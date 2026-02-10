@@ -1,0 +1,75 @@
+id: error-recovery-001
+version: "1.0"
+created_at: "2025-02-10"
+description: |
+  Agent gracefully handles a request for a non-existent element by reading the page,
+  confirming the element does not exist, and suggesting available alternatives.
+
+input:
+  url: https://example.com/dashboard
+  dom_snapshot: |
+    <html>
+      <head><title>Dashboard - Example App</title></head>
+      <body>
+        <div class="dashboard-layout">
+          <aside class="sidebar">
+            <nav>
+              <ul>
+                <li><a href="/dashboard" id="nav-home" class="active">Home</a></li>
+                <li><a href="/dashboard/settings" id="nav-settings">Settings</a></li>
+                <li><a href="/dashboard/reports" id="nav-reports">Reports</a></li>
+              </ul>
+            </nav>
+          </aside>
+          <main class="content-area">
+            <h1>Dashboard</h1>
+            <div class="widgets">
+              <div class="widget" id="widget-revenue">
+                <h3>Revenue</h3>
+                <p class="stat">$12,450</p>
+              </div>
+              <div class="widget" id="widget-users">
+                <h3>Active Users</h3>
+                <p class="stat">1,234</p>
+              </div>
+              <div class="widget" id="widget-orders">
+                <h3>Orders</h3>
+                <p class="stat">567</p>
+              </div>
+            </div>
+          </main>
+        </div>
+      </body>
+    </html>
+  user_query: "Click the 'Analytics' button"
+  viewport:
+    width: 1280
+    height: 720
+
+expected:
+  tool_calls:
+    - tool: read_page
+      params: {}
+      reasoning: Read the page to look for an Analytics button or similar element
+      optional: false
+
+    - tool: done
+      params:
+        text: "I couldn't find an 'Analytics' button on this page. The available navigation options in the sidebar are: Home, Settings, and Reports. Would you like me to click one of these instead?"
+      reasoning: Inform the user that the requested element does not exist and suggest available alternatives
+      optional: false
+
+  assistant_text_pattern: "*no*Analytics*Settings*Reports*"
+  outcome:
+    success: true
+
+metadata:
+  tags:
+    - error-recovery
+    - resilience
+    - graceful-handling
+    - read-page
+    - done
+  difficulty: hard
+  expected_steps: 2
+  category: resilience

@@ -1,0 +1,331 @@
+# QSidebar — Message Passing Protocol
+
+> **Complete specification** of every message exchanged between extension contexts.
+> All message types are defined in [`types-reference.md`](./types-reference.md).
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Transport Mechanisms](#transport-mechanisms)
+3. [Request ID Correlation](#request-id-correlation)
+4. [Message Catalog](#message-catalog)
+5. [Sequence Diagrams](#sequence-diagrams)
+6. [Error Handling](#error-handling)
+
+---
+
+## Overview
+
+QSidebar has four execution contexts that communicate via Chrome's messaging APIs:
+
+| Context | Process | Lifecycle | File |
+|---------|---------|-----------|------|
+| **Service Worker** (background) | Extension process | Ephemeral (terminates after ~30s idle) | `src/background/background.ts` |
+| **Side Panel** (UI) | Extension process | Lives while panel is open | `src/sidepanel/App.tsx` |
+| **Content Script** | Tab renderer process | Lives while page is loaded | `src/content/content.ts` |
+| **Offscreen Document** | Extension process | Created on demand for memory WASM | `src/offscreen/offscreen.ts` |
+
+### Communication Paths
+
+```
+Side Panel ←——chrome.runtime——→ Service Worker ←——chrome.tabs.sendMessage——→ Content Script
+                                       ↕
+                                chrome.runtime
+                                       ↕
+                              Offscreen Document
+                                       ↕
+                                  postMessage
+                                       ↕
+                                  Web Worker (embeddings)
+```
+
+**Rules:**
+- Content scripts **cannot** talk directly to the side panel — all messages route through the service worker.
+- The offscreen document **only** communicates with the service worker.
+- The web worker inside the offscreen document uses `postMessage` (not chrome.runtime).
+
+---
+
+## Transport Mechanisms
+
+### 1. `chrome.runtime.sendMessage` (one-shot, with response)
+
+Used for: Side Panel ↔ Service Worker, Offscreen Document → Service Worker.
+
+```typescript
+// Sender
+const response = await chrome.runtime.sendMessage({
+  type: "USER_CHAT",
+  requestId: crypto.randomUUID(),
+  source: "sidepanel",
+  payload: { text: "Search for flights to NYC", tabId: 123, workspaceId: null }
+});
+
+// Receiver (background.ts)
+chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {
+  if (message.type === "USER_CHAT") {
+    handleUserChat(message).then(sendResponse);
+    return true; // async response
+  }
+});
+```
+
+### 2. `chrome.tabs.sendMessage` (background → content script)
+
+Used for: Service Worker → Content Script (tab-targeted).
+
+```typescript
+// Background sends to a specific tab
+const response = await chrome.tabs.sendMessage(tabId, {
+  type: "DOM_SNAPSHOT_REQUEST",
+  requestId: crypto.randomUUID(),
+  source: "background",
+  payload: { includeText: true, refresh: true }
+});
+```
+
+### 3. `chrome.runtime.onMessage` with `sender.tab` check (content script → background)
+
+Content scripts use `chrome.runtime.sendMessage`, and the background listener disambiguates via `sender.tab`.
+
+### 4. `postMessage` (offscreen document ↔ web worker)
+
+The offscreen document spawns a web worker for Transformers.js embeddings. They communicate via the standard `postMessage` / `onmessage` channel.
+
+```typescript
+// Offscreen document → Web Worker
+worker.postMessage({ action: "embed", text: "hello world" });
+
+// Web Worker → Offscreen document
+self.postMessage({ action: "embed_result", embedding: Float32Array });
+```
+
+---
+
+## Request ID Correlation
+
+Every message carries a `requestId: string` (UUID v4). This enables:
+
+1. **Async response matching** — When the side panel sends `USER_CHAT` with `requestId: "abc"`, the background responds with `AGENT_RESPONSE` containing `requestId: "abc"`.
+2. **Tool call tracking** — `TOOL_EXECUTE` and `TOOL_RESULT` share the same `requestId`.
+3. **Timeout detection** — If no response arrives within 10s, the sender logs an error and surfaces it to the user.
+
+```typescript
+// Helper: send a message and await its correlated response
+function sendAndWait<T extends RuntimeMessage>(
+  message: RuntimeMessage,
+  timeoutMs = 10_000
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timeout waiting for response to ${message.type}`)),
+      timeoutMs
+    );
+    chrome.runtime.sendMessage(message, (response: T) => {
+      clearTimeout(timer);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+```
+
+---
+
+## Message Catalog
+
+### Side Panel → Service Worker
+
+| Message Type | Purpose | Payload | Expected Response |
+|---|---|---|---|
+| `USER_CHAT` | User sends a chat message | `{ text, tabId, workspaceId }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
+| `STOP_AGENT` | User clicks stop button | `{}` | `AGENT_STATUS` with `status: IDLE` |
+| `SETTINGS_UPDATE` | User changes settings | `{ settings: Partial<UserSettings> }` | `{ ok: true }` (sync response) |
+
+### Service Worker → Side Panel
+
+| Message Type | Purpose | Payload |
+|---|---|---|
+| `AGENT_STATUS` | Agent state machine changed | `{ status: AgentStatus, detail: string }` |
+| `STREAM_CHUNK` | Incremental LLM output | `{ delta: string, done: boolean }` |
+| `AGENT_RESPONSE` | Final agent response for a turn | `{ text, isStreaming, toolCalls }` |
+| `NAVIGATION_RESUME` | Page load completed after navigation | `{ url, isExpectedUrl }` |
+| `WORKSPACE_UPDATE` | Workspace list changed | `{ workspaces, activeWorkspaceId }` |
+
+### Service Worker → Content Script
+
+| Message Type | Purpose | Payload | Expected Response |
+|---|---|---|---|
+| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation | `{ includeText, refresh }` | `DOM_SNAPSHOT_RESPONSE` |
+| `TOOL_EXECUTE` | Execute a DOM action | `{ toolName, args, toolCallId }` | `TOOL_RESULT` |
+
+### Content Script → Service Worker
+
+| Message Type | Purpose | Payload |
+|---|---|---|
+| `DOM_SNAPSHOT_RESPONSE` | Return DOM snapshot | `{ snapshot: DomSnapshot, durationMs }` |
+| `TOOL_RESULT` | Return tool execution result | `{ toolCallId, success, result, navigated }` |
+
+### Service Worker → Offscreen Document
+
+| Message Type | Purpose | Payload | Expected Response |
+|---|---|---|---|
+| `MEMORY_WORKER` | Memory operation | `{ action: "init" \| "add" \| "search" \| "delete" \| "clear", ... }` | `MEMORY_WORKER_RESPONSE` |
+
+### Offscreen Document → Service Worker
+
+| Message Type | Purpose | Payload |
+|---|---|---|
+| `MEMORY_WORKER_RESPONSE` | Memory operation result | `{ action, success, results?, error? }` |
+
+---
+
+## Sequence Diagrams
+
+### 1. User Chat → Agent Loop → Tool Execution
+
+```
+Side Panel          Service Worker          Content Script
+    │                     │                       │
+    │── USER_CHAT ──────→ │                       │
+    │                     │ (start agent loop)    │
+    │← AGENT_STATUS ────  │ (status: THINKING)    │
+    │                     │                       │
+    │← STREAM_CHUNK ──── │ (LLM streaming...)    │
+    │← STREAM_CHUNK ──── │                       │
+    │← STREAM_CHUNK ──── │ (done: true)          │
+    │                     │                       │
+    │                     │ (LLM returned tool_calls)
+    │← AGENT_STATUS ────  │ (status: ACTING)      │
+    │                     │                       │
+    │                     │── TOOL_EXECUTE ──────→ │
+    │                     │                       │ (execute click)
+    │                     │←── TOOL_RESULT ──────  │
+    │                     │                       │
+    │                     │ (feed result to LLM)  │
+    │← AGENT_STATUS ────  │ (status: THINKING)    │
+    │← STREAM_CHUNK ──── │ ...                   │
+    │← AGENT_RESPONSE ── │ (final response)      │
+    │← AGENT_STATUS ────  │ (status: IDLE)        │
+    │                     │                       │
+```
+
+### 2. Navigation Bridge
+
+```
+Side Panel          Service Worker          Content Script (old)    Content Script (new)
+    │                     │                       │                       │
+    │                     │── TOOL_EXECUTE ──────→ │                       │
+    │                     │   (navigate url)      │                       │
+    │                     │←── TOOL_RESULT ──────  │ (navigated: true)     │
+    │                     │                       │                       │
+    │← AGENT_STATUS ────  │ (WAITING_FOR_PAGE_LOAD)                       │
+    │                     │                       │                       │
+    │                     │ (save state to         │ (destroyed)           │
+    │                     │  chrome.storage.local) │                       │
+    │                     │                       ×                       │
+    │                     │                                               │
+    │                     │←── webNavigation.onCompleted ────────────────  │
+    │                     │                                               │
+    │                     │ (restore state from storage)                   │
+    │                     │── DOM_SNAPSHOT_REQUEST ──────────────────────→ │
+    │                     │←── DOM_SNAPSHOT_RESPONSE ───────────────────  │
+    │                     │                                               │
+    │← NAVIGATION_RESUME  │                                               │
+    │← AGENT_STATUS ────  │ (status: THINKING)                            │
+    │                     │ (resume agent loop)                            │
+    │                     │                                               │
+```
+
+### 3. Memory Search Flow
+
+```
+Service Worker       Offscreen Document       Web Worker
+    │                       │                       │
+    │── MEMORY_WORKER ────→ │                       │
+    │   (action: search)    │                       │
+    │                       │── postMessage ──────→ │
+    │                       │   (embed query)       │
+    │                       │                       │ (run MiniLM-L6-v2)
+    │                       │←── postMessage ──────  │
+    │                       │   (embedding vector)  │
+    │                       │                       │
+    │                       │ (query Voy with vector)
+    │                       │ (query SQLite FTS5)
+    │                       │ (RRF fusion)
+    │                       │                       │
+    │←── MEMORY_WORKER_RESPONSE                     │
+    │   (action: search, results)                   │
+    │                       │                       │
+```
+
+### 4. Swarm Handoff
+
+```
+Side Panel          Service Worker                    OpenRouter API
+    │                     │                                  │
+    │← AGENT_STATUS ────  │ (WAITING_FOR_SWARM)              │
+    │                     │                                  │
+    │                     │── POST /chat/completions ──────→ │
+    │                     │   (model: kimi-k2.5, task)       │
+    │                     │                                  │ (agent swarm
+    │                     │                                  │  sub-agents run)
+    │                     │                                  │
+    │                     │←── SSE stream ──────────────────  │
+    │← STREAM_CHUNK ──── │                                  │
+    │← STREAM_CHUNK ──── │                                  │
+    │                     │                                  │
+    │                     │ (parse swarm report)             │
+    │← AGENT_STATUS ────  │ (status: THINKING)               │
+    │                     │ (feed report to Cerebras)        │
+    │                     │                                  │
+```
+
+---
+
+## Error Handling
+
+### Message-Level Errors
+
+Every response can optionally include an `error` field. Receivers check this first:
+
+```typescript
+// Pattern used throughout the codebase
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleMessage(message)
+    .then(result => sendResponse({ ok: true, ...result }))
+    .catch(err => sendResponse({ ok: false, error: err.message }));
+  return true; // async
+});
+```
+
+### Disconnected Contexts
+
+| Scenario | Detection | Recovery |
+|---|---|---|
+| Content script destroyed (navigation) | `chrome.runtime.lastError` on `sendMessage` | Navigation Bridge restores state after new page loads |
+| Service worker terminated (idle) | Side panel detects missed `AGENT_STATUS` | Side panel re-sends last `USER_CHAT`; service worker restores from `chrome.storage.local` |
+| Offscreen document closed | `chrome.runtime.lastError` | Service worker re-creates offscreen document via `chrome.offscreen.createDocument()` |
+| Side panel closed by user | N/A (service worker continues if mid-loop) | Agent loop completes silently; results available when panel reopens |
+
+### Timeout Constants
+
+| Operation | Timeout | Action on Timeout |
+|---|---|---|
+| DOM snapshot request | 5,000 ms | Return error to agent: "Page not responding" |
+| Tool execution | 10,000 ms | Return error to agent: "Action timed out" |
+| LLM API call (Cerebras) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel |
+| LLM API call (OpenRouter/Kimi) | 120,000 ms | Set `AgentStatus.ERROR`, notify side panel |
+| Navigation bridge wait | 30,000 ms | Abort navigation, set `AgentStatus.ERROR` |
+| Memory worker init | 15,000 ms | Disable memory features, warn user |
+
+---
+
+## Message Versioning
+
+Messages do not carry an explicit version number. Breaking changes to message payloads require updating all sender and receiver code in the same commit. Since all contexts are bundled together in the extension, there is no cross-version compatibility concern.

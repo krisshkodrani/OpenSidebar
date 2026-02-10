@@ -1,0 +1,68 @@
+id: overlay-dismiss-001
+version: "1.0"
+created_at: "2025-02-10"
+description: Dismiss a cookie consent overlay before clicking the target link underneath
+
+input:
+  url: https://example.com/article
+  dom_snapshot: |
+    <html>
+      <head><title>Breaking News - Example News</title></head>
+      <body>
+        <header>
+          <h1>Example News</h1>
+          <nav>
+            <a href="/" id="home-link">Home</a>
+            <a href="/news" id="news-link">News</a>
+          </nav>
+        </header>
+        <main>
+          <article>
+            <h2>Major Discovery in Renewable Energy</h2>
+            <p>Scientists have announced a breakthrough in solar cell efficiency that could revolutionize the renewable energy industry. The new technology promises to double the energy output of traditional panels while halving manufacturing costs.</p>
+            <a href="/article/full-story" id="read-more-link">Read More</a>
+          </article>
+        </main>
+        <div id="cookie-overlay" class="overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;">
+          <div class="overlay-content" style="background:white;padding:20px;margin:200px auto;max-width:500px;border-radius:8px;">
+            <h3>We use cookies</h3>
+            <p>This website uses cookies to ensure you get the best experience. By continuing to use this site, you agree to our use of cookies.</p>
+            <button id="cookie-accept-btn" class="btn-primary">Accept</button>
+            <button id="cookie-decline-btn" class="btn-secondary">Decline</button>
+          </div>
+        </div>
+      </body>
+    </html>
+  user_query: "Click the Read More link"
+  viewport:
+    width: 1280
+    height: 720
+
+expected:
+  tool_calls:
+    - tool: click_element
+      params:
+        id: 5
+      reasoning: Dismiss the cookie consent overlay by clicking Accept so the Read More link becomes accessible
+      optional: false
+
+    - tool: click_element
+      params:
+        id: 3
+      reasoning: Click the Read More link now that the overlay has been dismissed
+      optional: false
+
+  assistant_text_pattern: "*cookie*accept*Read More*"
+  outcome:
+    success: true
+
+metadata:
+  tags:
+    - overlay
+    - cookie-consent
+    - click
+    - multi-step
+    - interaction
+  difficulty: medium
+  expected_steps: 2
+  category: interaction

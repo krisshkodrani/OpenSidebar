@@ -1,0 +1,264 @@
+import React, { useEffect, useRef, useState } from "react";
+import { X, Save, Moon, Sun, Monitor, Trash2 } from "lucide-react";
+import { useStore } from "../store";
+import { UserSettings } from "../../types";
+
+interface Props {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+export function SettingsDrawer({ isOpen, onClose }: Props) {
+    const settings = useStore(s => s.settings);
+    const updateSettings = useStore(s => s.updateSettings);
+    const clearHistory = useStore(s => s.clearHistory);
+
+    const [formState, setFormState] = useState<UserSettings>(settings);
+    const [isDirty, setIsDirty] = useState(false);
+
+    const drawerRef = useRef<HTMLDivElement>(null);
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+    // Sync form state when settings change externally or drawer opens
+    useEffect(() => {
+        setFormState(settings);
+        setIsDirty(false);
+    }, [settings, isOpen]);
+
+    // Focus trap + Escape key
+    useEffect(() => {
+        if (!isOpen) return;
+
+        // Focus close button on open
+        closeButtonRef.current?.focus();
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                onClose();
+                return;
+            }
+
+            if (e.key === "Tab" && drawerRef.current) {
+                const focusable = drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+                if (focusable.length === 0) return;
+
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
+        };
+
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [isOpen, onClose]);
+
+    const handleChange = (key: keyof UserSettings, value: any) => {
+        setFormState(prev => {
+            const next = { ...prev, [key]: value };
+            setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
+            return next;
+        });
+    };
+
+    const handleSave = () => {
+        updateSettings(formState);
+        // Persist to sync storage
+        chrome.storage.sync.set({ userSettings: formState });
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <div
+            className="absolute inset-0 z-50 flex justify-end"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings"
+        >
+            {/* Backdrop */}
+            <div
+                className="absolute inset-0 bg-black/20 backdrop-blur-sm backdrop-enter"
+                onClick={onClose}
+            />
+
+            {/* Drawer */}
+            <div
+                ref={drawerRef}
+                className="relative w-full max-w-[320px] h-full bg-white dark:bg-gray-900 shadow-2xl flex flex-col border-l border-gray-200 dark:border-gray-800 drawer-enter"
+            >
+                <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
+                    <h2 className="font-semibold text-lg dark:text-gray-100">Settings</h2>
+                    <button
+                        ref={closeButtonRef}
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+                    >
+                        <X size={20} className="text-gray-500" />
+                    </button>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    {/* API Keys */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">API Configuration</h3>
+
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium dark:text-gray-300">Cerebras API Key</label>
+                            <input
+                                type="password"
+                                value={formState.cerebrasApiKey}
+                                onChange={e => handleChange("cerebrasApiKey", e.target.value)}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-gray-100"
+                                placeholder="sk-..."
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium dark:text-gray-300">OpenRouter API Key</label>
+                            <input
+                                type="password"
+                                value={formState.openRouterApiKey}
+                                onChange={e => handleChange("openRouterApiKey", e.target.value)}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-gray-100"
+                                placeholder="sk-or-..."
+                            />
+                        </div>
+                    </section>
+
+                    {/* Agent Behavior */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Agent Behavior</h3>
+
+                        <div className="space-y-1">
+                            <div className="flex justify-between">
+                                <label className="text-sm font-medium dark:text-gray-300">Max Turns</label>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{formState.maxTurns}</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="1"
+                                max="50"
+                                value={formState.maxTurns}
+                                onChange={e => handleChange("maxTurns", parseInt(e.target.value))}
+                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium dark:text-gray-300">Context Window</label>
+                            <select
+                                value={formState.contextWindowSize}
+                                onChange={e => handleChange("contextWindowSize", parseInt(e.target.value))}
+                                className="text-sm border border-gray-300 dark:border-gray-700 rounded px-2 py-1 bg-white dark:bg-gray-900 dark:text-gray-100 outline-none"
+                            >
+                                <option value={8000}>8k</option>
+                                <option value={32000}>32k</option>
+                                <option value={128000}>128k</option>
+                            </select>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium dark:text-gray-300">Enable Memory</label>
+                            <input
+                                type="checkbox"
+                                checked={formState.memoryEnabled}
+                                onChange={e => handleChange("memoryEnabled", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium dark:text-gray-300">Enable Workspaces</label>
+                            <input
+                                type="checkbox"
+                                checked={formState.workspaceEnabled}
+                                onChange={e => handleChange("workspaceEnabled", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                        </div>
+                    </section>
+
+                    {/* Appearance */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Appearance</h3>
+
+                        <div className="grid grid-cols-3 gap-2">
+                            {(["light", "dark", "system"] as const).map(theme => (
+                                <button
+                                    key={theme}
+                                    onClick={() => handleChange("theme", theme)}
+                                    className={`flex flex-col items-center gap-2 p-3 rounded-lg border text-xs font-medium transition-all
+                                        ${formState.theme === theme
+                                            ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 ring-1 ring-primary-500"
+                                            : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"
+                                        }
+                                    `}
+                                >
+                                    {theme === "light" && <Sun size={18} />}
+                                    {theme === "dark" && <Moon size={18} />}
+                                    {theme === "system" && <Monitor size={18} />}
+                                    <span className="capitalize">{theme}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* Visual Debugging */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Visual Debugging</h3>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium dark:text-gray-300">Show Element Tags</label>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">Display [N] labels on interactive page elements</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={formState.showElementTags}
+                                onChange={e => handleChange("showElementTags", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                        </div>
+                    </section>
+
+                    {/* History */}
+                    <section className="space-y-3 pt-4 border-t border-gray-200 dark:border-gray-800">
+                        <button
+                            onClick={() => {
+                                if (confirm("Are you sure you want to clear all chat history?")) {
+                                    clearHistory();
+                                }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
+                        >
+                            <Trash2 size={16} />
+                            Clear History
+                        </button>
+                    </section>
+
+                </div>
+
+                <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
+                    <button
+                        onClick={handleSave}
+                        disabled={!isDirty}
+                        className="w-full flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-lg font-medium transition-colors shadow-sm"
+                    >
+                        <Save size={18} />
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

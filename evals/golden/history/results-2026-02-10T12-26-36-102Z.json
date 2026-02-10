@@ -1,0 +1,1076 @@
+{
+  "results": [
+    {
+      "case_id": "dropdown-select-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 1,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 3,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "success": true
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 8
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 3
+            },
+            "reasoning": "Click the language select dropdown to open it",
+            "optional": true
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "reasoning": "Select the French option from the language dropdown",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 8
+            },
+            "reasoning": "Click the Save button to persist the language change",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/settings"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "error-recovery-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "I couldn't find an 'Analytics' button on this page. The available navigation options in the sidebar are: Home, Settings, and Reports. Would you like me to click one of these instead?"
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the page to look for an Analytics button or similar element",
+            "optional": false
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "I couldn't find an 'Analytics' button on this page. The available navigation options in the sidebar are: Home, Settings, and Reports. Would you like me to click one of these instead?"
+            },
+            "reasoning": "Inform the user that the requested element does not exist and suggest available alternatives",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/dashboard"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "form-placeholders-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 4,
+        "expected_steps": 4,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 3,
+              "text": "John Doe"
+            },
+            "success": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 4,
+              "text": "john@example.com"
+            },
+            "success": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 5,
+              "text": "Hello there"
+            },
+            "success": true
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 6
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 3
+            },
+            "reasoning": "Focus the name input field before typing",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 3,
+              "text": "John Doe"
+            },
+            "reasoning": "Enter the name into the name field",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 4
+            },
+            "reasoning": "Focus the email input field before typing",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 4,
+              "text": "john@example.com"
+            },
+            "reasoning": "Enter the email address into the email field",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "reasoning": "Focus the message textarea before typing",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 5,
+              "text": "Hello there"
+            },
+            "reasoning": "Enter the message into the message textarea",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 6
+            },
+            "reasoning": "Click the Submit button to send the contact form",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/contact"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "hover-menu-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 1,
+        "expected_steps": 1,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "hover_element",
+            "params": {
+              "id": 2
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "hover_element",
+            "params": {
+              "id": 2
+            },
+            "reasoning": "Hover over the Products menu item to trigger the dropdown and reveal the submenu options",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/app"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "login-form-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 3,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "testuser"
+            },
+            "success": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 2,
+              "text": "secret123",
+              "pressEnter": true
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 1
+            },
+            "reasoning": "Focus the username input field",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "testuser"
+            },
+            "reasoning": "Enter the username"
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 2
+            },
+            "reasoning": "Focus the password input field",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 2,
+              "text": "secret123",
+              "pressEnter": true
+            },
+            "reasoning": "Enter the password and submit via Enter"
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 3
+            },
+            "reasoning": "Submit the login form",
+            "optional": true
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/login"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "memory-conversation-context-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 3,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "Alice user name office address TechCorp"
+            },
+            "success": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "Your name is Alice Johnson! You work at TechCorp, and your office is located at 123 Innovation Drive, San Francisco, CA 94105."
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "Alice user name office address TechCorp"
+            },
+            "reasoning": "Search memory for user identity and office location information.\nThe user is asking follow-up questions that require recalling\nprevious conversation context.\n",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 1
+            },
+            "reasoning": "Focus the message input field to respond.\n",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "Your name is Alice Johnson! You work at TechCorp, and your office is located at 123 Innovation Drive, San Francisco, CA 94105."
+            },
+            "reasoning": "Provide personalized response incorporating both the user's name\nand office location retrieved from memory.\n",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 2
+            },
+            "reasoning": "Send the message to complete the response.\n",
+            "optional": true
+          },
+          {
+            "tool": "memory_add",
+            "params": {
+              "content": "User asked for name and office location confirmation - confirmed both details from memory",
+              "category": "conversation_log"
+            },
+            "reasoning": "Log this interaction to show the memory system is working correctly\nand user is engaging with context-aware responses.\n",
+            "optional": true
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://chat.example.com"
+        },
+        "expected_outcome": {
+          "success": true,
+          "page_contains": "chat"
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "memory-no-results-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "favorite color user preference"
+            },
+            "success": true
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "I don't have any memories about your favorite color. Would you like to tell me so I can remember it for next time?"
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "favorite color user preference"
+            },
+            "reasoning": "Search memory for any stored information about the user's favorite color",
+            "optional": false
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "I don't have any memories about your favorite color. Would you like to tell me so I can remember it for next time?"
+            },
+            "reasoning": "Inform the user that no relevant memories were found and offer to save the information",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "memory-project-context-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "failed",
+      "metrics": {
+        "steps_taken": 3,
+        "expected_steps": 4,
+        "tool_accuracy": 1,
+        "outcome_match": false
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "OpenSidebar website redesign project context"
+            },
+            "success": true
+          },
+          {
+            "tool": "navigate",
+            "params": {
+              "url": "https://github.com/OpenSidebar/OpenSidebar"
+            },
+            "success": true
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "OpenSidebar website redesign project context"
+            },
+            "reasoning": "Search memory for project details: repository location, tech stack,\ncurrent tasks, and what was last worked on.\n",
+            "optional": false
+          },
+          {
+            "tool": "navigate",
+            "params": {
+              "url": "https://github.com/OpenSidebar/OpenSidebar"
+            },
+            "reasoning": "Navigate directly to the GitHub repository found in memory.\nThis is more efficient than searching again.\n",
+            "optional": false
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the current state of the repository to see recent changes\nand understand what's been done since last session.\n",
+            "optional": false
+          },
+          {
+            "tool": "memory_add",
+            "params": {
+              "content": "Resuming OpenSidebar project work. Priority: Implement dark mode toggle in Hero section",
+              "category": "project_updates"
+            },
+            "reasoning": "Log the continuation of work and the immediate priority task.\nThis maintains project continuity across sessions.\n",
+            "optional": true
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://google.com"
+        },
+        "expected_outcome": {
+          "success": true,
+          "page_url_pattern": "github.com",
+          "page_contains": "opensidebar"
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "memory-restaurant-preferences-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "failed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 3,
+        "tool_accuracy": 1,
+        "outcome_match": false
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "Italian restaurants Boston dietary preferences vegetarian"
+            },
+            "success": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "vegetarian gluten-free Italian restaurants Boston",
+              "pressEnter": true
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "memory_search",
+            "params": {
+              "query": "Italian restaurants Boston dietary preferences vegetarian"
+            },
+            "reasoning": "First, check memory for user's dietary restrictions and food preferences.\nThis context is crucial for providing personalized restaurant recommendations.\n",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 1
+            },
+            "reasoning": "Focus the search input field to enter the query.\n",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "vegetarian gluten-free Italian restaurants Boston",
+              "pressEnter": true
+            },
+            "reasoning": "Type search query incorporating user's dietary preferences found in memory\nand submit via Enter.\n",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 2
+            },
+            "reasoning": "Submit the search by clicking the Google Search button.\n",
+            "optional": true
+          },
+          {
+            "tool": "memory_add",
+            "params": {
+              "content": "User searched for Italian restaurants in Boston - vegetarian and gluten-free options",
+              "category": "search_history"
+            },
+            "reasoning": "Save this search context to memory for future reference and recommendations.\nThis helps build a profile of user preferences over time.\n",
+            "optional": true
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://google.com"
+        },
+        "expected_outcome": {
+          "success": true,
+          "page_url_pattern": "google.com/search",
+          "page_contains": "restaurants"
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "multi-tab-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 1,
+        "expected_steps": 1,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "create_tab",
+            "params": {
+              "url": "https://wikipedia.org"
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "create_tab",
+            "params": {
+              "url": "https://wikipedia.org"
+            },
+            "reasoning": "Open Wikipedia in a new tab as the user requested",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "navigate-url-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "failed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": false
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "navigate",
+            "params": {
+              "url": "https://wikipedia.org"
+            },
+            "success": true
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "navigate",
+            "params": {
+              "url": "https://wikipedia.org"
+            },
+            "reasoning": "Navigate directly to Wikipedia as the user requested",
+            "optional": false
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the Wikipedia page to confirm successful navigation",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://google.com"
+        },
+        "expected_outcome": {
+          "success": true,
+          "page_url_pattern": "wikipedia.org"
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "overlay-dismiss-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "success": true
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 3
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "reasoning": "Dismiss the cookie consent overlay by clicking Accept so the Read More link becomes accessible",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 3
+            },
+            "reasoning": "Click the Read More link now that the overlay has been dismissed",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/article"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "pagination-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 12
+            },
+            "success": true
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 12
+            },
+            "reasoning": "Click the Next link in the pagination to go to the second page of products",
+            "optional": false
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the next page to confirm navigation and see the new products",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/products?page=1"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "scroll-and-find-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 3,
+        "expected_steps": 3,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "scroll_page",
+            "params": {
+              "direction": "down"
+            },
+            "success": true
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "scroll_page",
+            "params": {
+              "direction": "down"
+            },
+            "reasoning": "Scroll down the long article to find the subscribe button which is likely below the fold",
+            "optional": false
+          },
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the page content after scrolling to locate the subscribe button",
+            "optional": false
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 5
+            },
+            "reasoning": "Click the Subscribe button found at the bottom of the article",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/blog/long-article"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "search-google-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "failed",
+      "metrics": {
+        "steps_taken": 1,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": false
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "flights to Paris",
+              "pressEnter": true
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 1
+            },
+            "reasoning": "Focus the search input field",
+            "optional": true
+          },
+          {
+            "tool": "type_text",
+            "params": {
+              "id": 1,
+              "text": "flights to Paris",
+              "pressEnter": true
+            },
+            "reasoning": "Enter the search query and submit via Enter"
+          },
+          {
+            "tool": "click_element",
+            "params": {
+              "id": 2
+            },
+            "reasoning": "Submit the search by clicking the button",
+            "optional": true
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://google.com"
+        },
+        "expected_outcome": {
+          "success": true,
+          "page_url_pattern": "google.com/search",
+          "page_contains": "flights to Paris"
+        },
+        "errors": []
+      }
+    },
+    {
+      "case_id": "summarize-page-001",
+      "timestamp": "2026-02-10T12:26:36.099Z",
+      "duration_ms": 0,
+      "status": "passed",
+      "metrics": {
+        "steps_taken": 2,
+        "expected_steps": 2,
+        "tool_accuracy": 1,
+        "outcome_match": true
+      },
+      "details": {
+        "actual_tool_calls": [
+          {
+            "tool": "read_page",
+            "params": {},
+            "success": true
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "This article covers four key AI trends in 2025: multimodal AI going mainstream, autonomous AI agents, edge AI and on-device intelligence, and growing AI regulation and governance. The article concludes that organizations staying ahead of these trends will gain competitive advantage."
+            },
+            "success": true
+          }
+        ],
+        "expected_tool_calls": [
+          {
+            "tool": "read_page",
+            "params": {},
+            "reasoning": "Read the full article content to generate an accurate summary",
+            "optional": false
+          },
+          {
+            "tool": "done",
+            "params": {
+              "text": "This article covers four key AI trends in 2025: multimodal AI going mainstream, autonomous AI agents, edge AI and on-device intelligence, and growing AI regulation and governance. The article concludes that organizations staying ahead of these trends will gain competitive advantage."
+            },
+            "reasoning": "Provide a concise summary of the article to the user",
+            "optional": false
+          }
+        ],
+        "actual_text": "",
+        "actual_outcome": {
+          "success": true,
+          "final_url": "https://example.com/blog/ai-trends"
+        },
+        "expected_outcome": {
+          "success": true
+        },
+        "errors": []
+      }
+    }
+  ],
+  "summary": {
+    "total_cases": 16,
+    "passed": 12,
+    "failed": 4,
+    "errors": 0,
+    "avg_duration_ms": 0,
+    "avg_tool_accuracy": 1,
+    "by_category": {},
+    "by_difficulty": {}
+  },
+  "timestamp": "2026-02-10T12:26:36.101Z"
+}
