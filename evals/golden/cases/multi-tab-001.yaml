@@ -1,0 +1,61 @@
+id: multi-tab-001
+version: "1.0"
+created_at: "2025-02-10"
+description: Open a new tab navigating to Wikipedia from the current page
+
+input:
+  url: https://example.com
+  dom_snapshot: |
+    <html>
+      <head><title>Example - Homepage</title></head>
+      <body>
+        <header>
+          <h1>Welcome to Example</h1>
+          <nav>
+            <a href="/" id="home-link">Home</a>
+            <a href="/about" id="about-link">About</a>
+            <a href="/contact" id="contact-link">Contact</a>
+          </nav>
+        </header>
+        <main>
+          <section class="hero">
+            <h2>Discover Something New</h2>
+            <p>Explore our curated collection of resources and tools designed to help you learn and grow.</p>
+            <a href="/explore" id="explore-link" class="btn-primary">Start Exploring</a>
+          </section>
+          <section class="links">
+            <h3>Popular Resources</h3>
+            <ul>
+              <li><a href="/tutorials" id="tutorials-link">Tutorials</a></li>
+              <li><a href="/docs" id="docs-link">Documentation</a></li>
+              <li><a href="/community" id="community-link">Community</a></li>
+            </ul>
+          </section>
+        </main>
+      </body>
+    </html>
+  user_query: "Open wikipedia.org in a new tab"
+  viewport:
+    width: 1280
+    height: 720
+
+expected:
+  tool_calls:
+    - tool: create_tab
+      params:
+        url: "https://wikipedia.org"
+      reasoning: Open Wikipedia in a new tab as the user requested
+      optional: false
+
+  assistant_text_pattern: "*new tab*wikipedia*"
+  outcome:
+    success: true
+
+metadata:
+  tags:
+    - tabs
+    - create-tab
+    - navigation
+  difficulty: medium
+  expected_steps: 1
+  category: tabs

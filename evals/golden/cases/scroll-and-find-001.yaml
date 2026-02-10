@@ -1,0 +1,73 @@
+id: scroll-and-find-001
+version: "1.0"
+created_at: "2025-02-10"
+description: Scroll down a long article page to find and click a subscribe button near the bottom
+
+input:
+  url: https://example.com/blog/long-article
+  dom_snapshot: |
+    <html>
+      <head><title>The Future of Web Development - Blog</title></head>
+      <body>
+        <nav id="top-nav">
+          <a href="/" id="home-link">Home</a>
+          <a href="/blog" id="blog-link">Blog</a>
+          <a href="/about" id="about-link">About</a>
+        </nav>
+        <main>
+          <article>
+            <h1>The Future of Web Development</h1>
+            <p>Web development has evolved dramatically over the past decade. From simple static pages to complex single-page applications, the landscape continues to shift at a rapid pace. In this article, we explore what lies ahead for developers and the tools they use.</p>
+            <h2>The Rise of Server Components</h2>
+            <p>Server components represent a paradigm shift in how we think about rendering. By moving computation back to the server, we can reduce bundle sizes and improve performance for end users. Frameworks like Next.js and Remix have pioneered this approach, and adoption continues to grow across the industry.</p>
+            <h2>WebAssembly and Beyond</h2>
+            <p>WebAssembly opens the door to running languages like Rust, C++, and Go directly in the browser. This enables performance-critical applications such as video editing, 3D rendering, and scientific computing to run natively on the web without plugins or extensions.</p>
+            <h2>AI-Assisted Development</h2>
+            <p>AI coding assistants are transforming developer workflows. From code completion to automated testing, these tools are making developers more productive than ever before. The integration of large language models into IDEs and browsers is just the beginning of this revolution.</p>
+            <h2>Edge Computing</h2>
+            <p>Edge computing brings server logic closer to users, reducing latency and improving performance globally. Combined with serverless architectures, edge functions allow developers to deploy code that runs in data centers around the world with minimal configuration.</p>
+            <div class="subscribe-section">
+              <p>Enjoyed this article? Subscribe to our newsletter for weekly updates on web development trends.</p>
+              <button id="subscribe-btn" class="btn-primary">Subscribe</button>
+            </div>
+          </article>
+        </main>
+      </body>
+    </html>
+  user_query: "Find the subscribe button and click it"
+  viewport:
+    width: 1280
+    height: 720
+
+expected:
+  tool_calls:
+    - tool: scroll_page
+      params:
+        direction: "down"
+      reasoning: Scroll down the long article to find the subscribe button which is likely below the fold
+      optional: false
+
+    - tool: read_page
+      params: {}
+      reasoning: Read the page content after scrolling to locate the subscribe button
+      optional: false
+
+    - tool: click_element
+      params:
+        id: 5
+      reasoning: Click the Subscribe button found at the bottom of the article
+      optional: false
+
+  assistant_text_pattern: "*subscribe*click*"
+  outcome:
+    success: true
+
+metadata:
+  tags:
+    - scroll
+    - navigation
+    - click
+    - find-element
+  difficulty: easy
+  expected_steps: 3
+  category: navigation

@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "OpenSidebar",
+  "version": "0.1.0",
+  "description": "AI-powered browser agent workspace",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "tabGroups",
+    "webNavigation",
+    "offscreen",
+    "alarms"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open OpenSidebar"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
+}

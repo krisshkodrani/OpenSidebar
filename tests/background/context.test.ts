@@ -1,0 +1,269 @@
+/**
+ * Context Manager Tests
+ * Tests for token-based sliding window, message grouping,
+ * scroll indicator, and action trace summarization.
+ */
+
+import { describe, test, expect, beforeEach, mock } from "bun:test";
+
+// Mock chrome APIs
+globalThis.chrome = {
+  storage: {
+    session: {
+      get: mock(async () => ({})),
+      set: mock(async () => {}),
+    },
+  },
+} as any;
+
+// Import after mocking
+import { ContextManager } from "../../src/background/agent/context";
+import { LLMMessage } from "../../src/background/llm/types";
+
+describe("ContextManager", () => {
+  let context: ContextManager;
+
+  beforeEach(() => {
+    context = new ContextManager();
+    // Reset mocks
+    (chrome.storage.session.set as any).mockClear();
+  });
+
+  // Helper to create messages
+  const userMsg = (content: string): LLMMessage => ({
+    role: "user",
+    content,
+  });
+  const asstMsg = (content: string): LLMMessage => ({
+    role: "assistant",
+    content,
+  });
+  const toolCallMsg = (toolId: string): LLMMessage => ({
+    role: "assistant",
+    content: null,
+    tool_calls: [
+      {
+        id: toolId,
+        type: "function",
+        function: { name: "test", arguments: "{}" },
+      },
+    ],
+  });
+  const toolResultMsg = (toolId: string, content: string): LLMMessage => ({
+    role: "tool",
+    tool_call_id: toolId,
+    content,
+  });
+
+  describe("Token Estimation (Basic)", () => {
+    test("getPrompt returns system message", () => {
+      const prompt = context.getPrompt();
+      expect(prompt.length).toBeGreaterThan(0);
+      expect(prompt[0].role).toBe("system");
+    });
+
+    test("respects token budget (simulated)", () => {
+      // Add many long messages
+      const longText = "a".repeat(1000); // ~250 tokens
+      for (let i = 0; i < 30; i++) {
+        context.addMessage(userMsg(longText));
+      }
+
+      const prompt = context.getPrompt();
+
+      // Total should be around 6000 tokens max.
+      // 30 * 250 = 7500 tokens > 6000.
+      // Should truncate.
+      expect(prompt.length).toBeLessThan(32); // System + 30 user messages = 31. Should be less.
+    });
+  });
+
+  describe("Goal Amnesia Prevention", () => {
+    test("always keeps the first user message", () => {
+      context.addMessage(userMsg("FIRST_MESSAGE"));
+
+      // Fill with filler
+      const longText = "a".repeat(1000);
+      for (let i = 0; i < 50; i++) {
+        context.addMessage(asstMsg(longText));
+      }
+
+      const prompt = context.getPrompt();
+      // Index 0 is system, Index 1 should be first user message
+      expect(prompt[1].content).toBe("FIRST_MESSAGE");
+    });
+  });
+
+  describe("Tool Grouping", () => {
+    test("keeps tool call and result together", () => {
+      context.addMessage(userMsg("Hi"));
+      context.addMessage(toolCallMsg("call_1"));
+      context.addMessage(toolResultMsg("call_1", "result"));
+
+      const prompt = context.getPrompt();
+      // Should contain both
+      const hasCall = prompt.some((m) =>
+        m.tool_calls?.some((tc) => tc.id === "call_1"),
+      );
+      const hasResult = prompt.some(
+        (m) => m.role === "tool" && m.tool_call_id === "call_1",
+      );
+
+      expect(hasCall).toBe(true);
+      expect(hasResult).toBe(true);
+    });
+
+    test("retains order of grouped messages", () => {
+      context.addMessage(toolCallMsg("call_1"));
+      context.addMessage(toolResultMsg("call_1", "result"));
+
+      const prompt = context.getPrompt();
+      // Find indices
+      const callIdx = prompt.findIndex((m) =>
+        m.tool_calls?.some((tc) => tc.id === "call_1"),
+      );
+      const resIdx = prompt.findIndex(
+        (m) => m.role === "tool" && m.tool_call_id === "call_1",
+      );
+
+      expect(callIdx).toBeLessThan(resIdx);
+    });
+  });
+
+  describe("Scroll Indicator", () => {
+    test("shows 'more content below' when not at bottom", () => {
+      context.setSnapshot({
+        title: "Test Page",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "Some text",
+        viewport: { width: 1280, height: 800 },
+        scroll: { x: 0, y: 500, maxY: 3000 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("more content below");
+      expect(systemContent).toContain("500/3000px");
+    });
+
+    test("shows 'at bottom of page' when scrolled to end", () => {
+      context.setSnapshot({
+        title: "Test Page",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "Some text",
+        viewport: { width: 1280, height: 800 },
+        scroll: { x: 0, y: 3000, maxY: 3000 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("at bottom of page");
+      expect(systemContent).not.toContain("more content below");
+    });
+
+    test("shows 'all content visible' when page fits viewport", () => {
+      context.setSnapshot({
+        title: "Test Page",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "Some text",
+        viewport: { width: 1280, height: 800 },
+        scroll: { x: 0, y: 0, maxY: 0 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("all content visible");
+    });
+
+    test("shows correct percentage", () => {
+      context.setSnapshot({
+        title: "Test Page",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "",
+        viewport: { width: 1280, height: 800 },
+        scroll: { x: 0, y: 1500, maxY: 3000 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("50% down");
+    });
+
+    test("no scroll indicator when no snapshot", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      // Should not contain scroll info, and no leftover placeholder
+      expect(systemContent).not.toContain("{{scrollIndicator}}");
+    });
+  });
+
+  describe("Action Trace Summarization", () => {
+    test("compresses old tool results beyond 2 most recent", () => {
+      // Add 4 tool call/result pairs
+      for (let i = 1; i <= 4; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`));
+        const longResult = `Success: Step ${i} completed.\n${"Detail line.\n".repeat(50)}`;
+        context.addMessage(toolResultMsg(`call_${i}`, longResult));
+      }
+
+      const prompt = context.getPrompt();
+      const toolResults = prompt.filter((m) => m.role === "tool");
+
+      // The 2 most recent should be preserved (call_3, call_4)
+      // Older ones should be truncated
+      for (const result of toolResults) {
+        if (
+          result.tool_call_id === "call_3" ||
+          result.tool_call_id === "call_4"
+        ) {
+          // Recent — should be full
+          expect(result.content!.length).toBeGreaterThan(150);
+        } else if (
+          result.tool_call_id === "call_1" ||
+          result.tool_call_id === "call_2"
+        ) {
+          // Old — should be truncated
+          expect(result.content).toContain("[truncated]");
+          expect(result.content!.length).toBeLessThan(200);
+        }
+      }
+    });
+
+    test("preserves all results when only 2 tool calls exist", () => {
+      const longResult = `Success: completed.\n${"Detail line.\n".repeat(50)}`;
+
+      context.addMessage(toolCallMsg("call_1"));
+      context.addMessage(toolResultMsg("call_1", longResult));
+      context.addMessage(toolCallMsg("call_2"));
+      context.addMessage(toolResultMsg("call_2", longResult));
+
+      const prompt = context.getPrompt();
+      const toolResults = prompt.filter((m) => m.role === "tool");
+
+      // Both should be fully preserved (only 2, within threshold)
+      for (const result of toolResults) {
+        expect(result.content).not.toContain("[truncated]");
+      }
+    });
+
+    test("does not truncate short tool results", () => {
+      // Add 5 pairs but with short results
+      for (let i = 1; i <= 5; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`));
+        context.addMessage(toolResultMsg(`call_${i}`, `OK step ${i}`));
+      }
+
+      const prompt = context.getPrompt();
+      const toolResults = prompt.filter((m) => m.role === "tool");
+
+      // All short results should be preserved (< 150 chars)
+      for (const result of toolResults) {
+        expect(result.content).not.toContain("[truncated]");
+      }
+    });
+  });
+});

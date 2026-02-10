@@ -1,0 +1,56 @@
+id: memory-no-results-001
+version: "1.0"
+created_at: "2025-02-10"
+description: Agent searches memory for user preferences but finds no results and responds gracefully
+
+input:
+  url: https://example.com
+  dom_snapshot: |
+    <html>
+      <head><title>Example - Homepage</title></head>
+      <body>
+        <header>
+          <h1>Welcome to Example</h1>
+          <nav>
+            <a href="/" id="home-link">Home</a>
+            <a href="/about" id="about-link">About</a>
+          </nav>
+        </header>
+        <main>
+          <p>Welcome to our website. Explore our content and discover something new today.</p>
+        </main>
+      </body>
+    </html>
+  user_query: "What do you remember about my favorite color?"
+  viewport:
+    width: 1280
+    height: 720
+
+expected:
+  tool_calls:
+    - tool: memory_search
+      params:
+        query: "favorite color user preference"
+      reasoning: Search memory for any stored information about the user's favorite color
+      optional: false
+
+    - tool: done
+      params:
+        text: "I don't have any memories about your favorite color. Would you like to tell me so I can remember it for next time?"
+      reasoning: Inform the user that no relevant memories were found and offer to save the information
+      optional: false
+
+  assistant_text_pattern: "*no*memor*favorite color*"
+  outcome:
+    success: true
+
+metadata:
+  tags:
+    - memory
+    - memory_search
+    - no-results
+    - graceful-handling
+    - done
+  difficulty: easy
+  expected_steps: 2
+  category: memory

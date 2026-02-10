@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- Prose styles for assistant markdown messages --- */
+.prose-chat {
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.prose-chat p {
+  margin: 0.25em 0;
+}
+
+.prose-chat p:first-child {
+  margin-top: 0;
+}
+
+.prose-chat p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-chat code {
+  font-size: 0.85em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.prose-chat pre {
+  margin: 0.5em 0;
+  padding: 0.6em 0.8em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+
+.prose-chat pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.prose-chat ul,
+.prose-chat ol {
+  margin: 0.25em 0;
+  padding-left: 1.4em;
+}
+
+.prose-chat li {
+  margin: 0.15em 0;
+}
+
+.prose-chat a {
+  color: #4f46e5;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-chat a:hover {
+  color: #4338ca;
+}
+
+.prose-chat blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid rgba(0, 0, 0, 0.15);
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+
+.prose-chat h1 {
+  font-size: 1.15em;
+}
+
+.prose-chat h2 {
+  font-size: 1.05em;
+}
+
+.prose-chat h3 {
+  font-size: 1em;
+}
+
+.prose-chat hr {
+  margin: 0.5em 0;
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.prose-chat table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+  width: 100%;
+}
+
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+
+.prose-chat th {
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Dark mode prose overrides */
+.dark .prose-chat code {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark .prose-chat pre {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .prose-chat a {
+  color: #818cf8;
+}
+
+.dark .prose-chat a:hover {
+  color: #a5b4fc;
+}
+
+.dark .prose-chat blockquote {
+  border-left-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark .prose-chat hr {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .prose-chat th,
+.dark .prose-chat td {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .prose-chat th {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Streaming cursor --- */
+.streaming-cursor::after {
+  content: "\25AE";
+  display: inline;
+  animation: blink-cursor 0.8s step-end infinite;
+  color: currentColor;
+  opacity: 0.7;
+  margin-left: 1px;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0; }
+}
+
+/* --- Drawer slide-in animation --- */
+.drawer-enter {
+  animation: slide-in-right 0.2s ease-out forwards;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.backdrop-enter {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* --- Reduced motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .streaming-cursor::after {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .drawer-enter {
+    animation: none;
+  }
+
+  .backdrop-enter {
+    animation: none;
+  }
+
+  .animate-pulse,
+  .animate-ping,
+  .animate-spin {
+    animation: none !important;
+  }
+}
