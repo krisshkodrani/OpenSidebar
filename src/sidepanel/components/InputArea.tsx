@@ -19,9 +19,9 @@ export function InputArea({
   // Auto-resize
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = "0px";
       textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 150) + "px";
+        Math.min(textareaRef.current.scrollHeight, 120) + "px";
     }
   }, [inputText]);
 
@@ -49,7 +49,7 @@ export function InputArea({
           placeholder={
             isAgentRunning ? "Agent is processing..." : "Ask OpenSidebar..."
           }
-          className="w-full bg-transparent border-none outline-none resize-none max-h-[150px] min-h-[36px] py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
+          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] overflow-y-auto py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
           rows={1}
           disabled={isAgentRunning}
         />

@@ -98,7 +98,9 @@ export type RuntimeMessage =
   | SettingsUpdateMessage
   | SidePanelOpenedMessage
   | CloseSidePanelMessage
-  | ScreenshotCapturedMessage;
+  | ScreenshotCapturedMessage
+  | DismissModalsMessage
+  | DismissModalsResponse;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -194,6 +196,20 @@ export interface ScreenshotCapturedMessage extends BaseMessage {
     context: string;
     timestamp: number;
   };
+}
+
+/** Background asks the content script to auto-dismiss modals/banners */
+export interface DismissModalsMessage extends BaseMessage {
+  type: "DISMISS_MODALS";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
+/** Content script reports how many modals were dismissed */
+export interface DismissModalsResponse extends BaseMessage {
+  type: "DISMISS_MODALS_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: { dismissed: number };
 }
 
 /** Background sends a step update to the side panel for the timeline */
@@ -521,6 +537,8 @@ export interface DomSnapshotRequest extends BaseMessage {
     includeText: boolean;
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
+    /** Whether to render visual [N] tag overlays on the page */
+    showTags?: boolean;
   };
 }
 
@@ -730,6 +748,8 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
+  /** Speed mode: optimizes pipeline for throughput (fewer tools, batch snapshots, parallel execution) */
+  speedMode: boolean;
 }
 
 // --- Utility Types ---

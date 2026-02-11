@@ -3,8 +3,8 @@ import { tagElements, getCachedElements } from "./tagging";
 
 const MAX_VIEWPORT_TEXT_LENGTH = 15000;
 
-export function buildSnapshot(includeText: boolean, refresh: boolean): DomSnapshot {
-    const elements = refresh ? tagElements() : getCachedElements();
+export function buildSnapshot(includeText: boolean, refresh: boolean, showTags: boolean = false): DomSnapshot {
+    const elements = refresh ? tagElements(showTags) : getCachedElements();
 
     let viewportText = "";
     if (includeText) {

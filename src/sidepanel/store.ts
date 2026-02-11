@@ -22,8 +22,8 @@ interface Actions {
 type Store = SidePanelState & Actions;
 
 const DEFAULT_SETTINGS: UserSettings = {
-  cerebrasApiKey: "",
-  openRouterApiKey: "",
+  cerebrasApiKey: __CEREBRAS_API_KEY__,
+  openRouterApiKey: __OPENROUTER_API_KEY__,
   maxTurns: 30,
   contextWindowSize: 128000,
   memoryEnabled: true,

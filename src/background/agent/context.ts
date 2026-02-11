@@ -52,14 +52,35 @@ URL: {{url}}
 {{viewportText}}
 `;
 
+const SPEED_PROMPT_TEMPLATE = `
+You are a speed-optimized browser agent solving challenge tasks.
+
+RULES:
+- ONLY emit tool calls. Never explain or ask questions.
+- Emit MULTIPLE tool calls per turn when actions are independent.
+- If you see a modal/overlay/banner/popup, dismiss it FIRST by clicking the close/accept/dismiss button.
+- For forms: fill ALL fields in one turn, use pressEnter:true on the last field to submit.
+- type_text auto-focuses — do NOT click_element before typing.
+- Call done with a summary when the task is complete.
+
+Title: {{title}}
+URL: {{url}}
+{{scrollIndicator}}
+
+Elements:
+{{elements}}
+`;
+
 export class ContextManager {
   private history: LLMMessage[] = [];
   private snapshot: DomSnapshot | null = null;
   private maxHistory = 20;
   private maxContextTokens: number;
+  private speedMode: boolean;
 
-  constructor(maxContextTokens: number = 32000) {
+  constructor(maxContextTokens: number = 32000, speedMode: boolean = false) {
     this.maxContextTokens = maxContextTokens;
+    this.speedMode = speedMode;
   }
 
   public setSnapshot(snapshot: DomSnapshot) {
@@ -220,7 +241,8 @@ export class ContextManager {
   }
 
   private constructSystemMessage(): LLMMessage {
-    let content = SYSTEM_PROMPT_TEMPLATE;
+    const template = this.speedMode ? SPEED_PROMPT_TEMPLATE : SYSTEM_PROMPT_TEMPLATE;
+    let content = template;
 
     if (this.snapshot) {
       content = content.replace("{{title}}", this.snapshot.title || "Unknown");
@@ -244,7 +266,7 @@ export class ContextManager {
       }
 
       // Format elements with progressive compression
-      const level = this.getCompressionLevel();
+      const level = this.speedMode ? CompressionLevel.LIGHT : this.getCompressionLevel();
       const elementsList = this.formatElementsWithCompression(
         this.snapshot.elements,
         level,
@@ -254,22 +276,26 @@ export class ContextManager {
         elementsList || "No interactive elements found.",
       );
 
-      // Apply viewport text compression
-      let viewportText = this.snapshot.viewportText || "No text content.";
-      if (level === CompressionLevel.HEAVY) {
-        viewportText = ""; // Remove in heavy compression
-      } else if (level === CompressionLevel.MEDIUM) {
-        viewportText = viewportText.slice(0, 2000);
-      } else if (level === CompressionLevel.LIGHT) {
-        viewportText = viewportText.slice(0, 5000);
+      // Viewport text: skip entirely in speed mode (template has no {{viewportText}} placeholder)
+      if (!this.speedMode) {
+        let viewportText = this.snapshot.viewportText || "No text content.";
+        if (level === CompressionLevel.HEAVY) {
+          viewportText = ""; // Remove in heavy compression
+        } else if (level === CompressionLevel.MEDIUM) {
+          viewportText = viewportText.slice(0, 2000);
+        } else if (level === CompressionLevel.LIGHT) {
+          viewportText = viewportText.slice(0, 5000);
+        }
+        content = content.replace("{{viewportText}}", viewportText);
       }
-      content = content.replace("{{viewportText}}", viewportText);
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
-      content = content.replace("{{viewportText}}", "");
+      if (!this.speedMode) {
+        content = content.replace("{{viewportText}}", "");
+      }
     }
 
     return {

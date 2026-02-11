@@ -1,4 +1,4 @@
-import { ActivateSwarmArgs, AgentStatus } from "../types";
+import { ActivateSwarmArgs, AgentStatus, UserSettings } from "../types";
 import { logger } from "../utils";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -25,8 +25,9 @@ export async function callKimiSwarm(
   args: ActivateSwarmArgs,
   statusCallback?: (status: AgentStatus, detail: string) => void,
 ): Promise<string> {
-  const settings = await chrome.storage.sync.get(["openRouterApiKey"]);
-  const apiKey = settings.openRouterApiKey;
+  const stored = await chrome.storage.sync.get("userSettings");
+  const settings = (stored.userSettings ?? {}) as UserSettings;
+  const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
 
   if (!apiKey) {
     return "Error: OpenRouter API key not configured. Please add it in Settings.";

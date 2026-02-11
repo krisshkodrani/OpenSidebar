@@ -6,6 +6,7 @@ import {
   MessageSource,
   AgentStatus,
   AgentLoopState,
+  UserSettings,
 } from "../types";
 import { workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
@@ -51,7 +52,29 @@ chrome.sidePanel.setPanelBehavior({
 
 // 5. State
 let agentLoop: AgentLoop | null = null;
-const userOpenedPanel = new Set<number>();
+let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+// --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
+const USER_OPENED_KEY = "userOpenedPanel";
+
+async function addUserOpenedPanel(tabId: number): Promise<void> {
+  const data = await chrome.storage.session.get(USER_OPENED_KEY);
+  const arr: number[] = data[USER_OPENED_KEY] ?? [];
+  if (!arr.includes(tabId)) arr.push(tabId);
+  await chrome.storage.session.set({ [USER_OPENED_KEY]: arr });
+}
+
+async function hasUserOpenedPanel(tabId: number): Promise<boolean> {
+  const data = await chrome.storage.session.get(USER_OPENED_KEY);
+  const arr: number[] = data[USER_OPENED_KEY] ?? [];
+  return arr.includes(tabId);
+}
+
+async function removeUserOpenedPanel(tabId: number): Promise<void> {
+  const data = await chrome.storage.session.get(USER_OPENED_KEY);
+  const arr: number[] = data[USER_OPENED_KEY] ?? [];
+  await chrome.storage.session.set({ [USER_OPENED_KEY]: arr.filter((id) => id !== tabId) });
+}
 
 // 6. Restore workspaces on startup (check for existing OpenSidebar tab groups)
 restoreWorkspacesFromExistingGroups();
@@ -67,18 +90,16 @@ chrome.action.onClicked.addListener(async (tab) => {
     logger.info("sidebar", "Icon clicked", { tabId: tab.id });
     const tabId = tab.id;
     try {
-      // 0. Mark as user-initiated
-      userOpenedPanel.add(tabId);
-
-      // 1. Re-enable panel for this tab (fire and forget to preserve gesture)
+      // 0. Re-enable + open panel FIRST (must stay synchronous with gesture)
       chrome.sidePanel.setOptions({
         tabId,
         path: "src/sidepanel/index.html",
         enabled: true,
       });
-
-      // 2. Open it immediately
       await chrome.sidePanel.open({ tabId });
+
+      // 1. Mark as user-initiated AFTER open succeeds (still before SIDE_PANEL_OPENED arrives)
+      await addUserOpenedPanel(tabId);
 
       // We can call the same handler as the side panel message, or just let the side panel message trigger it.
       // However, if the side panel message fires, we might double-create if we are not careful.
@@ -124,7 +145,7 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
       });
     } else {
       // ONLY create if user explicitly opened it
-      if (userOpenedPanel.has(tabId)) {
+      if (await hasUserOpenedPanel(tabId)) {
         logger.info(
           "workspace",
           "Creating new workspace for tab (User Initiated)",
@@ -151,7 +172,7 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
           });
         }
         // Consumed the flag
-        userOpenedPanel.delete(tabId);
+        await removeUserOpenedPanel(tabId);
       } else {
         logger.warn(
           "workspace",
@@ -185,21 +206,23 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
 
 // Handle tab activation - show/hide panel based on workspace status
 chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+  // Cancel any pending close from a previous rapid tab switch
+  if (pendingCloseTimer) {
+    clearTimeout(pendingCloseTimer);
+    pendingCloseTimer = null;
+  }
+
   const workspace = await workspaceManager.getWorkspaceForTab(tabId);
 
   if (workspace) {
     // Tab IS in a workspace -> Enable and Open Side Panel
     try {
-      // 1. Enable panel for this tab (in case it was disabled globally or locally)
-      // We set plain options to ensure it's enabled.
       await chrome.sidePanel.setOptions({
         tabId,
         path: "src/sidepanel/index.html",
         enabled: true,
       });
 
-      // 2. Open the panel
-      // onActivated is a user gesture, so we can call open()
       await chrome.sidePanel.open({ tabId });
 
       logger.debug("sidebar", "Panel opened for workspace tab", {
@@ -214,24 +237,25 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
     }
   } else {
     // Tab is NOT in a workspace -> Disable/Close Side Panel
-    // We disable it for this specific tab to close it.
     try {
       await chrome.sidePanel.setOptions({
         tabId,
         enabled: false,
       });
-      // Force close via message (workaround for setOptions not closing open panels)
-      await chrome.runtime
-        .sendMessage({
-          type: "CLOSE_SIDE_PANEL",
-          source: MessageSource.BACKGROUND,
-          payload: { tabId, windowId },
-        })
-        .catch(() => {
-          // Ignore errors (e.g. no receiver if panel is already closed)
-        });
+      // Debounce the close message so rapid workspace→non-workspace→workspace
+      // switches don't kill the panel with a stale CLOSE_SIDE_PANEL
+      pendingCloseTimer = setTimeout(() => {
+        pendingCloseTimer = null;
+        chrome.runtime
+          .sendMessage({
+            type: "CLOSE_SIDE_PANEL",
+            source: MessageSource.BACKGROUND,
+            payload: { tabId, windowId },
+          })
+          .catch(() => {});
+      }, 150);
 
-      logger.debug("sidebar", "Panel closed for non-workspace tab", { tabId });
+      logger.debug("sidebar", "Panel close scheduled for non-workspace tab", { tabId });
     } catch (e) {
       logger.debug("sidebar", "Failed to close panel for non-workspace tab", {
         tabId,
@@ -245,6 +269,13 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Workspace auto-delete is handled by WorkspaceManager
   logger.debug("sidebar", "Tab closed", { tabId });
+
+  // Cancel any pending close from onActivated (the tab switch after removal
+  // will be handled fresh below or by the next onActivated)
+  if (pendingCloseTimer) {
+    clearTimeout(pendingCloseTimer);
+    pendingCloseTimer = null;
+  }
 
   // Robustness: Check if the *currently active* tab is in a workspace.
   // This handles edge cases where tab closure triggers a switch to a non-workspace tab
@@ -267,16 +298,20 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
           tabId: activeTab.id,
           enabled: false,
         });
-        await chrome.runtime
-          .sendMessage({
-            type: "CLOSE_SIDE_PANEL",
-            source: MessageSource.BACKGROUND,
-            payload: {
-              tabId: activeTab.id,
-              windowId: activeTab.windowId,
-            },
-          })
-          .catch(() => {});
+        // Debounce close message (same as onActivated)
+        pendingCloseTimer = setTimeout(() => {
+          pendingCloseTimer = null;
+          chrome.runtime
+            .sendMessage({
+              type: "CLOSE_SIDE_PANEL",
+              source: MessageSource.BACKGROUND,
+              payload: {
+                tabId: activeTab.id!,
+                windowId: activeTab.windowId,
+              },
+            })
+            .catch(() => {});
+        }, 150);
       }
     }
   } catch (e) {
@@ -328,16 +363,11 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
   const text = sanitizeUserInput(payload.text);
 
   // 1. Get Settings (API Key)
-  const settings = await chrome.storage.sync.get([
-    "cerebrasApiKey",
-    "openRouterApiKey",
-    "model",
-    "contextWindowSize",
-    "maxTurns",
-  ]);
+  const stored = await chrome.storage.sync.get("userSettings");
+  const settings = (stored.userSettings ?? {}) as UserSettings;
   const apiKey =
-    settings.cerebrasApiKey ||
-    settings.openRouterApiKey;
+    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ ||
+    settings.openRouterApiKey || __OPENROUTER_API_KEY__;
 
   if (!apiKey) {
     chrome.runtime.sendMessage({
@@ -386,7 +416,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
           })
           .catch(() => {});
       },
-    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30 });
+    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false });
   }
 
   // 3. Start Agent
@@ -426,7 +456,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { includeText: true, refresh: true },
+        payload: { includeText: true, refresh: true, showTags: settings.showElementTags ?? false },
       });
       snapshot = response.payload.snapshot;
     }
@@ -434,8 +464,10 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
     logger.warn("agent", "Failed to get snapshot", { error: e });
   }
 
-  // Notify content script that agent is active
-  sendAgentActivity(tabId, true);
+  // Notify content script that agent is active (skip in speed mode to reduce overhead)
+  if (!settings.speedMode) {
+    sendAgentActivity(tabId, true);
+  }
 
   agentLoop.start(text, tabId, snapshot);
 }
@@ -458,13 +490,11 @@ function sendAgentActivity(tabId: number, active: boolean) {
  * Called by the navigation bridge when webNavigation.onCompleted fires.
  */
 async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
-  const settings = await chrome.storage.sync.get([
-    "cerebrasApiKey",
-    "openRouterApiKey",
-    "contextWindowSize",
-    "maxTurns",
-  ]);
-  const apiKey = settings.cerebrasApiKey || settings.openRouterApiKey;
+  const stored = await chrome.storage.sync.get("userSettings");
+  const settings = (stored.userSettings ?? {}) as UserSettings;
+  const apiKey =
+    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ ||
+    settings.openRouterApiKey || __OPENROUTER_API_KEY__;
 
   if (!apiKey) {
     chrome.runtime
@@ -516,7 +546,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
         })
         .catch(() => {});
     },
-  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30 });
+  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false });
 
   // Get fresh snapshot from the new page
   let snapshot = undefined;
@@ -526,7 +556,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { includeText: true, refresh: true },
+        payload: { includeText: true, refresh: true, showTags: settings.showElementTags ?? false },
       });
       snapshot = response.payload.snapshot;
     }
@@ -536,8 +566,10 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
     });
   }
 
-  // Notify content script that agent is active
-  sendAgentActivity(state.activeTabId, true);
+  // Notify content script that agent is active (skip in speed mode)
+  if (!settings.speedMode) {
+    sendAgentActivity(state.activeTabId, true);
+  }
 
   // Resume from saved state
   agentLoop.resume(state, snapshot);

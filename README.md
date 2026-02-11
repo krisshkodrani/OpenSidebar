@@ -38,7 +38,7 @@ Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM
 | UI             | React 18 + Tailwind CSS                |
 | Build          | Vite + @crxjs/vite-plugin              |
 
-Full architecture: [OpenSidebar_Architecture.md](OpenSidebar_Architecture.md)
+Complete technical documentation: [docs/architecture/](./docs/architecture/)
 
 ---
 
@@ -115,26 +115,28 @@ This starts Vite with HMR. Load the `dist/` folder as an unpacked extension — 
 
 ## Documentation
 
-Comprehensive RFCs for each implementation phase:
+### User Guides
 
-- **[Technical Master Plan](./docs/11-technical-master-plan.md)**: The single source of truth for standards and roadmap.
-- **[Architecture](./docs/09-architecture.md)**: Detailed system design and implementation plan.
-- **[Critique & Plan](./docs/10-critique-plan.md)**: Analysis and roadmap (Gemini).
-- **[Dev Logs](./docs/)**: Daily progress and RFCs.
+- **[Features Overview](./docs/features/)** - Complete user-facing feature documentation
+  - [Browser Automation](./docs/features/browser-automation.md) - Click, type, scroll, navigate
+  - [Memory System](./docs/features/memory-system.md) - Local Second Brain
+  - [Workspace Management](./docs/features/workspace-management.md) - Auto tab groups
+  - [Streaming UI](./docs/features/streaming-ui.md) - Real-time responses
+  - [Security & Privacy](./docs/features/security.md) - Privacy-first design
 
-| Doc                                                        | Description             | State    |
-| ---------------------------------------------------------- | ----------------------- | -------- |
-| [Types Reference](docs/types-reference.md)                 | All TypeScript types    | Complete |
-| [Message Protocol](docs/message-protocol.md)               | Inter-context messaging | Complete |
-| [Phase 0: Scaffold](docs/00-project-scaffold.md)           | Project setup, configs  | Complete |
-| [Phase 1: Content Script](docs/01-content-script.md)       | DOM distillation        | Complete |
-| [Phase 2: Side Panel](docs/02-sidepanel-ui.md)             | React UI                | Complete |
-| [Phase 3: Agent Loop](docs/03-agent-loop.md)               | Core agent logic        | Complete |
-| [Phase 4: Navigation Bridge](docs/04-navigation-bridge.md) | Page load survival      | Complete |
-| [Phase 5: Kimi Swarm](docs/05-kimi-swarm.md)               | Deep Thought engine     | Complete |
-| [Phase 6: Memory](docs/06-memory-second-brain.md)          | Local RAG system        | Complete |
-| [Phase 7: Workspaces](docs/07-workspace-tab-groups.md)     | Tab Group isolation     | Complete |
-| [Phase 8: Testing](docs/08-testing-polish.md)              | Test strategy           | Complete |
+### Technical Architecture
+
+- **[Architecture Overview](./docs/architecture/overview.md)** - System design and components
+- **[Agent Loop](./docs/architecture/agent-loop.md)** - Core orchestration
+- **[Memory System](./docs/architecture/memory-system.md)** - Implementation details
+- **[Message Protocol](./docs/message-protocol.md)** - Inter-context messaging API
+- **[Type Reference](./docs/types-reference.md)** - All TypeScript types
+
+### Development
+
+- **[RFCs](./docs/rfc/)** - Feature proposals and technical decisions
+- **[Contributing Guide](./CONTRIBUTING.md)** - Development setup and guidelines
+- **[Agent Guidelines](./AGENTS.md)** - Technical reference for developers
 
 ---
 

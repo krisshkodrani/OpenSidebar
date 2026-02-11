@@ -124,7 +124,33 @@ export function querySelectorAllDeep(
   return [...new Set(results)];
 }
 
-export function tagElements(): TaggedElement[] {
+/** Map inferred role → short hint abbreviation for visual labels */
+const ROLE_HINTS: Record<string, string> = {
+  link: "link",
+  button: "btn",
+  textbox: "txt",
+  combobox: "sel",
+  checkbox: "chk",
+  radio: "radio",
+  tab: "tab",
+  menuitem: "menu",
+  switch: "sw",
+};
+
+/** Get abbreviated hint for a visual tag label */
+function shortHint(el: Element): string {
+  const role = el.getAttribute("role") || inferRole(el);
+  if (ROLE_HINTS[role]) return ROLE_HINTS[role];
+
+  const tag = el.tagName.toLowerCase();
+  if (tag === "input") return "input";
+  if (tag === "textarea") return "txt";
+  if (tag === "select") return "sel";
+  if (tag === "a") return "link";
+  return role.slice(0, 4);
+}
+
+export function tagElements(showTags: boolean = false): TaggedElement[] {
   // 1. Remove old tags
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
   tagMap.clear();
@@ -142,28 +168,32 @@ export function tagElements(): TaggedElement[] {
     const tag = tagCounter;
     tagMap.set(tag, el);
 
-    // 3. Inject visual label
-    const label = document.createElement("span");
-    label.className = LABEL_CLASS;
-    label.textContent = `[${tag}]`;
-    label.style.cssText = `
-      position: absolute;
-      z-index: 2147483647;
-      background: #fbbf24;
-      color: #000;
-      font: bold 11px/1 monospace;
-      padding: 1px 3px;
-      border-radius: 2px;
-      pointer-events: none;
-      white-space: nowrap;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    `;
-
-    // Position the label at the element's top-left
     const rect = el.getBoundingClientRect();
-    label.style.top = `${rect.top + window.scrollY}px`;
-    label.style.left = `${Math.max(0, rect.left + window.scrollX - 20)}px`;
-    document.body.appendChild(label);
+
+    // 3. Inject visual label (only when showTags is true)
+    if (showTags) {
+      const hint = shortHint(el);
+      const label = document.createElement("span");
+      label.className = LABEL_CLASS;
+      label.textContent = `[${tag}:${hint}]`;
+      label.style.cssText = `
+        position: absolute;
+        z-index: 2147483647;
+        background: #fbbf24;
+        color: #000;
+        font: bold 11px/1 monospace;
+        padding: 1px 3px;
+        border-radius: 2px;
+        pointer-events: none;
+        white-space: nowrap;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      `;
+
+      // Position the label at the element's top-left
+      label.style.top = `${rect.top + window.scrollY}px`;
+      label.style.left = `${Math.max(0, rect.left + window.scrollX - 20)}px`;
+      document.body.appendChild(label);
+    }
 
     // 4. Build TaggedElement
     results.push({
@@ -273,6 +303,32 @@ function extractAttributes(el: Element): Record<string, string> {
     if ((name === "id" || name === "name") && isRandomHash(val)) continue;
 
     attrs[name] = val.slice(0, ATTR_TRUNCATION);
+  }
+
+  // Label association for form elements
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+    // Try explicit <label for="id">
+    const elId = el.getAttribute("id");
+    if (elId) {
+      const labelEl = document.querySelector(`label[for="${CSS.escape(elId)}"]`);
+      if (labelEl) attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
+    }
+    // Try implicit <label> wrapper
+    if (!attrs["label"]) {
+      const parentLabel = el.closest("label");
+      if (parentLabel) {
+        const labelText = parentLabel.textContent?.trim().replace(el.value || "", "").trim();
+        if (labelText) attrs["label"] = truncateText(labelText, 40);
+      }
+    }
+    // Try aria-labelledby
+    if (!attrs["label"]) {
+      const labelledBy = el.getAttribute("aria-labelledby");
+      if (labelledBy) {
+        const labelEl = document.getElementById(labelledBy);
+        if (labelEl) attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
+      }
+    }
   }
 
   // State attributes — only include when they indicate non-default state

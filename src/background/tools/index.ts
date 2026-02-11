@@ -383,7 +383,7 @@ export function registerTools() {
       // Screenshot-on-failure: capture debug screenshot when element not found
       if (result.includes("No element with tag")) {
         try {
-          const stored = await chrome.storage.local.get("userSettings");
+          const stored = await chrome.storage.sync.get("userSettings");
           const settings = stored.userSettings as UserSettings | undefined;
           if (settings?.showElementTags) {
             const screenshot = await takeScreenshotWithTags(tabId, {
@@ -515,8 +515,36 @@ export function registerTools() {
       const urlResult = sanitizeUrl(args.url as string);
       if (!urlResult.ok) return `Error: ${urlResult.error}`;
       await chrome.tabs.update(tabId, { url: urlResult.value });
-      // Simplified wait — full Navigation Bridge is P1
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Wait for navigation to complete using webNavigation.onCompleted
+      // Falls back to timeout if the event doesn't fire
+      await new Promise<void>((resolve) => {
+        const NAV_TIMEOUT = 5000;
+        let resolved = false;
+
+        const done = () => {
+          if (resolved) return;
+          resolved = true;
+          chrome.webNavigation?.onCompleted.removeListener(onCompleted);
+          chrome.webNavigation?.onErrorOccurred.removeListener(onError);
+          clearTimeout(timer);
+          resolve();
+        };
+
+        const onCompleted = (details: { tabId: number; frameId: number }) => {
+          if (details.tabId === tabId && details.frameId === 0) done();
+        };
+        const onError = (details: { tabId: number; frameId: number }) => {
+          if (details.tabId === tabId && details.frameId === 0) done();
+        };
+
+        chrome.webNavigation?.onCompleted.addListener(onCompleted);
+        chrome.webNavigation?.onErrorOccurred.addListener(onError);
+        const timer = setTimeout(done, NAV_TIMEOUT);
+      });
+
+      // Brief wait for content script initialization
+      await new Promise((resolve) => setTimeout(resolve, 100));
       return `Navigated to ${urlResult.value}. Call read_page to see the new content.`;
     },
   );
