@@ -92,7 +92,7 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SCROLL_PAGE,
-    description: "Scroll the page to a specific direction or coordinates.",
+    description: "Scroll the page or a scrollable container in a direction.",
     parameters: {
       type: "object",
       properties: {
@@ -100,6 +100,11 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
           type: "string",
           enum: ["up", "down", "top", "bottom"],
           description: "Direction to scroll.",
+        },
+        id: {
+          type: "integer",
+          description:
+            "Optional tag ID of a scrollable container. Omit to scroll the window.",
         },
       },
       required: ["direction"],
@@ -423,6 +428,25 @@ const DRAW_STROKE_DEF: ToolDefinition = {
   },
 };
 
+const HIDE_ELEMENT_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.HIDE_ELEMENT,
+    description:
+      "Hide a DOM element by setting display:none. Use to dismiss overlays, modals, or banners that block interaction without clicking their buttons.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "The tag ID of the element to hide.",
+        },
+      },
+      required: ["id"],
+    },
+  },
+};
+
 // --- Execution Bridge ---
 
 async function executeContentTool(
@@ -607,6 +631,11 @@ export function registerTools() {
     ToolName.DRAW_STROKE,
     DRAW_STROKE_DEF,
     (args, tabId) => executeContentTool(ToolName.DRAW_STROKE, args, tabId),
+  );
+  toolRegistry.register(
+    ToolName.HIDE_ELEMENT,
+    HIDE_ELEMENT_DEF,
+    (args, tabId) => executeContentTool(ToolName.HIDE_ELEMENT, args, tabId),
   );
 
   // Service Worker Tools (chrome.* APIs)

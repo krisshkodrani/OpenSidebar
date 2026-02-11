@@ -51,6 +51,7 @@ export enum ToolName {
   PRESS_KEY = "press_key",
   DRAG_AND_DROP = "drag_and_drop",
   DRAW_STROKE = "draw_stroke",
+  HIDE_ELEMENT = "hide_element",
 }
 
 /** Risk classification for a tool invocation */
@@ -371,6 +372,8 @@ export interface ScrollPageArgs {
   direction: ScrollDirection;
   /** Number of pixels to scroll (default: 500) */
   amount?: number;
+  /** Optional tag ID of a scrollable container. Omit to scroll the window. */
+  id?: number;
 }
 
 /** Arguments for read_page — no arguments, reads the current viewport */
@@ -489,6 +492,12 @@ export interface DrawStrokeArgs {
   endY: number;
 }
 
+/** Arguments for hide_element */
+export interface HideElementArgs {
+  /** The numeric tag ID of the element to hide */
+  id: number;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -516,6 +525,7 @@ export type ToolArgsMap = {
   [ToolName.PRESS_KEY]: PressKeyArgs;
   [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
   [ToolName.DRAW_STROKE]: DrawStrokeArgs;
+  [ToolName.HIDE_ELEMENT]: HideElementArgs;
 };
 
 // --- Content Script Types ---

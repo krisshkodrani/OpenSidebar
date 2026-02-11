@@ -8,6 +8,7 @@ import {
     PressKeyArgs,
     DragAndDropArgs,
     DrawStrokeArgs,
+    HideElementArgs,
 } from "../types";
 import { getTagMap, getVisibleText } from "./tagging";
 import { buildSnapshot } from "./snapshot";
@@ -39,6 +40,8 @@ export async function executeAction(
             return executeDragAndDrop(args as unknown as DragAndDropArgs);
         case ToolName.DRAW_STROKE:
             return executeDrawStroke(args as unknown as DrawStrokeArgs);
+        case ToolName.HIDE_ELEMENT:
+            return executeHideElement(args as unknown as HideElementArgs);
         default:
             return { success: false, result: `Unknown tool: ${toolName}`, navigated: false };
     }
@@ -151,6 +154,23 @@ function executeType(args: TypeTextArgs): { success: boolean; result: string; na
 function executeScroll(args: ScrollPageArgs): { success: boolean; result: string; navigated: boolean } {
     const amount = args.amount ?? 500;
     const delta = args.direction === ScrollDirection.UP ? -amount : amount;
+
+    if (args.id !== undefined) {
+        const tagMap = getTagMap();
+        const el = tagMap.get(args.id);
+        if (!el) {
+            return { success: false, result: `No element with tag [${args.id}]`, navigated: false };
+        }
+        if (!(el instanceof HTMLElement)) {
+            return { success: false, result: `Element [${args.id}] is not scrollable`, navigated: false };
+        }
+        el.scrollBy({ top: delta, behavior: "instant" });
+        return {
+            success: true,
+            result: `Scrolled [${args.id}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+            navigated: false,
+        };
+    }
 
     window.scrollBy({ top: delta, behavior: "instant" });
 
@@ -337,6 +357,25 @@ function executeDrawStroke(args: DrawStrokeArgs): { success: boolean; result: st
     return {
         success: true,
         result: `Drew stroke on [${args.id}] from (${args.startX},${args.startY}) to (${args.endX},${args.endY})`,
+        navigated: false,
+    };
+}
+
+function executeHideElement(args: HideElementArgs): { success: boolean; result: string; navigated: boolean } {
+    const tagMap = getTagMap();
+    const el = tagMap.get(args.id);
+    if (!el) {
+        return { success: false, result: `No element with tag [${args.id}]`, navigated: false };
+    }
+    if (!(el instanceof HTMLElement)) {
+        return { success: false, result: `Element [${args.id}] is not an HTMLElement`, navigated: false };
+    }
+
+    el.style.display = "none";
+
+    return {
+        success: true,
+        result: `Hidden element [${args.id}] <${el.tagName.toLowerCase()}>`,
         navigated: false,
     };
 }

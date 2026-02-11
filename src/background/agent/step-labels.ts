@@ -79,6 +79,8 @@ export function formatStepLabel(
       return `Drag [${args.sourceId ?? "?"}] → [${args.targetId ?? "?"}]`;
     case ToolName.DRAW_STROKE:
       return `Draw on canvas [${args.id ?? "?"}]`;
+    case ToolName.HIDE_ELEMENT:
+      return `Hide element [${args.id ?? "?"}]`;
     case ToolName.DONE:
       return "Task complete";
     default:
