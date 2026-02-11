@@ -10,7 +10,7 @@ import {
     DrawStrokeArgs,
     HideElementArgs,
 } from "../types";
-import { getTagMap, getVisibleText } from "./tagging";
+import { getTagMap, getVisibleText, addDynamicTag } from "./tagging";
 import { buildSnapshot } from "./snapshot";
 
 export async function executeAction(
@@ -65,10 +65,12 @@ function executeClick(args: ClickElementArgs): { success: boolean; result: strin
     const topEl = document.elementFromPoint(x, y);
 
     if (topEl && !el.contains(topEl) && !topEl.contains(el)) {
-        // Overlaid by something else (e.g. cookie banner)
+        // Overlaid by something else (e.g. cookie banner, modal)
+        // Dynamically tag the blocking element so the LLM can hide it
+        const blockingTag = addDynamicTag(topEl);
         return {
             success: false,
-            result: `Click intercepted! Element [${args.id}] is covered by <${topEl.tagName.toLowerCase()} class="${topEl.className}">. Try closing the overlay first.`,
+            result: `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${topEl.tagName.toLowerCase()}>. Use hide_element(${blockingTag}) to remove it.`,
             navigated: false
         };
     }
