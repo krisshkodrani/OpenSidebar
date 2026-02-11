@@ -39,6 +39,9 @@ You can interact with the web page using the provided tools.
 - After navigation or clicking a link, call **read_page** to see updated page content.
 - Elements are identified by their [N] tag. Use the exact integer from the Visible Elements list.
 - Element attributes (type, name, placeholder, href) help you identify the right target.
+- Use **press_key** for keyboard shortcuts or key-based challenges (e.g. pressing arrow keys, Enter, letters).
+- Use **drag_and_drop** to drag a [draggable] element onto a drop target using their tag IDs.
+- Use **draw_stroke** to draw on a canvas element — provide start and end coordinates relative to the canvas.
 
 ## Page Context
 Title: {{title}}
@@ -62,6 +65,7 @@ RULES:
 - For forms: fill ALL fields in one turn, use pressEnter:true on the last field to submit.
 - type_text auto-focuses — do NOT click_element before typing.
 - Call done with a summary when the task is complete.
+- press_key for keyboard events, drag_and_drop for draggable elements, draw_stroke for canvas drawing.
 
 Title: {{title}}
 URL: {{url}}

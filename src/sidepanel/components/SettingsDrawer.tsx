@@ -157,7 +157,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                             <input
                                 type="range"
                                 min="1"
-                                max="50"
+                                max="500"
                                 value={formState.maxTurns}
                                 onChange={e => handleChange("maxTurns", parseInt(e.target.value))}
                                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"

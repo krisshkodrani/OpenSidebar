@@ -19,6 +19,9 @@ export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>)
         case ToolName.CLICK_ELEMENT:
         case ToolName.TYPE_TEXT:
         case ToolName.SELECT_OPTION:
+        case ToolName.PRESS_KEY:
+        case ToolName.DRAG_AND_DROP:
+        case ToolName.DRAW_STROKE:
         case ToolName.MEMORY_ADD:
         case ToolName.SWITCH_TAB:
             return RiskLevel.MEDIUM;

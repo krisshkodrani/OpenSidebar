@@ -16,13 +16,16 @@ export function InputArea({
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize
+  // Auto-resize: hide overflow during measurement to prevent scrollbar-induced inflation
+  const MAX_HEIGHT = 120;
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "0px";
-      textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 120) + "px";
-    }
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.overflowY = "hidden";
+    el.style.height = "0px";
+    const scrollH = Math.min(el.scrollHeight, MAX_HEIGHT);
+    el.style.height = scrollH + "px";
+    el.style.overflowY = scrollH >= MAX_HEIGHT ? "auto" : "hidden";
   }, [inputText]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -39,7 +42,7 @@ export function InputArea({
   };
 
   return (
-    <div className="p-3 border-t border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark">
+    <div className="p-2 bg-surface-light dark:bg-surface-dark">
       <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-1.5 rounded-xl ring-1 ring-transparent focus-within:ring-primary-500 transition-all">
         <textarea
           ref={textareaRef}
@@ -49,7 +52,7 @@ export function InputArea({
           placeholder={
             isAgentRunning ? "Agent is processing..." : "Ask OpenSidebar..."
           }
-          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] overflow-y-auto py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
+          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
           rows={1}
           disabled={isAgentRunning}
         />

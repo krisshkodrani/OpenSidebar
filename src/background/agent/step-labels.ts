@@ -69,6 +69,16 @@ export function formatStepLabel(
       return "Save to memory";
     case ToolName.WAIT:
       return `Wait ${args.ms ?? "?"}ms`;
+    case ToolName.PRESS_KEY: {
+      const key = args.key as string | undefined;
+      const mods = args.modifiers as string[] | undefined;
+      const modStr = mods?.length ? mods.join("+") + "+" : "";
+      return `Press ${modStr}${key ?? "?"}`;
+    }
+    case ToolName.DRAG_AND_DROP:
+      return `Drag [${args.sourceId ?? "?"}] → [${args.targetId ?? "?"}]`;
+    case ToolName.DRAW_STROKE:
+      return `Draw on canvas [${args.id ?? "?"}]`;
     case ToolName.DONE:
       return "Task complete";
     default:

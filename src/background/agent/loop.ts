@@ -22,6 +22,7 @@ const DOM_MODIFYING_TOOLS: Set<ToolName> = new Set([
     ToolName.TYPE_TEXT,
     ToolName.SELECT_OPTION,
     ToolName.HOVER_ELEMENT,
+    ToolName.DRAG_AND_DROP,
 ]);
 
 /** Tools that must execute sequentially (affect navigation or control flow) */

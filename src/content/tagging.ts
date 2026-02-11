@@ -38,6 +38,8 @@ const INTERACTIVE_SELECTORS = [
   "details",
   "[onclick]",
   "[tabindex]:not([tabindex='-1'])",
+  "canvas",
+  "[draggable='true']",
 ].join(", ");
 
 export function getCachedElements(): TaggedElement[] {
