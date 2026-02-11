@@ -4,7 +4,10 @@ import {
     TypeTextArgs,
     ScrollPageArgs,
     ScrollDirection,
-    SelectOptionArgs
+    SelectOptionArgs,
+    PressKeyArgs,
+    DragAndDropArgs,
+    DrawStrokeArgs,
 } from "../types";
 import { getTagMap, getVisibleText } from "./tagging";
 import { buildSnapshot } from "./snapshot";
@@ -30,6 +33,12 @@ export async function executeAction(
             return executeFindElement(args as unknown as { text: string });
         case ToolName.SELECT_OPTION:
             return executeSelectOption(args as unknown as SelectOptionArgs);
+        case ToolName.PRESS_KEY:
+            return executePressKey(args as unknown as PressKeyArgs);
+        case ToolName.DRAG_AND_DROP:
+            return executeDragAndDrop(args as unknown as DragAndDropArgs);
+        case ToolName.DRAW_STROKE:
+            return executeDrawStroke(args as unknown as DrawStrokeArgs);
         default:
             return { success: false, result: `Unknown tool: ${toolName}`, navigated: false };
     }
@@ -238,6 +247,96 @@ function executeSelectOption(args: SelectOptionArgs): { success: boolean; result
     return {
         success: true,
         result: `Selected "${match.textContent?.trim()}" in [${args.id}]`,
+        navigated: false,
+    };
+}
+
+function executePressKey(args: PressKeyArgs): { success: boolean; result: string; navigated: boolean } {
+    const modifiers = args.modifiers ?? [];
+    const opts: KeyboardEventInit = {
+        key: args.key,
+        code: args.key.length === 1 ? `Key${args.key.toUpperCase()}` : args.key,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: modifiers.includes("ctrl"),
+        shiftKey: modifiers.includes("shift"),
+        altKey: modifiers.includes("alt"),
+        metaKey: modifiers.includes("meta"),
+    };
+
+    window.dispatchEvent(new KeyboardEvent("keydown", opts));
+    window.dispatchEvent(new KeyboardEvent("keyup", opts));
+
+    const modStr = modifiers.length > 0 ? ` (${modifiers.join("+")})` : "";
+    return {
+        success: true,
+        result: `Pressed key "${args.key}"${modStr}`,
+        navigated: false,
+    };
+}
+
+function executeDragAndDrop(args: DragAndDropArgs): { success: boolean; result: string; navigated: boolean } {
+    const tagMap = getTagMap();
+    const sourceEl = tagMap.get(args.sourceId);
+    if (!sourceEl) {
+        return { success: false, result: `No element with tag [${args.sourceId}]`, navigated: false };
+    }
+    const targetEl = tagMap.get(args.targetId);
+    if (!targetEl) {
+        return { success: false, result: `No element with tag [${args.targetId}]`, navigated: false };
+    }
+
+    sourceEl.scrollIntoView({ behavior: "instant", block: "center" });
+
+    const dataTransfer = new DataTransfer();
+
+    sourceEl.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer }));
+    targetEl.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+    targetEl.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    sourceEl.dispatchEvent(new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer }));
+
+    return {
+        success: true,
+        result: `Dragged [${args.sourceId}] onto [${args.targetId}]`,
+        navigated: false,
+    };
+}
+
+function executeDrawStroke(args: DrawStrokeArgs): { success: boolean; result: string; navigated: boolean } {
+    const tagMap = getTagMap();
+    const el = tagMap.get(args.id);
+    if (!el) {
+        return { success: false, result: `No element with tag [${args.id}]`, navigated: false };
+    }
+
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    const rect = el.getBoundingClientRect();
+
+    const toClient = (offX: number, offY: number) => ({
+        clientX: rect.left + offX,
+        clientY: rect.top + offY,
+    });
+
+    const STEPS = 10;
+    const start = toClient(args.startX, args.startY);
+
+    el.dispatchEvent(new MouseEvent("mousedown", { ...start, bubbles: true, cancelable: true }));
+
+    for (let i = 1; i <= STEPS; i++) {
+        const t = i / STEPS;
+        const pt = toClient(
+            args.startX + (args.endX - args.startX) * t,
+            args.startY + (args.endY - args.startY) * t,
+        );
+        el.dispatchEvent(new MouseEvent("mousemove", { ...pt, bubbles: true, cancelable: true }));
+    }
+
+    const end = toClient(args.endX, args.endY);
+    el.dispatchEvent(new MouseEvent("mouseup", { ...end, bubbles: true, cancelable: true }));
+
+    return {
+        success: true,
+        result: `Drew stroke on [${args.id}] from (${args.startX},${args.startY}) to (${args.endX},${args.endY})`,
         navigated: false,
     };
 }

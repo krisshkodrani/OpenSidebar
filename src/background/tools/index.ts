@@ -336,6 +336,93 @@ const SELECT_OPTION_DEF: ToolDefinition = {
   },
 };
 
+const PRESS_KEY_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.PRESS_KEY,
+    description:
+      "Press a keyboard key. Dispatches keydown + keyup on the window. Use for keyboard shortcuts or key-based interactions.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description:
+            'The key value (e.g. "Enter", "a", "ArrowDown", "Escape").',
+        },
+        modifiers: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["ctrl", "shift", "alt", "meta"],
+            description: "Modifier key to hold.",
+          },
+          description: "Optional modifier keys to hold during the key press.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+};
+
+const DRAG_AND_DROP_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.DRAG_AND_DROP,
+    description:
+      "Drag an element and drop it onto another element. Uses the HTML Drag and Drop API (dragstart, dragover, drop, dragend).",
+    parameters: {
+      type: "object",
+      properties: {
+        sourceId: {
+          type: "integer",
+          description: "The tag ID of the element to drag.",
+        },
+        targetId: {
+          type: "integer",
+          description: "The tag ID of the drop target element.",
+        },
+      },
+      required: ["sourceId", "targetId"],
+    },
+  },
+};
+
+const DRAW_STROKE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.DRAW_STROKE,
+    description:
+      "Draw a mouse stroke on a canvas element. Dispatches mousedown, interpolated mousemoves, and mouseup.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "The tag ID of the canvas element.",
+        },
+        startX: {
+          type: "number",
+          description: "Start X offset from element top-left.",
+        },
+        startY: {
+          type: "number",
+          description: "Start Y offset from element top-left.",
+        },
+        endX: {
+          type: "number",
+          description: "End X offset from element top-left.",
+        },
+        endY: {
+          type: "number",
+          description: "End Y offset from element top-left.",
+        },
+      },
+      required: ["id", "startX", "startY", "endX", "endY"],
+    },
+  },
+};
+
 // --- Execution Bridge ---
 
 async function executeContentTool(
@@ -505,6 +592,21 @@ export function registerTools() {
     ToolName.SELECT_OPTION,
     SELECT_OPTION_DEF,
     (args, tabId) => executeContentTool(ToolName.SELECT_OPTION, args, tabId),
+  );
+  toolRegistry.register(
+    ToolName.PRESS_KEY,
+    PRESS_KEY_DEF,
+    (args, tabId) => executeContentTool(ToolName.PRESS_KEY, args, tabId),
+  );
+  toolRegistry.register(
+    ToolName.DRAG_AND_DROP,
+    DRAG_AND_DROP_DEF,
+    (args, tabId) => executeContentTool(ToolName.DRAG_AND_DROP, args, tabId),
+  );
+  toolRegistry.register(
+    ToolName.DRAW_STROKE,
+    DRAW_STROKE_DEF,
+    (args, tabId) => executeContentTool(ToolName.DRAW_STROKE, args, tabId),
   );
 
   // Service Worker Tools (chrome.* APIs)

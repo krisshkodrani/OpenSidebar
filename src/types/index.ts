@@ -48,6 +48,9 @@ export enum ToolName {
   WAIT = "wait",
   DONE = "done",
   SELECT_OPTION = "select_option",
+  PRESS_KEY = "press_key",
+  DRAG_AND_DROP = "drag_and_drop",
+  DRAW_STROKE = "draw_stroke",
 }
 
 /** Risk classification for a tool invocation */
@@ -456,6 +459,36 @@ export interface SelectOptionArgs {
   value: string;
 }
 
+/** Arguments for press_key */
+export interface PressKeyArgs {
+  /** Key value (e.g. "Enter", "a", "ArrowDown") */
+  key: string;
+  /** Optional modifier keys to hold */
+  modifiers?: ("ctrl" | "shift" | "alt" | "meta")[];
+}
+
+/** Arguments for drag_and_drop */
+export interface DragAndDropArgs {
+  /** Tag ID of the element to drag from */
+  sourceId: number;
+  /** Tag ID of the element to drop onto */
+  targetId: number;
+}
+
+/** Arguments for draw_stroke */
+export interface DrawStrokeArgs {
+  /** Tag ID of the canvas element */
+  id: number;
+  /** Start X offset from element top-left */
+  startX: number;
+  /** Start Y offset from element top-left */
+  startY: number;
+  /** End X offset from element top-left */
+  endX: number;
+  /** End Y offset from element top-left */
+  endY: number;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -480,6 +513,9 @@ export type ToolArgsMap = {
   [ToolName.WAIT]: WaitArgs;
   [ToolName.DONE]: DoneArgs;
   [ToolName.SELECT_OPTION]: SelectOptionArgs;
+  [ToolName.PRESS_KEY]: PressKeyArgs;
+  [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
+  [ToolName.DRAW_STROKE]: DrawStrokeArgs;
 };
 
 // --- Content Script Types ---

@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 17 tools are registered", () => {
+    test("all 20 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(17);
+        expect(defs.length).toBe(20);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -62,5 +62,29 @@ describe("Tool Registration", () => {
         const closeTab = defs.find(d => d.function.name === ToolName.CLOSE_TAB);
         expect(closeTab).toBeDefined();
         expect(closeTab!.function.parameters.required).toEqual([]);
+    });
+
+    test("press_key tool requires key parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const pressKey = defs.find(d => d.function.name === ToolName.PRESS_KEY);
+        expect(pressKey).toBeDefined();
+        expect(pressKey!.function.parameters.required).toContain("key");
+    });
+
+    test("drag_and_drop tool requires sourceId and targetId", () => {
+        const defs = toolRegistry.getDefinitions();
+        const dnd = defs.find(d => d.function.name === ToolName.DRAG_AND_DROP);
+        expect(dnd).toBeDefined();
+        expect(dnd!.function.parameters.required).toContain("sourceId");
+        expect(dnd!.function.parameters.required).toContain("targetId");
+    });
+
+    test("draw_stroke tool requires id, startX, startY, endX, endY", () => {
+        const defs = toolRegistry.getDefinitions();
+        const stroke = defs.find(d => d.function.name === ToolName.DRAW_STROKE);
+        expect(stroke).toBeDefined();
+        expect(stroke!.function.parameters.required).toEqual(
+            expect.arrayContaining(["id", "startX", "startY", "endX", "endY"])
+        );
     });
 });
