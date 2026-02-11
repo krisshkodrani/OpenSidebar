@@ -31,35 +31,30 @@ if (document.readyState === "complete") {
     window.addEventListener("load", runJanitor);
 }
 
-/** Dismiss pattern for button/link text and aria-labels */
-const DISMISS_PATTERN = /^(accept|accept all|ok|close|dismiss|got it|i agree|no thanks|continue|skip|×|✕|✗|x)$/i;
-
 /**
- * Auto-dismiss modals, overlays, banners, and popups.
+ * Auto-dismiss modals, overlays, banners, and popups by hiding them.
+ * Uses display:none instead of clicking dismiss buttons (adversarial sites trap clicks).
  * Returns the number of elements dismissed.
  */
 function autoDismissModals(): number {
     let dismissed = 0;
-    const candidates = document.querySelectorAll("button, a, [role='button']");
+    const containers = document.querySelectorAll(
+        "[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent"
+    );
 
-    for (const el of candidates) {
-        if (!isElementVisible(el)) continue;
+    for (const el of containers) {
+        if (!(el instanceof HTMLElement) || !isElementVisible(el)) continue;
 
-        const text = el.textContent?.trim() || "";
-        const ariaLabel = el.getAttribute("aria-label") || "";
+        const style = window.getComputedStyle(el);
+        const isOverlay =
+            style.position === "fixed" ||
+            style.position === "sticky" ||
+            parseInt(style.zIndex, 10) > 100;
 
-        if (!DISMISS_PATTERN.test(text) && !DISMISS_PATTERN.test(ariaLabel)) continue;
-
-        // Check if element appears to be in a modal context
-        const inModal = el.closest("[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent");
-        const style = window.getComputedStyle(el.closest("[style]") || el);
-        const isFixed = style.position === "fixed" || style.position === "sticky";
-        const highZ = parseInt(style.zIndex, 10) > 100;
-
-        if (inModal || isFixed || highZ) {
-            (el as HTMLElement).click();
+        if (isOverlay) {
+            el.style.display = "none";
             dismissed++;
-            logger.info("tools", "Auto-dismissed modal element", { text: text.slice(0, 30), ariaLabel });
+            logger.info("tools", "Auto-hid overlay", { tag: el.tagName, classes: el.className.toString().slice(0, 50) });
         }
     }
 

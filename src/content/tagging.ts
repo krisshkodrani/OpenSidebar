@@ -54,6 +54,21 @@ export function getTagMap(): Map<number, Element> {
 }
 
 /**
+ * Dynamically tag an element that wasn't in the original snapshot
+ * (e.g. an overlay detected during click interception).
+ * Returns the assigned tag number so the LLM can reference it.
+ */
+export function addDynamicTag(el: Element): number {
+  // Check if already tagged
+  for (const [existingTag, existingEl] of tagMap) {
+    if (existingEl === el) return existingTag;
+  }
+  tagCounter++;
+  tagMap.set(tagCounter, el);
+  return tagCounter;
+}
+
+/**
  * Recursively query elements through Shadow DOM boundaries
  * This enables interaction with Web Components and Shadow DOM encapsulated elements
  *
