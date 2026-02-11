@@ -8,10 +8,11 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { sendMessageToMemory } from "../memory/bridge";
-import { callKimiSwarm } from "../swarm";
+import { callResearchSwarm } from "../swarm";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
+import { describeScreenshot } from "../vision";
 
 // Export registry and types
 export * from "./registry";
@@ -22,14 +23,13 @@ const CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLICK_ELEMENT,
-    description:
-      "Click on an interactive element (button, link). Use the [N] tag ID from the Visible Elements list.",
+    description: "Click an element.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The tag ID of the element to click.",
+          description: "Element tag.",
         },
       },
       required: ["id"],
@@ -41,22 +41,18 @@ const SWARM_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.ACTIVATE_SWARM,
-    description:
-      "Delegate a complex research task to the Deep Thought Engine (Kimi Swarm). Use this for topics requiring deep analysis, multi-source synthesis, or when a simple web page read is insufficient.",
+    description: "Delegate complex research to a deep research model.",
     parameters: {
       type: "object",
       properties: {
         task: {
           type: "string",
-          description: "Detailed research topic or question.",
+          description: "Research topic or question.",
         },
         urls: {
           type: "array",
-          items: {
-            type: "string",
-            description: "List of specific URLs to investigate (optional).",
-          },
-          description: "Optional list of URLs to start research from.",
+          items: { type: "string" },
+          description: "Optional URLs to investigate.",
         },
       },
       required: ["task"],
@@ -68,19 +64,18 @@ const TYPE_TEXT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TYPE_TEXT,
-    description:
-      "Type text into an input field. Automatically focuses the element (no click needed). Set pressEnter to submit forms in one step.",
+    description: "Type into an input. Auto-focuses. pressEnter submits.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The tag ID of the input element to type into.",
+          description: "Element tag.",
         },
-        text: { type: "string", description: "The text to type." },
+        text: { type: "string", description: "Text to type." },
         pressEnter: {
           type: "boolean",
-          description: "Whether to press Enter after typing.",
+          description: "Press Enter after typing.",
         },
       },
       required: ["id", "text"],
@@ -92,19 +87,18 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SCROLL_PAGE,
-    description: "Scroll the page or a scrollable container in a direction.",
+    description: "Scroll the page or a container.",
     parameters: {
       type: "object",
       properties: {
         direction: {
           type: "string",
           enum: ["up", "down", "top", "bottom"],
-          description: "Direction to scroll.",
+          description: "Direction.",
         },
         id: {
           type: "integer",
-          description:
-            "Optional tag ID of a scrollable container. Omit to scroll the window.",
+          description: "Container element tag. Omit for window.",
         },
       },
       required: ["direction"],
@@ -116,8 +110,7 @@ const READ_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_PAGE,
-    description:
-      "Re-scans the page for fresh interactive elements and text content. Use after navigation or page changes.",
+    description: "Re-scan page for fresh elements and text.",
     parameters: {
       type: "object",
       properties: {},
@@ -130,18 +123,17 @@ const MEMORY_ADD_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.MEMORY_ADD,
-    description: "Save important information to long-term memory.",
+    description: "Save info to long-term memory.",
     parameters: {
       type: "object",
       properties: {
         content: {
           type: "string",
-          description: "The text content to remember.",
+          description: "Text to remember.",
         },
         category: {
           type: "string",
-          description:
-            "Category tag (e.g., 'user_preference', 'project_info').",
+          description: "Category tag.",
         },
       },
       required: ["content"],
@@ -153,11 +145,11 @@ const MEMORY_SEARCH_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.MEMORY_SEARCH,
-    description: "Search long-term memory for relevant information.",
+    description: "Search long-term memory.",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "The search query." },
+        query: { type: "string", description: "Search query." },
       },
       required: ["query"],
     },
@@ -168,14 +160,13 @@ const NAVIGATE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.NAVIGATE,
-    description:
-      "Navigate the current tab to a URL. The page will reload and you must wait for it to load before taking further actions.",
+    description: "Navigate to a URL. Waits for page load.",
     parameters: {
       type: "object",
       properties: {
         url: {
           type: "string",
-          description: "The full URL to navigate to (must include https://)",
+          description: "Full URL (https://).",
         },
       },
       required: ["url"],
@@ -187,11 +178,11 @@ const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CREATE_TAB,
-    description: "Open a new browser tab with a URL.",
+    description: "Open a new tab.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "URL to open" },
+        url: { type: "string", description: "URL to open." },
       },
       required: ["url"],
     },
@@ -202,13 +193,13 @@ const CLOSE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLOSE_TAB,
-    description: "Close a browser tab.",
+    description: "Close a tab.",
     parameters: {
       type: "object",
       properties: {
         tabId: {
           type: "integer",
-          description: "Tab ID to close. Omit to close the current tab.",
+          description: "Tab ID. Omit for current.",
         },
       },
       required: [],
@@ -220,11 +211,11 @@ const SWITCH_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SWITCH_TAB,
-    description: "Switch focus to a different browser tab.",
+    description: "Switch to another tab.",
     parameters: {
       type: "object",
       properties: {
-        tabId: { type: "integer", description: "Tab ID to switch to" },
+        tabId: { type: "integer", description: "Tab ID." },
       },
       required: ["tabId"],
     },
@@ -235,12 +226,11 @@ const WAIT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.WAIT,
-    description:
-      "Wait for a specified duration. Use after navigation or when waiting for content to load.",
+    description: "Wait for content to load.",
     parameters: {
       type: "object",
       properties: {
-        ms: { type: "integer", description: "Milliseconds to wait (max 5000)" },
+        ms: { type: "integer", description: "Milliseconds (max 5000)." },
       },
       required: ["ms"],
     },
@@ -251,14 +241,13 @@ const DONE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DONE,
-    description:
-      "Signal that you have completed the user's task. Always provide a summary of what was accomplished.",
+    description: "Signal task completion with a summary.",
     parameters: {
       type: "object",
       properties: {
         summary: {
           type: "string",
-          description: "Summary of what was accomplished",
+          description: "What was accomplished.",
         },
       },
       required: ["summary"],
@@ -270,8 +259,7 @@ const TAKE_SCREENSHOT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TAKE_SCREENSHOT,
-    description:
-      "Capture a screenshot of the current visible viewport. Useful for understanding layout, charts, or visual elements not clear in the DOM.",
+    description: "Capture and describe the visual layout.",
     parameters: {
       type: "object",
       properties: {},
@@ -284,13 +272,13 @@ const HOVER_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HOVER_ELEMENT,
-    description: "Hover over an element to reveal hidden menus or tooltips.",
+    description: "Hover to reveal menus/tooltips.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The numeric tag ID of the element to hover",
+          description: "Element tag.",
         },
       },
       required: ["id"],
@@ -302,14 +290,13 @@ const FIND_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.FIND_ELEMENT,
-    description:
-      "Search the page for an element containing specific text. Scrolls to it if found.",
+    description: "Find an element by text. Scrolls to it.",
     parameters: {
       type: "object",
       properties: {
         text: {
           type: "string",
-          description: "Text to search for (case-insensitive)",
+          description: "Text to search for.",
         },
       },
       required: ["text"],
@@ -321,19 +308,17 @@ const SELECT_OPTION_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SELECT_OPTION,
-    description:
-      "Select an option from a <select> dropdown. Provide the option's visible text or value attribute.",
+    description: "Select a dropdown option by text or value.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The tag ID of the <select> element.",
+          description: "Element tag.",
         },
         value: {
           type: "string",
-          description:
-            "The option text or value to select. If no exact match, available options are returned.",
+          description: "Option text or value.",
         },
       },
       required: ["id", "value"],
@@ -345,24 +330,21 @@ const PRESS_KEY_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.PRESS_KEY,
-    description:
-      "Press a keyboard key. Dispatches keydown + keyup on the window. Use for keyboard shortcuts or key-based interactions.",
+    description: "Press a keyboard key.",
     parameters: {
       type: "object",
       properties: {
         key: {
           type: "string",
-          description:
-            'The key value (e.g. "Enter", "a", "ArrowDown", "Escape").',
+          description: 'Key value (e.g. "Enter", "ArrowDown").',
         },
         modifiers: {
           type: "array",
           items: {
             type: "string",
             enum: ["ctrl", "shift", "alt", "meta"],
-            description: "Modifier key to hold.",
           },
-          description: "Optional modifier keys to hold during the key press.",
+          description: "Modifier keys.",
         },
       },
       required: ["key"],
@@ -374,18 +356,17 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAG_AND_DROP,
-    description:
-      "Drag an element and drop it onto another element. Uses the HTML Drag and Drop API (dragstart, dragover, drop, dragend).",
+    description: "Drag and drop between elements.",
     parameters: {
       type: "object",
       properties: {
         sourceId: {
           type: "integer",
-          description: "The tag ID of the element to drag.",
+          description: "Element to drag.",
         },
         targetId: {
           type: "integer",
-          description: "The tag ID of the drop target element.",
+          description: "Drop target element.",
         },
       },
       required: ["sourceId", "targetId"],
@@ -397,31 +378,18 @@ const DRAW_STROKE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAW_STROKE,
-    description:
-      "Draw a mouse stroke on a canvas element. Dispatches mousedown, interpolated mousemoves, and mouseup.",
+    description: "Draw a stroke on a canvas.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The tag ID of the canvas element.",
+          description: "Canvas element tag.",
         },
-        startX: {
-          type: "number",
-          description: "Start X offset from element top-left.",
-        },
-        startY: {
-          type: "number",
-          description: "Start Y offset from element top-left.",
-        },
-        endX: {
-          type: "number",
-          description: "End X offset from element top-left.",
-        },
-        endY: {
-          type: "number",
-          description: "End Y offset from element top-left.",
-        },
+        startX: { type: "number", description: "Start X offset." },
+        startY: { type: "number", description: "Start Y offset." },
+        endX: { type: "number", description: "End X offset." },
+        endY: { type: "number", description: "End Y offset." },
       },
       required: ["id", "startX", "startY", "endX", "endY"],
     },
@@ -432,14 +400,13 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HIDE_ELEMENT,
-    description:
-      "Hide a DOM element by setting display:none. Use to dismiss overlays, modals, or banners that block interaction without clicking their buttons.",
+    description: "Hide element (display:none). For overlays/modals.",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
-          description: "The tag ID of the element to hide.",
+          description: "Element tag.",
         },
       },
       required: ["id"],
@@ -598,7 +565,7 @@ export function registerTools() {
   // Swarm Tool
   toolRegistry.register(ToolName.ACTIVATE_SWARM, SWARM_DEF, async (args) => {
     const swarmArgs = args as unknown as ActivateSwarmArgs;
-    return await callKimiSwarm(swarmArgs);
+    return await callResearchSwarm(swarmArgs);
   });
 
   // Content Script Tools (already implemented in content/actions.ts)
@@ -734,13 +701,14 @@ export function registerTools() {
   toolRegistry.register(
     ToolName.TAKE_SCREENSHOT,
     TAKE_SCREENSHOT_DEF,
-    async () => {
+    async (_args, tabId) => {
       try {
-        const dataUrl = await chrome.tabs.captureVisibleTab({
+        const tab = await chrome.tabs.get(tabId);
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
           format: "jpeg",
-          quality: 60,
+          quality: 40,
         });
-        return `Screenshot captured (${dataUrl.length} bytes). Call read_page for text-based analysis of the page content.`;
+        return await describeScreenshot(dataUrl);
       } catch (e: any) {
         return `Error capturing screenshot: ${e.message}`;
       }

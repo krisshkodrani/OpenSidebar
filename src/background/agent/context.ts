@@ -108,7 +108,7 @@ export class ContextManager {
 
     // Compress old tool results to save context budget
     if (message.role === "tool") {
-      this.compressOldToolResults(2);
+      this.compressOldToolResults(this.speedMode ? 1 : 2);
     }
 
     if (this.history.length > 1000) {
@@ -303,7 +303,7 @@ export class ContextManager {
       // Viewport text
       if (this.speedMode) {
         // Speed mode: truncated viewport text so LLM can read task instructions
-        const viewportText = (this.snapshot.viewportText || "").slice(0, 3000);
+        const viewportText = (this.snapshot.viewportText || "").slice(0, 1500);
         content = content.replace("{{viewportText}}", viewportText);
       } else {
         let viewportText = this.snapshot.viewportText || "No text content.";
@@ -369,10 +369,14 @@ export class ContextManager {
 
     // Estimate tokens from elements + viewport text without building the full message
     const elemTokens = this.snapshot.elements.reduce((sum, el) => {
-      const attrs = Object.entries(el.attributes)
-        .map(([k, v]) => `${k}="${v}"`)
+      // Compact format estimate: [N] tagName#id attrs "text" (role)
+      const hasId = el.attributes.id ? `#${el.attributes.id}` : "";
+      const otherAttrs = Object.entries(el.attributes)
+        .filter(([k]) => k !== "id")
+        .map(([k, v]) => `${k}=${v}`)
         .join(" ");
-      const line = `[${el.tag}] <${el.tagName} ${attrs}> "${el.text}" (${el.role})`;
+      const role = el.role && el.role !== el.tagName ? ` (${el.role})` : "";
+      const line = `[${el.tag}] ${el.tagName}${hasId} ${otherAttrs} "${el.text}"${role}`;
       return sum + Math.ceil(line.length / 4);
     }, 0);
     const textTokens = Math.ceil(
@@ -411,47 +415,59 @@ export class ContextManager {
 
     return processed
       .map((el) => {
-        let attrs = "";
         let text = el.text;
+        let attrFilter: ((k: string) => boolean) | null = null;
 
         switch (level) {
           case CompressionLevel.NONE:
-            attrs = Object.entries(el.attributes)
-              .map(([k, v]) => `${k}="${v}"`)
-              .join(" ");
             break;
           case CompressionLevel.LIGHT:
-            attrs = Object.entries(el.attributes)
-              .map(([k, v]) => `${k}="${v}"`)
-              .join(" ");
             text = text.slice(0, 40);
             break;
-          case CompressionLevel.MEDIUM: {
-            // Only keep id, role, type, href
-            const essentialAttrs = ["id", "role", "type", "href"];
-            attrs = Object.entries(el.attributes)
-              .filter(([k]) => essentialAttrs.includes(k))
-              .map(([k, v]) => `${k}="${v}"`)
-              .join(" ");
+          case CompressionLevel.MEDIUM:
+            attrFilter = (k) => ["id", "role", "type", "href"].includes(k);
             text = text.slice(0, 20);
             break;
-          }
-          case CompressionLevel.HEAVY: {
-            const minimalAttrs = ["role", "type"];
-            attrs = Object.entries(el.attributes)
-              .filter(([k]) => minimalAttrs.includes(k))
-              .map(([k, v]) => `${k}="${v}"`)
-              .join(" ");
+          case CompressionLevel.HEAVY:
+            attrFilter = (k) => ["role", "type"].includes(k);
             text = text.slice(0, 15);
             break;
-          }
         }
 
-        const tagAttrs = attrs ? ` ${attrs}` : "";
-        const disabled = el.isDisabled ? " [disabled]" : "";
-        return `[${el.tag}] <${el.tagName}${tagAttrs}> "${text}" (${el.role || el.tagName})${disabled}`;
+        return this.formatElementCompact(el, text, attrFilter);
       })
       .join("\n");
+  }
+
+  /**
+   * Format a single element in compact notation.
+   * [N] tagName#id key=val key="multi word" "text" (role)
+   */
+  private formatElementCompact(
+    el: TaggedElement,
+    text: string,
+    attrFilter: ((k: string) => boolean) | null,
+  ): string {
+    // Build tag + id shorthand
+    const idVal = el.attributes.id;
+    const head = idVal ? `${el.tagName}#${idVal}` : el.tagName;
+
+    // Build remaining attributes (skip 'id' since it's in the head)
+    const attrParts: string[] = [];
+    for (const [k, v] of Object.entries(el.attributes)) {
+      if (k === "id") continue;
+      if (attrFilter && !attrFilter(k)) continue;
+      // Quote only when value contains spaces
+      attrParts.push(v.includes(" ") ? `${k}="${v}"` : `${k}=${v}`);
+    }
+
+    // Role: only show when different from tagName
+    const role =
+      el.role && el.role !== el.tagName ? ` (${el.role})` : "";
+    const disabled = el.isDisabled ? " [disabled]" : "";
+    const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
+
+    return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}`;
   }
 
   /**
@@ -497,13 +513,15 @@ export class ContextManager {
   }
 
   private compressToolResultsBeforeIndex(beforeIndex: number): void {
+    const maxLen = this.speedMode ? 80 : 150;
+    const snippetLen = this.speedMode ? 60 : 100;
     for (let i = 0; i <= beforeIndex; i++) {
       const msg = this.history[i];
       if (msg.role === "tool" && msg.content) {
         if (Array.isArray(msg.content)) {
           msg.content = "[screenshot truncated]";
-        } else if (msg.content.length > 150) {
-          const firstLine = msg.content.split("\n")[0].slice(0, 100);
+        } else if (msg.content.length > maxLen) {
+          const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);
           msg.content = firstLine + " [truncated]";
         }
       }
