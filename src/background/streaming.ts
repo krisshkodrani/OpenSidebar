@@ -15,7 +15,8 @@ interface PartialToolCall {
  */
 export async function parseSSEStream(
     body: ReadableStream<Uint8Array>,
-    onTextDelta: (delta: string) => void
+    onTextDelta: (delta: string) => void,
+    signal?: AbortSignal,
 ): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
     const reader = body.pipeThrough(new TextDecoderStream()).getReader();
 
@@ -23,8 +24,10 @@ export async function parseSSEStream(
     let content = "";
     const partialToolCalls = new Map<number, PartialToolCall>();
 
+    try {
     let readerDone = false;
     while (!readerDone) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const { done, value } = await reader.read();
         if (done) { readerDone = true; break; }
 
@@ -73,6 +76,9 @@ export async function parseSSEStream(
                 }
             }
         }
+    }
+    } finally {
+        reader.releaseLock();
     }
 
     // Build final tool_calls array

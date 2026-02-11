@@ -6,6 +6,24 @@ import { CompletionRequest, CompletionResponse, LLMToolCall } from "./types";
 const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+/** Delay that can be cancelled via an AbortSignal. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((r) => setTimeout(r, ms));
+  if (signal.aborted)
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 // Default models
 const MODEL_CEREBRAS = "gpt-oss-120b"; // OpenAI GPT OSS
 const MODEL_OPENROUTER = "moonshotai/kimi-k2.5"; // MoonshotAI: Kimi K2.5
@@ -32,6 +50,42 @@ export class LLMClient {
       : OPENROUTER_BASE_URL;
   }
 
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    maxRetries = 3,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const RETRYABLE = new Set([429, 502, 503, 504]);
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      try {
+        const response = await fetch(url, { ...init, signal });
+        if (response.ok || !RETRYABLE.has(response.status)) return response;
+        // Retryable error
+        const body = await response.text();
+        lastError = new Error(`LLM API Error (${response.status}): ${body}`);
+      } catch (e: any) {
+        if (e.name === "AbortError") throw e; // Never retry aborts
+        lastError = e; // Network error — retryable
+      }
+      if (attempt < maxRetries) {
+        const delay =
+          1000 * Math.pow(2, attempt - 1) +
+          Math.floor(Math.random() * 300);
+        logger.warn(
+          "agent",
+          `LLM request failed, retrying ${attempt}/${maxRetries}`,
+          { delay, error: lastError?.message },
+        );
+        await abortableDelay(delay, signal);
+      }
+    }
+    throw lastError!;
+  }
+
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     if (!this.apiKey) {
       throw new Error(
@@ -55,20 +109,25 @@ export class LLMClient {
     });
 
     try {
-      const response = await fetch(this.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-          ...(this.provider === "openrouter"
-            ? {
-                "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-                "X-Title": "OpenSidebar",
-              }
-            : {}),
+      const response = await this.fetchWithRetry(
+        this.baseUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.apiKey}`,
+            ...(this.provider === "openrouter"
+              ? {
+                  "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
+                  "X-Title": "OpenSidebar",
+                }
+              : {}),
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
+        3,
+        request.signal,
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -145,20 +204,25 @@ export class LLMClient {
     });
 
     try {
-      const response = await fetch(this.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-          ...(this.provider === "openrouter"
-            ? {
-                "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-                "X-Title": "OpenSidebar",
-              }
-            : {}),
+      const response = await this.fetchWithRetry(
+        this.baseUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.apiKey}`,
+            ...(this.provider === "openrouter"
+              ? {
+                  "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
+                  "X-Title": "OpenSidebar",
+                }
+              : {}),
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      });
+        3,
+        request.signal,
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -169,7 +233,7 @@ export class LLMClient {
         throw new Error("LLM response body is null — streaming not supported?");
       }
 
-      const result = await parseSSEStream(response.body, onTextDelta);
+      const result = await parseSSEStream(response.body, onTextDelta, request.signal);
 
       logger.debug("agent", "LLM Stream Response", {
         contentLen: result.content?.length,

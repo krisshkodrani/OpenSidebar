@@ -1,8 +1,12 @@
 import { ToolCall, ToolDefinition } from "../../types";
 
+export type ContentPart =
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
+
 export interface LLMMessage {
     role: "system" | "user" | "assistant" | "tool";
-    content: string | null;
+    content: string | null | ContentPart[];
     tool_calls?: LLMToolCall[];
     tool_call_id?: string;
     name?: string; // for tool role
@@ -24,6 +28,7 @@ export interface CompletionRequest {
     max_tokens?: number;
     model?: string;
     stop?: string[];
+    signal?: AbortSignal;
 }
 
 export interface CompletionResponse {
