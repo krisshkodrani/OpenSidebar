@@ -451,7 +451,21 @@ export class AgentLoop {
                 if (doneSignaled) break;
 
             } else {
-                // FINAL ANSWER (or question) — text already streamed via deltas
+                // FINAL ANSWER (or question) — text without tool calls
+
+                // Speed mode: never stop on text — inject continuation nudge and keep looping
+                if (this.speedMode) {
+                    logger.warn("agent", "Speed mode: LLM emitted text instead of tools, nudging", {
+                        turn: turns,
+                        text: response.content?.slice(0, 80),
+                    });
+                    this.context.addMessage({
+                        role: "user",
+                        content: "Do NOT output text. Use tool calls ONLY. If stuck, try read_page or scroll_page to find the task, then act. If an overlay blocks you, use hide_element. Continue solving tasks.",
+                    });
+                    continue; // Skip break, keep looping
+                }
+
                 chrome.runtime.sendMessage({
                     type: "STREAM_CHUNK",
                     requestId: crypto.randomUUID(),
