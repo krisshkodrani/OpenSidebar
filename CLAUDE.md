@@ -11,9 +11,10 @@ bun run lint           # ESLint (src/**/*.ts,tsx)
 bun run fmt            # Prettier format src/
 bun test               # Run all tests
 bun test tests/content/tagging.test.ts  # Run a single test file
-bun run logs           # Query logs (CLI tool)
-bun run logs:errors    # Show error logs only
-bun run logs:tail      # Tail logs (live)
+bun run logs           # Start log drain server (receives logs from extension)
+bun run logs:query     # Query log file (tail, errors, since, search, stats, help)
+bun run logs:tail      # Show last 50 log entries
+bun run logs:errors    # Show error-level entries only
 bun run evals          # Run eval suite
 bun run evals:stats    # Show eval statistics
 bun run evals:analyze  # Analyze evals with suggestions
@@ -76,8 +77,8 @@ Runs heavy memory operations outside the service worker.
 ### Utilities (`src/utils/`)
 Shared utilities used across all execution contexts. Barrel-exported via `index.ts`.
 
-- `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Writes to file via `file-logger.ts`.
-- `file-logger.ts` — JSONL file logger (`logs/qsidebar.jsonl`). 100MB per file, max 10 rotated files (1GB total). Auto-redacts API keys/tokens. Only active in Node.js/Bun environments (CLI tools), silently no-ops in browser contexts.
+- `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
+- `storage-logger.ts` — `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `bun run logs` is running.
 - `context.ts` — `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`, `isOffscreen()`.
 
 ### Types (`src/types/index.ts`)
@@ -102,7 +103,8 @@ Offline evaluation framework for testing agent behavior against golden datasets.
 - `optimizer/` — `analyzer.ts`, `tracker.ts`, `suggester.ts` for identifying improvements.
 
 ### Scripts (`scripts/`)
-- `log-query.ts` — CLI for querying JSONL logs. Commands: `tail`, `errors`, `category <cat>`, `level <lvl>`, `search <text>`, `stats`, `workspace`, `agent`, `export <format>`.
+- `log-server.ts` — Bun HTTP server (`127.0.0.1:7589`). Receives log batches from the extension's `StorageLogger` and appends to `logs/opensidebar.jsonl`. 50MB rotation, 5 files max.
+- `log-query.ts` — CLI for querying JSONL logs. Commands: `tail [N]`, `errors`, `since <duration>`, `level <lvl>`, `category <cat>`, `search <text>`, `stats`, `help`.
 
 ## Testing
 

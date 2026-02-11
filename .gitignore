@@ -19,8 +19,9 @@ pnpm-debug.log*
 # OS
 Thumbs.db
 
-# Logs
-logs/
+# Logs (keep .md docs, ignore data files)
+logs/*.jsonl
+logs/*.jsonl.*
 *.log
 
 # Test coverage
