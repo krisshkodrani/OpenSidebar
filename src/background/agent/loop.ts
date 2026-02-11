@@ -288,7 +288,7 @@ export class AgentLoop {
                                 }, true);
                                 logger.info("tools", `${toolName} OK`, { toolMs, result: result.slice(0, 120) });
 
-                                if (DOM_MODIFYING_TOOLS.has(toolName)) {
+                                if (DOM_MODIFYING_TOOLS.has(toolName) && !result.includes("Click intercepted")) {
                                     domModified = true;
                                 }
 
@@ -408,7 +408,7 @@ export class AgentLoop {
                             continue;
                         }
 
-                        if (DOM_MODIFYING_TOOLS.has(toolName)) {
+                        if (DOM_MODIFYING_TOOLS.has(toolName) && !result.includes("Click intercepted")) {
                             domModified = true;
                         }
 
