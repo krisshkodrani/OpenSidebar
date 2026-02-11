@@ -137,10 +137,30 @@ class StorageLogger {
     } finally {
       this.isFlushing = false;
 
+      // Best-effort drain to local log server for disk persistence
+      this.drainToServer(entries);
+
       // Flush any entries that arrived during the write
       if (this.buffer.length >= FLUSH_SIZE) {
         this.flush();
       }
+    }
+  }
+
+  /**
+   * Fire-and-forget POST to the local log server.
+   * Silent fail when server isn't running (connection-refused resolves in <1ms).
+   */
+  private drainToServer(entries: StorageLogEntry[]): void {
+    try {
+      fetch("http://127.0.0.1:7589/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entries),
+        signal: AbortSignal.timeout(2000),
+      }).catch(() => {});
+    } catch {
+      // fetch itself may throw in some contexts — ignore
     }
   }
 

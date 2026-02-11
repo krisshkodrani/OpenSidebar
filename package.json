@@ -14,6 +14,10 @@
     "lint": "bun run --bun eslint src --ext .ts,.tsx",
     "test": "bun test",
     "fmt": "bun run --bun prettier --write src/",
+    "logs": "bun run scripts/log-server.ts",
+    "logs:query": "bun run scripts/log-query.ts",
+    "logs:tail": "bun run scripts/log-query.ts tail",
+    "logs:errors": "bun run scripts/log-query.ts errors",
     "evals": "bun run evals/cli.ts",
     "evals:stats": "bun run evals/cli.ts --stats",
     "evals:analyze": "bun run evals/cli.ts --analyze --suggest"
