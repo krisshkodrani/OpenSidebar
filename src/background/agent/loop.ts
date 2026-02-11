@@ -107,6 +107,19 @@ export class AgentLoop {
                 this.statusHandler(AgentStatus.IDLE, "Stopped");
             } else {
                 logger.error("agent", "Loop Error", { error });
+                const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
+                chrome.runtime.sendMessage({
+                    type: "STREAM_CHUNK",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { delta: errorMsg, done: false },
+                }).catch(() => {});
+                chrome.runtime.sendMessage({
+                    type: "STREAM_CHUNK",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { delta: "", done: true },
+                }).catch(() => {});
                 this.statusHandler(AgentStatus.ERROR, error.message);
             }
         } finally {
@@ -123,6 +136,7 @@ export class AgentLoop {
     private async loop(tabId: number) {
         let turns = 0;
         let prevElementCount = -1; // Track element count for empty-page retry
+        let consecutiveNudges = 0;
 
         // Pre-agent modal auto-dismiss (speed mode only, before first LLM turn)
         if (this.speedMode) {
@@ -192,6 +206,7 @@ export class AgentLoop {
                 {
                     messages,
                     tools,
+                    max_tokens: this.speedMode ? 2048 : 4096,
                     stop: ["Observation:"], // ReAct pattern stop token just in case
                     signal: this.abortController!.signal,
                 },
@@ -237,6 +252,7 @@ export class AgentLoop {
             // 3. Handle Response
             if (response.tool_calls && response.tool_calls.length > 0) {
                 // ACTION REQUIRED
+                consecutiveNudges = 0;
                 const firstToolName = response.tool_calls[0].function.name;
                 this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
 
@@ -495,10 +511,32 @@ export class AgentLoop {
 
                 // Speed mode: never stop on text — refresh snapshot and inject continuation nudge
                 if (this.speedMode) {
+                    consecutiveNudges++;
                     logger.warn("agent", "Speed mode: LLM emitted text instead of tools, nudging", {
                         turn: turns,
+                        consecutiveNudges,
                         text: response.content?.slice(0, 80),
                     });
+
+                    // Safety net: if LLM keeps emitting text without any tool calls, stop
+                    if (consecutiveNudges >= 3) {
+                        logger.warn("agent", "Loop ended: consecutive nudge limit", { turns, consecutiveNudges });
+                        const stuckMsg = response.content || "The agent appears stuck and cannot continue.";
+                        chrome.runtime.sendMessage({
+                            type: "STREAM_CHUNK",
+                            requestId: crypto.randomUUID(),
+                            source: MessageSource.BACKGROUND,
+                            payload: { delta: stuckMsg, done: false },
+                        }).catch(() => {});
+                        chrome.runtime.sendMessage({
+                            type: "STREAM_CHUNK",
+                            requestId: crypto.randomUUID(),
+                            source: MessageSource.BACKGROUND,
+                            payload: { delta: "", done: true },
+                        }).catch(() => {});
+                        this.statusHandler(AgentStatus.IDLE, "Stuck — send a follow-up to continue");
+                        break;
+                    }
 
                     // Refresh snapshot so LLM sees current page state in next turn
                     try {
@@ -516,7 +554,7 @@ export class AgentLoop {
 
                     this.context.addMessage({
                         role: "user",
-                        content: "Do NOT output text. Use tool calls ONLY. Read the Page Text in the system prompt — it contains the current task instructions. Act on them immediately. If stuck, try scroll_page or read_page. If an overlay blocks you, use hide_element.",
+                        content: "You output text instead of tool calls — that is not allowed. ONLY use tool calls. Look at the page elements and text above — continue working through the task. If you are truly finished with the ENTIRE task, call done({\"summary\": \"...\"}). Otherwise, keep going with the next step.",
                     });
                     continue; // Skip break, keep looping
                 }
@@ -584,6 +622,19 @@ export class AgentLoop {
                 this.statusHandler(AgentStatus.IDLE, "Stopped");
             } else {
                 logger.error("agent", "Loop Error", { error });
+                const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
+                chrome.runtime.sendMessage({
+                    type: "STREAM_CHUNK",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { delta: errorMsg, done: false },
+                }).catch(() => {});
+                chrome.runtime.sendMessage({
+                    type: "STREAM_CHUNK",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { delta: "", done: true },
+                }).catch(() => {});
                 this.statusHandler(AgentStatus.ERROR, error.message);
             }
         } finally {
