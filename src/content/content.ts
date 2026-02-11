@@ -31,17 +31,64 @@ if (document.readyState === "complete") {
     window.addEventListener("load", runJanitor);
 }
 
+/** Dismiss pattern for button/link text and aria-labels */
+const DISMISS_PATTERN = /^(accept|accept all|ok|close|dismiss|got it|i agree|no thanks|continue|skip|×|✕|✗|x)$/i;
+
+/**
+ * Auto-dismiss modals, overlays, banners, and popups.
+ * Returns the number of elements dismissed.
+ */
+function autoDismissModals(): number {
+    let dismissed = 0;
+    const candidates = document.querySelectorAll("button, a, [role='button']");
+
+    for (const el of candidates) {
+        if (!isElementVisible(el)) continue;
+
+        const text = el.textContent?.trim() || "";
+        const ariaLabel = el.getAttribute("aria-label") || "";
+
+        if (!DISMISS_PATTERN.test(text) && !DISMISS_PATTERN.test(ariaLabel)) continue;
+
+        // Check if element appears to be in a modal context
+        const inModal = el.closest("[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent");
+        const style = window.getComputedStyle(el.closest("[style]") || el);
+        const isFixed = style.position === "fixed" || style.position === "sticky";
+        const highZ = parseInt(style.zIndex, 10) > 100;
+
+        if (inModal || isFixed || highZ) {
+            (el as HTMLElement).click();
+            dismissed++;
+            logger.info("tools", "Auto-dismissed modal element", { text: text.slice(0, 30), ariaLabel });
+        }
+    }
+
+    return dismissed;
+}
+
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
     if (message.type === "AGENT_ACTIVITY") {
         setAgentBorder(message.payload.active);
         return;
     }
 
+    if (message.type === "DISMISS_MODALS") {
+        const dismissed = autoDismissModals();
+        sendResponse({
+            type: "DISMISS_MODALS_RESPONSE",
+            requestId: message.requestId,
+            source: MessageSource.CONTENT,
+            payload: { dismissed },
+        });
+        return true;
+    }
+
     if (message.type === "DOM_SNAPSHOT_REQUEST") {
         const start = performance.now();
         const snapshot = buildSnapshot(
             message.payload.includeText,
-            message.payload.refresh
+            message.payload.refresh,
+            message.payload.showTags ?? false
         );
         sendResponse({
             type: "DOM_SNAPSHOT_RESPONSE",

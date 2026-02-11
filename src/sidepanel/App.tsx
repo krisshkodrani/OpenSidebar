@@ -343,7 +343,7 @@ export default function App() {
         </div>
       </main>
 
-      <div className="flex flex-col bg-surface-light dark:bg-surface-dark z-20 border-t border-gray-200 dark:border-gray-800 shadow-lg">
+      <div className="flex flex-col shrink-0 bg-surface-light dark:bg-surface-dark z-20 border-t border-gray-200 dark:border-gray-800 shadow-lg">
         <ControlBar />
         <InputArea onSend={handleSend} onStop={handleStop} />
       </div>

@@ -11,14 +11,14 @@ import { callKimiSwarm } from "../../src/background/swarm";
 import { ActivateSwarmArgs } from "../../src/types";
 
 // Mock chrome.storage
-const mockStorage = {
+const mockSettings = {
   openRouterApiKey: "test-api-key",
 };
 
 global.chrome = {
   storage: {
     sync: {
-      get: async (keys: string[]) => mockStorage,
+      get: async () => ({ userSettings: mockSettings }),
     },
   },
 } as any;
@@ -75,13 +75,13 @@ describe("Kimi Swarm Client", () => {
 
   test("should handle missing API key", async () => {
     // Temporarily clear API key
-    const originalKey = mockStorage.openRouterApiKey;
-    mockStorage.openRouterApiKey = "";
+    const originalKey = mockSettings.openRouterApiKey;
+    mockSettings.openRouterApiKey = "";
 
     const result = await callKimiSwarm({ task: "test" });
     expect(result).toContain("Error: OpenRouter API key not configured");
 
-    mockStorage.openRouterApiKey = originalKey; // Restore
+    mockSettings.openRouterApiKey = originalKey; // Restore
   });
 
   test("should handle API errors gracefully", async () => {

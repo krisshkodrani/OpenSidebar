@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Save, Moon, Sun, Monitor, Trash2 } from "lucide-react";
+import { X, Save, Moon, Sun, Monitor, Trash2, Download } from "lucide-react";
 import { useStore } from "../store";
 import { UserSettings } from "../../types";
+import { storageLogger } from "../../utils/storage-logger";
 
 interface Props {
     isOpen: boolean;
@@ -67,6 +68,15 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
             return next;
         });
+    };
+
+    const handleExportLogs = async () => {
+        const blobUrl = await storageLogger.exportAsJsonl();
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = "opensidebar-logs.jsonl";
+        a.click();
+        URL.revokeObjectURL(blobUrl);
     };
 
     const handleSave = () => {
@@ -243,6 +253,18 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         >
                             <Trash2 size={16} />
                             Clear History
+                        </button>
+                    </section>
+
+                    {/* Export */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Export</h3>
+                        <button
+                            onClick={handleExportLogs}
+                            className="w-full flex items-center justify-center gap-2 p-2.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-blue-200 dark:border-blue-900/30 rounded-lg transition-colors text-sm font-medium"
+                        >
+                            <Download size={16} />
+                            Export Logs
                         </button>
                     </section>
 

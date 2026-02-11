@@ -3,6 +3,11 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
 
+// Vite build-time constants (injected via `define` in vite.config.ts)
+(globalThis as any).__DEV__ = true;
+(globalThis as any).__CEREBRAS_API_KEY__ = "";
+(globalThis as any).__OPENROUTER_API_KEY__ = "";
+
 // Mock Chrome API
 global.chrome = {
     runtime: {
@@ -46,6 +51,10 @@ global.chrome = {
         update: async () => ({}),
         onRemoved: { addListener: () => { }, removeListener: () => { } },
         TAB_GROUP_ID_NONE: -1,
+    },
+    webNavigation: {
+        onCompleted: { addListener: () => { }, removeListener: () => { } },
+        onErrorOccurred: { addListener: () => { }, removeListener: () => { } },
     },
 } as any;
 
