@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 20 tools are registered", () => {
+    test("all 21 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(20);
+        expect(defs.length).toBe(21);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -86,5 +86,23 @@ describe("Tool Registration", () => {
         expect(stroke!.function.parameters.required).toEqual(
             expect.arrayContaining(["id", "startX", "startY", "endX", "endY"])
         );
+    });
+
+    test("hide_element tool requires id parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const hide = defs.find(d => d.function.name === ToolName.HIDE_ELEMENT);
+        expect(hide).toBeDefined();
+        expect(hide!.function.parameters.required).toContain("id");
+        expect(hide!.function.parameters.properties.id.type).toBe("integer");
+    });
+
+    test("scroll_page tool has optional id parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const scroll = defs.find(d => d.function.name === ToolName.SCROLL_PAGE);
+        expect(scroll).toBeDefined();
+        expect(scroll!.function.parameters.required).toContain("direction");
+        expect(scroll!.function.parameters.required).not.toContain("id");
+        expect(scroll!.function.parameters.properties.id).toBeDefined();
+        expect(scroll!.function.parameters.properties.id.type).toBe("integer");
     });
 });
