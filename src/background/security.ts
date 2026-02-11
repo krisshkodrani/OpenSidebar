@@ -14,6 +14,7 @@ export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>)
         case ToolName.TAKE_SCREENSHOT:
         case ToolName.HOVER_ELEMENT:
         case ToolName.FIND_ELEMENT:
+        case ToolName.DONE:
             return RiskLevel.LOW;
 
         case ToolName.CLICK_ELEMENT:
@@ -31,7 +32,6 @@ export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>)
         case ToolName.CREATE_TAB:
         case ToolName.CLOSE_TAB:
         case ToolName.ACTIVATE_SWARM:
-        case ToolName.DONE:
             return RiskLevel.HIGH;
 
         default:

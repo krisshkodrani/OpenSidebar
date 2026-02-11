@@ -57,8 +57,8 @@ URL: {{url}}
 `;
 
 const SPEED_PROMPT_TEMPLATE = `
-You are a speed-optimized browser agent solving a 30-task sequential challenge.
-Each task has instructions on the page. Execute the task, then click Next/Submit/Continue to advance.
+You are OpenSidebar, a speed-optimized autonomous browser agent.
+Execute the user's request using tool calls as efficiently as possible.
 
 RULES:
 - ONLY emit tool calls. NEVER explain, ask questions, or output plain text.
@@ -72,8 +72,9 @@ RULES:
 - drag_and_drop with sourceId/targetId for draggable elements.
 - draw_stroke on canvas with start/end coordinates (offsets from element top-left).
 - select_option for <select> dropdowns — pass the visible option text.
-- After completing all 30 tasks, call done with a summary.
-- READ the task instructions in the page text/elements carefully. Act on them immediately.
+- When done, call done with a summary.
+- If stuck or unsure what the page looks like, call take_screenshot to see the visual layout.
+- Page Text below contains current page content — do NOT call read_page unless you scrolled to a new position.
 
 Title: {{title}}
 URL: {{url}}
@@ -81,6 +82,9 @@ URL: {{url}}
 
 Elements:
 {{elements}}
+
+Page Text:
+{{viewportText}}
 `;
 
 export class ContextManager {
@@ -240,7 +244,15 @@ export class ContextManager {
   }
 
   private estimateMessageTokens(message: LLMMessage): number {
-    let text = message.content || "";
+    let text = "";
+    if (Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (part.type === "text") text += part.text;
+        else if (part.type === "image_url") text += " ".repeat(340); // ~85 tokens at 4 chars/token
+      }
+    } else {
+      text = message.content || "";
+    }
     if (message.tool_calls) {
       text += JSON.stringify(message.tool_calls);
     }
@@ -288,8 +300,12 @@ export class ContextManager {
         elementsList || "No interactive elements found.",
       );
 
-      // Viewport text: skip entirely in speed mode (template has no {{viewportText}} placeholder)
-      if (!this.speedMode) {
+      // Viewport text
+      if (this.speedMode) {
+        // Speed mode: truncated viewport text so LLM can read task instructions
+        const viewportText = (this.snapshot.viewportText || "").slice(0, 3000);
+        content = content.replace("{{viewportText}}", viewportText);
+      } else {
         let viewportText = this.snapshot.viewportText || "No text content.";
         if (level === CompressionLevel.HEAVY) {
           viewportText = ""; // Remove in heavy compression
@@ -305,9 +321,7 @@ export class ContextManager {
       content = content.replace("{{url}}", "about:blank");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
-      if (!this.speedMode) {
-        content = content.replace("{{viewportText}}", "");
-      }
+      content = content.replace("{{viewportText}}", "");
     }
 
     return {
@@ -317,18 +331,15 @@ export class ContextManager {
   }
 
   /**
-   * Get current context budget metrics for telemetry.
-   * Uses getPrompt() result which already includes compression.
+   * Get context metrics from an already-computed prompt array.
+   * Avoids double-computing the prompt when the caller already has it.
    */
-  public getPromptMetrics(): ContextMetrics {
-    const prompt = this.getPrompt();
-    const systemTokens = prompt.length > 0
-      ? this.estimateMessageTokens(prompt[0])
-      : 0;
-    const historyTokens = prompt.slice(1).reduce(
-      (sum, msg) => sum + this.estimateMessageTokens(msg),
-      0,
-    );
+  public getPromptMetricsFrom(prompt: LLMMessage[]): ContextMetrics {
+    const systemTokens =
+      prompt.length > 0 ? this.estimateMessageTokens(prompt[0]) : 0;
+    const historyTokens = prompt
+      .slice(1)
+      .reduce((sum, msg) => sum + this.estimateMessageTokens(msg), 0);
 
     return {
       systemTokens,
@@ -339,6 +350,14 @@ export class ContextManager {
       elementCount: this.snapshot?.elements.length || 0,
       compressionLevel: this.getCompressionLevel(),
     };
+  }
+
+  /**
+   * Get current context budget metrics for telemetry.
+   * Uses getPrompt() result which already includes compression.
+   */
+  public getPromptMetrics(): ContextMetrics {
+    return this.getPromptMetricsFrom(this.getPrompt());
   }
 
   /**
@@ -480,9 +499,13 @@ export class ContextManager {
   private compressToolResultsBeforeIndex(beforeIndex: number): void {
     for (let i = 0; i <= beforeIndex; i++) {
       const msg = this.history[i];
-      if (msg.role === "tool" && msg.content && msg.content.length > 150) {
-        const firstLine = msg.content.split("\n")[0].slice(0, 100);
-        msg.content = firstLine + " [truncated]";
+      if (msg.role === "tool" && msg.content) {
+        if (Array.isArray(msg.content)) {
+          msg.content = "[screenshot truncated]";
+        } else if (msg.content.length > 150) {
+          const firstLine = msg.content.split("\n")[0].slice(0, 100);
+          msg.content = firstLine + " [truncated]";
+        }
       }
     }
   }

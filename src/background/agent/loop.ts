@@ -66,7 +66,8 @@ export class AgentLoop {
     public async start(
         initialUserText: string,
         tabId: number,
-        initialSnapshot?: DomSnapshot
+        initialSnapshot?: DomSnapshot,
+        options?: { clearHistory?: boolean }
     ) {
         if (this.isRunning) {
             this.stop();
@@ -75,8 +76,13 @@ export class AgentLoop {
         this.isRunning = true;
         this.abortController = new AbortController();
 
-        // Restore context from session storage to handle SW restarts
-        await this.context.loadState();
+        // Clear or restore context
+        if (options?.clearHistory) {
+            this.context.clear();
+        } else {
+            // Restore context from session storage to handle SW restarts
+            await this.context.loadState();
+        }
 
         if (initialSnapshot) {
             this.context.setSnapshot(initialSnapshot);
@@ -116,6 +122,7 @@ export class AgentLoop {
 
     private async loop(tabId: number) {
         let turns = 0;
+        let prevElementCount = -1; // Track element count for empty-page retry
 
         // Pre-agent modal auto-dismiss (speed mode only, before first LLM turn)
         if (this.speedMode) {
@@ -143,8 +150,9 @@ export class AgentLoop {
                 ? toolRegistry.getDefinitions(SPEED_MODE_EXCLUDED_TOOLS)
                 : toolRegistry.getDefinitions();
 
-            // Log context metrics for telemetry
-            const metrics = this.context.getPromptMetrics();
+            // Log context metrics for telemetry (reuse already-computed prompt)
+            const metrics = this.context.getPromptMetricsFrom(messages);
+            if (prevElementCount < 0) prevElementCount = metrics.elementCount;
             logger.info("agent", "Context metrics", {
                 turn: turns,
                 systemTokens: metrics.systemTokens,
@@ -185,6 +193,7 @@ export class AgentLoop {
                     messages,
                     tools,
                     stop: ["Observation:"], // ReAct pattern stop token just in case
+                    signal: this.abortController!.signal,
                 },
                 onTextDelta
             );
@@ -416,7 +425,7 @@ export class AgentLoop {
                         this.context.addMessage({
                             role: "tool",
                             content: result,
-                            tool_call_id: toolCall.id
+                            tool_call_id: toolCall.id,
                         });
                     }
                 }
@@ -426,14 +435,34 @@ export class AgentLoop {
                     try {
                         const spaWait = this.speedMode ? 50 : 200;
                         await new Promise((resolve) => setTimeout(resolve, spaWait));
-                        const snapResponse = await chrome.tabs.sendMessage(tabId, {
+                        let snapResponse = await chrome.tabs.sendMessage(tabId, {
                             type: "DOM_SNAPSHOT_REQUEST",
                             requestId: crypto.randomUUID(),
                             source: MessageSource.BACKGROUND,
-                            payload: { includeText: !this.speedMode, refresh: true, showTags: this.showElementTags },
+                            payload: { includeText: true, refresh: true, showTags: this.showElementTags },
                         });
-                        if (snapResponse?.payload?.snapshot) {
-                            const snap = snapResponse.payload.snapshot;
+                        let snap = snapResponse?.payload?.snapshot;
+
+                        // Retry if elements dropped to 0 (SPA hasn't rendered yet)
+                        if (snap && snap.elements.length === 0 && prevElementCount > 0) {
+                            const retryDelays = [300, 500];
+                            for (const delay of retryDelays) {
+                                logger.info("agent", "Empty snapshot after action, retrying", {
+                                    turn: turns, delay, prevElements: prevElementCount,
+                                });
+                                await new Promise((resolve) => setTimeout(resolve, delay));
+                                snapResponse = await chrome.tabs.sendMessage(tabId, {
+                                    type: "DOM_SNAPSHOT_REQUEST",
+                                    requestId: crypto.randomUUID(),
+                                    source: MessageSource.BACKGROUND,
+                                    payload: { includeText: true, refresh: true, showTags: this.showElementTags },
+                                });
+                                snap = snapResponse?.payload?.snapshot;
+                                if (snap && snap.elements.length > 0) break;
+                            }
+                        }
+
+                        if (snap) {
                             logger.info("agent", "Snapshot refreshed", {
                                 turn: turns,
                                 title: snap.title?.slice(0, 60),
@@ -441,6 +470,7 @@ export class AgentLoop {
                                 elements: snap.elements.length,
                                 durationMs: snapResponse.payload.durationMs,
                             });
+                            prevElementCount = snap.elements.length;
                             this.context.setSnapshot(snap);
                         }
                     } catch {
@@ -453,15 +483,40 @@ export class AgentLoop {
             } else {
                 // FINAL ANSWER (or question) — text without tool calls
 
-                // Speed mode: never stop on text — inject continuation nudge and keep looping
+                // Notify user if LLM produced no content
+                if (!response.content) {
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: "(The agent finished without producing a response.)", done: false },
+                    }).catch(() => {});
+                }
+
+                // Speed mode: never stop on text — refresh snapshot and inject continuation nudge
                 if (this.speedMode) {
                     logger.warn("agent", "Speed mode: LLM emitted text instead of tools, nudging", {
                         turn: turns,
                         text: response.content?.slice(0, 80),
                     });
+
+                    // Refresh snapshot so LLM sees current page state in next turn
+                    try {
+                        const snapResponse = await chrome.tabs.sendMessage(tabId, {
+                            type: "DOM_SNAPSHOT_REQUEST",
+                            requestId: crypto.randomUUID(),
+                            source: MessageSource.BACKGROUND,
+                            payload: { includeText: true, refresh: true, showTags: this.showElementTags },
+                        });
+                        if (snapResponse?.payload?.snapshot) {
+                            prevElementCount = snapResponse.payload.snapshot.elements.length;
+                            this.context.setSnapshot(snapResponse.payload.snapshot);
+                        }
+                    } catch { /* non-critical */ }
+
                     this.context.addMessage({
                         role: "user",
-                        content: "Do NOT output text. Use tool calls ONLY. If stuck, try read_page or scroll_page to find the task, then act. If an overlay blocks you, use hide_element. Continue solving tasks.",
+                        content: "Do NOT output text. Use tool calls ONLY. Read the Page Text in the system prompt — it contains the current task instructions. Act on them immediately. If stuck, try scroll_page or read_page. If an overlay blocks you, use hide_element.",
                     });
                     continue; // Skip break, keep looping
                 }
@@ -480,6 +535,20 @@ export class AgentLoop {
 
         if (turns >= this.maxTurns) {
             logger.warn("agent", "Loop ended: max turns reached", { turns, maxTurns: this.maxTurns });
+            const limitMsg = `Reached turn limit (${turns}/${this.maxTurns}). You can increase the limit in Settings or send a follow-up message to continue.`;
+            chrome.runtime.sendMessage({
+                type: "STREAM_CHUNK",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: { delta: limitMsg, done: false },
+            }).catch(() => {});
+            chrome.runtime.sendMessage({
+                type: "STREAM_CHUNK",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: { delta: "", done: true },
+            }).catch(() => {});
+            this.statusHandler(AgentStatus.IDLE, `Turn limit (${turns}/${this.maxTurns})`);
         }
     }
 
