@@ -3,7 +3,6 @@ import { logger } from "../../utils";
 import { parseSSEStream } from "../streaming";
 import { CompletionRequest, CompletionResponse, LLMToolCall } from "./types";
 
-const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 /** Delay that can be cancelled via an AbortSignal. */
@@ -24,30 +23,33 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-// Default models
-const MODEL_CEREBRAS = "gpt-oss-120b"; // OpenAI GPT OSS
-const MODEL_OPENROUTER = "moonshotai/kimi-k2.5"; // MoonshotAI: Kimi K2.5
+/** Fast model tier — used for initial turns */
+export const MODEL_FAST = "google/gemini-2.5-flash-lite";
+/** Smart model tier — used after escalation when stuck */
+export const MODEL_SMART = "moonshotai/kimi-k2.5";
 
 export class LLMClient {
   private apiKey: string;
-  private provider: "cerebras" | "openrouter";
   private model: string;
 
-  constructor(
-    apiKey: string,
-    provider: "cerebras" | "openrouter" = "cerebras",
-    model?: string,
-  ) {
+  constructor(apiKey: string, model: string = MODEL_FAST) {
     this.apiKey = apiKey;
-    this.provider = provider;
-    this.model =
-      model || (provider === "cerebras" ? MODEL_CEREBRAS : MODEL_OPENROUTER);
+    this.model = model;
+  }
+
+  /** Get the currently active model ID */
+  public getCurrentModel(): string {
+    return this.model;
+  }
+
+  /** Switch the active model (e.g. for escalation). Mutates in place. */
+  public switchModel(model: string): void {
+    logger.info("agent", "Switching LLM model", { from: this.model, to: model });
+    this.model = model;
   }
 
   private get baseUrl() {
-    return this.provider === "cerebras"
-      ? CEREBRAS_BASE_URL
-      : OPENROUTER_BASE_URL;
+    return OPENROUTER_BASE_URL;
   }
 
   private async fetchWithRetry(
@@ -116,12 +118,8 @@ export class LLMClient {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.apiKey}`,
-            ...(this.provider === "openrouter"
-              ? {
-                  "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-                  "X-Title": "OpenSidebar",
-                }
-              : {}),
+            "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
+            "X-Title": "OpenSidebar",
           },
           body: JSON.stringify(payload),
         },
@@ -131,6 +129,18 @@ export class LLMClient {
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 402) {
+          const affordMatch = errorText.match(/can only afford (\d+)/);
+          const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
+          const err = new Error(
+            affordable > 0
+              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
+              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`
+          );
+          (err as any).status = 402;
+          (err as any).affordable = affordable;
+          throw err;
+        }
         throw new Error(`LLM API Error (${response.status}): ${errorText}`);
       }
 
@@ -211,12 +221,8 @@ export class LLMClient {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${this.apiKey}`,
-            ...(this.provider === "openrouter"
-              ? {
-                  "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-                  "X-Title": "OpenSidebar",
-                }
-              : {}),
+            "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
+            "X-Title": "OpenSidebar",
           },
           body: JSON.stringify(payload),
         },
@@ -226,6 +232,18 @@ export class LLMClient {
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 402) {
+          const affordMatch = errorText.match(/can only afford (\d+)/);
+          const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
+          const err = new Error(
+            affordable > 0
+              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
+              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`
+          );
+          (err as any).status = 402;
+          (err as any).affordable = affordable;
+          throw err;
+        }
         throw new Error(`LLM API Error (${response.status}): ${errorText}`);
       }
 
@@ -245,7 +263,7 @@ export class LLMClient {
         content: result.content,
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
-        usage: undefined,
+        usage: result.usage,
       };
     } catch (error: any) {
       logger.error("agent", "LLM Stream Request Failed", {

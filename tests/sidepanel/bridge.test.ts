@@ -40,7 +40,6 @@ describe("Bridge Message Routing", () => {
             stuckState: null,
             turnProgress: null,
             settings: {
-                cerebrasApiKey: "",
                 openRouterApiKey: "",
                 maxTurns: 30,
                 contextWindowSize: 128000,
@@ -48,7 +47,8 @@ describe("Bridge Message Routing", () => {
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
-                speedMode: false,
+                visionModel: "google/gemini-2.0-flash-001",
+                confirmPlan: false,
             },
         });
     });

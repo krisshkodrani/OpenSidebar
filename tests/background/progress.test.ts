@@ -157,6 +157,47 @@ describe("ProgressTracker", () => {
     }
   });
 
+  it("treats attribute change as progress (e.g. disabled→enabled)", () => {
+    const snap1 = makeSnap({
+      elements: [
+        {
+          tag: 1,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { disabled: "true" },
+          rect: { x: 0, y: 0, width: 100, height: 30 },
+          isVisible: true,
+          isDisabled: true,
+        },
+      ],
+    });
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    // Same element but attribute changed
+    const snap2 = makeSnap({
+      elements: [
+        {
+          tag: 1,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 100, height: 30 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    // Build 5 stale on snap1 (would nudge at 6 if no change)
+    for (let i = 0; i < 5; i++) {
+      tracker.onSnapshotRefresh(snap1);
+    }
+    // snap2 has different attributes → resets stale counter
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+  });
+
   it("reset() clears all state", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline

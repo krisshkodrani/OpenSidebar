@@ -2,7 +2,7 @@ import { logger } from "../utils";
 import { RuntimeMessage, MessageSource, OverlayDescriptor, ElementRect } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
-import { isElementVisible, addDynamicTag, getTagMap } from "./tagging";
+import { isElementVisible, addDynamicTag, getTagMap, resetStableIds } from "./tagging";
 
 logger.info("system", "Content Script Loaded");
 
@@ -30,6 +30,16 @@ if (document.readyState === "complete") {
 } else {
     window.addEventListener("load", runJanitor);
 }
+
+// Reset stable element IDs on full page navigation (not SPA transitions)
+let lastHref = window.location.href;
+window.addEventListener("pageshow", () => {
+    const currentHref = window.location.href;
+    if (currentHref !== lastHref) {
+        resetStableIds();
+        lastHref = currentHref;
+    }
+});
 
 // --- Overlay Detection Helpers ---
 

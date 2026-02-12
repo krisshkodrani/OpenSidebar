@@ -82,8 +82,7 @@ Required permissions:
 
 Host permissions:
 
-- `https://api.cerebras.ai/*` - Reflex Engine
-- `https://openrouter.ai/*` - Deep Thought Engine
+- `https://openrouter.ai/*` - LLM API (all models)
 
 ### vite.config.ts
 

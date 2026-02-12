@@ -5,3 +5,4 @@ export * from "./ControlBar";
 export * from "./StepTimeline";
 export * from "./StuckBanner";
 export * from "./TaskProgressPanel";
+export * from "./MetricsBar";

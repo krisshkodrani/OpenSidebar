@@ -16,6 +16,7 @@ export function InputArea({
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
+  const awaitingPlanApproval = useStore((s) => s.awaitingPlanApproval);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize: hide overflow during measurement to prevent scrollbar-induced inflation
@@ -58,7 +59,11 @@ export function InputArea({
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            isAgentRunning ? "Send a hint..." : "Ask OpenSidebar..."
+            awaitingPlanApproval
+              ? "Send corrections or click Approve..."
+              : isAgentRunning
+                ? "Send a hint..."
+                : "Ask OpenSidebar..."
           }
           className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
           rows={1}

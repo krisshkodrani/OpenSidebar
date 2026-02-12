@@ -1,13 +1,14 @@
 import React, { useCallback } from "react";
 import { useStore } from "../store";
 import { AgentStatus, MessageSource } from "../../types";
-import { Loader2, Pause, Play } from "lucide-react";
+import { Check, Loader2, Pause, Play } from "lucide-react";
 import { logger } from "../../utils";
 
 export function ControlBar() {
   const status = useStore((s) => s.agentStatus);
   const detail = useStore((s) => s.statusDetail);
   const turnProgress = useStore((s) => s.turnProgress);
+  const awaitingPlanApproval = useStore((s) => s.awaitingPlanApproval);
 
   const handlePause = useCallback(async () => {
     try {
@@ -72,7 +73,17 @@ export function ControlBar() {
           <Pause size={12} />
         </button>
       )}
-      {isPaused && (
+      {isPaused && awaitingPlanApproval && (
+        <button
+          onClick={handleResume}
+          className="flex items-center gap-1 px-2 py-0.5 rounded bg-green-500 hover:bg-green-600 text-white text-xs font-medium"
+          aria-label="Approve plan"
+        >
+          <Check size={12} />
+          Approve
+        </button>
+      )}
+      {isPaused && !awaitingPlanApproval && (
         <button
           onClick={handleResume}
           className="p-0.5 rounded hover:bg-primary-100 dark:hover:bg-primary-800 text-primary-600 dark:text-primary-400"

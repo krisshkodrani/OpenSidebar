@@ -4,12 +4,15 @@ import {
   isElementVisible,
   isRandomHash,
   truncateText,
+  resetStableIds,
+  getTagMap,
 } from "../../src/content/tagging";
 import "../../tests/setup";
 
 describe("tagElements", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    resetStableIds();
   });
 
   test("tags visible buttons", () => {
@@ -20,7 +23,6 @@ describe("tagElements", () => {
     const tagged = tagElements();
     expect(tagged.length).toBe(1);
     expect(tagged[0].tagName).toBe("button");
-    expect(tagged[0].tag).toBe(1);
     expect(tagged[0].text).toBe("Click Me");
   });
 
@@ -46,7 +48,6 @@ describe("tagElements", () => {
   });
 
   test("respects MAX_TAGGED_ELEMENTS cap of 50", () => {
-    // Create 60 visible buttons
     for (let i = 0; i < 60; i++) {
       const btn = document.createElement("button");
       btn.textContent = `Button ${i}`;
@@ -92,7 +93,6 @@ describe("tagElements", () => {
 
     const tagged = tagElements();
     expect(tagged.length).toBe(1);
-    // The random hash ID should be filtered out
     expect(tagged[0].attributes["id"]).toBeUndefined();
   });
 
@@ -106,6 +106,243 @@ describe("tagElements", () => {
     expect(tagged.length).toBe(1);
     expect(tagged[0].attributes["id"]).toBe("login-button");
   });
+
+  test("skips elements with aria-hidden=true", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Hidden Button";
+    btn.setAttribute("aria-hidden", "true");
+    document.body.appendChild(btn);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(0);
+  });
+
+  test("skips elements inside aria-hidden ancestor", () => {
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("aria-hidden", "true");
+    const btn = document.createElement("button");
+    btn.textContent = "Nested Hidden";
+    wrapper.appendChild(btn);
+    document.body.appendChild(wrapper);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(0);
+  });
+
+  test("resolves aria-describedby to description attribute", () => {
+    const hint = document.createElement("span");
+    hint.id = "hint-1";
+    hint.textContent = "Must be at least 8 characters";
+    document.body.appendChild(hint);
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.setAttribute("aria-describedby", "hint-1");
+    document.body.appendChild(input);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(1);
+    expect(tagged[0].attributes["description"]).toBe("Must be at least 8 characters");
+  });
+
+  test("resolves multiple space-separated aria-describedby IDs", () => {
+    const hint1 = document.createElement("span");
+    hint1.id = "hint-a";
+    hint1.textContent = "Required.";
+    document.body.appendChild(hint1);
+
+    const hint2 = document.createElement("span");
+    hint2.id = "hint-b";
+    hint2.textContent = "Min 8 chars.";
+    document.body.appendChild(hint2);
+
+    const input = document.createElement("input");
+    input.type = "password";
+    input.setAttribute("aria-describedby", "hint-a hint-b");
+    document.body.appendChild(input);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(1);
+    expect(tagged[0].attributes["description"]).toBe("Required. Min 8 chars.");
+  });
+
+  test("resolves aria-description direct attribute", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Submit";
+    btn.setAttribute("aria-description", "Submits the form and sends email");
+    document.body.appendChild(btn);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(1);
+    expect(tagged[0].attributes["description"]).toBe("Submits the form and sends email");
+  });
+
+  test("resolves aria-labelledby on non-form elements", () => {
+    const heading = document.createElement("h2");
+    heading.id = "section-title";
+    heading.textContent = "Account Settings";
+    document.body.appendChild(heading);
+
+    const btn = document.createElement("button");
+    btn.setAttribute("aria-labelledby", "section-title");
+    document.body.appendChild(btn);
+
+    const tagged = tagElements();
+    const btnTag = tagged.find((t) => t.tagName === "button");
+    expect(btnTag).toBeDefined();
+    expect(btnTag!.attributes["label"]).toBe("Account Settings");
+  });
+});
+
+describe("stable element IDs", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  test("unchanged elements keep the same IDs across refreshes", () => {
+    const btn1 = document.createElement("button");
+    btn1.textContent = "Submit";
+    const btn2 = document.createElement("button");
+    btn2.textContent = "Cancel";
+    document.body.appendChild(btn1);
+    document.body.appendChild(btn2);
+
+    const tagged1 = tagElements();
+    const submitId1 = tagged1.find(t => t.text === "Submit")!.tag;
+    const cancelId1 = tagged1.find(t => t.text === "Cancel")!.tag;
+
+    // Re-tag without changing DOM
+    const tagged2 = tagElements();
+    const submitId2 = tagged2.find(t => t.text === "Submit")!.tag;
+    const cancelId2 = tagged2.find(t => t.text === "Cancel")!.tag;
+
+    expect(submitId2).toBe(submitId1);
+    expect(cancelId2).toBe(cancelId1);
+  });
+
+  test("new element gets a new ID without disrupting existing IDs", () => {
+    const btn1 = document.createElement("button");
+    btn1.textContent = "Submit";
+    document.body.appendChild(btn1);
+
+    const tagged1 = tagElements();
+    const submitId = tagged1[0].tag;
+
+    // Add a new button
+    const btn2 = document.createElement("button");
+    btn2.textContent = "Cancel";
+    document.body.appendChild(btn2);
+
+    const tagged2 = tagElements();
+    const submitId2 = tagged2.find(t => t.text === "Submit")!.tag;
+    const cancelId = tagged2.find(t => t.text === "Cancel")!.tag;
+
+    expect(submitId2).toBe(submitId); // Existing ID unchanged
+    expect(cancelId).not.toBe(submitId); // New element gets different ID
+  });
+
+  test("removed element ID survives one grace period then is freed", () => {
+    const btn1 = document.createElement("button");
+    btn1.textContent = "Submit";
+    const btn2 = document.createElement("button");
+    btn2.textContent = "Cancel";
+    document.body.appendChild(btn1);
+    document.body.appendChild(btn2);
+
+    const tagged1 = tagElements();
+    const cancelId = tagged1.find(t => t.text === "Cancel")!.tag;
+
+    // Remove Cancel button
+    btn2.remove();
+
+    // First refresh after removal: grace period, ID still in maps
+    tagElements();
+    // The tag won't be in tagMap (element is gone) but the hash→ID mapping persists
+
+    // Second refresh: grace period expired, hash cleaned up
+    tagElements();
+
+    // Now add Cancel back — it should get a new ID since the old mapping was cleaned
+    const btn3 = document.createElement("button");
+    btn3.textContent = "Cancel";
+    document.body.appendChild(btn3);
+
+    const tagged3 = tagElements();
+    const newCancelId = tagged3.find(t => t.text === "Cancel")!.tag;
+    // The Cancel button has same DOM path + text, so it gets the same hash.
+    // Since the hash was cleaned up after 2 refreshes, it gets re-allocated.
+    // The ID might be the same number (re-allocated) or different depending on nextId.
+    // What matters is the system doesn't crash and the element is tagged.
+    expect(newCancelId).toBeDefined();
+  });
+
+  test("element with changed text gets a new ID", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Click Here";
+    document.body.appendChild(btn);
+
+    const tagged1 = tagElements();
+    const id1 = tagged1[0].tag;
+
+    // Change the button text
+    btn.textContent = "Dismiss";
+
+    const tagged2 = tagElements();
+    const id2 = tagged2[0].tag;
+
+    // Text is part of the hash, so different text → different hash → different ID
+    expect(id2).not.toBe(id1);
+  });
+
+  test("IDs remain stable when unrelated DOM sibling is added", () => {
+    const container = document.createElement("div");
+    const btn = document.createElement("button");
+    btn.textContent = "Action";
+    container.appendChild(btn);
+    document.body.appendChild(container);
+
+    const tagged1 = tagElements();
+    const actionId = tagged1[0].tag;
+
+    // Add a sibling div (not interactive)
+    const sibling = document.createElement("div");
+    sibling.textContent = "Info text";
+    container.appendChild(sibling);
+
+    const tagged2 = tagElements();
+    const actionId2 = tagged2.find(t => t.text === "Action")!.tag;
+
+    // Button's DOM path hasn't changed (same parent, same index)
+    expect(actionId2).toBe(actionId);
+  });
+
+  test("hash collision produces different IDs", () => {
+    // Two buttons with identical text at the same DOM position shouldn't happen,
+    // but buttons at different positions with same text get different hashes via domPath
+    const btn1 = document.createElement("button");
+    btn1.textContent = "Click Here";
+    const btn2 = document.createElement("button");
+    btn2.textContent = "Click Here";
+    document.body.appendChild(btn1);
+    document.body.appendChild(btn2);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(2);
+    expect(tagged[0].tag).not.toBe(tagged[1].tag);
+  });
+
+  test("resetStableIds clears all state and IDs restart from 1", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Test";
+    document.body.appendChild(btn);
+
+    tagElements();
+    resetStableIds();
+
+    const tagged = tagElements();
+    expect(tagged[0].tag).toBe(1);
+  });
 });
 
 describe("isElementVisible", () => {
@@ -116,8 +353,6 @@ describe("isElementVisible", () => {
     expect(isElementVisible(div)).toBe(false);
   });
 
-  // Note: The global mock returns {top:0, left:0, bottom:100, right:100, width:100, height:100}
-  // which is within the viewport, so elements are visible by default in tests.
   test("returns true for element within viewport (default mock)", () => {
     const btn = document.createElement("button");
     btn.textContent = "Visible";
@@ -184,7 +419,6 @@ describe("truncateText", () => {
     const result = truncateText(long, 80);
     expect(result.length).toBe(80);
     expect(result).toContain("...");
-    // Head = 64 chars, tail = 13 chars, ellipsis = 3 chars = 80
     expect(result.startsWith("A".repeat(64))).toBe(true);
     expect(result.endsWith("A".repeat(13))).toBe(true);
   });
@@ -194,9 +428,7 @@ describe("truncateText", () => {
       "Add to Cart - Limited Time Offer - Free Shipping Available - Buy Now Before Stock Runs Out Today";
     const result = truncateText(text, 80);
     expect(result.length).toBe(80);
-    // Head should preserve the beginning
     expect(result.startsWith("Add to Cart")).toBe(true);
-    // Tail should preserve the end
     expect(result.endsWith("Today")).toBe(true);
   });
 

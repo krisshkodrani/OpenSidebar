@@ -303,8 +303,7 @@ async function runEvaluationsCommand(values: any) {
       "\nFailed to initialize:",
       error instanceof Error ? error.message : error,
     );
-    console.log("\nMake sure you have set your API keys in .env file:");
-    console.log("   CEREBRAS_API_KEY=your_key_here");
+    console.log("\nMake sure you have set your API key in .env file:");
     console.log("   OPENROUTER_API_KEY=your_key_here");
     console.log("\n   Or use --mock flag to run in mock mode.");
     process.exit(1);

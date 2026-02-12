@@ -1,5 +1,6 @@
 import { ToolCall, ToolName } from "../types";
 import { logger } from "../utils";
+import { TokenUsage } from "./llm/types";
 
 interface PartialToolCall {
     id: string;
@@ -11,17 +12,18 @@ interface PartialToolCall {
  * Parses an OpenAI-compatible SSE stream, invoking onTextDelta for each
  * content token and accumulating tool calls across chunks.
  *
- * Returns the final assembled content and tool_calls array.
+ * Returns the final assembled content, tool_calls array, and usage (from the final chunk).
  */
 export async function parseSSEStream(
     body: ReadableStream<Uint8Array>,
     onTextDelta: (delta: string) => void,
     signal?: AbortSignal,
-): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
+): Promise<{ content: string | null; tool_calls?: ToolCall[]; usage?: TokenUsage }> {
     const reader = body.pipeThrough(new TextDecoderStream()).getReader();
 
     let buffer = "";
     let content = "";
+    let usage: TokenUsage | undefined;
     const partialToolCalls = new Map<number, PartialToolCall>();
 
     try {
@@ -48,6 +50,16 @@ export async function parseSSEStream(
             } catch {
                 logger.debug("streaming", "Skipping malformed SSE JSON");
                 continue;
+            }
+
+            // Capture usage from the final chunk (appears at top level, not in delta)
+            if (parsed.usage) {
+                usage = {
+                    prompt_tokens: parsed.usage.prompt_tokens ?? 0,
+                    completion_tokens: parsed.usage.completion_tokens ?? 0,
+                    total_tokens: parsed.usage.total_tokens ?? 0,
+                    cost: parsed.usage.cost,
+                };
             }
 
             const delta = parsed.choices?.[0]?.delta;
@@ -102,5 +114,6 @@ export async function parseSSEStream(
     return {
         content: content || null,
         tool_calls: toolCalls,
+        usage,
     };
 }

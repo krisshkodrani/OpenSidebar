@@ -1,8 +1,9 @@
 import { UserSettings } from "../types";
 import { logger } from "../utils";
+import { TokenUsage } from "./llm/types";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const VISION_MODEL = "google/gemini-2.0-flash-001";
+const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash-lite";
 
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -17,19 +18,27 @@ Keep the description under 300 words. Be factual, not interpretive.`;
 
 /**
  * Send a screenshot to a vision model on OpenRouter and return a text description.
- * Follows the same pattern as swarm.ts: standalone module, reads API key from settings,
- * own retry logic, returns a plain string.
+ * Standalone module: reads API key from settings, own retry logic, returns a plain string.
  */
-export async function describeScreenshot(dataUrl: string): Promise<string> {
+export interface VisionResult {
+  description: string;
+  usage?: TokenUsage;
+  model?: string;
+  durationMs?: number;
+}
+
+export async function describeScreenshot(dataUrl: string, signal?: AbortSignal): Promise<VisionResult> {
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const visionModel = settings.visionModel || DEFAULT_VISION_MODEL;
 
   if (!apiKey) {
-    return "[Screenshot captured but no OpenRouter API key configured for vision description. Add an OpenRouter key in Settings to enable visual analysis.]";
+    return { description: "[Screenshot captured but no OpenRouter API key configured for vision description. Add an OpenRouter key in Settings to enable visual analysis.]" };
   }
 
   let lastError: Error | null = null;
+  const callStart = Date.now();
 
   for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
     if (attempt > 1) {
@@ -39,6 +48,10 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
     }
 
     try {
+      const fetchSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000);
+
       const response = await fetch(OPENROUTER_API_URL, {
         method: "POST",
         headers: {
@@ -48,7 +61,7 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
           "X-Title": "OpenSidebar",
         },
         body: JSON.stringify({
-          model: VISION_MODEL,
+          model: visionModel,
           messages: [
             {
               role: "user",
@@ -61,6 +74,7 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
           max_tokens: 500,
           temperature: 0.2,
         }),
+        signal: fetchSignal,
       });
 
       if (!response.ok) {
@@ -70,7 +84,7 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
         // Don't retry on client errors (4xx except 429)
         if (response.status >= 400 && response.status < 500 && response.status !== 429) {
           logger.error("vision", "Non-retryable vision error", { status: response.status, body });
-          return `[Screenshot captured but vision analysis failed: ${response.status} error]`;
+          return { description: `[Screenshot captured but vision analysis failed: ${response.status} error]` };
         }
 
         throw err;
@@ -81,12 +95,29 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
 
       if (!text) {
         logger.warn("vision", "Vision model returned empty content");
-        return "[Screenshot captured but vision model returned no description]";
+        return { description: "[Screenshot captured but vision model returned no description]" };
       }
 
+      const visionUsage: TokenUsage | undefined = json.usage ? {
+        prompt_tokens: json.usage.prompt_tokens ?? 0,
+        completion_tokens: json.usage.completion_tokens ?? 0,
+        total_tokens: json.usage.total_tokens ?? 0,
+        cost: json.usage.cost,
+      } : undefined;
+
       logger.info("vision", "Screenshot described", { length: text.length });
-      return `[Screenshot Description]\n${text}`;
+      return {
+        description: `[Screenshot Description]\n${text}`,
+        usage: visionUsage,
+        model: visionModel,
+        durationMs: Date.now() - callStart,
+      };
     } catch (error: any) {
+      // Abort errors are non-retryable — return gracefully
+      if (error.name === "AbortError" || error.name === "TimeoutError") {
+        logger.warn("vision", "Vision aborted or timed out", { error: error.message });
+        return { description: `[Screenshot captured but vision analysis was aborted]` };
+      }
       lastError = error;
       logger.warn("vision", `Vision attempt ${attempt} failed`, { error: error.message });
 
@@ -97,5 +128,5 @@ export async function describeScreenshot(dataUrl: string): Promise<string> {
 
   const errorMsg = lastError?.message || "Unknown error";
   logger.error("vision", "Vision failed after all retries", { error: errorMsg });
-  return `[Screenshot captured but vision analysis failed: ${errorMsg}]`;
+  return { description: `[Screenshot captured but vision analysis failed: ${errorMsg}]` };
 }

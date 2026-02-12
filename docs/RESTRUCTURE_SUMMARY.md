@@ -21,7 +21,6 @@ docs/
 ├── rfc/                   # Active RFCs and proposals
 │   ├── README.md           # RFC process and current priorities
 │   ├── IMPLEMENTATION_PLAN_DOM_OPTIMIZATION.md
-│   ├── rfc-swarm-mode-configuration.md
 │   ├── rfc-content-script-api-guard.md
 │   └── archived/          # Completed implementation phases
 │       ├── README.md

@@ -10,6 +10,8 @@ The agent loop is the core orchestration engine that runs in the service worker.
 
 - `loop.ts` - Main `AgentLoop` class
 - `context.ts` - `ContextManager` for conversation history
+- `progress.ts` - `ProgressTracker` for stuck detection via snapshot fingerprinting
+- `step-labels.ts` - Human-readable step label generation for `AgentStep` timeline
 
 ## AgentLoop Class
 
@@ -26,12 +28,21 @@ class AgentLoop {
     initialUserText: string,
     tabId: number,
     initialSnapshot?: DomSnapshot,
-  ): Promise<void>;
+  ): Promise<LoopResult>;
   stop(): void;
   async resume(
     savedState: AgentLoopState,
     newSnapshot?: DomSnapshot,
   ): Promise<void>;
+
+  // Public API
+  injectHint(text: string): void;
+  getCurrentTurn(): number;
+  getOriginalQuery(): string;
+  getProgressTracker(): ProgressTracker;
+  pause(): void;
+  resume(): void;
+  isPaused(): boolean;
 }
 ```
 
@@ -167,7 +178,6 @@ You can see the current page through a distilled DOM snapshot showing interactiv
 - Navigate to URLs using navigate
 - Open, close, and switch tabs
 - Search and store information in your memory
-- Delegate complex research tasks to the Deep Thought engine using activate_swarm
 
 ## Rules
 1. ALWAYS call read_page first to understand the current page before taking any action.
@@ -176,8 +186,7 @@ You can see the current page through a distilled DOM snapshot showing interactiv
 4. If a page is loading, use wait(ms=2000) and then read_page.
 5. When you have completed the user's task, call done with a summary.
 6. Never fabricate element IDs — only use IDs from the most recent read_page result.
-7. For complex multi-step research tasks, use activate_swarm instead of manual browsing.
-8. Keep your text responses concise — the user sees your actions in the status bar.
+7. Keep your text responses concise — the user sees your actions in the status bar.
 
 ## Context
 You receive the current page state automatically. Interactive elements are shown as:
@@ -255,16 +264,21 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports 16 tools across three categories:
+The agent supports 21 tools across four categories:
 
 ### Content Script Tools (DOM)
 
 - `click_element` - Click tagged element
 - `type_text` - Type into input
-- `scroll_page` - Scroll up/down
+- `scroll_page` - Scroll up/down (supports container elements via optional `id` param)
 - `read_page` - Get page snapshot
 - `hover_element` - Hover over element
-- `find_element` - Find by text
+- `find_element` - Find by text, return tag ID for interaction
+- `select_option` - Select dropdown option
+- `press_key` - Dispatch keyboard events (with optional modifiers)
+- `drag_and_drop` - Full drag sequence between elements
+- `draw_stroke` - Mouse stroke on canvas elements
+- `hide_element` - Hide element via `display: none`
 
 ### Service Worker Tools (Chrome APIs)
 
@@ -273,20 +287,20 @@ The agent supports 16 tools across three categories:
 - `close_tab` - Close tab
 - `switch_tab` - Switch to tab
 - `wait` - Wait for duration
-- `take_screenshot` - Capture viewport
+- `take_screenshot` - Capture viewport (analyzed by vision LLM)
 
 ### Special Tools
 
 - `memory_add` - Save to memory
 - `memory_search` - Search memory
-- `activate_swarm` - Deep Thought delegation
 - `done` - Task completion
+- `escalate` - Voluntary model upgrade (switch from fast to smart model)
 
 ## Safety & Limits
 
 ### Max Turns
 
-Default: 10 turns per conversation
+Default: 25 turns per conversation (slider cap: 500)
 Prevents infinite loops and runaway agents
 
 ### Workspace Isolation
@@ -336,16 +350,49 @@ When `navigate` is called:
 
 See [Navigation Bridge](./navigation-bridge.md) for details.
 
-## Speed Mode
+## Progress Tracker
 
-When `speedMode` is enabled, the agent loop behaves differently in several key ways:
+The `ProgressTracker` (`progress.ts`) detects when the agent is stuck in a loop by fingerprinting DOM snapshots after each DOM-modifying action. If the snapshot fingerprint doesn't change for multiple consecutive turns, it intervenes:
 
-- **Parallel tool execution** — When no sequential tools (navigate, done) are present, all tool calls execute via `Promise.all` instead of sequentially.
-- **Nudge-on-text** — Text-only LLM responses don't stop the loop. Instead, the agent refreshes the snapshot and injects a nudge message telling the LLM to use tool calls.
-- **Model escalation** — After 2 consecutive text-only nudges, the agent replaces the `LLMClient` with Gemini 3 Flash via OpenRouter. If the escalated model also fails after 3 more nudges, the loop gives up.
+- **Nudge** (6 stale turns): Injects a user message suggesting alternative approaches
+- **Escalate** (12 stale turns): Fires once, suggests more drastic action changes
+- **Subsequent signals** (every 6 turns after): Repeat nudges
+
+Snapshot fingerprinting hashes `url + element count + sorted element signatures (tagName:text:isVisible)`. The tracker broadcasts `AGENT_STUCK` messages to the side panel and sends `"resolved"` when progress resumes.
+
+## Vision Bridge
+
+The `vision.ts` module provides `describeScreenshot(dataUrl)` which sends a screenshot to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter. The LLM returns a text description of the page's visual layout, which is used as the `take_screenshot` tool result instead of raw image data.
+
+## Pause / Resume
+
+The agent loop supports pausing via a Promise-based gate:
+
+- `pause()` creates a `pauseGate` Promise and sets status to `PAUSED`
+- `resume()` resolves the gate Promise and resumes the loop
+- At the top of each loop iteration, if `pauseGate` exists, the loop awaits it
+- `isPaused()` checks current state
+
+Users trigger pause/resume via `PAUSE_AGENT` / `RESUME_AGENT` messages from the side panel.
+
+## Hint Injection
+
+Users can send messages while the agent is running. These are treated as hints:
+
+- Side panel sends `USER_CHAT` with `isHint: true`
+- Background routes to `agentLoop.injectHint(text)` instead of creating a new loop
+- On the next turn, the hint is appended as a `UserMessage`: `"[User hint]: {text}"`
+
+## Unified Mode Behavior
+
+The agent loop operates in a single unified mode that combines the best behaviors:
+
+- **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot) are present, all tool calls execute via `Promise.all`.
+- **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
+- **Nudge→Escalate→Give-up** — Text-only responses trigger nudges. After 2 consecutive nudges, the model escalates from Gemini 2.0 Flash to Sonnet 4.5 via `switchModel()`. After 3 more nudges post-escalation, the loop gives up. The agent can also voluntarily escalate early by calling the `escalate` tool (e.g., when it encounters riddles, puzzles, or complex reasoning tasks).
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
-
-See [Speed Mode](../features/speed-mode.md) for full details including the comparison table and configuration.
+- **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
+- **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.
 
 ## Testing
 
@@ -357,11 +404,15 @@ See [Speed Mode](../features/speed-mode.md) for full details including the compa
 
 ## Key Files
 
-| File                              | Purpose             |
-| --------------------------------- | ------------------- |
-| `src/background/agent/loop.ts`    | AgentLoop class     |
-| `src/background/agent/context.ts` | ContextManager      |
-| `src/background/llm/client.ts`    | LLM API client      |
-| `src/background/streaming.ts`     | SSE parser          |
-| `src/background/tools/index.ts`   | Tool definitions    |
-| `src/background/security.ts`      | Risk classification |
+| File                                  | Purpose                       |
+| ------------------------------------- | ----------------------------- |
+| `src/background/agent/loop.ts`        | AgentLoop class               |
+| `src/background/agent/context.ts`     | ContextManager                |
+| `src/background/agent/progress.ts`    | ProgressTracker               |
+| `src/background/agent/step-labels.ts` | Step label generation         |
+| `src/background/llm/client.ts`        | LLM API client                |
+| `src/background/streaming.ts`         | SSE parser                    |
+| `src/background/tools/index.ts`       | Tool definitions (21 tools)   |
+| `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)   |
+| `src/background/vision.ts`            | Vision LLM bridge             |
+| `src/background/security.ts`          | Risk classification           |

@@ -10,7 +10,6 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       __DEV__: JSON.stringify(mode !== "production"),
-      __CEREBRAS_API_KEY__: JSON.stringify(env.CEREBRAS_API_KEY ?? ""),
       __OPENROUTER_API_KEY__: JSON.stringify(env.OPENROUTER_API_KEY ?? ""),
     },
     plugins: [

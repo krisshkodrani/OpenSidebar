@@ -9,11 +9,6 @@ This directory contains feature proposals, technical decisions, and implementati
 **Status:** Proposed  
 Phase-based optimization to reduce system prompt size by 70% while improving agent grounding through viewport-aware filtering, attribute whitelisting, and progressive compression.
 
-### [Swarm Mode Configuration Fix](./rfc-swarm-mode-configuration.md)
-
-**Status:** Ready to implement  
-Fixes Kimi Swarm activation by updating model identifier to `moonshotai/kimi-k2.5` and adding required `mode: "agent_swarm"` parameter.
-
 ### [Content Script API Guard](./rfc-content-script-api-guard.md)
 
 **Status:** Proposed  
@@ -87,9 +82,8 @@ Completed implementation phases and historical documents are stored in [archived
 ## Current Priorities
 
 1. **DOM Optimization** - Performance improvements for complex pages
-2. **Swarm Mode Fix** - Enable Deep Thought engine properly
-3. **Content Script Guards** - Prevent runtime errors
-4. **Shadow DOM Support** - Support modern web components
+2. **Content Script Guards** - Prevent runtime errors
+3. **Shadow DOM Support** - Support modern web components
 
 ## See Also
 

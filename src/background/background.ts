@@ -330,7 +330,12 @@ chrome.runtime.onMessage.addListener(
     ) {
       if (message.payload.isHint && agentLoop) {
         // Inject hint into running loop — don't start a new loop
+        logger.debug("agent", "User hint", { text: message.payload.text });
         agentLoop.injectHint(message.payload.text);
+        // If paused (e.g. awaiting plan approval), auto-resume after hint injection
+        if (agentLoop.isPaused()) {
+          agentLoop.resume();
+        }
       } else {
         handleUserChat(message.payload);
       }
@@ -376,13 +381,12 @@ chrome.runtime.onMessage.addListener(
 async function handleUserChat(payload: { text: string; tabId: number }) {
   const { tabId } = payload;
   const text = sanitizeUserInput(payload.text);
+  logger.debug("agent", "User message", { text, tabId });
 
   // 1. Get Settings (API Key)
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
-  const apiKey =
-    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ ||
-    settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
 
   if (!apiKey) {
     chrome.runtime.sendMessage({
@@ -394,10 +398,9 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
     return;
   }
 
-  const effectiveSpeedMode = settings.speedMode ?? false;
   const effectiveMaxTurns = settings.maxTurns || 30;
 
-  // 2. Initialize Loop if needed (challenge mode always creates fresh)
+  // 2. Initialize Loop if needed
   if (!agentLoop) {
     agentLoop = new AgentLoop(apiKey, {
       onStatusUpdate: (status, detail) => {
@@ -434,7 +437,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
           })
           .catch(() => {});
       },
-    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: effectiveMaxTurns, showElementTags: settings.showElementTags ?? false, speedMode: effectiveSpeedMode, openRouterApiKey: settings.openRouterApiKey || __OPENROUTER_API_KEY__ });
+    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: effectiveMaxTurns, showElementTags: settings.showElementTags ?? false, confirmPlan: settings.confirmPlan ?? false, showSessionMetrics: settings.showSessionMetrics ?? false });
   }
 
   // 3. Start Agent
@@ -482,10 +485,8 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
     logger.warn("agent", "Failed to get snapshot", { error: e });
   }
 
-  // Notify content script that agent is active (skip in speed mode to reduce overhead)
-  if (!effectiveSpeedMode) {
-    sendAgentActivity(tabId, true);
-  }
+  // Notify content script that agent is active
+  sendAgentActivity(tabId, true);
 
   agentLoop.start(text, tabId, snapshot);
 }
@@ -510,9 +511,7 @@ function sendAgentActivity(tabId: number, active: boolean) {
 async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
-  const apiKey =
-    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ ||
-    settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
 
   if (!apiKey) {
     chrome.runtime
@@ -564,7 +563,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
         })
         .catch(() => {});
     },
-  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false, openRouterApiKey: settings.openRouterApiKey || __OPENROUTER_API_KEY__ });
+  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, confirmPlan: settings.confirmPlan ?? false, showSessionMetrics: settings.showSessionMetrics ?? false });
 
   // Get fresh snapshot from the new page
   let snapshot = undefined;
@@ -584,10 +583,8 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
     });
   }
 
-  // Notify content script that agent is active (skip in speed mode)
-  if (!settings.speedMode) {
-    sendAgentActivity(state.activeTabId, true);
-  }
+  // Notify content script that agent is active
+  sendAgentActivity(state.activeTabId, true);
 
   // Resume from saved state
   agentLoop.resumeFromNavigation(state, snapshot);

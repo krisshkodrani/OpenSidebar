@@ -34,8 +34,20 @@ export function initializeBridge(
           state.setAgentRunning(false);
           state.clearStuckState();
           state.clearTurnProgress();
+          state.setAwaitingPlanApproval(false);
+          // Keep sessionMetrics visible after completion (cleared on next run start)
         } else {
           state.setAgentRunning(true);
+          // Clear stale metrics when a new run starts (THINKING is the first status)
+          if (message.payload.status === AgentStatus.THINKING && !state.sessionMetrics) {
+            // No-op — metrics will arrive via SESSION_METRICS
+          }
+        }
+        // Detect plan approval pause
+        if (message.payload.status === AgentStatus.PAUSED && message.payload.detail.includes("Plan ready")) {
+          state.setAwaitingPlanApproval(true);
+        } else if (message.payload.status !== AgentStatus.PAUSED) {
+          state.setAwaitingPlanApproval(false);
         }
         break;
 
@@ -99,6 +111,10 @@ export function initializeBridge(
 
       case "TASK_COMPLETION":
         state.setTaskCompletion(message.payload);
+        break;
+
+      case "SESSION_METRICS":
+        state.setSessionMetrics(message.payload);
         break;
 
       // Messages from other sources (sidepanel→background, background→content, etc.)

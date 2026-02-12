@@ -1,4 +1,4 @@
-# QSidebar — TypeScript Types Reference
+# OpenSidebar — TypeScript Types Reference
 
 > **Source of truth** for every interface, type, enum, and constant used across the project.
 > All types live in `src/types/index.ts` and are re-exported from there.
@@ -9,15 +9,17 @@
 
 1. [Enums](#enums)
 2. [Core Message Types](#core-message-types)
-3. [Agent Loop Types](#agent-loop-types)
-4. [Tool System Types](#tool-system-types)
-5. [Content Script Types](#content-script-types)
-6. [Side Panel UI Types](#side-panel-ui-types)
-7. [Memory / Second Brain Types](#memory--second-brain-types)
-8. [Workspace / Tab Group Types](#workspace--tab-group-types)
-9. [Navigation Bridge Types](#navigation-bridge-types)
-10. [Configuration Types](#configuration-types)
-11. [Utility Types](#utility-types)
+3. [Agent Feedback & Control Messages](#agent-feedback--control-messages)
+4. [Agent Loop Types](#agent-loop-types)
+5. [Agent Step Types](#agent-step-types)
+6. [Tool System Types](#tool-system-types)
+7. [Content Script Types](#content-script-types)
+8. [Side Panel UI Types](#side-panel-ui-types)
+9. [Memory / Second Brain Types](#memory--second-brain-types)
+10. [Workspace / Tab Group Types](#workspace--tab-group-types)
+11. [Navigation Bridge Types](#navigation-bridge-types)
+12. [Configuration Types](#configuration-types)
+13. [Utility Types](#utility-types)
 
 ---
 
@@ -38,10 +40,10 @@ export enum AgentStatus {
   ACTING = "ACTING",
   /** Agent has triggered navigation and is waiting for page load */
   WAITING_FOR_PAGE_LOAD = "WAITING_FOR_PAGE_LOAD",
-  /** Agent has handed off to the Kimi swarm and is awaiting results */
-  WAITING_FOR_SWARM = "WAITING_FOR_SWARM",
   /** Agent encountered an unrecoverable error */
   ERROR = "ERROR",
+  /** Agent loop is paused by user (awaiting resume) */
+  PAUSED = "PAUSED",
 }
 ```
 
@@ -61,7 +63,7 @@ export enum MessageSource {
 
 ### `ToolName`
 
-All tool names the Reflex Engine can invoke.
+All 21 tool names the agent can invoke.
 
 ```typescript
 /** Tool identifiers exposed to the LLM */
@@ -71,7 +73,6 @@ export enum ToolName {
   SCROLL_PAGE = "scroll_page",
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
-  ACTIVATE_SWARM = "activate_swarm",
   MEMORY_SEARCH = "memory_search",
   MEMORY_ADD = "memory_add",
   CREATE_TAB = "create_tab",
@@ -82,6 +83,12 @@ export enum ToolName {
   FIND_ELEMENT = "find_element",
   WAIT = "wait",
   DONE = "done",
+  SELECT_OPTION = "select_option",
+  PRESS_KEY = "press_key",
+  DRAG_AND_DROP = "drag_and_drop",
+  DRAW_STROKE = "draw_stroke",
+  HIDE_ELEMENT = "hide_element",
+  ESCALATE = "escalate",
 }
 ```
 
@@ -126,17 +133,19 @@ export interface BaseMessage {
   /** Unique request ID for correlating async responses */
   requestId: string;
   /** Where this message originated */
-  source: MessageSource;
+  source: MessageSource | string;
 }
 
 /**
- * Discriminated union of all message types.
+ * Discriminated union of all message types (26 members).
  * The `type` field is the discriminant.
  */
 export type RuntimeMessage =
   | UserChatMessage
   | AgentResponseMessage
   | AgentStatusMessage
+  | AgentStepMessage
+  | AgentActivityMessage
   | StreamChunkMessage
   | ToolExecuteMessage
   | ToolResultMessage
@@ -145,9 +154,20 @@ export type RuntimeMessage =
   | NavigationResumeMessage
   | MemoryWorkerMessage
   | MemoryWorkerResponse
-  | WorkspaceUpdateMessage
   | StopAgentMessage
-  | SettingsUpdateMessage;
+  | SettingsUpdateMessage
+  | SidePanelOpenedMessage
+  | CloseSidePanelMessage
+  | ScreenshotCapturedMessage
+  | DismissModalsMessage
+  | DismissModalsResponse
+  | AgentStuckMessage
+  | AgentTurnMessage
+  | TaskProgressMessage
+  | TaskCompletionMessage
+  | SkipSubtaskMessage
+  | PauseAgentMessage
+  | ResumeAgentMessage;
 ```
 
 ### `UserChatMessage`
@@ -163,6 +183,8 @@ export interface UserChatMessage extends BaseMessage {
     tabId: number;
     /** Active workspace ID, if any */
     workspaceId: string | null;
+    /** When true, inject as hint into running agent context (don't start new loop) */
+    isHint?: boolean;
   };
 }
 ```
@@ -239,6 +261,224 @@ export interface SettingsUpdateMessage extends BaseMessage {
 }
 ```
 
+### `SidePanelOpenedMessage`
+
+```typescript
+/** Side panel reports it has been opened/mounted */
+export interface SidePanelOpenedMessage extends BaseMessage {
+  type: "SIDE_PANEL_OPENED";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    windowId: number;
+  };
+}
+```
+
+### `CloseSidePanelMessage`
+
+```typescript
+/** Background instructs the side panel to close itself */
+export interface CloseSidePanelMessage extends BaseMessage {
+  type: "CLOSE_SIDE_PANEL";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    tabId: number;
+    windowId: number;
+  };
+}
+```
+
+### `ScreenshotCapturedMessage`
+
+```typescript
+/** Background sends a debug screenshot to the side panel for display */
+export interface ScreenshotCapturedMessage extends BaseMessage {
+  type: "SCREENSHOT_CAPTURED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    dataUrl: string;
+    context: string;
+    timestamp: number;
+  };
+}
+```
+
+### `DismissModalsMessage`
+
+```typescript
+/** Background asks the content script to auto-dismiss modals/banners */
+export interface DismissModalsMessage extends BaseMessage {
+  type: "DISMISS_MODALS";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+```
+
+### `DismissModalsResponse`
+
+```typescript
+/** Content script reports how many modals were dismissed */
+export interface DismissModalsResponse extends BaseMessage {
+  type: "DISMISS_MODALS_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: { dismissed: number };
+}
+```
+
+### `AgentStepMessage`
+
+```typescript
+/** Background sends a step update to the side panel for the timeline */
+export interface AgentStepMessage extends BaseMessage {
+  type: "AGENT_STEP";
+  source: MessageSource.BACKGROUND;
+  payload: { step: AgentStep; update: boolean };
+}
+```
+
+### `AgentActivityMessage`
+
+```typescript
+/** Background tells the content script whether the agent is actively running */
+export interface AgentActivityMessage extends BaseMessage {
+  type: "AGENT_ACTIVITY";
+  source: MessageSource.BACKGROUND;
+  payload: { active: boolean };
+}
+```
+
+---
+
+## Agent Feedback & Control Messages
+
+### `AgentStuckMessage`
+
+```typescript
+/** Background broadcasts stuck detection signals to the side panel */
+export interface AgentStuckMessage extends BaseMessage {
+  type: "AGENT_STUCK";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    signal: "nudge" | "escalate" | "resolved";
+    staleTurns: number;
+    url: string;
+    /** Human-readable explanation */
+    message: string;
+  };
+}
+```
+
+### `AgentTurnMessage`
+
+```typescript
+/** Background broadcasts turn progress to the side panel */
+export interface AgentTurnMessage extends BaseMessage {
+  type: "AGENT_TURN";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    turn: number;
+    maxTurns: number;
+  };
+}
+```
+
+### `TaskProgressMessage`
+
+```typescript
+/** Background broadcasts subtask progress to the side panel */
+export interface TaskProgressMessage extends BaseMessage {
+  type: "TASK_PROGRESS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    subtasks: SubtaskSummary[];
+    currentIndex: number;
+    /** Turns used so far across all subtasks */
+    totalTurnsUsed: number;
+  };
+}
+```
+
+### `SubtaskSummary`
+
+```typescript
+/** Summary of a single subtask within a decomposed task */
+export interface SubtaskSummary {
+  description: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  turnBudget: number;
+  result?: string;
+}
+```
+
+### `TaskCompletionMessage`
+
+```typescript
+/** Background sends structured completion report when a task finishes */
+export interface TaskCompletionMessage extends BaseMessage {
+  type: "TASK_COMPLETION";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    status: "completed" | "partial" | "failed";
+    totalTurns: number;
+    totalTimeMs: number;
+    summary: string;
+    subtaskResults: SubtaskResult[];
+    urlHistory: string[];
+  };
+}
+```
+
+### `SubtaskResult`
+
+```typescript
+/** Outcome of a single subtask within a completion report */
+export interface SubtaskResult {
+  description: string;
+  status: "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  result: string;
+}
+```
+
+### `SkipSubtaskMessage`
+
+```typescript
+/** Side panel requests skipping the current subtask */
+export interface SkipSubtaskMessage extends BaseMessage {
+  type: "SKIP_SUBTASK";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    taskId: string;
+  };
+}
+```
+
+### `PauseAgentMessage`
+
+```typescript
+/** Side panel requests pausing the agent loop */
+export interface PauseAgentMessage extends BaseMessage {
+  type: "PAUSE_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: Record<string, never>;
+}
+```
+
+### `ResumeAgentMessage`
+
+```typescript
+/** Side panel requests resuming the paused agent loop */
+export interface ResumeAgentMessage extends BaseMessage {
+  type: "RESUME_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: Record<string, never>;
+}
+```
+
 ---
 
 ## Agent Loop Types
@@ -273,7 +513,7 @@ export interface AgentLoopState {
 
 ### `ChatMessage`
 
-OpenAI-compatible chat message format (used by Cerebras and OpenRouter).
+OpenAI-compatible chat message format (used by OpenRouter).
 
 ```typescript
 /** A single message in the conversation history */
@@ -364,6 +604,27 @@ export interface SlidingWindowConfig {
 
 ---
 
+## Agent Step Types
+
+### `AgentStep`
+
+```typescript
+/** A single step in the agent's execution timeline */
+export interface AgentStep {
+  id: string;
+  type: "thinking" | "tool" | "info";
+  label: string;
+  detail?: string;
+  toolName?: ToolName;
+  status: "running" | "done" | "error";
+  timestamp: number;
+  durationMs?: number;
+  errorMessage?: string;
+}
+```
+
+---
+
 ## Tool System Types
 
 ### `ToolDefinition`
@@ -403,7 +664,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface:
+Each tool has a typed argument interface (21 tools):
 
 ```typescript
 /** Arguments for click_element */
@@ -428,25 +689,17 @@ export interface ScrollPageArgs {
   direction: ScrollDirection;
   /** Number of pixels to scroll (default: 500) */
   amount?: number;
+  /** Optional tag ID of a scrollable container. Omit to scroll the window. */
+  id?: number;
 }
 
 /** Arguments for read_page — no arguments, reads the current viewport */
-export interface ReadPageArgs {
-  // intentionally empty — reads current DOM snapshot
-}
+export type ReadPageArgs = Record<string, never>;
 
 /** Arguments for navigate */
 export interface NavigateArgs {
   /** Full URL to navigate to */
   url: string;
-}
-
-/** Arguments for activate_swarm */
-export interface ActivateSwarmArgs {
-  /** The task description for the Kimi swarm */
-  task: string;
-  /** Optional: URLs to include as context */
-  urls?: string[];
 }
 
 /** Arguments for memory_search */
@@ -484,9 +737,7 @@ export interface SwitchTabArgs {
 }
 
 /** Arguments for take_screenshot */
-export interface TakeScreenshotArgs {
-  // No args
-}
+export type TakeScreenshotArgs = Record<string, never>;
 
 /** Arguments for hover_element */
 export interface HoverElementArgs {
@@ -511,6 +762,56 @@ export interface DoneArgs {
   /** Final summary message to show the user */
   summary: string;
 }
+
+/** Arguments for select_option */
+export interface SelectOptionArgs {
+  /** The numeric tag ID of the <select> element */
+  id: number;
+  /** The option text or value to select */
+  value: string;
+}
+
+/** Arguments for press_key */
+export interface PressKeyArgs {
+  /** Key value (e.g. "Enter", "a", "ArrowDown") */
+  key: string;
+  /** Optional modifier keys to hold */
+  modifiers?: ("ctrl" | "shift" | "alt" | "meta")[];
+}
+
+/** Arguments for drag_and_drop */
+export interface DragAndDropArgs {
+  /** Tag ID of the element to drag from */
+  sourceId: number;
+  /** Tag ID of the element to drop onto */
+  targetId: number;
+}
+
+/** Arguments for draw_stroke */
+export interface DrawStrokeArgs {
+  /** Tag ID of the canvas element */
+  id: number;
+  /** Start X offset from element top-left */
+  startX: number;
+  /** Start Y offset from element top-left */
+  startY: number;
+  /** End X offset from element top-left */
+  endX: number;
+  /** End Y offset from element top-left */
+  endY: number;
+}
+
+/** Arguments for hide_element */
+export interface HideElementArgs {
+  /** The numeric tag ID of the element to hide */
+  id: number;
+}
+
+/** Arguments for escalate — voluntary model upgrade */
+export interface EscalateArgs {
+  /** Why the fast model can't handle this (e.g. "riddle requires multi-step reasoning") */
+  reason: string;
+}
 ```
 
 ### `ToolRouter`
@@ -528,7 +829,6 @@ export type ToolArgsMap = {
   [ToolName.SCROLL_PAGE]: ScrollPageArgs;
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
-  [ToolName.ACTIVATE_SWARM]: ActivateSwarmArgs;
   [ToolName.MEMORY_SEARCH]: MemorySearchArgs;
   [ToolName.MEMORY_ADD]: MemoryAddArgs;
   [ToolName.CREATE_TAB]: CreateTabArgs;
@@ -539,6 +839,12 @@ export type ToolArgsMap = {
   [ToolName.FIND_ELEMENT]: FindElementArgs;
   [ToolName.WAIT]: WaitArgs;
   [ToolName.DONE]: DoneArgs;
+  [ToolName.SELECT_OPTION]: SelectOptionArgs;
+  [ToolName.PRESS_KEY]: PressKeyArgs;
+  [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
+  [ToolName.DRAW_STROKE]: DrawStrokeArgs;
+  [ToolName.HIDE_ELEMENT]: HideElementArgs;
+  [ToolName.ESCALATE]: EscalateArgs;
 };
 ```
 
@@ -579,7 +885,7 @@ export interface TaggedElement {
   role: string;
   /** Visible text content (truncated to 80 chars) */
   text: string;
-  /** Key attributes: href, placeholder, aria-label, type, name */
+  /** Key attributes: href, placeholder, aria-label, type, name, label */
   attributes: Record<string, string>;
   /** Bounding rect relative to viewport */
   rect: ElementRect;
@@ -614,6 +920,8 @@ export interface DomSnapshotRequest extends BaseMessage {
     includeText: boolean;
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
+    /** Whether to render visual [N] tag overlays on the page */
+    showTags?: boolean;
   };
 }
 ```
@@ -682,6 +990,35 @@ export interface ChatEntry {
   toolCalls: ToolCallSummary[];
   /** Whether this message is still being streamed */
   isStreaming: boolean;
+  /** Real-time step timeline for agent execution */
+  steps?: AgentStep[];
+  /** Whether this user message was sent as a hint during execution */
+  isHint?: boolean;
+  /** Structured completion data — when present, MessageBubble renders CompletionSummary */
+  completionData?: TaskCompletionMessage["payload"];
+}
+```
+
+### `StuckState`
+
+```typescript
+/** Stuck detection state for the side panel */
+export interface StuckState {
+  signal: "nudge" | "escalate";
+  staleTurns: number;
+  url: string;
+  /** Timestamp of the stuck signal (for auto-dismiss timing) */
+  receivedAt: number;
+}
+```
+
+### `TurnProgress`
+
+```typescript
+/** Turn progress state for the side panel */
+export interface TurnProgress {
+  turn: number;
+  maxTurns: number;
 }
 ```
 
@@ -700,14 +1037,18 @@ export interface SidePanelState {
   inputText: string;
   /** Whether the agent is running (disables input) */
   isAgentRunning: boolean;
-  /** Active workspace for context isolation */
-  activeWorkspace: Workspace | null;
-  /** All known workspaces */
-  workspaces: Workspace[];
   /** User settings */
   settings: UserSettings;
   /** Error message to display, if any */
   error: string | null;
+  /** Active task decomposition progress (null when no decomposed task) */
+  taskProgress: TaskProgressMessage["payload"] | null;
+  /** Completed task report (null until task finishes) */
+  taskCompletion: TaskCompletionMessage["payload"] | null;
+  /** Non-null when the agent is detected as stuck */
+  stuckState: StuckState | null;
+  /** Current turn progress (null when agent is idle) */
+  turnProgress: TurnProgress | null;
 }
 ```
 
@@ -805,36 +1146,21 @@ export interface FTS5Row {
 ### `Workspace`
 
 ```typescript
-/** A named workspace backed by a Chrome Tab Group */
 export interface Workspace {
-  /** UUID v4 */
   id: string;
-  /** Human-readable workspace name */
   name: string;
-  /** Chrome tab group ID (-1 if not yet created) */
-  tabGroupId: number;
-  /** Tab group color */
-  color: chrome.tabGroups.ColorEnum;
-  /** Tab IDs belonging to this workspace */
+  color:
+    | "grey"
+    | "blue"
+    | "red"
+    | "yellow"
+    | "green"
+    | "pink"
+    | "purple"
+    | "cyan"
+    | "orange";
+  tabGroupId: number | null;
   tabIds: number[];
-  /** Whether this workspace is currently active */
-  isActive: boolean;
-  /** Unix timestamp of creation */
-  createdAt: number;
-}
-```
-
-### `WorkspaceUpdateMessage`
-
-```typescript
-/** Workspace state changed — broadcast to side panel */
-export interface WorkspaceUpdateMessage extends BaseMessage {
-  type: "WORKSPACE_UPDATE";
-  source: MessageSource.BACKGROUND;
-  payload: {
-    workspaces: Workspace[];
-    activeWorkspaceId: string | null;
-  };
 }
 ```
 
@@ -845,17 +1171,17 @@ export interface WorkspaceUpdateMessage extends BaseMessage {
 ### `NavigationState`
 
 ```typescript
-/** State persisted to chrome.storage.local for navigation survival */
+/** State persisted to chrome.storage.local during page navigations */
 export interface NavigationState {
-  /** The full agent loop state at time of navigation */
+  /** Full agent loop state to restore */
   agentState: AgentLoopState;
-  /** URL we navigated away from */
+  /** URL before navigation started */
   fromUrl: string;
-  /** URL we expect to arrive at */
+  /** Expected destination URL (null for click-triggered navigations) */
   toUrl: string | null;
-  /** Timestamp of navigation start */
+  /** Timestamp when navigation started (for timeout detection) */
   navigationStartTs: number;
-  /** Timeout in ms before giving up (default: 30000) */
+  /** Timeout in milliseconds (default: 30000) */
   timeoutMs: number;
 }
 ```
@@ -863,15 +1189,13 @@ export interface NavigationState {
 ### `NavigationResumeMessage`
 
 ```typescript
-/** Background tells the side panel that navigation completed and agent is resuming */
 export interface NavigationResumeMessage extends BaseMessage {
   type: "NAVIGATION_RESUME";
   source: MessageSource.BACKGROUND;
   payload: {
-    /** The URL that was loaded */
+    success: boolean;
     url: string;
-    /** Whether this was the expected URL */
-    isExpectedUrl: boolean;
+    error?: string;
   };
 }
 ```
@@ -883,13 +1207,10 @@ export interface NavigationResumeMessage extends BaseMessage {
 ### `UserSettings`
 
 ```typescript
-/** User-configurable settings stored in chrome.storage.sync */
 export interface UserSettings {
-  /** Cerebras API key */
-  cerebrasApiKey: string;
-  /** OpenRouter API key (for Kimi k2.5 swarm) */
+  /** OpenRouter API key */
   openRouterApiKey: string;
-  /** Maximum agent loop turns per request (default: 25) */
+  /** Maximum agent loop turns per request (default: 25, slider cap: 500) */
   maxTurns: number;
   /** Sliding window max tokens (default: 16000) */
   contextWindowSize: number;
@@ -899,32 +1220,12 @@ export interface UserSettings {
   workspaceEnabled: boolean;
   /** Theme: follows system by default */
   theme: "light" | "dark" | "system";
-}
-```
-
-### `StorageSchema`
-
-```typescript
-/**
- * Complete schema for chrome.storage.local.
- * Every key that QSidebar writes to storage is defined here.
- */
-export interface StorageSchema {
-  /** Persisted agent state for navigation bridge */
-  "qsidebar:agentState": NavigationState | null;
-  /** Workspace list */
-  "qsidebar:workspaces": Workspace[];
-  /** Active workspace ID */
-  "qsidebar:activeWorkspaceId": string | null;
-  /** Whether the memory system has been initialized */
-  "qsidebar:memoryInitialized": boolean;
-}
-
-/**
- * Schema for chrome.storage.sync (synced across devices).
- */
-export interface SyncStorageSchema {
-  "qsidebar:settings": UserSettings;
+  /** Show visual [N] tag overlays on page elements (debugging aid) */
+  showElementTags: boolean;
+  /** OpenRouter model ID for vision/screenshot analysis (default: google/gemini-2.0-flash-001) */
+  visionModel: string;
+  /** Whether to show a plan confirmation step before executing multi-step tasks */
+  confirmPlan: boolean;
 }
 ```
 
@@ -932,67 +1233,11 @@ export interface SyncStorageSchema {
 
 ## Utility Types
 
-### `Result<T>`
+### `Result<T, E>`
 
 ```typescript
 /** A discriminated union for success/error returns (no exceptions) */
-export type Result<T> =
+export type Result<T, E = Error> =
   | { ok: true; value: T }
-  | { ok: false; error: string };
-```
-
-### `DeepPartial<T>`
-
-```typescript
-/** Recursively makes all properties optional */
-export type DeepPartial<T> = {
-  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
-};
-```
-
-### `Prettify<T>`
-
-```typescript
-/** Flattens intersection types for better IDE hover display */
-export type Prettify<T> = {
-  [K in keyof T]: T[K];
-} & {};
-```
-
----
-
-## Constants
-
-```typescript
-/** Storage key prefix to avoid collisions with other extensions */
-export const STORAGE_PREFIX = "qsidebar:" as const;
-
-/** Maximum number of tagged elements per DOM snapshot */
-export const MAX_TAGGED_ELEMENTS = 200;
-
-/** Maximum viewport text length (chars) sent to LLM */
-export const MAX_VIEWPORT_TEXT_LENGTH = 4000;
-
-/** Default sliding window configuration */
-export const DEFAULT_SLIDING_WINDOW_CONFIG: SlidingWindowConfig = {
-  maxTokens: 16_000,
-  preserveRecentCount: 4,
-  preserveSystemMessage: true,
-  systemPromptTokenBudget: 2000,
-};
-
-/** Navigation bridge timeout (ms) */
-export const NAVIGATION_TIMEOUT_MS = 30_000;
-
-/** Maximum agent loop turns per user request */
-export const DEFAULT_MAX_TURNS = 25;
-
-/** Service worker keepalive interval (ms) — must be < 30s */
-export const KEEPALIVE_INTERVAL_MS = 25_000;
-
-/** Embedding model dimensions (MiniLM-L6-v2) */
-export const EMBEDDING_DIMENSIONS = 384;
-
-/** RRF fusion constant k */
-export const RRF_K = 60;
+  | { ok: false; error: E };
 ```

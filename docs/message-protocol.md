@@ -1,4 +1,4 @@
-# QSidebar — Message Passing Protocol
+# OpenSidebar — Message Passing Protocol
 
 > **Complete specification** of every message exchanged between extension contexts.
 > All message types are defined in [`types-reference.md`](./types-reference.md).
@@ -18,7 +18,7 @@
 
 ## Overview
 
-QSidebar has four execution contexts that communicate via Chrome's messaging APIs:
+OpenSidebar has four execution contexts that communicate via Chrome's messaging APIs:
 
 | Context | Process | Lifecycle | File |
 |---------|---------|-----------|------|
@@ -143,9 +143,12 @@ function sendAndWait<T extends RuntimeMessage>(
 
 | Message Type | Purpose | Payload | Expected Response |
 |---|---|---|---|
-| `USER_CHAT` | User sends a chat message | `{ text, tabId, workspaceId }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
+| `USER_CHAT` | User sends a chat message | `{ text, tabId, workspaceId, isHint? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
 | `STOP_AGENT` | User clicks stop button | `{}` | `AGENT_STATUS` with `status: IDLE` |
 | `SETTINGS_UPDATE` | User changes settings | `{ settings: Partial<UserSettings> }` | `{ ok: true }` (sync response) |
+| `PAUSE_AGENT` | User pauses agent execution | `{}` | `AGENT_STATUS` with `status: PAUSED` |
+| `RESUME_AGENT` | User resumes paused agent | `{}` | `AGENT_STATUS` with `status: THINKING` |
+| `SKIP_SUBTASK` | User skips current subtask | `{ taskId }` | — |
 
 ### Service Worker → Side Panel
 
@@ -154,15 +157,20 @@ function sendAndWait<T extends RuntimeMessage>(
 | `AGENT_STATUS` | Agent state machine changed | `{ status: AgentStatus, detail: string }` |
 | `STREAM_CHUNK` | Incremental LLM output | `{ delta: string, done: boolean }` |
 | `AGENT_RESPONSE` | Final agent response for a turn | `{ text, isStreaming, toolCalls }` |
-| `NAVIGATION_RESUME` | Page load completed after navigation | `{ url, isExpectedUrl }` |
-| `WORKSPACE_UPDATE` | Workspace list changed | `{ workspaces, activeWorkspaceId }` |
+| `NAVIGATION_RESUME` | Page load completed after navigation | `{ success, url, error? }` |
+| `AGENT_STEP` | Step timeline update | `{ step: AgentStep, update: boolean }` |
+| `AGENT_STUCK` | Agent stuck detection signal | `{ signal, staleTurns, url, message }` |
+| `AGENT_TURN` | Turn progress update | `{ turn, maxTurns }` |
+| `TASK_PROGRESS` | Subtask progress update | `{ taskId, subtasks, currentIndex, totalTurnsUsed }` |
+| `TASK_COMPLETION` | Task completion report | `{ taskId, status, totalTurns, totalTimeMs, summary, subtaskResults, urlHistory }` |
 
 ### Service Worker → Content Script
 
 | Message Type | Purpose | Payload | Expected Response |
 |---|---|---|---|
-| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation | `{ includeText, refresh }` | `DOM_SNAPSHOT_RESPONSE` |
+| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation | `{ includeText, refresh, showTags? }` | `DOM_SNAPSHOT_RESPONSE` |
 | `TOOL_EXECUTE` | Execute a DOM action | `{ toolName, args, toolCallId }` | `TOOL_RESULT` |
+| `DISMISS_MODALS` | Auto-dismiss modal overlays | `{}` | `DISMISS_MODALS_RESPONSE` |
 
 ### Content Script → Service Worker
 
@@ -170,6 +178,7 @@ function sendAndWait<T extends RuntimeMessage>(
 |---|---|---|
 | `DOM_SNAPSHOT_RESPONSE` | Return DOM snapshot | `{ snapshot: DomSnapshot, durationMs }` |
 | `TOOL_RESULT` | Return tool execution result | `{ toolCallId, success, result, navigated }` |
+| `DISMISS_MODALS_RESPONSE` | Report dismissed modals count | `{ dismissed: number }` |
 
 ### Service Worker → Offscreen Document
 
@@ -264,26 +273,51 @@ Service Worker       Offscreen Document       Web Worker
     │                       │                       │
 ```
 
-### 4. Swarm Handoff
+### 4. Pause / Resume
 
 ```
-Side Panel          Service Worker                    OpenRouter API
-    │                     │                                  │
-    │← AGENT_STATUS ────  │ (WAITING_FOR_SWARM)              │
-    │                     │                                  │
-    │                     │── POST /chat/completions ──────→ │
-    │                     │   (model: kimi-k2.5, task)       │
-    │                     │                                  │ (agent swarm
-    │                     │                                  │  sub-agents run)
-    │                     │                                  │
-    │                     │←── SSE stream ──────────────────  │
-    │← STREAM_CHUNK ──── │                                  │
-    │← STREAM_CHUNK ──── │                                  │
-    │                     │                                  │
-    │                     │ (parse swarm report)             │
-    │← AGENT_STATUS ────  │ (status: THINKING)               │
-    │                     │ (feed report to Cerebras)        │
-    │                     │                                  │
+Side Panel          Service Worker
+    │                     │
+    │── PAUSE_AGENT ────→ │
+    │                     │ (set pauseGate promise)
+    │← AGENT_STATUS ────  │ (status: PAUSED)
+    │                     │ ... (loop awaits gate) ...
+    │── RESUME_AGENT ───→ │
+    │                     │ (resolve pauseGate)
+    │← AGENT_STATUS ────  │ (status: THINKING)
+    │                     │ (loop continues)
+    │                     │
+```
+
+### 5. Stuck Detection
+
+```
+Side Panel          Service Worker          Content Script
+    │                     │                       │
+    │                     │ (ProgressTracker detects stale snapshot)
+    │← AGENT_STUCK ─────  │ (signal: "nudge", staleTurns: 6)
+    │                     │                       │
+    │                     │ (injects nudge into LLM context)
+    │                     │── TOOL_EXECUTE ──────→ │
+    │                     │←── TOOL_RESULT ──────  │
+    │                     │                       │
+    │                     │ (snapshot changed → progress detected)
+    │← AGENT_STUCK ─────  │ (signal: "resolved")
+    │                     │                       │
+```
+
+### 6. Turn Progress Tracking
+
+```
+Side Panel          Service Worker
+    │                     │
+    │                     │ (top of each loop iteration)
+    │← AGENT_TURN ──────  │ (turn: 14, maxTurns: 100)
+    │                     │
+    │                     │ ... (LLM + tool execution) ...
+    │                     │
+    │← AGENT_TURN ──────  │ (turn: 15, maxTurns: 100)
+    │                     │
 ```
 
 ---
@@ -319,8 +353,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 |---|---|---|
 | DOM snapshot request | 5,000 ms | Return error to agent: "Page not responding" |
 | Tool execution | 10,000 ms | Return error to agent: "Action timed out" |
-| LLM API call (Cerebras) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel |
-| LLM API call (OpenRouter/Kimi) | 120,000 ms | Set `AgentStatus.ERROR`, notify side panel |
+| LLM API call (OpenRouter) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel |
 | Navigation bridge wait | 30,000 ms | Abort navigation, set `AgentStatus.ERROR` |
 | Memory worker init | 15,000 ms | Disable memory features, warn user |
 

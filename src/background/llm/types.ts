@@ -31,14 +31,19 @@ export interface CompletionRequest {
     signal?: AbortSignal;
 }
 
+/** Token usage data returned by OpenRouter in every response */
+export interface TokenUsage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    /** Cost in USD charged by OpenRouter (returned directly in response) */
+    cost?: number;
+}
+
 export interface CompletionResponse {
     role: "assistant";
     content: string | null;
     tool_calls?: ToolCall[];
     finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | "error";
-    usage?: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-    };
+    usage?: TokenUsage;
 }

@@ -44,7 +44,6 @@ export interface RunnerOptions {
 export class EvaluationRunner {
   private options: RunnerOptions;
   private apiKey?: string;
-  private provider?: "cerebras" | "openrouter";
   private judge?: JudgeModel;
 
   constructor(options: RunnerOptions = {}) {
@@ -70,9 +69,8 @@ export class EvaluationRunner {
     registerTools();
 
     try {
-      const { apiKey, provider } = await getApiKey();
+      const { apiKey } = await getApiKey();
       this.apiKey = apiKey;
-      this.provider = provider;
 
       // Create judge if enabled (skipped in mock mode)
       // Judge always uses openai/gpt-5-mini via OpenRouter

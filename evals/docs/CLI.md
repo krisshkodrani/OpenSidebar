@@ -273,7 +273,7 @@ jobs:
       - name: Run evaluations
         run: bun evals --compare baseline --fail-on-regression
         env:
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 ## Exit Codes
@@ -295,12 +295,12 @@ export OPENAI_API_KEY=sk-...
 bun evals --suggest
 ```
 
-### `CEREBRAS_API_KEY`
+### `OPENROUTER_API_KEY`
 
 Required for running evaluations with real LLM.
 
 ```bash
-export CEREBRAS_API_KEY=...
+export OPENROUTER_API_KEY=...
 bun evals
 ```
 
@@ -415,7 +415,7 @@ echo "id: test-001" > evals/golden/cases/test.yaml
 Set the required API key:
 
 ```bash
-export CEREBRAS_API_KEY=...
+export OPENROUTER_API_KEY=...
 # or
 export OPENAI_API_KEY=...
 ```

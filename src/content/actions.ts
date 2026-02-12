@@ -10,7 +10,7 @@ import {
     DrawStrokeArgs,
     HideElementArgs,
 } from "../types";
-import { getTagMap, getVisibleText, addDynamicTag } from "./tagging";
+import { getTagMap, getVisibleText, addDynamicTag, truncateText } from "./tagging";
 import { buildSnapshot } from "./snapshot";
 
 export async function executeAction(
@@ -271,10 +271,91 @@ function executeHover(args: { id: number }): { success: boolean; result: string;
 
 function executeFindElement(args: { text: string }): { success: boolean; result: string; navigated: boolean } {
     const found = (window as any).find(args.text);
+    if (!found) {
+        return { success: false, result: `Text "${args.text}" not found on this page`, navigated: false };
+    }
+
+    // Locate the DOM node via the selection created by window.find()
+    const sel = window.getSelection();
+    const anchorNode = sel?.anchorNode;
+
+    // Clear selection to avoid visual artifacts
+    sel?.removeAllRanges();
+
+    if (!anchorNode) {
+        return { success: true, result: `Found "${args.text}" but could not locate its DOM node`, navigated: false };
+    }
+
+    // Walk up from the text node to find the nearest interactive or semantic container
+    const INTERACTIVE = "a[href],button,input,textarea,select,[role='button'],[role='link'],[role='tab'],[contenteditable='true']";
+    const SEMANTIC_TAGS = new Set(["p", "li", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "form", "label", "figcaption", "blockquote", "summary", "dt", "dd"]);
+
+    let target: Element | null = anchorNode.nodeType === Node.ELEMENT_NODE
+        ? anchorNode as Element
+        : anchorNode.parentElement;
+
+    let matched: Element | null = null;
+    while (target && target !== document.body) {
+        if (target.matches(INTERACTIVE)) {
+            matched = target;
+            break;
+        }
+        if (SEMANTIC_TAGS.has(target.tagName.toLowerCase())) {
+            matched = target;
+            break;
+        }
+        target = target.parentElement;
+    }
+
+    // Fallback: use the direct parent element
+    if (!matched) {
+        matched = anchorNode.nodeType === Node.ELEMENT_NODE
+            ? anchorNode as Element
+            : anchorNode.parentElement;
+    }
+
+    if (!matched) {
+        return { success: true, result: `Found "${args.text}" but could not locate a container element`, navigated: false };
+    }
+
+    // Drill down: if matched is a non-interactive container (p, form, div, etc.),
+    // check for a more specific interactive or cursor:pointer child containing the text
+    if (!matched.matches(INTERACTIVE)) {
+        const searchText = args.text.toLowerCase();
+        // First: check for an interactive child containing the text
+        const interactiveChild = matched.querySelector(INTERACTIVE);
+        if (interactiveChild && interactiveChild.textContent?.toLowerCase().includes(searchText)) {
+            matched = interactiveChild;
+        } else {
+            // Second: check for cursor:pointer children containing the text
+            const children = matched.querySelectorAll("*");
+            for (const child of children) {
+                if (!child.textContent?.toLowerCase().includes(searchText)) continue;
+                try {
+                    const style = window.getComputedStyle(child);
+                    if (style.cursor === "pointer") {
+                        matched = child;
+                        break;
+                    }
+                } catch {
+                    // getComputedStyle can fail
+                }
+            }
+        }
+    }
+
+    // Scroll the found element into view
+    matched.scrollIntoView({ behavior: "instant", block: "center" });
+
+    // Assign a tag ID for interaction
+    const tagId = addDynamicTag(matched);
+    const tagName = matched.tagName.toLowerCase();
+    const context = truncateText(getVisibleText(matched), 50);
+
     return {
-        success: !!found,
-        result: found ? `Found "${args.text}"` : `Text "${args.text}" not found`,
-        navigated: false
+        success: true,
+        result: `Found "${args.text}" near [${tagId}] <${tagName}> "${context}". Use tag [${tagId}] to interact with it.`,
+        navigated: false,
     };
 }
 

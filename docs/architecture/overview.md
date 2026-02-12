@@ -24,16 +24,16 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │                  Agent Loop                        │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │   │
 │  │  │  LLM     │  │ Context  │  │   Tool Registry  │  │   │
-│  │  │ Client   │  │ Manager  │  │   (16 tools)     │  │   │
+│  │  │ Client   │  │ Manager  │  │   (21 tools)     │  │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘  │   │
 │  └────────────────────────────────────────────────────┘   │
 │                         │                                   │
 │         ┌───────────────┼───────────────┐                   │
 │         ▼               ▼               ▼                   │
-│  ┌──────────┐   ┌────────────┐   ┌────────────┐           │
-│  │ Swarm    │   │ Navigation │   │ Memory     │           │
-│  │ (Kimi)   │   │ Bridge     │   │ Bridge     │           │
-│  └──────────┘   └────────────┘   └────────────┘           │
+│  ┌────────────┐            ┌────────────┐                  │
+│  │ Navigation │            │ Memory     │                  │
+│  │ Bridge     │            │ Bridge     │                  │
+│  └────────────┘            └────────────┘                  │
 │                                              │              │
 └──────────────────────────────────────────────┼──────────────┘
                                                │
@@ -105,8 +105,9 @@ Background → Side Panel: AGENT_RESPONSE (resumed)
 | **Package Manager** | Bun                                |
 | **UI**              | React 18 + Tailwind CSS 3.4        |
 | **State**           | Zustand + Immer                    |
-| **Fast LLM**        | Cerebras API (GPT-OSS-120b)        |
-| **Research LLM**    | OpenRouter API (Kimi k2.5)         |
+| **Fast LLM**        | OpenRouter (Gemini 2.0 Flash)      |
+| **Smart LLM**       | OpenRouter (Claude Sonnet 4.5, via model escalation) |
+| **Vision LLM**      | OpenRouter API (configurable, default Gemini 2.0 Flash) |
 | **Embeddings**      | Transformers.js (all-MiniLM-L6-v2) |
 | **Vector Search**   | Voy (WASM)                         |
 | **Keyword Search**  | SQLite WASM (FTS5)                 |
@@ -120,18 +121,21 @@ src/
 │   ├── background.ts    # Entry point
 │   ├── agent/
 │   │   ├── loop.ts      # AgentLoop orchestration
-│   │   └── context.ts   # ContextManager (sliding window)
+│   │   ├── context.ts   # ContextManager (sliding window)
+│   │   ├── progress.ts  # ProgressTracker (stuck detection)
+│   │   └── step-labels.ts # Step label generation
 │   ├── llm/
-│   │   ├── client.ts    # Cerebras/OpenRouter clients
+│   │   ├── client.ts    # OpenRouter LLM client
 │   │   └── types.ts     # LLM types
 │   ├── tools/
-│   │   ├── index.ts     # 16 tool definitions
-│   │   └── registry.ts  # ToolRegistry
+│   │   ├── index.ts     # 21 tool definitions
+│   │   ├── registry.ts  # ToolRegistry
+│   │   └── metadata.ts  # ToolMeta, pre-computed sets
 │   ├── memory/
 │   │   └── bridge.ts    # Offscreen communication
 │   ├── workspaces/
 │   │   └── manager.ts   # Workspace/Tab Group management
-│   ├── swarm.ts         # Kimi k2.5 delegation
+│   ├── vision.ts        # Vision LLM bridge (screenshot descriptions)
 │   ├── navigation.ts    # Navigation Bridge
 │   ├── keepalive.ts     # SW keepalive alarm
 │   ├── streaming.ts     # SSE parser
@@ -140,13 +144,15 @@ src/
 │   ├── content.ts       # Message listener
 │   ├── snapshot.ts      # DOM distillation
 │   ├── tagging.ts       # Element tagging
-│   ├── actions.ts       # Tool execution
-│   └── janitor.ts       # Cookie banner dismissal
+│   └── actions.ts       # Tool execution (DOM actions)
 ├── sidepanel/           # React UI
 │   ├── App.tsx
 │   ├── store.ts         # Zustand state
-│   ├── bridge.ts        # Background message handling
+│   ├── bridge.ts        # Message routing (exhaustive switch)
 │   └── components/      # UI components
+│       ├── StuckBanner.tsx
+│       ├── TaskProgressPanel.tsx
+│       └── ...
 ├── offscreen/           # Offscreen document
 │   └── memory/
 │       ├── main.ts      # SQLite + Voy coordination
@@ -170,11 +176,17 @@ All inter-context communication uses typed discriminated unions:
 
 ```typescript
 type RuntimeMessage =
-    | UserChatMessage
-    | AgentResponseMessage
-    | StreamChunkMessage
-    | ToolExecuteMessage
-    | ...;
+    | UserChatMessage        // Side panel → background
+    | AgentResponseMessage   // Background → side panel
+    | AgentStatusMessage     // Background → side panel
+    | StreamChunkMessage     // Background → side panel
+    | ToolExecuteMessage     // Background → content script
+    | AgentStuckMessage      // Background → side panel (stuck detection)
+    | AgentTurnMessage       // Background → side panel (turn progress)
+    | TaskProgressMessage    // Background → side panel (subtask progress)
+    | PauseAgentMessage      // Side panel → background
+    | ResumeAgentMessage     // Side panel → background
+    | ...;                   // 26 members total
 ```
 
 Every message has:
@@ -230,7 +242,7 @@ Tools classified by risk level:
 
 - **LOW:** Read-only (read_page, scroll_page, memory_search)
 - **MEDIUM:** Mutates state (click_element, type_text, memory_add)
-- **HIGH:** Navigation/tabs (navigate, close_tab, activate_swarm)
+- **HIGH:** Navigation/tabs (navigate, create_tab, close_tab)
 
 Risk displayed in UI but not blocking (autonomous agent model).
 

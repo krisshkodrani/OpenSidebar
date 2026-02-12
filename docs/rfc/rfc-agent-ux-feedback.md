@@ -1,6 +1,6 @@
 # RFC: Agent UX Feedback — Progress Visibility, Stuck Surfaces, and User Control
 
-**Status:** Proposed (design phase)
+**Status:** Implemented (core features)
 **Author:** OpenSidebar team
 **Date:** 2026-02-12
 **Depends on:** [RFC: Progress Tracker](./rfc-progress-tracker.md) (Phase 1 implemented, Phase 2 proposed), [RFC: Task Decomposition](./rfc-task-decomposition.md) (proposed)
@@ -413,14 +413,6 @@ interface AgentTurnMessage extends BaseMessage {
 
 **UI:** `ControlBar` displays `"Turn 14 / 100"` as a small label next to the stop button. Turns orange at 80% budget, red at 95%.
 
-### Speed Mode UX
-
-When `speedMode` is active, the agent runs faster but produces less streaming output. Adjustments:
-
-- **Always-expanded `StepTimeline`:** In speed mode, the step timeline in `MessageBubble` defaults to expanded (not collapsed). Since stream deltas are skipped, the timeline is the primary progress indicator.
-- **Heartbeat info steps:** Every 20 turns, emit an `AgentStep` with `type: "info"` and a label like `"Turn 40 — still working on example.com/form"`. This gives the user a periodic signal that the agent is alive.
-- **Turn counter always visible:** In speed mode, the `ControlBar` turn counter is always shown (even if the user hasn't expanded settings).
-
 ### Extension Badge
 
 Use `chrome.action.setBadgeText` to show agent state in the extension icon:
@@ -497,6 +489,36 @@ Move progress tracking to the extension popup (the icon click target) instead of
 ### 3. Web notifications instead of Chrome notifications
 
 Use the `Notification` API from the side panel instead of `chrome.notifications`. Works but doesn't fire when the side panel is closed. Chrome notifications persist in the notification center.
+
+---
+
+## Implementation Notes
+
+The following features from this RFC have been implemented:
+
+**Implemented:**
+- All message types (`AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `SKIP_SUBTASK`, `PAUSE_AGENT`, `RESUME_AGENT`) added to `src/types/index.ts`
+- `AgentStatus.PAUSED` added to the enum
+- `AgentLoop` public API: `injectHint()`, `pause()`, `resume()`, `isPaused()`, `getCurrentTurn()`, `getOriginalQuery()`, `getProgressTracker()`; `start()` returns `LoopResult`
+- `AGENT_STUCK` broadcast wired to ProgressTracker (nudge/escalate/resolved signals)
+- `AGENT_TURN` broadcast at top of each loop iteration (throttled in speed mode: turn 1 or every 5)
+- Pause/resume gate in `AgentLoop` with Promise-based blocking
+- `PAUSE_AGENT`/`RESUME_AGENT` handlers in `background.ts`
+- Hint injection via `isHint` flag on `USER_CHAT` → `agentLoop.injectHint()`
+- `bridge.ts` exhaustive message router with `never` check
+- Zustand store: `taskProgress`, `taskCompletion`, `stuckState`, `turnProgress` state fields + actions
+- `StuckBanner` component (dismissible, nudge vs escalate styling)
+- `TaskProgressPanel` component (subtask list with status icons, completion summary)
+- `ControlBar` pause/resume buttons, turn counter
+- `InputArea` hint mode (enabled during agent run, amber "Send hint" button)
+- `MessageBubble` CompletionSummary card, hint badge
+- `ContextManager.clearHistory()` (reset history preserving DOM snapshot)
+- `ChatEntry` extended with `steps`, `isHint`, `completionData`
+
+**Not yet implemented (future work):**
+- Extension badge (`chrome.action.setBadgeText`) — P4
+- Chrome notifications on completion — P4
+- `notifyOnCompletion` setting — P4
 
 ---
 

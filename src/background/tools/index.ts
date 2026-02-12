@@ -2,20 +2,26 @@ import { toolRegistry } from "./registry";
 import {
   ToolName,
   ToolDefinition,
-  ActivateSwarmArgs,
   MessageSource,
   UserSettings,
 } from "../../types";
 import { logger } from "../../utils";
 import { sendMessageToMemory } from "../memory/bridge";
-import { callKimiSwarm } from "../swarm";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
 import { describeScreenshot } from "../vision";
+import { TokenUsage } from "../llm/types";
 
 // Export registry and types
 export * from "./registry";
+
+/** Callback for reporting vision usage to the agent loop. Set by AgentLoop before starting. */
+let visionUsageCallback: ((usage: TokenUsage, durationMs: number, model: string) => void) | null = null;
+
+export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null): void {
+  visionUsageCallback = cb;
+}
 
 // --- Tool Definitions ---
 
@@ -33,29 +39,6 @@ const CLICK_DEF: ToolDefinition = {
         },
       },
       required: ["id"],
-    },
-  },
-};
-
-const SWARM_DEF: ToolDefinition = {
-  type: "function",
-  function: {
-    name: ToolName.ACTIVATE_SWARM,
-    description: "Delegate complex research to a deep research model.",
-    parameters: {
-      type: "object",
-      properties: {
-        task: {
-          type: "string",
-          description: "Research topic or question.",
-        },
-        urls: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional URLs to investigate.",
-        },
-      },
-      required: ["task"],
     },
   },
 };
@@ -110,7 +93,7 @@ const READ_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_PAGE,
-    description: "Re-scan page for fresh elements and text.",
+    description: "Re-scan page for fresh elements and text. Use after find_element fails, after page state changes, or when unsure which elements are available.",
     parameters: {
       type: "object",
       properties: {},
@@ -259,7 +242,7 @@ const TAKE_SCREENSHOT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TAKE_SCREENSHOT,
-    description: "Capture and describe the visual layout.",
+    description: "Capture and describe the visual layout. Use when stuck, when text-based tools give unexpected results, or to understand spatial relationships.",
     parameters: {
       type: "object",
       properties: {},
@@ -290,7 +273,7 @@ const FIND_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.FIND_ELEMENT,
-    description: "Find an element by text. Scrolls to it.",
+    description: "Find text on the page, scroll to it, and return its tag ID for interaction.",
     parameters: {
       type: "object",
       properties: {
@@ -410,6 +393,51 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
         },
       },
       required: ["id"],
+    },
+  },
+};
+
+const ESCALATE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.ESCALATE,
+    description: "Switch to a smarter, slower model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "Why the current model can't handle this.",
+        },
+      },
+      required: ["reason"],
+    },
+  },
+};
+
+const UPDATE_PLAN_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.UPDATE_PLAN,
+    description: "Report your task plan and progress. Call on turn 1 for multi-step tasks, and again when each subtask completes.",
+    parameters: {
+      type: "object",
+      properties: {
+        subtasks: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ordered list of subtask descriptions.",
+        },
+        currentIndex: {
+          type: "integer",
+          description: "0-based index of the subtask you are starting now.",
+        },
+        lastResult: {
+          type: "string",
+          description: "Brief result of the last completed subtask.",
+        },
+      },
+      required: ["subtasks", "currentIndex"],
     },
   },
 };
@@ -562,12 +590,6 @@ export function registerTools() {
     },
   );
 
-  // Swarm Tool
-  toolRegistry.register(ToolName.ACTIVATE_SWARM, SWARM_DEF, async (args) => {
-    const swarmArgs = args as unknown as ActivateSwarmArgs;
-    return await callKimiSwarm(swarmArgs);
-  });
-
   // Content Script Tools (already implemented in content/actions.ts)
   toolRegistry.register(
     ToolName.HOVER_ELEMENT,
@@ -603,6 +625,26 @@ export function registerTools() {
     ToolName.HIDE_ELEMENT,
     HIDE_ELEMENT_DEF,
     (args, tabId) => executeContentTool(ToolName.HIDE_ELEMENT, args, tabId),
+  );
+
+  // Escalation tool (intercepted by agent loop before executor runs)
+  toolRegistry.register(
+    ToolName.ESCALATE,
+    ESCALATE_DEF,
+    async (args) => {
+      // This executor is a fallback — the loop intercepts escalate before reaching here
+      return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
+    },
+  );
+
+  // Plan progress tool (intercepted by agent loop before executor runs)
+  toolRegistry.register(
+    ToolName.UPDATE_PLAN,
+    UPDATE_PLAN_DEF,
+    async (args) => {
+      const subtasks = args.subtasks as string[];
+      return `Plan updated: ${subtasks.length} subtasks, current: ${args.currentIndex}`;
+    },
   );
 
   // Service Worker Tools (chrome.* APIs)
@@ -643,7 +685,7 @@ export function registerTools() {
 
       // Brief wait for content script initialization
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return `Navigated to ${urlResult.value}. Call read_page to see the new content.`;
+      return `Navigated to ${urlResult.value}. Page has loaded. Fresh page snapshot is available.`;
     },
   );
 
@@ -686,7 +728,7 @@ export function registerTools() {
     const targetTabId = args.tabId as number;
     try {
       await chrome.tabs.update(targetTabId, { active: true });
-      return `Switched to tab ${targetTabId}. Call read_page to see its content.`;
+      return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
     } catch (e: any) {
       return `Error switching to tab ${targetTabId}: ${e.message}`;
     }
@@ -701,14 +743,19 @@ export function registerTools() {
   toolRegistry.register(
     ToolName.TAKE_SCREENSHOT,
     TAKE_SCREENSHOT_DEF,
-    async (_args, tabId) => {
+    async (_args, tabId, signal) => {
       try {
         const tab = await chrome.tabs.get(tabId);
         const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
           format: "jpeg",
           quality: 40,
         });
-        return await describeScreenshot(dataUrl);
+        const result = await describeScreenshot(dataUrl, signal);
+        // Report vision usage to the agent loop if callback is registered
+        if (result.usage && result.model && result.durationMs != null && visionUsageCallback) {
+          visionUsageCallback(result.usage, result.durationMs, result.model);
+        }
+        return result.description;
       } catch (e: any) {
         return `Error capturing screenshot: ${e.message}`;
       }

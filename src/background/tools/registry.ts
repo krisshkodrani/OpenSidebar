@@ -1,7 +1,7 @@
 import { ToolName, ToolCall, ToolDefinition } from "../../types";
 import { logger } from "../../utils";
 
-type ToolExecutor = (args: Record<string, unknown>, tabId: number) => Promise<string>;
+type ToolExecutor = (args: Record<string, unknown>, tabId: number, signal?: AbortSignal) => Promise<string>;
 
 export class ToolRegistry {
     private tools: Map<ToolName, ToolExecutor> = new Map();
@@ -26,7 +26,7 @@ export class ToolRegistry {
         this.definitions = [];
     }
 
-    async execute(toolCall: ToolCall, tabId: number): Promise<string> {
+    async execute(toolCall: ToolCall, tabId: number, signal?: AbortSignal): Promise<string> {
         const name = toolCall.function.name as ToolName;
         const executor = this.tools.get(name);
 
@@ -36,19 +36,21 @@ export class ToolRegistry {
         }
 
         let args: Record<string, unknown> = {};
-        try {
-            args = JSON.parse(toolCall.function.arguments);
-        } catch (e) {
-            logger.error("tools", `Failed to parse arguments for ${name}`, { error: e });
-            return `Error: Invalid JSON arguments for ${name}.`;
+        const rawArgs = toolCall.function.arguments;
+        if (rawArgs && rawArgs.trim().length > 0) {
+            try {
+                args = JSON.parse(rawArgs);
+            } catch (e) {
+                logger.error("tools", `Failed to parse arguments for ${name}`, { error: e });
+                return `Error: Invalid JSON arguments for ${name}.`;
+            }
         }
 
         try {
-            logger.debug("tools", `Executing ${name}`, { args });
-            const result = await executor(args, tabId);
+            const result = await executor(args, tabId, signal);
             return result;
         } catch (error: any) {
-            logger.error("tools", `Tool execution failed`, { tool: name, error: error.message });
+            if (error.name === "AbortError") throw error;
             return `Error executing ${name}: ${error.message}`;
         }
     }

@@ -229,7 +229,7 @@ The current implementation has a mock mode for testing. To use with real LLM:
 1. Set your API key:
 
 ```bash
-export CEREBRAS_API_KEY=your-key-here
+export OPENROUTER_API_KEY=your-key-here
 ```
 
 2. Update `runner.ts` to use real AgentLoop:

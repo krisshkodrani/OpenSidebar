@@ -25,8 +25,17 @@ OpenSidebar sees web pages through distilled DOM snapshots where interactive ele
 ### Advanced Interactions
 
 - **Hover over elements** - "Hover over the menu to see options"
-- **Find elements by text** - "Find the login button"
-- **Take screenshots** - "Take a screenshot of the current view"
+- **Find elements by text** - "Find the login button" (returns a tag ID for interaction)
+- **Take screenshots** - "Take a screenshot of the current view" (analyzed by vision LLM)
+- **Select dropdown options** - "Select 'United States' from the country dropdown"
+- **Press keyboard keys** - "Press Enter" or "Press Ctrl+A to select all"
+- **Drag and drop** - "Drag the item to the shopping cart"
+- **Draw on canvas** - "Draw a line across the canvas element"
+- **Hide overlays** - "Hide the cookie banner that's blocking the page"
+
+### Modal Auto-Dismiss
+
+On page load, OpenSidebar automatically detects and dismisses common cookie consent banners, overlay modals, and notification popups to keep the page interactive for the agent.
 
 ## Element Tagging System
 
@@ -100,15 +109,21 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 
 - `click_element` - Click tagged elements
 - `type_text` - Type into input fields
-- `scroll_page` - Scroll up/down
+- `scroll_page` - Scroll up/down (supports scrolling within container elements)
 - `read_page` - Get full page content
 - `navigate` - Go to URLs
 - `create_tab` - Open new tabs
 - `switch_tab` - Switch between tabs
 - `close_tab` - Close tabs
 - `hover_element` - Hover over elements
-- `find_element` - Find elements by text
-- `take_screenshot` - Capture viewport
+- `find_element` - Find elements by text, scroll to match, and return tag ID for interaction
+- `take_screenshot` - Capture viewport (analyzed by vision LLM for text description)
+- `select_option` - Select dropdown `<select>` options by text or value
+- `press_key` - Dispatch keyboard events (with optional modifiers)
+- `drag_and_drop` - Full drag sequence between two tagged elements
+- `draw_stroke` - Mouse stroke on canvas elements (interpolated points)
+- `hide_element` - Hide an element via `display: none` (useful for dismissing overlays)
+- `escalate` - Switch to a smarter model for complex reasoning (riddles, puzzles, math)
 
 ### DOM Snapshot Format
 

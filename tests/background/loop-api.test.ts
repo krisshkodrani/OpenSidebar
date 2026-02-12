@@ -5,6 +5,7 @@ import { AgentStatus } from "../../src/types";
 // Mock modules before importing AgentLoop
 mock.module("../../src/background/llm", () => ({
     LLMClient: class {
+        private model = "google/gemini-2.0-flash-001";
         complete = mock(() => Promise.resolve({
             role: "assistant",
             content: "done",
@@ -20,7 +21,11 @@ mock.module("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
+        switchModel = mock((m: string) => { this.model = m; });
+        getCurrentModel = () => this.model;
     },
+    MODEL_FAST: "google/gemini-2.0-flash-001",
+    MODEL_SMART: "anthropic/claude-sonnet-4-5",
 }));
 
 mock.module("../../src/background/keepalive", () => ({
@@ -176,10 +181,12 @@ describe("AgentLoop Public API", () => {
             expect(result.turnCount).toBeGreaterThan(0);
         });
 
-        test("start returns completed outcome for simple conversation", async () => {
+        test("start returns max_turns outcome when text-only LLM exhausts turn budget", async () => {
             const { agent } = createLoop();
             const result = await agent.start("Hello", 123);
-            expect(result.outcome).toBe("completed");
+            // With maxTurns=5 and text-only LLM: nudge→escalate→nudge→nudge→give-up at turn 5
+            // give-up break coincides with maxTurns boundary, so outcome is max_turns
+            expect(result.outcome).toBe("max_turns");
         });
     });
 
