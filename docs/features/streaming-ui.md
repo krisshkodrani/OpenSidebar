@@ -16,7 +16,7 @@ The streaming system delivers AI responses character-by-character, providing imm
 ### Technical Flow
 
 ```
-AI Model (Cerebras/Kimi)
+AI Model (OpenRouter)
     ↓
 Server-Sent Events (SSE) Stream
     ↓
@@ -44,7 +44,7 @@ The side panel shows current AI state:
 - **THINKING** - AI is generating a response
 - **ACTING** - AI is executing tools (clicking, typing, etc.)
 - **WAITING_FOR_PAGE_LOAD** - Waiting for page navigation
-- **WAITING_FOR_SWARM** - Deep Thought mode processing
+- **PAUSED** - Agent paused by user (awaiting resume)
 - **ERROR** - Something went wrong
 
 ### Tool Execution Display
@@ -61,24 +61,11 @@ When the AI performs actions, you see:
 
 ## Performance Features
 
-### Fast Reflex Engine
+### OpenRouter Models
 
-- **Cerebras API** - Up to 3000 tokens/second streaming
-- **Low latency** - Quick response for simple queries
-- **Immediate feedback** - Text starts appearing instantly
-
-### Deep Thought Engine
-
-- **Kimi K2.5** - For complex research tasks
-- **Higher latency** - Takes longer but provides thorough analysis
-- **Swarm mode** - Multiple sub-agents work in parallel
-
-### Intelligent Switching
-
-The AI automatically chooses the right engine:
-
-- **Reflex for simple tasks** - "Click this button", "What's on this page?"
-- **Deep Thought for complex tasks** - "Research best laptop options", "Compare these products"
+- **Gemini 2.0 Flash** - Fast model for initial responses (~3000 tok/s)
+- **Claude Sonnet 4.5** - Smart model, activated via automatic escalation when stuck
+- **Automatic switching** - Agent starts fast, escalates to smart model if needed
 
 ## Streaming Architecture
 
@@ -209,7 +196,7 @@ Click Stop at any time to:
 If text doesn't appear or is choppy:
 
 - **Check network** - Stable internet connection required
-- **API key** - Valid Cerebras/OpenRouter key needed
+- **API key** - Valid OpenRouter API key needed
 - **Browser extensions** - Try disabling other extensions temporarily
 
 ### UI Problems

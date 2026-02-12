@@ -46,6 +46,10 @@ function extractViewportText(): string {
                     if (tag === "script" || tag === "style" || tag === "noscript") {
                         return NodeFilter.FILTER_REJECT;
                     }
+                    // Skip aria-hidden subtrees from viewport text
+                    if (el.getAttribute("aria-hidden") === "true") {
+                        return NodeFilter.FILTER_REJECT;
+                    }
                     try {
                         const style = window.getComputedStyle(el);
                         if (style.display === "none" || style.visibility === "hidden") {

@@ -37,33 +37,37 @@ Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Scr
 The orchestrator. Receives user messages from the side panel, runs the agent loop, dispatches tool calls to the content script, and streams responses back.
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Creates/destroys `AgentLoop` instances.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support. Persists state to `chrome.storage.session` to survive SW restarts. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, viewport text). Manages sliding-window conversation history.
-- `llm/client.ts` — `LLMClient`. Calls Cerebras or OpenRouter chat completions API with tool definitions. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `tools/index.ts` registers all tools and bridges to content script / memory / swarm.
-- `swarm.ts` — `callKimiSwarm()`. Delegates complex research to Kimi K2.5 (`moonshotai/kimi-k2.5`) via OpenRouter. Includes retry logic with exponential backoff (max 3 retries, 7s total), streaming response parsing, and smart truncation (intro+conclusion extraction for long reports).
+- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, hint injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, nudge→escalate→give-up for text-only responses. Barrel-exported via `agent/index.ts`.
+- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, viewport text). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY).
+- `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
+- `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
+- `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
+- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.0 Flash) and `MODEL_SMART` (Claude Sonnet 4.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 22 tools and bridges to content script / memory.
+- `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
+- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff.
 - `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
 - `navigation.ts` — Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
-- `security.ts` — `classifyRisk()` maps each `ToolName` to a `RiskLevel` (low/medium/high) for UI display. `sanitizeUrl()` blocks non-http(s) protocols. `sanitizeUserInput()` strips null bytes and truncates.
+- `security.ts` — `classifyRisk()` maps each `ToolName` to a `RiskLevel` (low/medium/high) via tool metadata. `sanitizeUrl()` blocks non-http(s) protocols. `sanitizeUserInput()` strips null bytes and truncates.
 - `streaming.ts` — `parseSSEStream()`. Parses OpenAI-compatible SSE streams, accumulating text deltas and tool calls across chunks. Returns final content and assembled `ToolCall[]`.
 
 ### Content Script (`src/content/`)
 Injected into every page at `document_idle`. Handles DOM snapshot generation and action execution.
 
-- `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST` and `TOOL_EXECUTE` messages. Runs a cookie-banner auto-dismiss janitor on load.
-- `tagging.ts` — Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`.
+- `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` to clear cookie banners and overlay modals on load.
+- `tagging.ts` — Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`. Tags `canvas` and `[draggable='true']` elements. Extracts label associations (explicit `<label for>`, implicit wrapper, aria-labelledby).
 - `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, viewport text, scroll position.
-- `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find on tagged elements by ID.
+- `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID.
 
 ### Side Panel (`src/sidepanel/`)
 React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 
-- `App.tsx` — Root component. Composes Header, MessageBubble, InputArea, ControlBar.
-- `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error state).
-- `bridge.ts` — `initializeBridge()`. Listens for background messages and updates the Zustand store. Sends `USER_CHAT` and `STOP_AGENT` messages.
-- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`.
+- `App.tsx` — Root component. Composes Header, StuckBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
+- `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stuckState, turnProgress).
+- `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
+- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
 ### Offscreen Document (`src/offscreen/`)
 Runs heavy memory operations outside the service worker.
@@ -83,16 +87,16 @@ Shared utilities used across all execution contexts. Barrel-exported via `index.
 
 ### Types (`src/types/index.ts`)
 Single source of truth for all interfaces. Key patterns:
-- `RuntimeMessage` — discriminated union (discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`.
-- `ToolName` enum (16 tools) → `ToolArgsMap` maps each tool to its typed arguments.
+- `RuntimeMessage` — discriminated union (26 members, discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`.
+- `ToolName` enum (22 tools) → `ToolArgsMap` maps each tool to its typed arguments.
 - `ToolDefinition` — OpenAI function-calling schema format, used by `ToolRegistry`.
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
 - `Result<T, E>` — discriminated union for fallible operations.
-- `UserSettings` — Cerebras/OpenRouter API keys, maxTurns, contextWindowSize, memory/workspace toggles, theme.
+- `UserSettings` — OpenRouter API key, maxTurns, contextWindowSize, memory/workspace toggles, theme, showElementTags, visionModel, confirmPlan.
 
 ### Messaging Protocol
-All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID) and `source` (enum: sidepanel, background, content, offscreen). Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`.
+All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID) and `source` (enum: sidepanel, background, content, offscreen). Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
 
 ### Evals (`evals/`)
 Offline evaluation framework for testing agent behavior against golden datasets.
@@ -125,6 +129,19 @@ When investigating errors (build failures, runtime exceptions, unexpected behavi
 The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `bun run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
 
 For build errors, also check `bun run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
+
+## Design Principles
+
+### Generic over task-specific
+
+All agent infrastructure (planning, progress tracking, completion judgment, stuck detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a 30-step browser challenge the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
+
+- **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong in the agent loop.
+- **The agent adapts through prompting and memory, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses `memory_add` / `memory_search` to learn and recall strategies across sessions.
+- **Tools are generic primitives.** Click, type, scroll, navigate — not "solve step 5 of the challenge." Higher-level behavior emerges from the LLM's reasoning over these primitives.
+- **Plans are dynamic.** The guardian decomposes any user query into subtasks based on context — it doesn't have a list of known task templates.
+
+### When in doubt, ask: "Would this work on a site I've never seen?"
 
 ## Path Aliases
 

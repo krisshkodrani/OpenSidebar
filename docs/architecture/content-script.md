@@ -8,11 +8,10 @@ The content script is OpenSidebar's "eyes and hands" — it runs in every tab an
 
 **Files:**
 
-- `content.ts` - Main entry, message handling
+- `content.ts` - Main entry, message handling, `autoDismissModals()` modal auto-dismiss
 - `snapshot.ts` - DOM snapshot generation
-- `tagging.ts` - Element discovery and tagging
-- `actions.ts` - Tool execution (click, type, scroll, etc.)
-- `janitor.ts` - Cookie banner auto-dismiss
+- `tagging.ts` - Element discovery, tagging, and label association
+- `actions.ts` - Tool execution (click, type, scroll, select, press_key, drag, draw, hide, etc.)
 
 ## DOM Snapshot
 
@@ -66,6 +65,8 @@ const INTERACTIVE_SELECTORS = [
   "details", // Details elements
   "[onclick]", // Click handlers
   "[tabindex]:not([tabindex='-1'])", // Focusable elements
+  "canvas", // Canvas elements (for draw_stroke)
+  "[draggable='true']", // Draggable elements (for drag_and_drop)
 ];
 ```
 
@@ -156,23 +157,48 @@ Hovers over an element to reveal tooltips or menus.
 
 ### find_element
 
-Scrolls to and highlights an element containing specific text.
+Finds text on the page using `window.find()`, then walks up the DOM from the matched text node to find the nearest interactive or semantic container element. Assigns a dynamic tag ID via `addDynamicTag()` so the agent can interact with the found element.
 
-## Janitor (Anti-Modal)
+Returns: `Found "text" near [tagId] <tagname> "context". Use tag [tagId] to interact with it.`
 
-Automatically dismisses common cookie banners on page load:
+Walk-up strategy:
+1. Check each ancestor against interactive selectors (`a[href]`, `button`, `input`, etc.)
+2. Check semantic containers (`p`, `li`, `td`, `h1`-`h6`, `form`, etc.)
+3. Fallback to direct parent element
 
-```typescript
-const COMMON_SELECTORS = [
-  "button[aria-label='Accept all']",
-  "button[aria-label='Reject all']",
-  ".cookie-banner button.primary",
-  "#onetrust-accept-btn-handler", // OneTrust
-  ".fc-cta-consent", // Google Funding Choices
-];
-```
+### select_option
 
-The janitor runs on `document_idle` and clicks any visible matching elements.
+Selects an option from a `<select>` dropdown by matching text or value.
+
+### press_key
+
+Dispatches `keydown` + `keyup` events on `window` for the specified key. Supports optional modifier keys (`ctrl`, `shift`, `alt`, `meta`).
+
+### drag_and_drop
+
+Full drag sequence between two tagged elements: `dragstart` → `dragover` → `drop` → `dragend` with a `DataTransfer` object.
+
+### draw_stroke
+
+Performs a mouse stroke on a canvas element: `mousedown` at start coordinates, 10 interpolated `mousemove` events, then `mouseup` at end coordinates.
+
+### hide_element
+
+Sets `element.style.display = "none"` on a tagged element. Useful for dismissing overlay modals without clicking (which might trigger navigation).
+
+## Modal Auto-Dismiss
+
+The `autoDismissModals()` function in `content.ts` automatically dismisses common cookie consent banners, overlay modals, and notification popups on page load. It uses heuristic selectors for common frameworks (OneTrust, Google Funding Choices, etc.) and runs before the first LLM turn. The background can also trigger it via the `DISMISS_MODALS` message.
+
+## Label Association
+
+The `extractAttributes()` function in `tagging.ts` resolves label associations for form elements:
+
+- **Explicit**: `<label for="id">` matches by element ID
+- **Implicit**: `<label>` wrapper around the element
+- **ARIA**: `aria-labelledby` attribute reference
+
+Resolved labels appear as `label="..."` in `TaggedElement.attributes`.
 
 ## Message Protocol
 

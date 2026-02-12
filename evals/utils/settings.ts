@@ -41,10 +41,7 @@ export async function loadSettingsFromEnv(): Promise<Partial<UserSettings>> {
         // Remove quotes if present
         const cleanValue = value.replace(/^["']|["']$/g, "");
 
-        // Map to settings
-        if (key === "CEREBRAS_API_KEY") {
-          settings.cerebrasApiKey = cleanValue;
-        } else if (key === "OPENROUTER_API_KEY") {
+        if (key === "OPENROUTER_API_KEY") {
           settings.openRouterApiKey = cleanValue;
         }
       }
@@ -57,34 +54,21 @@ export async function loadSettingsFromEnv(): Promise<Partial<UserSettings>> {
 }
 
 /**
- * Get API key for LLM operations
+ * Get API key for LLM operations (OpenRouter only)
  * Priority: .env file > environment variables
  */
 export async function getApiKey(): Promise<{
   apiKey: string;
-  provider: "cerebras" | "openrouter";
 }> {
-  // Try .env file first
   const envSettings = await loadSettingsFromEnv();
-
-  // Check environment variables
-  const envCerebras = process.env.CEREBRAS_API_KEY;
-  const envOpenRouter = process.env.OPENROUTER_API_KEY;
-
-  // Priority: .env file > environment variables
-  const cerebrasKey = envSettings.cerebrasApiKey || envCerebras;
-  const openRouterKey = envSettings.openRouterApiKey || envOpenRouter;
-
-  if (cerebrasKey) {
-    return { apiKey: cerebrasKey, provider: "cerebras" };
-  }
+  const openRouterKey = envSettings.openRouterApiKey || process.env.OPENROUTER_API_KEY;
 
   if (openRouterKey) {
-    return { apiKey: openRouterKey, provider: "openrouter" };
+    return { apiKey: openRouterKey };
   }
 
   throw new Error(
-    "No API key configured. Please set CEREBRAS_API_KEY or OPENROUTER_API_KEY " +
+    "No API key configured. Please set OPENROUTER_API_KEY " +
       "in .env file or environment variables.",
   );
 }
@@ -94,17 +78,15 @@ export async function getApiKey(): Promise<{
  */
 export async function validateApiKeys(): Promise<{
   valid: boolean;
-  cerebras?: string;
   openrouter?: string;
   error?: string;
 }> {
   try {
-    const { apiKey, provider } = await getApiKey();
+    const { apiKey } = await getApiKey();
 
     return {
       valid: true,
-      cerebras: provider === "cerebras" ? apiKey : undefined,
-      openrouter: provider === "openrouter" ? apiKey : undefined,
+      openrouter: apiKey,
     };
   } catch (error) {
     return {
@@ -121,8 +103,6 @@ export async function loadCliSettings(): Promise<UserSettings> {
   const envSettings = await loadSettingsFromEnv();
 
   return {
-    cerebrasApiKey:
-      envSettings.cerebrasApiKey || process.env.CEREBRAS_API_KEY || "",
     openRouterApiKey:
       envSettings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
     maxTurns: 30,
@@ -131,5 +111,7 @@ export async function loadCliSettings(): Promise<UserSettings> {
     workspaceEnabled: true,
     theme: "system",
     showElementTags: false,
+    visionModel: "google/gemini-2.5-flash-lite",
+    confirmPlan: false,
   };
 }

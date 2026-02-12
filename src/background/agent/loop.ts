@@ -23,9 +23,13 @@ import { DomSnapshot } from "../../types";
 import { CompletionResponse, TokenUsage } from "../llm/types";
 import { startKeepalive, stopKeepalive } from "../keepalive";
 import { formatStepLabel } from "./step-labels";
+import { PlanGuardian } from "./guardian";
+
+/** Max times done() can be rejected before the safety valve forces it through */
+const MAX_DONE_REJECTIONS = 3;
 
 /** Nudge injected when LLM emits text instead of tool calls. */
-const NUDGE_MESSAGE = "You must call at least one tool each turn. Follow the Think step:\n1. What do I see on the page right now?\n2. What tool call will advance the task?\n3. What do I expect to happen?\nThen call that tool. If the task is fully complete, call done({\"summary\": \"...\"}).";
+const NUDGE_MESSAGE = "You must call at least one tool each turn. If unsure what's on the page, call read_page or take_screenshot. Follow the Think step:\n1. What do I see on the page right now?\n2. What tool call will advance the task?\n3. What do I expect to happen?\nThen call that tool. If the task is fully complete, call done({\"summary\": \"...\"}).";
 
 /** Result of a completed agent loop run */
 export interface LoopResult {
@@ -60,6 +64,11 @@ export class AgentLoop {
     private pendingHint: string | null = null;
     /** Promise-based gate for pause/resume */
     private pauseGate: { promise: Promise<void>; resolve: () => void } | null = null;
+
+    /** Plan guardian — smart model for decomposition and done validation */
+    private guardian: PlanGuardian;
+    /** Number of times done() has been rejected by the guardian */
+    private doneRejections = 0;
 
     /** Task planning state */
     private taskId: string | null = null;
@@ -167,6 +176,7 @@ export class AgentLoop {
         this.confirmPlan = options?.confirmPlan ?? false;
         this.showSessionMetrics = options?.showSessionMetrics ?? false;
         this.llm = new LLMClient(apiKey);
+        this.guardian = new PlanGuardian(apiKey);
         this.context = new ContextManager(options?.maxContextTokens);
         this.statusHandler = callbacks.onStatusUpdate;
         this.messageHandler = callbacks.onMessage;
@@ -195,6 +205,7 @@ export class AgentLoop {
         this.planSubtasks = [];
         this.taskStartTime = Date.now();
         this.urlHistory = [];
+        this.doneRejections = 0;
         this.metrics = AgentLoop.emptyMetrics();
         this.sessionStartTime = Date.now();
 
@@ -219,11 +230,80 @@ export class AgentLoop {
             content: userContent
         });
 
+        // --- Guardian: decompose task into plan (task-agnostic) ---
+        if (!this.confirmPlan) {
+            try {
+                this.stepHandler({
+                    id: crypto.randomUUID(),
+                    type: "thinking",
+                    label: "Analyzing task scope...",
+                    status: "running",
+                    timestamp: Date.now(),
+                }, false);
+
+                const decomposition = await this.guardian.decompose(
+                    initialUserText,
+                    this.context.getSnapshot()?.title || "",
+                    this.context.getSnapshot()?.url || "",
+                    this.abortController!.signal,
+                );
+
+                if (decomposition) {
+                    this.taskId = crypto.randomUUID();
+                    this.taskStartTime = Date.now();
+                    this.planSubtasks = decomposition.subtasks.map((desc, i) => ({
+                        description: desc,
+                        status: i === 0 ? "running" as const : "pending" as const,
+                        turnsUsed: 0,
+                        turnBudget: 0,
+                    }));
+
+                    this.context.addMessage({
+                        role: "user",
+                        content: `[Plan Guardian]: This is a multi-step task (${decomposition.subtasks.length} steps). Your plan:\n`
+                            + decomposition.subtasks.map((s, i) => `${i + 1}. ${s}`).join("\n")
+                            + `\n\nExecute step 1 now. Call update_plan({subtasks, currentIndex, lastResult}) after each step to report progress. `
+                            + `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
+                    });
+
+                    chrome.runtime.sendMessage({
+                        type: "TASK_PROGRESS",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: {
+                            taskId: this.taskId,
+                            subtasks: this.planSubtasks,
+                            currentIndex: 0,
+                            totalTurnsUsed: 0,
+                        },
+                    }).catch(() => {});
+
+                    this.stepHandler({
+                        id: crypto.randomUUID(),
+                        type: "info",
+                        label: `Plan: ${decomposition.subtasks.length} steps`,
+                        status: "done",
+                        timestamp: Date.now(),
+                    }, false);
+                }
+            } catch (err: any) {
+                logger.warn("agent", "Guardian decompose error (non-fatal)", { error: err?.message });
+            }
+        }
+
         this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
         // Register vision usage callback so screenshot tool can report token usage
         setVisionUsageCallback((usage, durationMs, model) => {
             this.recordVisionUsage(usage, durationMs, model);
+        });
+
+        // Register guardian usage callback for metrics tracking
+        this.guardian.setUsageCallback((usage, llmMs) => {
+            this.recordUsage(
+                { role: "assistant", content: null, finish_reason: "stop", usage } as CompletionResponse,
+                llmMs,
+            );
         });
 
         // Start keepalive alarm to prevent SW termination
@@ -446,6 +526,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
     private async loop(tabId: number): Promise<LoopResult> {
         let prevElementCount = -1; // Track element count for empty-page retry
         let consecutiveNudges = 0;
+        let totalNudges = 0;
         let escalated = false;
         let doneSummary = "";
         let wasStuck = false; // Track stuck state for "resolved" signal
@@ -538,16 +619,39 @@ Prefer "click" if a close/dismiss/accept button exists.`;
             };
 
             const llmStart = Date.now();
-            const response = await this.llm.completeStream(
-                {
-                    messages,
-                    tools,
-                    max_tokens: 4096,
-                    stop: ["Observation:"], // ReAct pattern stop token just in case
-                    signal: this.abortController!.signal,
-                },
-                onTextDelta
-            );
+            let response: CompletionResponse;
+            try {
+                response = await this.llm.completeStream(
+                    {
+                        messages,
+                        tools,
+                        max_tokens: 4096,
+                        stop: ["Observation:"], // ReAct pattern stop token just in case
+                        signal: this.abortController!.signal,
+                    },
+                    onTextDelta
+                );
+            } catch (llmError: any) {
+                if (llmError.name === "AbortError") throw llmError;
+                if ((llmError as any).status === 402) {
+                    const msg = llmError.message;
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: msg, done: false },
+                    }).catch(() => {});
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: "", done: true },
+                    }).catch(() => {});
+                    this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
+                    break;
+                }
+                throw llmError;
+            }
             const llmMs = Date.now() - llmStart;
 
             // Accumulate token usage and broadcast metrics
@@ -731,9 +835,79 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                         // Risk classification (informational, non-blocking)
                         const riskLevel = classifyRisk(toolName, args);
 
-                        // DONE tool — exit loop with summary
+                        // DONE tool — guardian-validated exit
                         if (toolName === ToolName.DONE) {
                             const summary = (args.summary as string) || "Task completed.";
+
+                            // Guardian validation: only when a plan exists
+                            if (this.taskId && this.planSubtasks.length > 0) {
+                                let shouldReject = false;
+                                let rejectReason = "";
+
+                                try {
+                                    this.stepHandler({
+                                        id: crypto.randomUUID(),
+                                        type: "thinking",
+                                        label: "Verifying completion...",
+                                        status: "running",
+                                        timestamp: Date.now(),
+                                    }, false);
+
+                                    const validation = await this.guardian.validateDone(
+                                        this.originalQuery,
+                                        this.planSubtasks,
+                                        summary,
+                                        this.context.getSnapshot()?.title || "",
+                                        this.context.getSnapshot()?.url || "",
+                                        this.abortController!.signal,
+                                    );
+
+                                    if (!validation.approved) {
+                                        shouldReject = true;
+                                        rejectReason = validation.reason || "Task is not yet complete.";
+                                    }
+                                } catch (err: any) {
+                                    // Guardian call failed — structural fallback
+                                    const completedCount = this.planSubtasks.filter(s => s.status === "completed").length;
+                                    if (completedCount < this.planSubtasks.length) {
+                                        shouldReject = true;
+                                        rejectReason = `Guardian unavailable. ${completedCount}/${this.planSubtasks.length} subtasks completed. Continue.`;
+                                    }
+                                }
+
+                                if (shouldReject) {
+                                    this.doneRejections++;
+                                    logger.warn("agent", "DONE rejected", {
+                                        turn: this.turnCount,
+                                        rejections: this.doneRejections,
+                                        reason: rejectReason.slice(0, 200),
+                                    });
+
+                                    if (this.doneRejections >= MAX_DONE_REJECTIONS) {
+                                        logger.warn("agent", "DONE forced after max rejections", {
+                                            turn: this.turnCount,
+                                            rejections: this.doneRejections,
+                                        });
+                                        // Fall through to normal done handling
+                                    } else {
+                                        this.context.addMessage({
+                                            role: "tool",
+                                            tool_call_id: toolCall.id,
+                                            content: `done() REJECTED: ${rejectReason}\n\nContinue working. Do NOT call done() until all steps are complete.`,
+                                        });
+                                        this.stepHandler({
+                                            id: crypto.randomUUID(),
+                                            type: "info",
+                                            label: `Not done yet (${this.doneRejections}/${MAX_DONE_REJECTIONS})`,
+                                            status: "done",
+                                            timestamp: Date.now(),
+                                        }, false);
+                                        continue; // Resume executor loop
+                                    }
+                                }
+                            }
+
+                            // --- Normal done handling ---
                             logger.info("agent", "DONE called", {
                                 turn: this.turnCount,
                                 url: this.context.getCurrentUrl(),
@@ -820,7 +994,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                                 this.context.addMessage({
                                     role: "tool",
                                     tool_call_id: toolCall.id,
-                                    content: "Already using the smarter model. Continue with the task.",
+                                    content: `Already using the most capable model (${this.llm.getCurrentModel()}). Escalation won't help further. Try a fundamentally different approach:\n- Use take_screenshot to see the visual layout\n- Use read_page to list all interactive elements\n- Try a completely different interaction strategy`,
                                 });
                             }
                             logger.info("agent", "ESCALATE called", {
@@ -1105,6 +1279,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
 
                 // Unified nudge→escalate→give-up for text-only responses
                 consecutiveNudges++;
+                totalNudges++;
                 logger.warn("agent", "LLM emitted text instead of tools, nudging", {
                     turn: this.turnCount,
                     consecutiveNudges,
@@ -1132,10 +1307,32 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                     continue;
                 }
 
-                // Give-up gate: 3 nudges (applies whether pre- or post-escalation)
+                // Give-up gate: 3 consecutive nudges (applies whether pre- or post-escalation)
                 if (consecutiveNudges >= 3) {
-                    logger.warn("agent", "Loop ended: consecutive nudge limit", { turns: this.turnCount, consecutiveNudges, escalated });
+                    logger.warn("agent", "Loop ended: consecutive nudge limit", { turns: this.turnCount, consecutiveNudges, totalNudges, escalated });
                     const stuckMsg = response.content || "The agent appears stuck and cannot continue.";
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: stuckMsg, done: false },
+                    }).catch(() => {});
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: "", done: true },
+                    }).catch(() => {});
+                    this.statusHandler(AgentStatus.IDLE, "Stuck — send a follow-up to continue");
+                    break;
+                }
+
+                // Ratio-based give-up: if >40% of turns are text-only after 10+ turns post-escalation
+                if (escalated && this.turnCount >= 10 && totalNudges / this.turnCount > 0.4) {
+                    logger.warn("agent", "Loop ended: excessive nudge ratio", {
+                        turns: this.turnCount, totalNudges, ratio: (totalNudges / this.turnCount).toFixed(2),
+                    });
+                    const stuckMsg = "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
                     chrome.runtime.sendMessage({
                         type: "STREAM_CHUNK",
                         requestId: crypto.randomUUID(),

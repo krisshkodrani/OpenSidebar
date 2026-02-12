@@ -34,19 +34,30 @@ All AI actions are classified by risk level:
 - **Scrolling** - `scroll_page` tool
 - **Memory search** - `memory_search` tool
 - **Taking screenshots** - `take_screenshot` tool
+- **Hovering** - `hover_element` tool
+- **Finding elements** - `find_element` tool
+- **Waiting** - `wait` tool
 
 ### MEDIUM RISK (State Changes)
 
 - **Clicking elements** - `click_element` tool
 - **Typing text** - `type_text` tool
 - **Memory additions** - `memory_add` tool
-- **Hovering** - `hover_element` tool
+- **Selecting options** - `select_option` tool
+- **Pressing keys** - `press_key` tool
+- **Drag and drop** - `drag_and_drop` tool
+- **Drawing on canvas** - `draw_stroke` tool
+- **Hiding elements** - `hide_element` tool
+- **Task completion** - `done` tool
 
 ### HIGH RISK (Navigation & System)
 
 - **Navigation** - `navigate` tool
 - **Tab management** - `create_tab`, `close_tab`, `switch_tab`
-- **Deep Thought mode** - `activate_swarm` tool
+
+### Risk Source of Truth
+
+Risk classifications are defined in `src/background/tools/metadata.ts` as the `TOOL_META` map. The `getToolMeta(name)` function is used by `security.ts`'s `classifyRisk()`. This centralizes all tool properties (risk, domModifying, sequential) in a single location.
 
 ### Risk Display
 
@@ -94,7 +105,7 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Key Usage
 
-- **Direct to providers** - Keys sent directly to Cerebras/OpenRouter
+- **Direct to providers** - Keys sent directly to OpenRouter
 - **No intermediaries** - No proxy servers or data collection
 - **HTTPS only** - All API calls encrypted in transit
 
@@ -212,7 +223,7 @@ OpenSidebar operates without confirmation gates:
 
 ### Secure Usage
 
-1. **Protect API keys** - Never share your Cerebras/OpenRouter keys
+1. **Protect API keys** - Never share your OpenRouter API key
 2. **Review actions** - Watch what the AI does on your behalf
 3. **Use HTTPS** - Prefer secure websites when possible
 4. **Regular cleanup** - Clear conversation history periodically

@@ -16,8 +16,10 @@
 ## Prompt (copy-paste this)
 
 ```
-Complete all challenge tasks on this page. For each task: read the instruction in the page text, execute it immediately, then move to the next. If there's a Start button, click it first. After each task, click Next/Submit/Continue to advance. Dismiss any modals/popups with hide_element. Fill all form fields in one turn and press Enter to submit. Never stop until all tasks are done or you see a completion/score screen — then call done. If stuck, scroll or read_page to find the task. If you can't solve it immediately, dismiss modals, step back, and try a different approach.
+Complete every challenge task on this page. Click Start if present. For each task, read the instructions from the page text and execute immediately. After completing each task, click Next/Submit/Continue to advance. Keep going through all tasks — never call done until you reach a final completion or score screen.
 ```
+
+> **Why so short?** The speed-mode system prompt (`SPEED_PROMPT_TEMPLATE` in `context.ts`) already covers all tool usage rules: parallel calls, `type_text` auto-focus + `pressEnter`, `hide_element` for overlays, `select_option`, `press_key`, `drag_and_drop`, `draw_stroke`, `take_screenshot` when stuck. The nudge system handles text-only responses automatically. Repeating tool instructions in the user message wastes the 1500-char viewport text budget and dilutes the task signal.
 
 ## Iteration Log
 

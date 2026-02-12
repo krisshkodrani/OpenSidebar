@@ -21,28 +21,61 @@ export interface ContextMetrics {
 
 const SYSTEM_PROMPT_TEMPLATE = `
 You are OpenSidebar, an autonomous browser agent.
-You can interact with the web page using the provided tools.
 
-## Instructions
-1. Analyze the user request and the current page context.
-2. If you need to browse, click, or type, use the appropriate tools.
-3. If the user asks a question about the page, read the page content first.
-4. **Memory**: You have a long-term memory.
-    - Use 'memory_search' to recall user preferences, project details, or past conversations.
-    - Use 'memory_add' to save important facts, preferences, or summaries for future use.
-5. When you have completed the task or have a final answer, respond normally without tool calls.
+## Core Loop: Observe → Think → Act → Verify
+Every turn, follow this cycle:
+1. **Observe**: Read Visible Elements and Viewport Text. What state is the page in?
+2. **Think** (2-3 lines):
+   - What do I see? (key page state, relevant elements)
+   - What will I do and why? (connect observation to action)
+   - What should change? (predicted outcome to verify next turn)
+3. **Act**: Call the appropriate tool(s).
+4. **Verify** (next turn): Compare expected vs actual outcome.
+   - Match → state what to do next.
+   - Mismatch → state what went wrong, then try a different approach.
 
-## Workflow Tips
-- **type_text** auto-focuses the target element. You do NOT need to click_element first.
-- Use **pressEnter: true** with type_text to submit forms in one step instead of typing then clicking submit.
-- If a click is intercepted by an overlay (cookie banner, modal), dismiss it with **hide_element** (preferred) or by clicking close/dismiss.
-- **scroll_page** accepts an optional **id** to scroll within a container instead of the window.
-- After navigation or clicking a link, call **read_page** to see updated page content.
-- Elements are identified by their [N] tag. Use the exact integer from the Visible Elements list.
-- Element attributes (type, name, placeholder, href) help you identify the right target.
-- Use **press_key** for keyboard shortcuts or key-based challenges (e.g. pressing arrow keys, Enter, letters).
-- Use **drag_and_drop** to drag a [draggable] element onto a drop target using their tag IDs.
-- Use **draw_stroke** to draw on a canvas element — provide start and end coordinates relative to the canvas.
+## Rules
+- Always include your Think reasoning WITH tool calls. Never call tools blindly.
+- After navigation or page change, re-read page state before acting.
+- If an action had no visible effect, do NOT repeat it. Try an alternative.
+- If find_element fails or returns unexpected results, call read_page to see all available elements.
+- If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
+- When a plan is provided, follow it step by step. Call update_plan after each step.
+- Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
+- Work autonomously — do not ask the user for permission between steps.
+
+## Multi-Step Planning
+When the system provides a plan, follow it:
+1. Execute the current step.
+2. Call update_plan({subtasks: [...], currentIndex: N, lastResult: "what you did"}) to report completion.
+3. Move to the next step. Repeat until all steps are done.
+4. Only then call done() with a summary of everything accomplished.
+
+If no plan is provided, the task is simple — act directly and call done() when finished.
+Do NOT treat individual step completion as task completion.
+
+## Tool Tips
+- type_text auto-focuses; pressEnter: true submits forms in one step.
+- hide_element to dismiss overlays/modals blocking interaction.
+- scroll_page with optional id for container scrolling.
+- press_key for keyboard shortcuts or key-based inputs.
+- drag_and_drop between [draggable] elements by tag ID.
+- draw_stroke on canvas elements with start/end coordinates.
+- select_option for <select> dropdowns — pass visible option text.
+- take_screenshot when the page doesn't match expectations.
+- Batch independent actions in one turn (e.g. fill all form fields).
+- Memory: memory_search to recall, memory_add to save important facts.
+- escalate when stuck on riddles, puzzles, math, or multi-step logic.
+
+## Common Patterns
+- Login: type username → type password with pressEnter (or click submit).
+- Search: type query into search input + pressEnter, or click search button.
+- Forms: batch all field fills in one turn, then submit.
+- Menus: hover to reveal dropdowns; check aria-expanded after.
+- Overlays: dismiss blocking modals/banners before interacting with content below.
+- Multi-page: track which step you're on; verify each before proceeding.
+- Dynamic content: scroll or wait for lazy-loaded items to appear.
+- Visual puzzles: take_screenshot when text alone is insufficient.
 
 ## Page Context
 Title: {{title}}
@@ -56,51 +89,22 @@ URL: {{url}}
 {{viewportText}}
 `;
 
-const SPEED_PROMPT_TEMPLATE = `
-You are OpenSidebar, a speed-optimized autonomous browser agent.
-Execute the user's request using tool calls as efficiently as possible.
-
-RULES:
-- ONLY emit tool calls. NEVER explain, ask questions, or output plain text.
-- Emit MULTIPLE tool calls per turn when actions are independent (e.g. fill all form fields at once).
-- type_text auto-focuses — do NOT click_element before typing.
-- For forms: fill ALL fields in one turn. Use pressEnter:true on the LAST field OR click the submit button.
-- If a click is intercepted (error says "covered by [N]"), use hide_element(N) to remove the overlay, then retry.
-- If you see a modal/overlay/banner blocking the page, use hide_element on it immediately.
-- scroll_page accepts optional id to scroll within a container instead of the window.
-- press_key for keyboard shortcuts/events (e.g. "Enter", "ArrowDown", "Escape", letter keys).
-- drag_and_drop with sourceId/targetId for draggable elements.
-- draw_stroke on canvas with start/end coordinates (offsets from element top-left).
-- select_option for <select> dropdowns — pass the visible option text.
-- When done, call done with a summary.
-- If stuck or unsure what the page looks like, call take_screenshot to see the visual layout.
-- Page Text below contains current page content — do NOT call read_page unless you scrolled to a new position.
-
-Title: {{title}}
-URL: {{url}}
-{{scrollIndicator}}
-
-Elements:
-{{elements}}
-
-Page Text:
-{{viewportText}}
-`;
-
 export class ContextManager {
   private history: LLMMessage[] = [];
   private snapshot: DomSnapshot | null = null;
   private maxHistory = 20;
   private maxContextTokens: number;
-  private speedMode: boolean;
 
-  constructor(maxContextTokens: number = 32000, speedMode: boolean = false) {
+  constructor(maxContextTokens: number = 32000) {
     this.maxContextTokens = maxContextTokens;
-    this.speedMode = speedMode;
   }
 
   public setSnapshot(snapshot: DomSnapshot) {
     this.snapshot = snapshot;
+  }
+
+  public getSnapshot(): DomSnapshot | null {
+    return this.snapshot;
   }
 
   public getCurrentUrl(): string {
@@ -112,7 +116,7 @@ export class ContextManager {
 
     // Compress old tool results to save context budget
     if (message.role === "tool") {
-      this.compressOldToolResults(this.speedMode ? 1 : 2);
+      this.compressOldToolResults(2);
     }
 
     if (this.history.length > 1000) {
@@ -150,11 +154,7 @@ export class ContextManager {
       const tokens = this.estimateMessageTokens(firstUserMsg);
       if (availableTokens >= tokens) {
         availableTokens -= tokens;
-        // Remove from history array so we don't duplicate processing (will re-add later if needed,
-        // but actually we want to build from end, so let's just keep reference)
       } else {
-        // Edge case: First message huge? Unlikely for initial prompt.
-        // Just let sliding window handle it if it doesn't fit.
         firstUserMsg = null;
       }
     }
@@ -172,13 +172,7 @@ export class ContextManager {
       const group: LLMMessage[] = [msg];
       let groupTokens = this.estimateMessageTokens(msg);
 
-      // Grouping: If this is a tool result (role='tool'), verify if next (prev in time) is assistant with tool_calls
       if (msg.role === "tool") {
-        // Look ahead in reversed array for the matching assistant message
-        // The assistant message might be immediately next, or separated by other tool results (parallel calls)
-        // Simple heuristic: If next is assistant with tool_calls, grab it too.
-
-        // Check next message (i+1)
         if (i + 1 < reversedHistory.length) {
           const nextMsg = reversedHistory[i + 1];
           if (
@@ -186,50 +180,21 @@ export class ContextManager {
             nextMsg.tool_calls &&
             nextMsg.tool_calls.length > 0
           ) {
-            // Check if this tool result belongs to one of the tool calls in nextMsg
             const calls = nextMsg.tool_calls;
             const myId = msg.tool_call_id;
             if (calls.some((c) => c.id === myId)) {
-              // It's a match! Add to group.
               group.push(nextMsg);
               groupTokens += this.estimateMessageTokens(nextMsg);
-              i++; // Skip next iteration since we consumed it
+              i++;
             }
           }
         }
       }
-      // Conversely, if current is assistant with tool calls, we should have seen the results already (since we traverse reverse).
-      // But if we selected results in previous iterations, they are already in selectedReverse.
-      // If we encounter an assistant message with tool calls that hasn't been grouped with results (e.g. results were skipped or not found),
-      // it's orphaned. A lonely tool call without result is invalid in many LLMs if it wasn't the last turn.
-      // BUT: We are traversing from MOST RECENT.
-      // SCENARIO:
-      // [Assistant(call), Tool(result)] <- Most recent
-      // Loop 1: msg=Tool(result). Next is Assistant(call). match! Group = [Tool, Assistant].
-      // Loop 2: (skipped)
-      //
-      // SCENARIO: Parallel
-      // [Assistant(call1, call2), Tool(result1), Tool(result2)]
-      // Loop 1: msg=Tool(result2). Next is Tool(result1). Not assistant. Group=[Tool2].
-      // Loop 2: msg=Tool(result1). Next is Assistant. match! Group=[Tool1, Assistant].
-      // Problem: Assistant is added, but Tool2 is already added separately.
-      // Result in prompt: [Assistant, Tool1] ... [Tool2] -> Order restored: [Assistant, Tool1, Tool2].
-      // This works!
-
-      // Caveat: If budget runs out between Tool2 and Tool1.
-      // Loop 1: Tool2 fits. selectedReverse=[Tool2].
-      // Loop 2: Tool1+Assistant fits?
-      // If yes: selectedReverse=[Tool2, Tool1, Assistant]. Restore -> [Assistant, Tool1, Tool2]. Correct.
-      // If no: Tool1+Assistant dropped. selectedReverse=[Tool2]. Restore -> [Tool2].
-      // Orphaned result! Model sees: [System, User, ... Tool2]. Confusing but not fatal syntax error usually.
-      // Better than Orphaned Call.
 
       if (availableTokens >= groupTokens) {
         selectedReverse.push(...group);
         availableTokens -= groupTokens;
       } else {
-        // If the group doesn't fit, we stop.
-        // This prevents partial groups at the boundary.
         break;
       }
     }
@@ -244,7 +209,39 @@ export class ContextManager {
     // Add selected recent messages (re-reverse to restore order)
     finalMessages.push(...selectedReverse.reverse());
 
-    return finalMessages;
+    // 5. Sanitize: drop orphaned tool results whose assistant was dropped by the window
+    const toolCallIdsInPrompt = new Set<string>();
+    for (const msg of finalMessages) {
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) toolCallIdsInPrompt.add(tc.id);
+      }
+    }
+
+    const toolResultIdsInPrompt = new Set<string>();
+    for (const msg of finalMessages) {
+      if (msg.role === "tool" && msg.tool_call_id) {
+        toolResultIdsInPrompt.add(msg.tool_call_id);
+      }
+    }
+
+    const sanitized = finalMessages.filter(msg => {
+      // Drop tool results without a matching assistant tool_call
+      if (msg.role === "tool" && msg.tool_call_id) {
+        return toolCallIdsInPrompt.has(msg.tool_call_id);
+      }
+      return true;
+    }).map(msg => {
+      // Strip tool_calls from assistant if ANY result is missing
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        const allResultsPresent = msg.tool_calls.every(tc => toolResultIdsInPrompt.has(tc.id));
+        if (!allResultsPresent) {
+          return { ...msg, tool_calls: undefined };
+        }
+      }
+      return msg;
+    });
+
+    return sanitized;
   }
 
   private estimateMessageTokens(message: LLMMessage): number {
@@ -269,8 +266,7 @@ export class ContextManager {
   }
 
   private constructSystemMessage(): LLMMessage {
-    const template = this.speedMode ? SPEED_PROMPT_TEMPLATE : SYSTEM_PROMPT_TEMPLATE;
-    let content = template;
+    let content = SYSTEM_PROMPT_TEMPLATE;
 
     if (this.snapshot) {
       content = content.replace("{{title}}", this.snapshot.title || "Unknown");
@@ -294,7 +290,7 @@ export class ContextManager {
       }
 
       // Format elements with progressive compression
-      const level = this.speedMode ? CompressionLevel.LIGHT : this.getCompressionLevel();
+      const level = this.getCompressionLevel();
       const elementsList = this.formatElementsWithCompression(
         this.snapshot.elements,
         level,
@@ -304,22 +300,16 @@ export class ContextManager {
         elementsList || "No interactive elements found.",
       );
 
-      // Viewport text
-      if (this.speedMode) {
-        // Speed mode: truncated viewport text so LLM can read task instructions
-        const viewportText = (this.snapshot.viewportText || "").slice(0, 1500);
-        content = content.replace("{{viewportText}}", viewportText);
-      } else {
-        let viewportText = this.snapshot.viewportText || "No text content.";
-        if (level === CompressionLevel.HEAVY) {
-          viewportText = ""; // Remove in heavy compression
-        } else if (level === CompressionLevel.MEDIUM) {
-          viewportText = viewportText.slice(0, 2000);
-        } else if (level === CompressionLevel.LIGHT) {
-          viewportText = viewportText.slice(0, 5000);
-        }
-        content = content.replace("{{viewportText}}", viewportText);
+      // Viewport text — dynamic with compression level
+      let viewportText = this.snapshot.viewportText || "No text content.";
+      if (level === CompressionLevel.HEAVY) {
+        viewportText = ""; // Remove in heavy compression
+      } else if (level === CompressionLevel.MEDIUM) {
+        viewportText = viewportText.slice(0, 2000);
+      } else if (level === CompressionLevel.LIGHT) {
+        viewportText = viewportText.slice(0, 3000);
       }
+      content = content.replace("{{viewportText}}", viewportText);
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
@@ -386,7 +376,7 @@ export class ContextManager {
     const textTokens = Math.ceil(
       (this.snapshot.viewportText || "").length / 4,
     );
-    const baseTokens = 350; // ~fixed template overhead
+    const baseTokens = 550; // ~fixed template overhead (expanded prompt + planning section)
     const historyTokens = this.history.reduce(
       (sum, msg) => sum + this.estimateMessageTokens(msg),
       0,
@@ -429,11 +419,11 @@ export class ContextManager {
             text = text.slice(0, 40);
             break;
           case CompressionLevel.MEDIUM:
-            attrFilter = (k) => ["id", "role", "type", "href"].includes(k);
+            attrFilter = (k) => ["id", "role", "type", "href", "label", "description"].includes(k);
             text = text.slice(0, 20);
             break;
           case CompressionLevel.HEAVY:
-            attrFilter = (k) => ["role", "type"].includes(k);
+            attrFilter = (k) => ["role", "type", "description"].includes(k);
             text = text.slice(0, 15);
             break;
         }
@@ -517,8 +507,8 @@ export class ContextManager {
   }
 
   private compressToolResultsBeforeIndex(beforeIndex: number): void {
-    const maxLen = this.speedMode ? 80 : 150;
-    const snippetLen = this.speedMode ? 60 : 100;
+    const maxLen = 150;
+    const snippetLen = 100;
     for (let i = 0; i <= beforeIndex; i++) {
       const msg = this.history[i];
       if (msg.role === "tool" && msg.content) {
@@ -537,10 +527,6 @@ export class ContextManager {
       const data = await chrome.storage.session.get("agent_context");
       if (data.agent_context) {
         this.history = data.agent_context.history || [];
-        // Snapshot might be too large/complex to persist effectively or stale,
-        // but we can try if it's small. For now, let's skip snapshot persistence
-        // to avoid quota issues and ensure fresh page reads.
-        // this.snapshot = data.agent_context.snapshot || null;
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
         });
@@ -555,7 +541,6 @@ export class ContextManager {
       await chrome.storage.session.set({
         agent_context: {
           history: this.history,
-          // snapshot: this.snapshot
         },
       });
     } catch (e) {

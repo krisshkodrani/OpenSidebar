@@ -123,17 +123,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">API Configuration</h3>
 
                         <div className="space-y-1">
-                            <label className="text-sm font-medium dark:text-gray-300">Cerebras API Key</label>
-                            <input
-                                type="password"
-                                value={formState.cerebrasApiKey}
-                                onChange={e => handleChange("cerebrasApiKey", e.target.value)}
-                                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-gray-100"
-                                placeholder="sk-..."
-                            />
-                        </div>
-
-                        <div className="space-y-1">
                             <label className="text-sm font-medium dark:text-gray-300">OpenRouter API Key</label>
                             <input
                                 type="password"
@@ -199,13 +188,31 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                         <div className="flex items-center justify-between">
                             <div>
-                                <label className="text-sm font-medium dark:text-gray-300">Speed Mode</label>
-                                <p className="text-xs text-gray-400 dark:text-gray-500">Fewer tools, batch snapshots, parallel execution</p>
+                                <label className="text-sm font-medium dark:text-gray-300">Confirm Plan</label>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">Show action plan and wait for approval before executing</p>
                             </div>
                             <input
                                 type="checkbox"
-                                checked={formState.speedMode}
-                                onChange={e => handleChange("speedMode", e.target.checked)}
+                                checked={formState.confirmPlan}
+                                onChange={e => handleChange("confirmPlan", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                        </div>
+                    </section>
+
+                    {/* Usage & Cost */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Usage & Cost</h3>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium dark:text-gray-300">Show Session Metrics</label>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">Token usage, cost, and timing during agent runs</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={formState.showSessionMetrics}
+                                onChange={e => handleChange("showSessionMetrics", e.target.checked)}
                                 className="w-4 h-4 text-primary-600 rounded bg-gray-100 border-gray-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                             />
                         </div>

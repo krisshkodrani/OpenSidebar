@@ -36,6 +36,7 @@ describe("Vision Bridge", () => {
       new Response(
         JSON.stringify({
           choices: [{ message: { content: "A login page with a form and two buttons." } }],
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, cost: 0.001 },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -43,8 +44,14 @@ describe("Vision Bridge", () => {
 
     const result = await describeScreenshot(FAKE_DATA_URL);
 
-    expect(result).toStartWith("[Screenshot Description]");
-    expect(result).toContain("A login page with a form and two buttons.");
+    expect(result.description).toStartWith("[Screenshot Description]");
+    expect(result.description).toContain("A login page with a form and two buttons.");
+    expect(result.usage).toBeDefined();
+    expect(result.usage!.prompt_tokens).toBe(100);
+    expect(result.usage!.completion_tokens).toBe(50);
+    expect(result.usage!.cost).toBe(0.001);
+    expect(result.model).toBe("google/gemini-2.5-flash-lite");
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
     expect(fetchSpy).toHaveBeenCalled();
 
     // Check the last call (ours) since other test files may spy on fetch globally
@@ -52,14 +59,15 @@ describe("Vision Bridge", () => {
     const lastCall = calls[calls.length - 1];
     expect(lastCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
     const body = JSON.parse(lastCall[1].body);
-    expect(body.model).toBe("google/gemini-2.0-flash-001");
+    expect(body.model).toBe("google/gemini-2.5-flash-lite");
   });
 
   test("missing API key returns graceful fallback", async () => {
     mockSettings.openRouterApiKey = "";
 
     const result = await describeScreenshot(FAKE_DATA_URL);
-    expect(result).toContain("no OpenRouter API key");
+    expect(result.description).toContain("no OpenRouter API key");
+    expect(result.usage).toBeUndefined();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -71,8 +79,8 @@ describe("Vision Bridge", () => {
     });
 
     const result = await describeScreenshot(FAKE_DATA_URL);
-    expect(result).toContain("vision analysis failed");
-    expect(result).toContain("429");
+    expect(result.description).toContain("vision analysis failed");
+    expect(result.description).toContain("429");
     // Should have retried (initial + 2 retries = 3 total)
     expect(callCount).toBe(3);
   });
@@ -85,8 +93,8 @@ describe("Vision Bridge", () => {
     });
 
     const result = await describeScreenshot(FAKE_DATA_URL);
-    expect(result).toContain("vision analysis failed");
-    expect(result).toContain("400");
+    expect(result.description).toContain("vision analysis failed");
+    expect(result.description).toContain("400");
     // Should NOT retry on 400
     expect(callCount).toBe(1);
   });

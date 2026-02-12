@@ -34,7 +34,6 @@ describe("SidePanel Store", () => {
             stuckState: null,
             turnProgress: null,
             settings: {
-                cerebrasApiKey: "",
                 openRouterApiKey: "",
                 maxTurns: 30,
                 contextWindowSize: 128000,
@@ -42,7 +41,8 @@ describe("SidePanel Store", () => {
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
-                speedMode: false,
+                visionModel: "google/gemini-2.0-flash-001",
+                confirmPlan: false,
             },
         });
     });
@@ -90,7 +90,7 @@ describe("SidePanel Store", () => {
         // Mock storage to return partial settings
         (chrome.storage.sync.get as any) = mock(async () => ({
             userSettings: {
-                cerebrasApiKey: "sk-test-123",
+                openRouterApiKey: "sk-or-test-123",
                 maxTurns: 10,
             },
         }));
@@ -98,7 +98,7 @@ describe("SidePanel Store", () => {
         await useStore.getState().loadSettingsFromStorage();
 
         const settings = useStore.getState().settings;
-        expect(settings.cerebrasApiKey).toBe("sk-test-123");
+        expect(settings.openRouterApiKey).toBe("sk-or-test-123");
         expect(settings.maxTurns).toBe(10);
         // Defaults preserved for missing fields
         expect(settings.memoryEnabled).toBe(true);
@@ -113,7 +113,7 @@ describe("SidePanel Store", () => {
         await useStore.getState().loadSettingsFromStorage();
 
         const settings = useStore.getState().settings;
-        expect(settings.cerebrasApiKey).toBe("");
+        expect(settings.openRouterApiKey).toBe("");
         expect(settings.maxTurns).toBe(30);
         expect(settings.workspaceEnabled).toBe(true);
     });
@@ -366,8 +366,9 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().turnProgress).toBeNull();
     });
 
-    test("DEFAULT_SETTINGS includes speedMode", () => {
+    test("DEFAULT_SETTINGS includes visionModel and confirmPlan", () => {
         const settings = useStore.getState().settings;
-        expect(settings.speedMode).toBe(false);
+        expect(settings.visionModel).toBe("google/gemini-2.0-flash-001");
+        expect(settings.confirmPlan).toBe(false);
     });
 });

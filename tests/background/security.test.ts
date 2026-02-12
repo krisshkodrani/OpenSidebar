@@ -12,6 +12,7 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.HOVER_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.FIND_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.DONE, { summary: "done" })).toBe(RiskLevel.LOW);
+        expect(classifyRisk(ToolName.ESCALATE, { reason: "riddle" })).toBe(RiskLevel.LOW);
     });
 
     test("mutation tools are MEDIUM risk", () => {
@@ -25,7 +26,6 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.NAVIGATE, { url: "https://example.com" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.CREATE_TAB, { url: "https://example.com" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.CLOSE_TAB, {})).toBe(RiskLevel.HIGH);
-        expect(classifyRisk(ToolName.ACTIVATE_SWARM, { task: "research" })).toBe(RiskLevel.HIGH);
     });
 
     test("unknown tool names default to HIGH", () => {

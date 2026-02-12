@@ -5,7 +5,6 @@ GlobalRegistrator.register();
 
 // Vite build-time constants (injected via `define` in vite.config.ts)
 (globalThis as any).__DEV__ = true;
-(globalThis as any).__CEREBRAS_API_KEY__ = "";
 (globalThis as any).__OPENROUTER_API_KEY__ = "";
 
 // Mock Chrome API

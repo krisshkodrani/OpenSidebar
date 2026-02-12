@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
-import { Header, MessageBubble, InputArea, ControlBar, StuckBanner, TaskProgressPanel } from "./components";
+import { Header, MessageBubble, InputArea, ControlBar, StuckBanner, TaskProgressPanel, MetricsBar } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import {
   AgentStatus,
@@ -22,6 +22,7 @@ export default function App() {
   const error = useStore((s) => s.error);
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
+  const sessionMetrics = useStore((s) => s.sessionMetrics);
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [screenshot, setScreenshot] = useState<{
@@ -252,7 +253,7 @@ export default function App() {
   }, [setAgentRunning, updateStatus]);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-200">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-200">
       <Header onOpenSettings={() => setIsSettingsOpen(true)} />
 
       <SettingsDrawer
@@ -299,6 +300,7 @@ export default function App() {
 
       <div className="flex flex-col shrink-0 bg-surface-light dark:bg-surface-dark z-20 border-t border-gray-200 dark:border-gray-800 shadow-lg">
         <ControlBar />
+        {settings.showSessionMetrics && sessionMetrics && <MetricsBar metrics={sessionMetrics} />}
         <TaskProgressPanel />
         <InputArea onSend={handleSend} onSendHint={handleSendHint} onStop={handleStop} />
       </div>

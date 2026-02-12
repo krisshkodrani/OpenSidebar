@@ -1,12 +1,69 @@
 import React, { useMemo } from "react";
 import { marked } from "marked";
-import { ChatEntry, TaskCompletionMessage } from "../../types";
+import { ChatEntry, SessionMetrics, TaskCompletionMessage } from "../../types";
 import { clsx } from "clsx";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
 import { CheckCircle2, XCircle, AlertTriangle, MessageCircle } from "lucide-react";
 
 marked.setOptions({ breaks: true, gfm: true });
+
+function formatTokensCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatCostCompact(cost: number): string {
+  if (cost === 0) return "$0";
+  if (cost >= 1) return `$${cost.toFixed(2)}`;
+  if (cost >= 0.01) return `$${cost.toFixed(2)}`;
+  return `$${cost.toFixed(4)}`;
+}
+
+function formatTimeCompact(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
+
+function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
+  const models = Object.entries(metrics.modelBreakdown);
+  const showBreakdown = models.length > 1;
+
+  return (
+    <div className="text-xs text-gray-500 dark:text-gray-400 tabular-nums space-y-0.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span>{metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "—"}</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
+        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span>Total {formatTimeCompact(metrics.totalSessionTimeMs)}</span>
+      </div>
+      {showBreakdown && (
+        <div className="pl-2 space-y-0.5">
+          {models.map(([model, data]) => (
+            <div key={model} className="flex items-center gap-1.5">
+              <span className="text-gray-400 dark:text-gray-500">{model.split("/").pop()}:</span>
+              <span>{formatTokensCompact(data.promptTokens + data.completionTokens)} tok</span>
+              {data.cost > 0 && (
+                <>
+                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span>{formatCostCompact(data.cost)}</span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] }) {
   const statusIcon =
@@ -36,6 +93,11 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
           </span>
         )}
       </div>
+      {data.metrics && (
+        <div className="mb-2">
+          <MetricsSummary metrics={data.metrics} />
+        </div>
+      )}
       {data.summary && (
         <p className="text-gray-600 dark:text-gray-300 text-xs mb-2">
           {data.summary}
@@ -45,9 +107,9 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
         <div className="space-y-1 mt-2 border-t border-gray-200 dark:border-gray-700 pt-2">
           {data.subtaskResults.map((sr, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs">
-              {sr.outcome === "completed" ? (
+              {sr.status === "completed" ? (
                 <CheckCircle2 size={10} className="text-green-500 shrink-0" />
-              ) : sr.outcome === "failed" ? (
+              ) : sr.status === "failed" ? (
                 <XCircle size={10} className="text-red-500 shrink-0" />
               ) : (
                 <AlertTriangle size={10} className="text-yellow-500 shrink-0" />

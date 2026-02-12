@@ -1,9 +1,6 @@
 import { TaggedElement } from "../types";
 import { logger } from "../utils";
 
-/** Global tag counter — resets on each snapshot refresh */
-let tagCounter = 0;
-
 /** Maps tag number → DOM element (for action execution) */
 const tagMap = new Map<number, Element>();
 
@@ -18,6 +15,9 @@ export const MAX_TAGGED_ELEMENTS = 50;
 
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
 const MAX_SHADOW_DEPTH = 3;
+
+/** Time budget for cursor:pointer scan (ms) */
+const CLICKABLE_SCAN_BUDGET_MS = 10;
 
 const INTERACTIVE_SELECTORS = [
   "a[href]",
@@ -42,11 +42,100 @@ const INTERACTIVE_SELECTORS = [
   "[draggable='true']",
 ].join(", ");
 
+// --- Stable ID infrastructure ---
+
+/** Persistent hash → integer ID map (survives across snapshot refreshes) */
+const hashToId = new Map<string, number>();
+/** Reverse map: integer ID → hash */
+const idToHash = new Map<number, string>();
+/** Next available integer ID */
+let nextId = 1;
+/** IDs from previous refresh that weren't seen this refresh (grace period) */
+const previousIds = new Set<number>();
+
+/**
+ * FNV-1a 32-bit hash → 8-char hex string.
+ * Fast, deterministic, good distribution for short strings.
+ */
+function fnv1aHash(str: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = (hash * 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+/** Build a simplified DOM path from body → element using child indices */
+function getDomPath(el: Element): string {
+  const parts: string[] = [];
+  let current: Element | null = el;
+  while (current && current !== document.body && current !== document.documentElement) {
+    const parent = current.parentElement;
+    if (!parent) break;
+    const siblings = Array.from(parent.children);
+    const idx = siblings.indexOf(current);
+    parts.unshift(`${current.tagName.toLowerCase()}:${idx}`);
+    current = parent;
+  }
+  return parts.join(">");
+}
+
+/** Build a stable attribute signature from identity-bearing attributes */
+function getAttrSignature(el: Element): string {
+  const keys = ["id", "name", "type", "role", "href", "aria-label", "data-testid"];
+  return keys
+    .map((k) => el.getAttribute(k))
+    .filter(Boolean)
+    .join("|");
+}
+
+/**
+ * Compute a stable hash for an element based on its identity.
+ * Components: tagName, DOM path, first 30 chars of text, key attributes.
+ */
+function computeStableHash(el: Element): string {
+  const tag = el.tagName.toLowerCase();
+  const path = getDomPath(el);
+  const text = (el.textContent?.trim() || "").slice(0, 30).toLowerCase();
+  const attrs = getAttrSignature(el);
+  return fnv1aHash(`${tag}|${path}|${text}|${attrs}`);
+}
+
+/**
+ * Get or allocate a stable integer ID for a given hash.
+ * Reuses existing ID if the hash was seen before.
+ */
+function getStableId(hash: string): number {
+  const existing = hashToId.get(hash);
+  if (existing !== undefined) return existing;
+  const id = nextId++;
+  hashToId.set(hash, id);
+  idToHash.set(id, hash);
+  return id;
+}
+
+/** Reset all stable ID state (call on full page navigation) */
+export function resetStableIds(): void {
+  hashToId.clear();
+  idToHash.clear();
+  tagMap.clear();
+  previousIds.clear();
+  nextId = 1;
+}
+
+// --- Container tags for clickable scan filtering ---
+
+const CONTAINER_TAGS = new Set([
+  "div", "section", "article", "main", "aside", "header",
+  "footer", "nav", "form", "fieldset", "ul", "ol", "table",
+  "tbody", "thead", "tr",
+]);
+
+// --- Public API ---
+
 export function getCachedElements(): TaggedElement[] {
-  // Reconstruct TaggedElements from the current DOM state of tags
-  // This is valid until the page changes naturally
-  // But typically we regenerate tags
-  return []; // For now, we prefer fresh tagging
+  return []; // Prefer fresh tagging
 }
 
 export function getTagMap(): Map<number, Element> {
@@ -63,26 +152,21 @@ export function addDynamicTag(el: Element): number {
   for (const [existingTag, existingEl] of tagMap) {
     if (existingEl === el) return existingTag;
   }
-  tagCounter++;
-  tagMap.set(tagCounter, el);
-  return tagCounter;
+  // Compute stable hash for consistency
+  const hash = computeStableHash(el);
+  const id = getStableId(hash);
+  tagMap.set(id, el);
+  return id;
 }
 
 /**
  * Recursively query elements through Shadow DOM boundaries
- * This enables interaction with Web Components and Shadow DOM encapsulated elements
- *
- * @param root - The root element/document to query from
- * @param selector - CSS selector string
- * @param depth - Current recursion depth (used internally)
- * @returns Array of elements matching the selector across all shadow boundaries
  */
 export function querySelectorAllDeep(
   root: Document | ShadowRoot | Element,
   selector: string,
   depth: number = 0,
 ): Element[] {
-  // Prevent excessive recursion
   if (depth > MAX_SHADOW_DEPTH) {
     return [];
   }
@@ -90,21 +174,17 @@ export function querySelectorAllDeep(
   const results: Element[] = [];
 
   try {
-    // Query in current root context
     if (root instanceof Element) {
       results.push(...Array.from(root.querySelectorAll(selector)));
     } else {
       results.push(...Array.from(root.querySelectorAll(selector)));
     }
 
-    // Find all elements that might have shadow roots
     const allElements = root.querySelectorAll("*");
 
     for (const el of allElements) {
-      // Check if this element has an open shadow root
       if (el.shadowRoot) {
         try {
-          // Recursively query inside the shadow root
           const shadowResults = querySelectorAllDeep(
             el.shadowRoot,
             selector,
@@ -112,13 +192,10 @@ export function querySelectorAllDeep(
           );
           results.push(...shadowResults);
         } catch (_e) {
-          // Silently skip shadow roots that throw (e.g., closed shadow DOM)
           continue;
         }
       }
 
-      // Also check for shadow hosts within custom elements
-      // Some frameworks attach shadow to the element itself
       if ((el as any).shadowRoot && el !== root) {
         try {
           const shadowResults = querySelectorAllDeep(
@@ -133,12 +210,70 @@ export function querySelectorAllDeep(
       }
     }
   } catch (e) {
-    // If querying fails (e.g., cross-origin restrictions), return what we have
     logger.warn("content", "Shadow DOM query failed", { error: e });
   }
 
-  // Remove duplicates (element might be found via multiple paths in complex DOMs)
   return [...new Set(results)];
+}
+
+/**
+ * Detect elements with cursor:pointer that aren't captured by INTERACTIVE_SELECTORS.
+ * Time-budgeted to avoid blocking on heavy pages.
+ */
+function detectClickableElements(): Element[] {
+  const found: Element[] = [];
+  const start = performance.now();
+
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode(node) {
+        const el = node as Element;
+        // Skip our own labels
+        if ((el as HTMLElement).classList?.contains(LABEL_CLASS)) return NodeFilter.FILTER_REJECT;
+        // Skip if already captured by interactive selectors
+        try {
+          if (el.matches(INTERACTIVE_SELECTORS)) return NodeFilter.FILTER_SKIP;
+        } catch {
+          return NodeFilter.FILTER_SKIP;
+        }
+        // Skip large containers
+        const tag = el.tagName.toLowerCase();
+        if (CONTAINER_TAGS.has(tag) && el.children.length > 3) return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    },
+  );
+
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    // Time budget check
+    if (performance.now() - start > CLICKABLE_SCAN_BUDGET_MS) {
+      logger.warn("content", "Clickable scan exceeded time budget", {
+        found: found.length,
+        elapsedMs: Math.round(performance.now() - start),
+      });
+      break;
+    }
+
+    const el = node as Element;
+    if (!isElementVisible(el)) continue;
+
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.cursor === "pointer") {
+        const text = el.textContent?.trim() || "";
+        // Only tag leaf-ish elements with reasonable text
+        if (text.length > 0 && text.length < 200 && el.children.length <= 3) {
+          found.push(el);
+        }
+      }
+    } catch {
+      // getComputedStyle can fail for detached elements
+    }
+  }
+  return found;
 }
 
 /** Map inferred role → short hint abbreviation for visual labels */
@@ -168,26 +303,64 @@ function shortHint(el: Element): string {
 }
 
 export function tagElements(showTags: boolean = false): TaggedElement[] {
-  // 1. Remove old tags
+  // 1. Remove old visual labels
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
+
+  // 2. Move current IDs into grace period; clear tagMap for fresh population
+  previousIds.clear();
+  for (const id of idToHash.keys()) {
+    previousIds.add(id);
+  }
   tagMap.clear();
-  tagCounter = 0;
 
-  // 2. Query all interactive elements (now with Shadow DOM support!)
+  // 3. Phase 1: Standard interactive selectors
   const candidates = querySelectorAllDeep(document, INTERACTIVE_SELECTORS);
-  const results: TaggedElement[] = [];
 
+  // 4. Phase 2: cursor:pointer elements not already captured
+  const clickableExtras = detectClickableElements();
+
+  // 5. Deduplicate
+  const seen = new Set<Element>();
+  const allCandidates: Element[] = [];
   for (const el of candidates) {
+    if (!seen.has(el)) {
+      seen.add(el);
+      allCandidates.push(el);
+    }
+  }
+  for (const el of clickableExtras) {
+    if (!seen.has(el)) {
+      seen.add(el);
+      allCandidates.push(el);
+    }
+  }
+
+  const results: TaggedElement[] = [];
+  const activeHashes = new Set<string>();
+
+  for (const el of allCandidates) {
     if (results.length >= MAX_TAGGED_ELEMENTS) break;
     if (!isElementVisible(el)) continue;
+    if (el.closest('[aria-hidden="true"]')) continue;
 
-    tagCounter++;
-    const tag = tagCounter;
+    // Compute stable hash and get/allocate a stable ID
+    const hash = computeStableHash(el);
+    // Handle hash collision: append suffix if this hash is already used by a different element
+    let finalHash = hash;
+    if (activeHashes.has(hash)) {
+      let suffix = 2;
+      while (activeHashes.has(`${hash}-${suffix}`)) suffix++;
+      finalHash = `${hash}-${suffix}`;
+    }
+    activeHashes.add(finalHash);
+
+    const tag = getStableId(finalHash);
+    previousIds.delete(tag); // Still alive — remove from grace
     tagMap.set(tag, el);
 
     const rect = el.getBoundingClientRect();
 
-    // 3. Inject visual label (only when showTags is true)
+    // 6. Inject visual label (only when showTags is true)
     if (showTags) {
       const hint = shortHint(el);
       const label = document.createElement("span");
@@ -205,14 +378,12 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
         white-space: nowrap;
         box-shadow: 0 1px 2px rgba(0,0,0,0.2);
       `;
-
-      // Position the label at the element's top-left
       label.style.top = `${rect.top + window.scrollY}px`;
       label.style.left = `${Math.max(0, rect.left + window.scrollX - 20)}px`;
       document.body.appendChild(label);
     }
 
-    // 4. Build TaggedElement
+    // 7. Build TaggedElement
     results.push({
       tag,
       tagName: el.tagName.toLowerCase(),
@@ -228,6 +399,18 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
       isVisible: true,
       isDisabled: isDisabled(el),
     });
+  }
+
+  // 8. Clean up hashes for elements gone for 2+ refreshes
+  // previousIds now contains IDs that existed before but weren't seen this refresh.
+  // They get one grace cycle. On the NEXT refresh, they'll be cleared from previousIds
+  // at the top, and if still not seen, they won't be in previousIds → eligible for cleanup.
+  // We clean hashes that are NOT in activeHashes AND NOT in previousIds (grace).
+  for (const [hash, id] of hashToId) {
+    if (!activeHashes.has(hash) && !previousIds.has(id)) {
+      hashToId.delete(hash);
+      idToHash.delete(id);
+    }
   }
 
   return results;
@@ -249,7 +432,6 @@ export function isElementVisible(el: Element): boolean {
   if (style.clip === "rect(0px, 0px, 0px, 0px)") return false;
 
   // Viewport-relative filtering with expansion margin
-  // getBoundingClientRect() returns viewport-relative coords
   const viewportTop = -VIEWPORT_EXPANSION;
   const viewportBottom = window.innerHeight + VIEWPORT_EXPANSION;
   const viewportLeft = 0;
@@ -272,7 +454,6 @@ function inferRole(el: Element): string {
 }
 
 export function getVisibleText(el: Element): string {
-  // Prefer aria-label > textContent > value > placeholder
   const ariaLabel = el.getAttribute("aria-label");
   if (ariaLabel) return ariaLabel;
 
@@ -288,20 +469,17 @@ export function getVisibleText(el: Element): string {
 
 /** Priority attributes for agent identification (AgentOccam hierarchy) */
 const PRIORITY_ATTRS = [
-  // Identity
   "id",
   "data-testid",
   "name",
-  // Navigation
   "href",
   "src",
-  // Input state
   "type",
   "placeholder",
   "value",
-  // Accessibility
   "role",
   "aria-label",
+  "aria-roledescription",
   "alt",
   "title",
 ];
@@ -316,21 +494,18 @@ function extractAttributes(el: Element): Record<string, string> {
     const val = el.getAttribute(name);
     if (!val || val.length === 0) continue;
 
-    // Skip random hashes (low character-to-token ratio, per AgentOccam)
     if ((name === "id" || name === "name") && isRandomHash(val)) continue;
 
     attrs[name] = val.slice(0, ATTR_TRUNCATION);
   }
 
-  // Label association for form elements
+  // Form-specific label association
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
-    // Try explicit <label for="id">
     const elId = el.getAttribute("id");
     if (elId) {
       const labelEl = document.querySelector(`label[for="${CSS.escape(elId)}"]`);
       if (labelEl) attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
     }
-    // Try implicit <label> wrapper
     if (!attrs["label"]) {
       const parentLabel = el.closest("label");
       if (parentLabel) {
@@ -338,43 +513,72 @@ function extractAttributes(el: Element): Record<string, string> {
         if (labelText) attrs["label"] = truncateText(labelText, 40);
       }
     }
-    // Try aria-labelledby
-    if (!attrs["label"]) {
-      const labelledBy = el.getAttribute("aria-labelledby");
-      if (labelledBy) {
-        const labelEl = document.getElementById(labelledBy);
-        if (labelEl) attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
+  }
+
+  // General aria-labelledby resolution
+  if (!attrs["label"] && !attrs["aria-label"]) {
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const parts: string[] = [];
+      for (const refId of labelledBy.split(/\s+/)) {
+        const refEl = document.getElementById(refId);
+        if (refEl) {
+          const txt = refEl.textContent?.trim();
+          if (txt) parts.push(txt);
+        }
+      }
+      if (parts.length > 0) {
+        attrs["label"] = truncateText(parts.join(" "), 40);
       }
     }
   }
 
-  // State attributes — only include when they indicate non-default state
+  // State attributes
   if (el.hasAttribute("disabled")) attrs["disabled"] = "true";
   if (el.getAttribute("aria-expanded") === "true")
     attrs["aria-expanded"] = "true";
   if (el.getAttribute("aria-selected") === "true")
     attrs["aria-selected"] = "true";
 
+  // Resolve aria-describedby
+  const describedBy = el.getAttribute("aria-describedby");
+  if (describedBy) {
+    const parts: string[] = [];
+    for (const refId of describedBy.split(/\s+/)) {
+      const refEl = document.getElementById(refId);
+      if (refEl) {
+        const txt = refEl.textContent?.trim();
+        if (txt) parts.push(txt);
+      }
+    }
+    if (parts.length > 0) {
+      attrs["description"] = truncateText(parts.join(" "), 80);
+    }
+  }
+
+  // aria-description direct attribute
+  if (!attrs["description"]) {
+    const ariaDesc = el.getAttribute("aria-description");
+    if (ariaDesc) {
+      attrs["description"] = truncateText(ariaDesc, 80);
+    }
+  }
+
   return attrs;
 }
 
 /**
  * Detect random hash/generated ID strings that waste tokens.
- * Patterns: css-1q2w3e4, Button_root__2dKj, u_0_j_8W0000
  */
 export function isRandomHash(value: string): boolean {
-  // CSS module pattern: double underscore + any suffix
   if (/__[a-zA-Z0-9]{2,}$/.test(value)) return true;
 
-  // Trailing mixed alphanumeric suffix after separator (must contain digits AND letters)
-  // This distinguishes hashes like "css-1q2w3e4" from words like "login-button"
   const suffixMatch = value.match(/[_-]([a-zA-Z0-9]{4,})$/);
   if (suffixMatch) {
     const suffix = suffixMatch[1];
     if (/\d/.test(suffix) && /[a-zA-Z]/.test(suffix)) return true;
   }
 
-  // Pure alphanumeric with no readable word (>= 3 consecutive lowercase)
   if (/^[a-zA-Z0-9]{8,}$/.test(value) && !/[a-z]{3,}/.test(value)) return true;
   return false;
 }

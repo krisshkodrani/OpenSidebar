@@ -2,7 +2,7 @@
 
 A bimodal, open-source Chrome extension that transforms your browser into an AI-powered agentic workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It combines a **fast Reflex Engine** (Cerebras) for real-time interactions with a **Deep Thought Engine** (Kimi k2.5 swarm) for complex research, plus a **local Second Brain** for persistent memory.
+OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses **OpenRouter** to access fast models (Gemini 2.0 Flash) for real-time interactions with dynamic model escalation for complex tasks, plus a **local Second Brain** for persistent memory.
 
 ---
 
@@ -10,7 +10,7 @@ OpenSidebar can navigate, read, click, type, and research across web pages — a
 
 - **Browser Automation** — Click buttons, fill forms, scroll pages, and navigate — all via natural language commands.
 - **Visual DOM Understanding** — Vimium-style numeric tagging of interactive elements. The AI sees `[3] <button> "Submit"` and calls `click_element(id=3)`.
-- **Bimodal Intelligence** — Fast model for instant actions, powerful model for deep research.
+- **Dynamic Model Escalation** — Fast model for instant actions, automatic escalation to more powerful models when needed.
 - **Local Memory** — Hybrid semantic + keyword search (Transformers.js + SQLite FTS5 + Voy) with Reciprocal Rank Fusion. All data stays in your browser.
 - **Auto-Managed Workspaces** — Chrome Tab Groups automatically organize your agent sessions. Click the extension icon on any tab to create a new workspace; tabs created by the agent auto-group together. Workspaces auto-delete when empty.
 - **Per-Tab Sidebar** — Sidebar opens only when you click the extension icon and closes automatically when you switch tabs. Each tab gets its own sidebar session and workspace.
@@ -30,8 +30,8 @@ Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM
 
 | Component      | Technology                             |
 | -------------- | -------------------------------------- |
-| Fast LLM       | Cerebras GPT-OSS-120b (~3000 tok/s)    |
-| Research LLM   | Kimi k2.5 via OpenRouter (agent swarm) |
+| Fast LLM       | OpenRouter (Gemini 2.0 Flash)          |
+| Smart LLM      | OpenRouter (model escalation)          |
 | Embeddings     | Transformers.js (all-MiniLM-L6-v2)     |
 | Vector Search  | Voy (WASM)                             |
 | Keyword Search | SQLite WASM (FTS5)                     |
@@ -65,8 +65,7 @@ _OpenSidebar automatically navigating and interacting with web pages_
 ### Prerequisites
 
 - Node.js 18+
-- A Cerebras API key ([cerebras.ai](https://cerebras.ai))
-- An OpenRouter API key ([openrouter.ai](https://openrouter.ai)) — optional, for Deep Thought mode
+- An OpenRouter API key ([openrouter.ai](https://openrouter.ai))
 
 ### Install & Build
 
@@ -96,8 +95,7 @@ This starts Vite with HMR. Load the `dist/` folder as an unpacked extension — 
 
 1. Click the OpenSidebar icon to open the side panel
 2. Click the settings gear icon
-3. Enter your Cerebras API key
-4. (Optional) Enter your OpenRouter API key for Deep Thought mode
+3. Enter your OpenRouter API key
 
 ---
 

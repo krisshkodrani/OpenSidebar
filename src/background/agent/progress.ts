@@ -6,12 +6,19 @@ export interface ProgressSignal {
   staleTurns: number;
 }
 
+/** Key attributes that indicate meaningful state changes */
+const STATE_ATTRS = ["disabled", "checked", "aria-expanded", "value", "selected", "aria-selected"];
+
 /** Cheap fingerprint — changes iff page meaningfully changed */
 function snapshotFingerprint(snap: DomSnapshot): string {
   const elSigs = snap.elements
-    .map(
-      (e) => `${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}`,
-    )
+    .map((e) => {
+      const attrSig = STATE_ATTRS
+        .filter((a) => a in e.attributes)
+        .map((a) => `${a}=${e.attributes[a]}`)
+        .join(",");
+      return `${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`;
+    })
     .sort()
     .join("|");
   return `${snap.url}|${snap.elements.length}|${elSigs}`;
@@ -21,10 +28,10 @@ const STALE_NUDGE = 6;
 const STALE_ESCALATE = 12;
 
 const STUCK_NUDGE_MSG =
-  "STUCK DETECTION: Your last several actions had no visible effect on the page. The elements you are interacting with may be decoys or non-functional. Change strategy:\n1. take_screenshot to see the actual visual layout\n2. read_page for full page text content\n3. scroll_page to find hidden or off-screen elements\n4. Look for non-obvious elements: small links, hidden inputs, keyboard shortcuts (press_key)\nDo NOT keep clicking prominent buttons that have no effect.";
+  "STUCK: Your last 6 actions changed nothing. STOP and apply the Verify step:\n1. What did you EXPECT to happen after your last action?\n2. What ACTUALLY happened? (Compare expected vs actual.)\n3. Why the mismatch?\nThen try ONE different approach:\n- take_screenshot — see what the page actually looks like\n- scroll_page — target might be off-screen\n- press_key — some UIs respond to keyboard only\n- find_element — search for the element by text\nDo NOT repeat any action you already tried.";
 
 const STUCK_ESCALATE_MSG =
-  "STUCK DETECTION: 12+ actions with no page change. Switching to a stronger model. Reassess the entire page — your previous approach failed. Start with take_screenshot and read_page before acting.";
+  "STUCK ESCALATION: 12+ actions failed. A stronger model is taking over. Start fresh:\n1. take_screenshot to see the page visually.\n2. Re-read Viewport Text — what does the page ACTUALLY say?\n3. Think: What do I see? What specific element advances the task? What should happen when I act?\n4. Try ONE action and verify the result next turn.";
 
 export class ProgressTracker {
   private lastFingerprint = "";

@@ -59,8 +59,6 @@ export function formatStepLabel(
       return "Close tab";
     case ToolName.SWITCH_TAB:
       return `Switch to tab ${args.tabId ?? "?"}`;
-    case ToolName.ACTIVATE_SWARM:
-      return "Deep research (Kimi Swarm)";
     case ToolName.MEMORY_SEARCH: {
       const q = args.query as string | undefined;
       return q ? `Search memory: "${q.slice(0, 30)}"` : "Search memory";
@@ -83,6 +81,18 @@ export function formatStepLabel(
       return `Hide element [${args.id ?? "?"}]`;
     case ToolName.DONE:
       return "Task complete";
+    case ToolName.ESCALATE: {
+      const reason = args.reason as string | undefined;
+      return reason ? `Escalate: "${reason.slice(0, 40)}"` : "Escalate to smarter model";
+    }
+    case ToolName.UPDATE_PLAN: {
+      const subtasks = args.subtasks as string[] | undefined;
+      const idx = args.currentIndex as number | undefined;
+      if (subtasks && idx !== undefined) {
+        return `Plan: step ${idx + 1} of ${subtasks.length}`;
+      }
+      return "Update plan";
+    }
     default:
       return String(toolName);
   }

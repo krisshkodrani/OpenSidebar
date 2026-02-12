@@ -339,7 +339,7 @@ These memory tests validate:
 - **Isolated Tests**: Each test has its own memory context
 - **Deterministic**: Same input always produces same mock memory results
 - **Extensible**: Easy to add new memory scenarios
-- **Real LLM**: Still uses actual Cerebras/OpenRouter for realistic responses
+- **Real LLM**: Still uses actual OpenRouter for realistic responses
 
 ## 🎉 Summary
 

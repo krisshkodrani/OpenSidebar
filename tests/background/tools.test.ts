@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 21 tools are registered", () => {
+    test("all 22 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(21);
+        expect(defs.length).toBe(22);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -104,5 +104,28 @@ describe("Tool Registration", () => {
         expect(scroll!.function.parameters.required).not.toContain("id");
         expect(scroll!.function.parameters.properties.id).toBeDefined();
         expect(scroll!.function.parameters.properties.id.type).toBe("integer");
+    });
+
+    test("escalate tool requires reason parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const escalate = defs.find(d => d.function.name === ToolName.ESCALATE);
+        expect(escalate).toBeDefined();
+        expect(escalate!.function.parameters.required).toContain("reason");
+        expect(escalate!.function.parameters.properties.reason.type).toBe("string");
+    });
+
+    test("escalate tool description mentions puzzles/riddles", () => {
+        const defs = toolRegistry.getDefinitions();
+        const escalate = defs.find(d => d.function.name === ToolName.ESCALATE);
+        expect(escalate).toBeDefined();
+        expect(escalate!.function.description).toContain("smarter");
+        expect(escalate!.function.description).toContain("riddles");
+    });
+
+    test("find_element description mentions tag ID", () => {
+        const defs = toolRegistry.getDefinitions();
+        const find = defs.find(d => d.function.name === ToolName.FIND_ELEMENT);
+        expect(find).toBeDefined();
+        expect(find!.function.description).toContain("tag ID");
     });
 });

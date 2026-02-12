@@ -139,7 +139,7 @@ async function handleNavigationComplete(
         state.messages.push({
             role: "tool",
             tool_call_id: state.pendingToolCall.toolCallId,
-            content: `Navigated to ${details.url}. Page has loaded. Call read_page to see the new content.`,
+            content: `Navigated to ${details.url}. Page has loaded. Fresh page snapshot is available.`,
         });
         state.pendingToolCall = null;
     }

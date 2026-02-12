@@ -4,6 +4,7 @@ import {
   AgentStatus,
   AgentStep,
   ChatEntry,
+  SessionMetrics,
   SidePanelState,
   StuckState,
   TaskCompletionMessage,
@@ -35,12 +36,14 @@ interface Actions {
   clearStuckState: () => void;
   setTurnProgress: (progress: TurnProgress) => void;
   clearTurnProgress: () => void;
+  setAwaitingPlanApproval: (awaiting: boolean) => void;
+  setSessionMetrics: (metrics: SessionMetrics) => void;
+  clearSessionMetrics: () => void;
 }
 
 type Store = SidePanelState & Actions;
 
 const DEFAULT_SETTINGS: UserSettings = {
-  cerebrasApiKey: __CEREBRAS_API_KEY__,
   openRouterApiKey: __OPENROUTER_API_KEY__,
   maxTurns: 30,
   contextWindowSize: 128000,
@@ -48,7 +51,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   workspaceEnabled: true,
   theme: "system",
   showElementTags: false,
-  speedMode: false,
+  visionModel: "google/gemini-2.5-flash-lite",
+  confirmPlan: false,
+  showSessionMetrics: false,
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -74,6 +79,8 @@ export const useStore = create<Store>()(
     taskCompletion: null,
     stuckState: null,
     turnProgress: null,
+    awaitingPlanApproval: false,
+    sessionMetrics: null,
 
     // Actions
     addMessage: (msg) =>
@@ -248,6 +255,21 @@ export const useStore = create<Store>()(
     clearTurnProgress: () =>
       set((state) => {
         state.turnProgress = null;
+      }),
+
+    setAwaitingPlanApproval: (awaiting) =>
+      set((state) => {
+        state.awaitingPlanApproval = awaiting;
+      }),
+
+    setSessionMetrics: (metrics) =>
+      set((state) => {
+        state.sessionMetrics = metrics;
+      }),
+
+    clearSessionMetrics: () =>
+      set((state) => {
+        state.sessionMetrics = null;
       }),
   })),
 );

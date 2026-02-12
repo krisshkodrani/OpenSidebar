@@ -66,7 +66,6 @@ Guidelines:
 export interface SuggesterOptions {
   apiKey?: string;
   model?: string;
-  provider?: "openai" | "cerebras";
 }
 
 /**
@@ -167,47 +166,39 @@ async function callLLM(
   let apiKey = options.apiKey || process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    // Try loading from .env file
     const envSettings = await loadSettingsFromEnv();
-    apiKey = envSettings.openRouterApiKey || envSettings.cerebrasApiKey;
+    apiKey = envSettings.openRouterApiKey;
   }
 
   if (!apiKey) {
     throw new Error(
       "API key required for prompt suggestions. Set OPENAI_API_KEY environment variable " +
-        "or add OPENROUTER_API_KEY/CEREBRAS_API_KEY to .env file",
+        "or add OPENROUTER_API_KEY to .env file",
     );
   }
 
-  const provider = options.provider || "openai";
   const model = options.model || "gpt-4";
 
-  let response: Response;
-
-  if (provider === "openai") {
-    response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert prompt engineer. Respond only with valid JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
-    });
-  } else {
-    throw new Error(`Provider ${provider} not yet implemented`);
-  }
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an expert prompt engineer. Respond only with valid JSON.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    }),
+  });
 
   if (!response.ok) {
     throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
