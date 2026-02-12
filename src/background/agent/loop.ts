@@ -866,7 +866,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                                         shouldReject = true;
                                         rejectReason = validation.reason || "Task is not yet complete.";
                                     }
-                                } catch (err: any) {
+                                } catch (_err: any) {
                                     // Guardian call failed — structural fallback
                                     const completedCount = this.planSubtasks.filter(s => s.status === "completed").length;
                                     if (completedCount < this.planSubtasks.length) {

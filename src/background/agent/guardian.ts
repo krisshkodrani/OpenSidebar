@@ -1,5 +1,5 @@
 import { LLMClient, MODEL_SMART } from "../llm";
-import { CompletionResponse, TokenUsage } from "../llm/types";
+import { TokenUsage } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 
