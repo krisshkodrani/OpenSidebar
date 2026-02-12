@@ -112,6 +112,20 @@ Tests use **Bun test runner** with `happy-dom` for DOM simulation. The global te
 
 Test files cover: agent loop, context manager, keepalive, navigation bridge, security, streaming, tools, content script (tagging, snapshot, shadow DOM), memory (RRF, storage), sidepanel store, and logger.
 
+## Debugging
+
+When investigating errors (build failures, runtime exceptions, unexpected behavior), **check the logs first** — they are the best source of truth for what actually happened at runtime.
+
+1. **Start the log drain** (if not already running): `bun run logs`
+2. **Query recent errors**: `bun run logs:errors`
+3. **Tail live output**: `bun run logs:tail`
+4. **Search for a keyword**: `bun run logs:query search <text>`
+5. **Log file location**: `logs/opensidebar.jsonl` (JSONL format, one structured entry per line)
+
+The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `bun run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
+
+For build errors, also check `bun run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
+
 ## Path Aliases
 
 `@/*` maps to `./src/*` (configured in both `tsconfig.json` and `vite.config.ts`).

@@ -5,10 +5,18 @@
 **Format:** 30 tasks, 5-minute timer (~10s/task budget)
 **Goal:** Single prompt, agent loops until all tasks complete
 
-## Prompt
+## Settings (before running)
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| Speed Mode | ON | Parallel tool exec, batch snapshots, filtered tools |
+| Max Turns | 500 | 30 tasks need headroom for retries |
+| Show Element Tags | OFF | Pure visual overhead, LLM never sees them |
+
+## Prompt (copy-paste this)
 
 ```
-Complete all challenge tasks on this page. For each task: read the instruction, execute it immediately, then move to the next task. If there's a Start button, click it first. After completing each task, look for and click Next/Submit/Continue. Dismiss any modals or popups immediately. Fill all form fields in one step and press Enter to submit. Never stop until all tasks are done or you see a completion/score screen — then call done. If you cant solve it immediately, step back, dissmis modals, try to find a way to solve it.
+Complete all challenge tasks on this page. For each task: read the instruction in the page text, execute it immediately, then move to the next. If there's a Start button, click it first. After each task, click Next/Submit/Continue to advance. Dismiss any modals/popups with hide_element. Fill all form fields in one turn and press Enter to submit. Never stop until all tasks are done or you see a completion/score screen — then call done. If stuck, scroll or read_page to find the task. If you can't solve it immediately, dismiss modals, step back, and try a different approach.
 ```
 
 ## Iteration Log

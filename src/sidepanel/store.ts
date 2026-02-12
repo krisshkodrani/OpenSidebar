@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import { AgentStatus, AgentStep, ChatEntry, SidePanelState, UserSettings } from "../types";
+import {
+  AgentStatus,
+  AgentStep,
+  ChatEntry,
+  SidePanelState,
+  StuckState,
+  TaskCompletionMessage,
+  TaskProgressMessage,
+  TurnProgress,
+  UserSettings,
+} from "../types";
 import { logger } from "../utils";
 
 interface Actions {
@@ -17,6 +27,14 @@ interface Actions {
   updateSettings: (settings: Partial<UserSettings>) => void;
   loadSettingsFromStorage: () => Promise<void>;
   loadMessagesFromStorage: () => Promise<void>;
+  // Agent feedback actions
+  setTaskProgress: (payload: TaskProgressMessage["payload"]) => void;
+  setTaskCompletion: (payload: TaskCompletionMessage["payload"]) => void;
+  clearTaskProgress: () => void;
+  setStuckState: (state: StuckState) => void;
+  clearStuckState: () => void;
+  setTurnProgress: (progress: TurnProgress) => void;
+  clearTurnProgress: () => void;
 }
 
 type Store = SidePanelState & Actions;
@@ -30,6 +48,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   workspaceEnabled: true,
   theme: "system",
   showElementTags: false,
+  speedMode: false,
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -51,6 +70,10 @@ export const useStore = create<Store>()(
     isAgentRunning: false,
     settings: DEFAULT_SETTINGS,
     error: null,
+    taskProgress: null,
+    taskCompletion: null,
+    stuckState: null,
+    turnProgress: null,
 
     // Actions
     addMessage: (msg) =>
@@ -187,5 +210,44 @@ export const useStore = create<Store>()(
         logger.warn("ui", "Failed to load messages from storage", { error: e });
       }
     },
+
+    // --- Agent feedback actions ---
+
+    setTaskProgress: (payload) =>
+      set((state) => {
+        state.taskProgress = payload;
+      }),
+
+    setTaskCompletion: (payload) =>
+      set((state) => {
+        state.taskCompletion = payload;
+        state.taskProgress = null; // Clear live progress when task completes
+      }),
+
+    clearTaskProgress: () =>
+      set((state) => {
+        state.taskProgress = null;
+        state.taskCompletion = null;
+      }),
+
+    setStuckState: (stuckState) =>
+      set((state) => {
+        state.stuckState = stuckState;
+      }),
+
+    clearStuckState: () =>
+      set((state) => {
+        state.stuckState = null;
+      }),
+
+    setTurnProgress: (progress) =>
+      set((state) => {
+        state.turnProgress = progress;
+      }),
+
+    clearTurnProgress: () =>
+      set((state) => {
+        state.turnProgress = null;
+      }),
   })),
 );

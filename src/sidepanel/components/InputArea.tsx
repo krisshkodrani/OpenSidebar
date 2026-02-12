@@ -1,14 +1,16 @@
 import React, { useRef, useEffect } from "react";
-import { Send, StopCircle } from "lucide-react";
+import { Send, StopCircle, MessageCircle } from "lucide-react";
 import { useStore } from "../store";
 
 import { clsx } from "clsx";
 
 export function InputArea({
   onSend,
+  onSendHint,
   onStop,
 }: {
   onSend: (text: string) => void;
+  onSendHint: (text: string) => void;
   onStop: () => void;
 }) {
   const inputText = useStore((s) => s.inputText);
@@ -28,16 +30,22 @@ export function InputArea({
     el.style.overflowY = scrollH >= MAX_HEIGHT ? "auto" : "hidden";
   }, [inputText]);
 
+  const hasText = inputText.trim().length > 0;
+
+  const handleSubmit = () => {
+    if (!hasText) return;
+    if (isAgentRunning) {
+      onSendHint(inputText);
+    } else {
+      onSend(inputText);
+    }
+    setInputText("");
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // Prevent submission if empty but allow stop? No, stop is click only usually.
-      if (isAgentRunning) return;
-
-      if (inputText.trim()) {
-        onSend(inputText);
-        setInputText("");
-      }
+      handleSubmit();
     }
   };
 
@@ -50,32 +58,38 @@ export function InputArea({
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            isAgentRunning ? "Agent is processing..." : "Ask OpenSidebar..."
+            isAgentRunning ? "Send a hint..." : "Ask OpenSidebar..."
           }
           className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
           rows={1}
-          disabled={isAgentRunning}
         />
-        <button
-          onClick={() => {
-            if (isAgentRunning) {
-              onStop();
-            } else if (inputText.trim()) {
-              onSend(inputText);
-              setInputText("");
-            }
-          }}
-          disabled={!inputText.trim() && !isAgentRunning}
-          className={clsx(
-            "p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed",
-            isAgentRunning
-              ? "bg-red-500 hover:bg-red-600"
-              : "bg-primary-600 hover:bg-primary-700",
-          )}
-          aria-label={isAgentRunning ? "Stop generation" : "Send message"}
-        >
-          {isAgentRunning ? <StopCircle size={16} /> : <Send size={16} />}
-        </button>
+        {isAgentRunning && !hasText ? (
+          <button
+            onClick={onStop}
+            className="p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 bg-red-500 hover:bg-red-600"
+            aria-label="Stop generation"
+          >
+            <StopCircle size={16} />
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!hasText}
+            className={clsx(
+              "p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed",
+              isAgentRunning
+                ? "bg-amber-500 hover:bg-amber-600"
+                : "bg-primary-600 hover:bg-primary-700",
+            )}
+            aria-label={isAgentRunning ? "Send hint" : "Send message"}
+          >
+            {isAgentRunning ? (
+              <MessageCircle size={16} />
+            ) : (
+              <Send size={16} />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { sendMessageToMemory } from "../memory/bridge";
-import { callResearchSwarm } from "../swarm";
+import { callKimiSwarm } from "../swarm";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
@@ -565,7 +565,7 @@ export function registerTools() {
   // Swarm Tool
   toolRegistry.register(ToolName.ACTIVATE_SWARM, SWARM_DEF, async (args) => {
     const swarmArgs = args as unknown as ActivateSwarmArgs;
-    return await callResearchSwarm(swarmArgs);
+    return await callKimiSwarm(swarmArgs);
   });
 
   // Content Script Tools (already implemented in content/actions.ts)

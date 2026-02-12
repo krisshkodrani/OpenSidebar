@@ -336,6 +336,17 @@ When `navigate` is called:
 
 See [Navigation Bridge](./navigation-bridge.md) for details.
 
+## Speed Mode
+
+When `speedMode` is enabled, the agent loop behaves differently in several key ways:
+
+- **Parallel tool execution** — When no sequential tools (navigate, done) are present, all tool calls execute via `Promise.all` instead of sequentially.
+- **Nudge-on-text** — Text-only LLM responses don't stop the loop. Instead, the agent refreshes the snapshot and injects a nudge message telling the LLM to use tool calls.
+- **Model escalation** — After 2 consecutive text-only nudges, the agent replaces the `LLMClient` with Gemini 3 Flash via OpenRouter. If the escalated model also fails after 3 more nudges, the loop gives up.
+- **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
+
+See [Speed Mode](../features/speed-mode.md) for full details including the comparison table and configuration.
+
 ## Testing
 
 **tests/background/agent.test.ts** - Agent loop lifecycle

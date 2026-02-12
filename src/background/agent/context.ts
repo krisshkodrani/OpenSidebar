@@ -103,6 +103,10 @@ export class ContextManager {
     this.snapshot = snapshot;
   }
 
+  public getCurrentUrl(): string {
+    return this.snapshot?.url ?? "";
+  }
+
   public addMessage(message: LLMMessage) {
     this.history.push(message);
 
@@ -562,6 +566,13 @@ export class ContextManager {
   public clear() {
     this.history = [];
     this.snapshot = null;
+    this.saveState().catch(() => {});
+  }
+
+  /** Clear conversation history but keep the current DOM snapshot intact.
+   *  Used between subtasks so page state carries over. */
+  public clearHistory() {
+    this.history = [];
     this.saveState().catch(() => {});
   }
 

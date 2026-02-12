@@ -266,4 +266,62 @@ describe("ContextManager", () => {
       }
     });
   });
+
+  describe("clearHistory", () => {
+    test("clears history but preserves snapshot", () => {
+      // Add some messages
+      context.addMessage(userMsg("Hello"));
+      context.addMessage(asstMsg("Hi there"));
+
+      // Set a snapshot
+      context.setSnapshot({
+        url: "https://example.com",
+        title: "Example",
+        elements: [
+          { tagName: "button", id: 1, text: "Click me", isVisible: true, attributes: {} },
+        ],
+        viewportText: "Some text",
+        scrollPosition: { scrollTop: 0, scrollHeight: 1000, clientHeight: 800 },
+      });
+
+      // Verify we have messages + snapshot
+      const promptBefore = context.getPrompt();
+      expect(promptBefore.length).toBeGreaterThan(1); // system + user + assistant
+
+      // Clear history
+      context.clearHistory();
+
+      // History should be empty (only system prompt remains)
+      const promptAfter = context.getPrompt();
+      const nonSystemMessages = promptAfter.filter(m => m.role !== "system");
+      expect(nonSystemMessages).toHaveLength(0);
+
+      // Snapshot should still be present (system prompt mentions elements)
+      const systemPrompt = promptAfter.find(m => m.role === "system");
+      expect(systemPrompt!.content).toContain("example.com");
+    });
+
+    test("clear() wipes both history and snapshot", () => {
+      context.addMessage(userMsg("Hello"));
+      context.setSnapshot({
+        url: "https://example.com",
+        title: "Example",
+        elements: [
+          { tagName: "button", id: 1, text: "Click me", isVisible: true, attributes: {} },
+        ],
+        viewportText: "content",
+        scrollPosition: { scrollTop: 0, scrollHeight: 1000, clientHeight: 800 },
+      });
+
+      context.clear();
+
+      const prompt = context.getPrompt();
+      const nonSystem = prompt.filter(m => m.role !== "system");
+      expect(nonSystem).toHaveLength(0);
+
+      // System prompt should NOT contain snapshot data
+      const system = prompt.find(m => m.role === "system");
+      expect(system!.content).not.toContain("example.com");
+    });
+  });
 });

@@ -1,42 +1,13 @@
 import { ToolName, RiskLevel, Result } from "../types";
+import { getToolMeta } from "./tools/metadata";
 
 /**
  * Classifies the risk level of a tool invocation.
- * Used for structured logging and ToolCallSummary display.
+ * Uses consolidated tool metadata from tools/metadata.ts.
  * Non-blocking — risk is informational, not a gate.
  */
 export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>): RiskLevel {
-    switch (toolName) {
-        case ToolName.READ_PAGE:
-        case ToolName.SCROLL_PAGE:
-        case ToolName.MEMORY_SEARCH:
-        case ToolName.WAIT:
-        case ToolName.TAKE_SCREENSHOT:
-        case ToolName.HOVER_ELEMENT:
-        case ToolName.FIND_ELEMENT:
-        case ToolName.DONE:
-            return RiskLevel.LOW;
-
-        case ToolName.CLICK_ELEMENT:
-        case ToolName.TYPE_TEXT:
-        case ToolName.SELECT_OPTION:
-        case ToolName.PRESS_KEY:
-        case ToolName.DRAG_AND_DROP:
-        case ToolName.DRAW_STROKE:
-        case ToolName.HIDE_ELEMENT:
-        case ToolName.MEMORY_ADD:
-        case ToolName.SWITCH_TAB:
-            return RiskLevel.MEDIUM;
-
-        case ToolName.NAVIGATE:
-        case ToolName.CREATE_TAB:
-        case ToolName.CLOSE_TAB:
-        case ToolName.ACTIVATE_SWARM:
-            return RiskLevel.HIGH;
-
-        default:
-            return RiskLevel.HIGH;
-    }
+    return getToolMeta(toolName)?.risk ?? RiskLevel.HIGH;
 }
 
 /**

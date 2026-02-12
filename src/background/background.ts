@@ -323,12 +323,17 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, _sender, _sendResponse) => {
-    // 1. Chat
+    // 1. Chat (or hint injection)
     if (
       message.source === MessageSource.SIDEPANEL &&
       message.type === "USER_CHAT"
     ) {
-      handleUserChat(message.payload);
+      if (message.payload.isHint && agentLoop) {
+        // Inject hint into running loop — don't start a new loop
+        agentLoop.injectHint(message.payload.text);
+      } else {
+        handleUserChat(message.payload);
+      }
       return false;
     }
 
@@ -342,6 +347,16 @@ chrome.runtime.onMessage.addListener(
       chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
         if (tab?.id) sendAgentActivity(tab.id, false);
       }).catch(() => {});
+      return false;
+    }
+
+    // 3. Pause / Resume Agent
+    if (message.type === "PAUSE_AGENT") {
+      if (agentLoop) agentLoop.pause();
+      return false;
+    }
+    if (message.type === "RESUME_AGENT") {
+      if (agentLoop) agentLoop.resume();
       return false;
     }
 
@@ -379,7 +394,10 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
     return;
   }
 
-  // 2. Initialize Loop if needed
+  const effectiveSpeedMode = settings.speedMode ?? false;
+  const effectiveMaxTurns = settings.maxTurns || 30;
+
+  // 2. Initialize Loop if needed (challenge mode always creates fresh)
   if (!agentLoop) {
     agentLoop = new AgentLoop(apiKey, {
       onStatusUpdate: (status, detail) => {
@@ -416,7 +434,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
           })
           .catch(() => {});
       },
-    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false });
+    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: effectiveMaxTurns, showElementTags: settings.showElementTags ?? false, speedMode: effectiveSpeedMode, openRouterApiKey: settings.openRouterApiKey || __OPENROUTER_API_KEY__ });
   }
 
   // 3. Start Agent
@@ -465,7 +483,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
   }
 
   // Notify content script that agent is active (skip in speed mode to reduce overhead)
-  if (!settings.speedMode) {
+  if (!effectiveSpeedMode) {
     sendAgentActivity(tabId, true);
   }
 
@@ -546,7 +564,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
         })
         .catch(() => {});
     },
-  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false });
+  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, speedMode: settings.speedMode ?? false, openRouterApiKey: settings.openRouterApiKey || __OPENROUTER_API_KEY__ });
 
   // Get fresh snapshot from the new page
   let snapshot = undefined;
@@ -572,7 +590,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   }
 
   // Resume from saved state
-  agentLoop.resume(state, snapshot);
+  agentLoop.resumeFromNavigation(state, snapshot);
 }
 
 /**
