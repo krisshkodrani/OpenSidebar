@@ -1,20 +1,7 @@
 import { ToolName, ToolCall, ToolDefinition } from "../../types";
-// Removed local ToolDefinition import
 import { logger } from "../../utils";
 
 type ToolExecutor = (args: Record<string, unknown>, tabId: number) => Promise<string>;
-
-/** Tools excluded in speed mode to reduce token count and LLM latency */
-export const SPEED_MODE_EXCLUDED_TOOLS: Set<ToolName> = new Set([
-    ToolName.ACTIVATE_SWARM,
-    ToolName.MEMORY_ADD,
-    ToolName.MEMORY_SEARCH,
-    ToolName.TAKE_SCREENSHOT,
-    ToolName.WAIT,
-    ToolName.CREATE_TAB,
-    ToolName.CLOSE_TAB,
-    ToolName.SWITCH_TAB,
-]);
 
 export class ToolRegistry {
     private tools: Map<ToolName, ToolExecutor> = new Map();

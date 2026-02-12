@@ -19,6 +19,8 @@ export enum AgentStatus {
   WAITING_FOR_SWARM = "WAITING_FOR_SWARM",
   /** Agent encountered an unrecoverable error */
   ERROR = "ERROR",
+  /** Agent loop is paused by user (awaiting resume) */
+  PAUSED = "PAUSED",
 }
 
 /** Extension context that originated or receives a message */
@@ -104,7 +106,14 @@ export type RuntimeMessage =
   | CloseSidePanelMessage
   | ScreenshotCapturedMessage
   | DismissModalsMessage
-  | DismissModalsResponse;
+  | DismissModalsResponse
+  | AgentStuckMessage
+  | AgentTurnMessage
+  | TaskProgressMessage
+  | TaskCompletionMessage
+  | SkipSubtaskMessage
+  | PauseAgentMessage
+  | ResumeAgentMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -116,6 +125,8 @@ export interface UserChatMessage extends BaseMessage {
     tabId: number;
     /** Active workspace ID, if any */
     workspaceId: string | null;
+    /** When true, inject as hint into running agent context (don't start new loop) */
+    isHint?: boolean;
   };
 }
 
@@ -228,6 +239,99 @@ export interface AgentActivityMessage extends BaseMessage {
   type: "AGENT_ACTIVITY";
   source: MessageSource.BACKGROUND;
   payload: { active: boolean };
+}
+
+// --- Agent Feedback & Control Messages ---
+
+/** Background broadcasts stuck detection signals to the side panel */
+export interface AgentStuckMessage extends BaseMessage {
+  type: "AGENT_STUCK";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    signal: "nudge" | "escalate" | "resolved";
+    staleTurns: number;
+    url: string;
+    /** Human-readable explanation */
+    message: string;
+  };
+}
+
+/** Background broadcasts turn progress to the side panel */
+export interface AgentTurnMessage extends BaseMessage {
+  type: "AGENT_TURN";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    turn: number;
+    maxTurns: number;
+  };
+}
+
+/** Background broadcasts subtask progress to the side panel */
+export interface TaskProgressMessage extends BaseMessage {
+  type: "TASK_PROGRESS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    subtasks: SubtaskSummary[];
+    currentIndex: number;
+    /** Turns used so far across all subtasks */
+    totalTurnsUsed: number;
+  };
+}
+
+/** Summary of a single subtask within a decomposed task */
+export interface SubtaskSummary {
+  description: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  turnBudget: number;
+  result?: string;
+}
+
+/** Background sends structured completion report when a task finishes */
+export interface TaskCompletionMessage extends BaseMessage {
+  type: "TASK_COMPLETION";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    status: "completed" | "partial" | "failed";
+    totalTurns: number;
+    totalTimeMs: number;
+    summary: string;
+    subtaskResults: SubtaskResult[];
+    urlHistory: string[];
+  };
+}
+
+/** Outcome of a single subtask within a completion report */
+export interface SubtaskResult {
+  description: string;
+  status: "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  result: string;
+}
+
+/** Side panel requests skipping the current subtask */
+export interface SkipSubtaskMessage extends BaseMessage {
+  type: "SKIP_SUBTASK";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    taskId: string;
+  };
+}
+
+/** Side panel requests pausing the agent loop */
+export interface PauseAgentMessage extends BaseMessage {
+  type: "PAUSE_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: Record<string, never>;
+}
+
+/** Side panel requests resuming the paused agent loop */
+export interface ResumeAgentMessage extends BaseMessage {
+  type: "RESUME_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: Record<string, never>;
 }
 
 // --- Agent Loop Types ---
@@ -652,6 +756,25 @@ export interface ChatEntry {
   isStreaming: boolean;
   /** Real-time step timeline for agent execution */
   steps?: AgentStep[];
+  /** Whether this user message was sent as a hint during execution */
+  isHint?: boolean;
+  /** Structured completion data — when present, MessageBubble renders CompletionSummary */
+  completionData?: TaskCompletionMessage["payload"];
+}
+
+/** Stuck detection state for the side panel */
+export interface StuckState {
+  signal: "nudge" | "escalate";
+  staleTurns: number;
+  url: string;
+  /** Timestamp of the stuck signal (for auto-dismiss timing) */
+  receivedAt: number;
+}
+
+/** Turn progress state for the side panel */
+export interface TurnProgress {
+  turn: number;
+  maxTurns: number;
 }
 
 /** Top-level React state for the side panel */
@@ -670,6 +793,14 @@ export interface SidePanelState {
   settings: UserSettings;
   /** Error message to display, if any */
   error: string | null;
+  /** Active task decomposition progress (null when no decomposed task) */
+  taskProgress: TaskProgressMessage["payload"] | null;
+  /** Completed task report (null until task finishes) */
+  taskCompletion: TaskCompletionMessage["payload"] | null;
+  /** Non-null when the agent is detected as stuck */
+  stuckState: StuckState | null;
+  /** Current turn progress (null when agent is idle) */
+  turnProgress: TurnProgress | null;
 }
 
 // --- Memory / Second Brain Types ---

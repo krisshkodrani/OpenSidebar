@@ -57,20 +57,35 @@ function executeClick(args: ClickElementArgs): { success: boolean; result: strin
     // Scroll into view if needed
     el.scrollIntoView({ behavior: "instant", block: "center" });
 
-    // Z-Index Check: Is the element actually clickable?
-    // We check the center point of the rect
-    const rect = el.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    const topEl = document.elementFromPoint(x, y);
+    // Z-Index Check: Auto-hide covering overlays (up to 3 layers) before clicking
+    const MAX_OVERLAY_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_OVERLAY_RETRIES; attempt++) {
+        const rect = el.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        const topEl = document.elementFromPoint(x, y);
 
-    if (topEl && !el.contains(topEl) && !topEl.contains(el)) {
-        // Overlaid by something else (e.g. cookie banner, modal)
-        // Dynamically tag the blocking element so the LLM can hide it
-        const blockingTag = addDynamicTag(topEl);
+        if (!topEl || el.contains(topEl) || topEl.contains(el)) {
+            break; // Clear to click
+        }
+
+        // Auto-hide the covering element
+        if (topEl instanceof HTMLElement) {
+            topEl.style.display = "none";
+        }
+    }
+
+    // Final check after retries
+    const finalRect = el.getBoundingClientRect();
+    const finalTop = document.elementFromPoint(
+        finalRect.left + finalRect.width / 2,
+        finalRect.top + finalRect.height / 2
+    );
+    if (finalTop && !el.contains(finalTop) && !finalTop.contains(el)) {
+        const blockingTag = addDynamicTag(finalTop);
         return {
             success: false,
-            result: `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${topEl.tagName.toLowerCase()}>. Use hide_element(${blockingTag}) to remove it.`,
+            result: `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${finalTop.tagName.toLowerCase()}>. Use hide_element(${blockingTag}) to remove it.`,
             navigated: false
         };
     }
@@ -155,7 +170,7 @@ function executeType(args: TypeTextArgs): { success: boolean; result: string; na
 
 function executeScroll(args: ScrollPageArgs): { success: boolean; result: string; navigated: boolean } {
     const amount = args.amount ?? 500;
-    const delta = args.direction === ScrollDirection.UP ? -amount : amount;
+    const isAbsolute = args.direction === ScrollDirection.TOP || args.direction === ScrollDirection.BOTTOM;
 
     if (args.id !== undefined) {
         const tagMap = getTagMap();
@@ -166,19 +181,49 @@ function executeScroll(args: ScrollPageArgs): { success: boolean; result: string
         if (!(el instanceof HTMLElement)) {
             return { success: false, result: `Element [${args.id}] is not scrollable`, navigated: false };
         }
-        el.scrollBy({ top: delta, behavior: "instant" });
+        switch (args.direction) {
+            case ScrollDirection.TOP:
+                el.scrollTo({ top: 0, behavior: "instant" });
+                break;
+            case ScrollDirection.BOTTOM:
+                el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
+                break;
+            case ScrollDirection.UP:
+                el.scrollBy({ top: -amount, behavior: "instant" });
+                break;
+            case ScrollDirection.DOWN:
+                el.scrollBy({ top: amount, behavior: "instant" });
+                break;
+        }
         return {
             success: true,
-            result: `Scrolled [${args.id}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+            result: isAbsolute
+                ? `Scrolled [${args.id}] to ${args.direction}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`
+                : `Scrolled [${args.id}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
             navigated: false,
         };
     }
 
-    window.scrollBy({ top: delta, behavior: "instant" });
+    switch (args.direction) {
+        case ScrollDirection.TOP:
+            window.scrollTo({ top: 0, behavior: "instant" });
+            break;
+        case ScrollDirection.BOTTOM:
+            window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+            break;
+        case ScrollDirection.UP:
+            window.scrollBy({ top: -amount, behavior: "instant" });
+            break;
+        case ScrollDirection.DOWN:
+            window.scrollBy({ top: amount, behavior: "instant" });
+            break;
+    }
 
     return {
         success: true,
-        result: `Scrolled ${args.direction} by ${amount}px. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`,
+        result: isAbsolute
+            ? `Scrolled to ${args.direction}. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`
+            : `Scrolled ${args.direction} by ${amount}px. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`,
         navigated: false,
     };
 }

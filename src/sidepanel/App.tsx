@@ -2,14 +2,13 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { X } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
-import { Header, MessageBubble, InputArea, ControlBar } from "./components";
+import { initializeBridge } from "./bridge";
+import { Header, MessageBubble, InputArea, ControlBar, StuckBanner, TaskProgressPanel } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import {
   AgentStatus,
-  RuntimeMessage,
   MessageSource,
   ChatEntry,
-  ToolCallSummary,
 } from "../types";
 
 export default function App() {
@@ -19,15 +18,10 @@ export default function App() {
   const setAgentRunning = useStore((s) => s.setAgentRunning);
   const setInputText = useStore((s) => s.setInputText);
   const settings = useStore((s) => s.settings);
-  const appendStreamDelta = useStore((s) => s.appendStreamDelta);
-  const finalizeStream = useStore((s) => s.finalizeStream);
-  const addStep = useStore((s) => s.addStep);
-  const updateStep = useStore((s) => s.updateStep);
   const setError = useStore((s) => s.setError);
   const error = useStore((s) => s.error);
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
-
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [screenshot, setScreenshot] = useState<{
@@ -90,80 +84,30 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Message Listener for Agent Communication
+  // Message Bridge — centralized message routing from background to store
   useEffect(() => {
-    const listener = (message: RuntimeMessage) => {
-      if (message.source !== MessageSource.BACKGROUND) return;
-
-      logger.debug("ui", "Received message", { type: message.type });
-
-      switch (message.type) {
-        case "AGENT_STATUS":
-          updateStatus(message.payload.status, message.payload.detail);
-          if (
-            message.payload.status === AgentStatus.IDLE ||
-            message.payload.status === AgentStatus.ERROR
-          ) {
-            setAgentRunning(false);
-          } else {
-            setAgentRunning(true);
+    const cleanup = initializeBridge(useStore, {
+      onScreenshot: (payload) => {
+        if (screenshotTimerRef.current) {
+          clearTimeout(screenshotTimerRef.current);
+        }
+        setScreenshot(payload);
+        screenshotTimerRef.current = setTimeout(() => {
+          setScreenshot(null);
+          screenshotTimerRef.current = null;
+        }, 30000);
+      },
+      onClose: (windowId) => {
+        chrome.windows.getCurrent().then((currentWindow) => {
+          if (currentWindow.id === windowId) {
+            logger.info("ui", "Received close request from background", { windowId });
+            globalThis.close();
           }
-          break;
-
-        case "STREAM_CHUNK":
-          handleStreamChunk(message.payload);
-          break;
-
-        case "CLOSE_SIDE_PANEL":
-          chrome.windows.getCurrent().then((currentWindow) => {
-            if (currentWindow.id === message.payload.windowId) {
-              logger.info("ui", "Received close request from background", {
-                windowId: currentWindow.id,
-              });
-              window.close();
-              // Actually window.close() in React component closes the window/frame it is in.
-              // But chrome.windows.getCurrent returns a Window object which does not have close().
-              // We need to call the global close().
-              // So just calling close() or globalThis.close() works for the frame.
-              globalThis.close();
-            }
-          });
-          break;
-
-        case "AGENT_STEP":
-          if (message.payload.update) {
-            updateStep(message.payload.step);
-          } else {
-            addStep(message.payload.step);
-          }
-          break;
-
-        case "AGENT_RESPONSE":
-          handleAgentResponse(message.payload);
-          break;
-
-        case "SCREENSHOT_CAPTURED":
-          // Clear any existing screenshot timer
-          if (screenshotTimerRef.current) {
-            clearTimeout(screenshotTimerRef.current);
-          }
-          setScreenshot(message.payload);
-          // Auto-dismiss after 30 seconds
-          screenshotTimerRef.current = setTimeout(() => {
-            setScreenshot(null);
-            screenshotTimerRef.current = null;
-          }, 30000);
-          break;
-
-        default:
-          logger.debug("ui", "Unhandled message type", { type: message.type });
-          break;
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(listener);
+        });
+      },
+    });
     return () => {
-      chrome.runtime.onMessage.removeListener(listener);
+      cleanup();
       if (screenshotTimerRef.current) {
         clearTimeout(screenshotTimerRef.current);
       }
@@ -184,35 +128,6 @@ export default function App() {
     const timer = setTimeout(() => setError(null), 8000);
     return () => clearTimeout(timer);
   }, [error, setError]);
-
-  // Handle stream chunks from background
-  const handleStreamChunk = useCallback(
-    (payload: { delta: string; done: boolean }) => {
-      const { delta, done } = payload;
-      if (done) {
-        finalizeStream();
-      } else if (delta) {
-        appendStreamDelta(delta);
-      }
-    },
-    [appendStreamDelta, finalizeStream],
-  );
-
-  // Handle final agent response
-  const handleAgentResponse = useCallback(
-    (payload: {
-      text: string;
-      isStreaming: boolean;
-      toolCalls: ToolCallSummary[];
-    }) => {
-      // The streaming handler should have already built the content
-      // This just finalizes if needed
-      if (!payload.isStreaming) {
-        finalizeStream();
-      }
-    },
-    [finalizeStream],
-  );
 
   // Send message to agent
   const handleSend = useCallback(
@@ -284,6 +199,43 @@ export default function App() {
     [addMessage, setInputText, setAgentRunning, updateStatus, setError],
   );
 
+  // Send hint to running agent
+  const handleSendHint = useCallback(
+    async (text: string) => {
+      const trimmedText = text.trim();
+      if (!trimmedText) return;
+
+      // Show hint in chat
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmedText,
+        timestamp: Date.now(),
+        toolCalls: [],
+        isStreaming: false,
+        isHint: true,
+      });
+
+      try {
+        await chrome.runtime.sendMessage({
+          type: "USER_CHAT",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.SIDEPANEL,
+          payload: {
+            text: trimmedText,
+            tabId: 0,
+            workspaceId: null,
+            isHint: true,
+          },
+        });
+      } catch (e) {
+        logger.error("ui", "Failed to send hint", { error: e });
+        setError("Failed to send hint to agent.");
+      }
+    },
+    [addMessage, setError],
+  );
+
   const handleStop = useCallback(async () => {
     try {
       await chrome.runtime.sendMessage({
@@ -307,6 +259,8 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
       />
+
+      <StuckBanner />
 
       <main className="flex-1 overflow-hidden relative flex flex-col">
         {error && (
@@ -345,7 +299,8 @@ export default function App() {
 
       <div className="flex flex-col shrink-0 bg-surface-light dark:bg-surface-dark z-20 border-t border-gray-200 dark:border-gray-800 shadow-lg">
         <ControlBar />
-        <InputArea onSend={handleSend} onStop={handleStop} />
+        <TaskProgressPanel />
+        <InputArea onSend={handleSend} onSendHint={handleSendHint} onStop={handleStop} />
       </div>
 
       {screenshot && (

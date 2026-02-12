@@ -29,6 +29,10 @@ describe("SidePanel Store", () => {
             inputText: "",
             isAgentRunning: false,
             error: null,
+            taskProgress: null,
+            taskCompletion: null,
+            stuckState: null,
+            turnProgress: null,
             settings: {
                 cerebrasApiKey: "",
                 openRouterApiKey: "",
@@ -38,6 +42,7 @@ describe("SidePanel Store", () => {
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
+                speedMode: false,
             },
         });
     });
@@ -263,5 +268,106 @@ describe("SidePanel Store", () => {
         });
 
         expect(useStore.getState().messages[0].steps).toHaveLength(1);
+    });
+
+    // --- Agent feedback action tests ---
+
+    test("setTaskProgress stores payload", () => {
+        const payload = {
+            taskId: "t1",
+            subtasks: [
+                { description: "Search", status: "completed" as const, turnsUsed: 3, turnBudget: 20 },
+                { description: "Fill form", status: "running" as const, turnsUsed: 1, turnBudget: 20 },
+            ],
+            currentIndex: 1,
+            totalTurnsUsed: 4,
+        };
+
+        useStore.getState().setTaskProgress(payload);
+        expect(useStore.getState().taskProgress).toEqual(payload);
+    });
+
+    test("setTaskCompletion stores payload and clears taskProgress", () => {
+        // Set progress first
+        useStore.getState().setTaskProgress({
+            taskId: "t1",
+            subtasks: [{ description: "Do thing", status: "running" as const, turnsUsed: 1, turnBudget: 20 }],
+            currentIndex: 0,
+            totalTurnsUsed: 1,
+        });
+        expect(useStore.getState().taskProgress).not.toBeNull();
+
+        // Completion should clear progress
+        const completion = {
+            taskId: "t1",
+            status: "completed" as const,
+            summary: "All done",
+            totalTurnsUsed: 5,
+            subtaskResults: [
+                { description: "Do thing", outcome: "completed" as const, turnsUsed: 5 },
+            ],
+        };
+        useStore.getState().setTaskCompletion(completion);
+
+        expect(useStore.getState().taskCompletion).toEqual(completion);
+        expect(useStore.getState().taskProgress).toBeNull();
+    });
+
+    test("clearTaskProgress clears both progress and completion", () => {
+        useStore.getState().setTaskProgress({
+            taskId: "t1",
+            subtasks: [],
+            currentIndex: 0,
+            totalTurnsUsed: 0,
+        });
+        useStore.getState().setTaskCompletion({
+            taskId: "t1",
+            status: "completed" as const,
+            summary: "",
+            totalTurnsUsed: 0,
+            subtaskResults: [],
+        });
+
+        useStore.getState().clearTaskProgress();
+        expect(useStore.getState().taskProgress).toBeNull();
+        expect(useStore.getState().taskCompletion).toBeNull();
+    });
+
+    test("setStuckState stores stuck info", () => {
+        const stuck = {
+            signal: "nudge" as const,
+            staleTurns: 6,
+            url: "https://example.com",
+            receivedAt: Date.now(),
+        };
+        useStore.getState().setStuckState(stuck);
+        expect(useStore.getState().stuckState).toEqual(stuck);
+    });
+
+    test("clearStuckState resets to null", () => {
+        useStore.getState().setStuckState({
+            signal: "escalate" as const,
+            staleTurns: 12,
+            url: "https://example.com",
+            receivedAt: Date.now(),
+        });
+        useStore.getState().clearStuckState();
+        expect(useStore.getState().stuckState).toBeNull();
+    });
+
+    test("setTurnProgress stores turn info", () => {
+        useStore.getState().setTurnProgress({ turn: 5, maxTurns: 30 });
+        expect(useStore.getState().turnProgress).toEqual({ turn: 5, maxTurns: 30 });
+    });
+
+    test("clearTurnProgress resets to null", () => {
+        useStore.getState().setTurnProgress({ turn: 10, maxTurns: 30 });
+        useStore.getState().clearTurnProgress();
+        expect(useStore.getState().turnProgress).toBeNull();
+    });
+
+    test("DEFAULT_SETTINGS includes speedMode", () => {
+        const settings = useStore.getState().settings;
+        expect(settings.speedMode).toBe(false);
     });
 });
