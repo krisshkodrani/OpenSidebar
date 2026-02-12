@@ -3,23 +3,29 @@ import {
     AgentLoopState,
     AgentStep,
     MessageSource,
+    OverlayDescriptor,
+    SessionMetrics,
+    SubtaskResult,
+    SubtaskSummary,
     ToolCall,
     ToolName,
+    UserSettings,
 } from "../../types";
 import { logger } from "../../utils";
-import { LLMClient } from "../llm";
-import { toolRegistry } from "../tools";
-import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS, SPEED_MODE_EXCLUDED_TOOLS } from "../tools/metadata";
-import { workspaceManager } from "../workspaces/manager";
+import { LLMClient, MODEL_SMART } from "../llm";
+import { toolRegistry, setVisionUsageCallback } from "../tools";
+import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
 import { classifyRisk } from "../security";
 import { ContextManager } from "./context";
 import { ProgressTracker } from "./progress";
+import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
+import { CompletionResponse, TokenUsage } from "../llm/types";
 import { startKeepalive, stopKeepalive } from "../keepalive";
 import { formatStepLabel } from "./step-labels";
 
-/** Nudge injected when speed-mode LLM emits text instead of tool calls. */
-const SPEED_NUDGE_MESSAGE = "You output text instead of tool calls — that is not allowed. ONLY use tool calls. Look at the page elements and text above — continue working through the task. If you are truly finished with the ENTIRE task, call done({\"summary\": \"...\"}). Otherwise, keep going with the next step.";
+/** Nudge injected when LLM emits text instead of tool calls. */
+const NUDGE_MESSAGE = "You must call at least one tool each turn. Follow the Think step:\n1. What do I see on the page right now?\n2. What tool call will advance the task?\n3. What do I expect to happen?\nThen call that tool. If the task is fully complete, call done({\"summary\": \"...\"}).";
 
 /** Result of a completed agent loop run */
 export interface LoopResult {
@@ -27,6 +33,8 @@ export interface LoopResult {
     turnCount: number;
     /** Summary from done() tool, or error message */
     summary: string;
+    /** Session token/cost/time metrics */
+    metrics?: SessionMetrics;
 }
 
 export class AgentLoop {
@@ -39,8 +47,8 @@ export class AgentLoop {
     private stepHandler: (step: AgentStep, update: boolean) => void;
     private maxTurns: number;
     private showElementTags: boolean;
-    private speedMode: boolean;
-    private openRouterApiKey?: string;
+    private confirmPlan: boolean;
+    private showSessionMetrics: boolean;
 
     /** Current turn count — exposed via getCurrentTurn() */
     private turnCount = 0;
@@ -53,6 +61,100 @@ export class AgentLoop {
     /** Promise-based gate for pause/resume */
     private pauseGate: { promise: Promise<void>; resolve: () => void } | null = null;
 
+    /** Task planning state */
+    private taskId: string | null = null;
+    private planSubtasks: SubtaskSummary[] = [];
+    private taskStartTime = 0;
+    private urlHistory: string[] = [];
+
+    /** Accumulated session metrics */
+    private metrics: SessionMetrics = AgentLoop.emptyMetrics();
+    private sessionStartTime = 0;
+
+    private static emptyMetrics(): SessionMetrics {
+        return {
+            totalPromptTokens: 0,
+            totalCompletionTokens: 0,
+            totalTokens: 0,
+            totalCost: 0,
+            totalLlmTimeMs: 0,
+            totalSessionTimeMs: 0,
+            llmCallCount: 0,
+            modelBreakdown: {},
+        };
+    }
+
+    /** Accumulate usage from an LLM response */
+    private recordUsage(response: CompletionResponse, llmMs: number): void {
+        if (response.usage) {
+            this.metrics.totalPromptTokens += response.usage.prompt_tokens;
+            this.metrics.totalCompletionTokens += response.usage.completion_tokens;
+            this.metrics.totalTokens += response.usage.total_tokens;
+            if (response.usage.cost != null) {
+                this.metrics.totalCost += response.usage.cost;
+            }
+        }
+        this.metrics.totalLlmTimeMs += llmMs;
+        this.metrics.llmCallCount += 1;
+
+        const model = this.llm.getCurrentModel();
+        if (!this.metrics.modelBreakdown[model]) {
+            this.metrics.modelBreakdown[model] = { promptTokens: 0, completionTokens: 0, cost: 0, calls: 0 };
+        }
+        const entry = this.metrics.modelBreakdown[model];
+        entry.calls += 1;
+        if (response.usage) {
+            entry.promptTokens += response.usage.prompt_tokens;
+            entry.completionTokens += response.usage.completion_tokens;
+            if (response.usage.cost != null) {
+                entry.cost += response.usage.cost;
+            }
+        }
+    }
+
+    /** Record usage from a vision API call */
+    public recordVisionUsage(usage: TokenUsage, llmMs: number, model: string): void {
+        this.metrics.totalPromptTokens += usage.prompt_tokens;
+        this.metrics.totalCompletionTokens += usage.completion_tokens;
+        this.metrics.totalTokens += usage.total_tokens;
+        if (usage.cost != null) {
+            this.metrics.totalCost += usage.cost;
+        }
+        this.metrics.totalLlmTimeMs += llmMs;
+        this.metrics.llmCallCount += 1;
+
+        if (!this.metrics.modelBreakdown[model]) {
+            this.metrics.modelBreakdown[model] = { promptTokens: 0, completionTokens: 0, cost: 0, calls: 0 };
+        }
+        const entry = this.metrics.modelBreakdown[model];
+        entry.calls += 1;
+        entry.promptTokens += usage.prompt_tokens;
+        entry.completionTokens += usage.completion_tokens;
+        if (usage.cost != null) {
+            entry.cost += usage.cost;
+        }
+    }
+
+    /** Get the current accumulated metrics snapshot */
+    public getMetrics(): SessionMetrics {
+        return { ...this.metrics, totalSessionTimeMs: Date.now() - this.sessionStartTime };
+    }
+
+    /** Broadcast metrics to side panel (throttled) */
+    private broadcastMetrics(): void {
+        if (!this.showSessionMetrics) return;
+        // Throttle: every 3 turns or on turn 1
+        if (this.turnCount !== 1 && this.turnCount % 3 !== 0) return;
+
+        this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
+        chrome.runtime.sendMessage({
+            type: "SESSION_METRICS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { ...this.metrics },
+        }).catch(() => {});
+    }
+
     constructor(
         apiKey: string,
         callbacks: {
@@ -60,12 +162,12 @@ export class AgentLoop {
             onMessage: (text: string, toolCalls: ToolCall[]) => void;
             onStep?: (step: AgentStep, update: boolean) => void;
         },
-        options?: { maxContextTokens?: number; maxTurns?: number; showElementTags?: boolean; speedMode?: boolean; openRouterApiKey?: string }
+        options?: { maxContextTokens?: number; maxTurns?: number; showElementTags?: boolean; confirmPlan?: boolean; showSessionMetrics?: boolean }
     ) {
-        this.speedMode = options?.speedMode ?? false;
-        this.openRouterApiKey = options?.openRouterApiKey;
+        this.confirmPlan = options?.confirmPlan ?? false;
+        this.showSessionMetrics = options?.showSessionMetrics ?? false;
         this.llm = new LLMClient(apiKey);
-        this.context = new ContextManager(options?.maxContextTokens, this.speedMode);
+        this.context = new ContextManager(options?.maxContextTokens);
         this.statusHandler = callbacks.onStatusUpdate;
         this.messageHandler = callbacks.onMessage;
         this.stepHandler = callbacks.onStep ?? (() => {});
@@ -89,6 +191,12 @@ export class AgentLoop {
         this.originalQuery = initialUserText;
         this.progress.reset();
         this.pendingHint = null;
+        this.taskId = null;
+        this.planSubtasks = [];
+        this.taskStartTime = Date.now();
+        this.urlHistory = [];
+        this.metrics = AgentLoop.emptyMetrics();
+        this.sessionStartTime = Date.now();
 
         // Clear or restore context
         if (options?.clearHistory) {
@@ -102,25 +210,33 @@ export class AgentLoop {
             this.context.setSnapshot(initialSnapshot);
         }
 
-        // 2. Add User Message
+        // 2. Add User Message (with plan prefix when confirmPlan is enabled)
+        const userContent = this.confirmPlan
+            ? `Before executing, briefly outline your action plan as a numbered list. Then wait for my approval. After I approve, proceed with execution.\n\n${initialUserText}`
+            : initialUserText;
         this.context.addMessage({
             role: "user",
-            content: initialUserText
+            content: userContent
         });
 
         this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
+        // Register vision usage callback so screenshot tool can report token usage
+        setVisionUsageCallback((usage, durationMs, model) => {
+            this.recordVisionUsage(usage, durationMs, model);
+        });
+
         // Start keepalive alarm to prevent SW termination
         await startKeepalive();
 
-        let result: LoopResult = { outcome: "completed", turnCount: 0, summary: "" };
+        let result: LoopResult = { outcome: "completed", turnCount: 0, summary: "", metrics: undefined };
         try {
             result = await this.loop(tabId);
         } catch (error: any) {
             if (error.name === "AbortError") {
                 logger.info("agent", "Agent stopped by user");
                 this.statusHandler(AgentStatus.IDLE, "Stopped");
-                result = { outcome: "stopped", turnCount: this.turnCount, summary: "Stopped by user" };
+                result = { outcome: "stopped", turnCount: this.turnCount, summary: "Stopped by user", metrics: this.getMetrics() };
             } else {
                 logger.error("agent", "Loop Error", { error });
                 const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
@@ -137,9 +253,10 @@ export class AgentLoop {
                     payload: { delta: "", done: true },
                 }).catch(() => {});
                 this.statusHandler(AgentStatus.ERROR, error.message);
-                result = { outcome: "error", turnCount: this.turnCount, summary: error.message };
+                result = { outcome: "error", turnCount: this.turnCount, summary: error.message, metrics: this.getMetrics() };
             }
         } finally {
+            setVisionUsageCallback(null);
             await stopKeepalive();
             this.isRunning = false;
         }
@@ -200,15 +317,102 @@ export class AgentLoop {
         return this.pauseGate !== null;
     }
 
-    /** Escalate to Gemini 3 Flash via OpenRouter when speed mode gets stuck. */
-    private escalateModel(): boolean {
-        if (!this.openRouterApiKey) {
-            logger.warn("agent", "Speed mode escalation skipped: no OpenRouter API key");
-            return false;
+    /**
+     * LLM fallback for overlay dismissal — called when heuristics can't remove a
+     * viewport-covering overlay. Sends the overlay HTML to a fast vision model
+     * to identify which button to click.
+     */
+    private async dismissOverlayWithLLM(overlay: OverlayDescriptor, tabId: number): Promise<void> {
+        try {
+            const stored = await chrome.storage.sync.get("userSettings");
+            const settings = (stored.userSettings ?? {}) as UserSettings;
+            const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+            if (!apiKey) return;
+
+            const visionModel = settings.visionModel || "google/gemini-2.0-flash-001";
+            const prompt = `You are a browser automation assistant. A modal/overlay is blocking the page.
+HTML (truncated):
+\`\`\`html
+${overlay.html}
+\`\`\`
+Covers ${overlay.coveragePercent}% of viewport.
+
+Respond with ONE JSON object, no markdown:
+{"action":"click","selector":"CSS_SELECTOR"}
+or {"action":"hide"}
+
+Prefer "click" if a close/dismiss/accept button exists.`;
+
+            const callStart = Date.now();
+            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${apiKey}`,
+                    "HTTP-Referer": "chrome-extension://opensidebar",
+                    "X-Title": "OpenSidebar",
+                },
+                body: JSON.stringify({
+                    model: visionModel,
+                    messages: [{ role: "user", content: prompt }],
+                    max_tokens: 150,
+                    temperature: 0,
+                }),
+                signal: AbortSignal.timeout(5000),
+            });
+
+            if (!response.ok) return;
+
+            const json = await response.json();
+            const text: string = json.choices?.[0]?.message?.content || "";
+            const llmMs = Date.now() - callStart;
+
+            // Record usage for metrics
+            if (json.usage) {
+                this.recordVisionUsage(
+                    {
+                        prompt_tokens: json.usage.prompt_tokens ?? 0,
+                        completion_tokens: json.usage.completion_tokens ?? 0,
+                        total_tokens: json.usage.total_tokens ?? 0,
+                        cost: json.usage.cost,
+                    },
+                    llmMs,
+                    visionModel,
+                );
+            }
+
+            // Parse JSON response (strip markdown fences if present)
+            const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+            const parsed = JSON.parse(cleaned) as { action: string; selector?: string };
+
+            if (parsed.action === "click" && parsed.selector) {
+                await chrome.tabs.sendMessage(tabId, {
+                    type: "DISMISS_MODALS",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { clickSelector: parsed.selector, overlayTagId: overlay.tagId },
+                });
+                logger.info("agent", "LLM overlay dismiss: click", { selector: parsed.selector, tagId: overlay.tagId });
+            } else {
+                // hide action — use TOOL_EXECUTE with hide_element
+                await chrome.tabs.sendMessage(tabId, {
+                    type: "TOOL_EXECUTE",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { toolName: ToolName.HIDE_ELEMENT, args: { id: overlay.tagId }, toolCallId: crypto.randomUUID() },
+                });
+                logger.info("agent", "LLM overlay dismiss: hide", { tagId: overlay.tagId });
+            }
+        } catch (err: any) {
+            // Non-critical — agent proceeds normally
+            logger.debug("agent", "LLM overlay dismiss failed (non-critical)", { error: err?.message });
         }
-        this.llm = new LLMClient(this.openRouterApiKey, "openrouter", "google/gemini-3-flash-preview");
-        logger.info("agent", "Speed mode: escalating to Gemini 3 Flash");
-        return true;
+    }
+
+    /** Escalate to smart model when stuck. */
+    private escalateModel(): void {
+        this.llm.switchModel(MODEL_SMART);
+        logger.info("agent", "Escalating to smart model", { model: MODEL_SMART });
     }
 
     /** Refresh DOM snapshot and update context. Returns element count or -1 on failure. */
@@ -228,6 +432,17 @@ export class AgentLoop {
         return -1;
     }
 
+    /** Refresh snapshot with retry — used after model escalation where fresh context is critical. */
+    private async refreshSnapshotWithRetry(tabId: number, prevCount: number): Promise<number> {
+        let count = await this.refreshSnapshot(tabId);
+        if (count >= 0) return count;
+        // Retry once after a brief delay
+        await new Promise(r => setTimeout(r, 300));
+        count = await this.refreshSnapshot(tabId);
+        if (count >= 0) return count;
+        return prevCount; // Keep existing count if both attempts fail
+    }
+
     private async loop(tabId: number): Promise<LoopResult> {
         let prevElementCount = -1; // Track element count for empty-page retry
         let consecutiveNudges = 0;
@@ -235,22 +450,31 @@ export class AgentLoop {
         let doneSummary = "";
         let wasStuck = false; // Track stuck state for "resolved" signal
 
-        // Pre-agent modal auto-dismiss (speed mode only, before first LLM turn)
-        if (this.speedMode) {
-            try {
-                const dismissResult = await chrome.tabs.sendMessage(tabId, {
-                    type: "DISMISS_MODALS",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: {},
+        // Pre-agent modal auto-dismiss (always, before first LLM turn)
+        try {
+            const dismissResult = await chrome.tabs.sendMessage(tabId, {
+                type: "DISMISS_MODALS",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: {},
+            });
+            const dismissed = dismissResult?.payload?.dismissed ?? 0;
+            if (dismissed > 0) {
+                logger.info("agent", "Auto-dismissed modals", { dismissed });
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            // LLM fallback for overlays that resist heuristic dismissal
+            const remainingOverlay = dismissResult?.payload?.remainingOverlay ?? null;
+            if (remainingOverlay && this.abortController) {
+                logger.info("agent", "Heuristics left remaining overlay, trying LLM fallback", {
+                    tagId: remainingOverlay.tagId,
+                    coverage: remainingOverlay.coveragePercent,
                 });
-                const dismissed = dismissResult?.payload?.dismissed ?? 0;
-                if (dismissed > 0) {
-                    logger.info("agent", "Auto-dismissed modals", { dismissed });
-                    await new Promise(r => setTimeout(r, 100));
-                }
-            } catch { /* non-critical */ }
-        }
+                await this.dismissOverlayWithLLM(remainingOverlay, tabId);
+                await new Promise(r => setTimeout(r, 200)); // DOM settle
+            }
+        } catch { /* non-critical */ }
 
         while (this.isRunning && this.turnCount < this.maxTurns) {
             // Pause gate — block here if user paused the loop
@@ -265,8 +489,8 @@ export class AgentLoop {
                 this.pendingHint = null;
             }
 
-            // Broadcast turn progress to side panel (throttled in speed mode)
-            if (!this.speedMode || this.turnCount === 1 || this.turnCount % 5 === 0) {
+            // Broadcast turn progress to side panel (throttled: every 5 turns)
+            if (this.turnCount === 1 || this.turnCount % 5 === 0) {
                 chrome.runtime.sendMessage({
                     type: "AGENT_TURN",
                     requestId: crypto.randomUUID(),
@@ -277,9 +501,7 @@ export class AgentLoop {
 
             // 1. LLM Inference (streamed)
             const messages = this.context.getPrompt();
-            const tools = this.speedMode
-                ? toolRegistry.getDefinitions(SPEED_MODE_EXCLUDED_TOOLS)
-                : toolRegistry.getDefinitions();
+            const tools = toolRegistry.getDefinitions();
 
             // Log context metrics for telemetry (reuse already-computed prompt)
             const metrics = this.context.getPromptMetricsFrom(messages);
@@ -292,7 +514,6 @@ export class AgentLoop {
                 utilization: Math.round(metrics.utilization * 100) + "%",
                 elements: metrics.elementCount,
                 compression: metrics.compressionLevel,
-                speedMode: this.speedMode,
                 toolCount: tools.length,
             });
 
@@ -306,30 +527,32 @@ export class AgentLoop {
             };
             this.stepHandler(thinkingStep, false);
 
-            // In speed mode, use no-op stream callback to eliminate per-token messaging overhead
-            const onTextDelta = this.speedMode
-                ? () => {}
-                : (delta: string) => {
-                    chrome.runtime.sendMessage({
-                        type: "STREAM_CHUNK",
-                        requestId: crypto.randomUUID(),
-                        source: MessageSource.BACKGROUND,
-                        payload: { delta, done: false },
-                    }).catch(() => { }); // Ignore if sidepanel closed
-                };
+            // Always stream deltas to side panel
+            const onTextDelta = (delta: string) => {
+                chrome.runtime.sendMessage({
+                    type: "STREAM_CHUNK",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: { delta, done: false },
+                }).catch(() => { }); // Ignore if sidepanel closed
+            };
 
             const llmStart = Date.now();
             const response = await this.llm.completeStream(
                 {
                     messages,
                     tools,
-                    max_tokens: this.speedMode ? 2048 : 4096,
+                    max_tokens: 4096,
                     stop: ["Observation:"], // ReAct pattern stop token just in case
                     signal: this.abortController!.signal,
                 },
                 onTextDelta
             );
             const llmMs = Date.now() - llmStart;
+
+            // Accumulate token usage and broadcast metrics
+            this.recordUsage(response, llmMs);
+            this.broadcastMetrics();
 
             // Log LLM response summary for debugging
             const toolSummary = response.tool_calls?.map(tc => {
@@ -341,10 +564,30 @@ export class AgentLoop {
                 turn: this.turnCount,
                 llmMs,
                 url: this.context.getCurrentUrl(),
-                text: response.content?.slice(0, 120) || null,
+                text: response.content?.slice(0, 500) || null,
                 toolCalls: toolSummary,
                 toolCount: toolSummary.length,
             });
+
+            // Full reasoning at DEBUG level (untruncated for performance analysis)
+            if (response.content) {
+                logger.debug("agent", "LLM reasoning (full)", { turn: this.turnCount, text: response.content });
+            }
+
+            // Recover tool calls from text output (models sometimes emit JSON as text)
+            if ((!response.tool_calls || response.tool_calls.length === 0) && response.content) {
+                const recovered = recoverToolCallsFromText(response.content);
+                if (recovered && recovered.length > 0) {
+                    logger.info("agent", "Recovered tool calls from text", {
+                        turn: this.turnCount,
+                        count: recovered.length,
+                        tools: recovered.map(tc => tc.function.name),
+                    });
+                    response.tool_calls = recovered;
+                }
+            }
+
+            const llmIntention = response.content?.slice(0, 300) || null;
 
             // 2. Add Assistant Message to History
             this.context.addMessage({
@@ -389,14 +632,14 @@ export class AgentLoop {
                 let doneSignaled = false;
                 let domModified = false;
 
-                // Determine if we can parallelize: speed mode + no sequential tools present
+                // Determine if we can parallelize: no sequential tools present
                 const hasSequentialTool = response.tool_calls.some(tc =>
                     SEQUENTIAL_TOOLS.has(tc.function.name as ToolName)
                 );
-                const canParallelize = this.speedMode && !hasSequentialTool && response.tool_calls.length > 1;
+                const canParallelize = !hasSequentialTool && response.tool_calls.length > 1;
 
                 if (canParallelize) {
-                    // PARALLEL EXECUTION (speed mode)
+                    // PARALLEL EXECUTION
                     const results = await Promise.all(
                         response.tool_calls.map(async (toolCall) => {
                             const toolName = toolCall.function.name as ToolName;
@@ -408,7 +651,6 @@ export class AgentLoop {
                             }
 
                             const riskLevel = classifyRisk(toolName, args);
-                            logger.debug("tools", `${toolName} [${riskLevel}] (parallel)`, { args });
 
                             const toolStep: AgentStep = {
                                 id: crypto.randomUUID(),
@@ -422,14 +664,20 @@ export class AgentLoop {
                             this.stepHandler(toolStep, false);
 
                             try {
-                                const result = await toolRegistry.execute(toolCall, tabId);
+                                const result = await toolRegistry.execute(toolCall, tabId, this.abortController!.signal);
                                 const toolMs = Date.now() - toolStep.timestamp;
                                 this.stepHandler({
                                     ...toolStep,
                                     status: "done",
                                     durationMs: toolMs,
                                 }, true);
-                                logger.info("tools", `${toolName} OK`, { toolMs, result: result.slice(0, 300) });
+                                logger.info("tools", `${toolName} OK`, {
+                                    turn: this.turnCount, tool: toolName, risk: riskLevel,
+                                    mode: "parallel",
+                                    args: JSON.stringify(args).slice(0, 500),
+                                    result: result.slice(0, 1000),
+                                    durationMs: toolMs, intention: llmIntention,
+                                });
 
                                 if (DOM_MODIFYING_TOOLS.has(toolName) && !result.includes("Click intercepted")) {
                                     domModified = true;
@@ -437,8 +685,16 @@ export class AgentLoop {
 
                                 return { toolCall, result, error: null };
                             } catch (toolError: any) {
+                                if (toolError.name === "AbortError") throw toolError;
                                 const errorMsg = toolError.message || String(toolError);
-                                logger.error("tools", `Tool ${toolName} failed`, { error: errorMsg });
+                                const toolMs = Date.now() - toolStep.timestamp;
+                                logger.error("tools", `${toolName} FAIL`, {
+                                    turn: this.turnCount, tool: toolName, risk: riskLevel,
+                                    mode: "parallel",
+                                    args: JSON.stringify(args).slice(0, 500),
+                                    error: errorMsg,
+                                    durationMs: toolMs, intention: llmIntention,
+                                });
                                 this.stepHandler({
                                     ...toolStep,
                                     status: "error",
@@ -459,7 +715,7 @@ export class AgentLoop {
                         });
                     }
                 } else {
-                    // SEQUENTIAL EXECUTION (normal mode or has sequential tools)
+                    // SEQUENTIAL EXECUTION (has sequential tools or single tool)
                     for (const toolCall of response.tool_calls) {
                         if (!this.isRunning) break;
 
@@ -474,7 +730,6 @@ export class AgentLoop {
 
                         // Risk classification (informational, non-blocking)
                         const riskLevel = classifyRisk(toolName, args);
-                        logger.debug("tools", `${toolName} [${riskLevel}]`, { args });
 
                         // DONE tool — exit loop with summary
                         if (toolName === ToolName.DONE) {
@@ -500,21 +755,144 @@ export class AgentLoop {
                             this.messageHandler(summary, []);
                             doneSummary = summary;
                             doneSignaled = true;
+
+                            // Broadcast task completion if plan was active
+                            if (this.taskId && this.planSubtasks.length > 0) {
+                                const subtaskResults: SubtaskResult[] = this.planSubtasks.map((st) => ({
+                                    description: st.description,
+                                    status: st.status === "failed" ? "failed" as const
+                                          : st.status === "skipped" ? "skipped" as const
+                                          : "completed" as const,
+                                    turnsUsed: st.turnsUsed,
+                                    result: st.result || "",
+                                }));
+
+                                chrome.runtime.sendMessage({
+                                    type: "TASK_COMPLETION",
+                                    requestId: crypto.randomUUID(),
+                                    source: MessageSource.BACKGROUND,
+                                    payload: {
+                                        taskId: this.taskId,
+                                        status: subtaskResults.every(sr => sr.status === "completed") ? "completed" : "partial",
+                                        totalTurnsUsed: this.turnCount,
+                                        totalTimeMs: Date.now() - this.taskStartTime,
+                                        summary,
+                                        subtaskResults,
+                                        urlHistory: this.urlHistory,
+                                    },
+                                }).catch(() => {});
+                            }
+
+                            // Broadcast final metrics
+                            if (this.showSessionMetrics) {
+                                this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
+                                chrome.runtime.sendMessage({
+                                    type: "SESSION_METRICS",
+                                    requestId: crypto.randomUUID(),
+                                    source: MessageSource.BACKGROUND,
+                                    payload: { ...this.metrics },
+                                }).catch(() => {});
+                            }
+
                             break;
                         }
 
-                        // WORKSPACE CHECK (skip in speed mode)
-                        if (!this.speedMode) {
-                            const isAllowed = await workspaceManager.isTabInActiveWorkspace(tabId);
-                            if (!isAllowed) {
-                                const errorMsg = "Error: The current tab is not in your active workspace. Switch to a tab in the workspace or use 'create_tab' to open inside it.";
+                        // ESCALATE tool — voluntary model upgrade
+                        if (toolName === ToolName.ESCALATE) {
+                            const reason = (args.reason as string) || "";
+                            if (!escalated) {
+                                this.escalateModel();
+                                escalated = true;
+                                prevElementCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount);
+                                this.stepHandler({
+                                    id: crypto.randomUUID(),
+                                    type: "info",
+                                    label: reason ? `Escalating: "${reason.slice(0, 60)}"` : "Escalating to smarter model",
+                                    status: "done",
+                                    timestamp: Date.now(),
+                                }, false);
                                 this.context.addMessage({
                                     role: "tool",
                                     tool_call_id: toolCall.id,
-                                    content: errorMsg
+                                    content: "Upgraded to smarter model. Re-read the page and continue.",
                                 });
-                                continue;
+                            } else {
+                                this.context.addMessage({
+                                    role: "tool",
+                                    tool_call_id: toolCall.id,
+                                    content: "Already using the smarter model. Continue with the task.",
+                                });
                             }
+                            logger.info("agent", "ESCALATE called", {
+                                turn: this.turnCount,
+                                reason,
+                                wasAlreadyEscalated: escalated && reason === "",
+                            });
+                            continue;
+                        }
+
+                        // UPDATE_PLAN tool — task decomposition and progress tracking
+                        if (toolName === ToolName.UPDATE_PLAN) {
+                            const subtaskDescs = (args.subtasks as string[]) || [];
+                            const currentIndex = (args.currentIndex as number) || 0;
+                            const lastResult = args.lastResult as string | undefined;
+
+                            if (!this.taskId) {
+                                this.taskId = crypto.randomUUID();
+                                this.taskStartTime = Date.now();
+                            }
+
+                            this.planSubtasks = subtaskDescs.map((desc, i) => ({
+                                description: desc,
+                                status: i < currentIndex ? "completed" as const
+                                      : i === currentIndex ? "running" as const
+                                      : "pending" as const,
+                                turnsUsed: 0,
+                                turnBudget: 0,
+                                result: i === currentIndex - 1 && lastResult ? lastResult : undefined,
+                            }));
+
+                            const currentUrl = this.context.getCurrentUrl();
+                            if (currentUrl && !this.urlHistory.includes(currentUrl)) {
+                                this.urlHistory.push(currentUrl);
+                            }
+
+                            chrome.runtime.sendMessage({
+                                type: "TASK_PROGRESS",
+                                requestId: crypto.randomUUID(),
+                                source: MessageSource.BACKGROUND,
+                                payload: {
+                                    taskId: this.taskId,
+                                    subtasks: this.planSubtasks,
+                                    currentIndex,
+                                    totalTurnsUsed: this.turnCount,
+                                },
+                            }).catch(() => {});
+
+                            this.stepHandler({
+                                id: crypto.randomUUID(),
+                                type: "info",
+                                label: lastResult
+                                    ? `Step ${currentIndex + 1}/${subtaskDescs.length}: "${subtaskDescs[currentIndex]?.slice(0, 40) || "done"}"`
+                                    : `Plan: ${subtaskDescs.length} steps`,
+                                status: "done",
+                                timestamp: Date.now(),
+                            }, false);
+
+                            this.context.addMessage({
+                                role: "tool",
+                                tool_call_id: toolCall.id,
+                                content: `Plan acknowledged. Now executing step ${currentIndex + 1}: "${subtaskDescs[currentIndex] || "done"}"`,
+                            });
+
+                            logger.info("agent", "UPDATE_PLAN", {
+                                turn: this.turnCount,
+                                taskId: this.taskId,
+                                subtaskCount: subtaskDescs.length,
+                                currentIndex,
+                                lastResult: lastResult?.slice(0, 100),
+                            });
+                            continue;
                         }
 
                         const toolStepId = crypto.randomUUID();
@@ -531,21 +909,35 @@ export class AgentLoop {
 
                         let result: string;
                         try {
-                            result = await toolRegistry.execute(toolCall, tabId);
+                            result = await toolRegistry.execute(toolCall, tabId, this.abortController!.signal);
                             const toolMs = Date.now() - toolStep.timestamp;
                             this.stepHandler({
                                 ...toolStep,
                                 status: "done",
                                 durationMs: toolMs,
                             }, true);
-                            logger.info("tools", `${toolName} OK`, { toolMs, result: result.slice(0, 300) });
+                            logger.info("tools", `${toolName} OK`, {
+                                turn: this.turnCount, tool: toolName, risk: riskLevel,
+                                mode: "sequential",
+                                args: JSON.stringify(args).slice(0, 500),
+                                result: result.slice(0, 1000),
+                                durationMs: toolMs, intention: llmIntention,
+                            });
                         } catch (toolError: any) {
+                            if (toolError.name === "AbortError") throw toolError;
                             const errorMsg = toolError.message || String(toolError);
-                            logger.error("tools", `Tool ${toolName} failed`, { error: errorMsg });
+                            const toolMs = Date.now() - toolStep.timestamp;
+                            logger.error("tools", `${toolName} FAIL`, {
+                                turn: this.turnCount, tool: toolName, risk: riskLevel,
+                                mode: "sequential",
+                                args: JSON.stringify(args).slice(0, 500),
+                                error: errorMsg,
+                                durationMs: toolMs, intention: llmIntention,
+                            });
                             this.stepHandler({
                                 ...toolStep,
                                 status: "error",
-                                durationMs: Date.now() - toolStep.timestamp,
+                                durationMs: toolMs,
                                 errorMessage: errorMsg,
                             }, true);
                             // Add error to conversation history so the LLM can recover
@@ -573,8 +965,7 @@ export class AgentLoop {
                 // Batch snapshot refresh: ONE refresh after all tools complete
                 if (domModified && !doneSignaled) {
                     try {
-                        const spaWait = this.speedMode ? 50 : 200;
-                        await new Promise((resolve) => setTimeout(resolve, spaWait));
+                        await new Promise((resolve) => setTimeout(resolve, 100)); // SPA wait
                         let snapResponse = await chrome.tabs.sendMessage(tabId, {
                             type: "DOM_SNAPSHOT_REQUEST",
                             requestId: crypto.randomUUID(),
@@ -637,16 +1028,17 @@ export class AgentLoop {
                                 }).catch(() => {});
                                 wasStuck = true;
                                 if (progressSignal.type === "escalate" && !escalated) {
-                                    if (this.escalateModel()) {
-                                        escalated = true;
-                                        this.stepHandler({
-                                            id: crypto.randomUUID(),
-                                            type: "info",
-                                            label: "Stuck — switching to smarter model",
-                                            status: "done",
-                                            timestamp: Date.now(),
-                                        }, false);
-                                    }
+                                    this.escalateModel();
+                                    escalated = true;
+                                    this.stepHandler({
+                                        id: crypto.randomUUID(),
+                                        type: "info",
+                                        label: "Stuck — switching to smarter model",
+                                        status: "done",
+                                        timestamp: Date.now(),
+                                    }, false);
+                                    // Mandatory snapshot refresh so the new model sees current state
+                                    prevElementCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount);
                                 }
                             } else if (wasStuck) {
                                 // Agent recovered — broadcast resolved signal
@@ -672,7 +1064,7 @@ export class AgentLoop {
                 if (doneSignaled) break;
 
             } else {
-                // FINAL ANSWER (or question) — text without tool calls
+                // TEXT RESPONSE — no tool calls
 
                 // Notify user if LLM produced no content
                 if (!response.content) {
@@ -684,74 +1076,87 @@ export class AgentLoop {
                     }).catch(() => {});
                 }
 
-                // Speed mode: never stop on text — refresh snapshot and inject continuation nudge
-                if (this.speedMode) {
-                    consecutiveNudges++;
-                    logger.warn("agent", "Speed mode: LLM emitted text instead of tools, nudging", {
-                        turn: this.turnCount,
-                        consecutiveNudges,
-                        text: response.content?.slice(0, 80),
-                    });
+                // Plan confirmation: on turn 1 with confirmPlan, pause for user approval
+                if (this.confirmPlan && this.turnCount === 1 && response.content) {
+                    // Finalize stream so the plan text appears as a complete message
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: "", done: true },
+                    }).catch(() => {});
 
-                    // Escalation gate: after 2 nudges, try upgrading model
-                    if (consecutiveNudges >= 2 && !escalated) {
-                        if (this.escalateModel()) {
-                            escalated = true;
-                            consecutiveNudges = 0;
+                    logger.info("agent", "Plan ready — pausing for user approval");
+                    this.statusHandler(AgentStatus.PAUSED, "Plan ready — waiting for approval");
 
-                            // User-visible feedback
-                            this.stepHandler({
-                                id: crypto.randomUUID(),
-                                type: "info",
-                                label: "Switching to smarter model",
-                                status: "done",
-                                timestamp: Date.now(),
-                            }, false);
-                            this.statusHandler(AgentStatus.THINKING, "Escalating model...");
-
-                            const count = await this.refreshSnapshot(tabId);
-                            if (count >= 0) prevElementCount = count;
-                            this.context.addMessage({ role: "user", content: SPEED_NUDGE_MESSAGE });
-                            continue;
-                        }
+                    // Block until user approves (RESUME_AGENT) or injects a hint
+                    if (!this.pauseGate) {
+                        let resolve: () => void;
+                        const promise = new Promise<void>(r => { resolve = r; });
+                        this.pauseGate = { promise, resolve: resolve! };
                     }
+                    await this.pauseGate.promise;
+                    this.pauseGate = null;
+                    if (!this.isRunning) break;
 
-                    // Give-up gate: 3 nudges (applies whether pre- or post-escalation)
-                    if (consecutiveNudges >= 3) {
-                        logger.warn("agent", "Loop ended: consecutive nudge limit", { turns: this.turnCount, consecutiveNudges, escalated });
-                        const stuckMsg = response.content || "The agent appears stuck and cannot continue.";
-                        chrome.runtime.sendMessage({
-                            type: "STREAM_CHUNK",
-                            requestId: crypto.randomUUID(),
-                            source: MessageSource.BACKGROUND,
-                            payload: { delta: stuckMsg, done: false },
-                        }).catch(() => {});
-                        chrome.runtime.sendMessage({
-                            type: "STREAM_CHUNK",
-                            requestId: crypto.randomUUID(),
-                            source: MessageSource.BACKGROUND,
-                            payload: { delta: "", done: true },
-                        }).catch(() => {});
-                        this.statusHandler(AgentStatus.IDLE, "Stuck — send a follow-up to continue");
-                        break;
-                    }
+                    this.statusHandler(AgentStatus.THINKING, "Executing plan...");
+                    continue; // Continue the loop — user approved
+                }
 
-                    // Regular nudge: refresh snapshot + inject message
-                    const count = await this.refreshSnapshot(tabId);
-                    if (count >= 0) prevElementCount = count;
-                    this.context.addMessage({ role: "user", content: SPEED_NUDGE_MESSAGE });
+                // Unified nudge→escalate→give-up for text-only responses
+                consecutiveNudges++;
+                logger.warn("agent", "LLM emitted text instead of tools, nudging", {
+                    turn: this.turnCount,
+                    consecutiveNudges,
+                    text: response.content?.slice(0, 80),
+                });
+
+                // Escalation gate: after 2 nudges, try upgrading model
+                if (consecutiveNudges >= 2 && !escalated) {
+                    this.escalateModel();
+                    escalated = true;
+                    consecutiveNudges = 0;
+
+                    // User-visible feedback
+                    this.stepHandler({
+                        id: crypto.randomUUID(),
+                        type: "info",
+                        label: "Switching to smarter model",
+                        status: "done",
+                        timestamp: Date.now(),
+                    }, false);
+                    this.statusHandler(AgentStatus.THINKING, "Escalating model...");
+
+                    prevElementCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount);
+                    this.context.addMessage({ role: "user", content: NUDGE_MESSAGE });
                     continue;
                 }
 
-                chrome.runtime.sendMessage({
-                    type: "STREAM_CHUNK",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: { delta: "", done: true },
-                }).catch(() => { });
-                logger.info("agent", "Loop ended: final answer", { turn: this.turnCount });
-                this.statusHandler(AgentStatus.IDLE, "Done");
-                break; // Exit loop
+                // Give-up gate: 3 nudges (applies whether pre- or post-escalation)
+                if (consecutiveNudges >= 3) {
+                    logger.warn("agent", "Loop ended: consecutive nudge limit", { turns: this.turnCount, consecutiveNudges, escalated });
+                    const stuckMsg = response.content || "The agent appears stuck and cannot continue.";
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: stuckMsg, done: false },
+                    }).catch(() => {});
+                    chrome.runtime.sendMessage({
+                        type: "STREAM_CHUNK",
+                        requestId: crypto.randomUUID(),
+                        source: MessageSource.BACKGROUND,
+                        payload: { delta: "", done: true },
+                    }).catch(() => {});
+                    this.statusHandler(AgentStatus.IDLE, "Stuck — send a follow-up to continue");
+                    break;
+                }
+
+                // Regular nudge: refresh snapshot + inject message
+                const count = await this.refreshSnapshot(tabId);
+                if (count >= 0) prevElementCount = count;
+                this.context.addMessage({ role: "user", content: NUDGE_MESSAGE });
+                continue;
             }
         }
 
@@ -771,10 +1176,10 @@ export class AgentLoop {
                 payload: { delta: "", done: true },
             }).catch(() => {});
             this.statusHandler(AgentStatus.IDLE, `Turn limit (${this.turnCount}/${this.maxTurns})`);
-            return { outcome: "max_turns" as const, turnCount: this.turnCount, summary: limitMsg };
+            return { outcome: "max_turns" as const, turnCount: this.turnCount, summary: limitMsg, metrics: this.getMetrics() };
         }
 
-        return { outcome: "completed" as const, turnCount: this.turnCount, summary: doneSummary };
+        return { outcome: "completed" as const, turnCount: this.turnCount, summary: doneSummary, metrics: this.getMetrics() };
     }
 
     /**

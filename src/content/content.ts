@@ -1,8 +1,8 @@
 import { logger } from "../utils";
-import { RuntimeMessage, MessageSource } from "../types";
+import { RuntimeMessage, MessageSource, OverlayDescriptor, ElementRect } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
-import { isElementVisible } from "./tagging";
+import { isElementVisible, addDynamicTag, getTagMap } from "./tagging";
 
 logger.info("system", "Content Script Loaded");
 
@@ -31,13 +31,144 @@ if (document.readyState === "complete") {
     window.addEventListener("load", runJanitor);
 }
 
+// --- Overlay Detection Helpers ---
+
+const AGENT_BORDER_ID = "opensidebar-agent-border";
+
 /**
- * Auto-dismiss modals, overlays, banners, and popups by hiding them.
- * Uses display:none instead of clicking dismiss buttons (adversarial sites trap clicks).
- * Returns the number of elements dismissed.
+ * Detect elements that cover >50% of the viewport via fixed/absolute positioning.
+ * Returns elements sorted by coverage descending.
  */
-function autoDismissModals(): number {
+export function detectViewportCoveringOverlays(): { el: HTMLElement; coverage: number; rect: DOMRect }[] {
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    const vpArea = vpW * vpH;
+    if (vpArea === 0) return [];
+
+    const results: { el: HTMLElement; coverage: number; rect: DOMRect }[] = [];
+    const allElements = document.querySelectorAll("*");
+
+    for (const raw of allElements) {
+        if (!(raw instanceof HTMLElement)) continue;
+        if (raw.id === AGENT_BORDER_ID) continue;
+        if (!isElementVisible(raw)) continue;
+
+        const style = window.getComputedStyle(raw);
+        if (style.position !== "fixed" && style.position !== "absolute") continue;
+
+        const rect = raw.getBoundingClientRect();
+        // Clamp to viewport
+        const left = Math.max(0, rect.left);
+        const top = Math.max(0, rect.top);
+        const right = Math.min(vpW, rect.right);
+        const bottom = Math.min(vpH, rect.bottom);
+        const visibleW = Math.max(0, right - left);
+        const visibleH = Math.max(0, bottom - top);
+        const visibleArea = visibleW * visibleH;
+        const coverage = (visibleArea / vpArea) * 100;
+
+        if (coverage > 50) {
+            results.push({ el: raw, coverage, rect });
+        }
+    }
+
+    results.sort((a, b) => b.coverage - a.coverage);
+    return results;
+}
+
+/**
+ * Check if an element looks like a backdrop/scrim overlay.
+ */
+export function isBackdropElement(el: HTMLElement): boolean {
+    const style = window.getComputedStyle(el);
+
+    // Has backdrop-filter (blur, brightness, etc.)
+    if (style.backdropFilter && style.backdropFilter !== "none") return true;
+
+    // Semi-transparent background color (rgba with alpha between 0 exclusive and 0.9 inclusive)
+    const bg = style.backgroundColor;
+    const rgbaMatch = bg.match(/rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*([\d.]+)\s*)?\)/);
+    if (rgbaMatch && rgbaMatch[1] !== undefined) {
+        const alpha = parseFloat(rgbaMatch[1]);
+        if (alpha > 0 && alpha <= 0.9) return true;
+    }
+
+    return false;
+}
+
+/**
+ * Search within an overlay for a close/dismiss button.
+ * Returns the first visible match or null.
+ * Priority: aria-label > class-based > X/× text in top-right quadrant.
+ */
+export function findCloseButton(overlay: HTMLElement): HTMLElement | null {
+    // Priority 1: aria-label based
+    const ariaSelectors = [
+        '[aria-label*="close" i]',
+        '[aria-label*="dismiss" i]',
+        '[aria-label*="Close" i]',
+        '[aria-label*="Dismiss" i]',
+    ];
+    for (const sel of ariaSelectors) {
+        const el = overlay.querySelector(sel);
+        if (el instanceof HTMLElement && isElementVisible(el)) return el;
+    }
+
+    // Priority 2: class-based
+    const classSelectors = [
+        ".close",
+        ".dismiss",
+        ".btn-close",
+        '[class*="close-btn"]',
+        '[class*="modal-close"]',
+    ];
+    for (const sel of classSelectors) {
+        const el = overlay.querySelector(sel);
+        if (el instanceof HTMLElement && isElementVisible(el)) return el;
+    }
+
+    // Priority 3: buttons with ×/✕/X text in top-right quadrant
+    const overlayRect = overlay.getBoundingClientRect();
+    const midX = overlayRect.left + overlayRect.width / 2;
+    const midY = overlayRect.top + overlayRect.height / 2;
+    const closeChars = /^[\s×✕xX✖✗✘☓]\s*$/;
+
+    const buttons = overlay.querySelectorAll("button, [role='button'], a");
+    for (const btn of buttons) {
+        if (!(btn instanceof HTMLElement) || !isElementVisible(btn)) continue;
+        const text = btn.textContent?.trim() || "";
+        // Check text or if it's an SVG-only button (no text, has svg child)
+        const isSvgOnly = !text && btn.querySelector("svg") !== null;
+        if (!closeChars.test(text) && !isSvgOnly) continue;
+
+        // Must be in top-right quadrant of overlay
+        const btnRect = btn.getBoundingClientRect();
+        const btnCenterX = btnRect.left + btnRect.width / 2;
+        const btnCenterY = btnRect.top + btnRect.height / 2;
+        if (btnCenterX >= midX && btnCenterY <= midY) return btn;
+    }
+
+    return null;
+}
+
+// --- Modal Dismissal ---
+
+interface DismissResult {
+    dismissed: number;
+    remainingOverlay: OverlayDescriptor | null;
+}
+
+/**
+ * Auto-dismiss modals, overlays, banners, and popups.
+ * Phase A: Selector-based (try close buttons before hiding).
+ * Phase B: Viewport-cover detection (backdrop→hide, close button→click, else→hide).
+ * Phase C: ESC key if anything was dismissed.
+ * Phase D: Re-scan for remaining overlays.
+ */
+function autoDismissModals(): DismissResult {
     let dismissed = 0;
+
+    // Phase A: Selector-based dismissal (existing logic, enhanced)
     const containers = document.querySelectorAll(
         "[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent"
     );
@@ -51,15 +182,77 @@ function autoDismissModals(): number {
             style.position === "sticky" ||
             parseInt(style.zIndex, 10) > 100;
 
-        if (isOverlay) {
+        if (!isOverlay) continue;
+
+        // Try close button first, fall back to hiding
+        const closeBtn = findCloseButton(el);
+        if (closeBtn) {
+            closeBtn.click();
+            dismissed++;
+            logger.info("tools", "Clicked close button on overlay", { tag: el.tagName, classes: el.className.toString().slice(0, 50) });
+        } else {
             el.style.display = "none";
             dismissed++;
             logger.info("tools", "Auto-hid overlay", { tag: el.tagName, classes: el.className.toString().slice(0, 50) });
         }
     }
 
-    return dismissed;
+    // Phase B: Viewport-cover detection (catches modals without semantic CSS)
+    const coveringOverlays = detectViewportCoveringOverlays();
+    for (const { el, coverage } of coveringOverlays) {
+        if (!isElementVisible(el)) continue; // May have been hidden in Phase A
+
+        if (isBackdropElement(el)) {
+            // Backdrop/scrim: just hide it
+            el.style.display = "none";
+            dismissed++;
+            logger.info("tools", "Hid backdrop overlay", { coverage: Math.round(coverage), tag: el.tagName });
+            continue;
+        }
+
+        const closeBtn = findCloseButton(el);
+        if (closeBtn) {
+            closeBtn.click();
+            dismissed++;
+            logger.info("tools", "Clicked close on covering overlay", { coverage: Math.round(coverage), tag: el.tagName });
+        } else {
+            el.style.display = "none";
+            dismissed++;
+            logger.info("tools", "Hid covering overlay (no close button)", { coverage: Math.round(coverage), tag: el.tagName });
+        }
+    }
+
+    // Phase C: Dispatch ESC key if anything was dismissed (closes keyboard-driven overlays)
+    if (dismissed > 0) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    }
+
+    // Phase D: Re-scan for remaining overlays
+    const remaining = detectViewportCoveringOverlays();
+    if (remaining.length > 0) {
+        const top = remaining[0];
+        const tagId = addDynamicTag(top.el);
+        const rect: ElementRect = {
+            x: top.rect.x,
+            y: top.rect.y,
+            width: top.rect.width,
+            height: top.rect.height,
+        };
+        return {
+            dismissed,
+            remainingOverlay: {
+                html: top.el.outerHTML.slice(0, 3000),
+                tagId,
+                rect,
+                coveragePercent: Math.round(top.coverage),
+            },
+        };
+    }
+
+    return { dismissed, remainingOverlay: null };
 }
+
+// --- Message Handler ---
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
     if (message.type === "AGENT_ACTIVITY") {
@@ -68,12 +261,42 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
     }
 
     if (message.type === "DISMISS_MODALS") {
-        const dismissed = autoDismissModals();
+        const { clickSelector, overlayTagId } = message.payload;
+
+        if (clickSelector) {
+            // LLM-directed: click a specific selector within the overlay
+            let clicked = false;
+            if (overlayTagId != null) {
+                const tagMap = getTagMap();
+                const overlay = tagMap.get(overlayTagId);
+                if (overlay instanceof HTMLElement) {
+                    const target = overlay.querySelector(clickSelector);
+                    if (target instanceof HTMLElement) {
+                        target.click();
+                        clicked = true;
+                    } else {
+                        // Selector not found inside overlay — hide the entire overlay
+                        overlay.style.display = "none";
+                        clicked = true;
+                    }
+                }
+            }
+            sendResponse({
+                type: "DISMISS_MODALS_RESPONSE",
+                requestId: message.requestId,
+                source: MessageSource.CONTENT,
+                payload: { dismissed: clicked ? 1 : 0, remainingOverlay: null },
+            });
+            return true;
+        }
+
+        // Heuristic path
+        const result = autoDismissModals();
         sendResponse({
             type: "DISMISS_MODALS_RESPONSE",
             requestId: message.requestId,
             source: MessageSource.CONTENT,
-            payload: { dismissed },
+            payload: { dismissed: result.dismissed, remainingOverlay: result.remainingOverlay },
         });
         return true;
     }

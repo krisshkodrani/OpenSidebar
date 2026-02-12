@@ -15,8 +15,6 @@ export enum AgentStatus {
   ACTING = "ACTING",
   /** Agent has triggered navigation and is waiting for page load */
   WAITING_FOR_PAGE_LOAD = "WAITING_FOR_PAGE_LOAD",
-  /** Agent has handed off to the Kimi swarm and is awaiting results */
-  WAITING_FOR_SWARM = "WAITING_FOR_SWARM",
   /** Agent encountered an unrecoverable error */
   ERROR = "ERROR",
   /** Agent loop is paused by user (awaiting resume) */
@@ -38,7 +36,7 @@ export enum ToolName {
   SCROLL_PAGE = "scroll_page",
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
-  ACTIVATE_SWARM = "activate_swarm",
+
   MEMORY_SEARCH = "memory_search",
   MEMORY_ADD = "memory_add",
   CREATE_TAB = "create_tab",
@@ -54,6 +52,8 @@ export enum ToolName {
   DRAG_AND_DROP = "drag_and_drop",
   DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
+  ESCALATE = "escalate",
+  UPDATE_PLAN = "update_plan",
 }
 
 /** Risk classification for a tool invocation */
@@ -113,7 +113,8 @@ export type RuntimeMessage =
   | TaskCompletionMessage
   | SkipSubtaskMessage
   | PauseAgentMessage
-  | ResumeAgentMessage;
+  | ResumeAgentMessage
+  | SessionMetricsMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -217,14 +218,23 @@ export interface ScreenshotCapturedMessage extends BaseMessage {
 export interface DismissModalsMessage extends BaseMessage {
   type: "DISMISS_MODALS";
   source: MessageSource.BACKGROUND;
-  payload: Record<string, never>;
+  payload: {
+    /** LLM-directed: CSS selector to click within overlay */
+    clickSelector?: string;
+    /** Tag ID of the overlay to scope the click */
+    overlayTagId?: number;
+  };
 }
 
 /** Content script reports how many modals were dismissed */
 export interface DismissModalsResponse extends BaseMessage {
   type: "DISMISS_MODALS_RESPONSE";
   source: MessageSource.CONTENT;
-  payload: { dismissed: number };
+  payload: {
+    dismissed: number;
+    /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
+    remainingOverlay: OverlayDescriptor | null;
+  };
 }
 
 /** Background sends a step update to the side panel for the timeline */
@@ -295,11 +305,13 @@ export interface TaskCompletionMessage extends BaseMessage {
   payload: {
     taskId: string;
     status: "completed" | "partial" | "failed";
-    totalTurns: number;
+    totalTurnsUsed: number;
     totalTimeMs: number;
     summary: string;
     subtaskResults: SubtaskResult[];
     urlHistory: string[];
+    /** Session metrics (token usage, cost, timing) */
+    metrics?: SessionMetrics;
   };
 }
 
@@ -332,6 +344,38 @@ export interface ResumeAgentMessage extends BaseMessage {
   type: "RESUME_AGENT";
   source: MessageSource.SIDEPANEL;
   payload: Record<string, never>;
+}
+
+/** Background broadcasts session token/cost metrics to the side panel */
+export interface SessionMetricsMessage extends BaseMessage {
+  type: "SESSION_METRICS";
+  source: MessageSource.BACKGROUND;
+  payload: SessionMetrics;
+}
+
+/** Accumulated token usage, cost, and timing for an agent session */
+export interface SessionMetrics {
+  /** Total prompt tokens across all LLM calls this session */
+  totalPromptTokens: number;
+  /** Total completion tokens across all LLM calls this session */
+  totalCompletionTokens: number;
+  /** Total tokens (prompt + completion) */
+  totalTokens: number;
+  /** Cumulative cost in USD from OpenRouter */
+  totalCost: number;
+  /** Total LLM call time in ms (wall clock, not including tool execution) */
+  totalLlmTimeMs: number;
+  /** Total session wall clock time in ms */
+  totalSessionTimeMs: number;
+  /** Number of LLM calls made (including vision) */
+  llmCallCount: number;
+  /** Per-model breakdown */
+  modelBreakdown: Record<string, {
+    promptTokens: number;
+    completionTokens: number;
+    cost: number;
+    calls: number;
+  }>;
 }
 
 // --- Agent Loop Types ---
@@ -489,14 +533,6 @@ export interface NavigateArgs {
   url: string;
 }
 
-/** Arguments for activate_swarm */
-export interface ActivateSwarmArgs {
-  /** The task description for the Kimi swarm */
-  task: string;
-  /** Optional: URLs to include as context */
-  urls?: string[];
-}
-
 /** Arguments for memory_search */
 export interface MemorySearchArgs {
   /** Natural language query */
@@ -602,6 +638,19 @@ export interface HideElementArgs {
   id: number;
 }
 
+/** Arguments for escalate — voluntary model upgrade */
+export interface EscalateArgs {
+  /** Why the fast model can't handle this (e.g. "riddle requires multi-step reasoning") */
+  reason: string;
+}
+
+/** Arguments for update_plan — report task plan and progress */
+export interface UpdatePlanArgs {
+  subtasks: string[];
+  currentIndex: number;
+  lastResult?: string;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -614,7 +663,7 @@ export type ToolArgsMap = {
   [ToolName.SCROLL_PAGE]: ScrollPageArgs;
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
-  [ToolName.ACTIVATE_SWARM]: ActivateSwarmArgs;
+
   [ToolName.MEMORY_SEARCH]: MemorySearchArgs;
   [ToolName.MEMORY_ADD]: MemoryAddArgs;
   [ToolName.CREATE_TAB]: CreateTabArgs;
@@ -630,6 +679,8 @@ export type ToolArgsMap = {
   [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
   [ToolName.DRAW_STROKE]: DrawStrokeArgs;
   [ToolName.HIDE_ELEMENT]: HideElementArgs;
+  [ToolName.ESCALATE]: EscalateArgs;
+  [ToolName.UPDATE_PLAN]: UpdatePlanArgs;
 };
 
 // --- Content Script Types ---
@@ -676,6 +727,18 @@ export interface ElementRect {
   y: number;
   width: number;
   height: number;
+}
+
+/** Describes a viewport-covering overlay that heuristic dismissal couldn't remove */
+export interface OverlayDescriptor {
+  /** outerHTML truncated to 3000 chars */
+  html: string;
+  /** Assigned via addDynamicTag */
+  tagId: number;
+  /** Bounding rect of the overlay */
+  rect: ElementRect;
+  /** Percentage of viewport covered by this overlay */
+  coveragePercent: number;
 }
 
 /** Background requests a DOM snapshot from the content script */
@@ -801,6 +864,10 @@ export interface SidePanelState {
   stuckState: StuckState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
+  /** True when agent is paused waiting for plan approval */
+  awaitingPlanApproval: boolean;
+  /** Live session metrics (null when no active session or tracking disabled) */
+  sessionMetrics: SessionMetrics | null;
 }
 
 // --- Memory / Second Brain Types ---
@@ -916,7 +983,6 @@ export interface NavigationState {
 // --- Configuration Types ---
 
 export interface UserSettings {
-  cerebrasApiKey: string;
   openRouterApiKey: string;
   maxTurns: number;
   contextWindowSize: number;
@@ -925,8 +991,12 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
-  /** Speed mode: optimizes pipeline for throughput (fewer tools, batch snapshots, parallel execution) */
-  speedMode: boolean;
+  /** OpenRouter model ID for vision/screenshot analysis (default: google/gemini-2.0-flash-001) */
+  visionModel: string;
+  /** Show action plan and wait for confirmation before executing (default: false) */
+  confirmPlan: boolean;
+  /** Show token usage and cost metrics during and after agent sessions */
+  showSessionMetrics: boolean;
 }
 
 // --- Utility Types ---
