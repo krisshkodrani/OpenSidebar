@@ -12,7 +12,9 @@
     "tabGroups",
     "webNavigation",
     "offscreen",
-    "alarms"
+    "alarms",
+    "search",
+    "downloads"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

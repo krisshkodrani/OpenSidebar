@@ -22,6 +22,9 @@ import {
   DragAndDropArgs,
   DrawStrokeArgs,
   HideElementArgs,
+  ReadElementArgs,
+  RightClickArgs,
+  SetCheckboxArgs,
 } from "../types";
 import {
   getTagMap,
@@ -126,6 +129,14 @@ export async function executeAction(
       return executeDrawStroke(args as unknown as DrawStrokeArgs);
     case ToolName.HIDE_ELEMENT:
       return executeHideElement(args as unknown as HideElementArgs);
+    case ToolName.READ_ELEMENT:
+      return executeReadElement(args as unknown as ReadElementArgs);
+    case ToolName.RIGHT_CLICK:
+      return executeRightClick(args as unknown as RightClickArgs);
+    case ToolName.SET_CHECKBOX:
+      return executeSetCheckbox(args as unknown as SetCheckboxArgs);
+    case ToolName.UPLOAD_FILE:
+      return executeUploadFile(args as Record<string, unknown>);
     default:
       return {
         success: false,
@@ -902,4 +913,166 @@ function executeHideElement(args: HideElementArgs): {
     result: `Hidden element [${args.id}] <${el.tagName.toLowerCase()}>`,
     navigated: false,
   };
+}
+
+function executeReadElement(args: ReadElementArgs): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  const tagMap = getTagMap();
+  const el = tagMap.get(args.id);
+  if (!el) {
+    return {
+      success: false,
+      result: `No element with tag [${args.id}]`,
+      navigated: false,
+    };
+  }
+
+  if (args.attribute) {
+    const value = el.getAttribute(args.attribute);
+    if (value === null) {
+      return {
+        success: false,
+        result: `Element [${args.id}] has no attribute "${args.attribute}"`,
+        navigated: false,
+      };
+    }
+    return {
+      success: true,
+      result: truncateText(value, 2000),
+      navigated: false,
+    };
+  }
+
+  const text = el.textContent || "";
+  return {
+    success: true,
+    result: truncateText(text, 2000),
+    navigated: false,
+  };
+}
+
+function executeRightClick(args: RightClickArgs): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  const tagMap = getTagMap();
+  const el = tagMap.get(args.id);
+  if (!el) {
+    return {
+      success: false,
+      result: `No element with tag [${args.id}]`,
+      navigated: false,
+    };
+  }
+
+  el.scrollIntoView({ behavior: "instant", block: "center" });
+  el.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+  );
+
+  return {
+    success: true,
+    result: `Right-clicked element [${args.id}]`,
+    navigated: false,
+  };
+}
+
+function executeSetCheckbox(args: SetCheckboxArgs): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  const tagMap = getTagMap();
+  const el = tagMap.get(args.id);
+  if (!el) {
+    return {
+      success: false,
+      result: `No element with tag [${args.id}]`,
+      navigated: false,
+    };
+  }
+
+  if (
+    !(el instanceof HTMLInputElement) ||
+    (el.type !== "checkbox" && el.type !== "radio")
+  ) {
+    return {
+      success: false,
+      result: `Element [${args.id}] is not a checkbox or radio input`,
+      navigated: false,
+    };
+  }
+
+  el.checked = args.checked;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+
+  return {
+    success: true,
+    result: `Set [${args.id}] checked=${args.checked}`,
+    navigated: false,
+  };
+}
+
+function executeUploadFile(args: Record<string, unknown>): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  const tagMap = getTagMap();
+  const el = tagMap.get(args.id as number);
+  if (!el) {
+    return {
+      success: false,
+      result: `No element with tag [${args.id}]`,
+      navigated: false,
+    };
+  }
+
+  if (
+    !(el instanceof HTMLInputElement) ||
+    el.type !== "file"
+  ) {
+    return {
+      success: false,
+      result: `Element [${args.id}] is not a file input`,
+      navigated: false,
+    };
+  }
+
+  // Args contain pre-processed file data from the service worker
+  const data = args.data as string; // base64-encoded
+  const filename = args.filename as string;
+  const mimeType = args.mimeType as string;
+
+  try {
+    const byteChars = atob(data);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteArray[i] = byteChars.charCodeAt(i);
+    }
+
+    const file = new File([byteArray], filename, { type: mimeType });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    el.files = dt.files;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+
+    return {
+      success: true,
+      result: `Uploaded "${filename}" (${byteArray.length} bytes) to [${args.id}]`,
+      navigated: false,
+    };
+  } catch (e: any) {
+    return {
+      success: false,
+      result: `Failed to set file on [${args.id}]: ${e.message}`,
+      navigated: false,
+    };
+  }
 }

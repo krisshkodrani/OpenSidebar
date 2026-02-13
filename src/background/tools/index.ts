@@ -174,7 +174,8 @@ const NAVIGATE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.NAVIGATE,
-    description: "Navigate to a URL. Waits for page load.",
+    description:
+      "Navigate to a URL or search query. Provide url OR query, not both.",
     parameters: {
       type: "object",
       properties: {
@@ -182,8 +183,11 @@ const NAVIGATE_DEF: ToolDefinition = {
           type: "string",
           description: "Full URL (https://).",
         },
+        query: {
+          type: "string",
+          description: "Search query (uses default search engine).",
+        },
       },
-      required: ["url"],
     },
   },
 };
@@ -477,6 +481,169 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
   },
 };
 
+const READ_ELEMENT_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.READ_ELEMENT,
+    description: "Read text content or a specific attribute of an element.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "Element tag ID (integer from Visible Elements list).",
+        },
+        attribute: {
+          type: "string",
+          description: 'Attribute to read (e.g. "href", "src", "value"). Omit for text content.',
+        },
+      },
+      required: ["id"],
+    },
+  },
+};
+
+const EXECUTE_JS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.EXECUTE_JS,
+    description: "Run JavaScript in the page context. Returns the result as a string.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          description: "JavaScript code to evaluate.",
+        },
+      },
+      required: ["code"],
+    },
+  },
+};
+
+const UPLOAD_FILE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.UPLOAD_FILE,
+    description: "Upload a file to an <input type=\"file\"> element by URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "File input element tag ID (integer).",
+        },
+        url: {
+          type: "string",
+          description: "URL of the file to upload.",
+        },
+      },
+      required: ["id", "url"],
+    },
+  },
+};
+
+const GO_BACK_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GO_BACK,
+    description: "Go back in browser history.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+const GO_FORWARD_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GO_FORWARD,
+    description: "Go forward in browser history.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+const LIST_TABS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.LIST_TABS,
+    description: "List all open tabs with their IDs, titles, and URLs.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+const RIGHT_CLICK_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.RIGHT_CLICK,
+    description: "Right-click (context menu) on an element.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "Element tag ID (integer from Visible Elements list).",
+        },
+      },
+      required: ["id"],
+    },
+  },
+};
+
+const SET_CHECKBOX_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SET_CHECKBOX,
+    description: "Set a checkbox or radio input to checked or unchecked.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "Checkbox/radio element tag ID (integer).",
+        },
+        checked: {
+          type: "boolean",
+          description: "Whether the input should be checked.",
+        },
+      },
+      required: ["id", "checked"],
+    },
+  },
+};
+
+const DOWNLOAD_FILE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.DOWNLOAD_FILE,
+    description: "Download a file from a URL to the user's downloads folder.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "URL of the file to download.",
+        },
+        filename: {
+          type: "string",
+          description: "Optional filename for the downloaded file.",
+        },
+      },
+      required: ["url"],
+    },
+  },
+};
+
 // --- Execution Bridge ---
 
 async function executeContentTool(
@@ -506,6 +673,33 @@ async function executeContentTool(
     logger.error("tools", "Bridge execution failed", { error: e.message });
     return `Error: Could not communicate with content script. Is the tab active? (${e.message})`;
   }
+}
+
+/** Wait for a tab navigation to complete (webNavigation.onCompleted or timeout). */
+function waitForNavigation(tabId: number, timeoutMs = 5000): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let resolved = false;
+
+    const done = () => {
+      if (resolved) return;
+      resolved = true;
+      chrome.webNavigation?.onCompleted.removeListener(onCompleted);
+      chrome.webNavigation?.onErrorOccurred.removeListener(onError);
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const onCompleted = (details: { tabId: number; frameId: number }) => {
+      if (details.tabId === tabId && details.frameId === 0) done();
+    };
+    const onError = (details: { tabId: number; frameId: number }) => {
+      if (details.tabId === tabId && details.frameId === 0) done();
+    };
+
+    chrome.webNavigation?.onCompleted.addListener(onCompleted);
+    chrome.webNavigation?.onErrorOccurred.addListener(onError);
+    const timer = setTimeout(done, timeoutMs);
+  });
 }
 
 // --- Registration ---
@@ -687,40 +881,25 @@ export function registerTools() {
     ToolName.NAVIGATE,
     NAVIGATE_DEF,
     async (args, tabId) => {
-      const urlResult = sanitizeUrl(args.url as string);
-      if (!urlResult.ok) return `Error: ${urlResult.error}`;
-      await chrome.tabs.update(tabId, { url: urlResult.value });
+      const url = args.url as string | undefined;
+      const query = args.query as string | undefined;
 
-      // Wait for navigation to complete using webNavigation.onCompleted
-      // Falls back to timeout if the event doesn't fire
-      await new Promise<void>((resolve) => {
-        const NAV_TIMEOUT = 5000;
-        let resolved = false;
+      if (url && query) return "Error: provide url OR query, not both.";
+      if (!url && !query) return "Error: provide either url or query.";
 
-        const done = () => {
-          if (resolved) return;
-          resolved = true;
-          chrome.webNavigation?.onCompleted.removeListener(onCompleted);
-          chrome.webNavigation?.onErrorOccurred.removeListener(onError);
-          clearTimeout(timer);
-          resolve();
-        };
+      if (url) {
+        const urlResult = sanitizeUrl(url);
+        if (!urlResult.ok) return `Error: ${urlResult.error}`;
+        await chrome.tabs.update(tabId, { url: urlResult.value });
+      } else {
+        await chrome.search.query({ text: query!, disposition: "CURRENT_TAB" });
+      }
 
-        const onCompleted = (details: { tabId: number; frameId: number }) => {
-          if (details.tabId === tabId && details.frameId === 0) done();
-        };
-        const onError = (details: { tabId: number; frameId: number }) => {
-          if (details.tabId === tabId && details.frameId === 0) done();
-        };
-
-        chrome.webNavigation?.onCompleted.addListener(onCompleted);
-        chrome.webNavigation?.onErrorOccurred.addListener(onError);
-        const timer = setTimeout(done, NAV_TIMEOUT);
-      });
-
+      await waitForNavigation(tabId);
       // Brief wait for content script initialization
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return `Navigated to ${urlResult.value}. Page has loaded. Fresh page snapshot is available.`;
+      const target = url ? url : `search: "${query}"`;
+      return `Navigated to ${target}. Page has loaded. Fresh page snapshot is available.`;
     },
   );
 
@@ -812,6 +991,158 @@ export function registerTools() {
   toolRegistry.register(ToolName.DONE, DONE_DEF, async (args) => {
     return (args.summary as string) || "Task completed.";
   });
+
+  // --- New Tools ---
+
+  toolRegistry.register(
+    ToolName.READ_ELEMENT,
+    READ_ELEMENT_DEF,
+    (args, tabId) => executeContentTool(ToolName.READ_ELEMENT, args, tabId),
+  );
+
+  toolRegistry.register(
+    ToolName.RIGHT_CLICK,
+    RIGHT_CLICK_DEF,
+    (args, tabId) => executeContentTool(ToolName.RIGHT_CLICK, args, tabId),
+  );
+
+  toolRegistry.register(
+    ToolName.SET_CHECKBOX,
+    SET_CHECKBOX_DEF,
+    (args, tabId) => executeContentTool(ToolName.SET_CHECKBOX, args, tabId),
+  );
+
+  toolRegistry.register(
+    ToolName.UPLOAD_FILE,
+    UPLOAD_FILE_DEF,
+    async (args, tabId) => {
+      const url = args.url as string;
+      const urlResult = sanitizeUrl(url);
+      if (!urlResult.ok) return `Error: ${urlResult.error}`;
+
+      try {
+        const response = await fetch(urlResult.value);
+        if (!response.ok) return `Error: fetch failed with status ${response.status}`;
+
+        const contentLength = response.headers.get("content-length");
+        if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+          return "Error: file exceeds 10MB limit.";
+        }
+
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > 10 * 1024 * 1024) {
+          return "Error: file exceeds 10MB limit.";
+        }
+
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+
+        const contentType = response.headers.get("content-type") || "application/octet-stream";
+        const urlPath = new URL(urlResult.value).pathname;
+        const filename = urlPath.split("/").pop() || "file";
+
+        return executeContentTool(ToolName.UPLOAD_FILE, {
+          id: args.id,
+          data: base64,
+          filename,
+          mimeType: contentType,
+        }, tabId);
+      } catch (e: any) {
+        return `Error fetching file: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.GO_BACK,
+    GO_BACK_DEF,
+    async (_args, tabId) => {
+      try {
+        await chrome.tabs.goBack(tabId);
+        await waitForNavigation(tabId);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return "Navigated back. Fresh page snapshot is available.";
+      } catch (e: any) {
+        return `Error going back: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.GO_FORWARD,
+    GO_FORWARD_DEF,
+    async (_args, tabId) => {
+      try {
+        await chrome.tabs.goForward(tabId);
+        await waitForNavigation(tabId);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return "Navigated forward. Fresh page snapshot is available.";
+      } catch (e: any) {
+        return `Error going forward: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.LIST_TABS,
+    LIST_TABS_DEF,
+    async () => {
+      const tabs = await chrome.tabs.query({});
+      if (tabs.length === 0) return "No open tabs.";
+      const lines = tabs.map(
+        (t: any) => `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.active ? " [active]" : ""}`,
+      );
+      return lines.join("\n");
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.EXECUTE_JS,
+    EXECUTE_JS_DEF,
+    async (args, tabId) => {
+      const code = args.code as string;
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "MAIN" as any,
+          func: (c: string) => {
+            try {
+              return String(eval(c));
+            } catch (e: any) {
+              return `Error: ${e.message}`;
+            }
+          },
+          args: [code],
+        });
+        const value = results?.[0]?.result;
+        return value !== undefined ? String(value) : "undefined";
+      } catch (e: any) {
+        return `Error executing JS: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.DOWNLOAD_FILE,
+    DOWNLOAD_FILE_DEF,
+    async (args) => {
+      const url = args.url as string;
+      const filename = args.filename as string | undefined;
+      const urlResult = sanitizeUrl(url);
+      if (!urlResult.ok) return `Error: ${urlResult.error}`;
+
+      try {
+        const opts: any = { url: urlResult.value };
+        if (filename) opts.filename = filename;
+        const downloadId = await chrome.downloads.download(opts);
+        return `Download started (ID: ${downloadId})`;
+      } catch (e: any) {
+        return `Error starting download: ${e.message}`;
+      }
+    },
+  );
 
   logger.info(
     "tools",

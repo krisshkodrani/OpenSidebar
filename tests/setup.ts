@@ -41,6 +41,8 @@ global.chrome = {
         query: async () => [],
         captureVisibleTab: async () => "data:image/jpeg;base64,mock",
         sendMessage: async () => ({ payload: { result: "ok", success: true } }),
+        goBack: async () => { },
+        goForward: async () => { },
         TAB_ID_NONE: -1,
         onRemoved: { addListener: () => { }, removeListener: () => { } },
         onUpdated: { addListener: () => { }, removeListener: () => { } },
@@ -54,6 +56,15 @@ global.chrome = {
     webNavigation: {
         onCompleted: { addListener: () => { }, removeListener: () => { } },
         onErrorOccurred: { addListener: () => { }, removeListener: () => { } },
+    },
+    downloads: {
+        download: async () => 1,
+    },
+    scripting: {
+        executeScript: async () => [{ result: "undefined" }],
+    },
+    search: {
+        query: async () => { },
     },
 } as any;
 
