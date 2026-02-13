@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import "../setup";
 import { ToolName } from "../../src/types";
-import { executeAction } from "../../src/content/actions";
+import { executeAction, isLikelyOverlay } from "../../src/content/actions";
 import { tagElements, getTagMap, addDynamicTag, resetStableIds } from "../../src/content/tagging";
 
 describe("Content Actions", () => {
@@ -207,24 +207,162 @@ describe("Content Actions", () => {
         });
     });
 
+    describe("isLikelyOverlay", () => {
+        test("returns true for fixed + high z-index element", () => {
+            document.body.innerHTML = '<div id="test" style="position: fixed; z-index: 200;">Overlay</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for absolute + high z-index element", () => {
+            document.body.innerHTML = '<div id="test" style="position: absolute; z-index: 999;">Overlay</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for role=dialog element", () => {
+            document.body.innerHTML = '<div id="test" role="dialog">Modal</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for role=alertdialog element", () => {
+            document.body.innerHTML = '<div id="test" role="alertdialog">Alert</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for .modal class", () => {
+            document.body.innerHTML = '<div id="test" class="modal">Modal</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for .cookie class", () => {
+            document.body.innerHTML = '<div id="test" class="cookie">Cookie banner</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns true for .consent class", () => {
+            document.body.innerHTML = '<div id="test" class="consent">Consent banner</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("returns false for normal paragraph", () => {
+            document.body.innerHTML = '<p id="test">Just a paragraph</p>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(false);
+        });
+
+        test("returns false for normal button", () => {
+            document.body.innerHTML = '<button id="test">Submit</button>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(false);
+        });
+
+        test("returns false for normal input", () => {
+            document.body.innerHTML = '<input id="test" type="text" />';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(false);
+        });
+
+        test("returns false for static div with no overlay characteristics", () => {
+            document.body.innerHTML = '<div id="test" style="position: static;">Normal content</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(false);
+        });
+
+        test("returns false for fixed element with low z-index", () => {
+            document.body.innerHTML = '<div id="test" style="position: fixed; z-index: 5;">Sticky nav</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(false);
+        });
+    });
+
     describe("executeHideElement", () => {
-        test("hides a tagged element", async () => {
-            document.body.innerHTML = '<div><button id="overlay">Close</button></div>';
+        test("hides an overlay element (role=dialog)", async () => {
+            document.body.innerHTML = '<div role="dialog" id="overlay"><button>Close</button></div>';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let overlayTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "overlay") { overlayTag = tag; break; }
+            }
+            // If the dialog itself isn't tagged, add it dynamically
+            if (overlayTag < 0) {
+                const el = document.getElementById("overlay")!;
+                overlayTag = addDynamicTag(el);
+            }
+            expect(overlayTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: overlayTag });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("Hidden");
+
+            const overlay = document.getElementById("overlay")!;
+            expect(overlay.style.display).toBe("none");
+        });
+
+        test("hides a fixed + high z-index overlay", async () => {
+            document.body.innerHTML = '<div id="popup" style="position: fixed; z-index: 9999;">Popup</div>';
+            resetStableIds();
+            tagElements(false);
+            const el = document.getElementById("popup")!;
+            const tag = addDynamicTag(el);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("Hidden");
+            expect(el.style.display).toBe("none");
+        });
+
+        test("rejects non-overlay element", async () => {
+            document.body.innerHTML = '<p id="content">Important content</p>';
+            resetStableIds();
+            tagElements(false);
+            const el = document.getElementById("content")!;
+            const tag = addDynamicTag(el);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
+            expect(result.success).toBe(false);
+            expect(result.result).toContain("does not appear to be an overlay");
+            expect(result.result).toContain("scroll_page");
+            expect(el.style.display).not.toBe("none");
+        });
+
+        test("rejects normal button element", async () => {
+            document.body.innerHTML = '<button id="btn">Submit</button>';
             resetStableIds();
             tagElements(false);
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
-                if (el.id === "overlay") { btnTag = tag; break; }
+                if (el.id === "btn") { btnTag = tag; break; }
             }
             expect(btnTag).toBeGreaterThan(0);
 
             const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Hidden");
+            expect(result.success).toBe(false);
+            expect(result.result).toContain("does not appear to be an overlay");
+        });
 
-            const btn = document.getElementById("overlay")!;
-            expect(btn.style.display).toBe("none");
+        test("rejects normal input element", async () => {
+            document.body.innerHTML = '<input id="inp" type="text" />';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let inpTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "inp") { inpTag = tag; break; }
+            }
+            expect(inpTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: inpTag });
+            expect(result.success).toBe(false);
+            expect(result.result).toContain("does not appear to be an overlay");
         });
     });
 });

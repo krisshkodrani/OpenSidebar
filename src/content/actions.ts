@@ -13,6 +13,66 @@ import {
 import { getTagMap, getVisibleText, addDynamicTag, truncateText } from "./tagging";
 import { buildSnapshot } from "./snapshot";
 
+/** Overlay detection selectors (matches semantic overlay CSS classes/roles) */
+const OVERLAY_SELECTORS = [
+    "[role='dialog']",
+    "[role='alertdialog']",
+    ".modal",
+    ".overlay",
+    ".popup",
+    ".banner",
+    ".cookie",
+    ".consent",
+];
+
+/**
+ * Check if an element is likely an overlay/modal/popup that can safely be hidden.
+ * Returns true if the element matches overlay heuristics (fixed/absolute + high z-index,
+ * semantic overlay selectors, backdrop-filter, semi-transparent background, or covers >30% viewport).
+ */
+export function isLikelyOverlay(el: HTMLElement): boolean {
+    const style = window.getComputedStyle(el);
+    const position = style.position;
+    const isPositioned = position === "fixed" || position === "absolute";
+    const zIndex = parseInt(style.zIndex, 10) || 0;
+
+    // Condition 1: fixed/absolute + high z-index
+    if (isPositioned && zIndex > 100) return true;
+
+    // Condition 2: matches semantic overlay selectors
+    const selectorStr = OVERLAY_SELECTORS.join(",");
+    if (el.matches(selectorStr)) return true;
+
+    // Condition 3: has backdrop-filter
+    if (style.backdropFilter && style.backdropFilter !== "none") return true;
+
+    // Condition 4: semi-transparent background (alpha 0-0.9)
+    const bg = style.backgroundColor;
+    const rgbaMatch = bg.match(/rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(?:,\s*([\d.]+)\s*)?\)/);
+    if (rgbaMatch && rgbaMatch[1] !== undefined) {
+        const alpha = parseFloat(rgbaMatch[1]);
+        if (alpha > 0 && alpha <= 0.9) return true;
+    }
+
+    // Condition 5: covers >30% of viewport with fixed/absolute positioning
+    if (isPositioned) {
+        const vpW = window.innerWidth;
+        const vpH = window.innerHeight;
+        const vpArea = vpW * vpH;
+        if (vpArea > 0) {
+            const rect = el.getBoundingClientRect();
+            const left = Math.max(0, rect.left);
+            const top = Math.max(0, rect.top);
+            const right = Math.min(vpW, rect.right);
+            const bottom = Math.min(vpH, rect.bottom);
+            const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
+            if ((visibleArea / vpArea) > 0.3) return true;
+        }
+    }
+
+    return false;
+}
+
 export async function executeAction(
     toolName: ToolName,
     args: Record<string, unknown>
@@ -69,8 +129,9 @@ function executeClick(args: ClickElementArgs): { success: boolean; result: strin
             break; // Clear to click
         }
 
-        // Auto-hide the covering element
+        // Auto-hide the covering element only if it looks like an overlay
         if (topEl instanceof HTMLElement) {
+            if (!isLikelyOverlay(topEl)) break; // Not an overlay — stop retrying
             topEl.style.display = "none";
         }
     }
@@ -83,11 +144,12 @@ function executeClick(args: ClickElementArgs): { success: boolean; result: strin
     );
     if (finalTop && !el.contains(finalTop) && !finalTop.contains(el)) {
         const blockingTag = addDynamicTag(finalTop);
-        return {
-            success: false,
-            result: `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${finalTop.tagName.toLowerCase()}>. Use hide_element(${blockingTag}) to remove it.`,
-            navigated: false
-        };
+        const blockingTagName = finalTop.tagName.toLowerCase();
+        const overlayLikely = finalTop instanceof HTMLElement && isLikelyOverlay(finalTop);
+        const result = overlayLikely
+            ? `Click intercepted! Element [${args.id}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Use hide_element(${blockingTag}) to remove it, or press_key("Escape").`
+            : `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: scroll_page, find_element, or click a different element.`;
+        return { success: false, result, navigated: false };
     }
 
     // Determine if this click will navigate
@@ -497,6 +559,14 @@ function executeHideElement(args: HideElementArgs): { success: boolean; result: 
     }
     if (!(el instanceof HTMLElement)) {
         return { success: false, result: `Element [${args.id}] is not an HTMLElement`, navigated: false };
+    }
+
+    if (!isLikelyOverlay(el)) {
+        return {
+            success: false,
+            result: `Element [${args.id}] <${el.tagName.toLowerCase()}> does not appear to be an overlay or modal. hide_element only works on overlays (fixed/absolute positioned, high z-index, dialog roles). Try: scroll_page, find_element, or press_key("Escape").`,
+            navigated: false,
+        };
     }
 
     el.style.display = "none";
