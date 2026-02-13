@@ -60,6 +60,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   visionModel: "google/gemini-2.5-flash-lite",
   confirmPlan: false,
   showSessionMetrics: false,
+  disableScreenshot: false,
+  disableNavigation: false,
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;

@@ -7,6 +7,7 @@ import {
   AgentStatus,
   AgentLoopState,
   UserSettings,
+  ToolName,
 } from "../types";
 import { workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
@@ -54,6 +55,7 @@ chrome.sidePanel.setPanelBehavior({
 // 5. State — per-workspace agent loops
 const agentLoops = new Map<string, AgentLoop>();
 let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
+const pendingSidePanelOpens = new Set<number>();
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(tabId: number, provided?: string | null): Promise<string> {
@@ -72,6 +74,14 @@ async function ensureKeepalive(): Promise<void> {
 /** Stop keepalive only when all loops are done */
 async function maybeStopKeepalive(): Promise<void> {
   if (agentLoops.size === 0) await stopKeepalive();
+}
+
+/** Build tool exclusion set from user settings */
+function buildDisabledTools(settings: UserSettings): Set<ToolName> {
+  const disabled = new Set<ToolName>();
+  if (settings.disableScreenshot) disabled.add(ToolName.TAKE_SCREENSHOT);
+  if (settings.disableNavigation) disabled.add(ToolName.NAVIGATE);
+  return disabled;
 }
 
 // --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
@@ -143,12 +153,16 @@ chrome.action.onClicked.addListener(async (tab) => {
 // because openPanelOnActionClick swallows the click event here.
 
 async function handleSidePanelOpened(tabId: number, windowId: number) {
+  if (pendingSidePanelOpens.has(tabId)) return; // already processing
+  pendingSidePanelOpens.add(tabId);
+
   logger.info("sidebar", "Side Panel opened - checking workspace", {
     tabId,
     windowId,
   });
 
   if (!tabId) {
+    pendingSidePanelOpens.delete(tabId);
     logger.error("workspace", "No tab ID in side panel open handler");
     return;
   }
@@ -221,6 +235,8 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
     }
   } catch (error) {
     logger.error("sidebar", "Error in icon click handler", { tabId, error });
+  } finally {
+    pendingSidePanelOpens.delete(tabId);
   }
 }
 
@@ -507,6 +523,7 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
       showElementTags: settings.showElementTags ?? false,
       confirmPlan: settings.confirmPlan ?? false,
       showSessionMetrics: settings.showSessionMetrics ?? false,
+      disabledTools: buildDisabledTools(settings),
       workspaceId,
     });
     agentLoops.set(workspaceId, loop);
@@ -653,6 +670,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
     showElementTags: settings.showElementTags ?? false,
     confirmPlan: settings.confirmPlan ?? false,
     showSessionMetrics: settings.showSessionMetrics ?? false,
+    disabledTools: buildDisabledTools(settings),
     workspaceId,
   });
   agentLoops.set(workspaceId, loop);

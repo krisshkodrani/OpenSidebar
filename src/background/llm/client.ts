@@ -252,6 +252,22 @@ export class LLMClient {
     return this.provider.providerId;
   }
 
+  /** Get provider info for the currently active fast/smart slot */
+  public getActiveProviderInfo(): { providerId: string; model: string } {
+    const isSmartModel = this.model === MODEL_SMART;
+    const slot = isSmartModel ? null : this.fastPool.getActive();
+    return {
+      providerId: (slot?.provider ?? this.provider).providerId,
+      model: slot?.model ?? this.model,
+    };
+  }
+
+  private onProviderFailover?: (from: string, to: string) => void;
+
+  public setFailoverCallback(cb: (from: string, to: string) => void): void {
+    this.onProviderFailover = cb;
+  }
+
   /**
    * Switch to smart model on OpenRouter. Used during escalation.
    * Changes BOTH the provider (Groq→OpenRouter) and the model.
@@ -333,6 +349,7 @@ export class LLMClient {
               to: fallback.provider.providerId,
               model: fallback.model,
             });
+            this.onProviderFailover?.(providerId, fallback.provider.providerId);
             const fb = this.rebuildForProvider(init, fallback);
             try {
               const fbResp = await fetch(fb.url, { ...fb.init, signal });
