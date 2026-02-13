@@ -35,7 +35,7 @@ const CLICK_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag.",
+          description: "Element tag ID (integer from Visible Elements list).",
         },
       },
       required: ["id"],
@@ -53,7 +53,7 @@ const TYPE_TEXT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag.",
+          description: "Element tag ID (integer from Visible Elements list).",
         },
         text: { type: "string", description: "Text to type." },
         pressEnter: {
@@ -81,7 +81,7 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
         },
         id: {
           type: "integer",
-          description: "Container element tag. Omit for window.",
+          description: "Container element tag ID (integer). Omit for window scroll.",
         },
       },
       required: ["direction"],
@@ -224,13 +224,13 @@ const DONE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DONE,
-    description: "Signal task completion with a summary.",
+    description: "Signal task completion or answer the user's question with a summary.",
     parameters: {
       type: "object",
       properties: {
         summary: {
           type: "string",
-          description: "What was accomplished.",
+          description: "What was accomplished, or your answer to the user's question.",
         },
       },
       required: ["summary"],
@@ -261,7 +261,7 @@ const HOVER_ELEMENT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag.",
+          description: "Element tag ID (integer from Visible Elements list).",
         },
       },
       required: ["id"],
@@ -297,7 +297,7 @@ const SELECT_OPTION_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag.",
+          description: "Element tag ID (integer from Visible Elements list).",
         },
         value: {
           type: "string",
@@ -345,11 +345,11 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
       properties: {
         sourceId: {
           type: "integer",
-          description: "Element to drag.",
+          description: "Element to drag (integer).",
         },
         targetId: {
           type: "integer",
-          description: "Drop target element.",
+          description: "Drop target element (integer).",
         },
       },
       required: ["sourceId", "targetId"],
@@ -367,7 +367,7 @@ const DRAW_STROKE_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Canvas element tag.",
+          description: "Canvas element tag ID (integer).",
         },
         startX: { type: "number", description: "Start X offset." },
         startY: { type: "number", description: "Start Y offset." },
@@ -389,7 +389,7 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag.",
+          description: "Element tag ID (integer from Visible Elements list).",
         },
       },
       required: ["id"],
@@ -430,7 +430,7 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
         },
         currentIndex: {
           type: "integer",
-          description: "0-based index of the subtask you are starting now.",
+          description: "0-based index of the NEXT subtask to execute (after the one you just completed).",
         },
         lastResult: {
           type: "string",

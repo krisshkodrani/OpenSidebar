@@ -389,7 +389,7 @@ The agent loop operates in a single unified mode that combines the best behavior
 
 - **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
-- **Nudge→Escalate→Give-up** — Text-only responses trigger nudges. After 2 consecutive nudges, the model escalates from Gemini 2.0 Flash to Sonnet 4.5 via `switchModel()`. After 3 more nudges post-escalation, the loop gives up. The agent can also voluntarily escalate early by calling the `escalate` tool (e.g., when it encounters riddles, puzzles, or complex reasoning tasks).
+- **Nudge→Escalate→Give-up** — Text-only responses trigger nudges. After 2 consecutive nudges, the model escalates from Gemini 2.5 Flash Lite to MiniMax M2.5 via `switchModel()`. After 3 more nudges post-escalation, the loop gives up. The agent can also voluntarily escalate early by calling the `escalate` tool (e.g., when it encounters riddles, puzzles, or complex reasoning tasks).
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
 - **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
 - **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.

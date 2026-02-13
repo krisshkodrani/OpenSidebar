@@ -63,8 +63,8 @@ When the AI performs actions, you see:
 
 ### OpenRouter Models
 
-- **Gemini 2.0 Flash** - Fast model for initial responses (~3000 tok/s)
-- **Claude Sonnet 4.5** - Smart model, activated via automatic escalation when stuck
+- **Gemini 2.5 Flash Lite** - Fast model for initial responses (~3000 tok/s)
+- **MiniMax M2.5** - Smart model, activated via automatic escalation when stuck
 - **Automatic switching** - Agent starts fast, escalates to smart model if needed
 
 ## Streaming Architecture

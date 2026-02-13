@@ -105,8 +105,8 @@ Background → Side Panel: AGENT_RESPONSE (resumed)
 | **Package Manager** | Bun                                |
 | **UI**              | React 18 + Tailwind CSS 3.4        |
 | **State**           | Zustand + Immer                    |
-| **Fast LLM**        | OpenRouter (Gemini 2.0 Flash)      |
-| **Smart LLM**       | OpenRouter (Claude Sonnet 4.5, via model escalation) |
+| **Fast LLM**        | OpenRouter (Gemini 2.5 Flash Lite) |
+| **Smart LLM**       | OpenRouter (MiniMax M2.5, via model escalation) |
 | **Vision LLM**      | OpenRouter API (configurable, default Gemini 2.0 Flash) |
 | **Embeddings**      | Transformers.js (all-MiniLM-L6-v2) |
 | **Vector Search**   | Voy (WASM)                         |

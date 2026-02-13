@@ -26,7 +26,62 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 /** Fast model tier — used for initial turns */
 export const MODEL_FAST = "google/gemini-2.5-flash-lite";
 /** Smart model tier — used after escalation when stuck */
-export const MODEL_SMART = "moonshotai/kimi-k2.5";
+export const MODEL_SMART = "minimax/minimax-m2.5";
+
+/** Strip <think>...</think> reasoning blocks from model output */
+export function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+}
+
+/**
+ * Returns how many trailing chars of `text` match a prefix of `tag`.
+ * Used to avoid emitting/discarding a partial tag boundary during streaming.
+ */
+function partialTagLen(text: string, tag: string): number {
+  const max = Math.min(tag.length - 1, text.length);
+  for (let i = max; i >= 1; i--) {
+    if (text.endsWith(tag.slice(0, i))) return i;
+  }
+  return 0;
+}
+
+/** Streaming filter that suppresses <think>...</think> blocks across chunk boundaries. */
+function createThinkFilter(emit: (text: string) => void) {
+  let buf = "";
+  let inside = false;
+  return {
+    push(delta: string) {
+      buf += delta;
+      while (buf) {
+        if (inside) {
+          const idx = buf.indexOf("</think>");
+          if (idx === -1) {
+            const keep = partialTagLen(buf, "</think>");
+            buf = keep > 0 ? buf.slice(-keep) : "";
+            return;
+          }
+          buf = buf.slice(idx + "</think>".length);
+          inside = false;
+        } else {
+          const idx = buf.indexOf("<think>");
+          if (idx === -1) {
+            const keep = partialTagLen(buf, "<think>");
+            const safe = buf.length - keep;
+            if (safe > 0) emit(buf.slice(0, safe));
+            buf = keep > 0 ? buf.slice(-keep) : "";
+            return;
+          }
+          if (idx > 0) emit(buf.slice(0, idx));
+          buf = buf.slice(idx + "<think>".length);
+          inside = true;
+        }
+      }
+    },
+    flush() {
+      if (!inside && buf) { emit(buf); buf = ""; }
+    },
+  };
+}
 
 export class LLMClient {
   private apiKey: string;
@@ -99,6 +154,7 @@ export class LLMClient {
       model: request.model || this.model,
       messages: request.messages,
       tools: request.tools,
+      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
@@ -174,9 +230,13 @@ export class LLMClient {
         toolCalls: parsedToolCalls.length,
       });
 
+      // Strip reasoning tokens (<think>...</think>) that some models emit inline
+      const rawContent = choice.message.content;
+      const cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+
       return {
         role: "assistant",
-        content: choice.message.content,
+        content: cleanContent,
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
         usage: data.usage,
@@ -201,6 +261,7 @@ export class LLMClient {
       model: request.model || this.model,
       messages: request.messages,
       tools: request.tools,
+      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0,
       max_tokens: request.max_tokens,
       stop: request.stop,
@@ -251,7 +312,14 @@ export class LLMClient {
         throw new Error("LLM response body is null — streaming not supported?");
       }
 
-      const result = await parseSSEStream(response.body, onTextDelta, request.signal);
+      // Wrap callback to suppress <think>...</think> reasoning blocks during streaming
+      const thinkFilter = createThinkFilter(onTextDelta);
+      const result = await parseSSEStream(response.body, thinkFilter.push, request.signal);
+      thinkFilter.flush();
+
+      // Preserve raw content (with <think> blocks) for conversation history —
+      // M2.5 reasoning chain continuity improves performance significantly.
+      // The streaming thinkFilter already suppressed <think> from the UI deltas.
 
       logger.debug("agent", "LLM Stream Response", {
         contentLen: result.content?.length,
@@ -260,7 +328,7 @@ export class LLMClient {
 
       return {
         role: "assistant",
-        content: result.content,
+        content: result.content || null,
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
         usage: result.usage,

@@ -12,7 +12,7 @@ import {
     UserSettings,
 } from "../../types";
 import { logger } from "../../utils";
-import { LLMClient, MODEL_SMART } from "../llm";
+import { LLMClient, MODEL_SMART, stripThinkTags } from "../llm";
 import { toolRegistry, setVisionUsageCallback } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
 import { classifyRisk } from "../security";
@@ -29,7 +29,19 @@ import { PlanGuardian } from "./guardian";
 const MAX_DONE_REJECTIONS = 3;
 
 /** Nudge injected when LLM emits text instead of tool calls. */
-const NUDGE_MESSAGE = "You must call at least one tool each turn. If unsure what's on the page, call read_page or take_screenshot. Follow the Think step:\n1. What do I see on the page right now?\n2. What tool call will advance the task?\n3. What do I expect to happen?\nThen call that tool. If the task is fully complete, call done({\"summary\": \"...\"}).";
+const NUDGE_MESSAGE = `You responded with text but no tool call. Either:
+- Call a tool to advance the task (read_page, click, type_text, scroll_page, etc.)
+- If the user asked a question and you already know the answer, call done({"summary": "your answer"})
+- If you need to see the page first, call read_page or take_screenshot
+Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?`;
+
+/** Nudge injected when escalating to the smart model — orients it on the situation. */
+const ESCALATION_NUDGE = `You are now the upgraded model, brought in because the previous model got stuck.
+Review the conversation history and current page state. Then:
+1. Identify what was attempted and why it failed.
+2. Formulate a different strategy — do not repeat what already failed.
+3. Call the appropriate tool to advance the task.
+If the page state is unclear, start with read_page or take_screenshot.`;
 
 /** Result of a completed agent loop run */
 export interface LoopResult {
@@ -257,6 +269,15 @@ export class AgentLoop {
                         turnsUsed: 0,
                         turnBudget: 0,
                     }));
+
+                    // Inject plan status into system prompt (visible every turn)
+                    this.context.setPlanStatus(
+                        decomposition.subtasks.map((desc, i) => ({
+                            description: desc,
+                            status: i === 0 ? "running" : "pending",
+                        })),
+                        0,
+                    );
 
                     this.context.addMessage({
                         role: "user",
@@ -658,6 +679,11 @@ Prefer "click" if a close/dismiss/accept button exists.`;
             this.recordUsage(response, llmMs);
             this.broadcastMetrics();
 
+            // Derive clean content (no <think> blocks) for logging and logic,
+            // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
+            const rawContent = response.content;
+            const cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+
             // Log LLM response summary for debugging
             const toolSummary = response.tool_calls?.map(tc => {
                 let argSnippet = "";
@@ -668,19 +694,19 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                 turn: this.turnCount,
                 llmMs,
                 url: this.context.getCurrentUrl(),
-                text: response.content?.slice(0, 500) || null,
+                text: cleanContent?.slice(0, 500) || null,
                 toolCalls: toolSummary,
                 toolCount: toolSummary.length,
             });
 
             // Full reasoning at DEBUG level (untruncated for performance analysis)
-            if (response.content) {
-                logger.debug("agent", "LLM reasoning (full)", { turn: this.turnCount, text: response.content });
+            if (cleanContent) {
+                logger.debug("agent", "LLM reasoning (full)", { turn: this.turnCount, text: cleanContent });
             }
 
             // Recover tool calls from text output (models sometimes emit JSON as text)
-            if ((!response.tool_calls || response.tool_calls.length === 0) && response.content) {
-                const recovered = recoverToolCallsFromText(response.content);
+            if ((!response.tool_calls || response.tool_calls.length === 0) && cleanContent) {
+                const recovered = recoverToolCallsFromText(cleanContent);
                 if (recovered && recovered.length > 0) {
                     logger.info("agent", "Recovered tool calls from text", {
                         turn: this.turnCount,
@@ -691,7 +717,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                 }
             }
 
-            const llmIntention = response.content?.slice(0, 300) || null;
+            const llmIntention = cleanContent?.slice(0, 300) || null;
 
             // 2. Add Assistant Message to History
             this.context.addMessage({
@@ -908,6 +934,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                             }
 
                             // --- Normal done handling ---
+                            this.context.clearPlanStatus();
                             logger.info("agent", "DONE called", {
                                 turn: this.turnCount,
                                 url: this.context.getCurrentUrl(),
@@ -988,7 +1015,7 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                                 this.context.addMessage({
                                     role: "tool",
                                     tool_call_id: toolCall.id,
-                                    content: "Upgraded to smarter model. Re-read the page and continue.",
+                                    content: ESCALATION_NUDGE,
                                 });
                             } else {
                                 this.context.addMessage({
@@ -1026,6 +1053,15 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                                 result: i === currentIndex - 1 && lastResult ? lastResult : undefined,
                             }));
 
+                            // Update plan status in system prompt (visible every turn)
+                            this.context.setPlanStatus(
+                                subtaskDescs.map((desc, i) => ({
+                                    description: desc,
+                                    status: i < currentIndex ? "done" : i === currentIndex ? "running" : "pending",
+                                })),
+                                currentIndex,
+                            );
+
                             const currentUrl = this.context.getCurrentUrl();
                             if (currentUrl && !this.urlHistory.includes(currentUrl)) {
                                 this.urlHistory.push(currentUrl);
@@ -1053,10 +1089,23 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                                 timestamp: Date.now(),
                             }, false);
 
+                            // Directive response: tell the agent exactly what to do next
+                            let planResponse: string;
+                            if (currentIndex >= subtaskDescs.length) {
+                                planResponse = lastResult
+                                    ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
+                                    : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
+                            } else {
+                                const prevStepNote = lastResult
+                                    ? `Step ${currentIndex} complete: "${lastResult}"\n\n`
+                                    : "";
+                                planResponse = `${prevStepNote}NOW EXECUTE Step ${currentIndex + 1} of ${subtaskDescs.length}: "${subtaskDescs[currentIndex]}"\nFocus on this step only. Call update_plan() when done.`;
+                            }
+
                             this.context.addMessage({
                                 role: "tool",
                                 tool_call_id: toolCall.id,
-                                content: `Plan acknowledged. Now executing step ${currentIndex + 1}: "${subtaskDescs[currentIndex] || "done"}"`,
+                                content: planResponse,
                             });
 
                             logger.info("agent", "UPDATE_PLAN", {
@@ -1240,16 +1289,6 @@ Prefer "click" if a close/dismiss/accept button exists.`;
             } else {
                 // TEXT RESPONSE — no tool calls
 
-                // Notify user if LLM produced no content
-                if (!response.content) {
-                    chrome.runtime.sendMessage({
-                        type: "STREAM_CHUNK",
-                        requestId: crypto.randomUUID(),
-                        source: MessageSource.BACKGROUND,
-                        payload: { delta: "(The agent finished without producing a response.)", done: false },
-                    }).catch(() => {});
-                }
-
                 // Plan confirmation: on turn 1 with confirmPlan, pause for user approval
                 if (this.confirmPlan && this.turnCount === 1 && response.content) {
                     // Finalize stream so the plan text appears as a complete message
@@ -1277,13 +1316,28 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                     continue; // Continue the loop — user approved
                 }
 
+                // Soft nudge: turn 1, no plan, substantive text — likely an answer to a question
+                if (this.turnCount === 1 && !this.taskId && cleanContent && cleanContent.trim().length > 20) {
+                    consecutiveNudges++;
+                    totalNudges++;
+                    logger.info("agent", "Soft nudge: turn 1 text response, suggesting done()", {
+                        turn: this.turnCount,
+                        textLen: cleanContent.trim().length,
+                    });
+                    this.context.addMessage({
+                        role: "user",
+                        content: `If that was your answer to the user's question, wrap it in done({"summary": "..."}) to deliver it. If you need to act on the page, call the appropriate tool.`,
+                    });
+                    continue;
+                }
+
                 // Unified nudge→escalate→give-up for text-only responses
                 consecutiveNudges++;
                 totalNudges++;
                 logger.warn("agent", "LLM emitted text instead of tools, nudging", {
                     turn: this.turnCount,
                     consecutiveNudges,
-                    text: response.content?.slice(0, 80),
+                    text: cleanContent?.slice(0, 80),
                 });
 
                 // Escalation gate: after 2 nudges, try upgrading model
@@ -1303,14 +1357,14 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                     this.statusHandler(AgentStatus.THINKING, "Escalating model...");
 
                     prevElementCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount);
-                    this.context.addMessage({ role: "user", content: NUDGE_MESSAGE });
+                    this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
                     continue;
                 }
 
                 // Give-up gate: 3 consecutive nudges (applies whether pre- or post-escalation)
                 if (consecutiveNudges >= 3) {
                     logger.warn("agent", "Loop ended: consecutive nudge limit", { turns: this.turnCount, consecutiveNudges, totalNudges, escalated });
-                    const stuckMsg = response.content || "The agent appears stuck and cannot continue.";
+                    const stuckMsg = cleanContent || "The agent appears stuck and cannot continue.";
                     chrome.runtime.sendMessage({
                         type: "STREAM_CHUNK",
                         requestId: crypto.randomUUID(),

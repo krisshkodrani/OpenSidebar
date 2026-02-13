@@ -15,7 +15,7 @@ const fetchMock = mock(() => Promise.resolve({
 // Mock modules before importing AgentLoop
 mock.module("../../src/background/llm", () => ({
     LLMClient: class {
-        private model = "google/gemini-2.0-flash-001";
+        private model = "google/gemini-2.5-flash-lite";
         complete = mock(() => Promise.resolve({
             role: "assistant",
             content: "done",
@@ -38,8 +38,9 @@ mock.module("../../src/background/llm", () => ({
         switchModel = mock((m: string) => { this.model = m; });
         getCurrentModel = () => this.model;
     },
-    MODEL_FAST: "google/gemini-2.0-flash-001",
-    MODEL_SMART: "anthropic/claude-sonnet-4-5",
+    MODEL_FAST: "google/gemini-2.5-flash-lite",
+    MODEL_SMART: "minimax/minimax-m2.5",
+    stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
 }));
 
 mock.module("../../src/background/keepalive", () => ({

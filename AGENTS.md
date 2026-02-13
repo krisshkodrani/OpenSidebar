@@ -334,7 +334,7 @@ src/
 │   │   └── bridge.ts     # Offscreen document communication
 │   ├── workspaces/
 │   │   └── manager.ts    # Auto-managed workspace system
-│   ├── swarm.ts          # Kimi k2.5 Deep Thought delegation
+│   ├── vision.ts         # Screenshot description via vision model
 │   ├── navigation.ts     # Navigation Bridge (state persistence)
 │   ├── keepalive.ts      # SW keepalive alarm (prevents termination)
 │   ├── streaming.ts      # SSE parser for LLM streaming
@@ -441,7 +441,7 @@ enum AgentStatus {
 
 - `memory_add` - Save to Second Brain
 - `memory_search` - Search Second Brain
-- `activate_swarm` - Delegate to Kimi k2.5
+- `escalate` - Switch to smarter model (MiniMax M2.5)
 - `done` - Mark task complete
 
 ### Streaming Architecture
