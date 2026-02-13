@@ -4,7 +4,7 @@ This directory contains feature proposals, technical decisions, and implementati
 
 ## Active RFCs
 
-### [DOM Context Optimization](./IMPLEMENTATION_PLAN_DOM_OPTIMIZATION.md)
+### [DOM Context Optimization](./rfc-dom-optimization-plan.md)
 
 **Status:** Proposed  
 Phase-based optimization to reduce system prompt size by 70% while improving agent grounding through viewport-aware filtering, attribute whitelisting, and progressive compression.
@@ -14,12 +14,12 @@ Phase-based optimization to reduce system prompt size by 70% while improving age
 **Status:** Proposed  
 Adds runtime context detection to prevent Chrome API errors when modules are accidentally loaded in content scripts.
 
-### [Shadow DOM Support](./SHADOW_DOM_REPORT.md)
+### [Shadow DOM Support](./shadow-dom-report.md)
 
 **Status:** Research phase  
 Analysis and implementation plan for supporting web components that use Shadow DOM.
 
-### [Implementation: Locked Workspace](./IMPLEMENTATION-Locked-Workspace.md)
+### [Implementation: Locked Workspace](./rfc-locked-workspace.md)
 
 **Status:** Proposed  
 Adds workspace locking functionality to prevent accidental tab modifications during AI operations.

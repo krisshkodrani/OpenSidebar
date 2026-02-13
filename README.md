@@ -28,15 +28,15 @@ Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM
                      (Memory: SQLite + Voy + Transformers.js)
 ```
 
-| Component      | Technology                             |
-| -------------- | -------------------------------------- |
-| Fast LLM       | OpenRouter (Gemini 2.5 Flash Lite)     |
-| Smart LLM      | OpenRouter (model escalation)          |
-| Embeddings     | Transformers.js (all-MiniLM-L6-v2)     |
-| Vector Search  | Voy (WASM)                             |
-| Keyword Search | SQLite WASM (FTS5)                     |
-| UI             | React 18 + Tailwind CSS                |
-| Build          | Vite + @crxjs/vite-plugin              |
+| Component      | Technology                         |
+| -------------- | ---------------------------------- |
+| Fast LLM       | OpenRouter (Gemini 2.5 Flash Lite) |
+| Smart LLM      | OpenRouter (model escalation)      |
+| Embeddings     | Transformers.js (all-MiniLM-L6-v2) |
+| Vector Search  | Voy (WASM)                         |
+| Keyword Search | SQLite WASM (FTS5)                 |
+| UI             | React 18 + Tailwind CSS            |
+| Build          | Vite + @crxjs/vite-plugin          |
 
 Complete technical documentation: [docs/architecture/](./docs/architecture/)
 
@@ -127,8 +127,8 @@ This starts Vite with HMR. Load the `dist/` folder as an unpacked extension — 
 - **[Architecture Overview](./docs/architecture/overview.md)** - System design and components
 - **[Agent Loop](./docs/architecture/agent-loop.md)** - Core orchestration
 - **[Memory System](./docs/architecture/memory-system.md)** - Implementation details
-- **[Message Protocol](./docs/message-protocol.md)** - Inter-context messaging API
-- **[Type Reference](./docs/types-reference.md)** - All TypeScript types
+- **[Message Protocol](./docs/architecture/message-protocol.md)** - Inter-context messaging API
+- **[Type Reference](./docs/architecture/types-reference.md)** - All TypeScript types
 
 ### Development
 
