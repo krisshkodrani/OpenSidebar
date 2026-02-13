@@ -39,6 +39,7 @@ interface Actions {
   setAwaitingPlanApproval: (awaiting: boolean) => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
+  setReady: () => void;
 }
 
 type Store = SidePanelState & Actions;
@@ -68,6 +69,7 @@ function persistMessages(messages: ChatEntry[]) {
 export const useStore = create<Store>()(
   immer((set, get) => ({
     // Initial State
+    ready: false,
     messages: [],
     agentStatus: AgentStatus.IDLE,
     statusDetail: "Ready",
@@ -217,6 +219,11 @@ export const useStore = create<Store>()(
         logger.warn("ui", "Failed to load messages from storage", { error: e });
       }
     },
+
+    setReady: () =>
+      set((state) => {
+        state.ready = true;
+      }),
 
     // --- Agent feedback actions ---
 

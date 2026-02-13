@@ -59,7 +59,7 @@ export function ControlBar() {
       </span>
 
       {turnProgress && (
-        <span className="text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
+        <span className="text-warm-400 dark:text-warm-500 tabular-nums shrink-0">
           {turnProgress.turn}/{turnProgress.maxTurns}
         </span>
       )}

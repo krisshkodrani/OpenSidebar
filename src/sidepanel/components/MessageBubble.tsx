@@ -35,25 +35,25 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
   const showBreakdown = models.length > 1;
 
   return (
-    <div className="text-xs text-gray-500 dark:text-gray-400 tabular-nums space-y-0.5">
+    <div className="text-xs text-warm-500 dark:text-warm-400 tabular-nums space-y-0.5">
       <div className="flex items-center gap-1.5 flex-wrap">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
-        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>{metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "—"}</span>
-        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
-        <span className="text-gray-300 dark:text-gray-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>Total {formatTimeCompact(metrics.totalSessionTimeMs)}</span>
       </div>
       {showBreakdown && (
         <div className="pl-2 space-y-0.5">
           {models.map(([model, data]) => (
             <div key={model} className="flex items-center gap-1.5">
-              <span className="text-gray-400 dark:text-gray-500">{model.split("/").pop()}:</span>
+              <span className="text-warm-400 dark:text-warm-500">{model.split("/").pop()}:</span>
               <span>{formatTokensCompact(data.promptTokens + data.completionTokens)} tok</span>
               {data.cost > 0 && (
                 <>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
+                  <span className="text-warm-300 dark:text-warm-600">·</span>
                   <span>{formatCostCompact(data.cost)}</span>
                 </>
               )}
@@ -83,12 +83,12 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
         : "Task failed";
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-sm">
+    <div className="bg-warm-100/50 dark:bg-warm-800/50 rounded-lg border border-warm-200 dark:border-warm-700 p-3 text-sm">
       <div className="flex items-center gap-2 mb-2">
         {statusIcon}
         <span className="font-medium">{statusLabel}</span>
         {data.totalTurnsUsed > 0 && (
-          <span className="text-gray-400 text-xs ml-auto">
+          <span className="text-warm-400 text-xs ml-auto">
             {data.totalTurnsUsed} turns
           </span>
         )}
@@ -99,12 +99,12 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
         </div>
       )}
       {data.summary && (
-        <p className="text-gray-600 dark:text-gray-300 text-xs mb-2">
+        <p className="text-warm-600 dark:text-warm-300 text-xs mb-2">
           {data.summary}
         </p>
       )}
       {data.subtaskResults && data.subtaskResults.length > 0 && (
-        <div className="space-y-1 mt-2 border-t border-gray-200 dark:border-gray-700 pt-2">
+        <div className="space-y-1 mt-2 border-t border-warm-200 dark:border-warm-700 pt-2">
           {data.subtaskResults.map((sr, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs">
               {sr.status === "completed" ? (
@@ -114,7 +114,7 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
               ) : (
                 <AlertTriangle size={10} className="text-yellow-500 shrink-0" />
               )}
-              <span className="truncate text-gray-600 dark:text-gray-400">
+              <span className="truncate text-warm-600 dark:text-warm-400">
                 {sr.description}
               </span>
             </div>
@@ -137,7 +137,7 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
   return (
     <div
       className={clsx(
-        "flex flex-col gap-1 mb-4",
+        "flex flex-col gap-1 mb-5 message-enter",
         isUser ? "items-end" : "items-start",
       )}
     >
@@ -149,12 +149,12 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
       )}
       <div
         className={clsx(
-          "max-w-[85%] px-3 py-2 rounded-lg text-sm shadow-sm",
+          "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
           isUser
             ? isHint
-              ? "bg-amber-500 text-white rounded-br-none whitespace-pre-wrap"
-              : "bg-primary-600 text-white rounded-br-none whitespace-pre-wrap"
-            : "bg-surface-light dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none border border-gray-200 dark:border-gray-700",
+              ? "bg-gradient-to-br from-amber-400 to-amber-500 text-white whitespace-pre-wrap"
+              : "bg-gradient-to-br from-primary-500 to-primary-600 text-white whitespace-pre-wrap"
+            : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60 border-l-2 border-l-primary-400/70 dark:border-l-primary-500/70",
           !isUser && message.isStreaming && "streaming-cursor",
         )}
       >
@@ -174,7 +174,7 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
         ) : message.toolCalls.length > 0 ? (
-          <span className="text-gray-500 italic">Thinking...</span>
+          <span className="text-warm-500 italic">Thinking...</span>
         ) : (
           ""
         )}
@@ -191,7 +191,7 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
 
       <span
         className={clsx(
-          "text-[10px] text-gray-400 px-1 opacity-70",
+          "text-[10px] text-warm-400 px-1 opacity-70",
           isUser ? "text-right" : "text-left",
         )}
       >

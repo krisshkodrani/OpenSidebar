@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
@@ -11,7 +11,14 @@ import {
   ChatEntry,
 } from "../types";
 
+const SUGGESTED_ACTIONS = [
+  "Summarize this page",
+  "Fill out this form",
+  "Find pricing info",
+];
+
 export default function App() {
+  const ready = useStore((s) => s.ready);
   const messages = useStore((s) => s.messages);
   const addMessage = useStore((s) => s.addMessage);
   const updateStatus = useStore((s) => s.updateStatus);
@@ -22,6 +29,7 @@ export default function App() {
   const error = useStore((s) => s.error);
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
+  const setReady = useStore((s) => s.setReady);
   const sessionMetrics = useStore((s) => s.sessionMetrics);
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -62,8 +70,9 @@ export default function App() {
   useEffect(() => {
     logger.info("ui", "Side Panel Mounted");
 
-    loadSettingsFromStorage();
-    loadMessagesFromStorage();
+    Promise.all([loadSettingsFromStorage(), loadMessagesFromStorage()]).then(
+      () => setReady(),
+    );
 
     // Notify background that panel is open (triggers workspace creation if needed)
     chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
@@ -252,8 +261,21 @@ export default function App() {
     }
   }, [setAgentRunning, updateStatus]);
 
+  if (!ready) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-warm-50 dark:bg-warm-900">
+        <div className="animate-pulse flex flex-col items-center gap-3">
+          <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
+            <span className="text-white font-bold text-xl tracking-tight">OS</span>
+          </div>
+          <span className="text-xs text-warm-400 dark:text-warm-500">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-200">
+    <div className="flex flex-col h-full bg-warm-50 dark:bg-warm-900 text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
       <Header onOpenSettings={() => setIsSettingsOpen(true)} />
 
       <SettingsDrawer
@@ -283,14 +305,27 @@ export default function App() {
           className="flex-1 overflow-y-auto p-4 scroll-smooth"
         >
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 opacity-50">
-              <div className="w-16 h-16 bg-gray-200 dark:bg-gray-800 rounded-2xl mb-4 flex items-center justify-center">
-                <span className="text-2xl">✨</span>
+            <div className="h-full flex flex-col items-center justify-center text-center p-8">
+              <div className="rounded-2xl bg-warm-100/50 dark:bg-warm-800/30 border border-warm-200/60 dark:border-warm-700/40 shadow-soft p-6 max-w-[280px]">
+                <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg mb-3 flex items-center justify-center mx-auto">
+                  <Sparkles size={20} className="text-primary-500" />
+                </div>
+                <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">Welcome to OpenSidebar</h2>
+                <p className="text-sm text-warm-500 dark:text-warm-400 mb-4">
+                  Ask me to browse, research, or automate tasks.
+                </p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {SUGGESTED_ACTIONS.map((action) => (
+                    <button
+                      key={action}
+                      onClick={() => setInputText(action)}
+                      className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-colors"
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <h2 className="font-semibold mb-1">Welcome to OpenSidebar</h2>
-              <p className="text-sm">
-                Ask me to browse, research, or automate tasks.
-              </p>
             </div>
           ) : (
             messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
@@ -298,7 +333,7 @@ export default function App() {
         </div>
       </main>
 
-      <div className="flex flex-col shrink-0 bg-surface-light dark:bg-surface-dark z-20 border-t border-gray-200 dark:border-gray-800 shadow-lg">
+      <div className="flex flex-col shrink-0 glass-surface z-20 border-t border-warm-200 dark:border-warm-800 shadow-glass">
         <ControlBar />
         {settings.showSessionMetrics && sessionMetrics && <MetricsBar metrics={sessionMetrics} />}
         <TaskProgressPanel />
@@ -307,14 +342,14 @@ export default function App() {
 
       {screenshot && (
         <div className="fixed bottom-4 right-4 z-50 max-w-md">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+          <div className="bg-warm-50 dark:bg-warm-800 rounded-lg shadow-xl border border-warm-200 dark:border-warm-700 overflow-hidden">
+            <div className="p-2 bg-warm-100 dark:bg-warm-900 border-b border-warm-200 dark:border-warm-700 flex justify-between items-center">
+              <span className="text-xs font-medium text-warm-600 dark:text-warm-400">
                 Debug Screenshot
               </span>
               <button
                 onClick={() => setScreenshot(null)}
-                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="p-0.5 hover:bg-warm-200 dark:hover:bg-warm-700 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-300"
               >
                 <X size={14} />
               </button>
@@ -324,7 +359,7 @@ export default function App() {
               alt="Debug screenshot with element tags"
               className="max-h-48 w-full object-contain"
             />
-            <div className="p-2 text-xs text-gray-500 dark:text-gray-400">
+            <div className="p-2 text-xs text-warm-500 dark:text-warm-400">
               {screenshot.context}
             </div>
           </div>

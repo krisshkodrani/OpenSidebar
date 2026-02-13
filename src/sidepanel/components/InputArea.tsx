@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import { Send, StopCircle, MessageCircle } from "lucide-react";
 import { useStore } from "../store";
 
@@ -18,18 +18,36 @@ export function InputArea({
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const awaitingPlanApproval = useStore((s) => s.awaitingPlanApproval);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevHeightRef = useRef<number>(0);
 
-  // Auto-resize: hide overflow during measurement to prevent scrollbar-induced inflation
+  // Smooth auto-resize: measure with transition disabled, then animate
   const MAX_HEIGHT = 120;
-  useEffect(() => {
+  const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+
+    // Store previous height
+    const prev = prevHeightRef.current;
+
+    // Disable transition and measure
+    el.style.transition = "none";
     el.style.overflowY = "hidden";
     el.style.height = "0px";
     const scrollH = Math.min(el.scrollHeight, MAX_HEIGHT);
+    el.style.height = (prev || scrollH) + "px";
+
+    // Force reflow, then re-enable transition
+    void el.offsetHeight;
+    el.style.transition = "height 0.15s ease";
     el.style.height = scrollH + "px";
     el.style.overflowY = scrollH >= MAX_HEIGHT ? "auto" : "hidden";
-  }, [inputText]);
+
+    prevHeightRef.current = scrollH;
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [inputText, resizeTextarea]);
 
   const hasText = inputText.trim().length > 0;
 
@@ -52,7 +70,7 @@ export function InputArea({
 
   return (
     <div className="p-2 bg-surface-light dark:bg-surface-dark">
-      <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 p-1.5 rounded-xl ring-1 ring-transparent focus-within:ring-primary-500 transition-all">
+      <div className="relative flex items-end gap-2 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-xl ring-1 ring-transparent focus-within:ring-primary-500 transition-all">
         <textarea
           ref={textareaRef}
           value={inputText}
@@ -65,7 +83,7 @@ export function InputArea({
                 ? "Send a hint..."
                 : "Ask OpenSidebar..."
           }
-          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500"
+          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-500"
           rows={1}
         />
         {isAgentRunning && !hasText ? (
