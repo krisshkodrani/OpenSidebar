@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import React, { useId, useState, useRef, useEffect } from "react";
 import { ToolCallSummary } from "../../types";
 import { ChevronDown, ChevronRight, Terminal, CheckCircle, Clock } from "lucide-react";
 import { clsx } from "clsx";
@@ -11,13 +11,21 @@ interface Props {
 export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
     const [isOpen, setIsOpen] = useState(defaultOpen);
     const panelId = useId();
+    const contentRef = useRef<HTMLDivElement>(null);
+    const [contentHeight, setContentHeight] = useState(0);
+
+    useEffect(() => {
+        if (contentRef.current) {
+            setContentHeight(contentRef.current.scrollHeight);
+        }
+    }, [isOpen, tool.result]);
 
     const getRiskColor = (level: string) => {
         switch (level) {
             case "high": return "bg-red-500";
             case "medium": return "bg-yellow-500";
             case "low": return "bg-green-500";
-            default: return "bg-gray-400";
+            default: return "bg-warm-400";
         }
     };
 
@@ -32,20 +40,20 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
         : JSON.stringify(tool.args, null, 2);
 
     return (
-        <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 overflow-hidden text-xs shadow-sm transition-all hover:shadow-md">
+        <div className="border border-warm-200 dark:border-warm-700 rounded-lg bg-warm-50 dark:bg-warm-900 overflow-hidden text-xs shadow-soft transition-all hover:shadow-soft-md">
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 aria-expanded={isOpen}
                 aria-controls={panelId}
-                className="flex items-center gap-2 w-full p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 text-left transition-colors"
+                className="flex items-center gap-2 w-full p-2.5 hover:bg-warm-100 dark:hover:bg-warm-800 text-left transition-colors"
             >
-                {isOpen ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+                {isOpen ? <ChevronDown size={14} className="text-warm-400" /> : <ChevronRight size={14} className="text-warm-400" />}
 
-                <div className="flex items-center justify-center w-6 h-6 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                <div className="flex items-center justify-center w-6 h-6 rounded bg-warm-100 dark:bg-warm-800 text-warm-600 dark:text-warm-300">
                     <Terminal size={14} />
                 </div>
 
-                <span className="font-mono font-medium text-gray-700 dark:text-gray-200">{tool.toolName}</span>
+                <span className="font-mono font-medium text-warm-700 dark:text-warm-200">{tool.toolName}</span>
 
                 <div className="ml-auto flex items-center gap-3">
                     <StatusIcon />
@@ -57,28 +65,33 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
                 </div>
             </button>
 
-            {isOpen && (
-                <div
-                    id={panelId}
-                    role="region"
-                    aria-label={`${tool.toolName} details`}
-                    className="p-3 border-t border-gray-200 dark:border-gray-700 font-mono text-[11px] bg-gray-50 dark:bg-gray-950/50"
-                >
-                    <div className="mb-1 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Input</div>
-                    <pre className="overflow-x-auto p-2 rounded bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-800 mb-3">
+            <div
+                id={panelId}
+                role="region"
+                aria-label={`${tool.toolName} details`}
+                ref={contentRef}
+                className="overflow-hidden transition-[height,opacity] duration-200 ease-out"
+                style={{
+                    height: isOpen ? contentHeight : 0,
+                    opacity: isOpen ? 1 : 0,
+                }}
+            >
+                <div className="p-3 border-t border-warm-200 dark:border-warm-700 font-mono text-[11px] bg-warm-100/50 dark:bg-warm-950/50">
+                    <div className="mb-1 text-warm-500 font-semibold uppercase tracking-wider text-[10px]">Input</div>
+                    <pre className="overflow-x-auto p-2 rounded bg-warm-100 dark:bg-warm-900 text-warm-800 dark:text-warm-300 border border-warm-200 dark:border-warm-800 mb-3">
                         {argsDisplay}
                     </pre>
 
                     {tool.result && (
                         <>
-                            <div className="mb-1 text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Output</div>
-                            <pre className="overflow-x-auto p-2 rounded bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-800 max-h-40">
+                            <div className="mb-1 text-warm-500 font-semibold uppercase tracking-wider text-[10px]">Output</div>
+                            <pre className="overflow-x-auto p-2 rounded bg-warm-50 dark:bg-warm-900 text-warm-600 dark:text-warm-400 border border-warm-200 dark:border-warm-800 max-h-40">
                                 {tool.result}
                             </pre>
                         </>
                     )}
                 </div>
-            )}
+            </div>
         </div>
     );
 }

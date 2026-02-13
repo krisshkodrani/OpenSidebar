@@ -8,7 +8,7 @@ interface Props {
 
 export function Header({ onOpenSettings }: Props) {
     return (
-        <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800 bg-surface-light dark:bg-surface-dark sticky top-0 z-10 transition-colors">
+        <header className="flex items-center justify-between p-4 border-b border-warm-200 dark:border-warm-800 glass-surface sticky top-0 z-10 transition-colors">
             <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
                     {/* Logo removed as per user request */}
@@ -18,7 +18,7 @@ export function Header({ onOpenSettings }: Props) {
 
             <button
                 onClick={onOpenSettings}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="p-2 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full transition-colors text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
                 aria-label="Settings"
             >
                 <Settings size={18} />

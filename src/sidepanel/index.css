@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./fonts/Inter-Variable.woff2') format('woff2');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,11 +13,11 @@
 html, body, #root {
   height: 100%;
   margin: 0;
-  background-color: #f9fafb;
+  background-color: #faf9f7;
 }
 
 .dark body {
-  background-color: #111827;
+  background-color: #1c1917;
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -64,13 +72,13 @@ html, body, #root {
 }
 
 .prose-chat a {
-  color: #4f46e5;
+  color: #5046e5;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .prose-chat a:hover {
-  color: #4338ca;
+  color: #433aca;
 }
 
 .prose-chat blockquote {
@@ -159,19 +167,19 @@ html, body, #root {
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* --- Streaming cursor --- */
+/* --- Streaming cursor (smooth pulse) --- */
 .streaming-cursor::after {
   content: "\25AE";
   display: inline;
-  animation: blink-cursor 0.8s step-end infinite;
+  animation: cursor-pulse 1s ease-in-out infinite;
   color: currentColor;
-  opacity: 0.7;
+  opacity: 0.8;
   margin-left: 1px;
 }
 
-@keyframes blink-cursor {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 0; }
+@keyframes cursor-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.15; }
 }
 
 /* --- Drawer slide-in animation --- */
@@ -197,6 +205,42 @@ html, body, #root {
   to { opacity: 1; }
 }
 
+/* --- Message entrance animation --- */
+.message-enter {
+  animation: fade-in-up 0.3s ease-out both;
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Glass surface --- */
+.glass-surface {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(250, 249, 247, 0.85);
+}
+
+.dark .glass-surface {
+  background-color: rgba(28, 25, 23, 0.85);
+}
+
+/* --- Button tactile feedback --- */
+button {
+  transition: transform 0.1s ease, background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
 /* --- Reduced motion --- */
 @media (prefers-reduced-motion: reduce) {
   .streaming-cursor::after {
@@ -210,6 +254,18 @@ html, body, #root {
 
   .backdrop-enter {
     animation: none;
+  }
+
+  .message-enter {
+    animation: none;
+  }
+
+  button {
+    transition: none;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
   }
 
   .animate-pulse,

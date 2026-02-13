@@ -27,15 +27,15 @@ export function MetricsBar({ metrics }: { metrics: SessionMetrics }) {
   const hasCost = metrics.totalCost > 0;
 
   return (
-    <div className="px-4 py-1 text-xs text-gray-500 dark:text-gray-400 tabular-nums flex items-center gap-2 flex-wrap">
+    <div className="px-4 py-1 text-xs text-warm-500 dark:text-warm-400 tabular-nums flex items-center gap-2 flex-wrap">
       <span>{formatTokens(metrics.totalTokens)} tokens</span>
-      <span className="text-gray-300 dark:text-gray-600">·</span>
+      <span className="text-warm-300 dark:text-warm-600">·</span>
       {hasCost ? (
         <span>{formatCost(metrics.totalCost)}</span>
       ) : (
         <span>—</span>
       )}
-      <span className="text-gray-300 dark:text-gray-600">·</span>
+      <span className="text-warm-300 dark:text-warm-600">·</span>
       <span>{formatTime(metrics.totalLlmTimeMs)} LLM</span>
     </div>
   );
