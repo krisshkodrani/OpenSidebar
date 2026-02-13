@@ -178,6 +178,7 @@ export class AgentLoop {
   private showElementTags: boolean;
   private confirmPlan: boolean;
   private showSessionMetrics: boolean;
+  private disabledTools: Set<ToolName>;
 
   /** Workspace ID for session isolation */
   public readonly workspaceId: string | null;
@@ -337,13 +338,27 @@ export class AgentLoop {
       showElementTags?: boolean;
       confirmPlan?: boolean;
       showSessionMetrics?: boolean;
+      disabledTools?: Set<ToolName>;
       workspaceId?: string | null;
     },
   ) {
     this.confirmPlan = options?.confirmPlan ?? false;
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
+    this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     this.workspaceId = options?.workspaceId ?? null;
     this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast);
+    this.llm.setFailoverCallback((from, to) => {
+      const names: Record<string, string> = {
+        cerebras: "Cerebras", groq: "Groq", openrouter: "OpenRouter",
+      };
+      this.stepHandler({
+        id: crypto.randomUUID(),
+        type: "info",
+        label: `Rate limited on ${names[from] ?? from} — switched to ${names[to] ?? to}`,
+        status: "done",
+        timestamp: Date.now(),
+      }, false);
+    });
     this.guardian = new PlanGuardian(openRouterApiKey);
     this.context = new ContextManager(options?.maxContextTokens, this.workspaceId);
     this.statusHandler = callbacks.onStatusUpdate;
@@ -770,6 +785,47 @@ export class AgentLoop {
     );
   }
 
+  /**
+   * Check whether a navigate() target URL matches a completed plan step's URL.
+   * Compares origin + pathname only (ignores query params and hash).
+   * Returns a block message if matched, or null to allow navigation.
+   */
+  private checkNavigateGuard(targetUrl: string): string | null {
+    if (this.planSubtasks.length === 0) return null;
+
+    const completedWithUrls = this.planSubtasks
+      .map((s, i) => ({ ...s, index: i }))
+      .filter((s) => s.status === "completed" && s.completedAtUrl);
+
+    if (completedWithUrls.length === 0) return null;
+
+    let targetOriginPath: string;
+    try {
+      const u = new URL(targetUrl);
+      targetOriginPath = u.origin + u.pathname;
+    } catch {
+      return null; // Unparseable URL — let it through
+    }
+
+    for (const step of completedWithUrls) {
+      try {
+        const u = new URL(step.completedAtUrl!);
+        const stepOriginPath = u.origin + u.pathname;
+        if (targetOriginPath === stepOriginPath) {
+          return (
+            `BLOCKED: Cannot navigate to "${targetUrl}" — matches completed step ${step.index + 1} ("${step.description}").\n` +
+            `Navigating back would undo progress. Continue with the current step.\n` +
+            `If re-visiting is genuinely needed, call update_plan() with a revised plan first.`
+          );
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   private async loop(tabId: number): Promise<LoopResult> {
     let prevElementCount = -1; // Track element count for empty-page retry
     let consecutiveNudges = 0;
@@ -817,13 +873,17 @@ export class AgentLoop {
       ) {
         this.broadcast({
           type: "AGENT_TURN",
-          payload: { turn: this.turnCount, maxTurns: this.maxTurns },
+          payload: {
+            turn: this.turnCount,
+            maxTurns: this.maxTurns,
+            provider: this.llm.getActiveProviderInfo().providerId,
+          },
         });
       }
 
       // 1. LLM Inference (streamed)
       const messages = this.context.getPrompt();
-      const tools = toolRegistry.getDefinitions();
+      const tools = toolRegistry.getDefinitions(this.disabledTools);
 
       // Log context metrics for telemetry (reuse already-computed prompt)
       const metrics = this.context.getPromptMetricsFrom(messages);
@@ -1369,19 +1429,26 @@ export class AgentLoop {
                 this.taskStartTime = Date.now();
               }
 
-              this.planSubtasks = subtaskDescs.map((desc, i) => ({
-                description: desc,
-                status:
-                  i < currentIndex
-                    ? ("completed" as const)
-                    : i === currentIndex
-                      ? ("running" as const)
-                      : ("pending" as const),
-                turnsUsed: 0,
-                turnBudget: 0,
-                result:
-                  i === currentIndex - 1 && lastResult ? lastResult : undefined,
-              }));
+              this.planSubtasks = subtaskDescs.map((desc, i) => {
+                // Preserve existing completedAtUrl for previously-completed steps
+                const existing = this.planSubtasks[i];
+                const isJustCompleted = i === currentIndex - 1;
+                return {
+                  description: desc,
+                  status:
+                    i < currentIndex
+                      ? ("completed" as const)
+                      : i === currentIndex
+                        ? ("running" as const)
+                        : ("pending" as const),
+                  turnsUsed: 0,
+                  turnBudget: 0,
+                  result: isJustCompleted && lastResult ? lastResult : undefined,
+                  completedAtUrl: isJustCompleted
+                    ? this.context.getCurrentUrl() || undefined
+                    : existing?.completedAtUrl,
+                };
+              });
 
               // Update plan status in system prompt (visible every turn)
               this.context.setPlanStatus(
@@ -1393,6 +1460,7 @@ export class AgentLoop {
                       : i === currentIndex
                         ? "running"
                         : "pending",
+                  completedAtUrl: this.planSubtasks[i]?.completedAtUrl,
                 })),
                 currentIndex,
               );
@@ -1451,6 +1519,36 @@ export class AgentLoop {
                 currentIndex,
               });
               continue;
+            }
+
+            // NAVIGATE guard — block navigation to completed step URLs
+            if (toolName === ToolName.NAVIGATE && args.url) {
+              const blockMessage = this.checkNavigateGuard(args.url as string);
+              if (blockMessage) {
+                logger.warn("agent", "Navigate blocked by guard", {
+                  turn: this.turnCount,
+                  targetUrl: (args.url as string).slice(0, 120),
+                });
+                this.traceRecorder?.recordEvent("navigate_blocked", {
+                  targetUrl: args.url,
+                });
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockMessage,
+                });
+                this.stepHandler(
+                  {
+                    id: crypto.randomUUID(),
+                    type: "info",
+                    label: "Navigate blocked — would undo progress",
+                    status: "done",
+                    timestamp: Date.now(),
+                  },
+                  false,
+                );
+                continue;
+              }
             }
 
             const toolStepId = crypto.randomUUID();
@@ -1776,28 +1874,30 @@ export class AgentLoop {
                 });
 
                 // Auto-screenshot: give the LLM visual context when stuck
-                try {
-                  const screenshotResult = await toolRegistry.execute(
-                    {
-                      id: `auto_screenshot_${this.turnCount}`,
-                      type: "function",
-                      function: { name: ToolName.TAKE_SCREENSHOT, arguments: "{}" },
-                    },
-                    tabId,
-                    this.abortController!.signal,
-                  );
-                  this.context.addMessage({
-                    role: "user",
-                    content: `[Auto-screenshot — you are stuck]\n${screenshotResult}`,
-                  });
-                  logger.info("agent", "Auto-screenshot injected on stuck", {
-                    turn: this.turnCount,
-                    staleTurns: progressSignal.staleTurns,
-                  });
-                } catch (screenshotErr: any) {
-                  logger.warn("agent", "Auto-screenshot failed (non-critical)", {
-                    error: screenshotErr?.message,
-                  });
+                if (!this.disabledTools.has(ToolName.TAKE_SCREENSHOT)) {
+                  try {
+                    const screenshotResult = await toolRegistry.execute(
+                      {
+                        id: `auto_screenshot_${this.turnCount}`,
+                        type: "function",
+                        function: { name: ToolName.TAKE_SCREENSHOT, arguments: "{}" },
+                      },
+                      tabId,
+                      this.abortController!.signal,
+                    );
+                    this.context.addMessage({
+                      role: "user",
+                      content: `[Auto-screenshot — you are stuck]\n${screenshotResult}`,
+                    });
+                    logger.info("agent", "Auto-screenshot injected on stuck", {
+                      turn: this.turnCount,
+                      staleTurns: progressSignal.staleTurns,
+                    });
+                  } catch (screenshotErr: any) {
+                    logger.warn("agent", "Auto-screenshot failed (non-critical)", {
+                      error: screenshotErr?.message,
+                    });
+                  }
                 }
 
                 // Broadcast stuck signal to side panel

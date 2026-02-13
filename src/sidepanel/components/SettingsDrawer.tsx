@@ -262,6 +262,37 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         </div>
                     </section>
 
+                    {/* Tool Restrictions */}
+                    <section className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">Tool Restrictions</h3>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium dark:text-warm-300">Disable Screenshot</label>
+                                <p className="text-xs text-warm-400 dark:text-warm-500">Hide take_screenshot from tools (saves ~1-3s per call)</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={formState.disableScreenshot}
+                                onChange={e => handleChange("disableScreenshot", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium dark:text-warm-300">Disable Navigation</label>
+                                <p className="text-xs text-warm-400 dark:text-warm-500">Prevent agent from navigating to new URLs</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={formState.disableNavigation}
+                                onChange={e => handleChange("disableNavigation", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+                            />
+                        </div>
+                    </section>
+
                     {/* Appearance */}
                     <section className="space-y-3">
                         <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">Appearance</h3>

@@ -1,0 +1,238 @@
+import { describe, test, expect, mock } from "bun:test";
+import "../setup";
+import { AgentLoop } from "../../src/background/agent/loop";
+import { SubtaskSummary } from "../../src/types";
+
+// Mock LLM Client
+mock.module("../../src/background/llm", () => ({
+    LLMClient: class {
+        private model = "google/gemini-2.5-flash-lite";
+        complete = mock(() => Promise.resolve({
+            role: "assistant",
+            content: "ok",
+            tool_calls: undefined,
+            finish_reason: "stop",
+        }));
+        completeStream = mock((_req: any, onDelta: (d: string) => void) => {
+            onDelta("ok");
+            return Promise.resolve({
+                role: "assistant",
+                content: "ok",
+                tool_calls: undefined,
+                finish_reason: "stop",
+            });
+        });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
+        getCurrentModel = () => this.model;
+        getCurrentProvider = () => "openrouter";
+        getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });
+        setFailoverCallback = mock(() => {});
+    },
+    MODEL_FAST: "google/gemini-2.5-flash-lite",
+    MODEL_SMART: "minimax/minimax-m2.5",
+    stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
+}));
+
+function createAgent(): AgentLoop {
+    return new AgentLoop("test-key", undefined, undefined, false, {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+        onStep: mock(),
+    });
+}
+
+/** Access private checkNavigateGuard via type escape */
+function checkGuard(agent: AgentLoop, url: string): string | null {
+    return (agent as any).checkNavigateGuard(url);
+}
+
+/** Set private planSubtasks directly */
+function setPlanSubtasks(agent: AgentLoop, subtasks: SubtaskSummary[]): void {
+    (agent as any).planSubtasks = subtasks;
+}
+
+describe("Navigate Guard", () => {
+    test("returns null when no plan exists (empty planSubtasks)", () => {
+        const agent = createAgent();
+        // planSubtasks is [] by default
+        expect(checkGuard(agent, "https://example.com/step1")).toBeNull();
+    });
+
+    test("returns null when plan has no completed steps with URLs", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            { description: "Do step 1", status: "completed", turnsUsed: 1, turnBudget: 0 },
+            { description: "Do step 2", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+        // No completedAtUrl set → guard returns null
+        expect(checkGuard(agent, "https://example.com/step1")).toBeNull();
+    });
+
+    test("blocks navigation to a completed step URL (exact path match)", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Complete step 1",
+                status: "completed",
+                turnsUsed: 2,
+                turnBudget: 0,
+                completedAtUrl: "https://challenge.example.com/step1?version=1",
+            },
+            { description: "Do step 2", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        const result = checkGuard(agent, "https://challenge.example.com/step1?version=2");
+        expect(result).not.toBeNull();
+        expect(result).toContain("BLOCKED");
+        expect(result).toContain("step 1");
+        expect(result).toContain("Complete step 1");
+    });
+
+    test("origin+pathname matching ignores query params and hash", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Fill out form",
+                status: "completed",
+                turnsUsed: 3,
+                turnBudget: 0,
+                completedAtUrl: "https://app.test/form?id=abc#section1",
+            },
+            { description: "Review", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        // Same origin+pathname, different query → blocked
+        expect(checkGuard(agent, "https://app.test/form?id=xyz")).not.toBeNull();
+        // Same origin+pathname, no query → blocked
+        expect(checkGuard(agent, "https://app.test/form")).not.toBeNull();
+        // Same origin+pathname, different hash → blocked
+        expect(checkGuard(agent, "https://app.test/form#other")).not.toBeNull();
+    });
+
+    test("allows navigation to a different path on the same origin", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Step 1",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step1",
+            },
+            { description: "Step 2", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        expect(checkGuard(agent, "https://example.com/step2")).toBeNull();
+        expect(checkGuard(agent, "https://example.com/other/path")).toBeNull();
+    });
+
+    test("allows navigation to a different origin", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Step 1",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step1",
+            },
+            { description: "Step 2", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        expect(checkGuard(agent, "https://other-site.com/step1")).toBeNull();
+    });
+
+    test("handles unparseable target URL gracefully (returns null)", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Step 1",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step1",
+            },
+        ]);
+
+        expect(checkGuard(agent, "not-a-valid-url")).toBeNull();
+    });
+
+    test("skips steps whose completedAtUrl is unparseable", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Step 1",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "bad-url-no-protocol",
+            },
+            {
+                description: "Step 2",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step2",
+            },
+            { description: "Step 3", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        // Step 1's bad URL is skipped; step 2's URL still blocks
+        expect(checkGuard(agent, "https://example.com/step2")).not.toBeNull();
+        // And unrelated URL goes through
+        expect(checkGuard(agent, "https://example.com/step3")).toBeNull();
+    });
+
+    test("only checks completed steps, not running/pending", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Step 1",
+                status: "completed",
+                turnsUsed: 1,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step1",
+            },
+            {
+                description: "Step 2",
+                status: "running",
+                turnsUsed: 0,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step2", // has URL but not completed
+            },
+            {
+                description: "Step 3",
+                status: "pending",
+                turnsUsed: 0,
+                turnBudget: 0,
+                completedAtUrl: "https://example.com/step3", // has URL but not completed
+            },
+        ]);
+
+        expect(checkGuard(agent, "https://example.com/step1")).not.toBeNull(); // completed → blocked
+        expect(checkGuard(agent, "https://example.com/step2")).toBeNull();      // running → allowed
+        expect(checkGuard(agent, "https://example.com/step3")).toBeNull();      // pending → allowed
+    });
+
+    test("block message includes correct step number and description", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            { description: "Login to site", status: "completed", turnsUsed: 1, turnBudget: 0 },
+            {
+                description: "Navigate to search",
+                status: "completed",
+                turnsUsed: 2,
+                turnBudget: 0,
+                completedAtUrl: "https://site.com/search",
+            },
+            { description: "Run query", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        const result = checkGuard(agent, "https://site.com/search?q=test");
+        expect(result).not.toBeNull();
+        expect(result).toContain("step 2");
+        expect(result).toContain("Navigate to search");
+        expect(result).toContain("update_plan()");
+    });
+});

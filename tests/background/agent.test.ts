@@ -29,6 +29,8 @@ mock.module("../../src/background/llm", () => ({
         switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "openrouter";
+        getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });
+        setFailoverCallback = mock(() => {});
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",

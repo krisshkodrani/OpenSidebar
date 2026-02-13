@@ -20,7 +20,7 @@ export interface ContextMetrics {
 }
 
 export interface PlanStatus {
-  subtasks: { description: string; status: string }[];
+  subtasks: { description: string; status: string; completedAtUrl?: string }[];
   currentIndex: number;
 }
 
@@ -116,8 +116,10 @@ export class ContextManager {
     this.storageKey = workspaceId ? `agent_context:${workspaceId}` : "agent_context";
   }
 
+  private capturedOverlays: string[] = [];
+
   public setPlanStatus(
-    subtasks: { description: string; status: string }[],
+    subtasks: { description: string; status: string; completedAtUrl?: string }[],
     currentIndex: number,
   ): void {
     this.planStatus = { subtasks, currentIndex };
@@ -132,24 +134,38 @@ export class ContextManager {
     const { subtasks, currentIndex } = this.planStatus;
     const total = subtasks.length;
 
+    // Helper: format a completed step line, appending URL path if available
+    const formatDoneLine = (s: typeof subtasks[number], i: number): string => {
+      let line = `  ${i + 1}. ${s.description} [done`;
+      if (s.completedAtUrl) {
+        try {
+          const u = new URL(s.completedAtUrl);
+          line += ` @ ${u.pathname}`;
+        } catch {
+          line += ` @ ${s.completedAtUrl}`;
+        }
+      }
+      line += "]";
+      return line;
+    };
+
     if (currentIndex >= total) {
       // All steps done
-      const lines = subtasks.map(
-        (s, i) => `  ${i + 1}. ${s.description} [done]`,
-      );
+      const lines = subtasks.map((s, i) => formatDoneLine(s, i));
       return `## Active Plan\nAll ${total} steps completed.\n${lines.join("\n")}\nCall done() now with a summary of everything accomplished.`;
     }
 
     const currentDesc = subtasks[currentIndex]?.description || "Unknown";
     const completedLines = subtasks
       .slice(0, currentIndex)
-      .map((s, i) => `  ${i + 1}. ${s.description} [done]`);
+      .map((s, i) => formatDoneLine(s, i));
     const nextStep =
       currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
 
     let block = `## Active Plan\nStep ${currentIndex + 1} of ${total}: "${currentDesc}"\n`;
     if (completedLines.length > 0) {
       block += `Completed:\n${completedLines.join("\n")}\n`;
+      block += `Do NOT navigate back to completed step URLs — this will destroy progress.\n`;
     }
     if (nextStep) {
       block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
@@ -160,6 +176,16 @@ export class ContextManager {
 
   public setSnapshot(snapshot: DomSnapshot) {
     this.snapshot = snapshot;
+    if (snapshot.capturedTexts && snapshot.capturedTexts.length > 0) {
+      // Append new texts, avoiding exact immediate duplicates if possible,
+      // but simple append is safer for now to preserve history.
+      // We limit to last 50 entries to avoid infinite growth.
+      this.capturedOverlays.push(...snapshot.capturedTexts);
+      if (this.capturedOverlays.length > 50) {
+        this.capturedOverlays = this.capturedOverlays.slice(-50);
+      }
+      this.saveState().catch(() => { });
+    }
   }
 
   public getSnapshot(): DomSnapshot | null {
@@ -389,6 +415,31 @@ export class ContextManager {
         content = content.replace(
           "## Viewport Text",
           warnings + "\n\n## Viewport Text",
+        );
+      }
+
+      // Archivist: surface text from persisted captured overlays
+      if (
+        this.capturedOverlays.length > 0
+      ) {
+        const archived = this.capturedOverlays
+          .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${t}`)
+          .join("\n\n");
+        content = content.replace(
+          "## Viewport Text",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Viewport Text`,
+        );
+      } else if (
+        // Fallback for immediate snapshot if persistence hasn't caught up (rare)
+        this.snapshot.capturedTexts &&
+        this.snapshot.capturedTexts.length > 0
+      ) {
+        const archived = this.snapshot.capturedTexts
+          .map((t, i) => `[Overlay ${i + 1}]: ${t}`)
+          .join("\n\n");
+        content = content.replace(
+          "## Viewport Text",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Viewport Text`,
         );
       }
 
@@ -690,6 +741,7 @@ export class ContextManager {
       if (data[this.storageKey]) {
         this.history = data[this.storageKey].history || [];
         this.planStatus = data[this.storageKey].planStatus || null;
+        this.capturedOverlays = data[this.storageKey].capturedOverlays || [];
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
           hasPlan: !!this.planStatus,
@@ -707,6 +759,7 @@ export class ContextManager {
         [this.storageKey]: {
           history: this.history,
           planStatus: this.planStatus,
+          capturedOverlays: this.capturedOverlays,
         },
       });
     } catch (e) {
@@ -718,6 +771,7 @@ export class ContextManager {
     this.history = [];
     this.snapshot = null;
     this.planStatus = null;
+    this.capturedOverlays = [];
     this.saveState().catch(() => { });
   }
 
@@ -733,6 +787,11 @@ export class ContextManager {
    */
   public restoreFromState(messages: LLMMessage[]) {
     this.history = [...messages];
+    // We don't overwrite capturedOverlays here because they should
+    // persist independently or be loaded via loadState().
+    // If we wanted to sync them from `savedState` (AgentLoopState),
+    // we'd need to add them to AgentLoopState too.
+    // For now, loadState() handles the session persistence, so we are good.
     this.saveState().catch(() => { });
     logger.info("agent", "Context restored from navigation state", {
       historyLength: this.history.length,

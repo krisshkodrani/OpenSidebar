@@ -186,9 +186,24 @@ export function findCloseButton(overlay: HTMLElement): HTMLElement | null {
 
 // --- Modal Dismissal ---
 
+/** Deduplication cache: prevents re-logging the same overlay text across calls */
+const _seenOverlayTexts = new Set<string>();
+
+/**
+ * Extract meaningful text from an overlay container before dismissal.
+ * Returns empty string if the overlay has no useful text.
+ */
+export function extractOverlayText(el: HTMLElement): string {
+  const raw = (el.innerText ?? el.textContent ?? "").trim();
+  if (!raw) return "";
+  // Truncate to avoid giant payloads
+  return raw.length > 2000 ? raw.slice(0, 2000) + "…" : raw;
+}
+
 interface DismissResult {
   dismissed: number;
   remainingOverlay: OverlayDescriptor | null;
+  capturedTexts: string[];
 }
 
 /**
@@ -200,6 +215,18 @@ interface DismissResult {
  */
 function autoDismissModals(): DismissResult {
   let dismissed = 0;
+  const capturedTexts: string[] = [];
+
+  /** Extract text, deduplicate, and log before dismissing */
+  function archiveOverlay(el: HTMLElement): void {
+    const text = extractOverlayText(el);
+    if (!text || _seenOverlayTexts.has(text)) return;
+    _seenOverlayTexts.add(text);
+    capturedTexts.push(text);
+    logger.info("tools", "Archived overlay text before dismissal", {
+      preview: text.slice(0, 120),
+    });
+  }
 
   // Phase A: Selector-based dismissal (existing logic, enhanced)
   const containers = document.querySelectorAll(
@@ -216,6 +243,9 @@ function autoDismissModals(): DismissResult {
       parseInt(style.zIndex, 10) > 100;
 
     if (!isOverlay) continue;
+
+    // Archive text BEFORE dismissing
+    archiveOverlay(el);
 
     // Try close button first, fall back to hiding
     const closeBtn = findCloseButton(el);
@@ -240,6 +270,11 @@ function autoDismissModals(): DismissResult {
   const coveringOverlays = detectViewportCoveringOverlays();
   for (const { el, coverage } of coveringOverlays) {
     if (!isElementVisible(el)) continue; // May have been hidden in Phase A
+
+    // Archive text BEFORE dismissing (skip pure backdrops — no useful text)
+    if (!isBackdropElement(el)) {
+      archiveOverlay(el);
+    }
 
     if (isBackdropElement(el)) {
       // Backdrop/scrim: just hide it
@@ -296,10 +331,11 @@ function autoDismissModals(): DismissResult {
         rect,
         coveragePercent: Math.round(top.coverage),
       },
+      capturedTexts,
     };
   }
 
-  return { dismissed, remainingOverlay: null };
+  return { dismissed, remainingOverlay: null, capturedTexts };
 }
 
 // --- Message Handler ---
@@ -320,6 +356,7 @@ chrome.runtime.onMessage.addListener(
         payload: {
           dismissed: result.dismissed,
           remainingOverlay: result.remainingOverlay,
+          capturedTexts: result.capturedTexts,
         },
       });
       return true;
@@ -330,9 +367,11 @@ chrome.runtime.onMessage.addListener(
         const start = performance.now();
 
         // Auto-dismiss overlays that block the viewport
+        let dismissedTexts: string[] = [];
         const overlays = detectViewportCoveringOverlays();
         if (overlays.length > 0) {
           const result = autoDismissModals();
+          dismissedTexts = result.capturedTexts;
           if (result.dismissed > 0) {
             await new Promise((r) => setTimeout(r, 50)); // DOM settle
           }
@@ -343,6 +382,11 @@ chrome.runtime.onMessage.addListener(
           message.payload.refresh,
           message.payload.showTags ?? false,
         );
+
+        // Archivist: attach captured overlay text to snapshot for LLM context
+        if (dismissedTexts.length > 0) {
+          snapshot.capturedTexts = dismissedTexts;
+        }
 
         // Detect survivors and attach to snapshot
         const survivors = detectViewportCoveringOverlays();

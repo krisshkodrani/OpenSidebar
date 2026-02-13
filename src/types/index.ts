@@ -285,6 +285,7 @@ export interface AgentTurnMessage extends BaseMessage {
   payload: {
     turn: number;
     maxTurns: number;
+    provider?: string;
   };
 }
 
@@ -308,6 +309,8 @@ export interface SubtaskSummary {
   turnsUsed: number;
   turnBudget: number;
   result?: string;
+  /** URL (origin+pathname) where this step was completed — used by navigate guard */
+  completedAtUrl?: string;
 }
 
 /** Background sends structured completion report when a task finishes */
@@ -924,6 +927,7 @@ export interface StuckState {
 export interface TurnProgress {
   turn: number;
   maxTurns: number;
+  provider?: string;
 }
 
 /** Top-level React state for the side panel */
@@ -1093,6 +1097,10 @@ export interface UserSettings {
   confirmPlan: boolean;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
+  /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
+  disableScreenshot: boolean;
+  /** Hide navigate from tools */
+  disableNavigation: boolean;
 }
 
 // --- Utility Types ---
@@ -1168,7 +1176,8 @@ export interface TraceEvent {
   | "plan_update"
   | "screenshot"
   | "stuck_signal"
-  | "circuit_breaker";
+  | "circuit_breaker"
+  | "navigate_blocked";
   timestamp: number;
   data: Record<string, unknown>;
 }

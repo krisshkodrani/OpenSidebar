@@ -109,6 +109,7 @@ export function initializeBridge(
         state.setTurnProgress({
           turn: message.payload.turn,
           maxTurns: message.payload.maxTurns,
+          provider: message.payload.provider,
         });
         break;
 

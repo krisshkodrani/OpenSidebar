@@ -582,26 +582,42 @@ function executeFindElement(args: { text: string }): {
   // check for a more specific interactive or cursor:pointer child containing the text
   if (!matched.matches(INTERACTIVE)) {
     const searchText = args.text.toLowerCase();
-    // First: check for an interactive child containing the text
-    const interactiveChild = matched.querySelector(INTERACTIVE);
-    if (
-      interactiveChild &&
-      interactiveChild.textContent?.toLowerCase().includes(searchText)
-    ) {
-      matched = interactiveChild;
+    // For form containers, prefer the input element directly
+    if (matched.tagName === "FORM") {
+      const formInput = matched.querySelector("input,textarea,select");
+      if (formInput) {
+        matched = formInput;
+      }
     } else {
-      // Second: check for cursor:pointer children containing the text
-      const children = matched.querySelectorAll("*");
-      for (const child of children) {
-        if (!child.textContent?.toLowerCase().includes(searchText)) continue;
-        try {
-          const style = window.getComputedStyle(child);
-          if (style.cursor === "pointer") {
-            matched = child;
-            break;
+      // Check all interactive children for one containing the text
+      const interactiveChildren = matched.querySelectorAll(INTERACTIVE);
+      let found = false;
+      for (const child of interactiveChildren) {
+        if (child.textContent?.toLowerCase().includes(searchText)) {
+          matched = child;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // Fallback: cursor:pointer children containing the text
+        const children = matched.querySelectorAll("*");
+        for (const child of children) {
+          if (!child.textContent?.toLowerCase().includes(searchText)) continue;
+          try {
+            const style = window.getComputedStyle(child);
+            if (style.cursor === "pointer") {
+              matched = child;
+              found = true;
+              break;
+            }
+          } catch {
+            // getComputedStyle can fail
           }
-        } catch {
-          // getComputedStyle can fail
+        }
+        // Last resort: if only one interactive child, use it
+        if (!found && interactiveChildren.length === 1) {
+          matched = interactiveChildren[0];
         }
       }
     }

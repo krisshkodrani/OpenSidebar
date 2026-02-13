@@ -1123,7 +1123,16 @@ export function registerTools() {
           world: "MAIN" as any,
           func: (c: string) => {
             try {
-              return String(eval(c));
+              const result = eval(c);
+              if (result === null || result === undefined) return String(result);
+              if (typeof result === "object") {
+                try {
+                  return JSON.stringify(result, null, 2);
+                } catch {
+                  return String(result);
+                }
+              }
+              return String(result);
             } catch (e: any) {
               return `Error: ${e.message}`;
             }
@@ -1131,7 +1140,7 @@ export function registerTools() {
           args: [code],
         });
         const value = results?.[0]?.result;
-        return value !== undefined ? String(value) : "undefined";
+        return value !== undefined ? value : "undefined";
       } catch (e: any) {
         return `Error executing JS: ${e.message}`;
       }

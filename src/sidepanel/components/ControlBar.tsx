@@ -62,6 +62,19 @@ export function ControlBar() {
         {isPaused ? "Paused" : detail}
       </span>
 
+      {turnProgress?.provider && (
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
+          turnProgress.provider === "cerebras"
+            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+            : turnProgress.provider === "groq"
+              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+              : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+        }`}>
+          {turnProgress.provider === "cerebras" ? "Cerebras"
+            : turnProgress.provider === "groq" ? "Groq" : "OpenRouter"}
+        </span>
+      )}
+
       {turnProgress && (
         <span className="text-warm-400 dark:text-warm-500 tabular-nums shrink-0">
           {turnProgress.turn}/{turnProgress.maxTurns}

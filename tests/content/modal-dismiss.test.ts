@@ -4,6 +4,7 @@ import {
     detectViewportCoveringOverlays,
     isBackdropElement,
     findCloseButton,
+    extractOverlayText,
 } from "../../src/content/content";
 
 // Mock viewport dimensions (happy-dom defaults to 0x0)
@@ -44,7 +45,7 @@ function setMockRect(el: Element, rect: Partial<DOMRect>) {
         left: rect.left ?? rect.x ?? 0,
         bottom: (rect.top ?? rect.y ?? 0) + (rect.height ?? 100),
         right: (rect.left ?? rect.x ?? 0) + (rect.width ?? 100),
-        toJSON: () => {},
+        toJSON: () => { },
     } as DOMRect;
     rectOverrides.set(el, full);
 }
@@ -346,5 +347,45 @@ describe("Snapshot-integrated overlay dismissal", () => {
         expect(snapshot.survivingOverlays).toBeDefined();
         expect(snapshot.survivingOverlays![0].tagId).toBe(42);
         expect(snapshot.survivingOverlays![0].coveragePercent).toBe(85);
+    });
+});
+
+describe("extractOverlayText", () => {
+    test("returns trimmed inner text", () => {
+        const el = document.createElement("div");
+        el.textContent = "  Important clue: the code is 42  ";
+        document.body.appendChild(el);
+        expect(extractOverlayText(el)).toBe("Important clue: the code is 42");
+    });
+
+    test("returns empty string for whitespace-only content", () => {
+        const el = document.createElement("div");
+        el.textContent = "   \n\t  ";
+        document.body.appendChild(el);
+        expect(extractOverlayText(el)).toBe("");
+    });
+
+    test("returns empty string for empty element", () => {
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        expect(extractOverlayText(el)).toBe("");
+    });
+
+    test("truncates text longer than 2000 chars", () => {
+        const el = document.createElement("div");
+        el.textContent = "A".repeat(3000);
+        document.body.appendChild(el);
+        const result = extractOverlayText(el);
+        expect(result.length).toBe(2001); // 2000 chars + "…"
+        expect(result.endsWith("…")).toBe(true);
+    });
+
+    test("does not truncate text at exactly 2000 chars", () => {
+        const el = document.createElement("div");
+        el.textContent = "B".repeat(2000);
+        document.body.appendChild(el);
+        const result = extractOverlayText(el);
+        expect(result.length).toBe(2000);
+        expect(result.endsWith("…")).toBe(false);
     });
 });
