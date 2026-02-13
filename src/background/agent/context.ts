@@ -19,6 +19,11 @@ export interface ContextMetrics {
   compressionLevel: CompressionLevel;
 }
 
+export interface PlanStatus {
+  subtasks: { description: string; status: string }[];
+  currentIndex: number;
+}
+
 const SYSTEM_PROMPT_TEMPLATE = `
 You are OpenSidebar, an autonomous browser agent.
 
@@ -34,6 +39,11 @@ Every turn, follow this cycle:
    - Match → state what to do next.
    - Mismatch → state what went wrong, then try a different approach.
 
+## Answering Questions
+If the user asks a question about the page (e.g. "what is this?", "describe...", "tell me about..."),
+answer it directly using done({"summary": "your answer"}) — do NOT start performing actions.
+Only begin acting on the page if the user asks you to DO something (click, fill, navigate, solve, etc.).
+
 ## Rules
 - Always include your Think reasoning WITH tool calls. Never call tools blindly.
 - After navigation or page change, re-read page state before acting.
@@ -44,15 +54,19 @@ Every turn, follow this cycle:
 - Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
 - Work autonomously — do not ask the user for permission between steps.
 
+{{planStatus}}
 ## Multi-Step Planning
-When the system provides a plan, follow it:
-1. Execute the current step.
-2. Call update_plan({subtasks: [...], currentIndex: N, lastResult: "what you did"}) to report completion.
-3. Move to the next step. Repeat until all steps are done.
-4. Only then call done() with a summary of everything accomplished.
+When an Active Plan is shown above:
+1. Focus ONLY on the current step. Ignore future steps.
+2. Execute the current step using the appropriate tool(s).
+3. When the step is done, call update_plan({subtasks, currentIndex: NEXT_INDEX, lastResult: "what you did"}).
+   - currentIndex = the 0-based index of the NEXT step to execute.
+   - lastResult = brief description of what you accomplished.
+4. The system will confirm and show the next step. Then execute it.
+5. Only call done() when ALL steps show as completed.
 
-If no plan is provided, the task is simple — act directly and call done() when finished.
-Do NOT treat individual step completion as task completion.
+If no Active Plan is shown, the task is simple — act directly and call done() when finished.
+Do NOT call done() until every planned step is complete.
 
 ## Tool Tips
 - type_text auto-focuses; pressEnter: true submits forms in one step.
@@ -94,9 +108,46 @@ export class ContextManager {
   private snapshot: DomSnapshot | null = null;
   private maxHistory = 20;
   private maxContextTokens: number;
+  private planStatus: PlanStatus | null = null;
 
   constructor(maxContextTokens: number = 32000) {
     this.maxContextTokens = maxContextTokens;
+  }
+
+  public setPlanStatus(subtasks: { description: string; status: string }[], currentIndex: number): void {
+    this.planStatus = { subtasks, currentIndex };
+  }
+
+  public clearPlanStatus(): void {
+    this.planStatus = null;
+  }
+
+  private formatPlanStatus(): string {
+    if (!this.planStatus) return "";
+    const { subtasks, currentIndex } = this.planStatus;
+    const total = subtasks.length;
+
+    if (currentIndex >= total) {
+      // All steps done
+      const lines = subtasks.map((s, i) => `  ${i + 1}. ${s.description} [done]`);
+      return `## Active Plan\nAll ${total} steps completed.\n${lines.join("\n")}\nCall done() now with a summary of everything accomplished.`;
+    }
+
+    const currentDesc = subtasks[currentIndex]?.description || "Unknown";
+    const completedLines = subtasks
+      .slice(0, currentIndex)
+      .map((s, i) => `  ${i + 1}. ${s.description} [done]`);
+    const nextStep = currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
+
+    let block = `## Active Plan\nStep ${currentIndex + 1} of ${total}: "${currentDesc}"\n`;
+    if (completedLines.length > 0) {
+      block += `Completed:\n${completedLines.join("\n")}\n`;
+    }
+    if (nextStep) {
+      block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
+    }
+    block += `Execute the current step now. Call update_plan() when done to advance.`;
+    return block;
   }
 
   public setSnapshot(snapshot: DomSnapshot) {
@@ -310,12 +361,14 @@ export class ContextManager {
         viewportText = viewportText.slice(0, 3000);
       }
       content = content.replace("{{viewportText}}", viewportText);
+      content = content.replace("{{planStatus}}", this.formatPlanStatus());
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
       content = content.replace("{{viewportText}}", "");
+      content = content.replace("{{planStatus}}", this.formatPlanStatus());
     }
 
     return {
@@ -376,7 +429,10 @@ export class ContextManager {
     const textTokens = Math.ceil(
       (this.snapshot.viewportText || "").length / 4,
     );
-    const baseTokens = 550; // ~fixed template overhead (expanded prompt + planning section)
+    const planTokens = this.planStatus
+      ? Math.ceil(this.formatPlanStatus().length / 4)
+      : 0;
+    const baseTokens = 550 + planTokens; // ~fixed template overhead + active plan section
     const historyTokens = this.history.reduce(
       (sum, msg) => sum + this.estimateMessageTokens(msg),
       0,
@@ -527,8 +583,10 @@ export class ContextManager {
       const data = await chrome.storage.session.get("agent_context");
       if (data.agent_context) {
         this.history = data.agent_context.history || [];
+        this.planStatus = data.agent_context.planStatus || null;
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
+          hasPlan: !!this.planStatus,
         });
       }
     } catch (e) {
@@ -541,6 +599,7 @@ export class ContextManager {
       await chrome.storage.session.set({
         agent_context: {
           history: this.history,
+          planStatus: this.planStatus,
         },
       });
     } catch (e) {
@@ -551,6 +610,7 @@ export class ContextManager {
   public clear() {
     this.history = [];
     this.snapshot = null;
+    this.planStatus = null;
     this.saveState().catch(() => {});
   }
 
