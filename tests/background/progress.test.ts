@@ -211,4 +211,104 @@ describe("ProgressTracker", () => {
     const signal = tracker.onSnapshotRefresh(snap);
     expect(signal).toBeNull();
   });
+
+  it("URL-only change halves stale count instead of resetting", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    // Build up 4 stale turns on same URL + same content
+    for (let i = 0; i < 4; i++) {
+      tracker.onSnapshotRefresh(snap1);
+    }
+    // staleTurns = 4
+
+    // Navigate to different URL with same content → halve to 2
+    const snap2 = makeSnap({ url: "https://other.com" });
+    const signal = tracker.onSnapshotRefresh(snap2);
+    expect(signal).toBeNull();
+
+    // Now 4 more stale turns on new URL should nudge at staleTurns = 6
+    // (2 carried over + 4 new = 6)
+    for (let i = 0; i < 3; i++) {
+      expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    }
+    const nudge = tracker.onSnapshotRefresh(snap2); // staleTurns = 2+4 = 6
+    expect(nudge).not.toBeNull();
+    expect(nudge!.type).toBe("nudge");
+  });
+
+  it("content change still fully resets stale count to 0", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    // Build up 5 stale turns
+    for (let i = 0; i < 5; i++) {
+      tracker.onSnapshotRefresh(snap1);
+    }
+
+    // Content change on different URL → full reset
+    const snap2 = makeSnap({
+      url: "https://other.com",
+      elements: [
+        {
+          tag: 2,
+          tagName: "input",
+          role: "textbox",
+          text: "Different element",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 200, height: 30 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+
+    // 5 more stale turns should NOT trigger nudge (counter was reset to 0)
+    for (let i = 0; i < 5; i++) {
+      expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    }
+  });
+
+  it("URL change does not prevent eventual nudge/escalate if content stays stale", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    // Build stale turns, periodically changing URL with same content
+    // This simulates navigating away and back with no real progress
+    for (let i = 0; i < 5; i++) {
+      tracker.onSnapshotRefresh(snap1); // staleTurns 1-5
+    }
+    // staleTurns = 5, navigate away → halve to 2
+    const snapOther = makeSnap({ url: "https://other.com" });
+    tracker.onSnapshotRefresh(snapOther);
+    // staleTurns = 2, navigate back → halve to 1
+    tracker.onSnapshotRefresh(snap1);
+    // staleTurns = 1, keep going stale on same URL
+    for (let i = 0; i < 4; i++) {
+      tracker.onSnapshotRefresh(snap1); // staleTurns 2-5
+    }
+    const signal = tracker.onSnapshotRefresh(snap1); // staleTurns = 6 → nudge
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe("nudge");
+  });
+
+  it("URL-only change does not count as content change (fingerprint excludes URL)", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    // Same content, different URL — should NOT fully reset stale count
+    const snap2 = makeSnap({ url: "https://different.com" });
+
+    // Build 10 stale turns
+    for (let i = 0; i < 10; i++) {
+      tracker.onSnapshotRefresh(snap1);
+    }
+    // staleTurns = 10, URL change halves to 5
+    tracker.onSnapshotRefresh(snap2);
+    // 1 more stale → staleTurns = 6 → nudge
+    const signal = tracker.onSnapshotRefresh(snap2);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe("nudge");
+  });
 });

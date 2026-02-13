@@ -8,10 +8,14 @@ The agent loop is the core orchestration engine that runs in the service worker.
 
 **Files:**
 
+- `constants.ts` - Centralized configuration constants (thresholds, limits, string lengths)
 - `loop.ts` - Main `AgentLoop` class
 - `context.ts` - `ContextManager` for conversation history
 - `progress.ts` - `ProgressTracker` for stuck detection via snapshot fingerprinting
 - `step-labels.ts` - Human-readable step label generation for `AgentStep` timeline
+- `executor.ts` - Tool execution logic (parallel/sequential strategies)
+- `guardian.ts` - `PlanGuardian` for task decomposition and completion validation
+- `tool-recovery.ts` - Extract tool calls from plain text LLM responses
 
 ## AgentLoop Class
 
@@ -44,6 +48,53 @@ class AgentLoop {
   resume(): void;
   isPaused(): boolean;
 }
+```
+
+## Agent Loop Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant SidePanel
+    participant AgentLoop
+    participant LLM
+    participant Tools
+    participant ContentScript
+    participant ContextManager
+
+    User->>SidePanel: Send message
+    SidePanel->>AgentLoop: USER_CHAT
+    AgentLoop->>ContextManager: Add user message
+
+    rect rgb(240, 248, 255)
+        Note over AgentLoop,LLM: Think Phase
+        AgentLoop->>ContextManager: getPrompt()
+        ContextManager-->>AgentLoop: Messages with context
+        AgentLoop->>LLM: completeStream()
+        LLM-->>AgentLoop: Stream deltas
+        AgentLoop->>SidePanel: STREAM_CHUNK
+    end
+
+    alt Has tool calls
+        rect rgb(255, 248, 240)
+            Note over AgentLoop,Tools: Act Phase
+            AgentLoop->>Tools: Execute tool(s)
+            Tools->>ContentScript: TOOL_EXECUTE
+            ContentScript-->>Tools: TOOL_RESULT
+            Tools-->>AgentLoop: Result
+            AgentLoop->>ContextManager: Add tool result
+        end
+
+        alt done() called
+            AgentLoop->>SidePanel: TASK_COMPLETION
+            AgentLoop->>SidePanel: AGENT_STATUS(IDLE)
+        else More turns needed
+            AgentLoop->>AgentLoop: Next iteration
+        end
+    else Text only
+        AgentLoop->>SidePanel: STREAM_CHUNK(done=true)
+        AgentLoop->>SidePanel: AGENT_STATUS(IDLE)
+    end
 ```
 
 ### Lifecycle
@@ -404,15 +455,18 @@ The agent loop operates in a single unified mode that combines the best behavior
 
 ## Key Files
 
-| File                                  | Purpose                       |
-| ------------------------------------- | ----------------------------- |
-| `src/background/agent/loop.ts`        | AgentLoop class               |
-| `src/background/agent/context.ts`     | ContextManager                |
-| `src/background/agent/progress.ts`    | ProgressTracker               |
-| `src/background/agent/step-labels.ts` | Step label generation         |
-| `src/background/llm/client.ts`        | LLM API client                |
-| `src/background/streaming.ts`         | SSE parser                    |
-| `src/background/tools/index.ts`       | Tool definitions (21 tools)   |
-| `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)   |
-| `src/background/vision.ts`            | Vision LLM bridge             |
-| `src/background/security.ts`          | Risk classification           |
+| File                                  | Purpose                              |
+| ------------------------------------- | ------------------------------------ |
+| `src/background/agent/loop.ts`        | AgentLoop class - main orchestration |
+| `src/background/agent/constants.ts`   | Centralized configuration constants  |
+| `src/background/agent/executor.ts`    | Tool execution (parallel/sequential) |
+| `src/background/agent/context.ts`     | ContextManager - sliding window      |
+| `src/background/agent/progress.ts`    | ProgressTracker - stuck detection    |
+| `src/background/agent/guardian.ts`    | PlanGuardian - task decomposition    |
+| `src/background/agent/step-labels.ts` | Step label generation                |
+| `src/background/llm/client.ts`        | LLM API client                       |
+| `src/background/streaming.ts`         | SSE parser                           |
+| `src/background/tools/index.ts`       | Tool definitions (22 tools)          |
+| `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
+| `src/background/vision.ts`            | Vision LLM bridge                    |
+| `src/background/security.ts`          | Risk classification                  |

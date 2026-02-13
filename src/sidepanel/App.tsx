@@ -1,15 +1,29 @@
+/**
+ * OpenSidebar - Side Panel UI
+ *
+ * React 18 + Tailwind CSS UI rendered in Chrome's side panel.
+ * Handles user input, displays agent responses, and shows status updates.
+ *
+ * Communication: Receives messages from background via chrome.runtime.onMessage
+ * State: Managed via Zustand store
+ */
+
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { X, Sparkles } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
-import { Header, MessageBubble, InputArea, ControlBar, StuckBanner, TaskProgressPanel, MetricsBar } from "./components";
-import { SettingsDrawer } from "./components/SettingsDrawer";
 import {
-  AgentStatus,
-  MessageSource,
-  ChatEntry,
-} from "../types";
+  Header,
+  MessageBubble,
+  InputArea,
+  ControlBar,
+  StuckBanner,
+  TaskProgressPanel,
+  MetricsBar,
+} from "./components";
+import { SettingsDrawer } from "./components/SettingsDrawer";
+import { AgentStatus, MessageSource, ChatEntry } from "../types";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -110,7 +124,9 @@ export default function App() {
       onClose: (windowId) => {
         chrome.windows.getCurrent().then((currentWindow) => {
           if (currentWindow.id === windowId) {
-            logger.info("ui", "Received close request from background", { windowId });
+            logger.info("ui", "Received close request from background", {
+              windowId,
+            });
             globalThis.close();
           }
         });
@@ -266,9 +282,13 @@ export default function App() {
       <div className="flex flex-col items-center justify-center h-full bg-warm-50 dark:bg-warm-900">
         <div className="animate-pulse flex flex-col items-center gap-3">
           <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-            <span className="text-white font-bold text-xl tracking-tight">OS</span>
+            <span className="text-white font-bold text-xl tracking-tight">
+              OS
+            </span>
           </div>
-          <span className="text-xs text-warm-400 dark:text-warm-500">Loading...</span>
+          <span className="text-xs text-warm-400 dark:text-warm-500">
+            Loading...
+          </span>
         </div>
       </div>
     );
@@ -310,7 +330,9 @@ export default function App() {
                 <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg mb-3 flex items-center justify-center mx-auto">
                   <Sparkles size={20} className="text-primary-500" />
                 </div>
-                <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">Welcome to OpenSidebar</h2>
+                <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                  Welcome to OpenSidebar
+                </h2>
                 <p className="text-sm text-warm-500 dark:text-warm-400 mb-4">
                   Ask me to browse, research, or automate tasks.
                 </p>
@@ -335,9 +357,15 @@ export default function App() {
 
       <div className="flex flex-col shrink-0 glass-surface z-20 border-t border-warm-200 dark:border-warm-800 shadow-glass">
         <ControlBar />
-        {settings.showSessionMetrics && sessionMetrics && <MetricsBar metrics={sessionMetrics} />}
+        {settings.showSessionMetrics && sessionMetrics && (
+          <MetricsBar metrics={sessionMetrics} />
+        )}
         <TaskProgressPanel />
-        <InputArea onSend={handleSend} onSendHint={handleSendHint} onStop={handleStop} />
+        <InputArea
+          onSend={handleSend}
+          onSendHint={handleSendHint}
+          onStop={handleStop}
+        />
       </div>
 
       {screenshot && (

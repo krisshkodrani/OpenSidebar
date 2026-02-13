@@ -78,15 +78,28 @@ function createThinkFilter(emit: (text: string) => void) {
       }
     },
     flush() {
-      if (!inside && buf) { emit(buf); buf = ""; }
+      if (!inside && buf) {
+        emit(buf);
+        buf = "";
+      }
     },
   };
 }
+
+/**
+ * LLM Client for OpenSidebar
+ * Handles communication with OpenRouter API, including streaming and retry logic
+ */
 
 export class LLMClient {
   private apiKey: string;
   private model: string;
 
+  /**
+   * Creates a new LLM client
+   * @param apiKey - OpenRouter API key
+   * @param model - Model ID to use (defaults to MODEL_FAST)
+   */
   constructor(apiKey: string, model: string = MODEL_FAST) {
     this.apiKey = apiKey;
     this.model = model;
@@ -99,7 +112,10 @@ export class LLMClient {
 
   /** Switch the active model (e.g. for escalation). Mutates in place. */
   public switchModel(model: string): void {
-    logger.info("agent", "Switching LLM model", { from: this.model, to: model });
+    logger.info("agent", "Switching LLM model", {
+      from: this.model,
+      to: model,
+    });
     this.model = model;
   }
 
@@ -130,8 +146,7 @@ export class LLMClient {
       }
       if (attempt < maxRetries) {
         const delay =
-          1000 * Math.pow(2, attempt - 1) +
-          Math.floor(Math.random() * 300);
+          1000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 300);
         logger.warn(
           "agent",
           `LLM request failed, retrying ${attempt}/${maxRetries}`,
@@ -191,7 +206,7 @@ export class LLMClient {
           const err = new Error(
             affordable > 0
               ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
-              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`
+              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
@@ -232,7 +247,9 @@ export class LLMClient {
 
       // Strip reasoning tokens (<think>...</think>) that some models emit inline
       const rawContent = choice.message.content;
-      const cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+      const cleanContent = rawContent
+        ? stripThinkTags(rawContent) || null
+        : null;
 
       return {
         role: "assistant",
@@ -247,6 +264,14 @@ export class LLMClient {
     }
   }
 
+  /**
+   * Executes a streaming LLM completion request.
+   * Handles SSE parsing, think tag filtering, and automatic retries.
+   *
+   * @param request - Completion request with messages, tools, and options
+   * @param onTextDelta - Callback for each text chunk received
+   * @returns Complete response with parsed tool calls and usage data
+   */
   async completeStream(
     request: CompletionRequest,
     onTextDelta: (delta: string) => void,
@@ -299,7 +324,7 @@ export class LLMClient {
           const err = new Error(
             affordable > 0
               ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
-              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`
+              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
@@ -314,7 +339,11 @@ export class LLMClient {
 
       // Wrap callback to suppress <think>...</think> reasoning blocks during streaming
       const thinkFilter = createThinkFilter(onTextDelta);
-      const result = await parseSSEStream(response.body, thinkFilter.push, request.signal);
+      const result = await parseSSEStream(
+        response.body,
+        thinkFilter.push,
+        request.signal,
+      );
       thinkFilter.flush();
 
       // Preserve raw content (with <think> blocks) for conversation history —
