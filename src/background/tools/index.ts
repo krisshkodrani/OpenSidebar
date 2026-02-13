@@ -23,6 +23,37 @@ export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: numb
   visionUsageCallback = cb;
 }
 
+/** Callback for passing screenshot thumbnails to the agent loop. Set by AgentLoop before starting. */
+let screenshotCaptureCallback: ((thumbnailDataUrl: string) => void) | null = null;
+
+export function setScreenshotCaptureCallback(cb: ((thumbnailDataUrl: string) => void) | null): void {
+  screenshotCaptureCallback = cb;
+}
+
+/** Downsize a full-res screenshot data URL to a ~320px wide JPEG thumbnail. */
+async function createThumbnail(dataUrl: string): Promise<string> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const bitmap = await createImageBitmap(blob);
+
+  const MAX_WIDTH = 320;
+  const scale = Math.min(1, MAX_WIDTH / bitmap.width);
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+
+  const thumbBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.5 });
+  const arrayBuf = await thumbBlob.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return `data:image/jpeg;base64,${btoa(binary)}`;
+}
+
 // --- Tool Definitions ---
 
 const CLICK_DEF: ToolDefinition = {
@@ -750,6 +781,17 @@ export function registerTools() {
           format: "jpeg",
           quality: 40,
         });
+
+        // Generate thumbnail and fire callback (before vision LLM call)
+        if (screenshotCaptureCallback) {
+          try {
+            const thumbnailUrl = await createThumbnail(dataUrl);
+            screenshotCaptureCallback(thumbnailUrl);
+          } catch (e) {
+            logger.warn("tools", "Thumbnail generation failed", { error: e });
+          }
+        }
+
         const result = await describeScreenshot(dataUrl, signal);
         // Report vision usage to the agent loop if callback is registered
         if (result.usage && result.model && result.durationMs != null && visionUsageCallback) {
