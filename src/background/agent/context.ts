@@ -114,7 +114,10 @@ export class ContextManager {
     this.maxContextTokens = maxContextTokens;
   }
 
-  public setPlanStatus(subtasks: { description: string; status: string }[], currentIndex: number): void {
+  public setPlanStatus(
+    subtasks: { description: string; status: string }[],
+    currentIndex: number,
+  ): void {
     this.planStatus = { subtasks, currentIndex };
   }
 
@@ -129,7 +132,9 @@ export class ContextManager {
 
     if (currentIndex >= total) {
       // All steps done
-      const lines = subtasks.map((s, i) => `  ${i + 1}. ${s.description} [done]`);
+      const lines = subtasks.map(
+        (s, i) => `  ${i + 1}. ${s.description} [done]`,
+      );
       return `## Active Plan\nAll ${total} steps completed.\n${lines.join("\n")}\nCall done() now with a summary of everything accomplished.`;
     }
 
@@ -137,7 +142,8 @@ export class ContextManager {
     const completedLines = subtasks
       .slice(0, currentIndex)
       .map((s, i) => `  ${i + 1}. ${s.description} [done]`);
-    const nextStep = currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
+    const nextStep =
+      currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
 
     let block = `## Active Plan\nStep ${currentIndex + 1} of ${total}: "${currentDesc}"\n`;
     if (completedLines.length > 0) {
@@ -178,6 +184,18 @@ export class ContextManager {
     );
   }
 
+  /**
+   * Builds the LLM prompt with sliding window context management.
+   *
+   * Algorithm:
+   * 1. Reserve output tokens (1000) for LLM response
+   * 2. Always preserve the first user message (Goal Amnesia Prevention)
+   * 3. Fill remaining budget with most recent messages from the end
+   * 4. Group tool results with their corresponding assistant messages
+   * 5. Sanitize: drop orphaned tool results whose assistant was dropped
+   *
+   * @returns Array of messages ready for LLM consumption
+   */
   public getPrompt(): LLMMessage[] {
     const systemMessage = this.constructSystemMessage();
 
@@ -275,22 +293,26 @@ export class ContextManager {
       }
     }
 
-    const sanitized = finalMessages.filter(msg => {
-      // Drop tool results without a matching assistant tool_call
-      if (msg.role === "tool" && msg.tool_call_id) {
-        return toolCallIdsInPrompt.has(msg.tool_call_id);
-      }
-      return true;
-    }).map(msg => {
-      // Strip tool_calls from assistant if ANY result is missing
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        const allResultsPresent = msg.tool_calls.every(tc => toolResultIdsInPrompt.has(tc.id));
-        if (!allResultsPresent) {
-          return { ...msg, tool_calls: undefined };
+    const sanitized = finalMessages
+      .filter((msg) => {
+        // Drop tool results without a matching assistant tool_call
+        if (msg.role === "tool" && msg.tool_call_id) {
+          return toolCallIdsInPrompt.has(msg.tool_call_id);
         }
-      }
-      return msg;
-    });
+        return true;
+      })
+      .map((msg) => {
+        // Strip tool_calls from assistant if ANY result is missing
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          const allResultsPresent = msg.tool_calls.every((tc) =>
+            toolResultIdsInPrompt.has(tc.id),
+          );
+          if (!allResultsPresent) {
+            return { ...msg, tool_calls: undefined };
+          }
+        }
+        return msg;
+      });
 
     return sanitized;
   }
@@ -352,11 +374,20 @@ export class ContextManager {
       );
 
       // Surviving overlay warnings (overlays that auto-dismissal couldn't remove)
-      if (this.snapshot.survivingOverlays && this.snapshot.survivingOverlays.length > 0) {
+      if (
+        this.snapshot.survivingOverlays &&
+        this.snapshot.survivingOverlays.length > 0
+      ) {
         const warnings = this.snapshot.survivingOverlays
-          .map(o => `WARNING: Overlay [${o.tagId}] covers ${o.coveragePercent}% of viewport — use click_element or hide_element to dismiss.`)
+          .map(
+            (o) =>
+              `WARNING: Overlay [${o.tagId}] covers ${o.coveragePercent}% of viewport — use click_element or hide_element to dismiss.`,
+          )
           .join("\n");
-        content = content.replace("## Viewport Text", warnings + "\n\n## Viewport Text");
+        content = content.replace(
+          "## Viewport Text",
+          warnings + "\n\n## Viewport Text",
+        );
       }
 
       // Viewport text — dynamic with compression level
@@ -434,9 +465,7 @@ export class ContextManager {
       const line = `[${el.tag}] ${el.tagName}${hasId} ${otherAttrs} "${el.text}"${role}`;
       return sum + Math.ceil(line.length / 4);
     }, 0);
-    const textTokens = Math.ceil(
-      (this.snapshot.viewportText || "").length / 4,
-    );
+    const textTokens = Math.ceil((this.snapshot.viewportText || "").length / 4);
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)
       : 0;
@@ -446,8 +475,7 @@ export class ContextManager {
       0,
     );
 
-    const totalEstimate =
-      baseTokens + elemTokens + textTokens + historyTokens;
+    const totalEstimate = baseTokens + elemTokens + textTokens + historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
     if (utilization < 0.5) return CompressionLevel.NONE;
@@ -456,9 +484,13 @@ export class ContextManager {
     return CompressionLevel.HEAVY;
   }
 
+  /** Maximum items shown per group before collapsing the rest into a summary. */
+  private static readonly GROUP_COLLAPSE_THRESHOLD = 8;
+
   /**
    * Apply compression to elements based on current level.
-   * Returns a formatted element list string.
+   * Groups elements by semantic category (inputs, buttons, links, other)
+   * and collapses excess items in large groups to reduce noise.
    */
   private formatElementsWithCompression(
     elements: TaggedElement[],
@@ -471,30 +503,95 @@ export class ContextManager {
       processed = this.selectRelevantElements(elements, 10);
     }
 
-    return processed
-      .map((el) => {
-        let text = el.text;
-        let attrFilter: ((k: string) => boolean) | null = null;
+    // Determine text/attr compression per level
+    const textLimit =
+      level === CompressionLevel.HEAVY
+        ? 15
+        : level === CompressionLevel.MEDIUM
+          ? 20
+          : level === CompressionLevel.LIGHT
+            ? 40
+            : Infinity;
+    const attrFilter: ((k: string) => boolean) | null =
+      level === CompressionLevel.HEAVY
+        ? (k) => ["role", "type", "description"].includes(k)
+        : level === CompressionLevel.MEDIUM
+          ? (k) =>
+            ["id", "role", "type", "href", "label", "description"].includes(k)
+          : null;
 
-        switch (level) {
-          case CompressionLevel.NONE:
-            break;
-          case CompressionLevel.LIGHT:
-            text = text.slice(0, 40);
-            break;
-          case CompressionLevel.MEDIUM:
-            attrFilter = (k) => ["id", "role", "type", "href", "label", "description"].includes(k);
-            text = text.slice(0, 20);
-            break;
-          case CompressionLevel.HEAVY:
-            attrFilter = (k) => ["role", "type", "description"].includes(k);
-            text = text.slice(0, 15);
-            break;
-        }
+    // Categorize elements into semantic groups
+    const groups = this.groupElementsByCategory(processed);
+    const sections: string[] = [];
 
+    for (const { label, items } of groups) {
+      if (items.length === 0) continue;
+
+      const formatted = items.map((el) => {
+        const text =
+          textLimit === Infinity ? el.text : el.text.slice(0, textLimit);
         return this.formatElementCompact(el, text, attrFilter);
-      })
-      .join("\n");
+      });
+
+      // Collapse large groups: show first N items + summary of the rest
+      const threshold = ContextManager.GROUP_COLLAPSE_THRESHOLD;
+      if (items.length > threshold) {
+        const shown = formatted.slice(0, threshold);
+        const collapsed = items.slice(threshold);
+        const sampleLabels = [
+          ...new Set(collapsed.map((el) => el.text.slice(0, 20))),
+        ].slice(0, 4);
+        shown.push(
+          `  ... and ${collapsed.length} more (${sampleLabels.join(", ")}, ...)`,
+        );
+        sections.push(`${label} (${items.length}):\n${shown.join("\n")}`);
+      } else {
+        sections.push(`${label} (${items.length}):\n${formatted.join("\n")}`);
+      }
+    }
+
+    return sections.join("\n\n");
+  }
+
+  /**
+   * Group elements into semantic categories for structured display.
+   * Order: inputs/forms first (most actionable), then buttons, links, other.
+   */
+  private groupElementsByCategory(
+    elements: TaggedElement[],
+  ): { label: string; items: TaggedElement[] }[] {
+    const inputs: TaggedElement[] = [];
+    const buttons: TaggedElement[] = [];
+    const links: TaggedElement[] = [];
+    const other: TaggedElement[] = [];
+
+    for (const el of elements) {
+      if (
+        ["input", "textarea", "select"].includes(el.tagName) ||
+        el.role === "textbox" ||
+        el.role === "combobox" ||
+        el.role === "searchbox"
+      ) {
+        inputs.push(el);
+      } else if (
+        el.tagName === "button" ||
+        el.role === "button" ||
+        (el.attributes.type === "submit" || el.attributes.type === "button")
+      ) {
+        buttons.push(el);
+      } else if (el.tagName === "a" || el.role === "link") {
+        links.push(el);
+      } else {
+        other.push(el);
+      }
+    }
+
+    return [
+      { label: "Inputs & Forms", items: inputs },
+      { label: "Buttons", items: buttons },
+      { label: "Links & Navigation", items: links },
+      { label: "Other", items: other },
+    ];
   }
 
   /**
@@ -520,8 +617,7 @@ export class ContextManager {
     }
 
     // Role: only show when different from tagName
-    const role =
-      el.role && el.role !== el.tagName ? ` (${el.role})` : "";
+    const role = el.role && el.role !== el.tagName ? ` (${el.role})` : "";
     const disabled = el.isDisabled ? " [disabled]" : "";
     const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
 
@@ -619,14 +715,14 @@ export class ContextManager {
     this.history = [];
     this.snapshot = null;
     this.planStatus = null;
-    this.saveState().catch(() => {});
+    this.saveState().catch(() => { });
   }
 
   /** Clear conversation history but keep the current DOM snapshot intact.
    *  Used between subtasks so page state carries over. */
   public clearHistory() {
     this.history = [];
-    this.saveState().catch(() => {});
+    this.saveState().catch(() => { });
   }
 
   /**
@@ -634,7 +730,7 @@ export class ContextManager {
    */
   public restoreFromState(messages: LLMMessage[]) {
     this.history = [...messages];
-    this.saveState().catch(() => {});
+    this.saveState().catch(() => { });
     logger.info("agent", "Context restored from navigation state", {
       historyLength: this.history.length,
     });

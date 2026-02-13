@@ -70,6 +70,8 @@ export enum RiskLevel {
 export enum ScrollDirection {
   UP = "up",
   DOWN = "down",
+  TOP = "top",
+  BOTTOM = "bottom",
 }
 
 // --- Core Message Types ---
@@ -906,11 +908,11 @@ export interface MemoryWorkerMessage extends BaseMessage {
   type: "MEMORY_WORKER";
   source: MessageSource.BACKGROUND;
   payload:
-    | { action: "init" }
-    | { action: "add"; content: string; category: string; sourceUrl: string }
-    | { action: "search"; query: string; limit: number }
-    | { action: "delete"; id: string }
-    | { action: "clear" };
+  | { action: "init" }
+  | { action: "add"; content: string; category: string; sourceUrl: string }
+  | { action: "search"; query: string; limit: number }
+  | { action: "delete"; id: string }
+  | { action: "clear" };
 }
 
 /** Responses from the memory worker back to the service worker */
@@ -918,11 +920,11 @@ export interface MemoryWorkerResponse extends BaseMessage {
   type: "MEMORY_WORKER_RESPONSE";
   source: MessageSource.OFFSCREEN;
   payload:
-    | { action: "init"; success: boolean; error?: string }
-    | { action: "add"; success: boolean; id: string; error?: string }
-    | { action: "search"; results: MemorySearchResult[]; error?: string }
-    | { action: "delete"; success: boolean; error?: string }
-    | { action: "clear"; success: boolean; error?: string };
+  | { action: "init"; success: boolean; error?: string }
+  | { action: "add"; success: boolean; id: string; error?: string }
+  | { action: "search"; results: MemorySearchResult[]; error?: string }
+  | { action: "delete"; success: boolean; error?: string }
+  | { action: "clear"; success: boolean; error?: string };
 }
 
 /** A row from the SQLite FTS5 table */
@@ -942,15 +944,15 @@ export interface Workspace {
   id: string;
   name: string;
   color:
-    | "grey"
-    | "blue"
-    | "red"
-    | "yellow"
-    | "green"
-    | "pink"
-    | "purple"
-    | "cyan"
-    | "orange";
+  | "grey"
+  | "blue"
+  | "red"
+  | "yellow"
+  | "green"
+  | "pink"
+  | "purple"
+  | "cyan"
+  | "orange";
   tabGroupId: number | null;
   tabIds: number[];
 }

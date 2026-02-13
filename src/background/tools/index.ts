@@ -450,14 +450,14 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.UPDATE_PLAN,
-    description: "Report your task plan and progress. Call on turn 1 for multi-step tasks, and again when each subtask completes.",
+    description: "Report task progress or REVISE the plan if the current one is failing. Call after each subtask.",
     parameters: {
       type: "object",
       properties: {
         subtasks: {
           type: "array",
           items: { type: "string" },
-          description: "Ordered list of subtask descriptions.",
+          description: "Ordered list of subtask descriptions. You may overwrite the future steps if the current plan is stuck.",
         },
         currentIndex: {
           type: "integer",
@@ -466,6 +466,10 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
         lastResult: {
           type: "string",
           description: "Brief result of the last completed subtask.",
+        },
+        rationale: {
+          type: "string",
+          description: "Required if changing the plan: Explain WHY you are modifying the subtasks (e.g., 'Current approach failed because...').",
         },
       },
       required: ["subtasks", "currentIndex"],

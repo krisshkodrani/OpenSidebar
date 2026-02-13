@@ -198,7 +198,7 @@ export function addDynamicTag(el: Element): number {
 }
 
 /**
- * Recursively query elements through Shadow DOM boundaries
+ * Recursively query elements through Shadow DOM and iframe boundaries
  */
 export function querySelectorAllDeep(
   root: Document | ShadowRoot | Element,
@@ -221,6 +221,7 @@ export function querySelectorAllDeep(
     const allElements = root.querySelectorAll("*");
 
     for (const el of allElements) {
+      // Shadow DOM traversal
       if (el.shadowRoot) {
         try {
           const shadowResults = querySelectorAllDeep(
@@ -246,9 +247,27 @@ export function querySelectorAllDeep(
           continue;
         }
       }
+
+      // Same-origin iframe traversal
+      if (el.tagName === "IFRAME") {
+        try {
+          const iframeDoc = (el as HTMLIFrameElement).contentDocument;
+          if (iframeDoc) {
+            const iframeResults = querySelectorAllDeep(
+              iframeDoc,
+              selector,
+              depth + 1,
+            );
+            results.push(...iframeResults);
+          }
+        } catch (_e) {
+          // Cross-origin iframe — silently skip
+          continue;
+        }
+      }
     }
   } catch (e) {
-    logger.warn("content", "Shadow DOM query failed", { error: e });
+    logger.warn("content", "Deep DOM query failed", { error: e });
   }
 
   return [...new Set(results)];
@@ -614,21 +633,51 @@ function extractAttributes(el: Element): Record<string, string> {
     }
   }
 
+  // Visual style hints (color) for disambiguation
+  try {
+    const style = window.getComputedStyle(el);
+    const bg = style.backgroundColor;
+    // Only emit non-trivial backgrounds (skip transparent/rgba(0,0,0,0))
+    if (
+      bg &&
+      bg !== "rgba(0, 0, 0, 0)" &&
+      bg !== "transparent"
+    ) {
+      attrs["bg-color"] = bg;
+    }
+    const fg = style.color;
+    if (fg) attrs["text-color"] = fg;
+  } catch {
+    // getComputedStyle can fail for detached elements
+  }
+
   return attrs;
 }
 
 /**
  * Detect random hash/generated ID strings that waste tokens.
+ * Tuned to preserve short, stable suffixes (e.g., "row-1a2b") while
+ * still catching Webpack/Vite chunk hashes and CSS-module suffixes.
  */
 export function isRandomHash(value: string): boolean {
+  // Double-underscore suffixes are almost always CSS-module / build-tool noise
   if (/__[a-zA-Z0-9]{2,}$/.test(value)) return true;
 
+  // Check trailing alphanumeric suffix after _ or -
   const suffixMatch = value.match(/[_-]([a-zA-Z0-9]{4,})$/);
   if (suffixMatch) {
     const suffix = suffixMatch[1];
-    if (/\d/.test(suffix) && /[a-zA-Z]/.test(suffix)) return true;
+    // Only strip if suffix is long enough (≥6) AND has mixed letters+digits
+    // with roughly even entropy (rules out "row-1" or "step-2a" type patterns)
+    if (suffix.length >= 6 && /\d/.test(suffix) && /[a-zA-Z]/.test(suffix)) {
+      const digits = suffix.replace(/[^0-9]/g, "").length;
+      const ratio = digits / suffix.length;
+      // Random hashes have ~20-80% digit ratio; structured IDs tend to be outside this
+      if (ratio > 0.2 && ratio < 0.8) return true;
+    }
   }
 
+  // Pure alphanumeric blobs without readable words (e.g., "xK9mQ2pL")
   if (/^[a-zA-Z0-9]{8,}$/.test(value) && !/[a-z]{3,}/.test(value)) return true;
   return false;
 }

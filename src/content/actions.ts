@@ -718,27 +718,91 @@ function executeDragAndDrop(args: DragAndDropArgs): {
 
   sourceEl.scrollIntoView({ behavior: "instant", block: "center" });
 
+  const srcRect = sourceEl.getBoundingClientRect();
+  const tgtRect = targetEl.getBoundingClientRect();
+
+  const srcX = srcRect.left + srcRect.width / 2;
+  const srcY = srcRect.top + srcRect.height / 2;
+  const tgtX = tgtRect.left + tgtRect.width / 2;
+  const tgtY = tgtRect.top + tgtRect.height / 2;
+
+  const commonOpts = { bubbles: true, cancelable: true };
+
+  // --- Strategy 1: Pointer/Mouse events (React DnD, dnd-kit, SortableJS, etc.) ---
+  // Most modern DnD libraries listen for pointer or mouse events, not native HTML5 drag.
+
+  // pointerdown + mousedown on source
+  sourceEl.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      ...commonOpts,
+      clientX: srcX,
+      clientY: srcY,
+      pointerId: 1,
+    }),
+  );
+  sourceEl.dispatchEvent(
+    new MouseEvent("mousedown", {
+      ...commonOpts,
+      clientX: srcX,
+      clientY: srcY,
+    }),
+  );
+
+  // Interpolated pointermove + mousemove from source → target
+  const DRAG_STEPS = 10;
+  for (let i = 1; i <= DRAG_STEPS; i++) {
+    const t = i / DRAG_STEPS;
+    const cx = srcX + (tgtX - srcX) * t;
+    const cy = srcY + (tgtY - srcY) * t;
+    const moveTarget = i < DRAG_STEPS ? sourceEl : targetEl;
+    moveTarget.dispatchEvent(
+      new PointerEvent("pointermove", {
+        ...commonOpts,
+        clientX: cx,
+        clientY: cy,
+        pointerId: 1,
+      }),
+    );
+    moveTarget.dispatchEvent(
+      new MouseEvent("mousemove", {
+        ...commonOpts,
+        clientX: cx,
+        clientY: cy,
+      }),
+    );
+  }
+
+  // pointerup + mouseup on target
+  targetEl.dispatchEvent(
+    new PointerEvent("pointerup", {
+      ...commonOpts,
+      clientX: tgtX,
+      clientY: tgtY,
+      pointerId: 1,
+    }),
+  );
+  targetEl.dispatchEvent(
+    new MouseEvent("mouseup", {
+      ...commonOpts,
+      clientX: tgtX,
+      clientY: tgtY,
+    }),
+  );
+
+  // --- Strategy 2: Native HTML5 Drag & Drop API (fallback) ---
   const dataTransfer = new DataTransfer();
 
   sourceEl.dispatchEvent(
-    new DragEvent("dragstart", {
-      bubbles: true,
-      cancelable: true,
-      dataTransfer,
-    }),
+    new DragEvent("dragstart", { ...commonOpts, dataTransfer }),
   );
   targetEl.dispatchEvent(
-    new DragEvent("dragover", {
-      bubbles: true,
-      cancelable: true,
-      dataTransfer,
-    }),
+    new DragEvent("dragover", { ...commonOpts, dataTransfer }),
   );
   targetEl.dispatchEvent(
-    new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }),
+    new DragEvent("drop", { ...commonOpts, dataTransfer }),
   );
   sourceEl.dispatchEvent(
-    new DragEvent("dragend", { bubbles: true, cancelable: true, dataTransfer }),
+    new DragEvent("dragend", { ...commonOpts, dataTransfer }),
   );
 
   return {
