@@ -414,7 +414,7 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HIDE_ELEMENT,
-    description: "Hide element (display:none). For overlays/modals.",
+    description: "Hide an overlay or modal blocking interaction (display:none). Only works on overlays (fixed/absolute position, high z-index, dialog roles). Rejects non-overlay elements.",
     parameters: {
       type: "object",
       properties: {
