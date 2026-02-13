@@ -1,10 +1,22 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { marked } from "marked";
-import { ChatEntry, SessionMetrics, TaskCompletionMessage } from "../../types";
+import {
+  AgentStep,
+  ChatEntry,
+  SessionMetrics,
+  TaskCompletionMessage,
+  ToolName,
+} from "../../types";
 import { clsx } from "clsx";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
-import { CheckCircle2, XCircle, AlertTriangle, MessageCircle } from "lucide-react";
+import { ScreenshotLightbox } from "./ScreenshotLightbox";
+import {
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  MessageCircle,
+} from "lucide-react";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -39,7 +51,9 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
       <div className="flex items-center gap-1.5 flex-wrap">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
-        <span>{metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "—"}</span>
+        <span>
+          {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "—"}
+        </span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
@@ -49,8 +63,13 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
         <div className="pl-2 space-y-0.5">
           {models.map(([model, data]) => (
             <div key={model} className="flex items-center gap-1.5">
-              <span className="text-warm-400 dark:text-warm-500">{model.split("/").pop()}:</span>
-              <span>{formatTokensCompact(data.promptTokens + data.completionTokens)} tok</span>
+              <span className="text-warm-400 dark:text-warm-500">
+                {model.split("/").pop()}:
+              </span>
+              <span>
+                {formatTokensCompact(data.promptTokens + data.completionTokens)}{" "}
+                tok
+              </span>
               {data.cost > 0 && (
                 <>
                   <span className="text-warm-300 dark:text-warm-600">·</span>
@@ -65,7 +84,11 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
   );
 }
 
-function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] }) {
+function CompletionSummary({
+  data,
+}: {
+  data: TaskCompletionMessage["payload"];
+}) {
   const statusIcon =
     data.status === "completed" ? (
       <CheckCircle2 size={14} className="text-green-500" />
@@ -128,11 +151,20 @@ function CompletionSummary({ data }: { data: TaskCompletionMessage["payload"] })
 export function MessageBubble({ message }: { message: ChatEntry }) {
   const isUser = message.role === "user";
   const isHint = isUser && message.isHint;
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
     return marked.parse(message.content) as string;
   }, [message.content, isUser]);
+
+  const screenshotSteps = useMemo(() => {
+    if (!message.steps) return [];
+    return message.steps.filter(
+      (step): step is AgentStep & { screenshotUrl: string } =>
+        step.toolName === ToolName.TAKE_SCREENSHOT && !!step.screenshotUrl,
+    );
+  }, [message.steps]);
 
   return (
     <div
@@ -141,6 +173,26 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
         isUser ? "items-end" : "items-start",
       )}
     >
+      {/* Inline Screenshot Thumbnails */}
+      {!isUser && screenshotSteps.length > 0 && (
+        <div className="flex flex-col gap-2 max-w-[85%]">
+          {screenshotSteps.map((step, idx) => (
+            <img
+              key={step.id}
+              src={step.screenshotUrl}
+              alt={`Page screenshot ${idx + 1}`}
+              className="max-h-[200px] rounded border border-warm-200 dark:border-warm-700 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setLightboxSrc(step.screenshotUrl)}
+            />
+          ))}
+        </div>
+      )}
+      {lightboxSrc && (
+        <ScreenshotLightbox
+          src={lightboxSrc}
+          onClose={() => setLightboxSrc(null)}
+        />
+      )}
       {!isUser && message.steps && message.steps.length > 0 && (
         <StepTimeline
           steps={message.steps}

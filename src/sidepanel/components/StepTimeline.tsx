@@ -8,14 +8,15 @@ import {
   Info,
   ChevronDown,
   ChevronRight,
-  Camera,
 } from "lucide-react";
 import { AgentStep } from "../../types";
 import { clsx } from "clsx";
 
 function StepIcon({ step }: { step: AgentStep }) {
   if (step.status === "running") {
-    return <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />;
+    return (
+      <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
+    );
   }
   if (step.status === "error") {
     return <XCircle size={14} className="text-red-500 shrink-0" />;
@@ -39,31 +40,8 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function ScreenshotLightbox({
-  src,
-  onClose,
-}: {
-  src: string;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-      onClick={onClose}
-    >
-      <img
-        src={src}
-        alt="Screenshot"
-        className="max-w-[90%] max-h-[90%] rounded-lg shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  );
-}
-
 function StepRow({ step, index }: { step: AgentStep; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const [showFullScreenshot, setShowFullScreenshot] = useState(false);
 
   return (
     <div
@@ -74,7 +52,8 @@ function StepRow({ step, index }: { step: AgentStep; index: number }) {
         onClick={() => step.detail && setExpanded(!expanded)}
         className={clsx(
           "flex items-center gap-1.5 w-full text-left py-0.5 px-1 rounded text-xs",
-          step.detail && "hover:bg-warm-100 dark:hover:bg-warm-700/50 cursor-pointer",
+          step.detail &&
+            "hover:bg-warm-100 dark:hover:bg-warm-700/50 cursor-pointer",
           !step.detail && "cursor-default",
         )}
       >
@@ -90,31 +69,12 @@ function StepRow({ step, index }: { step: AgentStep; index: number }) {
         >
           {step.label}
         </span>
-        {step.screenshotUrl && (
-          <Camera size={12} className="text-blue-400 shrink-0" />
-        )}
         {step.durationMs != null && step.durationMs >= 500 && (
           <span className="text-[10px] text-warm-400 tabular-nums shrink-0">
             {formatDuration(step.durationMs)}
           </span>
         )}
       </button>
-      {step.screenshotUrl && (
-        <div className="ml-8 mt-0.5 mb-1">
-          <img
-            src={step.screenshotUrl}
-            alt="Page screenshot"
-            className="max-h-[120px] rounded border border-warm-200 dark:border-warm-700 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => setShowFullScreenshot(true)}
-          />
-        </div>
-      )}
-      {showFullScreenshot && step.screenshotUrl && (
-        <ScreenshotLightbox
-          src={step.screenshotUrl}
-          onClose={() => setShowFullScreenshot(false)}
-        />
-      )}
       {expanded && step.detail && (
         <pre className="ml-8 text-[10px] text-warm-400 dark:text-warm-500 bg-warm-100 dark:bg-warm-800 rounded px-2 py-1 mt-0.5 mb-1 overflow-x-auto max-h-20">
           {step.detail}
