@@ -23,7 +23,7 @@ import {
   MetricsBar,
 } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
-import { AgentStatus, MessageSource, ChatEntry } from "../types";
+import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -80,32 +80,70 @@ export default function App() {
     return () => mediaQuery.removeEventListener("change", handler);
   }, [settings.theme]);
 
-  // Initial load
+  // Initial load — resolve workspace, then load data
   useEffect(() => {
     logger.info("ui", "Side Panel Mounted");
 
-    Promise.all([loadSettingsFromStorage(), loadMessagesFromStorage()]).then(
-      () => setReady(),
-    );
+    (async () => {
+      // 1. Load settings first (synchronously needed for theme etc.)
+      await loadSettingsFromStorage();
 
-    // Notify background that panel is open (triggers workspace creation if needed)
-    chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-      if (tab?.id) {
-        chrome.runtime
-          .sendMessage({
-            type: "SIDE_PANEL_OPENED",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.SIDEPANEL,
-            payload: { tabId: tab.id, windowId: tab.windowId },
-          })
-          .catch((e) =>
-            logger.error("ui", "Failed to notify background of panel open", {
-              error: e,
-            }),
-          );
+      // 2. Resolve active workspace from current tab
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          // Look up workspace from chrome.storage.local (persisted by WorkspaceManager)
+          const stored = await chrome.storage.local.get("opensidebar:workspaces");
+          const workspaces: Workspace[] = stored["opensidebar:workspaces"] || [];
+          const ws = workspaces.find((w) => w.tabIds.includes(tab.id!));
+          if (ws) {
+            useStore.getState().setActiveWorkspaceId(ws.id);
+          }
+
+          // 3. Notify background that panel is open
+          chrome.runtime
+            .sendMessage({
+              type: "SIDE_PANEL_OPENED",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.SIDEPANEL,
+              payload: { tabId: tab.id, windowId: tab.windowId },
+            })
+            .catch((e) =>
+              logger.error("ui", "Failed to notify background of panel open", {
+                error: e,
+              }),
+            );
+        }
+      } catch (e) {
+        logger.warn("ui", "Failed to resolve workspace on mount", { error: e });
       }
-    });
+
+      // 4. Load messages (now workspace-aware)
+      await loadMessagesFromStorage();
+      setReady();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tab activation listener — detect workspace switches
+  useEffect(() => {
+    const listener = async (activeInfo: chrome.tabs.TabActiveInfo) => {
+      try {
+        const stored = await chrome.storage.local.get("opensidebar:workspaces");
+        const workspaces: Workspace[] = stored["opensidebar:workspaces"] || [];
+        const ws = workspaces.find((w) => w.tabIds.includes(activeInfo.tabId));
+        const newWsId = ws?.id ?? null;
+        const currentWsId = useStore.getState().activeWorkspaceId;
+        if (newWsId !== currentWsId && newWsId != null) {
+          useStore.getState().setActiveWorkspaceId(newWsId);
+        }
+      } catch (e) {
+        logger.warn("ui", "Failed to resolve workspace on tab switch", { error: e });
+      }
+    };
+
+    chrome.tabs.onActivated.addListener(listener);
+    return () => chrome.tabs.onActivated.removeListener(listener);
   }, []);
 
   // Message Bridge — centralized message routing from background to store
@@ -212,7 +250,7 @@ export default function App() {
           payload: {
             text: trimmedText,
             tabId: activeTabId,
-            workspaceId: null,
+            workspaceId: useStore.getState().activeWorkspaceId,
           },
         });
       } catch (e) {
@@ -250,7 +288,7 @@ export default function App() {
           payload: {
             text: trimmedText,
             tabId: 0,
-            workspaceId: null,
+            workspaceId: useStore.getState().activeWorkspaceId,
             isHint: true,
           },
         });
@@ -268,7 +306,9 @@ export default function App() {
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
-        payload: {},
+        payload: {
+          workspaceId: useStore.getState().activeWorkspaceId,
+        },
       });
       setAgentRunning(false);
       updateStatus(AgentStatus.IDLE, "Stopped by user");

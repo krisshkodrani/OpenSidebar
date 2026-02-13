@@ -1,5 +1,17 @@
 import { ToolCall, ToolDefinition } from "../../types";
 
+/** Provider-specific configuration for LLM API calls */
+export interface ProviderConfig {
+    /** Base URL for the chat completions endpoint */
+    baseUrl: string;
+    /** API key for Authorization header */
+    apiKey: string;
+    /** Extra headers (e.g. OpenRouter's HTTP-Referer, X-Title) */
+    headers: Record<string, string>;
+    /** Provider identifier for logging and metrics */
+    providerId: "openrouter" | "groq";
+}
+
 export type ContentPart =
     | { type: "text"; text: string }
     | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };

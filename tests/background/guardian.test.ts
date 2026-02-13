@@ -41,8 +41,10 @@ mock.module("../../src/background/llm", () => ({
         private model = "google/gemini-2.5-flash-lite";
         complete = mockComplete;
         completeStream = mockCompleteStream;
-        switchModel = mock((m: string) => { this.model = m; });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
         getCurrentModel = () => this.model;
+        getCurrentProvider = () => "openrouter";
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",

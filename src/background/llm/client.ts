@@ -1,9 +1,10 @@
 import { ToolCall } from "../../types";
 import { logger } from "../../utils";
 import { parseSSEStream } from "../streaming";
-import { CompletionRequest, CompletionResponse, LLMToolCall } from "./types";
+import { CompletionRequest, CompletionResponse, LLMToolCall, ProviderConfig } from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -23,10 +24,33 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Fast model tier — used for initial turns */
+/** Fast model tier — used for initial turns (OpenRouter) */
 export const MODEL_FAST = "openai/gpt-4o-mini";
+/** Fast model tier — used for initial turns (Groq, when enabled) */
+export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
 /** Smart model tier — used after escalation when stuck */
 export const MODEL_SMART = "minimax/minimax-m2.5";
+
+function openRouterProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: OPENROUTER_BASE_URL,
+    apiKey,
+    headers: {
+      "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
+      "X-Title": "OpenSidebar",
+    },
+    providerId: "openrouter",
+  };
+}
+
+function groqProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: GROQ_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "groq",
+  };
+}
 
 /** Strip <think>...</think> reasoning blocks from model output */
 export function stripThinkTags(text: string): string {
@@ -92,17 +116,39 @@ function createThinkFilter(emit: (text: string) => void) {
  */
 
 export class LLMClient {
-  private apiKey: string;
+  private provider: ProviderConfig;
   private model: string;
+  private openRouterApiKey: string;
+  /** Saved fast model config for de-escalation */
+  private fastModel: string;
+  private fastProvider: ProviderConfig;
 
   /**
    * Creates a new LLM client
-   * @param apiKey - OpenRouter API key
-   * @param model - Model ID to use (defaults to MODEL_FAST)
+   * @param openRouterApiKey - OpenRouter key (always needed for smart model)
+   * @param groqApiKey - Groq key (optional; when set + useGroq=true, fast model uses Groq)
+   * @param useGroq - Whether to route the fast model through Groq
+   * @param model - Model ID override (defaults to appropriate fast model based on useGroq)
    */
-  constructor(apiKey: string, model: string = MODEL_FAST) {
-    this.apiKey = apiKey;
-    this.model = model;
+  constructor(
+    openRouterApiKey: string,
+    groqApiKey?: string,
+    useGroq: boolean = false,
+    model?: string,
+  ) {
+    this.openRouterApiKey = openRouterApiKey;
+
+    if (useGroq && groqApiKey && (!model || model === MODEL_FAST_GROQ)) {
+      this.model = model ?? MODEL_FAST_GROQ;
+      this.provider = groqProvider(groqApiKey);
+    } else {
+      this.model = model ?? MODEL_FAST;
+      this.provider = openRouterProvider(openRouterApiKey);
+    }
+
+    // Save fast config for de-escalation
+    this.fastModel = this.model;
+    this.fastProvider = { ...this.provider };
   }
 
   /** Get the currently active model ID */
@@ -110,17 +156,43 @@ export class LLMClient {
     return this.model;
   }
 
-  /** Switch the active model (e.g. for escalation). Mutates in place. */
-  public switchModel(model: string): void {
-    logger.info("agent", "Switching LLM model", {
-      from: this.model,
-      to: model,
+  /** Get the current provider identifier */
+  public getCurrentProvider(): string {
+    return this.provider.providerId;
+  }
+
+  /**
+   * Switch to smart model on OpenRouter. Used during escalation.
+   * Changes BOTH the provider (Groq→OpenRouter) and the model.
+   */
+  public switchToSmart(): void {
+    logger.info("agent", "Switching to smart model", {
+      fromModel: this.model,
+      fromProvider: this.provider.providerId,
+      toModel: MODEL_SMART,
+      toProvider: "openrouter",
     });
-    this.model = model;
+    this.model = MODEL_SMART;
+    this.provider = openRouterProvider(this.openRouterApiKey);
+  }
+
+  /**
+   * Switch back to fast model. Used during de-escalation when progress resumes.
+   * Restores the original model and provider from construction time.
+   */
+  public switchToFast(): void {
+    logger.info("agent", "Switching back to fast model", {
+      fromModel: this.model,
+      fromProvider: this.provider.providerId,
+      toModel: this.fastModel,
+      toProvider: this.fastProvider.providerId,
+    });
+    this.model = this.fastModel;
+    this.provider = { ...this.fastProvider };
   }
 
   private get baseUrl() {
-    return OPENROUTER_BASE_URL;
+    return this.provider.baseUrl;
   }
 
   private async fetchWithRetry(
@@ -149,8 +221,8 @@ export class LLMClient {
           1000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 300);
         logger.warn(
           "agent",
-          `LLM request failed, retrying ${attempt}/${maxRetries}`,
-          { delay, error: lastError?.message },
+          `LLM request failed (${this.provider.providerId}), retrying ${attempt}/${maxRetries}`,
+          { delay, error: lastError?.message, model: this.model },
         );
         await abortableDelay(delay, signal);
       }
@@ -159,9 +231,10 @@ export class LLMClient {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    if (!this.apiKey) {
+    if (!this.provider.apiKey) {
+      const name = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
       throw new Error(
-        "LLM API Key is missing. Please configure it in settings.",
+        `${name} API Key is missing. Please configure it in settings.`,
       );
     }
 
@@ -188,9 +261,8 @@ export class LLMClient {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-            "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-            "X-Title": "OpenSidebar",
+            Authorization: `Bearer ${this.provider.apiKey}`,
+            ...this.provider.headers,
           },
           body: JSON.stringify(payload),
         },
@@ -201,12 +273,16 @@ export class LLMClient {
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 402) {
+          const providerName = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
+          const creditsUrl = this.provider.providerId === "groq"
+            ? "console.groq.com/settings/billing"
+            : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
             affordable > 0
-              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
-              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`,
+              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
+              : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
@@ -276,9 +352,10 @@ export class LLMClient {
     request: CompletionRequest,
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
-    if (!this.apiKey) {
+    if (!this.provider.apiKey) {
+      const name = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
       throw new Error(
-        "LLM API Key is missing. Please configure it in settings.",
+        `${name} API Key is missing. Please configure it in settings.`,
       );
     }
 
@@ -306,9 +383,8 @@ export class LLMClient {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-            "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
-            "X-Title": "OpenSidebar",
+            Authorization: `Bearer ${this.provider.apiKey}`,
+            ...this.provider.headers,
           },
           body: JSON.stringify(payload),
         },
@@ -319,12 +395,16 @@ export class LLMClient {
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 402) {
+          const providerName = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
+          const creditsUrl = this.provider.providerId === "groq"
+            ? "console.groq.com/settings/billing"
+            : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
             affordable > 0
-              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at openrouter.ai/credits.`
-              : `Insufficient OpenRouter credits. Add credits at openrouter.ai/credits.`,
+              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
+              : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;

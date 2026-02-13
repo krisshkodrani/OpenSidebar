@@ -40,12 +40,16 @@ interface Actions {
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setReady: () => void;
+  // Workspace awareness
+  setActiveWorkspaceId: (id: string | null) => void;
 }
 
 type Store = SidePanelState & Actions;
 
 const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: __OPENROUTER_API_KEY__,
+  groqApiKey: __GROQ_API_KEY__,
+  useGroqFast: false,
   maxTurns: 30,
   contextWindowSize: 128000,
   memoryEnabled: true,
@@ -59,10 +63,16 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;
 
-function persistMessages(messages: ChatEntry[]) {
+/** Get the storage key scoped by workspace */
+function chatStorageKey(wsId: string | null): string {
+  return wsId ? `chatMessages:${wsId}` : "chatMessages";
+}
+
+function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
   if (persistTimeout) clearTimeout(persistTimeout);
+  const key = chatStorageKey(wsId);
   persistTimeout = setTimeout(() => {
-    chrome.storage.session.set({ chatMessages: messages }).catch(() => {});
+    chrome.storage.session.set({ [key]: messages }).catch(() => {});
   }, 300);
 }
 
@@ -70,6 +80,7 @@ export const useStore = create<Store>()(
   immer((set, get) => ({
     // Initial State
     ready: false,
+    activeWorkspaceId: null,
     messages: [],
     agentStatus: AgentStatus.IDLE,
     statusDetail: "Ready",
@@ -92,7 +103,7 @@ export const useStore = create<Store>()(
           id: msg.id,
           role: msg.role,
         });
-        persistMessages(get().messages);
+        persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
     appendStreamDelta: (delta) =>
@@ -110,7 +121,7 @@ export const useStore = create<Store>()(
             isStreaming: true,
           });
         }
-        persistMessages(get().messages);
+        persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
     finalizeStream: () =>
@@ -119,7 +130,7 @@ export const useStore = create<Store>()(
         if (last?.role === "assistant" && last.isStreaming) {
           last.isStreaming = false;
         }
-        persistMessages(get().messages);
+        persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
     addStep: (step) =>
@@ -134,7 +145,7 @@ export const useStore = create<Store>()(
             break;
           }
         }
-        persistMessages(get().messages);
+        persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
     updateStep: (step) =>
@@ -150,7 +161,7 @@ export const useStore = create<Store>()(
             }
           }
         }
-        persistMessages(get().messages);
+        persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
     updateStatus: (status, detail) =>
@@ -179,7 +190,8 @@ export const useStore = create<Store>()(
       set((state) => {
         state.messages = [];
         logger.info("ui", "Chat history cleared");
-        chrome.storage.session.set({ chatMessages: [] }).catch(() => {});
+        const key = chatStorageKey(get().activeWorkspaceId);
+        chrome.storage.session.set({ [key]: [] }).catch(() => {});
       }),
 
     updateSettings: (updates) =>
@@ -203,9 +215,10 @@ export const useStore = create<Store>()(
 
     loadMessagesFromStorage: async () => {
       try {
-        const result = await chrome.storage.session.get("chatMessages");
-        if (result.chatMessages && Array.isArray(result.chatMessages) && result.chatMessages.length > 0) {
-          const messages = (result.chatMessages as ChatEntry[]).map((msg) =>
+        const key = chatStorageKey(get().activeWorkspaceId);
+        const result = await chrome.storage.session.get(key);
+        if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
+          const messages = (result[key] as ChatEntry[]).map((msg) =>
             msg.isStreaming ? { ...msg, isStreaming: false } : msg,
           );
           set((state) => {
@@ -213,6 +226,7 @@ export const useStore = create<Store>()(
           });
           logger.debug("ui", "Messages restored from storage", {
             count: messages.length,
+            storageKey: key,
           });
         }
       } catch (e) {
@@ -278,5 +292,17 @@ export const useStore = create<Store>()(
       set((state) => {
         state.sessionMetrics = null;
       }),
+
+    // Workspace awareness
+    setActiveWorkspaceId: (id) => {
+      const currentId = get().activeWorkspaceId;
+      if (currentId === id) return;
+      set((state) => {
+        state.activeWorkspaceId = id;
+        state.messages = []; // Clear current messages when switching workspace
+      });
+      // Load messages for the new workspace
+      get().loadMessagesFromStorage();
+    },
   })),
 );

@@ -16,11 +16,21 @@ export const AGENT_LIMITS = {
 /** Stuck detection thresholds */
 export const STUCK_THRESHOLDS = {
   /** Turns of no progress before nudging the agent */
-  NUDGE: 6,
-  /** Turns of no progress before escalating to smarter model */
-  ESCALATE: 12,
+  NUDGE: 3,
+  /** Turns of no progress before strategy pivot (prune history, fresh start) */
+  PIVOT: 6,
+  /** Turns of no progress before escalating to smarter model + pivot */
+  ESCALATE: 9,
   /** Maximum turns before giving up entirely */
-  GIVE_UP: 20,
+  GIVE_UP: 15,
+} as const;
+
+/** Escalation/de-escalation cycle limits */
+export const ESCALATION_LIMITS = {
+  /** Max escalation→de-escalation cycles before staying on smart permanently */
+  MAX_CYCLES: 3,
+  /** Turns of cooldown after de-escalation before re-escalation is allowed */
+  COOLDOWN_TURNS: 3,
 } as const;
 
 /** Tool failure circuit breaker */

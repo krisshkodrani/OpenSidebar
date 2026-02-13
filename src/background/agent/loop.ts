@@ -3,6 +3,7 @@ import {
   AgentLoopState,
   AgentStep,
   MessageSource,
+  RuntimeMessage,
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
@@ -22,8 +23,7 @@ import { ContextManager } from "./context";
 import { ProgressTracker } from "./progress";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
-import { CompletionResponse, TokenUsage } from "../llm/types";
-import { startKeepalive, stopKeepalive } from "../keepalive";
+import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
 import { formatStepLabel } from "./step-labels";
 import { PlanGuardian } from "./guardian";
 import { TraceRecorder } from "./trace";
@@ -34,6 +34,7 @@ import {
   LLM_CONFIG,
   STRING_LIMITS,
   TIMING,
+  ESCALATION_LIMITS,
 } from "./constants";
 
 /** Nudge injected when LLM emits text instead of tool calls. */
@@ -50,6 +51,94 @@ Review the conversation history and current page state. Then:
 2. Formulate a different strategy — do not repeat what already failed.
 3. Call the appropriate tool to advance the task.
 If the page state is unclear, start with read_page or take_screenshot.`;
+
+/** Message injected during a strategy pivot — tells the agent what NOT to retry. */
+const PIVOT_MESSAGE = (failureSummary: string) =>
+  `STRATEGY PIVOT — Your previous approach is not working. Start fresh.
+
+What was attempted (DO NOT retry these approaches):
+${failureSummary}
+
+Instructions:
+1. Forget the details of previous attempts — they failed.
+2. Re-read the user's task above.
+3. Look at the current page state with fresh eyes (use read_page or take_screenshot).
+4. Think from first principles: what is a COMPLETELY DIFFERENT way to accomplish this?
+5. If the task seems impossible on this page, navigate elsewhere or call done() explaining why.`;
+
+/**
+ * Extract a compact summary of failed tool attempts from conversation history.
+ * Walks backward through messages, collects tool calls + their results,
+ * and aggregates repeated failures into a short summary.
+ * No LLM call needed — purely programmatic.
+ */
+function extractFailedAttempts(messages: LLMMessage[]): string {
+  const failures = new Map<string, { count: number; error: string }>();
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "tool") continue;
+
+    const content = typeof msg.content === "string" ? msg.content : "";
+    const isFail =
+      content.startsWith("Error:") ||
+      content.includes("does not appear to be") ||
+      content.includes("No element with tag") ||
+      content.includes("Click intercepted") ||
+      content.includes("REJECTED");
+
+    if (!isFail) continue;
+
+    // Find the corresponding assistant tool_call
+    const toolCallId = msg.tool_call_id;
+    if (!toolCallId) continue;
+
+    let toolName = "unknown";
+    let argSnippet = "";
+    for (let j = i - 1; j >= 0; j--) {
+      const aMsg = messages[j];
+      if (aMsg.role === "assistant" && aMsg.tool_calls) {
+        const tc = aMsg.tool_calls.find((c) => c.id === toolCallId);
+        if (tc) {
+          toolName = tc.function.name;
+          try {
+            const args = JSON.parse(tc.function.arguments);
+            // Build a compact arg summary
+            const parts: string[] = [];
+            if (args.id != null) parts.push(`[${args.id}]`);
+            if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
+            if (args.url) parts.push(String(args.url).slice(0, 40));
+            if (args.direction) parts.push(args.direction);
+            argSnippet = parts.join(" ");
+          } catch { /* */ }
+          break;
+        }
+      }
+    }
+
+    const key = `${toolName} ${argSnippet}`.trim();
+    const errorSnippet = content.split("\n")[0].slice(0, 60);
+
+    if (failures.has(key)) {
+      const entry = failures.get(key)!;
+      entry.count++;
+    } else {
+      failures.set(key, { count: 1, error: errorSnippet });
+    }
+
+    // Cap at ~10 unique failure types
+    if (failures.size >= 10) break;
+  }
+
+  if (failures.size === 0) return "- No specific tool failures recorded.";
+
+  const lines: string[] = [];
+  for (const [key, { count, error }] of failures) {
+    const times = count > 1 ? ` x${count}` : "";
+    lines.push(`- ${key}${times} — ${error}`);
+  }
+  return lines.join("\n").slice(0, 500);
+}
 
 /** Result of a completed agent loop run */
 export interface LoopResult {
@@ -89,6 +178,9 @@ export class AgentLoop {
   private showElementTags: boolean;
   private confirmPlan: boolean;
   private showSessionMetrics: boolean;
+
+  /** Workspace ID for session isolation */
+  public readonly workspaceId: string | null;
 
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
@@ -223,18 +315,16 @@ export class AgentLoop {
       return;
 
     this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
-    chrome.runtime
-      .sendMessage({
-        type: "SESSION_METRICS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { ...this.metrics },
-      })
-      .catch(() => { });
+    this.broadcast({
+      type: "SESSION_METRICS",
+      payload: { ...this.metrics },
+    });
   }
 
   constructor(
-    apiKey: string,
+    openRouterApiKey: string,
+    groqApiKey: string | undefined,
+    useGroqFast: boolean,
     callbacks: {
       onStatusUpdate: (status: AgentStatus, detail: string) => void;
       onMessage: (text: string, toolCalls: ToolCall[]) => void;
@@ -246,18 +336,35 @@ export class AgentLoop {
       showElementTags?: boolean;
       confirmPlan?: boolean;
       showSessionMetrics?: boolean;
+      workspaceId?: string | null;
     },
   ) {
     this.confirmPlan = options?.confirmPlan ?? false;
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
-    this.llm = new LLMClient(apiKey);
-    this.guardian = new PlanGuardian(apiKey);
-    this.context = new ContextManager(options?.maxContextTokens);
+    this.workspaceId = options?.workspaceId ?? null;
+    this.llm = new LLMClient(openRouterApiKey, groqApiKey, useGroqFast);
+    this.guardian = new PlanGuardian(openRouterApiKey);
+    this.context = new ContextManager(options?.maxContextTokens, this.workspaceId);
     this.statusHandler = callbacks.onStatusUpdate;
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => { });
     this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
     this.showElementTags = options?.showElementTags ?? false;
+  }
+
+  /**
+   * Send a message to the side panel, automatically injecting workspaceId,
+   * requestId, and source. Fire-and-forget (errors are silenced).
+   */
+  private broadcast(msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">): void {
+    chrome.runtime
+      .sendMessage({
+        ...msg,
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId: this.workspaceId,
+      } as RuntimeMessage)
+      .catch(() => { });
   }
 
   /**
@@ -299,6 +406,7 @@ export class AgentLoop {
       initialUserText,
       initialSnapshot?.url || "",
     );
+    this.traceRecorder.setWorkspaceId(this.workspaceId);
 
     // Clear or restore context
     if (options?.clearHistory) {
@@ -381,19 +489,15 @@ export class AgentLoop {
               `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
           });
 
-          chrome.runtime
-            .sendMessage({
-              type: "TASK_PROGRESS",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: {
-                taskId: this.taskId,
-                subtasks: this.planSubtasks,
-                currentIndex: 0,
-                totalTurnsUsed: 0,
-              },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "TASK_PROGRESS",
+            payload: {
+              taskId: this.taskId,
+              subtasks: this.planSubtasks,
+              currentIndex: 0,
+              totalTurnsUsed: 0,
+            },
+          });
 
           this.stepHandler(
             {
@@ -415,15 +519,15 @@ export class AgentLoop {
 
     this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
-    // Register vision usage callback so screenshot tool can report token usage
+    // Register per-tab vision usage callback so screenshot tool can report token usage
     setVisionUsageCallback((usage, durationMs, model) => {
       this.recordVisionUsage(usage, durationMs, model);
-    });
+    }, tabId);
 
-    // Register screenshot capture callback for inline thumbnails
+    // Register per-tab screenshot capture callback for inline thumbnails
     setScreenshotCaptureCallback((thumbnailUrl) => {
       this.pendingScreenshotUrl = thumbnailUrl;
-    });
+    }, tabId);
 
     // Register guardian usage callback for metrics tracking
     this.guardian.setUsageCallback((usage, llmMs) => {
@@ -437,9 +541,6 @@ export class AgentLoop {
         llmMs,
       );
     });
-
-    // Start keepalive alarm to prevent SW termination
-    await startKeepalive();
 
     let result: LoopResult = {
       outcome: "completed",
@@ -462,22 +563,14 @@ export class AgentLoop {
       } else {
         logger.error("agent", "Loop Error", { error });
         const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
-        chrome.runtime
-          .sendMessage({
-            type: "STREAM_CHUNK",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { delta: errorMsg, done: false },
-          })
-          .catch(() => { });
-        chrome.runtime
-          .sendMessage({
-            type: "STREAM_CHUNK",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { delta: "", done: true },
-          })
-          .catch(() => { });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: errorMsg, done: false },
+        });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
         this.statusHandler(AgentStatus.ERROR, error.message);
         result = {
           outcome: "error",
@@ -487,9 +580,8 @@ export class AgentLoop {
         };
       }
     } finally {
-      setVisionUsageCallback(null);
-      setScreenshotCaptureCallback(null);
-      await stopKeepalive();
+      setVisionUsageCallback(null, tabId);
+      setScreenshotCaptureCallback(null, tabId);
       this.isRunning = false;
       // Finalize trace recording (fire-and-forget)
       if (this.traceRecorder) {
@@ -561,10 +653,67 @@ export class AgentLoop {
     return this.pauseGate !== null;
   }
 
-  /** Escalate to smart model when stuck. */
+  /** Escalate to smart model when stuck. Switches both model and provider (Groq→OpenRouter). */
   private escalateModel(): void {
-    this.llm.switchModel(MODEL_SMART);
-    logger.info("agent", "Escalating to smart model", { model: MODEL_SMART });
+    this.llm.switchToSmart();
+    logger.info("agent", "Escalating to smart model", { model: MODEL_SMART, provider: "openrouter" });
+  }
+
+  /** De-escalate back to fast model when progress resumes after automatic escalation. */
+  private deescalateModel(): void {
+    this.llm.switchToFast();
+    logger.info("agent", "De-escalating to fast model");
+  }
+
+  /**
+   * Strategy pivot: prune failing history, inject original query + failure summary,
+   * refresh DOM snapshot, and reset progress tracking. Gives the agent a fresh
+   * start without changing models.
+   */
+  private async strategyPivot(tabId: number): Promise<void> {
+    // 1. Extract what was tried before clearing
+    const failureSummary = extractFailedAttempts(this.context.getMessages());
+
+    // 2. Clear history (keeps DOM snapshot)
+    this.context.clearHistory();
+
+    // 3. Re-inject original query
+    this.context.addMessage({
+      role: "user",
+      content: this.originalQuery,
+    });
+
+    // 4. Inject pivot message with constraints
+    this.context.addMessage({
+      role: "user",
+      content: PIVOT_MESSAGE(failureSummary),
+    });
+
+    // 5. Refresh DOM snapshot for current state
+    await this.refreshSnapshotWithRetry(tabId, -1);
+
+    // 6. Reset progress tracker so it can fire signals again
+    this.progress.resetEscalation();
+
+    // 7. User-visible feedback
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: "Rethinking approach from scratch",
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+
+    logger.info("agent", "Strategy pivot executed", {
+      turn: this.turnCount,
+      failureSummaryLen: failureSummary.length,
+    });
+    this.traceRecorder?.recordEvent("strategy_pivot", {
+      turn: this.turnCount,
+    });
   }
 
   /** Refresh DOM snapshot and update context. Returns element count or -1 on failure. */
@@ -606,22 +755,14 @@ export class AgentLoop {
 
   /** Stream a message to side panel and break the loop (for circuit breaker exits) */
   private circuitBreakerExit(message: string): void {
-    chrome.runtime
-      .sendMessage({
-        type: "STREAM_CHUNK",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { delta: message, done: false },
-      })
-      .catch(() => { });
-    chrome.runtime
-      .sendMessage({
-        type: "STREAM_CHUNK",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { delta: "", done: true },
-      })
-      .catch(() => { });
+    this.broadcast({
+      type: "STREAM_CHUNK",
+      payload: { delta: message, done: false },
+    });
+    this.broadcast({
+      type: "STREAM_CHUNK",
+      payload: { delta: "", done: true },
+    });
     this.statusHandler(
       AgentStatus.IDLE,
       "Circuit breaker — send a follow-up to continue",
@@ -632,9 +773,15 @@ export class AgentLoop {
     let prevElementCount = -1; // Track element count for empty-page retry
     let consecutiveNudges = 0;
     let totalNudges = 0;
-    let escalated = false;
     let doneSummary = "";
     let wasStuck = false; // Track stuck state for "resolved" signal
+
+    // Escalation/de-escalation state machine
+    let onSmartModel = false;
+    let voluntaryEscalation = false; // escalate tool → permanent, no de-escalation
+    let escalationCycles = 0;
+    let cooldownRemaining = 0;
+    let pivotDone = false; // has text-only pivot fired?
 
     // Circuit breaker: consecutive all-fail turns
     let consecutiveAllFailTurns = 0;
@@ -648,6 +795,9 @@ export class AgentLoop {
       if (!this.isRunning) break; // Check again after resume (user may have stopped)
 
       this.turnCount++;
+
+      // Decrement de-escalation cooldown
+      if (cooldownRemaining > 0) cooldownRemaining--;
 
       // Inject pending hint from user before LLM call
       if (this.pendingHint) {
@@ -664,14 +814,10 @@ export class AgentLoop {
         this.turnCount === 1 ||
         this.turnCount % BROADCAST_INTERVALS.TURN_PROGRESS === 0
       ) {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_TURN",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { turn: this.turnCount, maxTurns: this.maxTurns },
-          })
-          .catch(() => { });
+        this.broadcast({
+          type: "AGENT_TURN",
+          payload: { turn: this.turnCount, maxTurns: this.maxTurns },
+        });
       }
 
       // 1. LLM Inference (streamed)
@@ -724,14 +870,10 @@ export class AgentLoop {
 
       // Always stream deltas to side panel
       const onTextDelta = (delta: string) => {
-        chrome.runtime
-          .sendMessage({
-            type: "STREAM_CHUNK",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { delta, done: false },
-          })
-          .catch(() => { }); // Ignore if sidepanel closed
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta, done: false },
+        });
       };
 
       const llmStart = Date.now();
@@ -751,22 +893,14 @@ export class AgentLoop {
         if (llmError.name === "AbortError") throw llmError;
         if ((llmError as any).status === 402) {
           const msg = llmError.message;
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: msg, done: false },
-            })
-            .catch(() => { });
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: "", done: true },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: msg, done: false },
+          });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
           break;
         }
@@ -882,14 +1016,10 @@ export class AgentLoop {
         // Thought text already delivered via STREAM_CHUNK deltas
         // Signal stream end so sidepanel finalizes the message
         if (response.content) {
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: "", done: true },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
         }
 
         // Execute Tools
@@ -1152,51 +1282,44 @@ export class AgentLoop {
                   }),
                 );
 
-                chrome.runtime
-                  .sendMessage({
-                    type: "TASK_COMPLETION",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: {
-                      taskId: this.taskId,
-                      status: subtaskResults.every(
-                        (sr) => sr.status === "completed",
-                      )
-                        ? "completed"
-                        : "partial",
-                      totalTurnsUsed: this.turnCount,
-                      totalTimeMs: Date.now() - this.taskStartTime,
-                      summary,
-                      subtaskResults,
-                      urlHistory: this.urlHistory,
-                    },
-                  })
-                  .catch(() => { });
+                this.broadcast({
+                  type: "TASK_COMPLETION",
+                  payload: {
+                    taskId: this.taskId,
+                    status: subtaskResults.every(
+                      (sr) => sr.status === "completed",
+                    )
+                      ? "completed"
+                      : "partial",
+                    totalTurnsUsed: this.turnCount,
+                    totalTimeMs: Date.now() - this.taskStartTime,
+                    summary,
+                    subtaskResults,
+                    urlHistory: this.urlHistory,
+                  },
+                });
               }
 
               // Broadcast final metrics
               if (this.showSessionMetrics) {
                 this.metrics.totalSessionTimeMs =
                   Date.now() - this.sessionStartTime;
-                chrome.runtime
-                  .sendMessage({
-                    type: "SESSION_METRICS",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: { ...this.metrics },
-                  })
-                  .catch(() => { });
+                this.broadcast({
+                  type: "SESSION_METRICS",
+                  payload: { ...this.metrics },
+                });
               }
 
               break;
             }
 
-            // ESCALATE tool — voluntary model upgrade
+            // ESCALATE tool — voluntary model upgrade (permanent, no de-escalation)
             if (toolName === ToolName.ESCALATE) {
               const reason = (args.reason as string) || "";
-              if (!escalated) {
+              if (!onSmartModel) {
                 this.escalateModel();
-                escalated = true;
+                onSmartModel = true;
+                voluntaryEscalation = true;
                 prevElementCount = await this.refreshSnapshotWithRetry(
                   tabId,
                   prevElementCount,
@@ -1228,7 +1351,7 @@ export class AgentLoop {
               logger.info("agent", "ESCALATE called", {
                 turn: this.turnCount,
                 reason,
-                wasAlreadyEscalated: escalated && reason === "",
+                wasAlreadyEscalated: onSmartModel && reason === "",
               });
               this.traceRecorder?.recordEvent("escalation", { reason, voluntary: true });
               continue;
@@ -1273,19 +1396,15 @@ export class AgentLoop {
                 currentIndex,
               );
 
-              chrome.runtime
-                .sendMessage({
-                  type: "TASK_PROGRESS",
-                  requestId: crypto.randomUUID(),
-                  source: MessageSource.BACKGROUND,
-                  payload: {
-                    taskId: this.taskId,
-                    subtasks: this.planSubtasks,
-                    currentIndex,
-                    totalTurnsUsed: this.turnCount,
-                  },
-                })
-                .catch(() => { });
+              this.broadcast({
+                type: "TASK_PROGRESS",
+                payload: {
+                  taskId: this.taskId,
+                  subtasks: this.planSubtasks,
+                  currentIndex,
+                  totalTurnsUsed: this.turnCount,
+                },
+              });
 
               this.stepHandler(
                 {
@@ -1680,28 +1799,28 @@ export class AgentLoop {
                   });
                 }
 
-                this.context.addMessage({
-                  role: "user",
-                  content: progressSignal.message,
-                });
                 // Broadcast stuck signal to side panel
-                chrome.runtime
-                  .sendMessage({
-                    type: "AGENT_STUCK",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: {
-                      signal: progressSignal.type as "nudge" | "escalate",
-                      staleTurns: progressSignal.staleTurns,
-                      url: snap.url,
-                      message: progressSignal.message,
-                    },
-                  })
-                  .catch(() => { });
+                this.broadcast({
+                  type: "AGENT_STUCK",
+                  payload: {
+                    signal: progressSignal.type as "nudge" | "pivot" | "escalate",
+                    staleTurns: progressSignal.staleTurns,
+                    url: snap.url,
+                    message: progressSignal.message,
+                  },
+                });
                 wasStuck = true;
-                if (progressSignal.type === "escalate" && !escalated) {
+
+                if (progressSignal.type === "pivot") {
+                  // Strategy pivot: clear failing history, fresh start on same model
+                  await this.strategyPivot(tabId);
+                  consecutiveNudges = 0;
+                } else if (progressSignal.type === "escalate" && !onSmartModel && cooldownRemaining <= 0) {
+                  // Escalation + pivot: switch to smart model AND clear context
                   this.escalateModel();
-                  escalated = true;
+                  onSmartModel = true;
+                  await this.strategyPivot(tabId);
+                  consecutiveNudges = 0;
                   this.stepHandler(
                     {
                       id: crypto.randomUUID(),
@@ -1712,28 +1831,45 @@ export class AgentLoop {
                     },
                     false,
                   );
-                  // Mandatory snapshot refresh so the new model sees current state
-                  prevElementCount = await this.refreshSnapshotWithRetry(
-                    tabId,
-                    prevElementCount,
-                  );
+                } else {
+                  // Nudge: just inject the message (no context clearing)
+                  this.context.addMessage({
+                    role: "user",
+                    content: progressSignal.message,
+                  });
                 }
               } else if (wasStuck) {
                 // Agent recovered — broadcast resolved signal
-                chrome.runtime
-                  .sendMessage({
-                    type: "AGENT_STUCK",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: {
-                      signal: "resolved",
-                      staleTurns: 0,
-                      url: snap.url,
-                      message: "Agent is making progress again.",
-                    },
-                  })
-                  .catch(() => { });
+                this.broadcast({
+                  type: "AGENT_STUCK",
+                  payload: {
+                    signal: "resolved",
+                    staleTurns: 0,
+                    url: snap.url,
+                    message: "Agent is making progress again.",
+                  },
+                });
                 wasStuck = false;
+
+                // De-escalate if on smart model (automatic, not voluntary) and under cycle limit
+                if (onSmartModel && !voluntaryEscalation && escalationCycles < ESCALATION_LIMITS.MAX_CYCLES) {
+                  this.deescalateModel();
+                  onSmartModel = false;
+                  escalationCycles++;
+                  cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
+                  this.progress.resetEscalation();
+
+                  this.stepHandler(
+                    {
+                      id: crypto.randomUUID(),
+                      type: "info",
+                      label: "Progress made — switching back to fast model",
+                      status: "done",
+                      timestamp: Date.now(),
+                    },
+                    false,
+                  );
+                }
               }
             }
           } catch {
@@ -1751,14 +1887,10 @@ export class AgentLoop {
         // Plan confirmation: on turn 1 with confirmPlan, pause for user approval
         if (this.confirmPlan && this.turnCount === 1 && response.content) {
           // Finalize stream so the plan text appears as a complete message
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: "", done: true },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
 
           logger.info("agent", "Plan ready — pausing for user approval");
           this.statusHandler(
@@ -1806,19 +1938,30 @@ export class AgentLoop {
           continue;
         }
 
-        // Unified nudge→escalate→give-up for text-only responses
+        // Unified nudge→pivot→escalate+pivot→give-up for text-only responses
         consecutiveNudges++;
         totalNudges++;
         logger.warn("agent", "LLM emitted text instead of tools, nudging", {
           turn: this.turnCount,
           consecutiveNudges,
+          pivotDone,
+          onSmartModel,
           text: cleanContent?.slice(0, 80),
         });
 
-        // Escalation gate: after 2 nudges, try upgrading model
-        if (consecutiveNudges >= 2 && !escalated) {
+        // Pivot gate: 2 text-only nudges → try fresh context on same model
+        if (consecutiveNudges >= 2 && !pivotDone) {
+          await this.strategyPivot(tabId);
+          pivotDone = true;
+          consecutiveNudges = 0;
+          continue;
+        }
+
+        // Escalation + pivot gate: 2 more text-only after pivot → escalate + pivot
+        if (consecutiveNudges >= 2 && !onSmartModel && cooldownRemaining <= 0) {
           this.escalateModel();
-          escalated = true;
+          onSmartModel = true;
+          await this.strategyPivot(tabId);
           consecutiveNudges = 0;
 
           // User-visible feedback
@@ -1833,41 +1976,27 @@ export class AgentLoop {
             false,
           );
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
-
-          prevElementCount = await this.refreshSnapshotWithRetry(
-            tabId,
-            prevElementCount,
-          );
-          this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
           continue;
         }
 
-        // Give-up gate: 3 consecutive nudges (applies whether pre- or post-escalation)
+        // Give-up gate: 3 consecutive nudges after escalate+pivot
         if (consecutiveNudges >= 3) {
           logger.warn("agent", "Loop ended: consecutive nudge limit", {
             turns: this.turnCount,
             consecutiveNudges,
             totalNudges,
-            escalated,
+            onSmartModel,
           });
           const stuckMsg =
             cleanContent || "The agent appears stuck and cannot continue.";
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: stuckMsg, done: false },
-            })
-            .catch(() => { });
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: "", done: true },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: stuckMsg, done: false },
+          });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           this.statusHandler(
             AgentStatus.IDLE,
             "Stuck — send a follow-up to continue",
@@ -1878,7 +2007,7 @@ export class AgentLoop {
 
         // Ratio-based give-up: if >40% of turns are text-only after 10+ turns post-escalation
         if (
-          escalated &&
+          onSmartModel &&
           this.turnCount >= 10 &&
           totalNudges / this.turnCount > 0.4
         ) {
@@ -1889,22 +2018,14 @@ export class AgentLoop {
           });
           const stuckMsg =
             "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: stuckMsg, done: false },
-            })
-            .catch(() => { });
-          chrome.runtime
-            .sendMessage({
-              type: "STREAM_CHUNK",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { delta: "", done: true },
-            })
-            .catch(() => { });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: stuckMsg, done: false },
+          });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           this.statusHandler(
             AgentStatus.IDLE,
             "Stuck — send a follow-up to continue",
@@ -1933,22 +2054,14 @@ export class AgentLoop {
         maxTurns: this.maxTurns,
       });
       const limitMsg = `Reached turn limit (${this.turnCount}/${this.maxTurns}). You can increase the limit in Settings or send a follow-up message to continue.`;
-      chrome.runtime
-        .sendMessage({
-          type: "STREAM_CHUNK",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          payload: { delta: limitMsg, done: false },
-        })
-        .catch(() => { });
-      chrome.runtime
-        .sendMessage({
-          type: "STREAM_CHUNK",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          payload: { delta: "", done: true },
-        })
-        .catch(() => { });
+      this.broadcast({
+        type: "STREAM_CHUNK",
+        payload: { delta: limitMsg, done: false },
+      });
+      this.broadcast({
+        type: "STREAM_CHUNK",
+        payload: { delta: "", done: true },
+      });
       this.statusHandler(
         AgentStatus.IDLE,
         `Turn limit (${this.turnCount}/${this.maxTurns})`,
@@ -1993,11 +2106,17 @@ export class AgentLoop {
 
     this.statusHandler(AgentStatus.THINKING, "Resuming after navigation...");
 
-    // Restart keepalive alarm
-    await startKeepalive();
+    // Register per-tab callbacks so screenshot/vision tools work after navigation
+    const tabId = savedState.activeTabId;
+    setVisionUsageCallback((usage, durationMs, model) => {
+      this.recordVisionUsage(usage, durationMs, model);
+    }, tabId);
+    setScreenshotCaptureCallback((thumbnailUrl) => {
+      this.pendingScreenshotUrl = thumbnailUrl;
+    }, tabId);
 
     try {
-      await this.loop(savedState.activeTabId);
+      await this.loop(tabId);
     } catch (error: any) {
       if (error.name === "AbortError") {
         logger.info("agent", "Agent stopped by user");
@@ -2005,26 +2124,19 @@ export class AgentLoop {
       } else {
         logger.error("agent", "Loop Error", { error });
         const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
-        chrome.runtime
-          .sendMessage({
-            type: "STREAM_CHUNK",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { delta: errorMsg, done: false },
-          })
-          .catch(() => { });
-        chrome.runtime
-          .sendMessage({
-            type: "STREAM_CHUNK",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { delta: "", done: true },
-          })
-          .catch(() => { });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: errorMsg, done: false },
+        });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
         this.statusHandler(AgentStatus.ERROR, error.message);
       }
     } finally {
-      await stopKeepalive();
+      setVisionUsageCallback(null, tabId);
+      setScreenshotCaptureCallback(null, tabId);
       this.isRunning = false;
     }
   }
@@ -2043,7 +2155,7 @@ export class AgentLoop {
       turnCount: this.turnCount,
       maxTurns: this.maxTurns,
       activeTabId: tabId,
-      workspaceId: null,
+      workspaceId: this.workspaceId,
       lastActivityTs: Date.now(),
       pendingToolCall: null,
     };
