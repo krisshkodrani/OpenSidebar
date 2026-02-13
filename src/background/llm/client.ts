@@ -24,7 +24,7 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Fast model tier — used for initial turns */
-export const MODEL_FAST = "google/gemini-2.5-flash-lite";
+export const MODEL_FAST = "openai/gpt-4o-mini";
 /** Smart model tier — used after escalation when stuck */
 export const MODEL_SMART = "minimax/minimax-m2.5";
 

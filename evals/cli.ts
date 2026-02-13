@@ -1,637 +1,264 @@
 /**
- * CLI Entry Point
+ * Eval CLI — entry point for the trace-based evaluation pipeline.
  *
- * Command-line interface for running evaluations and managing golden dataset.
+ * Usage: bun run evals/cli.ts <command> [args]
+ *
+ * Commands:
+ *   convert <session-id> [--strategy <s>]  Convert trace to eval cases
+ *   run [--case <id>] [--all] [--judge]    Run eval cases
+ *   results [--session <id>]               Show eval results
+ *   stats                                  Aggregate statistics
+ *   analyze                                Pattern analysis
+ *   help                                   Show usage
  */
 
-// Import Chrome mocks FIRST before any other imports
-import "./utils/chrome-mock.js";
+import { convertSession } from "./converter";
+import { runEvals } from "./runner";
+import { readEvalResults, readEvalCases, readSessionIndex } from "./utils";
 
-import { parseArgs } from "util";
-import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
-import {
-  loadAllGoldenCases,
-  filterGoldenCases,
-  getGoldenDatasetStats,
-} from "./core/loader.js";
-import { EvaluationRunner, runEvaluations } from "./core/runner.js";
-import { calculateSummary } from "./core/metrics.js";
-import {
-  generateReport,
-  printToConsole,
-  generateComparisonReport,
-} from "./core/reporter.js";
-import {
-  analyzeFailure,
-  analyzeMultipleFailures,
-} from "./optimizer/analyzer.js";
-import {
-  generatePromptSuggestions,
-  applySuggestion,
-  rankSuggestions,
-} from "./optimizer/suggester.js";
-import {
-  trackImprovement,
-  loadImprovementHistory,
-  getImprovementStats,
-  generateImprovementReport,
-  savePromptVersion,
-  loadPromptVersion,
-} from "./optimizer/tracker.js";
-import type {
-  EvaluationResult,
-  EvaluationConfig,
-  ComparisonResult,
-} from "./core/types.js";
-
-const HISTORY_DIR = join(import.meta.dir, "golden", "history");
-
-const usage = `
-QSidebar Evaluation System
-
-Usage:
-  bun evals [options]
-
-Commands:
-  --run, -r              Run evaluations (default if no command specified)
-  --analyze, -a          Analyze failures and generate insights
-  --suggest, -s          Generate prompt improvement suggestions
-  --compare <id>         Compare with baseline run
-  --stats                Show golden dataset statistics
-  --history              Show improvement history
-
-Options:
-  --category <list>      Filter by categories (comma-separated)
-  --tag <list>           Filter by tags (comma-separated)
-  --difficulty <list>    Filter by difficulty: easy,medium,hard
-  --id <list>            Filter by case IDs (comma-separated)
-  --format <format>     Output format: json, markdown, html, csv (default: console)
-  --output <path>        Output file path
-  --mock                 Use mock mode (no real LLM calls)
-  --no-judge             Disable LLM-as-Judge evaluation (faster, no extra API calls)
-  --timeout <ms>         Timeout per case in ms (default: 60000)
-  --fail-on-regression   Exit with error if regressions found
-  --help, -h             Show this help message
-
-Examples:
-  bun evals                              # Run all evaluations
-  bun evals --tag navigation,search      # Run only navigation and search tests
-  bun evals --difficulty easy            # Run only easy tests
-  bun evals --analyze --suggest          # Analyze failures and suggest improvements
-  bun evals --compare baseline           # Compare with baseline
-  bun evals --format markdown --output report.md
-`;
+const c = {
+  reset: "\x1b[0m",
+  dim: "\x1b[2m",
+  red: "\x1b[31m",
+  yellow: "\x1b[33m",
+  green: "\x1b[32m",
+  cyan: "\x1b[36m",
+  bold: "\x1b[1m",
+};
 
 async function main() {
-  const { values, positionals } = parseArgs({
-    args: Bun.argv.slice(2),
-    options: {
-      run: { type: "boolean", short: "r" },
-      analyze: { type: "boolean", short: "a" },
-      suggest: { type: "boolean", short: "s" },
-      compare: { type: "string" },
-      stats: { type: "boolean" },
-      history: { type: "boolean" },
-      category: { type: "string" },
-      tag: { type: "string" },
-      difficulty: { type: "string" },
-      id: { type: "string" },
-      format: { type: "string" },
-      output: { type: "string" },
-      mock: { type: "boolean" },
-      "no-judge": { type: "boolean" },
-      timeout: { type: "string" },
-      "fail-on-regression": { type: "boolean" },
-      help: { type: "boolean", short: "h" },
-    },
-    allowPositionals: true,
-  });
+  const args = process.argv.slice(2);
+  const command = args[0] || "help";
 
-  // Show help
-  if (values.help) {
-    console.log(usage);
-    process.exit(0);
-  }
-
-  try {
-    // Show stats
-    if (values.stats) {
-      await showStats();
-      return;
-    }
-
-    // Show history
-    if (values.history) {
-      await showHistory();
-      return;
-    }
-
-    // Analyze and suggest
-    if (values.analyze || values.suggest) {
-      await runAnalysis(values);
-      return;
-    }
-
-    // Compare
-    if (values.compare) {
-      await runComparison(values.compare);
-      return;
-    }
-
-    // Default: run evaluations
-    await runEvaluationsCommand(values);
-  } catch (error) {
-    console.error("Error:", error instanceof Error ? error.message : error);
-    process.exit(1);
+  switch (command) {
+    case "convert":
+      await cmdConvert(args.slice(1));
+      break;
+    case "run":
+      await cmdRun(args.slice(1));
+      break;
+    case "results":
+      cmdResults(args.slice(1));
+      break;
+    case "stats":
+      cmdStats();
+      break;
+    case "analyze":
+      cmdAnalyze();
+      break;
+    case "help":
+    default:
+      cmdHelp();
+      break;
   }
 }
 
-/**
- * Show golden dataset statistics
- */
-async function showStats() {
-  const cases = await loadAllGoldenCases();
-  const stats = getGoldenDatasetStats(cases);
-
-  console.log("\n" + "=".repeat(60));
-  console.log("Golden Dataset Statistics");
-  console.log("=".repeat(60));
-  console.log();
-  console.log(`Total Cases: ${stats.total}`);
-  console.log();
-
-  console.log("By Difficulty:");
-  for (const [diff, count] of Object.entries(stats.byDifficulty)) {
-    console.log(`  ${diff}: ${count}`);
+async function cmdConvert(args: string[]) {
+  const sessionId = args[0];
+  if (!sessionId) {
+    console.error("Usage: evals convert <session-id> [--strategy first-turn|any-turn|recovery|escalation|all]");
+    process.exit(1);
   }
-  console.log();
 
-  console.log("By Tag:");
-  for (const [tag, count] of Object.entries(stats.byTag)) {
-    console.log(`  ${tag}: ${count}`);
+  const stratIdx = args.indexOf("--strategy");
+  const strategy = (stratIdx !== -1 && args[stratIdx + 1]) ? args[stratIdx + 1] : "all";
+  const validStrategies = ["first-turn", "any-turn", "recovery", "escalation", "all"];
+  if (!validStrategies.includes(strategy)) {
+    console.error(`Invalid strategy: ${strategy}. Valid: ${validStrategies.join(", ")}`);
+    process.exit(1);
   }
-  console.log();
 
-  if (Object.keys(stats.byCategory).length > 0) {
-    console.log("By Category:");
-    for (const [cat, count] of Object.entries(stats.byCategory)) {
-      console.log(`  ${cat}: ${count}`);
+  console.log(`Converting session ${sessionId} with strategy: ${strategy}`);
+  const count = await convertSession(sessionId, strategy as any);
+  console.log(`${c.green}Generated ${count} eval case(s)${c.reset}`);
+}
+
+async function cmdRun(args: string[]) {
+  const caseIdx = args.indexOf("--case");
+  const caseId = caseIdx !== -1 ? args[caseIdx + 1] : undefined;
+  const all = args.includes("--all");
+  const judge = args.includes("--judge");
+  const modelIdx = args.indexOf("--model");
+  const model = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
+
+  await runEvals({ caseId, all, judge, model });
+}
+
+function cmdResults(args: string[]) {
+  const results = readEvalResults();
+  if (results.length === 0) {
+    console.log("No eval results found. Run 'evals run' first.");
+    return;
+  }
+
+  const sessionIdx = args.indexOf("--session");
+  const sessionFilter = sessionIdx !== -1 ? args[sessionIdx + 1] : undefined;
+
+  let filtered = results;
+  if (sessionFilter) {
+    const cases = readEvalCases();
+    const caseIds = new Set(
+      cases
+        .filter((c) => c.sourceSessionId.startsWith(sessionFilter))
+        .map((c) => c.id),
+    );
+    filtered = results.filter((r) => caseIds.has(r.caseId));
+  }
+
+  console.log(`${c.bold}Eval Results (${filtered.length}):${c.reset}\n`);
+  for (const r of filtered) {
+    const statusColor = r.status === "pass" ? c.green : r.status === "fail" ? c.red : c.yellow;
+    console.log(
+      `  ${statusColor}${r.status.padEnd(5)}${c.reset} ` +
+      `names=${r.scores.toolNameMatch.toFixed(2)} params=${r.scores.toolParamMatch.toFixed(2)} ` +
+      `seq=${r.scores.sequenceMatch.toFixed(2)} ${r.durationMs}ms` +
+      (r.scores.judge ? ` judge:${r.scores.judge.taskCompletion}/10` : "") +
+      (r.error ? ` ${c.red}${r.error.slice(0, 60)}${c.reset}` : ""),
+    );
+  }
+}
+
+function cmdStats() {
+  const results = readEvalResults();
+  const cases = readEvalCases();
+
+  if (results.length === 0) {
+    console.log("No eval results found.");
+    return;
+  }
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+
+  const avgNameMatch = avg(results.map((r) => r.scores.toolNameMatch));
+  const avgParamMatch = avg(results.map((r) => r.scores.toolParamMatch));
+  const avgSeqMatch = avg(results.map((r) => r.scores.sequenceMatch));
+
+  console.log(`${c.bold}Eval Statistics${c.reset}\n`);
+  console.log(`  Total cases:   ${cases.length}`);
+  console.log(`  Total results: ${results.length}`);
+  console.log(`  ${c.green}Passed:${c.reset}      ${passed} (${pct(passed, results.length)})`);
+  console.log(`  ${c.red}Failed:${c.reset}      ${failed} (${pct(failed, results.length)})`);
+  console.log(`  ${c.yellow}Errors:${c.reset}      ${errors} (${pct(errors, results.length)})`);
+  console.log();
+  console.log(`  Avg tool name match:  ${avgNameMatch.toFixed(3)}`);
+  console.log(`  Avg tool param match: ${avgParamMatch.toFixed(3)}`);
+  console.log(`  Avg sequence match:   ${avgSeqMatch.toFixed(3)}`);
+
+  // Strategy breakdown
+  const byStrategy: Record<string, EvalResult[]> = {};
+  for (const r of results) {
+    const evalCase = cases.find((c) => c.id === r.caseId);
+    const strategy = evalCase?.strategy ?? "unknown";
+    if (!byStrategy[strategy]) byStrategy[strategy] = [];
+    byStrategy[strategy].push(r);
+  }
+
+  console.log(`\n${c.bold}By Strategy:${c.reset}`);
+  for (const [strategy, stratResults] of Object.entries(byStrategy)) {
+    const p = stratResults.filter((r) => r.status === "pass").length;
+    console.log(`  ${strategy.padEnd(15)} ${p}/${stratResults.length} passed (${pct(p, stratResults.length)})`);
+  }
+}
+
+function cmdAnalyze() {
+  const results = readEvalResults();
+  const cases = readEvalCases();
+
+  if (results.length === 0) {
+    console.log("No eval results found.");
+    return;
+  }
+
+  console.log(`${c.bold}Pattern Analysis${c.reset}\n`);
+
+  // Find common failure patterns
+  const failures = results.filter((r) => r.status === "fail");
+  const toolMismatches: Record<string, number> = {};
+
+  for (const f of failures) {
+    const evalCase = cases.find((c) => c.id === f.caseId);
+    if (!evalCase) continue;
+
+    for (const exp of evalCase.expected.toolCalls) {
+      const found = f.actual.toolCalls.some((a) => a.toolName === exp.toolName);
+      if (!found) {
+        toolMismatches[exp.toolName] = (toolMismatches[exp.toolName] || 0) + 1;
+      }
+    }
+  }
+
+  if (Object.keys(toolMismatches).length > 0) {
+    console.log(`  ${c.bold}Most missed tools:${c.reset}`);
+    const sorted = Object.entries(toolMismatches).sort((a, b) => b[1] - a[1]);
+    for (const [tool, count] of sorted.slice(0, 10)) {
+      console.log(`    ${c.red}${tool.padEnd(20)}${c.reset} missed ${count} times`);
     }
     console.log();
   }
 
-  console.log("=".repeat(60));
-}
+  // Score distribution
+  const lowNameScores = results.filter((r) => r.scores.toolNameMatch < 0.5);
+  const lowSeqScores = results.filter((r) => r.scores.sequenceMatch < 0.5);
 
-/**
- * Show improvement history
- */
-async function showHistory() {
-  const report = await generateImprovementReport();
-  console.log(report);
-}
+  console.log(`  ${c.bold}Weak areas:${c.reset}`);
+  console.log(`    Low tool name match (<0.5): ${lowNameScores.length} cases`);
+  console.log(`    Low sequence match (<0.5):  ${lowSeqScores.length} cases`);
 
-/**
- * Ensure history directory exists
- */
-function ensureHistoryDir() {
-  if (!existsSync(HISTORY_DIR)) {
-    mkdirSync(HISTORY_DIR, { recursive: true });
+  // Judge analysis if available
+  const judged = results.filter((r) => r.scores.judge);
+  if (judged.length > 0) {
+    const avgTask = avg(judged.map((r) => r.scores.judge!.taskCompletion));
+    const avgTool = avg(judged.map((r) => r.scores.judge!.toolSelection));
+    const avgEff = avg(judged.map((r) => r.scores.judge!.efficiency));
+    console.log(`\n  ${c.bold}Judge scores (${judged.length} cases):${c.reset}`);
+    console.log(`    Task completion: ${avgTask.toFixed(1)}/10`);
+    console.log(`    Tool selection:  ${avgTool.toFixed(1)}/10`);
+    console.log(`    Efficiency:      ${avgEff.toFixed(1)}/10`);
   }
 }
 
-/**
- * Save results to history
- */
-async function saveResults(results: EvaluationResult[], summary: any) {
-  ensureHistoryDir();
+function cmdHelp() {
+  console.log(`
+${c.bold}Eval Pipeline CLI${c.reset}
 
-  const data = JSON.stringify({ results, summary, timestamp: new Date().toISOString() }, null, 2);
+Usage: bun run evals <command> [args]
 
-  // Save as latest
-  const latestPath = join(HISTORY_DIR, "latest-results.json");
-  await Bun.write(latestPath, data);
+Commands:
+  convert <session-id> [--strategy <s>]   Convert trace to eval cases
+    Strategies: first-turn, any-turn, recovery, escalation, all (default)
 
-  // Save timestamped copy
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const tsPath = join(HISTORY_DIR, `results-${ts}.json`);
-  await Bun.write(tsPath, data);
+  run [options]                           Run eval cases against LLM
+    --case <id>    Run a specific case
+    --all          Run all cases
+    --judge        Enable LLM-as-judge for failures
+    --model <m>    Override model
 
-  return { latestPath, tsPath };
+  results [--session <id>]                Show eval results
+  stats                                   Aggregate statistics
+  analyze                                 Pattern analysis
+  help                                    Show this help
+
+Workflow:
+  1. Record traces: run agent with 'bun run logs' active
+  2. Convert: bun run evals convert <session-id>
+  3. Run: bun run evals run --all
+  4. Analyze: bun run evals analyze
+`);
 }
 
-/**
- * Load latest results from history
- */
-async function loadLatestResults(): Promise<{ results: EvaluationResult[]; summary: any } | null> {
-  const latestPath = join(HISTORY_DIR, "latest-results.json");
-  if (!existsSync(latestPath)) {
-    return null;
-  }
-  const file = Bun.file(latestPath);
-  return JSON.parse(await file.text());
+function avg(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-/**
- * Load results by timestamp ID
- */
-async function loadResultsById(id: string): Promise<{ results: EvaluationResult[]; summary: any } | null> {
-  // Try exact match first
-  const exactPath = join(HISTORY_DIR, `results-${id}.json`);
-  if (existsSync(exactPath)) {
-    const file = Bun.file(exactPath);
-    return JSON.parse(await file.text());
-  }
-
-  // Try prefix match
-  const { readdirSync } = await import("fs");
-  const files = readdirSync(HISTORY_DIR).filter(
-    (f) => f.startsWith(`results-${id}`) && f.endsWith(".json"),
-  );
-
-  if (files.length === 0) {
-    return null;
-  }
-
-  const file = Bun.file(join(HISTORY_DIR, files[0]));
-  return JSON.parse(await file.text());
+function pct(n: number, total: number): string {
+  if (total === 0) return "0%";
+  return `${((n / total) * 100).toFixed(0)}%`;
 }
 
-/**
- * Run evaluations
- */
-async function runEvaluationsCommand(values: any) {
-  // Load and filter cases
-  let cases = await loadAllGoldenCases();
-
-  if (cases.length === 0) {
-    console.log("No golden cases found. Create some in evals/golden/cases/");
-    return;
-  }
-
-  // Apply filters
-  cases = filterGoldenCases(cases, {
-    tags: values.tag?.split(","),
-    difficulty: values.difficulty?.split(","),
-    category: values.category?.split(","),
-    ids: values.id?.split(","),
-  });
-
-  if (cases.length === 0) {
-    console.log("No cases match the specified filters.");
-    return;
-  }
-
-  console.log(`\nRunning ${cases.length} evaluation(s)...\n`);
-
-  // Create runner
-  const runner = new EvaluationRunner({
-    mockMode: values.mock,
-    enableJudge: !values["no-judge"],
-    timeoutMs: values.timeout ? parseInt(values.timeout) : 60000,
-    onProgress: (completed, total, current) => {
-      process.stdout.write(`\rProgress: ${completed}/${total} (${current})`);
-    },
-  });
-
-  // Initialize runner (loads API keys from .env)
-  try {
-    await runner.initialize();
-  } catch (error) {
-    console.error(
-      "\nFailed to initialize:",
-      error instanceof Error ? error.message : error,
-    );
-    console.log("\nMake sure you have set your API key in .env file:");
-    console.log("   OPENROUTER_API_KEY=your_key_here");
-    console.log("\n   Or use --mock flag to run in mock mode.");
-    process.exit(1);
-  }
-
-  // Run evaluations
-  const startTime = Date.now();
-  const results: EvaluationResult[] = [];
-
-  for (const testCase of cases) {
-    const result = await runner.runCase(testCase);
-    results.push(result);
-  }
-
-  const duration = Date.now() - startTime;
-  process.stdout.write("\r" + " ".repeat(50) + "\r"); // Clear progress line
-
-  // Calculate summary
-  const summary = {
-    total_cases: results.length,
-    passed: results.filter((r) => r.status === "passed").length,
-    failed: results.filter((r) => r.status === "failed").length,
-    errors: results.filter((r) => r.status === "error").length,
-    avg_duration_ms: Math.round(duration / results.length),
-    avg_tool_accuracy: undefined as number | undefined,
-    avg_text_similarity: undefined as number | undefined,
-    avg_judge_score: undefined as number | undefined,
-    by_category: {} as Record<string, { passed: number; failed: number }>,
-    by_difficulty: {} as Record<string, { passed: number; failed: number }>,
-  };
-
-  // Calculate averages
-  const toolAccuracies = results
-    .map((r) => r.metrics.tool_accuracy)
-    .filter((a): a is number => a !== undefined);
-  if (toolAccuracies.length > 0) {
-    summary.avg_tool_accuracy =
-      toolAccuracies.reduce((a, b) => a + b, 0) / toolAccuracies.length;
-  }
-
-  const textSimilarities = results
-    .map((r) => r.metrics.text_similarity)
-    .filter((s): s is number => s !== undefined);
-  if (textSimilarities.length > 0) {
-    summary.avg_text_similarity =
-      textSimilarities.reduce((a, b) => a + b, 0) / textSimilarities.length;
-  }
-
-  const judgeScores = results
-    .map((r) => r.metrics.judge_score)
-    .filter((s): s is number => s !== undefined);
-  if (judgeScores.length > 0) {
-    summary.avg_judge_score =
-      judgeScores.reduce((a, b) => a + b, 0) / judgeScores.length;
-  }
-
-  // Save results to history
-  const { latestPath } = await saveResults(results, summary);
-  console.log(`Results saved to ${latestPath}`);
-
-  // Output results
-  if (values.format) {
-    const report = generateReport(results, summary, {
-      format: values.format as any,
-      output_path: values.output,
-      include_details: true,
-      include_analysis: false,
-    });
-
-    if (values.output) {
-      await Bun.write(values.output, report);
-      console.log(`\nReport saved to ${values.output}`);
-    } else {
-      console.log(report);
-    }
-  } else {
-    printToConsole(results, summary);
-  }
-
-  // Check for regressions if comparing
-  if (values["fail-on-regression"]) {
-    // Would need to load baseline and compare
-    console.log("\nWarning: --fail-on-regression requires --compare");
-  }
-
-  // Exit with error if any failures
-  if (summary.failed > 0 || summary.errors > 0) {
-    process.exit(1);
-  }
-}
-
-/**
- * Run analysis on recent failures
- */
-async function runAnalysis(values: any) {
-  console.log("Analysis mode - loading recent results...\n");
-
-  const data = await loadLatestResults();
-  if (!data) {
-    console.log("No results found. Run evaluations first: bun evals");
-    console.log("Or run in mock mode: bun evals --mock");
-    return;
-  }
-
-  const { results } = data;
-  const failures = results.filter((r) => r.status === "failed" || r.status === "error");
-
-  if (failures.length === 0) {
-    console.log("No failures found in latest results. All cases passed!");
-    return;
-  }
-
-  console.log(`Found ${failures.length} failure(s) out of ${results.length} total cases.\n`);
-
-  // Analyze each failure
-  console.log("=".repeat(60));
-  console.log("Failure Analysis");
-  console.log("=".repeat(60));
-
-  for (const failure of failures) {
-    console.log(`\n--- ${failure.case_id} (${failure.status}) ---`);
-
-    if (failure.details.errors.length > 0) {
-      console.log(`  Errors: ${failure.details.errors.join(", ")}`);
-    }
-
-    if (failure.metrics.tool_accuracy !== undefined) {
-      console.log(`  Tool Accuracy: ${(failure.metrics.tool_accuracy * 100).toFixed(1)}%`);
-    }
-
-    if (failure.metrics.outcome_match !== undefined) {
-      console.log(`  Outcome Match: ${failure.metrics.outcome_match}`);
-    }
-
-    // Show judge verdict if available
-    if (failure.details.judge_verdict) {
-      const v = failure.details.judge_verdict;
-      console.log(`  Judge Score: ${((v.task_completion + v.tool_selection + v.efficiency) / 3).toFixed(1)}/10 (${v.overall_pass ? "PASS" : "FAIL"})`);
-      console.log(`  Judge Reasoning: ${v.reasoning}`);
-      if (v.issues.length > 0) {
-        console.log(`  Judge Issues:`);
-        for (const issue of v.issues) {
-          console.log(`    - ${issue}`);
-        }
-      }
-    }
-
-    // Show actual vs expected tool calls
-    if (failure.details.expected_tool_calls && failure.details.actual_tool_calls) {
-      const expected = failure.details.expected_tool_calls
-        .filter((tc) => !tc.optional)
-        .map((tc) => tc.tool);
-      const actual = failure.details.actual_tool_calls.map((tc) => tc.tool);
-      console.log(`  Expected tools: [${expected.join(", ")}]`);
-      console.log(`  Actual tools:   [${actual.join(", ")}]`);
-    }
-
-    // Run failure analysis
-    try {
-      const analysis = analyzeFailure(failure);
-      if (analysis) {
-        console.log(`  Root cause: ${analysis.root_cause}`);
-        console.log(`  Severity: ${analysis.severity}`);
-        if (analysis.suggestions.length > 0) {
-          console.log(`  Suggestions:`);
-          for (const s of analysis.suggestions) {
-            console.log(`    - ${s}`);
-          }
-        }
-      }
-    } catch {
-      // analyzeFailure may not handle all cases yet
-    }
-  }
-
-  // Cluster common issues
-  console.log("\n" + "=".repeat(60));
-  console.log("Common Issues");
-  console.log("=".repeat(60));
-
-  const toolMismatches = failures.filter(
-    (f) => f.metrics.tool_accuracy !== undefined && f.metrics.tool_accuracy < 0.6,
-  );
-  const outcomeFails = failures.filter(
-    (f) => f.metrics.outcome_match === false,
-  );
-  const errors = failures.filter((f) => f.status === "error");
-
-  if (toolMismatches.length > 0) {
-    console.log(`\n  Tool Accuracy Issues: ${toolMismatches.length} case(s)`);
-    for (const f of toolMismatches) {
-      console.log(`    - ${f.case_id}: ${((f.metrics.tool_accuracy || 0) * 100).toFixed(1)}%`);
-    }
-  }
-
-  if (outcomeFails.length > 0) {
-    console.log(`\n  Outcome Failures: ${outcomeFails.length} case(s)`);
-    for (const f of outcomeFails) {
-      console.log(`    - ${f.case_id}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    console.log(`\n  Runtime Errors: ${errors.length} case(s)`);
-    for (const f of errors) {
-      console.log(`    - ${f.case_id}: ${f.details.errors[0] || "unknown"}`);
-    }
-  }
-
-  // Generate suggestions if requested
-  if (values.suggest) {
-    console.log("\n" + "=".repeat(60));
-    console.log("Prompt Improvement Suggestions");
-    console.log("=".repeat(60));
-
-    try {
-      const suggestions = generatePromptSuggestions(failures);
-      if (suggestions.length === 0) {
-        console.log("\n  No suggestions generated.");
-      } else {
-        const ranked = rankSuggestions(suggestions);
-        for (let i = 0; i < ranked.length; i++) {
-          const s = ranked[i];
-          console.log(`\n  ${i + 1}. ${s.title}`);
-          console.log(`     ${s.description}`);
-          console.log(`     Confidence: ${s.impact.confidence}`);
-          console.log(`     Affected: ${s.impact.affected_cases.join(", ")}`);
-        }
-      }
-    } catch {
-      console.log("\n  Suggestion generation not fully implemented yet.");
-    }
-  }
-}
-
-/**
- * Run comparison with baseline
- */
-async function runComparison(baselineId: string) {
-  console.log(`Comparing with baseline: ${baselineId}\n`);
-
-  // Load baseline
-  const baseline = await loadResultsById(baselineId);
-  if (!baseline) {
-    console.log(`Baseline "${baselineId}" not found in ${HISTORY_DIR}`);
-    console.log("Available baselines:");
-    try {
-      const { readdirSync } = await import("fs");
-      const files = readdirSync(HISTORY_DIR)
-        .filter((f) => f.startsWith("results-") && f.endsWith(".json"))
-        .map((f) => f.replace("results-", "").replace(".json", ""));
-      for (const f of files) {
-        console.log(`  ${f}`);
-      }
-    } catch {
-      console.log("  (no history directory found)");
-    }
-    return;
-  }
-
-  // Load latest
-  const latest = await loadLatestResults();
-  if (!latest) {
-    console.log("No latest results found. Run evaluations first.");
-    return;
-  }
-
-  // Build comparison
-  const regressions: ComparisonResult["regressions"] = [];
-  const improvements: ComparisonResult["improvements"] = [];
-  const unchanged: string[] = [];
-
-  const baselineMap = new Map(baseline.results.map((r) => [r.case_id, r]));
-  const latestMap = new Map(latest.results.map((r) => [r.case_id, r]));
-
-  // Compare overlapping cases
-  for (const [caseId, latestResult] of latestMap) {
-    const baselineResult = baselineMap.get(caseId);
-    if (!baselineResult) continue;
-
-    if (baselineResult.status === "passed" && latestResult.status !== "passed") {
-      regressions.push({
-        case_id: caseId,
-        baseline_status: "passed",
-        current_status: latestResult.status as "failed" | "error",
-        change_description: `Regressed from passed to ${latestResult.status}`,
-      });
-    } else if (baselineResult.status !== "passed" && latestResult.status === "passed") {
-      improvements.push({
-        case_id: caseId,
-        baseline_status: baselineResult.status as "failed" | "error",
-        current_status: "passed",
-        improvement_description: `Improved from ${baselineResult.status} to passed`,
-      });
-    } else {
-      unchanged.push(caseId);
-    }
-  }
-
-  // Print comparison
-  console.log("=".repeat(60));
-  console.log("Comparison Report");
-  console.log("=".repeat(60));
-
-  const basePassRate = baseline.results.filter((r) => r.status === "passed").length / baseline.results.length;
-  const latestPassRate = latest.results.filter((r) => r.status === "passed").length / latest.results.length;
-
-  console.log(`\nBaseline pass rate: ${(basePassRate * 100).toFixed(1)}% (${baseline.results.length} cases)`);
-  console.log(`Current pass rate:  ${(latestPassRate * 100).toFixed(1)}% (${latest.results.length} cases)`);
-  console.log(`Delta:              ${((latestPassRate - basePassRate) * 100).toFixed(1)}%`);
-
-  if (improvements.length > 0) {
-    console.log(`\nImprovements (${improvements.length}):`);
-    for (const imp of improvements) {
-      console.log(`  + ${imp.case_id}: ${imp.improvement_description}`);
-    }
-  }
-
-  if (regressions.length > 0) {
-    console.log(`\nRegressions (${regressions.length}):`);
-    for (const reg of regressions) {
-      console.log(`  - ${reg.case_id}: ${reg.change_description}`);
-    }
-  }
-
-  console.log(`\nUnchanged: ${unchanged.length} case(s)`);
-  console.log("=".repeat(60));
-}
-
-// Run main
-main();
+main().catch((err) => {
+  console.error(`${c.red}Error: ${err.message}${c.reset}`);
+  process.exit(1);
+});

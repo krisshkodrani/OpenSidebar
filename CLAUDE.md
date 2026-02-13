@@ -15,9 +15,14 @@ bun run logs           # Start log drain server (receives logs from extension)
 bun run logs:query     # Query log file (tail, errors, since, search, stats, help)
 bun run logs:tail      # Show last 50 log entries
 bun run logs:errors    # Show error-level entries only
-bun run evals          # Run eval suite
+bun run traces         # Query trace files (list, show, turns, stats)
+bun run traces:list    # List all recorded sessions
+bun run traces:stats   # Aggregate trace statistics
+bun run evals          # Eval pipeline CLI (convert, run, stats, analyze)
+bun run evals:convert  # Convert traces to eval cases
+bun run evals:run      # Run eval cases against LLM
 bun run evals:stats    # Show eval statistics
-bun run evals:analyze  # Analyze evals with suggestions
+bun run evals:analyze  # Pattern analysis across eval results
 ```
 
 **Note:** On this Windows machine, bun was installed via `npm install -g bun` and may not be in PATH by default. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
@@ -42,7 +47,7 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.5 Flash Lite) and `MODEL_SMART` (MiniMax M2.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (GPT-4o-mini) and `MODEL_SMART` (MiniMax M2.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 22 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff.
@@ -98,13 +103,25 @@ Single source of truth for all interfaces. Key patterns:
 ### Messaging Protocol
 All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID) and `source` (enum: sidepanel, background, content, offscreen). Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
 
-### Evals (`evals/`)
-Offline evaluation framework for testing agent behavior against golden datasets.
+### Traces & Evals
 
-- `cli.ts` — CLI entry point. Supports `--stats` and `--analyze --suggest` flags.
-- `core/` — `loader.ts` (YAML case loader), `runner.ts` (eval executor), `metrics.ts` (scoring), `reporter.ts` (output formatting), `types.ts`.
-- `golden/cases/` — YAML test cases (login forms, search, memory operations).
-- `optimizer/` — `analyzer.ts`, `tracker.ts`, `suggester.ts` for identifying improvements.
+**Trace Recording** (`src/background/agent/trace.ts`): `TraceRecorder` captures full-fidelity execution data from every live agent session — DOM snapshots, LLM requests/responses, tool executions, events. Data drains to `traces/` via the log server (fire-and-forget, zero cost when server is down). Types in `src/types/index.ts`: `TraceEntry`, `TraceToolExecution`, `TraceEvent`, `TraceSession`.
+
+**Trace Server** (`scripts/log-server.ts`): The existing log server (port 7589) also handles trace endpoints: `POST /traces` appends per-turn entries to `traces/{sessionId}.jsonl`, `POST /traces/session` writes session metadata to `traces/index.jsonl`.
+
+**Trace Query** (`scripts/trace-query.ts`): CLI for querying trace files. Commands: `list`, `show <id>`, `turns <id>`, `turn <id> <N>`, `filter --outcome <o>`, `stats`.
+
+**Eval Pipeline** (`evals/`): Trace-based evaluation system that replays recorded interactions offline.
+
+- `types.ts` — `EvalCase`, `EvalResult`, `JudgeScore` types.
+- `converter.ts` — Converts trace sessions into eval cases using strategies: `first-turn`, `any-turn`, `recovery`, `escalation`.
+- `runner.ts` — Replays eval cases against the LLM via OpenRouter (no browser needed).
+- `scorer.ts` — Scoring: tool name match, param match (fuzzy), sequence alignment (Levenshtein).
+- `judge.ts` — LLM-as-judge for qualitative assessment of failed cases.
+- `cli.ts` — CLI entry point: `convert`, `run`, `results`, `stats`, `analyze`.
+- `utils.ts` — Shared utilities: file I/O, API key loading, Levenshtein distance.
+
+**Workflow**: Record traces → Convert to eval cases → Run evals → Analyze patterns → Improve prompts/tools → Verify with evals.
 
 ### Scripts (`scripts/`)
 - `log-server.ts` — Bun HTTP server (`127.0.0.1:7589`). Receives log batches from the extension's `StorageLogger` and appends to `logs/opensidebar.jsonl`. 50MB rotation, 5 files max.

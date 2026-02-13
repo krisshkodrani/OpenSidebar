@@ -15,15 +15,21 @@ const HOST = "127.0.0.1";
 const PROJECT_ROOT = join(dirname(import.meta.dir));
 const LOG_DIR = join(PROJECT_ROOT, "logs");
 const LOG_FILE = join(LOG_DIR, "opensidebar.jsonl");
+const TRACE_DIR = join(PROJECT_ROOT, "traces");
+const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
 
 let entryCount = 0;
+let traceEntryCount = 0;
 
-// Ensure logs directory exists
+// Ensure directories exist
 if (!existsSync(LOG_DIR)) {
   mkdirSync(LOG_DIR, { recursive: true });
+}
+if (!existsSync(TRACE_DIR)) {
+  mkdirSync(TRACE_DIR, { recursive: true });
 }
 
 /** Rotate log file when it exceeds MAX_FILE_SIZE */
@@ -104,10 +110,48 @@ const server = Bun.serve({
       }
     }
 
+    // Trace entry endpoint — append a TraceEntry to traces/{sessionId}.jsonl
+    if (url.pathname === "/traces" && req.method === "POST") {
+      try {
+        const entry = await req.json();
+        const sessionId = entry?.sessionId;
+        if (!sessionId || typeof sessionId !== "string") {
+          return new Response("Missing sessionId", {
+            status: 400,
+            headers: CORS_HEADERS,
+          });
+        }
+        const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
+        await appendFile(traceFile, JSON.stringify(entry) + "\n");
+        traceEntryCount++;
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      } catch (err) {
+        return new Response(`Trace error: ${err}`, {
+          status: 500,
+          headers: CORS_HEADERS,
+        });
+      }
+    }
+
+    // Trace session endpoint — append a TraceSession to traces/index.jsonl
+    if (url.pathname === "/traces/session" && req.method === "POST") {
+      try {
+        const session = await req.json();
+        await appendFile(TRACE_INDEX, JSON.stringify(session) + "\n");
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      } catch (err) {
+        return new Response(`Trace session error: ${err}`, {
+          status: 500,
+          headers: CORS_HEADERS,
+        });
+      }
+    }
+
     return new Response("Not found", { status: 404, headers: CORS_HEADERS });
   },
 });
 
 console.log(`Log server listening on http://${HOST}:${server.port}`);
 console.log(`Writing to ${LOG_FILE}`);
+console.log(`Traces to ${TRACE_DIR}`);
 console.log(`Press Ctrl+C to stop\n`);

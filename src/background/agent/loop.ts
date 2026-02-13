@@ -26,6 +26,7 @@ import { CompletionResponse, TokenUsage } from "../llm/types";
 import { startKeepalive, stopKeepalive } from "../keepalive";
 import { formatStepLabel } from "./step-labels";
 import { PlanGuardian } from "./guardian";
+import { TraceRecorder } from "./trace";
 import {
   AGENT_LIMITS,
   TOOL_FAILURE_THRESHOLDS,
@@ -113,6 +114,9 @@ export class AgentLoop {
   private planSubtasks: SubtaskSummary[] = [];
   private taskStartTime = 0;
   private urlHistory: string[] = [];
+
+  /** Trace recorder for session capture */
+  private traceRecorder: TraceRecorder | null = null;
 
   /** Off-domain navigation detection */
   private startingOrigin: string | null = null;
@@ -290,6 +294,11 @@ export class AgentLoop {
     this.offDomainWarned = false;
     this.metrics = AgentLoop.emptyMetrics();
     this.sessionStartTime = Date.now();
+    this.traceRecorder = new TraceRecorder(crypto.randomUUID());
+    this.traceRecorder.setSessionInfo(
+      initialUserText,
+      initialSnapshot?.url || "",
+    );
 
     // Clear or restore context
     if (options?.clearHistory) {
@@ -482,6 +491,16 @@ export class AgentLoop {
       setScreenshotCaptureCallback(null);
       await stopKeepalive();
       this.isRunning = false;
+      // Finalize trace recording (fire-and-forget)
+      if (this.traceRecorder) {
+        await this.traceRecorder.finalize(
+          result.outcome,
+          result.summary,
+          result.turnCount,
+          result.metrics ?? null,
+        );
+        this.traceRecorder = null;
+      }
     }
     return result;
   }
@@ -632,6 +651,7 @@ export class AgentLoop {
 
       // Inject pending hint from user before LLM call
       if (this.pendingHint) {
+        this.traceRecorder?.recordEvent("hint", { text: this.pendingHint });
         this.context.addMessage({
           role: "user",
           content: `[User hint]: ${this.pendingHint}`,
@@ -671,6 +691,26 @@ export class AgentLoop {
         compression: metrics.compressionLevel,
         toolCount: tools.length,
       });
+
+      // Trace: start turn recording
+      if (this.traceRecorder) {
+        const snap = this.context.getSnapshot();
+        this.traceRecorder.startTurn(
+          this.turnCount,
+          {
+            url: snap?.url || "",
+            title: snap?.title || "",
+            elementCount: metrics.elementCount,
+            viewportTextLength: snap?.viewportText?.length || 0,
+            scrollY: snap?.scroll?.y || 0,
+          },
+          snap?.elements || [],
+          metrics.systemTokens + metrics.historyTokens,
+          tools.length,
+          this.llm.getCurrentModel(),
+          metrics.compressionLevel,
+        );
+      }
 
       const thinkingStepId = crypto.randomUUID();
       const thinkingStep: AgentStep = {
@@ -737,6 +777,17 @@ export class AgentLoop {
       // Accumulate token usage and broadcast metrics
       this.recordUsage(response, llmMs);
       this.broadcastMetrics();
+
+      // Trace: record LLM response
+      if (this.traceRecorder) {
+        this.traceRecorder.recordLLMResponse(
+          response.content,
+          response.tool_calls || [],
+          response.finish_reason,
+          response.usage ?? null,
+          llmMs,
+        );
+      }
 
       // Derive clean content (no <think> blocks) for logging and logic,
       // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
@@ -902,6 +953,9 @@ export class AgentLoop {
                   durationMs: toolMs,
                   intention: llmIntention,
                 });
+                this.traceRecorder?.recordToolExecution(
+                  toolCall.id, toolName, args, result, true, toolMs, riskLevel,
+                );
 
                 if (
                   DOM_MODIFYING_TOOLS.has(toolName) &&
@@ -925,6 +979,9 @@ export class AgentLoop {
                   durationMs: toolMs,
                   intention: llmIntention,
                 });
+                this.traceRecorder?.recordToolExecution(
+                  toolCall.id, toolName, args, errorMsg, false, toolMs, riskLevel, errorMsg,
+                );
                 this.stepHandler(
                   {
                     ...toolStep,
@@ -1019,6 +1076,10 @@ export class AgentLoop {
                       0,
                       STRING_LIMITS.REJECTION_REASON,
                     ),
+                  });
+                  this.traceRecorder?.recordEvent("done_rejected", {
+                    rejections: this.doneRejections,
+                    reason: rejectReason,
                   });
 
                   if (this.doneRejections >= AGENT_LIMITS.MAX_DONE_REJECTIONS) {
@@ -1169,6 +1230,7 @@ export class AgentLoop {
                 reason,
                 wasAlreadyEscalated: escalated && reason === "",
               });
+              this.traceRecorder?.recordEvent("escalation", { reason, voluntary: true });
               continue;
             }
 
@@ -1264,6 +1326,10 @@ export class AgentLoop {
                 currentIndex,
                 lastResult: lastResult?.slice(0, 100),
               });
+              this.traceRecorder?.recordEvent("plan_update", {
+                subtaskCount: subtaskDescs.length,
+                currentIndex,
+              });
               continue;
             }
 
@@ -1308,6 +1374,9 @@ export class AgentLoop {
                 durationMs: toolMs,
                 intention: llmIntention,
               });
+              this.traceRecorder?.recordToolExecution(
+                toolCall.id, toolName, args, result, true, toolMs, riskLevel,
+              );
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
               const errorMsg = toolError.message || String(toolError);
@@ -1322,6 +1391,9 @@ export class AgentLoop {
                 durationMs: toolMs,
                 intention: llmIntention,
               });
+              this.traceRecorder?.recordToolExecution(
+                toolCall.id, toolName, args, errorMsg, false, toolMs, riskLevel, errorMsg,
+              );
               this.stepHandler(
                 {
                   ...toolStep,
@@ -1397,6 +1469,10 @@ export class AgentLoop {
                 consecutiveAllFailTurns,
               },
             );
+            this.traceRecorder?.recordEvent("circuit_breaker", {
+              reason: "consecutive_all_fail",
+              consecutiveAllFailTurns,
+            });
             this.circuitBreakerExit(
               `All tool calls have failed for ${consecutiveAllFailTurns} consecutive turns. The agent cannot make progress. Send a follow-up with different instructions.`,
             );
@@ -1440,6 +1516,11 @@ export class AgentLoop {
                     count,
                   },
                 );
+                this.traceRecorder?.recordEvent("circuit_breaker", {
+                  reason: "same_tool_repeat",
+                  tool: toolName,
+                  count,
+                });
                 this.circuitBreakerExit(
                   `The same tool call (${toolName}) has failed ${count} times with the same arguments. The agent is stuck in a loop. Send a follow-up with different instructions.`,
                 );
@@ -1559,6 +1640,14 @@ export class AgentLoop {
               // Progress tracking: detect stuck loops
               const progressSignal = this.progress.onSnapshotRefresh(snap);
               if (progressSignal) {
+                this.traceRecorder?.recordProgress(
+                  progressSignal.staleTurns,
+                  progressSignal.type,
+                );
+                this.traceRecorder?.recordEvent("stuck_signal", {
+                  type: progressSignal.type,
+                  staleTurns: progressSignal.staleTurns,
+                });
                 logger.warn("agent", "Progress stuck detected", {
                   turn: this.turnCount,
                   type: progressSignal.type,
@@ -1652,7 +1741,10 @@ export class AgentLoop {
           }
         }
 
-        if (doneSignaled) break;
+        if (doneSignaled) {
+          await this.traceRecorder?.endTurn();
+          break;
+        }
       } else {
         // TEXT RESPONSE — no tool calls
 
@@ -1780,6 +1872,7 @@ export class AgentLoop {
             AgentStatus.IDLE,
             "Stuck — send a follow-up to continue",
           );
+          await this.traceRecorder?.endTurn();
           break;
         }
 
@@ -1816,6 +1909,7 @@ export class AgentLoop {
             AgentStatus.IDLE,
             "Stuck — send a follow-up to continue",
           );
+          await this.traceRecorder?.endTurn();
           break;
         }
 
@@ -1823,8 +1917,14 @@ export class AgentLoop {
         const count = await this.refreshSnapshot(tabId);
         if (count >= 0) prevElementCount = count;
         this.context.addMessage({ role: "user", content: NUDGE_MESSAGE });
+
+        // Trace: flush turn
+        await this.traceRecorder?.endTurn();
         continue;
       }
+
+      // Trace: flush turn at end of each iteration
+      await this.traceRecorder?.endTurn();
     }
 
     if (this.turnCount >= this.maxTurns) {
