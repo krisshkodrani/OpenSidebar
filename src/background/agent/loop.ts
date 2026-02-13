@@ -3,17 +3,15 @@ import {
     AgentLoopState,
     AgentStep,
     MessageSource,
-    OverlayDescriptor,
     SessionMetrics,
     SubtaskResult,
     SubtaskSummary,
     ToolCall,
     ToolName,
-    UserSettings,
 } from "../../types";
 import { logger } from "../../utils";
 import { LLMClient, MODEL_SMART, stripThinkTags } from "../llm";
-import { toolRegistry, setVisionUsageCallback } from "../tools";
+import { toolRegistry, setVisionUsageCallback, setScreenshotCaptureCallback } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
 import { classifyRisk } from "../security";
 import { ContextManager } from "./context";
@@ -74,6 +72,8 @@ export class AgentLoop {
     private progress = new ProgressTracker();
     /** Pending hint from the user, picked up on the next turn */
     private pendingHint: string | null = null;
+    /** Pending screenshot thumbnail from take_screenshot, attached to step on completion */
+    private pendingScreenshotUrl: string | null = null;
     /** Promise-based gate for pause/resume */
     private pauseGate: { promise: Promise<void>; resolve: () => void } | null = null;
 
@@ -319,6 +319,11 @@ export class AgentLoop {
             this.recordVisionUsage(usage, durationMs, model);
         });
 
+        // Register screenshot capture callback for inline thumbnails
+        setScreenshotCaptureCallback((thumbnailUrl) => {
+            this.pendingScreenshotUrl = thumbnailUrl;
+        });
+
         // Register guardian usage callback for metrics tracking
         this.guardian.setUsageCallback((usage, llmMs) => {
             this.recordUsage(
@@ -358,6 +363,7 @@ export class AgentLoop {
             }
         } finally {
             setVisionUsageCallback(null);
+            setScreenshotCaptureCallback(null);
             await stopKeepalive();
             this.isRunning = false;
         }
@@ -418,98 +424,6 @@ export class AgentLoop {
         return this.pauseGate !== null;
     }
 
-    /**
-     * LLM fallback for overlay dismissal — called when heuristics can't remove a
-     * viewport-covering overlay. Sends the overlay HTML to a fast vision model
-     * to identify which button to click.
-     */
-    private async dismissOverlayWithLLM(overlay: OverlayDescriptor, tabId: number): Promise<void> {
-        try {
-            const stored = await chrome.storage.sync.get("userSettings");
-            const settings = (stored.userSettings ?? {}) as UserSettings;
-            const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
-            if (!apiKey) return;
-
-            const visionModel = settings.visionModel || "google/gemini-2.0-flash-001";
-            const prompt = `You are a browser automation assistant. A modal/overlay is blocking the page.
-HTML (truncated):
-\`\`\`html
-${overlay.html}
-\`\`\`
-Covers ${overlay.coveragePercent}% of viewport.
-
-Respond with ONE JSON object, no markdown:
-{"action":"click","selector":"CSS_SELECTOR"}
-or {"action":"hide"}
-
-Prefer "click" if a close/dismiss/accept button exists.`;
-
-            const callStart = Date.now();
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${apiKey}`,
-                    "HTTP-Referer": "chrome-extension://opensidebar",
-                    "X-Title": "OpenSidebar",
-                },
-                body: JSON.stringify({
-                    model: visionModel,
-                    messages: [{ role: "user", content: prompt }],
-                    max_tokens: 150,
-                    temperature: 0,
-                }),
-                signal: AbortSignal.timeout(5000),
-            });
-
-            if (!response.ok) return;
-
-            const json = await response.json();
-            const text: string = json.choices?.[0]?.message?.content || "";
-            const llmMs = Date.now() - callStart;
-
-            // Record usage for metrics
-            if (json.usage) {
-                this.recordVisionUsage(
-                    {
-                        prompt_tokens: json.usage.prompt_tokens ?? 0,
-                        completion_tokens: json.usage.completion_tokens ?? 0,
-                        total_tokens: json.usage.total_tokens ?? 0,
-                        cost: json.usage.cost,
-                    },
-                    llmMs,
-                    visionModel,
-                );
-            }
-
-            // Parse JSON response (strip markdown fences if present)
-            const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
-            const parsed = JSON.parse(cleaned) as { action: string; selector?: string };
-
-            if (parsed.action === "click" && parsed.selector) {
-                await chrome.tabs.sendMessage(tabId, {
-                    type: "DISMISS_MODALS",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: { clickSelector: parsed.selector, overlayTagId: overlay.tagId },
-                });
-                logger.info("agent", "LLM overlay dismiss: click", { selector: parsed.selector, tagId: overlay.tagId });
-            } else {
-                // hide action — use TOOL_EXECUTE with hide_element
-                await chrome.tabs.sendMessage(tabId, {
-                    type: "TOOL_EXECUTE",
-                    requestId: crypto.randomUUID(),
-                    source: MessageSource.BACKGROUND,
-                    payload: { toolName: ToolName.HIDE_ELEMENT, args: { id: overlay.tagId }, toolCallId: crypto.randomUUID() },
-                });
-                logger.info("agent", "LLM overlay dismiss: hide", { tagId: overlay.tagId });
-            }
-        } catch (err: any) {
-            // Non-critical — agent proceeds normally
-            logger.debug("agent", "LLM overlay dismiss failed (non-critical)", { error: err?.message });
-        }
-    }
-
     /** Escalate to smart model when stuck. */
     private escalateModel(): void {
         this.llm.switchModel(MODEL_SMART);
@@ -551,32 +465,6 @@ Prefer "click" if a close/dismiss/accept button exists.`;
         let escalated = false;
         let doneSummary = "";
         let wasStuck = false; // Track stuck state for "resolved" signal
-
-        // Pre-agent modal auto-dismiss (always, before first LLM turn)
-        try {
-            const dismissResult = await chrome.tabs.sendMessage(tabId, {
-                type: "DISMISS_MODALS",
-                requestId: crypto.randomUUID(),
-                source: MessageSource.BACKGROUND,
-                payload: {},
-            });
-            const dismissed = dismissResult?.payload?.dismissed ?? 0;
-            if (dismissed > 0) {
-                logger.info("agent", "Auto-dismissed modals", { dismissed });
-                await new Promise(r => setTimeout(r, 100));
-            }
-
-            // LLM fallback for overlays that resist heuristic dismissal
-            const remainingOverlay = dismissResult?.payload?.remainingOverlay ?? null;
-            if (remainingOverlay && this.abortController) {
-                logger.info("agent", "Heuristics left remaining overlay, trying LLM fallback", {
-                    tagId: remainingOverlay.tagId,
-                    coverage: remainingOverlay.coveragePercent,
-                });
-                await this.dismissOverlayWithLLM(remainingOverlay, tabId);
-                await new Promise(r => setTimeout(r, 200)); // DOM settle
-            }
-        } catch { /* non-critical */ }
 
         while (this.isRunning && this.turnCount < this.maxTurns) {
             // Pause gate — block here if user paused the loop
@@ -1134,10 +1022,13 @@ Prefer "click" if a close/dismiss/accept button exists.`;
                         try {
                             result = await toolRegistry.execute(toolCall, tabId, this.abortController!.signal);
                             const toolMs = Date.now() - toolStep.timestamp;
+                            const screenshotUrl = this.pendingScreenshotUrl;
+                            this.pendingScreenshotUrl = null;
                             this.stepHandler({
                                 ...toolStep,
                                 status: "done",
                                 durationMs: toolMs,
+                                ...(screenshotUrl ? { screenshotUrl } : {}),
                             }, true);
                             logger.info("tools", `${toolName} OK`, {
                                 turn: this.turnCount, tool: toolName, risk: riskLevel,

@@ -218,12 +218,7 @@ export interface ScreenshotCapturedMessage extends BaseMessage {
 export interface DismissModalsMessage extends BaseMessage {
   type: "DISMISS_MODALS";
   source: MessageSource.BACKGROUND;
-  payload: {
-    /** LLM-directed: CSS selector to click within overlay */
-    clickSelector?: string;
-    /** Tag ID of the overlay to scope the click */
-    overlayTagId?: number;
-  };
+  payload: Record<string, never>;
 }
 
 /** Content script reports how many modals were dismissed */
@@ -699,6 +694,8 @@ export interface DomSnapshot {
   viewport: { width: number; height: number };
   /** Scroll position */
   scroll: { x: number; y: number; maxY: number };
+  /** Overlays that survived auto-dismissal (agent should handle manually) */
+  survivingOverlays?: { tagId: number; coveragePercent: number }[];
 }
 
 /** A single interactive DOM element with a numeric tag */
@@ -803,6 +800,8 @@ export interface AgentStep {
   timestamp: number;
   durationMs?: number;
   errorMessage?: string;
+  /** Base64 data URL of a downsized screenshot thumbnail (~320px wide) */
+  screenshotUrl?: string;
 }
 
 // --- Side Panel UI Types ---
@@ -842,6 +841,8 @@ export interface TurnProgress {
 
 /** Top-level React state for the side panel */
 export interface SidePanelState {
+  /** Whether initial load (settings + messages) is complete */
+  ready: boolean;
   /** Chat history */
   messages: ChatEntry[];
   /** Current agent status (drives status indicator) */
