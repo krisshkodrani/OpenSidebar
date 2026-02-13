@@ -42,7 +42,7 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.0 Flash) and `MODEL_SMART` (Claude Sonnet 4.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.5 Flash Lite) and `MODEL_SMART` (MiniMax M2.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 22 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff.
@@ -134,7 +134,7 @@ For build errors, also check `bun run build` output directly — Vite/Rollup sur
 
 ### Generic over task-specific
 
-All agent infrastructure (planning, progress tracking, completion judgment, stuck detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a 30-step browser challenge the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
+All agent infrastructure (planning, progress tracking, completion judgment, stuck detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a complex multi-step workflow the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
 
 - **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong in the agent loop.
 - **The agent adapts through prompting and memory, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses `memory_add` / `memory_search` to learn and recall strategies across sessions.

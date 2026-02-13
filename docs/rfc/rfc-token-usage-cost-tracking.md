@@ -418,12 +418,12 @@ Extend the existing `CompletionSummary` component (rendered inside `MessageBubbl
 └─────────────────────────────────────────┘
 ```
 
-If the user had model escalation (started on Gemini Flash Lite, escalated to Kimi K2.5), show the breakdown:
+If the user had model escalation (started on Gemini Flash Lite, escalated to MiniMax M2.5), show the breakdown:
 
 ```
 │ 47 turns · 125.3K tokens · $0.04       │
 │ ├ gemini-2.5-flash-lite: 98.1K tok · $0.01  │
-│ └ kimi-k2.5:             27.2K tok · $0.03  │
+│ └ minimax-m2.5:          27.2K tok · $0.03  │
 ```
 
 ### Data Flow
@@ -510,7 +510,7 @@ OpenRouter includes cost data directly in API responses, so **no additional API 
 
 3. **Model pricing** — OpenRouter passes through the underlying provider's pricing with no markup. Prices vary per model:
    - `google/gemini-2.5-flash-lite` (MODEL_FAST): ~$0.10/M input, ~$0.40/M output
-   - `moonshotai/kimi-k2.5` (MODEL_SMART): ~$0.45/M input, ~$2.25/M output
+   - `minimax/minimax-m2.5` (MODEL_SMART): ~$0.30/M input, ~$1.20/M output
    - Vision models: same pricing as their text counterparts (default: `google/gemini-2.5-flash-lite`)
 
 4. **Fallback if `cost` is absent** — If OpenRouter doesn't return `cost` (rare), we can estimate from token counts × known model prices. But the `usage.cost` field should be preferred as the source of truth.

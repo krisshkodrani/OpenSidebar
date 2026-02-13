@@ -29,7 +29,8 @@ mock.module("../../src/background/llm", () => ({
         getCurrentModel = () => this.model;
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
-    MODEL_SMART: "moonshotai/kimi-k2.5",
+    MODEL_SMART: "minimax/minimax-m2.5",
+    stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
 }));
 
 describe("AgentLoop", () => {
