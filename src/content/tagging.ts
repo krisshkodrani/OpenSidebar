@@ -1,3 +1,16 @@
+/**
+ * Tagging - Vimium-style numeric element tagging
+ *
+ * Responsibilities:
+ * - Scan DOM for interactive elements
+ * - Assign stable numeric tags [1], [2], [3]...
+ * - Support shadow DOM traversal
+ * - Generate visible text for each element
+ * - Maintain stable IDs across snapshots
+ *
+ * Tag format: [N] tagName#id "visible text" (role)
+ */
+
 import { TaggedElement } from "../types";
 import { logger } from "../utils";
 
@@ -70,7 +83,11 @@ function fnv1aHash(str: string): string {
 function getDomPath(el: Element): string {
   const parts: string[] = [];
   let current: Element | null = el;
-  while (current && current !== document.body && current !== document.documentElement) {
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement
+  ) {
     const parent = current.parentElement;
     if (!parent) break;
     const siblings = Array.from(parent.children);
@@ -83,7 +100,15 @@ function getDomPath(el: Element): string {
 
 /** Build a stable attribute signature from identity-bearing attributes */
 function getAttrSignature(el: Element): string {
-  const keys = ["id", "name", "type", "role", "href", "aria-label", "data-testid"];
+  const keys = [
+    "id",
+    "name",
+    "type",
+    "role",
+    "href",
+    "aria-label",
+    "data-testid",
+  ];
   return keys
     .map((k) => el.getAttribute(k))
     .filter(Boolean)
@@ -127,9 +152,22 @@ export function resetStableIds(): void {
 // --- Container tags for clickable scan filtering ---
 
 const CONTAINER_TAGS = new Set([
-  "div", "section", "article", "main", "aside", "header",
-  "footer", "nav", "form", "fieldset", "ul", "ol", "table",
-  "tbody", "thead", "tr",
+  "div",
+  "section",
+  "article",
+  "main",
+  "aside",
+  "header",
+  "footer",
+  "nav",
+  "form",
+  "fieldset",
+  "ul",
+  "ol",
+  "table",
+  "tbody",
+  "thead",
+  "tr",
 ]);
 
 // --- Public API ---
@@ -231,7 +269,8 @@ function detectClickableElements(): Element[] {
       acceptNode(node) {
         const el = node as Element;
         // Skip our own labels
-        if ((el as HTMLElement).classList?.contains(LABEL_CLASS)) return NodeFilter.FILTER_REJECT;
+        if ((el as HTMLElement).classList?.contains(LABEL_CLASS))
+          return NodeFilter.FILTER_REJECT;
         // Skip if already captured by interactive selectors
         try {
           if (el.matches(INTERACTIVE_SELECTORS)) return NodeFilter.FILTER_SKIP;
@@ -240,7 +279,8 @@ function detectClickableElements(): Element[] {
         }
         // Skip large containers
         const tag = el.tagName.toLowerCase();
-        if (CONTAINER_TAGS.has(tag) && el.children.length > 3) return NodeFilter.FILTER_SKIP;
+        if (CONTAINER_TAGS.has(tag) && el.children.length > 3)
+          return NodeFilter.FILTER_SKIP;
         return NodeFilter.FILTER_ACCEPT;
       },
     },
@@ -500,16 +540,26 @@ function extractAttributes(el: Element): Record<string, string> {
   }
 
   // Form-specific label association
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+  if (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement
+  ) {
     const elId = el.getAttribute("id");
     if (elId) {
-      const labelEl = document.querySelector(`label[for="${CSS.escape(elId)}"]`);
-      if (labelEl) attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
+      const labelEl = document.querySelector(
+        `label[for="${CSS.escape(elId)}"]`,
+      );
+      if (labelEl)
+        attrs["label"] = truncateText(labelEl.textContent?.trim() || "", 40);
     }
     if (!attrs["label"]) {
       const parentLabel = el.closest("label");
       if (parentLabel) {
-        const labelText = parentLabel.textContent?.trim().replace(el.value || "", "").trim();
+        const labelText = parentLabel.textContent
+          ?.trim()
+          .replace(el.value || "", "")
+          .trim();
         if (labelText) attrs["label"] = truncateText(labelText, 40);
       }
     }
