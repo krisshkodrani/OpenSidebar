@@ -13,14 +13,14 @@ Two tightly related defects in the content script's tagging system cause the maj
 
 `tagElements()` resets `tagCounter = 0` and rebuilds the tag map from scratch on every snapshot refresh. After any DOM-modifying tool (click, hide, type, drag), the loop calls `refresh: true` which re-tags all elements with new sequential IDs. The LLM references an ID from the previous turn, but that ID now points to a different element.
 
-**Evidence from logs (Step 4, Browser Navigation Challenge):**
+**Evidence from logs (dynamic page with changing element IDs):**
 ```
 Turn 45: click_element(2) => Clicked [2] button "Click Here"     ✓ correct
 Turn 46: click_element(2) => Clicked [2] button "Continue Journey" ✗ ID shifted!
 Turn 47: click_element(1) => Clicked [1] button "Keep Going"      ✗ wrong again
 ```
 
-The agent needed to click the same "Click Here" button 3 times. It identified the right element on the first click. After the DOM reacted, the snapshot refreshed, and ID `[2]` was reassigned to a completely different button. **This single issue consumed 92 turns (~40% of the session).**
+The agent needed to click the same "Click Here" button 3 times. It identified the right element on the first click. After the DOM reacted, the snapshot refreshed, and ID `[2]` was reassigned to a completely different button. **This single issue consumed 92 turns (~40% of the session) in the observed session.**
 
 ### P0-B: Inline clickable elements are not tagged
 
@@ -30,7 +30,7 @@ The `INTERACTIVE_SELECTORS` list covers `<a[href]>`, `<button>`, `[role='button'
 - `<span>` with `cursor: pointer` CSS
 - Generic elements with `click` listeners attached programmatically (no `onclick` attribute)
 
-**Evidence:** Step 4's challenge text read *"...or click **here** 3 more times to reveal"* — the word "here" was an inline clickable `<span>` inside a `<p>`. Since it had no `href`, no `onclick` attribute, and no `role`, the tagging system never tagged it. `find_element("click here")` returned the parent `<p>` element, not the clickable span. The agent had **no way** to discover or interact with the actual target.
+**Evidence:** On a dynamic page, the text read *"...or click **here** 3 more times to reveal"* — the word "here" was an inline clickable `<span>` inside a `<p>`. Since it had no `href`, no `onclick` attribute, and no `role`, the tagging system never tagged it. `find_element("click here")` returned the parent `<p>` element, not the clickable span. The agent had **no way** to discover or interact with the actual target.
 
 ### Impact
 
@@ -38,7 +38,7 @@ The `INTERACTIVE_SELECTORS` list covers `<a[href]>`, `<button>`, `[role='button'
 |-------|-------------------------------|-------------------|
 | Unstable IDs | ~50 turns (repeated wrong-element clicks) | 1 hint |
 | Missing inline tags | ~70 turns (couldn't find clickable text) | 1 hint |
-| **Combined** | **~92 turns** (overlapping) | Step 4 unsolvable without user hint |
+| **Combined** | **~92 turns** (overlapping) | Task unsolvable without user hint |
 
 Both issues interact: even when `find_element` returned a dynamic tag for a nearby element, the next snapshot refresh invalidated that tag. The agent was fighting both problems simultaneously.
 
@@ -400,14 +400,13 @@ This ensures `find_element("click here")` returns the clickable `<span>` inside 
 
 ## Estimated Impact
 
-Based on the log analysis of the Browser Navigation Challenge session:
+Based on log analysis of a representative session with dynamic page content:
 
 | Metric | Before | After (projected) |
 |--------|--------|-------------------|
-| Turns to complete Step 4 | 92 | ~10-15 |
+| Turns to complete a multi-step task | 92 | ~10-15 |
 | `click_element` wrong-target rate | 21% | <5% |
 | `find_element` miss on inline text | 30% | <10% |
 | User interventions needed | 3 (hint + 2 prods) | 0 |
-| Steps completable per session | 8/30 | 20+ (credit-limited) |
 
-The 92→15 turn reduction on Step 4 alone saves ~$0.15-0.30 in API costs and 5+ minutes of wall-clock time. Across a 30-step challenge, the cumulative savings would be substantial.
+The 92→15 turn reduction on a single task saves ~$0.15-0.30 in API costs and 5+ minutes of wall-clock time. Across complex multi-step workflows, the cumulative savings would be substantial.
