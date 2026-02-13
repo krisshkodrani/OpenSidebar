@@ -243,10 +243,10 @@ export class WorkspaceManager {
   }
 
   /**
-   * Get the next sequential workspace name ("OpenSidebar 1", "OpenSidebar 2", etc.)
+   * Get the next sequential workspace name ("OS 1", "OS 2", etc.)
    */
   public getNextWorkspaceName(): string {
-    return `OpenSidebar ${this.nextWorkspaceNum}`;
+    return `OS ${this.nextWorkspaceNum}`;
   }
 
   /**
@@ -292,13 +292,13 @@ export class WorkspaceManager {
     const tabs = await chrome.tabs.query({ groupId: group.id });
     const tabIds = tabs.map((t) => t.id!).filter(Boolean);
 
-    // Parse workspace number from title if possible
-    const match = group.title?.match(/OpenSidebar (\d+)/);
+    // Parse workspace number from title if possible (supports legacy "OpenSidebar N" and new "OS N")
+    const match = group.title?.match(/(?:OpenSidebar|OS) (\d+)/);
     const num = match ? parseInt(match[1]) : this.nextWorkspaceNum;
 
     const workspace: Workspace = {
       id: crypto.randomUUID(),
-      name: group.title || `OpenSidebar ${num}`,
+      name: group.title || `OS ${num}`,
       color: group.color || "blue",
       tabGroupId: group.id,
       tabIds,

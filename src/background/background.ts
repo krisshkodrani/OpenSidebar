@@ -596,8 +596,8 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
 async function restoreWorkspacesFromExistingGroups() {
   try {
     const groups = await chrome.tabGroups.query({});
-    const opensidebarGroups = groups.filter((g) =>
-      g.title?.startsWith("OpenSidebar "),
+    const opensidebarGroups = groups.filter(
+      (g) => g.title?.startsWith("OS ") || g.title?.startsWith("OpenSidebar "),
     );
 
     if (opensidebarGroups.length > 0) {

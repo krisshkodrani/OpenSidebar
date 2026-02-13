@@ -100,12 +100,28 @@ export async function parseSSEStream(
         // Sort by index to preserve order
         const sorted = [...partialToolCalls.entries()].sort((a, b) => a[0] - b[0]);
         for (const [, partial] of sorted) {
+            let args = partial.arguments;
+            // Validate assembled JSON arguments
+            if (args && args.trim().length > 0) {
+                try {
+                    JSON.parse(args);
+                } catch {
+                    logger.warn("streaming", "Invalid tool arguments after assembly, defaulting to {}", {
+                        toolName: partial.name,
+                        argsLen: args.length,
+                        argsTail: args.slice(-30),
+                    });
+                    args = "{}";
+                }
+            } else {
+                args = "{}";
+            }
             toolCalls.push({
                 id: partial.id,
                 type: "function",
                 function: {
                     name: partial.name as ToolName,
-                    arguments: partial.arguments,
+                    arguments: args,
                 },
             });
         }
