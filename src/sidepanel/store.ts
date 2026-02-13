@@ -49,6 +49,7 @@ type Store = SidePanelState & Actions;
 const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: __OPENROUTER_API_KEY__,
   groqApiKey: __GROQ_API_KEY__,
+  cerebrasApiKey: __CEREBRAS_API_KEY__,
   useGroqFast: false,
   maxTurns: 30,
   contextWindowSize: 128000,

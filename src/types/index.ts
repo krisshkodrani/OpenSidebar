@@ -244,6 +244,8 @@ export interface DismissModalsResponse extends BaseMessage {
     dismissed: number;
     /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
     remainingOverlay: OverlayDescriptor | null;
+    /** Text content extracted from dismissed overlays (deduplicated) */
+    capturedTexts: string[];
   };
 }
 
@@ -779,6 +781,8 @@ export interface DomSnapshot {
   scroll: { x: number; y: number; maxY: number };
   /** Overlays that survived auto-dismissal (agent should handle manually) */
   survivingOverlays?: { tagId: number; coveragePercent: number }[];
+  /** Text content extracted from overlays that were dismissed (deduplicated) */
+  capturedTexts?: string[];
 }
 
 /** A single interactive DOM element with a numeric tag */
@@ -1072,6 +1076,8 @@ export interface UserSettings {
   openRouterApiKey: string;
   /** Groq API key for fast model (GPT-OSS-120B) */
   groqApiKey: string;
+  /** Cerebras API key for fast model (highest priority when present) */
+  cerebrasApiKey: string;
   /** Use Groq for fast model instead of OpenRouter */
   useGroqFast: boolean;
   maxTurns: number;
@@ -1155,14 +1161,14 @@ export interface TraceToolExecution {
 /** A notable event that occurred during a trace turn */
 export interface TraceEvent {
   type:
-    | "escalation"
-    | "hint"
-    | "modal_dismiss"
-    | "done_rejected"
-    | "plan_update"
-    | "screenshot"
-    | "stuck_signal"
-    | "circuit_breaker";
+  | "escalation"
+  | "hint"
+  | "modal_dismiss"
+  | "done_rejected"
+  | "plan_update"
+  | "screenshot"
+  | "stuck_signal"
+  | "circuit_breaker";
   timestamp: number;
   data: Record<string, unknown>;
 }

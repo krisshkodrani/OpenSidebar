@@ -5,6 +5,7 @@ import { CompletionRequest, CompletionResponse, LLMToolCall, ProviderConfig } fr
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
+const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -28,6 +29,8 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 export const MODEL_FAST = "openai/gpt-4o-mini";
 /** Fast model tier — used for initial turns (Groq, when enabled) */
 export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
+/** Fast model tier — used for initial turns (Cerebras, highest priority) */
+export const MODEL_FAST_CEREBRAS = "gpt-oss-120b";
 /** Smart model tier — used after escalation when stuck */
 export const MODEL_SMART = "minimax/minimax-m2.5";
 
@@ -49,6 +52,15 @@ function groqProvider(apiKey: string): ProviderConfig {
     apiKey,
     headers: {},
     providerId: "groq",
+  };
+}
+
+function cerebrasProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: CEREBRAS_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "cerebras",
   };
 }
 
@@ -110,45 +122,124 @@ function createThinkFilter(emit: (text: string) => void) {
   };
 }
 
+// --- Provider Pool (priority-based failover) ---
+
+const COOLDOWN_MS = 60_000;
+
+export interface ProviderSlot {
+  provider: ProviderConfig;
+  cooldownUntil: number;
+  model: string;
+}
+
+/**
+ * Priority-based provider pool for the fast model tier.
+ * Cerebras → Groq → OpenRouter (fastest first).
+ * On 429, the provider is placed on a 60s cooldown and the next provider is used.
+ */
+export class ProviderPool {
+  private slots: ProviderSlot[];
+
+  constructor(openRouterKey: string, groqKey?: string, cerebrasKey?: string) {
+    this.slots = [];
+    // Priority: fastest first
+    if (cerebrasKey) {
+      this.slots.push({
+        provider: cerebrasProvider(cerebrasKey),
+        cooldownUntil: 0,
+        model: MODEL_FAST_CEREBRAS,
+      });
+    }
+    if (groqKey) {
+      this.slots.push({
+        provider: groqProvider(groqKey),
+        cooldownUntil: 0,
+        model: MODEL_FAST_GROQ,
+      });
+    }
+    // OpenRouter always present as last resort
+    this.slots.push({
+      provider: openRouterProvider(openRouterKey),
+      cooldownUntil: 0,
+      model: MODEL_FAST,
+    });
+  }
+
+  /** Returns highest-priority provider not on cooldown */
+  getActive(): ProviderSlot {
+    const now = Date.now();
+    return (
+      this.slots.find((s) => now >= s.cooldownUntil) ??
+      this.slots[this.slots.length - 1] // OpenRouter as absolute fallback
+    );
+  }
+
+  /** Mark a provider as rate-limited */
+  cooldown(providerId: string): void {
+    const slot = this.slots.find((s) => s.provider.providerId === providerId);
+    if (slot) slot.cooldownUntil = Date.now() + COOLDOWN_MS;
+  }
+
+  /** Get next provider in chain for immediate failover */
+  getNextFallback(afterProviderId: string): ProviderSlot | null {
+    const idx = this.slots.findIndex(
+      (s) => s.provider.providerId === afterProviderId,
+    );
+    if (idx === -1 || idx >= this.slots.length - 1) return null;
+    const now = Date.now();
+    for (let i = idx + 1; i < this.slots.length; i++) {
+      if (now >= this.slots[i].cooldownUntil) return this.slots[i];
+    }
+    // All downstream are on cooldown — return OpenRouter as absolute fallback
+    return this.slots[this.slots.length - 1];
+  }
+
+  /** Get all slots (for testing) */
+  getSlots(): ProviderSlot[] {
+    return this.slots;
+  }
+}
+
 /**
  * LLM Client for OpenSidebar
- * Handles communication with OpenRouter API, including streaming and retry logic
+ * Handles communication with LLM APIs via priority-based provider failover
  */
 
 export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
   private openRouterApiKey: string;
-  /** Saved fast model config for de-escalation */
-  private fastModel: string;
-  private fastProvider: ProviderConfig;
+  /** Priority-based provider pool for fast model failover */
+  private fastPool: ProviderPool;
 
   /**
-   * Creates a new LLM client
-   * @param openRouterApiKey - OpenRouter key (always needed for smart model)
-   * @param groqApiKey - Groq key (optional; when set + useGroq=true, fast model uses Groq)
-   * @param useGroq - Whether to route the fast model through Groq
-   * @param model - Model ID override (defaults to appropriate fast model based on useGroq)
+   * Creates a new LLM client with priority-based provider failover.
+   * @param openRouterApiKey - OpenRouter key (always needed for smart model + fallback)
+   * @param groqApiKey - Groq key (optional; joins pool if useGroq=true)
+   * @param cerebrasApiKey - Cerebras key (optional; joins pool at highest priority if present)
+   * @param useGroq - Whether Groq joins the fast model pool
+   * @param model - Model ID override (defaults to pool's top-priority model)
    */
   constructor(
     openRouterApiKey: string,
     groqApiKey?: string,
+    cerebrasApiKey?: string,
     useGroq: boolean = false,
     model?: string,
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    if (useGroq && groqApiKey && (!model || model === MODEL_FAST_GROQ)) {
-      this.model = model ?? MODEL_FAST_GROQ;
-      this.provider = groqProvider(groqApiKey);
-    } else {
-      this.model = model ?? MODEL_FAST;
-      this.provider = openRouterProvider(openRouterApiKey);
-    }
+    // Build priority pool: Cerebras → Groq → OpenRouter
+    this.fastPool = new ProviderPool(
+      openRouterApiKey,
+      useGroq ? groqApiKey : undefined,
+      cerebrasApiKey,
+    );
 
-    // Save fast config for de-escalation
-    this.fastModel = this.model;
-    this.fastProvider = { ...this.provider };
+    // Initialize from pool's top priority
+    const initialSlot = this.fastPool.getActive();
+    this.model = model ?? initialSlot.model;
+    this.provider = initialSlot.provider;
   }
 
   /** Get the currently active model ID */
@@ -178,21 +269,39 @@ export class LLMClient {
 
   /**
    * Switch back to fast model. Used during de-escalation when progress resumes.
-   * Restores the original model and provider from construction time.
+   * Reads from pool to get the fastest available provider (respects cooldowns).
    */
   public switchToFast(): void {
+    const slot = this.fastPool.getActive();
     logger.info("agent", "Switching back to fast model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
-      toModel: this.fastModel,
-      toProvider: this.fastProvider.providerId,
+      toModel: slot.model,
+      toProvider: slot.provider.providerId,
     });
-    this.model = this.fastModel;
-    this.provider = { ...this.fastProvider };
+    this.model = slot.model;
+    this.provider = slot.provider;
   }
 
-  private get baseUrl() {
-    return this.provider.baseUrl;
+  /** Rebuild request for a different provider (swaps URL, headers, AND model in body) */
+  private rebuildForProvider(
+    init: RequestInit,
+    slot: ProviderSlot,
+  ): { url: string; init: RequestInit } {
+    const body = JSON.parse(init.body as string);
+    body.model = slot.model;
+    return {
+      url: slot.provider.baseUrl,
+      init: {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${slot.provider.apiKey}`,
+          ...slot.provider.headers,
+        },
+        body: JSON.stringify(body),
+      },
+    };
   }
 
   private async fetchWithRetry(
@@ -200,6 +309,7 @@ export class LLMClient {
     init: RequestInit,
     maxRetries = 3,
     signal?: AbortSignal,
+    providerId?: string,
   ): Promise<Response> {
     const RETRYABLE = new Set([429, 502, 503, 504]);
     let lastError: Error | null = null;
@@ -212,6 +322,32 @@ export class LLMClient {
         // Retryable error
         const body = await response.text();
         lastError = new Error(`LLM API Error (${response.status}): ${body}`);
+
+        // Immediate provider failover on 429 (rate limit)
+        if (response.status === 429 && providerId) {
+          this.fastPool.cooldown(providerId);
+          const fallback = this.fastPool.getNextFallback(providerId);
+          if (fallback) {
+            logger.warn("agent", "Provider rate-limited, failing over", {
+              from: providerId,
+              to: fallback.provider.providerId,
+              model: fallback.model,
+            });
+            const fb = this.rebuildForProvider(init, fallback);
+            try {
+              const fbResp = await fetch(fb.url, { ...fb.init, signal });
+              if (fbResp.ok || !RETRYABLE.has(fbResp.status)) return fbResp;
+              const fbBody = await fbResp.text();
+              lastError = new Error(
+                `LLM API Error (${fbResp.status}): ${fbBody}`,
+              );
+            } catch (e: any) {
+              if (e.name === "AbortError") throw e;
+              lastError = e;
+            }
+            // Fallback also failed — continue normal retry loop
+          }
+        }
       } catch (e: any) {
         if (e.name === "AbortError") throw e; // Never retry aborts
         lastError = e; // Network error — retryable
@@ -221,7 +357,7 @@ export class LLMClient {
           1000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 300);
         logger.warn(
           "agent",
-          `LLM request failed (${this.provider.providerId}), retrying ${attempt}/${maxRetries}`,
+          `LLM request failed (${providerId ?? "unknown"}), retrying ${attempt}/${maxRetries}`,
           { delay, error: lastError?.message, model: this.model },
         );
         await abortableDelay(delay, signal);
@@ -231,15 +367,26 @@ export class LLMClient {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    if (!this.provider.apiKey) {
-      const name = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
+    // Use pool for fast model, direct provider for smart model
+    const isSmartModel = this.model === MODEL_SMART;
+    const slot = isSmartModel ? null : this.fastPool.getActive();
+    const provider = slot?.provider ?? this.provider;
+    const activeModel = slot?.model ?? this.model;
+
+    if (!provider.apiKey) {
+      const name =
+        provider.providerId === "groq"
+          ? "Groq"
+          : provider.providerId === "cerebras"
+            ? "Cerebras"
+            : "OpenRouter";
       throw new Error(
         `${name} API Key is missing. Please configure it in settings.`,
       );
     }
 
     const payload = {
-      model: request.model || this.model,
+      model: request.model || activeModel,
       messages: request.messages,
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
@@ -250,33 +397,43 @@ export class LLMClient {
 
     logger.debug("agent", "LLM Request", {
       model: payload.model,
+      provider: provider.providerId,
       msgCount: payload.messages.length,
       tools: payload.tools?.length,
     });
 
     try {
       const response = await this.fetchWithRetry(
-        this.baseUrl,
+        provider.baseUrl,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${this.provider.apiKey}`,
-            ...this.provider.headers,
+            Authorization: `Bearer ${provider.apiKey}`,
+            ...provider.headers,
           },
           body: JSON.stringify(payload),
         },
         3,
         request.signal,
+        provider.providerId,
       );
 
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 402) {
-          const providerName = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
-          const creditsUrl = this.provider.providerId === "groq"
-            ? "console.groq.com/settings/billing"
-            : "openrouter.ai/credits";
+          const providerName =
+            provider.providerId === "groq"
+              ? "Groq"
+              : provider.providerId === "cerebras"
+                ? "Cerebras"
+                : "OpenRouter";
+          const creditsUrl =
+            provider.providerId === "groq"
+              ? "console.groq.com/settings/billing"
+              : provider.providerId === "cerebras"
+                ? "cloud.cerebras.ai"
+                : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
@@ -352,15 +509,26 @@ export class LLMClient {
     request: CompletionRequest,
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
-    if (!this.provider.apiKey) {
-      const name = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
+    // Use pool for fast model, direct provider for smart model
+    const isSmartModel = this.model === MODEL_SMART;
+    const slot = isSmartModel ? null : this.fastPool.getActive();
+    const provider = slot?.provider ?? this.provider;
+    const activeModel = slot?.model ?? this.model;
+
+    if (!provider.apiKey) {
+      const name =
+        provider.providerId === "groq"
+          ? "Groq"
+          : provider.providerId === "cerebras"
+            ? "Cerebras"
+            : "OpenRouter";
       throw new Error(
         `${name} API Key is missing. Please configure it in settings.`,
       );
     }
 
     const payload = {
-      model: request.model || this.model,
+      model: request.model || activeModel,
       messages: request.messages,
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
@@ -372,33 +540,43 @@ export class LLMClient {
 
     logger.debug("agent", "LLM Stream Request", {
       model: payload.model,
+      provider: provider.providerId,
       msgCount: payload.messages.length,
       tools: payload.tools?.length,
     });
 
     try {
       const response = await this.fetchWithRetry(
-        this.baseUrl,
+        provider.baseUrl,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${this.provider.apiKey}`,
-            ...this.provider.headers,
+            Authorization: `Bearer ${provider.apiKey}`,
+            ...provider.headers,
           },
           body: JSON.stringify(payload),
         },
         3,
         request.signal,
+        provider.providerId,
       );
 
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 402) {
-          const providerName = this.provider.providerId === "groq" ? "Groq" : "OpenRouter";
-          const creditsUrl = this.provider.providerId === "groq"
-            ? "console.groq.com/settings/billing"
-            : "openrouter.ai/credits";
+          const providerName =
+            provider.providerId === "groq"
+              ? "Groq"
+              : provider.providerId === "cerebras"
+                ? "Cerebras"
+                : "OpenRouter";
+          const creditsUrl =
+            provider.providerId === "groq"
+              ? "console.groq.com/settings/billing"
+              : provider.providerId === "cerebras"
+                ? "cloud.cerebras.ai"
+                : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(

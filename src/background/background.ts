@@ -442,6 +442,7 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
   const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
+  const cerebrasApiKey = settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
   const useGroqFast = !!(settings.useGroqFast && groqApiKey);
 
   if (!openRouterApiKey) {
@@ -460,7 +461,7 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
   // 2. Initialize Loop if needed
   let loop = agentLoops.get(workspaceId);
   if (!loop) {
-    loop = new AgentLoop(openRouterApiKey, groqApiKey, useGroqFast, {
+    loop = new AgentLoop(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast, {
       onStatusUpdate: (status, detail) => {
         chrome.runtime
           .sendMessage({
@@ -586,6 +587,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
   const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
+  const cerebrasApiKey = settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
   const useGroqFast = !!(settings.useGroqFast && groqApiKey);
   const workspaceId = state.workspaceId ?? "default";
 
@@ -606,7 +608,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   }
 
   // Create a new agent loop with restored state
-  const loop = new AgentLoop(openRouterApiKey, groqApiKey, useGroqFast, {
+  const loop = new AgentLoop(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast, {
     onStatusUpdate: (status, detail) => {
       chrome.runtime
         .sendMessage({

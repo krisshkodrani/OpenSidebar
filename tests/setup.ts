@@ -7,6 +7,7 @@ GlobalRegistrator.register();
 (globalThis as any).__DEV__ = true;
 (globalThis as any).__OPENROUTER_API_KEY__ = "";
 (globalThis as any).__GROQ_API_KEY__ = "";
+(globalThis as any).__CEREBRAS_API_KEY__ = "";
 
 // Mock Chrome API
 global.chrome = {

@@ -161,6 +161,21 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                                 />
                             </div>
                         )}
+
+                        <div className="space-y-1">
+                            <label className="text-sm font-medium dark:text-warm-300">
+                                Cerebras API Key
+                                <span className="text-xs text-warm-400 ml-2">(optional, fastest)</span>
+                            </label>
+                            <p className="text-xs text-warm-400 dark:text-warm-500">Highest priority provider when set</p>
+                            <input
+                                type="password"
+                                value={formState.cerebrasApiKey}
+                                onChange={e => handleChange("cerebrasApiKey", e.target.value)}
+                                className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                                placeholder="csk-..."
+                            />
+                        </div>
                     </section>
 
                     {/* Agent Behavior */}

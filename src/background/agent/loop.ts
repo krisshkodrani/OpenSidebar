@@ -324,6 +324,7 @@ export class AgentLoop {
   constructor(
     openRouterApiKey: string,
     groqApiKey: string | undefined,
+    cerebrasApiKey: string | undefined,
     useGroqFast: boolean,
     callbacks: {
       onStatusUpdate: (status: AgentStatus, detail: string) => void;
@@ -342,7 +343,7 @@ export class AgentLoop {
     this.confirmPlan = options?.confirmPlan ?? false;
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.workspaceId = options?.workspaceId ?? null;
-    this.llm = new LLMClient(openRouterApiKey, groqApiKey, useGroqFast);
+    this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast);
     this.guardian = new PlanGuardian(openRouterApiKey);
     this.context = new ContextManager(options?.maxContextTokens, this.workspaceId);
     this.statusHandler = callbacks.onStatusUpdate;
