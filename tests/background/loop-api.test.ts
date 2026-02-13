@@ -42,7 +42,7 @@ function createLoop(overrides?: Record<string, any>) {
     const onStatus = mock();
     const onMessage = mock();
     const onStep = mock();
-    const agent = new AgentLoop("test-key", undefined, false, {
+    const agent = new AgentLoop("test-key", undefined, undefined, false, {
         onStatusUpdate: onStatus,
         onMessage: onMessage,
         onStep: onStep,

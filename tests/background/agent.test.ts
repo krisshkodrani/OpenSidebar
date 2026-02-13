@@ -41,7 +41,7 @@ describe("AgentLoop", () => {
         const onMessage = mock();
         const onStep = mock();
 
-        const agent = new AgentLoop("test-key", undefined, false, {
+        const agent = new AgentLoop("test-key", undefined, undefined, false, {
             onStatusUpdate: onStatus,
             onMessage: onMessage,
             onStep: onStep,
@@ -60,7 +60,7 @@ describe("AgentLoop", () => {
         const onMessage = mock();
         const onStep = mock();
 
-        const agent = new AgentLoop("test-key", undefined, false, {
+        const agent = new AgentLoop("test-key", undefined, undefined, false, {
             onStatusUpdate: onStatus,
             onMessage: onMessage,
             onStep: onStep,
