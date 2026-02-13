@@ -21,8 +21,9 @@ Given a user task and page context, decide if it needs multiple steps.
 - Multi-step tasks: return {"isMultiStep": true, "subtasks": ["step 1", ...]}
 
 Rules:
-- 3-15 subtasks. Each must be a concrete, verifiable browser action.
-- Group related micro-actions (e.g. "fill name and email" not two separate steps).
+- 3-8 subtasks maximum. Fewer is better.
+- Group related actions into single steps (e.g. "fill all form fields and submit" is ONE step, not three).
+- Each subtask should require 1-5 tool calls. If it would need more, the subtask is too granular.
 - Last subtask should verify the overall goal was achieved.
 - Be generic — derive steps from the task description and page context, not assumptions about the site.
 
@@ -76,10 +77,26 @@ export class PlanGuardian {
 
             const text = (response.content || "").trim();
             const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
-            const parsed = JSON.parse(cleaned);
+            let parsed: any;
+            try {
+                parsed = JSON.parse(cleaned);
+            } catch {
+                // Fallback: extract first {...} block from text
+                const match = cleaned.match(/\{[\s\S]*\}/);
+                if (!match) throw new Error(`No JSON object found in: ${cleaned.slice(0, 100)}`);
+                parsed = JSON.parse(match[0]);
+            }
 
             if (!parsed.isMultiStep) return null;
             if (!Array.isArray(parsed.subtasks) || parsed.subtasks.length < 2) return null;
+
+            // Hard cap: truncate to 8 subtasks max
+            if (parsed.subtasks.length > 8) {
+                logger.warn("agent", "Guardian decomposition exceeded 8 subtasks, truncating", {
+                    original: parsed.subtasks.length,
+                });
+                parsed.subtasks = parsed.subtasks.slice(0, 8);
+            }
 
             logger.info("agent", "Guardian decomposed task", {
                 subtaskCount: parsed.subtasks.length,
@@ -124,7 +141,15 @@ export class PlanGuardian {
 
             const text = (response.content || "").trim();
             const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
-            const parsed = JSON.parse(cleaned);
+            let parsed: any;
+            try {
+                parsed = JSON.parse(cleaned);
+            } catch {
+                // Fallback: extract first {...} block from text
+                const match = cleaned.match(/\{[\s\S]*\}/);
+                if (!match) throw new Error(`No JSON object found in: ${cleaned.slice(0, 100)}`);
+                parsed = JSON.parse(match[0]);
+            }
 
             logger.info("agent", "Guardian validateDone", {
                 approved: parsed.approved,
