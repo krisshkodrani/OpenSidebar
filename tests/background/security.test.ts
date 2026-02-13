@@ -13,6 +13,8 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.FIND_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.DONE, { summary: "done" })).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.ESCALATE, { reason: "riddle" })).toBe(RiskLevel.LOW);
+        expect(classifyRisk(ToolName.READ_ELEMENT, { id: 1 })).toBe(RiskLevel.LOW);
+        expect(classifyRisk(ToolName.LIST_TABS, {})).toBe(RiskLevel.LOW);
     });
 
     test("mutation tools are MEDIUM risk", () => {
@@ -20,12 +22,19 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.TYPE_TEXT, { id: 1, text: "hello" })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.MEMORY_ADD, { content: "test" })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.SWITCH_TAB, { tabId: 1 })).toBe(RiskLevel.MEDIUM);
+        expect(classifyRisk(ToolName.RIGHT_CLICK, { id: 1 })).toBe(RiskLevel.MEDIUM);
+        expect(classifyRisk(ToolName.SET_CHECKBOX, { id: 1, checked: true })).toBe(RiskLevel.MEDIUM);
+        expect(classifyRisk(ToolName.UPLOAD_FILE, { id: 1, url: "https://example.com/file.txt" })).toBe(RiskLevel.MEDIUM);
+        expect(classifyRisk(ToolName.DOWNLOAD_FILE, { url: "https://example.com/file.txt" })).toBe(RiskLevel.MEDIUM);
     });
 
     test("navigation and destructive tools are HIGH risk", () => {
         expect(classifyRisk(ToolName.NAVIGATE, { url: "https://example.com" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.CREATE_TAB, { url: "https://example.com" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.CLOSE_TAB, {})).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.GO_BACK, {})).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.GO_FORWARD, {})).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.EXECUTE_JS, { code: "alert(1)" })).toBe(RiskLevel.HIGH);
     });
 
     test("unknown tool names default to HIGH", () => {

@@ -29,6 +29,15 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   [ToolName.SWITCH_TAB]:     { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
   [ToolName.ESCALATE]:       { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.UPDATE_PLAN]:    { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
+  [ToolName.READ_ELEMENT]:   { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
+  [ToolName.EXECUTE_JS]:     { risk: RiskLevel.HIGH,   domModifying: true,  sequential: true  },
+  [ToolName.UPLOAD_FILE]:    { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: true  },
+  [ToolName.GO_BACK]:        { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
+  [ToolName.GO_FORWARD]:     { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
+  [ToolName.LIST_TABS]:      { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
+  [ToolName.RIGHT_CLICK]:    { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: false },
+  [ToolName.SET_CHECKBOX]:   { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: false },
+  [ToolName.DOWNLOAD_FILE]:  { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

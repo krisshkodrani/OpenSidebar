@@ -54,6 +54,15 @@ export enum ToolName {
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
   UPDATE_PLAN = "update_plan",
+  READ_ELEMENT = "read_element",
+  EXECUTE_JS = "execute_js",
+  UPLOAD_FILE = "upload_file",
+  GO_BACK = "go_back",
+  GO_FORWARD = "go_forward",
+  LIST_TABS = "list_tabs",
+  RIGHT_CLICK = "right_click",
+  SET_CHECKBOX = "set_checkbox",
+  DOWNLOAD_FILE = "download_file",
 }
 
 /** Risk classification for a tool invocation */
@@ -527,7 +536,9 @@ export type ReadPageArgs = Record<string, never>;
 /** Arguments for navigate */
 export interface NavigateArgs {
   /** Full URL to navigate to */
-  url: string;
+  url?: string;
+  /** Search query (uses default search engine). Provide url OR query, not both. */
+  query?: string;
 }
 
 /** Arguments for memory_search */
@@ -648,6 +659,59 @@ export interface UpdatePlanArgs {
   lastResult?: string;
 }
 
+/** Arguments for read_element */
+export interface ReadElementArgs {
+  /** The numeric tag ID of the element */
+  id: number;
+  /** Attribute name to read (e.g. "href", "src"). Omit to read text content. */
+  attribute?: string;
+}
+
+/** Arguments for execute_js */
+export interface ExecuteJsArgs {
+  /** JavaScript code to evaluate in the page's MAIN world */
+  code: string;
+}
+
+/** Arguments for upload_file */
+export interface UploadFileArgs {
+  /** The numeric tag ID of the <input type="file"> element */
+  id: number;
+  /** URL of the file to upload (fetched by the service worker) */
+  url: string;
+}
+
+/** Arguments for go_back */
+export type GoBackArgs = Record<string, never>;
+
+/** Arguments for go_forward */
+export type GoForwardArgs = Record<string, never>;
+
+/** Arguments for list_tabs */
+export type ListTabsArgs = Record<string, never>;
+
+/** Arguments for right_click */
+export interface RightClickArgs {
+  /** The numeric tag ID of the element to right-click */
+  id: number;
+}
+
+/** Arguments for set_checkbox */
+export interface SetCheckboxArgs {
+  /** The numeric tag ID of the checkbox or radio input */
+  id: number;
+  /** Whether the checkbox should be checked */
+  checked: boolean;
+}
+
+/** Arguments for download_file */
+export interface DownloadFileArgs {
+  /** URL of the file to download */
+  url: string;
+  /** Optional filename for the downloaded file */
+  filename?: string;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -678,6 +742,15 @@ export type ToolArgsMap = {
   [ToolName.HIDE_ELEMENT]: HideElementArgs;
   [ToolName.ESCALATE]: EscalateArgs;
   [ToolName.UPDATE_PLAN]: UpdatePlanArgs;
+  [ToolName.READ_ELEMENT]: ReadElementArgs;
+  [ToolName.EXECUTE_JS]: ExecuteJsArgs;
+  [ToolName.UPLOAD_FILE]: UploadFileArgs;
+  [ToolName.GO_BACK]: GoBackArgs;
+  [ToolName.GO_FORWARD]: GoForwardArgs;
+  [ToolName.LIST_TABS]: ListTabsArgs;
+  [ToolName.RIGHT_CLICK]: RightClickArgs;
+  [ToolName.SET_CHECKBOX]: SetCheckboxArgs;
+  [ToolName.DOWNLOAD_FILE]: DownloadFileArgs;
 };
 
 // --- Content Script Types ---
@@ -1007,3 +1080,86 @@ export interface UserSettings {
 export type Result<T, E = Error> =
   | { ok: true; value: T }
   | { ok: false; error: E };
+
+// --- Trace Types (for recording agent sessions) ---
+
+/** A single turn's full-fidelity recording for offline eval replay */
+export interface TraceEntry {
+  sessionId: string;
+  turnNumber: number;
+  timestamp: number;
+  /** DOM state at turn start */
+  snapshot: {
+    url: string;
+    title: string;
+    elementCount: number;
+    viewportTextLength: number;
+    scrollY: number;
+  };
+  /** Full elements array (for eval replay — reconstruct system prompt) */
+  elements: TaggedElement[];
+  /** LLM call metadata */
+  llmRequest: {
+    model: string;
+    messageCount: number;
+    toolCount: number;
+    compressionLevel: string;
+  };
+  /** LLM response data */
+  llmResponse: {
+    content: string | null;
+    toolCalls: ToolCall[];
+    finishReason: string;
+    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cost?: number } | null;
+    durationMs: number;
+  };
+  /** Tool executions for this turn */
+  toolExecutions: TraceToolExecution[];
+  /** Events that occurred during this turn */
+  events: TraceEvent[];
+  /** Progress tracker state */
+  progressState: {
+    staleTurns: number;
+    signal: string | null;
+  };
+}
+
+/** A single tool execution within a trace turn */
+export interface TraceToolExecution {
+  toolCallId: string;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+  riskLevel: RiskLevel;
+}
+
+/** A notable event that occurred during a trace turn */
+export interface TraceEvent {
+  type:
+    | "escalation"
+    | "hint"
+    | "modal_dismiss"
+    | "done_rejected"
+    | "plan_update"
+    | "screenshot"
+    | "stuck_signal"
+    | "circuit_breaker";
+  timestamp: number;
+  data: Record<string, unknown>;
+}
+
+/** Session-level metadata written to traces/index.jsonl on session end */
+export interface TraceSession {
+  sessionId: string;
+  startTime: number;
+  endTime: number;
+  query: string;
+  startUrl: string;
+  outcome: "completed" | "stopped" | "max_turns" | "error";
+  turnCount: number;
+  summary: string;
+  metrics: SessionMetrics | null;
+}

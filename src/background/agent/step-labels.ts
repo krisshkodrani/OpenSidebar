@@ -93,6 +93,44 @@ export function formatStepLabel(
       }
       return "Update plan";
     }
+    case ToolName.READ_ELEMENT: {
+      const attr = args.attribute as string | undefined;
+      return attr
+        ? `Read "${attr}" of [${args.id ?? "?"}]`
+        : `Read text of [${args.id ?? "?"}]`;
+    }
+    case ToolName.EXECUTE_JS: {
+      const code = args.code as string | undefined;
+      const preview = code
+        ? code.length > 30
+          ? `${code.slice(0, 30)}...`
+          : code
+        : "?";
+      return `Execute JS: ${preview}`;
+    }
+    case ToolName.UPLOAD_FILE:
+      return `Upload file to [${args.id ?? "?"}]`;
+    case ToolName.GO_BACK:
+      return "Go back";
+    case ToolName.GO_FORWARD:
+      return "Go forward";
+    case ToolName.LIST_TABS:
+      return "List tabs";
+    case ToolName.RIGHT_CLICK:
+      return `Right-click [${args.id ?? "?"}]`;
+    case ToolName.SET_CHECKBOX:
+      return `Set checkbox [${args.id ?? "?"}] = ${args.checked ?? "?"}`;
+    case ToolName.DOWNLOAD_FILE: {
+      const url = args.url as string | undefined;
+      if (url) {
+        try {
+          return `Download from ${new URL(url).hostname}`;
+        } catch {
+          return "Download file";
+        }
+      }
+      return "Download file";
+    }
     default:
       return String(toolName);
   }

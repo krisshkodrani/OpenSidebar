@@ -20,6 +20,13 @@ describe("Tool Metadata", () => {
             expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_PAGE)).toBe(true);
         });
 
+        test("contains new DOM-modifying tools", () => {
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.RIGHT_CLICK)).toBe(true);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.SET_CHECKBOX)).toBe(true);
+        });
+
         test("does not contain read-only tools", () => {
             expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
             expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
@@ -27,20 +34,27 @@ describe("Tool Metadata", () => {
             expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
             expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
             expect(DOM_MODIFYING_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(false);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
+            expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
         });
     });
 
     describe("SEQUENTIAL_TOOLS", () => {
-        test("contains navigate, done, take_screenshot, escalate, and update_plan", () => {
+        test("contains navigate, done, take_screenshot, escalate, update_plan, execute_js, upload_file, go_back, go_forward", () => {
             expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
             expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
             expect(SEQUENTIAL_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
             expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
             expect(SEQUENTIAL_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(true);
+            expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
+            expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
+            expect(SEQUENTIAL_TOOLS.has(ToolName.GO_BACK)).toBe(true);
+            expect(SEQUENTIAL_TOOLS.has(ToolName.GO_FORWARD)).toBe(true);
         });
 
-        test("has exactly 5 entries", () => {
-            expect(SEQUENTIAL_TOOLS.size).toBe(5);
+        test("has exactly 9 entries", () => {
+            expect(SEQUENTIAL_TOOLS.size).toBe(9);
         });
     });
 
