@@ -70,7 +70,7 @@ Do NOT call done() until every planned step is complete.
 
 ## Tool Tips
 - type_text auto-focuses; pressEnter: true submits forms in one step.
-- hide_element to dismiss overlays/modals blocking interaction.
+- hide_element removes overlays/modals blocking interaction (rejects non-overlay elements).
 - scroll_page with optional id for container scrolling.
 - press_key for keyboard shortcuts or key-based inputs.
 - drag_and_drop between [draggable] elements by tag ID.
@@ -86,7 +86,7 @@ Do NOT call done() until every planned step is complete.
 - Search: type query into search input + pressEnter, or click search button.
 - Forms: batch all field fills in one turn, then submit.
 - Menus: hover to reveal dropdowns; check aria-expanded after.
-- Overlays: dismiss blocking modals/banners before interacting with content below.
+- Overlays: if a surviving overlay is reported, use click_element or hide_element to dismiss it.
 - Multi-page: track which step you're on; verify each before proceeding.
 - Dynamic content: scroll or wait for lazy-loaded items to appear.
 - Visual puzzles: take_screenshot when text alone is insufficient.
@@ -350,6 +350,14 @@ export class ContextManager {
         "{{elements}}",
         elementsList || "No interactive elements found.",
       );
+
+      // Surviving overlay warnings (overlays that auto-dismissal couldn't remove)
+      if (this.snapshot.survivingOverlays && this.snapshot.survivingOverlays.length > 0) {
+        const warnings = this.snapshot.survivingOverlays
+          .map(o => `WARNING: Overlay [${o.tagId}] covers ${o.coveragePercent}% of viewport — use click_element or hide_element to dismiss.`)
+          .join("\n");
+        content = content.replace("## Viewport Text", warnings + "\n\n## Viewport Text");
+      }
 
       // Viewport text — dynamic with compression level
       let viewportText = this.snapshot.viewportText || "No text content.";

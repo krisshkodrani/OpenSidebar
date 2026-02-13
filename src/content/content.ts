@@ -2,7 +2,7 @@ import { logger } from "../utils";
 import { RuntimeMessage, MessageSource, OverlayDescriptor, ElementRect } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
-import { isElementVisible, addDynamicTag, getTagMap, resetStableIds } from "./tagging";
+import { isElementVisible, addDynamicTag, resetStableIds } from "./tagging";
 
 logger.info("system", "Content Script Loaded");
 
@@ -271,36 +271,6 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
     }
 
     if (message.type === "DISMISS_MODALS") {
-        const { clickSelector, overlayTagId } = message.payload;
-
-        if (clickSelector) {
-            // LLM-directed: click a specific selector within the overlay
-            let clicked = false;
-            if (overlayTagId != null) {
-                const tagMap = getTagMap();
-                const overlay = tagMap.get(overlayTagId);
-                if (overlay instanceof HTMLElement) {
-                    const target = overlay.querySelector(clickSelector);
-                    if (target instanceof HTMLElement) {
-                        target.click();
-                        clicked = true;
-                    } else {
-                        // Selector not found inside overlay — hide the entire overlay
-                        overlay.style.display = "none";
-                        clicked = true;
-                    }
-                }
-            }
-            sendResponse({
-                type: "DISMISS_MODALS_RESPONSE",
-                requestId: message.requestId,
-                source: MessageSource.CONTENT,
-                payload: { dismissed: clicked ? 1 : 0, remainingOverlay: null },
-            });
-            return true;
-        }
-
-        // Heuristic path
         const result = autoDismissModals();
         sendResponse({
             type: "DISMISS_MODALS_RESPONSE",
@@ -312,21 +282,43 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
     }
 
     if (message.type === "DOM_SNAPSHOT_REQUEST") {
-        const start = performance.now();
-        const snapshot = buildSnapshot(
-            message.payload.includeText,
-            message.payload.refresh,
-            message.payload.showTags ?? false
-        );
-        sendResponse({
-            type: "DOM_SNAPSHOT_RESPONSE",
-            requestId: message.requestId,
-            source: MessageSource.CONTENT,
-            payload: {
-                snapshot,
-                durationMs: Math.round(performance.now() - start),
-            },
-        });
+        (async () => {
+            const start = performance.now();
+
+            // Auto-dismiss overlays that block the viewport
+            const overlays = detectViewportCoveringOverlays();
+            if (overlays.length > 0) {
+                const result = autoDismissModals();
+                if (result.dismissed > 0) {
+                    await new Promise(r => setTimeout(r, 50)); // DOM settle
+                }
+            }
+
+            const snapshot = buildSnapshot(
+                message.payload.includeText,
+                message.payload.refresh,
+                message.payload.showTags ?? false
+            );
+
+            // Detect survivors and attach to snapshot
+            const survivors = detectViewportCoveringOverlays();
+            if (survivors.length > 0) {
+                snapshot.survivingOverlays = survivors.map(s => ({
+                    tagId: addDynamicTag(s.el),
+                    coveragePercent: Math.round(s.coverage),
+                }));
+            }
+
+            sendResponse({
+                type: "DOM_SNAPSHOT_RESPONSE",
+                requestId: message.requestId,
+                source: MessageSource.CONTENT,
+                payload: {
+                    snapshot,
+                    durationMs: Math.round(performance.now() - start),
+                },
+            });
+        })();
         return true; // async response
     }
 

@@ -458,6 +458,23 @@ export class AgentLoop {
         return prevCount; // Keep existing count if both attempts fail
     }
 
+    /** Stream a message to side panel and break the loop (for circuit breaker exits) */
+    private circuitBreakerExit(message: string): void {
+        chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { delta: message, done: false },
+        }).catch(() => {});
+        chrome.runtime.sendMessage({
+            type: "STREAM_CHUNK",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { delta: "", done: true },
+        }).catch(() => {});
+        this.statusHandler(AgentStatus.IDLE, "Circuit breaker — send a follow-up to continue");
+    }
+
     private async loop(tabId: number): Promise<LoopResult> {
         let prevElementCount = -1; // Track element count for empty-page retry
         let consecutiveNudges = 0;
@@ -465,6 +482,15 @@ export class AgentLoop {
         let escalated = false;
         let doneSummary = "";
         let wasStuck = false; // Track stuck state for "resolved" signal
+
+        // Circuit breaker: consecutive all-fail turns
+        let consecutiveAllFailTurns = 0;
+        const MAX_CONSECUTIVE_ALL_FAIL = 5;
+
+        // Circuit breaker: same-tool repeat failure
+        const toolFailCounts = new Map<string, number>();
+        const TOOL_FAIL_WARN_THRESHOLD = 4;
+        const TOOL_FAIL_EXIT_THRESHOLD = 6;
 
         while (this.isRunning && this.turnCount < this.maxTurns) {
             // Pause gate — block here if user paused the loop
@@ -1073,6 +1099,89 @@ export class AgentLoop {
                             content: result,
                             tool_call_id: toolCall.id,
                         });
+                    }
+                }
+
+                // --- Circuit Breaker: track tool failures ---
+                if (!doneSignaled) {
+                    // Count successes/failures from this turn's tool results
+                    let turnSuccesses = 0;
+                    let turnFailures = 0;
+                    const recentMessages = this.context.getMessages();
+                    // Look at the tool results we just added (they're the most recent messages)
+                    for (let i = recentMessages.length - 1; i >= 0; i--) {
+                        const msg = recentMessages[i];
+                        if (msg.role !== "tool") break;
+                        const content = typeof msg.content === "string" ? msg.content : "";
+                        if (content.startsWith("Error:") || content.includes("does not appear to be") || content.includes("No element with tag") || content.includes("Click intercepted")) {
+                            turnFailures++;
+                        } else {
+                            turnSuccesses++;
+                        }
+                    }
+
+                    // A. Consecutive all-fail turns
+                    if (turnFailures > 0 && turnSuccesses === 0) {
+                        consecutiveAllFailTurns++;
+                    } else {
+                        consecutiveAllFailTurns = 0;
+                    }
+
+                    if (consecutiveAllFailTurns >= MAX_CONSECUTIVE_ALL_FAIL) {
+                        logger.warn("agent", "Circuit breaker: consecutive all-fail turns", {
+                            turn: this.turnCount,
+                            consecutiveAllFailTurns,
+                        });
+                        this.circuitBreakerExit(
+                            `All tool calls have failed for ${consecutiveAllFailTurns} consecutive turns. The agent cannot make progress. Send a follow-up with different instructions.`,
+                        );
+                        return { outcome: "error" as const, turnCount: this.turnCount, summary: "Circuit breaker: consecutive tool failures", metrics: this.getMetrics() };
+                    }
+
+                    // B. Same-tool repeat failure tracking
+                    for (const toolCall of response.tool_calls!) {
+                        const toolName = toolCall.function.name;
+                        const argsKey = toolCall.function.arguments.slice(0, 100);
+                        const failKey = `${toolName}:${argsKey}`;
+
+                        // Find the corresponding tool result
+                        const toolResult = recentMessages.find(
+                            m => m.role === "tool" && m.tool_call_id === toolCall.id,
+                        );
+                        const resultContent = typeof toolResult?.content === "string" ? toolResult.content : "";
+                        const isFail = resultContent.startsWith("Error:") || resultContent.includes("does not appear to be") || resultContent.includes("No element with tag") || resultContent.includes("Click intercepted");
+
+                        if (isFail) {
+                            const count = (toolFailCounts.get(failKey) || 0) + 1;
+                            toolFailCounts.set(failKey, count);
+
+                            if (count >= TOOL_FAIL_EXIT_THRESHOLD) {
+                                logger.warn("agent", "Circuit breaker: same-tool repeat failure", {
+                                    turn: this.turnCount,
+                                    tool: toolName,
+                                    count,
+                                });
+                                this.circuitBreakerExit(
+                                    `The same tool call (${toolName}) has failed ${count} times with the same arguments. The agent is stuck in a loop. Send a follow-up with different instructions.`,
+                                );
+                                return { outcome: "error" as const, turnCount: this.turnCount, summary: "Circuit breaker: repeated tool failure", metrics: this.getMetrics() };
+                            }
+
+                            if (count === TOOL_FAIL_WARN_THRESHOLD) {
+                                logger.warn("agent", "Circuit breaker warning: tool repeating failures", {
+                                    turn: this.turnCount,
+                                    tool: toolName,
+                                    count,
+                                });
+                                this.context.addMessage({
+                                    role: "user",
+                                    content: `WARNING: ${toolName} has failed ${count} times with similar arguments. Stop repeating this approach. Try a fundamentally different strategy — use a different tool, different element, or scroll/navigate to find an alternative path.`,
+                                });
+                            }
+                        } else {
+                            // Reset on success for this tool+args combo
+                            toolFailCounts.delete(failKey);
+                        }
                     }
                 }
 

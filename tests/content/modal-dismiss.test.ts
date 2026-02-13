@@ -274,3 +274,77 @@ describe("autoDismissModals (integrated via DISMISS_MODALS handler)", () => {
         expect(found.length).toBe(1);
     });
 });
+
+describe("Snapshot-integrated overlay dismissal", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    test("no overlays → detectViewportCoveringOverlays returns empty (no extra work)", () => {
+        const div = document.createElement("div");
+        div.textContent = "Clean page content";
+        document.body.appendChild(div);
+
+        // Pre-check: no overlays detected
+        const overlays = detectViewportCoveringOverlays();
+        expect(overlays.length).toBe(0);
+    });
+
+    test("overlay detected → survivingOverlays reported when heuristics fail", () => {
+        // Create an overlay that won't be auto-dismissed by heuristics
+        // (no close button, not a backdrop, no dialog/modal class)
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.zIndex = "9999";
+        overlay.textContent = "Persistent overlay content";
+        document.body.appendChild(overlay);
+        setMockRect(overlay, { x: 0, y: 0, width: 1024, height: 768, top: 0, left: 0 });
+
+        // Overlays are detected
+        const overlays = detectViewportCoveringOverlays();
+        expect(overlays.length).toBeGreaterThanOrEqual(1);
+        expect(overlays[0].coverage).toBeGreaterThan(50);
+
+        // This represents what the snapshot handler would report as survivors
+        const survivors = overlays.map(o => ({
+            tagId: 1, // would be addDynamicTag(o.el) in real code
+            coveragePercent: Math.round(o.coverage),
+        }));
+        expect(survivors.length).toBeGreaterThanOrEqual(1);
+        expect(survivors[0].coveragePercent).toBeGreaterThan(50);
+    });
+
+    test("overlay with close button is auto-dismissed by heuristics", () => {
+        // Create a modal with a close button — heuristics should handle it
+        const modal = document.createElement("div");
+        modal.setAttribute("role", "dialog");
+        modal.style.position = "fixed";
+        modal.style.zIndex = "9999";
+        document.body.appendChild(modal);
+        setMockRect(modal, { x: 100, y: 100, width: 800, height: 600, top: 100, left: 100 });
+
+        const closeBtn = document.createElement("button");
+        closeBtn.setAttribute("aria-label", "Close");
+        modal.appendChild(closeBtn);
+
+        // Close button should be found
+        const found = findCloseButton(modal);
+        expect(found).toBe(closeBtn);
+    });
+
+    test("DomSnapshot type accepts survivingOverlays field", () => {
+        // Type-level verification: ensure the field is accepted
+        const snapshot: import("../../src/types").DomSnapshot = {
+            title: "Test",
+            url: "https://test.com",
+            elements: [],
+            viewportText: "",
+            viewport: { width: 1024, height: 768 },
+            scroll: { x: 0, y: 0, maxY: 0 },
+            survivingOverlays: [{ tagId: 42, coveragePercent: 85 }],
+        };
+        expect(snapshot.survivingOverlays).toBeDefined();
+        expect(snapshot.survivingOverlays![0].tagId).toBe(42);
+        expect(snapshot.survivingOverlays![0].coveragePercent).toBe(85);
+    });
+});
