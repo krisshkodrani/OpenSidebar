@@ -91,6 +91,8 @@ export interface BaseMessage {
   requestId: string;
   /** Where this message originated */
   source: MessageSource | string;
+  /** Workspace this message belongs to (null = global / unscoped) */
+  workspaceId?: string | null;
 }
 
 /**
@@ -182,7 +184,9 @@ export interface StreamChunkMessage extends BaseMessage {
 export interface StopAgentMessage extends BaseMessage {
   type: "STOP_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
 }
 
 /** Settings changed — broadcast to all contexts */
@@ -264,7 +268,7 @@ export interface AgentStuckMessage extends BaseMessage {
   type: "AGENT_STUCK";
   source: MessageSource.BACKGROUND;
   payload: {
-    signal: "nudge" | "escalate" | "resolved";
+    signal: "nudge" | "pivot" | "escalate" | "resolved";
     staleTurns: number;
     url: string;
     /** Human-readable explanation */
@@ -342,14 +346,18 @@ export interface SkipSubtaskMessage extends BaseMessage {
 export interface PauseAgentMessage extends BaseMessage {
   type: "PAUSE_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
 }
 
 /** Side panel requests resuming the paused agent loop */
 export interface ResumeAgentMessage extends BaseMessage {
   type: "RESUME_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
 }
 
 /** Background broadcasts session token/cost metrics to the side panel */
@@ -901,7 +909,7 @@ export interface ChatEntry {
 
 /** Stuck detection state for the side panel */
 export interface StuckState {
-  signal: "nudge" | "escalate";
+  signal: "nudge" | "pivot" | "escalate";
   staleTurns: number;
   url: string;
   /** Timestamp of the stuck signal (for auto-dismiss timing) */
@@ -918,6 +926,8 @@ export interface TurnProgress {
 export interface SidePanelState {
   /** Whether initial load (settings + messages) is complete */
   ready: boolean;
+  /** Active workspace ID for message scoping (null = global) */
+  activeWorkspaceId: string | null;
   /** Chat history */
   messages: ChatEntry[];
   /** Current agent status (drives status indicator) */
@@ -1060,6 +1070,10 @@ export interface NavigationState {
 
 export interface UserSettings {
   openRouterApiKey: string;
+  /** Groq API key for fast model (GPT-OSS-120B) */
+  groqApiKey: string;
+  /** Use Groq for fast model instead of OpenRouter */
+  useGroqFast: boolean;
   maxTurns: number;
   contextWindowSize: number;
   memoryEnabled: boolean;
@@ -1088,6 +1102,8 @@ export interface TraceEntry {
   sessionId: string;
   turnNumber: number;
   timestamp: number;
+  /** Workspace ID for session isolation correlation */
+  workspaceId?: string | null;
   /** DOM state at turn start */
   snapshot: {
     url: string;
@@ -1162,4 +1178,6 @@ export interface TraceSession {
   turnCount: number;
   summary: string;
   metrics: SessionMetrics | null;
+  /** Workspace ID for session isolation correlation */
+  workspaceId?: string | null;
 }

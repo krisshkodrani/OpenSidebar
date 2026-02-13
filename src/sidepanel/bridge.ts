@@ -21,6 +21,13 @@ export function initializeBridge(
   const listener = (message: RuntimeMessage) => {
     if (message.source !== MessageSource.BACKGROUND) return;
 
+    // Workspace filter: drop messages for other workspaces
+    const activeWsId = store.getState().activeWorkspaceId;
+    if (message.workspaceId != null && activeWsId != null && message.workspaceId !== activeWsId) {
+      logger.debug("ui", "Dropping message for different workspace", { type: message.type, messageWs: message.workspaceId, activeWs: activeWsId });
+      return;
+    }
+
     logger.debug("ui", "Received message", { type: message.type });
     const state = store.getState();
 

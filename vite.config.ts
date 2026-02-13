@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __DEV__: JSON.stringify(mode !== "production"),
       __OPENROUTER_API_KEY__: JSON.stringify(env.OPENROUTER_API_KEY ?? ""),
+      __GROQ_API_KEY__: JSON.stringify(env.GROQ_API_KEY ?? ""),
     },
     plugins: [
       react(),

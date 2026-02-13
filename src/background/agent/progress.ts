@@ -2,7 +2,7 @@ import { DomSnapshot } from "../../types";
 import { STUCK_THRESHOLDS } from "./constants";
 
 export interface ProgressSignal {
-  type: "nudge" | "escalate";
+  type: "nudge" | "pivot" | "escalate";
   message: string;
   staleTurns: number;
 }
@@ -32,15 +32,19 @@ function contentFingerprint(snap: DomSnapshot): string {
 }
 
 const STUCK_NUDGE_MSG =
-  "STUCK: Your last 6 actions changed nothing. STOP and apply the Verify step:\n1. Why did the last action fail?\n2. Is the current plan still valid?\nThen try ONE different approach:\n- take_screenshot — see the reality\n- scroll_page — target might be off-screen\n- update_plan — if the current step is impossible, REVISE the plan (provide a rationale)\n- find_element — search for the element by text";
+  "STUCK: Your last actions changed nothing. STOP and apply the Verify step:\n1. Why did the last action fail?\n2. Is the current plan still valid?\nThen try ONE different approach:\n- take_screenshot — see the reality\n- scroll_page — target might be off-screen\n- update_plan — if the current step is impossible, REVISE the plan (provide a rationale)\n- find_element — search for the element by text";
+
+const STUCK_PIVOT_MSG =
+  "STRATEGY PIVOT REQUIRED: Multiple actions have failed. The system will clear your failed context and let you start fresh with a different approach.";
 
 const STUCK_ESCALATE_MSG =
-  "STUCK ESCALATION: 12+ actions failed. A stronger model is taking over. Start fresh:\n1. take_screenshot to see the page visually.\n2. Re-read Viewport Text — what does the page ACTUALLY say?\n3. If the plan is blocked, call update_plan() to pivot to a new strategy.\n4. Try ONE action and verify the result next turn.";
+  "STUCK ESCALATION: A stronger model is taking over with fresh context. Start with a completely different strategy.";
 
 export class ProgressTracker {
   private lastFingerprint = "";
   private lastUrl = "";
   private staleTurns = 0;
+  private pivotFired = false;
   private escalationFired = false;
 
   onSnapshotRefresh(snap: DomSnapshot): ProgressSignal | null {
@@ -66,11 +70,20 @@ export class ProgressTracker {
     // Same content, same URL — stuck
     this.staleTurns++;
 
+    // Check in descending order: escalate first, then pivot, then nudge
     if (this.staleTurns >= STUCK_THRESHOLDS.ESCALATE && !this.escalationFired) {
       this.escalationFired = true;
       return {
         type: "escalate",
         message: STUCK_ESCALATE_MSG,
+        staleTurns: this.staleTurns,
+      };
+    }
+    if (this.staleTurns >= STUCK_THRESHOLDS.PIVOT && !this.pivotFired) {
+      this.pivotFired = true;
+      return {
+        type: "pivot",
+        message: STUCK_PIVOT_MSG,
         staleTurns: this.staleTurns,
       };
     }
@@ -87,10 +100,19 @@ export class ProgressTracker {
     return null;
   }
 
+  /** Reset all tracking state (new session) */
   reset() {
     this.lastFingerprint = "";
     this.lastUrl = "";
     this.staleTurns = 0;
+    this.pivotFired = false;
     this.escalationFired = false;
+  }
+
+  /** Reset escalation/pivot flags so they can fire again (after a pivot clears context) */
+  resetEscalation() {
+    this.pivotFired = false;
+    this.escalationFired = false;
+    this.staleTurns = 0;
   }
 }

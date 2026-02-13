@@ -24,6 +24,7 @@ export class TraceRecorder {
   private startTime: number;
   private query = "";
   private startUrl = "";
+  private workspaceId: string | null = null;
 
   // Current turn being recorded
   private currentTurn: Partial<TraceEntry> | null = null;
@@ -39,6 +40,11 @@ export class TraceRecorder {
   setSessionInfo(query: string, startUrl: string): void {
     this.query = query;
     this.startUrl = startUrl;
+  }
+
+  /** Set workspace ID for trace correlation */
+  setWorkspaceId(id: string | null): void {
+    this.workspaceId = id;
   }
 
   /** Begin recording a new turn */
@@ -144,6 +150,7 @@ export class TraceRecorder {
       sessionId: this.currentTurn.sessionId!,
       turnNumber: this.currentTurn.turnNumber!,
       timestamp: this.currentTurn.timestamp!,
+      workspaceId: this.workspaceId,
       snapshot: this.currentTurn.snapshot!,
       elements: this.currentTurn.elements!,
       llmRequest: this.currentTurn.llmRequest!,
@@ -188,6 +195,7 @@ export class TraceRecorder {
       turnCount,
       summary,
       metrics,
+      workspaceId: this.workspaceId,
     };
 
     await this.flush("/traces/session", session);

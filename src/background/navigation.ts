@@ -16,8 +16,13 @@ import { logger } from "../utils";
 
 // --- Constants ---
 
-const STORAGE_KEY = "qsidebar:agentState";
+const STORAGE_KEY_PREFIX = "qsidebar:agentState";
 const NAVIGATION_TIMEOUT_MS = 30_000; // 30 seconds
+
+/** Get workspace-scoped storage key */
+function storageKey(workspaceId?: string | null): string {
+    return workspaceId ? `${STORAGE_KEY_PREFIX}:${workspaceId}` : STORAGE_KEY_PREFIX;
+}
 
 // --- State Management ---
 
@@ -43,24 +48,49 @@ export async function saveNavigationState(
         timeoutMs: NAVIGATION_TIMEOUT_MS,
     };
 
-    await chrome.storage.local.set({ [STORAGE_KEY]: navState });
-    logger.info("navigation", "Saved navigation state", { fromUrl, toUrl: expectedUrl });
+    const key = storageKey(state.workspaceId);
+    await chrome.storage.local.set({ [key]: navState });
+    logger.info("navigation", "Saved navigation state", { fromUrl, toUrl: expectedUrl, storageKey: key });
 }
 
 /**
  * Retrieves pending navigation state, or null if none exists.
+ * Checks workspace-scoped key first (by tab lookup), then falls back to the default key.
  */
 export async function loadNavigationState(): Promise<NavigationState | null> {
-    const stored = await chrome.storage.local.get(STORAGE_KEY);
-    return stored[STORAGE_KEY] ?? null;
+    // Try all stored keys matching the prefix pattern
+    const stored = await chrome.storage.local.get(null);
+    for (const [key, value] of Object.entries(stored)) {
+        if (key.startsWith(STORAGE_KEY_PREFIX) && value && (value as NavigationState).agentState) {
+            return value as NavigationState;
+        }
+    }
+    return null;
 }
 
 /**
- * Clears stored navigation state.
+ * Retrieves pending navigation state for a specific tab.
  */
-export async function clearNavigationState(): Promise<void> {
-    await chrome.storage.local.remove(STORAGE_KEY);
-    logger.debug("navigation", "Cleared navigation state");
+export async function loadNavigationStateForTab(tabId: number): Promise<NavigationState | null> {
+    const stored = await chrome.storage.local.get(null);
+    for (const [key, value] of Object.entries(stored)) {
+        if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
+            const navState = value as NavigationState;
+            if (navState.agentState?.activeTabId === tabId) {
+                return navState;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Clears stored navigation state for a given workspace (or default).
+ */
+export async function clearNavigationState(workspaceId?: string | null): Promise<void> {
+    const key = storageKey(workspaceId);
+    await chrome.storage.local.remove(key);
+    logger.debug("navigation", "Cleared navigation state", { storageKey: key });
 }
 
 // --- Event Handlers ---
@@ -69,7 +99,7 @@ export async function clearNavigationState(): Promise<void> {
 export type ResumeCallback = (state: AgentLoopState, newUrl: string) => void;
 
 /** Callback type for broadcasting status updates */
-export type StatusCallback = (status: AgentStatus, detail: string) => void;
+export type StatusCallback = (status: AgentStatus, detail: string, workspaceId?: string | null) => void;
 
 let resumeCallback: ResumeCallback | null = null;
 let statusCallback: StatusCallback | null = null;
@@ -96,26 +126,23 @@ async function handleNavigationComplete(
     // Only care about main frame (not iframes)
     if (details.frameId !== 0) return;
 
-    const navState = await loadNavigationState();
+    const navState = await loadNavigationStateForTab(details.tabId);
     if (!navState) return;
 
     // Check if agent was waiting for navigation
     if (navState.agentState.status !== AgentStatus.WAITING_FOR_PAGE_LOAD) return;
 
-    // Check if this is the tab we're tracking
-    if (details.tabId !== navState.agentState.activeTabId) return;
-
     // Check for timeout
     const elapsed = Date.now() - navState.navigationStartTs;
     if (elapsed > navState.timeoutMs) {
-        await clearNavigationState();
-        statusCallback?.(AgentStatus.ERROR, "Navigation timed out");
+        await clearNavigationState(navState.agentState.workspaceId);
+        statusCallback?.(AgentStatus.ERROR, "Navigation timed out", navState.agentState.workspaceId);
         logger.warn("navigation", "Navigation timed out", { elapsed, timeout: navState.timeoutMs });
         return;
     }
 
     // Clear stored state before resuming
-    await clearNavigationState();
+    await clearNavigationState(navState.agentState.workspaceId);
 
     logger.info("navigation", "Navigation completed, resuming agent", { url: details.url });
 
@@ -159,13 +186,10 @@ async function handleNavigationError(
     // Only care about main frame
     if (details.frameId !== 0) return;
 
-    const navState = await loadNavigationState();
+    const navState = await loadNavigationStateForTab(details.tabId);
     if (!navState) return;
 
-    // Check if this is the tab we're tracking
-    if (details.tabId !== navState.agentState.activeTabId) return;
-
-    await clearNavigationState();
+    await clearNavigationState(navState.agentState.workspaceId);
 
     logger.warn("navigation", "Navigation failed", { url: details.url, error: details.error });
 
@@ -201,14 +225,12 @@ async function handleNavigationError(
  * Cleans up navigation state if the tracked tab is closed.
  */
 async function handleTabRemoved(tabId: number): Promise<void> {
-    const navState = await loadNavigationState();
+    const navState = await loadNavigationStateForTab(tabId);
     if (!navState) return;
 
-    if (navState.agentState.activeTabId === tabId) {
-        await clearNavigationState();
-        statusCallback?.(AgentStatus.ERROR, "Tab was closed during navigation");
-        logger.warn("navigation", "Tab closed during navigation", { tabId });
-    }
+    await clearNavigationState(navState.agentState.workspaceId);
+    statusCallback?.(AgentStatus.ERROR, "Tab was closed during navigation", navState.agentState.workspaceId);
+    logger.warn("navigation", "Tab closed during navigation", { tabId });
 }
 
 /**
@@ -216,13 +238,19 @@ async function handleTabRemoved(tabId: number): Promise<void> {
  * Called from runtime.onStartup.
  */
 export async function checkStaleNavigationState(): Promise<void> {
-    const navState = await loadNavigationState();
-    if (!navState) return;
-
-    const elapsed = Date.now() - navState.navigationStartTs;
-    if (elapsed > navState.timeoutMs) {
-        await clearNavigationState();
-        logger.info("navigation", "Cleaned up stale navigation state on startup");
+    // Check all stored navigation states and clean up stale ones
+    const stored = await chrome.storage.local.get(null);
+    for (const [key, value] of Object.entries(stored)) {
+        if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
+            const navState = value as NavigationState;
+            if (navState.navigationStartTs) {
+                const elapsed = Date.now() - navState.navigationStartTs;
+                if (elapsed > (navState.timeoutMs || NAVIGATION_TIMEOUT_MS)) {
+                    await chrome.storage.local.remove(key);
+                    logger.info("navigation", "Cleaned up stale navigation state on startup", { key });
+                }
+            }
+        }
     }
 }
 

@@ -11,7 +11,15 @@ const mockStorage = new Map<string, any>();
 globalThis.chrome = {
     storage: {
         local: {
-            get: mock(async (key: string) => {
+            get: mock(async (key: string | null) => {
+                if (key === null) {
+                    // Return all stored items
+                    const result: Record<string, any> = {};
+                    for (const [k, v] of mockStorage.entries()) {
+                        result[k] = v;
+                    }
+                    return result;
+                }
                 const value = mockStorage.get(key);
                 return value ? { [key]: value } : {};
             }),

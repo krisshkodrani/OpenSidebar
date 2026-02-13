@@ -54,8 +54,8 @@ export class PlanGuardian {
     private llm: LLMClient;
     private usageCallback: ((usage: TokenUsage, llmMs: number) => void) | null = null;
 
-    constructor(apiKey: string) {
-        this.llm = new LLMClient(apiKey, MODEL_SMART);
+    constructor(openRouterApiKey: string) {
+        this.llm = new LLMClient(openRouterApiKey, undefined, false, MODEL_SMART);
     }
 
     setUsageCallback(cb: ((usage: TokenUsage, llmMs: number) => void) | null) {

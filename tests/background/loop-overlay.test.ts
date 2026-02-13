@@ -24,8 +24,10 @@ mock.module("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
-        switchModel = mock((m: string) => { this.model = m; });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
         getCurrentModel = () => this.model;
+        getCurrentProvider = () => "openrouter";
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",
@@ -46,7 +48,7 @@ function createLoop() {
     const onStatus = mock();
     const onMessage = mock();
     const onStep = mock();
-    const agent = new AgentLoop("test-key", {
+    const agent = new AgentLoop("test-key", undefined, false, {
         onStatusUpdate: onStatus,
         onMessage: onMessage,
         onStep: onStep,

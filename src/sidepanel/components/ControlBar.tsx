@@ -16,7 +16,9 @@ export function ControlBar() {
         type: "PAUSE_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
-        payload: {},
+        payload: {
+          workspaceId: useStore.getState().activeWorkspaceId,
+        },
       });
     } catch (e) {
       logger.error("ui", "Failed to pause agent", { error: e });
@@ -29,7 +31,9 @@ export function ControlBar() {
         type: "RESUME_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
-        payload: {},
+        payload: {
+          workspaceId: useStore.getState().activeWorkspaceId,
+        },
       });
     } catch (e) {
       logger.error("ui", "Failed to resume agent", { error: e });

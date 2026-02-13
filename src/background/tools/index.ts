@@ -16,18 +16,30 @@ import { TokenUsage } from "../llm/types";
 // Export registry and types
 export * from "./registry";
 
-/** Callback for reporting vision usage to the agent loop. Set by AgentLoop before starting. */
-let visionUsageCallback: ((usage: TokenUsage, durationMs: number, model: string) => void) | null = null;
+/** Per-tab callbacks for reporting vision usage to the agent loop. */
+const visionUsageCallbacks = new Map<number, (usage: TokenUsage, durationMs: number, model: string) => void>();
 
-export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null): void {
-  visionUsageCallback = cb;
+export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null, tabId?: number): void {
+  if (tabId != null) {
+    if (cb) visionUsageCallbacks.set(tabId, cb);
+    else visionUsageCallbacks.delete(tabId);
+  } else {
+    // Backwards compat: null clears all
+    if (!cb) visionUsageCallbacks.clear();
+  }
 }
 
-/** Callback for passing screenshot thumbnails to the agent loop. Set by AgentLoop before starting. */
-let screenshotCaptureCallback: ((thumbnailDataUrl: string) => void) | null = null;
+/** Per-tab callbacks for passing screenshot thumbnails to the agent loop. */
+const screenshotCaptureCallbacks = new Map<number, (thumbnailDataUrl: string) => void>();
 
-export function setScreenshotCaptureCallback(cb: ((thumbnailDataUrl: string) => void) | null): void {
-  screenshotCaptureCallback = cb;
+export function setScreenshotCaptureCallback(cb: ((thumbnailDataUrl: string) => void) | null, tabId?: number): void {
+  if (tabId != null) {
+    if (cb) screenshotCaptureCallbacks.set(tabId, cb);
+    else screenshotCaptureCallbacks.delete(tabId);
+  } else {
+    // Backwards compat: null clears all
+    if (!cb) screenshotCaptureCallbacks.clear();
+  }
 }
 
 /** Downsize a full-res screenshot data URL to a ~320px wide JPEG thumbnail. */
@@ -966,10 +978,11 @@ export function registerTools() {
         });
 
         // Generate thumbnail and fire callback (before vision LLM call)
-        if (screenshotCaptureCallback) {
+        const captureCallback = screenshotCaptureCallbacks.get(tabId);
+        if (captureCallback) {
           try {
             const thumbnailUrl = await createThumbnail(dataUrl);
-            screenshotCaptureCallback(thumbnailUrl);
+            captureCallback(thumbnailUrl);
           } catch (e) {
             logger.warn("tools", "Thumbnail generation failed", { error: e });
           }
@@ -977,8 +990,9 @@ export function registerTools() {
 
         const result = await describeScreenshot(dataUrl, signal);
         // Report vision usage to the agent loop if callback is registered
-        if (result.usage && result.model && result.durationMs != null && visionUsageCallback) {
-          visionUsageCallback(result.usage, result.durationMs, result.model);
+        const usageCallback = visionUsageCallbacks.get(tabId);
+        if (result.usage && result.model && result.durationMs != null && usageCallback) {
+          usageCallback(result.usage, result.durationMs, result.model);
         }
         return result.description;
       } catch (e: any) {

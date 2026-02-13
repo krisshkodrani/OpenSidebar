@@ -25,8 +25,10 @@ mock.module("../../src/background/llm", () => ({
             finish_reason: "stop",
         }));
         completeStream = mockCompleteStream;
-        switchModel = mock((m: string) => { this.model = m; });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
         getCurrentModel = () => this.model;
+        getCurrentProvider = () => "openrouter";
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",
@@ -39,7 +41,7 @@ describe("AgentLoop", () => {
         const onMessage = mock();
         const onStep = mock();
 
-        const agent = new AgentLoop("test-key", {
+        const agent = new AgentLoop("test-key", undefined, false, {
             onStatusUpdate: onStatus,
             onMessage: onMessage,
             onStep: onStep,
@@ -58,7 +60,7 @@ describe("AgentLoop", () => {
         const onMessage = mock();
         const onStep = mock();
 
-        const agent = new AgentLoop("test-key", {
+        const agent = new AgentLoop("test-key", undefined, false, {
             onStatusUpdate: onStatus,
             onMessage: onMessage,
             onStep: onStep,
@@ -66,15 +68,17 @@ describe("AgentLoop", () => {
 
         await agent.start("Hello", 123);
 
-        // Guardian decompose step + Unified nudge→escalate→give-up for text-only responses:
+        // Guardian decompose step + Unified nudge→pivot→escalate+pivot→give-up for text-only:
         // Pre-loop: guardian thinking(running) "Analyzing task scope..."
-        // Turn 1: thinking(running) + thinking(done) → nudge (consecutiveNudges=1)
-        // Turn 2: thinking(running) + thinking(done) → escalate (info step) + nudge (reset to 0)
+        // Turn 1: thinking(running) + thinking(done) → soft nudge (consecutiveNudges=1)
+        // Turn 2: thinking(running) + thinking(done) → pivot (info "Rethinking approach") → reset
         // Turn 3: thinking(running) + thinking(done) → nudge (consecutiveNudges=1)
-        // Turn 4: thinking(running) + thinking(done) → nudge (consecutiveNudges=2)
-        // Turn 5: thinking(running) + thinking(done) → give-up (consecutiveNudges=3)
-        // = 1 guardian step + 5 turns × 2 thinking steps + 1 info step = 12
-        expect(onStep).toHaveBeenCalledTimes(12);
+        // Turn 4: thinking(running) + thinking(done) → escalate+pivot (info "Rethinking" + info "Switching")
+        // Turn 5: thinking(running) + thinking(done) → nudge (consecutiveNudges=1)
+        // Turn 6: thinking(running) + thinking(done) → nudge (consecutiveNudges=2)
+        // Turn 7: thinking(running) + thinking(done) → give-up (consecutiveNudges=3)
+        // = 1 guardian + 7 turns × 2 thinking + 1 pivot info + 2 escalate+pivot info = 18
+        expect(onStep).toHaveBeenCalledTimes(18);
 
         // First call: guardian decompose thinking step
         const guardianCall = onStep.mock.calls[0];
@@ -95,10 +99,10 @@ describe("AgentLoop", () => {
         expect(secondCall[0].durationMs).toBeDefined();
         expect(secondCall[1]).toBe(true); // update = true
 
-        // Sixth call (index 5): info step "Switching to smarter model" from escalation
-        const escalationStep = onStep.mock.calls[5];
-        expect(escalationStep[0].type).toBe("info");
-        expect(escalationStep[0].label).toBe("Switching to smarter model");
-        expect(escalationStep[1]).toBe(false); // new step, not update
+        // Index 5: info step "Rethinking approach from scratch" from first pivot
+        const pivotStep = onStep.mock.calls[5];
+        expect(pivotStep[0].type).toBe("info");
+        expect(pivotStep[0].label).toBe("Rethinking approach from scratch");
+        expect(pivotStep[1]).toBe(false);
     });
 });

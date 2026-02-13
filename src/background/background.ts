@@ -14,7 +14,7 @@ import {
   registerNavigationListeners,
   setNavigationCallbacks,
 } from "./navigation";
-import { registerAlarmListener } from "./keepalive";
+import { registerAlarmListener, startKeepalive, stopKeepalive } from "./keepalive";
 
 logger.info("system", "Service Worker Initialized");
 
@@ -28,13 +28,14 @@ setNavigationCallbacks(
   (state: AgentLoopState, newUrl: string) => {
     handleNavigationResume(state, newUrl);
   },
-  // Status callback — broadcasts status updates
-  (status: AgentStatus, detail: string) => {
+  // Status callback — broadcasts status updates (includes workspaceId from nav state)
+  (status: AgentStatus, detail: string, workspaceId?: string | null) => {
     chrome.runtime
       .sendMessage({
         type: "AGENT_STATUS",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
+        workspaceId: workspaceId ?? undefined,
         payload: { status, detail },
       })
       .catch(() => {});
@@ -50,9 +51,28 @@ chrome.sidePanel.setPanelBehavior({
   openPanelOnActionClick: false,
 });
 
-// 5. State
-let agentLoop: AgentLoop | null = null;
+// 5. State — per-workspace agent loops
+const agentLoops = new Map<string, AgentLoop>();
 let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
+async function resolveWorkspaceId(tabId: number, provided?: string | null): Promise<string> {
+  if (provided) return provided;
+  const ws = await workspaceManager.getWorkspaceForTab(tabId);
+  if (ws?.id) return ws.id;
+  logger.debug("workspace", "No workspace found for tab, using default", { tabId });
+  return "default";
+}
+
+/** Start keepalive if any loops are active */
+async function ensureKeepalive(): Promise<void> {
+  if (agentLoops.size > 0) await startKeepalive();
+}
+
+/** Stop keepalive only when all loops are done */
+async function maybeStopKeepalive(): Promise<void> {
+  if (agentLoops.size === 0) await stopKeepalive();
+}
 
 // --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
 const USER_OPENED_KEY = "userOpenedPanel";
@@ -328,40 +348,74 @@ chrome.runtime.onMessage.addListener(
       message.source === MessageSource.SIDEPANEL &&
       message.type === "USER_CHAT"
     ) {
-      if (message.payload.isHint && agentLoop) {
-        // Inject hint into running loop — don't start a new loop
-        logger.debug("agent", "User hint", { text: message.payload.text });
-        agentLoop.injectHint(message.payload.text);
-        // If paused (e.g. awaiting plan approval), auto-resume after hint injection
-        if (agentLoop.isPaused()) {
-          agentLoop.resume();
+      const wsId = message.payload.workspaceId;
+      (async () => {
+        const resolvedWsId = await resolveWorkspaceId(message.payload.tabId, wsId);
+        const loop = agentLoops.get(resolvedWsId);
+        if (message.payload.isHint && loop) {
+          // Inject hint into running loop — don't start a new loop
+          logger.debug("agent", "User hint", { text: message.payload.text, workspaceId: resolvedWsId });
+          loop.injectHint(message.payload.text);
+          // If paused (e.g. awaiting plan approval), auto-resume after hint injection
+          if (loop.isPaused()) {
+            loop.resume();
+          }
+        } else {
+          handleUserChat(message.payload, resolvedWsId);
         }
-      } else {
-        handleUserChat(message.payload);
-      }
+      })();
       return false;
     }
 
     // 2. Stop Agent
     if (message.type === "STOP_AGENT") {
-      if (agentLoop) {
-        agentLoop.stop();
-        agentLoop = null;
-      }
-      // Notify content script to remove the border
-      chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-        if (tab?.id) sendAgentActivity(tab.id, false);
-      }).catch(() => {});
+      const wsId = message.payload?.workspaceId;
+      (async () => {
+        // If wsId provided, stop that specific loop; otherwise stop all
+        if (wsId) {
+          const loop = agentLoops.get(wsId);
+          if (loop) {
+            loop.stop();
+            agentLoops.delete(wsId);
+            await maybeStopKeepalive();
+          }
+        } else {
+          // Backwards compat: stop all loops
+          for (const [id, loop] of agentLoops) {
+            loop.stop();
+            agentLoops.delete(id);
+          }
+          await maybeStopKeepalive();
+        }
+        // Notify content script to remove the border
+        chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+          if (tab?.id) sendAgentActivity(tab.id, false);
+        }).catch(() => {});
+      })();
       return false;
     }
 
     // 3. Pause / Resume Agent
     if (message.type === "PAUSE_AGENT") {
-      if (agentLoop) agentLoop.pause();
+      const wsId = message.payload?.workspaceId;
+      if (wsId) {
+        const loop = agentLoops.get(wsId);
+        if (loop) loop.pause();
+      } else {
+        // Backwards compat: pause all
+        for (const loop of agentLoops.values()) loop.pause();
+      }
       return false;
     }
     if (message.type === "RESUME_AGENT") {
-      if (agentLoop) agentLoop.resume();
+      const wsId = message.payload?.workspaceId;
+      if (wsId) {
+        const loop = agentLoops.get(wsId);
+        if (loop) loop.resume();
+      } else {
+        // Backwards compat: resume all
+        for (const loop of agentLoops.values()) loop.resume();
+      }
       return false;
     }
 
@@ -378,22 +432,25 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
-async function handleUserChat(payload: { text: string; tabId: number }) {
+async function handleUserChat(payload: { text: string; tabId: number }, workspaceId: string) {
   const { tabId } = payload;
   const text = sanitizeUserInput(payload.text);
-  logger.debug("agent", "User message", { text, tabId });
+  logger.debug("agent", "User message", { text, tabId, workspaceId });
 
-  // 1. Get Settings (API Key)
+  // 1. Get Settings (API Keys)
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
-  const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
+  const useGroqFast = !!(settings.useGroqFast && groqApiKey);
 
-  if (!apiKey) {
+  if (!openRouterApiKey) {
     chrome.runtime.sendMessage({
       type: "AGENT_STATUS",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
-      payload: { status: AgentStatus.ERROR, detail: "No API Key configured." },
+      workspaceId,
+      payload: { status: AgentStatus.ERROR, detail: "No OpenRouter API Key configured." },
     });
     return;
   }
@@ -401,20 +458,24 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
   const effectiveMaxTurns = settings.maxTurns || 30;
 
   // 2. Initialize Loop if needed
-  if (!agentLoop) {
-    agentLoop = new AgentLoop(apiKey, {
+  let loop = agentLoops.get(workspaceId);
+  if (!loop) {
+    loop = new AgentLoop(openRouterApiKey, groqApiKey, useGroqFast, {
       onStatusUpdate: (status, detail) => {
         chrome.runtime
           .sendMessage({
             type: "AGENT_STATUS",
             requestId: crypto.randomUUID(),
             source: MessageSource.BACKGROUND,
+            workspaceId,
             payload: { status, detail },
           })
           .catch(() => {});
         // Send AGENT_ACTIVITY to content script when agent starts/stops
         if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
           sendAgentActivity(tabId, false);
+          agentLoops.delete(workspaceId);
+          maybeStopKeepalive().catch(() => {});
         }
       },
       onMessage: (text, toolCalls) => {
@@ -423,6 +484,7 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
             type: "AGENT_RESPONSE",
             requestId: crypto.randomUUID(),
             source: MessageSource.BACKGROUND,
+            workspaceId,
             payload: { text, toolCalls, isStreaming: false },
           })
           .catch(() => {});
@@ -433,11 +495,20 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
             type: "AGENT_STEP",
             requestId: crypto.randomUUID(),
             source: MessageSource.BACKGROUND,
+            workspaceId,
             payload: { step, update },
           })
           .catch(() => {});
       },
-    }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: effectiveMaxTurns, showElementTags: settings.showElementTags ?? false, confirmPlan: settings.confirmPlan ?? false, showSessionMetrics: settings.showSessionMetrics ?? false });
+    }, {
+      maxContextTokens: settings.contextWindowSize || 32000,
+      maxTurns: effectiveMaxTurns,
+      showElementTags: settings.showElementTags ?? false,
+      confirmPlan: settings.confirmPlan ?? false,
+      showSessionMetrics: settings.showSessionMetrics ?? false,
+      workspaceId,
+    });
+    agentLoops.set(workspaceId, loop);
   }
 
   // 3. Start Agent
@@ -488,7 +559,9 @@ async function handleUserChat(payload: { text: string; tabId: number }) {
   // Notify content script that agent is active
   sendAgentActivity(tabId, true);
 
-  agentLoop.start(text, tabId, snapshot);
+  // Start keepalive and run the loop
+  await ensureKeepalive();
+  loop.start(text, tabId, snapshot);
 }
 
 /** Send AGENT_ACTIVITY message to the content script on a specific tab */
@@ -511,17 +584,21 @@ function sendAgentActivity(tabId: number, active: boolean) {
 async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
-  const apiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
+  const useGroqFast = !!(settings.useGroqFast && groqApiKey);
+  const workspaceId = state.workspaceId ?? "default";
 
-  if (!apiKey) {
+  if (!openRouterApiKey) {
     chrome.runtime
       .sendMessage({
         type: "AGENT_STATUS",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
+        workspaceId,
         payload: {
           status: AgentStatus.ERROR,
-          detail: "No API Key configured.",
+          detail: "No OpenRouter API Key configured.",
         },
       })
       .catch(() => {});
@@ -529,18 +606,21 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   }
 
   // Create a new agent loop with restored state
-  agentLoop = new AgentLoop(apiKey, {
+  const loop = new AgentLoop(openRouterApiKey, groqApiKey, useGroqFast, {
     onStatusUpdate: (status, detail) => {
       chrome.runtime
         .sendMessage({
           type: "AGENT_STATUS",
           requestId: crypto.randomUUID(),
           source: MessageSource.BACKGROUND,
+          workspaceId,
           payload: { status, detail },
         })
         .catch(() => {});
       if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
         sendAgentActivity(state.activeTabId, false);
+        agentLoops.delete(workspaceId);
+        maybeStopKeepalive().catch(() => {});
       }
     },
     onMessage: (text, toolCalls) => {
@@ -549,6 +629,7 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
           type: "AGENT_RESPONSE",
           requestId: crypto.randomUUID(),
           source: MessageSource.BACKGROUND,
+          workspaceId,
           payload: { text, toolCalls, isStreaming: false },
         })
         .catch(() => {});
@@ -559,11 +640,20 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
           type: "AGENT_STEP",
           requestId: crypto.randomUUID(),
           source: MessageSource.BACKGROUND,
+          workspaceId,
           payload: { step, update },
         })
         .catch(() => {});
     },
-  }, { maxContextTokens: settings.contextWindowSize || 32000, maxTurns: settings.maxTurns || 30, showElementTags: settings.showElementTags ?? false, confirmPlan: settings.confirmPlan ?? false, showSessionMetrics: settings.showSessionMetrics ?? false });
+  }, {
+    maxContextTokens: settings.contextWindowSize || 32000,
+    maxTurns: settings.maxTurns || 30,
+    showElementTags: settings.showElementTags ?? false,
+    confirmPlan: settings.confirmPlan ?? false,
+    showSessionMetrics: settings.showSessionMetrics ?? false,
+    workspaceId,
+  });
+  agentLoops.set(workspaceId, loop);
 
   // Get fresh snapshot from the new page
   let snapshot = undefined;
@@ -586,8 +676,9 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   // Notify content script that agent is active
   sendAgentActivity(state.activeTabId, true);
 
-  // Resume from saved state
-  agentLoop.resumeFromNavigation(state, snapshot);
+  // Start keepalive and resume from saved state
+  await ensureKeepalive();
+  loop.resumeFromNavigation(state, snapshot);
 }
 
 /**

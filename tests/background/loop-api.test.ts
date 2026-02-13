@@ -21,8 +21,10 @@ mock.module("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
-        switchModel = mock((m: string) => { this.model = m; });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
         getCurrentModel = () => this.model;
+        getCurrentProvider = () => "openrouter";
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",
@@ -40,7 +42,7 @@ function createLoop(overrides?: Record<string, any>) {
     const onStatus = mock();
     const onMessage = mock();
     const onStep = mock();
-    const agent = new AgentLoop("test-key", {
+    const agent = new AgentLoop("test-key", undefined, false, {
         onStatusUpdate: onStatus,
         onMessage: onMessage,
         onStep: onStep,
@@ -185,8 +187,8 @@ describe("AgentLoop Public API", () => {
         test("start returns max_turns outcome when text-only LLM exhausts turn budget", async () => {
             const { agent } = createLoop();
             const result = await agent.start("Hello", 123);
-            // With maxTurns=5 and text-only LLM: nudge→escalate→nudge→nudge→give-up at turn 5
-            // give-up break coincides with maxTurns boundary, so outcome is max_turns
+            // With maxTurns=5 and text-only LLM: nudge→pivot→nudge→escalate+pivot→nudge
+            // Agent runs all 5 turns without hitting give-up (needs 7), so outcome is max_turns
             expect(result.outcome).toBe("max_turns");
         });
     });

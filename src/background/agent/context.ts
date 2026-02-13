@@ -109,9 +109,11 @@ export class ContextManager {
   private maxHistory = 20;
   private maxContextTokens: number;
   private planStatus: PlanStatus | null = null;
+  private storageKey: string;
 
-  constructor(maxContextTokens: number = 32000) {
+  constructor(maxContextTokens: number = 32000, workspaceId?: string | null) {
     this.maxContextTokens = maxContextTokens;
+    this.storageKey = workspaceId ? `agent_context:${workspaceId}` : "agent_context";
   }
 
   public setPlanStatus(
@@ -684,13 +686,14 @@ export class ContextManager {
 
   public async loadState() {
     try {
-      const data = await chrome.storage.session.get("agent_context");
-      if (data.agent_context) {
-        this.history = data.agent_context.history || [];
-        this.planStatus = data.agent_context.planStatus || null;
+      const data = await chrome.storage.session.get(this.storageKey);
+      if (data[this.storageKey]) {
+        this.history = data[this.storageKey].history || [];
+        this.planStatus = data[this.storageKey].planStatus || null;
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
           hasPlan: !!this.planStatus,
+          storageKey: this.storageKey,
         });
       }
     } catch (e) {
@@ -701,7 +704,7 @@ export class ContextManager {
   public async saveState() {
     try {
       await chrome.storage.session.set({
-        agent_context: {
+        [this.storageKey]: {
           history: this.history,
           planStatus: this.planStatus,
         },

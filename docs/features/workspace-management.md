@@ -63,6 +63,42 @@ The side panel is strictly per-tab:
 10. NEW workspace "OpenSidebar 2" created (red group)
 ```
 
+## Parallel Agent Execution
+
+Each workspace runs its own independent `AgentLoop` instance with fully isolated state. This means you can send tasks to multiple workspaces simultaneously — all agents run in parallel.
+
+### How It Works
+
+In `background.ts`, agent loops are stored in a per-workspace map:
+
+```typescript
+const agentLoops = new Map<string, AgentLoop>();
+```
+
+Each `AgentLoop` instance owns its own:
+- **LLM client** — separate `LLMClient` with independent model/provider state
+- **Context manager** — isolated conversation history and system prompt
+- **Session metrics** — per-workspace token/cost tracking
+- **Progress tracker** — independent stuck detection per workspace
+
+### Isolation Boundaries
+
+| Resource | Isolation Strategy |
+|---|---|
+| Conversation history | `agent_context:{workspaceId}` storage key |
+| Navigation state | `qsidebar:agentState:{workspaceId}` storage key |
+| Vision/screenshot callbacks | Per-tab `Map` in tools bridge |
+| Streaming & status messages | Filtered by `workspaceId` on RuntimeMessage |
+| Keepalive alarm | Shared — smart lifecycle (starts when any loop active, stops when all finish) |
+
+### Usage
+
+1. Open the sidebar on a tab in Workspace 1 and send a task
+2. Switch to a tab in Workspace 2, open the sidebar, and send a different task
+3. Both agents execute simultaneously — each with its own context, history, and progress
+
+Practically, 2-3 parallel agents work well. Performance depends on API rate limits and system resources.
+
 ## Visual Indicators
 
 ### Tab Groups
@@ -176,6 +212,12 @@ Uses Chrome's native Tab Groups API:
 - **Color assignment** follows Chrome's default sequence
 - **Group naming** uses "OpenSidebar N" pattern
 - **Group management** happens in the background
+
+### Message Routing
+
+- `RuntimeMessage` carries an optional `workspaceId` field for workspace-scoped routing
+- Side panel bridge filters incoming messages by `activeWorkspaceId` — only messages for the current workspace are processed
+- Background broadcasts (streaming, status, metrics) include `workspaceId` so each side panel instance sees only its own agent's output
 
 ### Workspace Persistence
 

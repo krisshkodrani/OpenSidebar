@@ -123,7 +123,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">API Configuration</h3>
 
                         <div className="space-y-1">
-                            <label className="text-sm font-medium dark:text-warm-300">OpenRouter API Key</label>
+                            <label className="text-sm font-medium dark:text-warm-300">
+                                OpenRouter API Key
+                                <span className="text-xs text-warm-400 ml-2">(required)</span>
+                            </label>
                             <input
                                 type="password"
                                 value={formState.openRouterApiKey}
@@ -132,6 +135,32 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                                 placeholder="sk-or-..."
                             />
                         </div>
+
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-medium dark:text-warm-300">Use Groq for Fast Model</label>
+                                <p className="text-xs text-warm-400 dark:text-warm-500">GPT-OSS-120B on Groq (faster, smarter)</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={formState.useGroqFast}
+                                onChange={e => handleChange("useGroqFast", e.target.checked)}
+                                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+                            />
+                        </div>
+
+                        {formState.useGroqFast && (
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium dark:text-warm-300">Groq API Key</label>
+                                <input
+                                    type="password"
+                                    value={formState.groqApiKey}
+                                    onChange={e => handleChange("groqApiKey", e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                                    placeholder="gsk_..."
+                                />
+                            </div>
+                        )}
                     </section>
 
                     {/* Agent Behavior */}
