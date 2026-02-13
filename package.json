@@ -18,9 +18,14 @@
     "logs:query": "bun run scripts/log-query.ts",
     "logs:tail": "bun run scripts/log-query.ts tail",
     "logs:errors": "bun run scripts/log-query.ts errors",
+    "traces": "bun run scripts/trace-query.ts",
+    "traces:list": "bun run scripts/trace-query.ts list",
+    "traces:stats": "bun run scripts/trace-query.ts stats",
     "evals": "bun run evals/cli.ts",
-    "evals:stats": "bun run evals/cli.ts --stats",
-    "evals:analyze": "bun run evals/cli.ts --analyze --suggest"
+    "evals:convert": "bun run evals/cli.ts convert",
+    "evals:run": "bun run evals/cli.ts run",
+    "evals:stats": "bun run evals/cli.ts stats",
+    "evals:analyze": "bun run evals/cli.ts analyze"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

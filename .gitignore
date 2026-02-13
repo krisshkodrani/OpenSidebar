@@ -24,6 +24,13 @@ logs/*.jsonl
 logs/*.jsonl.*
 *.log
 
+# Traces (keep code, ignore data files)
+traces/*.jsonl
+
+# Eval data (generated, not checked in)
+evals/cases/*.jsonl
+evals/results/*.jsonl
+
 # Test coverage
 coverage/
 
