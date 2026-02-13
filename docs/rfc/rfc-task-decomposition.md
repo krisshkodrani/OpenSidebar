@@ -7,7 +7,7 @@
 
 ## Problem
 
-The agent treats every user message as a monolithic task. A complex instruction like "Complete all 30 challenge tasks" gets a single turn budget, single context window, and no structured subtask tracking. When it fails at task 5, there's no record of what was completed vs. what remains.
+The agent treats every user message as a monolithic task. A complex instruction like "Fill out all the forms on this page and submit each one" gets a single turn budget, single context window, and no structured subtask tracking. When it fails at step 5, there's no record of what was completed vs. what remains.
 
 ## Vision
 

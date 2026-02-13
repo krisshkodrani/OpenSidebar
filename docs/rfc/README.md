@@ -19,11 +19,6 @@ Adds runtime context detection to prevent Chrome API errors when modules are acc
 **Status:** Research phase  
 Analysis and implementation plan for supporting web components that use Shadow DOM.
 
-### [Computer Use Challenge](./computer-use-challenge.md)
-
-**Status:** Exploratory  
-Research into vision model integration and advanced computer use capabilities.
-
 ### [Implementation: Locked Workspace](./IMPLEMENTATION-Locked-Workspace.md)
 
 **Status:** Proposed  
