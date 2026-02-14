@@ -1093,7 +1093,7 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
-  /** OpenRouter model ID for vision/screenshot analysis (default: google/gemini-2.0-flash-001) */
+  /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
   visionModel: string;
   /** Show action plan and wait for confirmation before executing (default: false) */
   confirmPlan: boolean;
