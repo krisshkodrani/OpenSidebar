@@ -949,9 +949,12 @@ function executeReadElement(args: ReadElementArgs): {
   if (args.attribute) {
     const value = el.getAttribute(args.attribute);
     if (value === null) {
+      const available = Array.from(el.attributes)
+        .map((a) => a.name)
+        .join(", ");
       return {
         success: false,
-        result: `Element [${args.id}] has no attribute "${args.attribute}"`,
+        result: `Element [${args.id}] has no attribute "${args.attribute}". Available: ${available || "(none)"}`,
         navigated: false,
       };
     }

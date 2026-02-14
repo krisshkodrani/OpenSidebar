@@ -90,7 +90,7 @@ const TYPE_TEXT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TYPE_TEXT,
-    description: "Type into an input field. Clears existing text, auto-focuses, auto-scrolls. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
+    description: "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
     parameters: {
       type: "object",
       properties: {
@@ -329,7 +329,7 @@ const FIND_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.FIND_ELEMENT,
-    description: "Find text on the page, scroll to it, and return its tag ID for interaction. Preferred over blind scroll_page when you know what to look for.",
+    description: "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists.",
     parameters: {
       type: "object",
       properties: {
@@ -395,7 +395,7 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAG_AND_DROP,
-    description: "Drag source element to target element. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
+    description: "Drag source element to target element. Look for elements with draggable=true (sources) and dropzone=true (targets) in the page snapshot. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
     parameters: {
       type: "object",
       properties: {
@@ -528,7 +528,7 @@ const EXECUTE_JS_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.EXECUTE_JS,
-    description: "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string.",
+    description: "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string. IMPORTANT: No jQuery — use el.textContent.includes() not :contains(). Use el.getAttribute('class') not el.className (fails on SVG). Use Array.from(querySelectorAll(...)) for array methods. Wrap in (function(){ ... })() if using return.",
     parameters: {
       type: "object",
       properties: {

@@ -541,6 +541,7 @@ const PRIORITY_ATTRS = [
   "aria-roledescription",
   "alt",
   "title",
+  "draggable",
 ];
 
 /** Max chars per attribute value */
@@ -556,6 +557,22 @@ function extractAttributes(el: Element): Record<string, string> {
     if ((name === "id" || name === "name") && isRandomHash(val)) continue;
 
     attrs[name] = val.slice(0, ATTR_TRUNCATION);
+  }
+
+  // Select element: surface available options so LLM doesn't guess blind
+  if (el instanceof HTMLSelectElement) {
+    const opts = Array.from(el.options)
+      .map((o) => o.textContent?.trim() || o.value)
+      .filter(Boolean);
+    if (opts.length > 0) {
+      attrs["options"] = truncateText(opts.join(" | "), ATTR_TRUNCATION * 2);
+    }
+    if (el.value) {
+      const selected = el.options[el.selectedIndex];
+      if (selected) {
+        attrs["selected"] = selected.textContent?.trim() || selected.value;
+      }
+    }
   }
 
   // Form-specific label association
@@ -600,6 +617,17 @@ function extractAttributes(el: Element): Record<string, string> {
         attrs["label"] = truncateText(parts.join(" "), 40);
       }
     }
+  }
+
+  // Detect drop zone — JS event handlers aren't HTML attributes, check properties
+  if (
+    typeof (el as any).ondrop === "function" ||
+    typeof (el as any).ondragover === "function" ||
+    el.hasAttribute("dropzone") ||
+    (el as HTMLElement).dataset?.droptarget ||
+    (el as HTMLElement).dataset?.dropzone
+  ) {
+    attrs["dropzone"] = "true";
   }
 
   // State attributes
