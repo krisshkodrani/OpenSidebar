@@ -34,6 +34,22 @@ import {
 } from "./tagging";
 import { buildSnapshot } from "./snapshot";
 
+/** Build a "No element with tag" error with nearby ID hints for LLM recovery */
+function staleIdError(id: number): { success: false; result: string; navigated: false } {
+  const tagMap = getTagMap();
+  const available = Array.from(tagMap.keys())
+    .sort((a, b) => Math.abs(a - id) - Math.abs(b - id))
+    .slice(0, 5);
+  const hint = available.length > 0
+    ? ` Nearby IDs: ${available.map((n) => `[${n}]`).join(", ")}. Call read_page if none match.`
+    : " No elements tagged — call read_page to refresh.";
+  return {
+    success: false,
+    result: `No element with tag [${id}]${hint}`,
+    navigated: false,
+  };
+}
+
 /** Overlay detection selectors (matches semantic overlay CSS classes/roles) */
 const OVERLAY_SELECTORS = [
   "[role='dialog']",
@@ -154,11 +170,7 @@ function executeClick(args: ClickElementArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   // Scroll into view if needed
@@ -272,11 +284,7 @@ function executeType(args: TypeTextArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   if (
@@ -367,11 +375,7 @@ function executeScroll(args: ScrollPageArgs): {
     const tagMap = getTagMap();
     const el = tagMap.get(args.id);
     if (!el) {
-      return {
-        success: false,
-        result: `No element with tag [${args.id}]`,
-        navigated: false,
-      };
+      return staleIdError(args.id);
     }
     if (!(el instanceof HTMLElement)) {
       return {
@@ -474,11 +478,7 @@ function executeHover(args: { id: number }): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el)
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
   el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
@@ -646,11 +646,7 @@ function executeSelectOption(args: SelectOptionArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   if (!(el instanceof HTMLSelectElement)) {
@@ -730,7 +726,7 @@ function executeDragAndDrop(args: DragAndDropArgs): {
   if (!sourceEl) {
     return {
       success: false,
-      result: `No element with tag [${args.sourceId}]`,
+      result: staleIdError(args.sourceId).result,
       navigated: false,
     };
   }
@@ -738,7 +734,7 @@ function executeDragAndDrop(args: DragAndDropArgs): {
   if (!targetEl) {
     return {
       success: false,
-      result: `No element with tag [${args.targetId}]`,
+      result: staleIdError(args.targetId).result,
       navigated: false,
     };
   }
@@ -847,11 +843,7 @@ function executeDrawStroke(args: DrawStrokeArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
@@ -900,11 +892,7 @@ function executeHideElement(args: HideElementArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
   if (!(el instanceof HTMLElement)) {
     return {
@@ -939,11 +927,7 @@ function executeReadElement(args: ReadElementArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   if (args.attribute) {
@@ -981,11 +965,7 @@ function executeRightClick(args: RightClickArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
@@ -1008,11 +988,7 @@ function executeSetCheckbox(args: SetCheckboxArgs): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   if (
@@ -1045,11 +1021,7 @@ function executeUploadFile(args: Record<string, unknown>): {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id as number);
   if (!el) {
-    return {
-      success: false,
-      result: `No element with tag [${args.id}]`,
-      navigated: false,
-    };
+    return staleIdError(args.id);
   }
 
   if (
