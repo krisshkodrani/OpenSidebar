@@ -2304,6 +2304,23 @@ export class AgentLoop {
           }
         }
 
+        // Force snapshot refresh when tools hit stale element IDs
+        // Ensures the LLM's next turn sees fresh IDs without wasting a read_page call
+        if (!domModified && !doneSignaled) {
+          const recentMsgs = this.context.getMessages();
+          for (let i = recentMsgs.length - 1; i >= 0; i--) {
+            const msg = recentMsgs[i];
+            if (msg.role !== "tool") break;
+            if (typeof msg.content === "string" && msg.content.includes("No element with tag")) {
+              domModified = true;
+              logger.info("agent", "Stale element ID detected, forcing snapshot refresh", {
+                turn: this.turnCount,
+              });
+              break;
+            }
+          }
+        }
+
         // Batch snapshot refresh: ONE refresh after all tools complete
         if (domModified && !doneSignaled) {
           try {
