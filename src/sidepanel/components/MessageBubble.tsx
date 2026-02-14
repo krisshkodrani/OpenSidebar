@@ -148,14 +148,20 @@ function CompletionSummary({
   );
 }
 
-export function MessageBubble({ message }: { message: ChatEntry }) {
+export const MessageBubble = React.memo(function MessageBubble({ message }: { message: ChatEntry }) {
   const isUser = message.role === "user";
   const isHint = isUser && message.isHint;
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
-    return marked.parse(message.content) as string;
+    // Strip markdown Think/Observe/Verify reasoning sections before rendering
+    const cleaned = message.content
+      .replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "")
+      .replace(/\*\*Act\*\*:?\s*/gi, "")
+      .trim();
+    if (!cleaned) return "";
+    return marked.parse(cleaned) as string;
   }, [message.content, isUser]);
 
   const screenshotSteps = useMemo(() => {
@@ -254,4 +260,4 @@ export function MessageBubble({ message }: { message: ChatEntry }) {
       </span>
     </div>
   );
-}
+});

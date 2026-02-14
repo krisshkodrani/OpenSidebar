@@ -165,7 +165,7 @@ describe("ProviderPool", () => {
 
       expect(slots[0].model).toBe(MODEL_FAST_CEREBRAS); // "gpt-oss-120b"
       expect(slots[1].model).toBe(MODEL_FAST_GROQ); // "openai/gpt-oss-120b"
-      expect(slots[2].model).toBe(MODEL_FAST); // "openai/gpt-4o-mini"
+      expect(slots[2].model).toBe(MODEL_FAST); // "openai/gpt-oss-120b"
     });
 
     test("provider URLs are correct", () => {

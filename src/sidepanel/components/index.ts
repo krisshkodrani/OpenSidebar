@@ -6,3 +6,5 @@ export * from "./StepTimeline";
 export * from "./StuckBanner";
 export * from "./TaskProgressPanel";
 export * from "./MetricsBar";
+export * from "./SavedPromptsDrawer";
+export * from "./PromptPicker";

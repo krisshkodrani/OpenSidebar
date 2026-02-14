@@ -357,6 +357,14 @@ export class WorkspaceManager {
     }
   }
 
+  /**
+   * Look up a workspace by its ID
+   */
+  public async getWorkspaceById(id: string): Promise<Workspace | null> {
+    await this.init();
+    return this.workspaces.find((ws) => ws.id === id) || null;
+  }
+
   public async getWorkspaces(): Promise<Workspace[]> {
     await this.init();
     return this.workspaces;

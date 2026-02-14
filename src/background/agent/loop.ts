@@ -18,7 +18,8 @@ import {
   setScreenshotCaptureCallback,
 } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
-import { classifyRisk } from "../security";
+import { classifyRisk, sanitizeUrl } from "../security";
+import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { ProgressTracker } from "./progress";
 import { recoverToolCallsFromText } from "./tool-recovery";
@@ -35,6 +36,8 @@ import {
   STRING_LIMITS,
   TIMING,
   ESCALATION_LIMITS,
+  REDUNDANT_ACTION,
+  STEP_WATCHDOG,
 } from "./constants";
 
 /** Nudge injected when LLM emits text instead of tool calls. */
@@ -52,28 +55,69 @@ Review the conversation history and current page state. Then:
 3. Call the appropriate tool to advance the task.
 If the page state is unclear, start with read_page or take_screenshot.`;
 
+/** Nudge injected when de-escalating back to the fast model. */
+const DEESCALATION_NUDGE = `The smarter model made progress and you're back in control.
+Review the recent history to understand what was accomplished. Continue from where it left off.
+Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?`;
+
 /** Message injected during a strategy pivot — tells the agent what NOT to retry. */
-const PIVOT_MESSAGE = (failureSummary: string) =>
+const PIVOT_MESSAGE = (attemptSummary: string) =>
   `STRATEGY PIVOT — Your previous approach is not working. Start fresh.
 
-What was attempted (DO NOT retry these approaches):
-${failureSummary}
+What was attempted:
+${attemptSummary}
 
 Instructions:
-1. Forget the details of previous attempts — they failed.
+1. Do not repeat completed actions or retry failed ones.
 2. Re-read the user's task above.
 3. Look at the current page state with fresh eyes (use read_page or take_screenshot).
 4. Think from first principles: what is a COMPLETELY DIFFERENT way to accomplish this?
 5. If the task seems impossible on this page, navigate elsewhere or call done() explaining why.`;
 
+/** Tracks a recent successful tool call for redundant action detection */
+interface RecentAction {
+  tool: string;
+  args: string;    // First 100 chars of JSON args
+  result: string;  // First 60 chars of result
+}
+
+/** Filler prefix patterns — text-only responses that start with these are low-information */
+const FILLER_PREFIXES = [
+  "i'm ready",
+  "we need to",
+  "the task",
+  "i will now",
+  "i'll",
+  "we have",
+  "i'm now",
+  "the next step",
+];
+
 /**
- * Extract a compact summary of failed tool attempts from conversation history.
- * Walks backward through messages, collects tool calls + their results,
- * and aggregates repeated failures into a short summary.
- * No LLM call needed — purely programmatic.
+ * Classify a text-only LLM response as filler (low-information narration)
+ * vs. genuine reasoning that may contain useful analysis.
  */
-function extractFailedAttempts(messages: LLMMessage[]): string {
-  const failures = new Map<string, { count: number; error: string }>();
+function isFillerText(text: string): boolean {
+  const trimmed = text.trim();
+  // Short text with no tool call is definitionally filler in an agent context
+  if (trimmed.length < 60) return true;
+  // Filler prefix pattern
+  const lower = trimmed.toLowerCase();
+  if (FILLER_PREFIXES.some((prefix) => lower.startsWith(prefix))) return true;
+  // High non-alphanumeric ratio (catches "We have..............." patterns)
+  const alphanumCount = trimmed.replace(/[^a-zA-Z0-9]/g, "").length;
+  if (alphanumCount / trimmed.length < 0.6) return true;
+  return false;
+}
+
+/**
+ * Build a compact summary of what the agent tried before a strategy pivot.
+ * Includes both successes and failures so the next model knows what was
+ * already accomplished vs what went wrong.
+ */
+function extractAttemptSummary(messages: LLMMessage[]): string {
+  const successes: string[] = [];
+  const failures: string[] = [];
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -86,8 +130,6 @@ function extractFailedAttempts(messages: LLMMessage[]): string {
       content.includes("No element with tag") ||
       content.includes("Click intercepted") ||
       content.includes("REJECTED");
-
-    if (!isFail) continue;
 
     // Find the corresponding assistant tool_call
     const toolCallId = msg.tool_call_id;
@@ -103,12 +145,12 @@ function extractFailedAttempts(messages: LLMMessage[]): string {
           toolName = tc.function.name;
           try {
             const args = JSON.parse(tc.function.arguments);
-            // Build a compact arg summary
             const parts: string[] = [];
             if (args.id != null) parts.push(`[${args.id}]`);
             if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
             if (args.url) parts.push(String(args.url).slice(0, 40));
             if (args.direction) parts.push(args.direction);
+            if (args.summary) parts.push(`"${String(args.summary).slice(0, 30)}"`);
             argSnippet = parts.join(" ");
           } catch { /* */ }
           break;
@@ -117,27 +159,34 @@ function extractFailedAttempts(messages: LLMMessage[]): string {
     }
 
     const key = `${toolName} ${argSnippet}`.trim();
-    const errorSnippet = content.split("\n")[0].slice(0, 60);
 
-    if (failures.has(key)) {
-      const entry = failures.get(key)!;
-      entry.count++;
+    if (isFail) {
+      const errorSnippet = content.split("\n")[0].slice(0, 60);
+      // Deduplicate repeated failures
+      const existing = failures.find(f => f.startsWith(`- ${key}`));
+      if (!existing) failures.push(`- ${key} — ${errorSnippet}`);
     } else {
-      failures.set(key, { count: 1, error: errorSnippet });
+      // Skip internal/noise tools for success tracking
+      if (["read_page", "wait", "update_plan", "escalate"].includes(toolName)) continue;
+      const resultSnippet = content.split("\n")[0].slice(0, 60);
+      successes.push(`- ${key} → ${resultSnippet}`);
     }
 
-    // Cap at ~10 unique failure types
-    if (failures.size >= 10) break;
+    // Cap total entries
+    if (successes.length + failures.length >= 15) break;
   }
 
-  if (failures.size === 0) return "- No specific tool failures recorded.";
-
-  const lines: string[] = [];
-  for (const [key, { count, error }] of failures) {
-    const times = count > 1 ? ` x${count}` : "";
-    lines.push(`- ${key}${times} — ${error}`);
+  const sections: string[] = [];
+  if (successes.length > 0) {
+    sections.push(`Completed actions (DO NOT redo):\n${successes.join("\n")}`);
   }
-  return lines.join("\n").slice(0, 500);
+  if (failures.length > 0) {
+    sections.push(`Failed actions (DO NOT retry):\n${failures.join("\n")}`);
+  }
+  if (sections.length === 0) {
+    return "No specific actions recorded.";
+  }
+  return sections.join("\n\n").slice(0, 800);
 }
 
 /** Result of a completed agent loop run */
@@ -201,6 +250,10 @@ export class AgentLoop {
   private guardian: PlanGuardian;
   /** Number of times done() has been rejected by the guardian */
   private doneRejections = 0;
+  /** Turns spent on the current plan step (reset on update_plan advancement) */
+  private turnsOnCurrentStep = 0;
+  /** Last plan index — used to detect step transitions */
+  private lastPlanIndex = 0;
 
   /** Task planning state */
   private taskId: string | null = null;
@@ -210,6 +263,9 @@ export class AgentLoop {
 
   /** Trace recorder for session capture */
   private traceRecorder: TraceRecorder | null = null;
+
+  /** Tab IDs where we've registered vision/screenshot callbacks (for cleanup) */
+  private registeredCallbackTabIds = new Set<number>();
 
   /** Off-domain navigation detection */
   private startingOrigin: string | null = null;
@@ -413,6 +469,8 @@ export class AgentLoop {
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
+    this.turnsOnCurrentStep = 0;
+    this.lastPlanIndex = 0;
     this.startingOrigin = null;
     this.offDomainWarned = false;
     this.metrics = AgentLoop.emptyMetrics();
@@ -536,6 +594,8 @@ export class AgentLoop {
     this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
     // Register per-tab vision usage callback so screenshot tool can report token usage
+    this.registeredCallbackTabIds.clear();
+    this.registeredCallbackTabIds.add(tabId);
     setVisionUsageCallback((usage, durationMs, model) => {
       this.recordVisionUsage(usage, durationMs, model);
     }, tabId);
@@ -597,8 +657,12 @@ export class AgentLoop {
         };
       }
     } finally {
-      setVisionUsageCallback(null, tabId);
-      setScreenshotCaptureCallback(null, tabId);
+      // Clean up callbacks for all tabs the agent touched
+      for (const tid of this.registeredCallbackTabIds) {
+        setVisionUsageCallback(null, tid);
+        setScreenshotCaptureCallback(null, tid);
+      }
+      this.registeredCallbackTabIds.clear();
       this.isRunning = false;
       // Finalize trace recording (fire-and-forget)
       if (this.traceRecorder) {
@@ -677,6 +741,13 @@ export class AgentLoop {
     logger.info("agent", "Escalating to smart model", { model: MODEL_SMART, provider: "openrouter" });
   }
 
+  /** Get the tab IDs belonging to this agent's workspace, or null if no workspace. */
+  private async getWorkspaceTabIds(): Promise<number[] | null> {
+    if (!this.workspaceId || this.workspaceId === "default") return null;
+    const ws = await workspaceManager.getWorkspaceById(this.workspaceId);
+    return ws?.tabIds ?? null;
+  }
+
   /** De-escalate back to fast model when progress resumes after automatic escalation. */
   private deescalateModel(): void {
     this.llm.switchToFast();
@@ -691,7 +762,7 @@ export class AgentLoop {
    */
   private async strategyPivot(tabId: number): Promise<void> {
     // 1. Extract what was tried before clearing
-    const failureSummary = extractFailedAttempts(this.context.getMessages());
+    const attemptSummary = extractAttemptSummary(this.context.getMessages());
 
     // 2. Clear history (keeps DOM snapshot)
     this.context.clearHistory();
@@ -705,7 +776,7 @@ export class AgentLoop {
     // 4. Inject pivot message with constraints
     this.context.addMessage({
       role: "user",
-      content: PIVOT_MESSAGE(failureSummary),
+      content: PIVOT_MESSAGE(attemptSummary),
     });
 
     // 5. Refresh DOM snapshot for current state
@@ -728,7 +799,7 @@ export class AgentLoop {
 
     logger.info("agent", "Strategy pivot executed", {
       turn: this.turnCount,
-      failureSummaryLen: failureSummary.length,
+      attemptSummaryLen: attemptSummary.length,
     });
     this.traceRecorder?.recordEvent("strategy_pivot", {
       turn: this.turnCount,
@@ -829,7 +900,8 @@ export class AgentLoop {
     return null;
   }
 
-  private async loop(tabId: number): Promise<LoopResult> {
+  private async loop(initialTabId: number): Promise<LoopResult> {
+    let tabId = initialTabId;
     let prevElementCount = -1; // Track element count for empty-page retry
     let consecutiveNudges = 0;
     let totalNudges = 0;
@@ -841,6 +913,7 @@ export class AgentLoop {
     let voluntaryEscalation = false; // escalate tool → permanent, no de-escalation
     let escalationCycles = 0;
     let cooldownRemaining = 0;
+    let smartModelStartTurn = 0; // turn when auto-escalation fired
     let pivotDone = false; // has text-only pivot fired?
 
     // Circuit breaker: consecutive all-fail turns
@@ -849,12 +922,16 @@ export class AgentLoop {
     // Circuit breaker: same-tool repeat failure
     const toolFailCounts = new Map<string, number>();
 
+    // Redundant action detection: sliding window of recent successful tool calls
+    const recentSuccesses: RecentAction[] = [];
+
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
       if (!this.isRunning) break; // Check again after resume (user may have stopped)
 
       this.turnCount++;
+      this.turnsOnCurrentStep++;
 
       // Decrement de-escalation cooldown
       if (cooldownRemaining > 0) cooldownRemaining--;
@@ -1077,14 +1154,11 @@ export class AgentLoop {
         const firstToolName = response.tool_calls[0].function.name;
         this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
 
-        // Thought text already delivered via STREAM_CHUNK deltas
-        // Signal stream end so sidepanel finalizes the message
-        if (response.content) {
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
-        }
+        // Always finalize the stream so the next turn creates a fresh message
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
 
         // Execute Tools
         let doneSignaled = false;
@@ -1432,6 +1506,9 @@ export class AgentLoop {
                 this.taskStartTime = Date.now();
               }
 
+              // Detect step advancement (index moved forward)
+              const stepAdvanced = currentIndex > this.lastPlanIndex;
+
               this.planSubtasks = subtaskDescs.map((desc, i) => {
                 // Preserve existing completedAtUrl for previously-completed steps
                 const existing = this.planSubtasks[i];
@@ -1491,24 +1568,71 @@ export class AgentLoop {
                 false,
               );
 
-              // Directive response: tell the agent exactly what to do next
-              let planResponse: string;
-              if (currentIndex >= subtaskDescs.length) {
-                planResponse = lastResult
-                  ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
-                  : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
+              // Step-transition context reset: clear history so the LLM
+              // cannot see prior step's tool calls and repeat them
+              if (stepAdvanced && currentIndex < subtaskDescs.length) {
+                this.context.clearHistory();
+
+                // Re-inject the original user goal (Goal Amnesia Prevention)
+                this.context.addMessage({
+                  role: "user",
+                  content: this.originalQuery,
+                });
+
+                // Inject context-switch message to orient on the new step
+                const newStepDesc = subtaskDescs[currentIndex] || "next step";
+                this.context.addMessage({
+                  role: "user",
+                  content: `STEP TRANSITION: Step ${currentIndex} is COMPLETE. You are now on Step ${currentIndex + 1}: "${newStepDesc}".\nRead the page state fresh. The previous step's approach may be IRRELEVANT.\nDo NOT repeat tools from the previous step unless they match the NEW step.`,
+                });
+
+                logger.info("agent", "Step-transition history cleared", {
+                  turn: this.turnCount,
+                  fromStep: this.lastPlanIndex,
+                  toStep: currentIndex,
+                });
               } else {
-                const prevStepNote = lastResult
-                  ? `Step ${currentIndex} complete: "${lastResult}"\n\n`
-                  : "";
-                planResponse = `${prevStepNote}NOW EXECUTE Step ${currentIndex + 1} of ${subtaskDescs.length}: "${subtaskDescs[currentIndex]}"\nFocus on this step only. Call update_plan() when done.`;
+                // No step advancement — standard directive response
+                let planResponse: string;
+                if (currentIndex >= subtaskDescs.length) {
+                  planResponse = lastResult
+                    ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
+                    : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
+                } else {
+                  const prevStepNote = lastResult
+                    ? `Step ${currentIndex} complete: "${lastResult}"\n\n`
+                    : "";
+                  planResponse = `${prevStepNote}NOW EXECUTE Step ${currentIndex + 1} of ${subtaskDescs.length}: "${subtaskDescs[currentIndex]}"\nFocus on this step only. Call update_plan() when done.`;
+                }
+
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: planResponse,
+                });
               }
 
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: planResponse,
-              });
+              // Handle "all steps done" — still need the directive even after clear
+              if (stepAdvanced && currentIndex >= subtaskDescs.length) {
+                this.context.clearHistory();
+                this.context.addMessage({
+                  role: "user",
+                  content: this.originalQuery,
+                });
+                const doneDirective = lastResult
+                  ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
+                  : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
+                this.context.addMessage({
+                  role: "user",
+                  content: doneDirective,
+                });
+              }
+
+              // Reset step watchdog on advancement
+              if (stepAdvanced) {
+                this.turnsOnCurrentStep = 0;
+                this.lastPlanIndex = currentIndex;
+              }
 
               logger.info("agent", "UPDATE_PLAN", {
                 turn: this.turnCount,
@@ -1516,11 +1640,14 @@ export class AgentLoop {
                 subtaskCount: subtaskDescs.length,
                 currentIndex,
                 lastResult: lastResult?.slice(0, 100),
+                stepAdvanced,
               });
               this.traceRecorder?.recordEvent("plan_update", {
                 subtaskCount: subtaskDescs.length,
                 currentIndex,
+                stepAdvanced,
               });
+              recentSuccesses.length = 0; // Reset on plan update
               continue;
             }
 
@@ -1631,6 +1758,207 @@ export class AgentLoop {
                 );
                 continue;
               }
+            }
+
+            // LIST_TABS — workspace-scoped
+            if (toolName === ToolName.LIST_TABS) {
+              const wsTabIds = await this.getWorkspaceTabIds();
+              let tabLines: string[];
+              if (wsTabIds) {
+                // Filter to workspace tabs only
+                const tabs: chrome.tabs.Tab[] = [];
+                for (const id of wsTabIds) {
+                  try {
+                    tabs.push(await chrome.tabs.get(id));
+                  } catch {
+                    // Tab may have been closed externally
+                  }
+                }
+                if (tabs.length === 0) {
+                  tabLines = ["No open tabs in this workspace."];
+                } else {
+                  tabLines = tabs.map(
+                    (t) =>
+                      `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+                  );
+                }
+              } else {
+                // No workspace — show all tabs (fallback)
+                const allTabs = await chrome.tabs.query({});
+                tabLines = allTabs.map(
+                  (t: any) =>
+                    `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+                );
+              }
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: tabLines.join("\n") || "No open tabs.",
+              });
+              logger.info("agent", "LIST_TABS", {
+                turn: this.turnCount,
+                count: tabLines.length,
+                workspaceScoped: wsTabIds !== null,
+              });
+              continue;
+            }
+
+            // SWITCH_TAB — workspace-scoped, updates loop tabId
+            if (toolName === ToolName.SWITCH_TAB) {
+              const targetTabId = args.tabId as number;
+              const wsTabIds = await this.getWorkspaceTabIds();
+
+              if (wsTabIds && !wsTabIds.includes(targetTabId)) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
+                });
+                logger.warn("agent", "switch_tab blocked — outside workspace", {
+                  turn: this.turnCount,
+                  targetTabId,
+                  workspaceTabs: wsTabIds,
+                });
+                continue;
+              }
+
+              try {
+                await chrome.tabs.update(targetTabId, { active: true });
+                tabId = targetTabId;
+
+                // Register vision/screenshot callbacks on new tab
+                this.registeredCallbackTabIds.add(tabId);
+                setVisionUsageCallback((usage, durationMs, model) => {
+                  this.recordVisionUsage(usage, durationMs, model);
+                }, tabId);
+                setScreenshotCaptureCallback((thumbnailUrl) => {
+                  this.pendingScreenshotUrl = thumbnailUrl;
+                }, tabId);
+
+                // Refresh snapshot for new tab
+                prevElementCount = await this.refreshSnapshotWithRetry(
+                  tabId,
+                  prevElementCount,
+                );
+
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Switched to tab ${targetTabId}. Fresh page snapshot is available.`,
+                });
+              } catch (e: any) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error switching to tab ${targetTabId}: ${e.message}`,
+                });
+              }
+              logger.info("agent", "SWITCH_TAB", {
+                turn: this.turnCount,
+                targetTabId,
+                newTabId: tabId,
+              });
+              continue;
+            }
+
+            // CLOSE_TAB — workspace-scoped, prevents closing current tab
+            if (toolName === ToolName.CLOSE_TAB) {
+              const targetTabId = (args.tabId as number) || tabId;
+
+              if (targetTabId === tabId) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error: Cannot close the current tab (${tabId}). Use switch_tab to move to another tab first.`,
+                });
+                continue;
+              }
+
+              const wsTabIds = await this.getWorkspaceTabIds();
+              if (wsTabIds && !wsTabIds.includes(targetTabId)) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
+                });
+                logger.warn("agent", "close_tab blocked — outside workspace", {
+                  turn: this.turnCount,
+                  targetTabId,
+                  workspaceTabs: wsTabIds,
+                });
+                continue;
+              }
+
+              try {
+                await chrome.tabs.remove(targetTabId);
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Closed tab ${targetTabId}.`,
+                });
+              } catch (e: any) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error closing tab ${targetTabId}: ${e.message}`,
+                });
+              }
+              logger.info("agent", "CLOSE_TAB", {
+                turn: this.turnCount,
+                targetTabId,
+              });
+              continue;
+            }
+
+            // CREATE_TAB — workspace-scoped, auto-adds to workspace
+            if (toolName === ToolName.CREATE_TAB) {
+              const url = args.url as string;
+              const urlResult = sanitizeUrl(url);
+              if (!urlResult.ok) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error: ${urlResult.error}`,
+                });
+                continue;
+              }
+
+              try {
+                const newTab = await chrome.tabs.create({ url: urlResult.value });
+                if (newTab.id && this.workspaceId && this.workspaceId !== "default") {
+                  await workspaceManager.addTabToWorkspace(newTab.id, this.workspaceId);
+                }
+
+                // Register callbacks on new tab
+                if (newTab.id) {
+                  this.registeredCallbackTabIds.add(newTab.id);
+                  setVisionUsageCallback((usage, durationMs, model) => {
+                    this.recordVisionUsage(usage, durationMs, model);
+                  }, newTab.id);
+                  setScreenshotCaptureCallback((thumbnailUrl) => {
+                    this.pendingScreenshotUrl = thumbnailUrl;
+                  }, newTab.id);
+                }
+
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
+                });
+                logger.info("agent", "CREATE_TAB", {
+                  turn: this.turnCount,
+                  newTabId: newTab.id,
+                  url: urlResult.value,
+                  workspaceId: this.workspaceId,
+                });
+              } catch (e: any) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error creating tab: ${e.message}`,
+                });
+              }
+              continue;
             }
 
             const toolStepId = crypto.randomUUID();
@@ -1852,6 +2180,128 @@ export class AgentLoop {
               toolFailCounts.delete(failKey);
             }
           }
+
+          // C. Redundant successful action detection
+          for (const toolCall of response.tool_calls!) {
+            const toolName = toolCall.function.name;
+            const argsKey = toolCall.function.arguments.slice(0, 100);
+
+            // Find the corresponding tool result
+            const toolResult = recentMessages.find(
+              (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
+            );
+            const resultContent =
+              typeof toolResult?.content === "string" ? toolResult.content : "";
+            const isSuccess =
+              !resultContent.startsWith("Error:") &&
+              !resultContent.includes("does not appear to be") &&
+              !resultContent.includes("No element with tag") &&
+              !resultContent.includes("Click intercepted") &&
+              !resultContent.includes("REJECTED");
+
+            if (isSuccess) {
+              // Push to ring buffer (capped at WINDOW size)
+              recentSuccesses.push({
+                tool: toolName,
+                args: argsKey,
+                result: resultContent.slice(0, 60),
+              });
+              if (recentSuccesses.length > REDUNDANT_ACTION.WINDOW) {
+                recentSuccesses.shift();
+              }
+
+              // Count repetitions of this tool+args in the window
+              const matchCount = recentSuccesses.filter(
+                (entry) => entry.tool === toolName && entry.args === argsKey,
+              ).length;
+
+              if (matchCount >= REDUNDANT_ACTION.THRESHOLD) {
+                logger.warn("agent", "Redundant action detected", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  count: matchCount,
+                });
+                this.traceRecorder?.recordEvent("redundant_action", {
+                  tool: toolName,
+                  count: matchCount,
+                });
+                this.context.addMessage({
+                  role: "user",
+                  content: `REDUNDANT ACTION: You have called ${toolName} ${matchCount} times with similar arguments, getting the same result each time. This is not making progress. ACT on the information you already have — use click_element, type_text, or another tool to advance the task. Do NOT call ${toolName} with these arguments again.`,
+                });
+                // Clear the buffer so the warning doesn't fire every subsequent turn
+                recentSuccesses.length = 0;
+              } else {
+                // D. Tool-name-only redundancy: same tool name with varying args
+                const toolNameCount = recentSuccesses.filter(
+                  (entry) => entry.tool === toolName,
+                ).length;
+                if (toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_ONLY_THRESHOLD) {
+                  logger.warn("agent", "Tool-name redundancy detected", {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    count: toolNameCount,
+                  });
+                  this.traceRecorder?.recordEvent("tool_name_redundancy", {
+                    tool: toolName,
+                    count: toolNameCount,
+                  });
+                  this.context.addMessage({
+                    role: "user",
+                    content: `WARNING: You have called ${toolName} ${toolNameCount} times in recent turns (with different arguments each time). If the step is already done, call update_plan() to advance. If your approach isn't working, try take_screenshot or a completely different strategy.`,
+                  });
+                  recentSuccesses.length = 0;
+                }
+              }
+            }
+          }
+
+          // E. Step duration watchdog
+          if (this.taskId && this.planSubtasks.length > 0 && this.turnsOnCurrentStep > 0) {
+            if (this.turnsOnCurrentStep >= STEP_WATCHDOG.ESCALATE_TURNS && !onSmartModel && cooldownRemaining <= 0) {
+              logger.warn("agent", "Step watchdog: force escalation", {
+                turn: this.turnCount,
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+              });
+              this.traceRecorder?.recordEvent("step_watchdog_escalate", {
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+              });
+              this.escalateModel();
+              onSmartModel = true;
+              smartModelStartTurn = this.turnCount;
+              await this.strategyPivot(tabId);
+              this.context.addMessage({
+                role: "user",
+                content: `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_NUDGE}\nEither complete this step and call update_plan(), or revise the plan if the step is impossible.`,
+              });
+              this.stepHandler(
+                {
+                  id: crypto.randomUUID(),
+                  type: "info",
+                  label: `Stuck on step ${this.lastPlanIndex + 1} — escalating`,
+                  status: "done",
+                  timestamp: Date.now(),
+                },
+                false,
+              );
+            } else if (this.turnsOnCurrentStep === STEP_WATCHDOG.WARN_TURNS) {
+              logger.warn("agent", "Step watchdog: nudge", {
+                turn: this.turnCount,
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+              });
+              this.traceRecorder?.recordEvent("step_watchdog_warn", {
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+              });
+              this.context.addMessage({
+                role: "user",
+                content: `You have spent ${this.turnsOnCurrentStep} turns on this step. Either the step is ALREADY COMPLETE (call update_plan to advance) or your approach isn't working (try take_screenshot or escalate).`,
+              });
+            }
+          }
         }
 
         // Batch snapshot refresh: ONE refresh after all tools complete
@@ -1906,10 +2356,11 @@ export class AgentLoop {
               prevElementCount = snap.elements.length;
               this.context.setSnapshot(snap);
 
-              // Track URL in history
+              // Track URL in history + reset redundant action buffer on navigation
               const currentUrl = snap.url;
               if (currentUrl && !this.urlHistory.includes(currentUrl)) {
                 this.urlHistory.push(currentUrl);
+                recentSuccesses.length = 0;
               }
 
               // Off-domain navigation detection
@@ -1998,12 +2449,16 @@ export class AgentLoop {
                   // Strategy pivot: clear failing history, fresh start on same model
                   await this.strategyPivot(tabId);
                   consecutiveNudges = 0;
+                  recentSuccesses.length = 0;
                 } else if (progressSignal.type === "escalate" && !onSmartModel && cooldownRemaining <= 0) {
                   // Escalation + pivot: switch to smart model AND clear context
                   this.escalateModel();
                   onSmartModel = true;
+                  smartModelStartTurn = this.turnCount;
                   await this.strategyPivot(tabId);
+                  this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
                   consecutiveNudges = 0;
+                  recentSuccesses.length = 0;
                   this.stepHandler(
                     {
                       id: crypto.randomUUID(),
@@ -2034,9 +2489,17 @@ export class AgentLoop {
                 });
                 wasStuck = false;
 
-                // De-escalate if on smart model (automatic, not voluntary) and under cycle limit
-                if (onSmartModel && !voluntaryEscalation && escalationCycles < ESCALATION_LIMITS.MAX_CYCLES) {
+                // De-escalate if on smart model (automatic, not voluntary), under cycle limit,
+                // and the smart model has had enough turns to actually work
+                const smartTenure = this.turnCount - smartModelStartTurn;
+                if (
+                  onSmartModel &&
+                  !voluntaryEscalation &&
+                  escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
+                  smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
+                ) {
                   this.deescalateModel();
+                  this.context.addMessage({ role: "user", content: DEESCALATION_NUDGE });
                   onSmartModel = false;
                   escalationCycles++;
                   cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
@@ -2118,17 +2581,33 @@ export class AgentLoop {
             role: "user",
             content: `If that was your answer to the user's question, wrap it in done({"summary": "..."}) to deliver it. If you need to act on the page, call the appropriate tool.`,
           });
+          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
           continue;
         }
 
         // Unified nudge→pivot→escalate+pivot→give-up for text-only responses
-        consecutiveNudges++;
+        // Filler detection: low-information text fast-tracks to immediate pivot
+        const filler = cleanContent ? isFillerText(cleanContent) : true;
+        if (filler) {
+          consecutiveNudges += 2; // Immediately satisfies the >= 2 pivot threshold
+          logger.warn("agent", "Filler text detected, fast-tracking pivot", {
+            turn: this.turnCount,
+            text: cleanContent?.slice(0, 80),
+          });
+          this.traceRecorder?.recordEvent("filler_text", {
+            length: cleanContent?.length ?? 0,
+            turn: this.turnCount,
+          });
+        } else {
+          consecutiveNudges++;
+        }
         totalNudges++;
         logger.warn("agent", "LLM emitted text instead of tools, nudging", {
           turn: this.turnCount,
           consecutiveNudges,
           pivotDone,
           onSmartModel,
+          filler,
           text: cleanContent?.slice(0, 80),
         });
 
@@ -2137,6 +2616,8 @@ export class AgentLoop {
           await this.strategyPivot(tabId);
           pivotDone = true;
           consecutiveNudges = 0;
+          recentSuccesses.length = 0;
+          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
           continue;
         }
 
@@ -2144,8 +2625,11 @@ export class AgentLoop {
         if (consecutiveNudges >= 2 && !onSmartModel && cooldownRemaining <= 0) {
           this.escalateModel();
           onSmartModel = true;
+          smartModelStartTurn = this.turnCount;
           await this.strategyPivot(tabId);
+          this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
           consecutiveNudges = 0;
+          recentSuccesses.length = 0;
 
           // User-visible feedback
           this.stepHandler(
@@ -2159,6 +2643,7 @@ export class AgentLoop {
             false,
           );
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
+          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
           continue;
         }
 
@@ -2224,6 +2709,7 @@ export class AgentLoop {
 
         // Trace: flush turn
         await this.traceRecorder?.endTurn();
+        this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
         continue;
       }
 
@@ -2318,8 +2804,11 @@ export class AgentLoop {
         this.statusHandler(AgentStatus.ERROR, error.message);
       }
     } finally {
-      setVisionUsageCallback(null, tabId);
-      setScreenshotCaptureCallback(null, tabId);
+      for (const tid of this.registeredCallbackTabIds) {
+        setVisionUsageCallback(null, tid);
+        setScreenshotCaptureCallback(null, tid);
+      }
+      this.registeredCallbackTabIds.clear();
       this.isRunning = false;
     }
   }

@@ -50,7 +50,7 @@ describe("Vision Bridge", () => {
     expect(result.usage!.prompt_tokens).toBe(100);
     expect(result.usage!.completion_tokens).toBe(50);
     expect(result.usage!.cost).toBe(0.001);
-    expect(result.model).toBe("google/gemini-2.5-flash-lite");
+    expect(result.model).toBe("qwen/qwen3-vl-235b-a22b-instruct");
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
     expect(fetchSpy).toHaveBeenCalled();
 
@@ -59,7 +59,7 @@ describe("Vision Bridge", () => {
     const lastCall = calls[calls.length - 1];
     expect(lastCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
     const body = JSON.parse(lastCall[1].body);
-    expect(body.model).toBe("google/gemini-2.5-flash-lite");
+    expect(body.model).toBe("qwen/qwen3-vl-235b-a22b-instruct");
   });
 
   test("missing API key returns graceful fallback", async () => {

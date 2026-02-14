@@ -25,8 +25,8 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Fast model tier — used for initial turns (OpenRouter) */
-export const MODEL_FAST = "openai/gpt-4o-mini";
+/** Fast model tier — used for initial turns (OpenRouter fallback) */
+export const MODEL_FAST = "openai/gpt-oss-120b";
 /** Fast model tier — used for initial turns (Groq, when enabled) */
 export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
 /** Fast model tier — used for initial turns (Cerebras, highest priority) */
@@ -64,9 +64,15 @@ function cerebrasProvider(apiKey: string): ProviderConfig {
   };
 }
 
-/** Strip <think>...</think> reasoning blocks from model output */
+/** Strip reasoning blocks from model output: XML think tags and markdown Think/Verify sections */
 export function stripThinkTags(text: string): string {
-  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // XML think blocks
+  let result = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // Markdown Think/Observe/Verify sections (Cerebras/Groq pattern)
+  result = result.replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "").trim();
+  // Strip **Act** header itself (keep content after it)
+  result = result.replace(/\*\*Act\*\*:?\s*/gi, "").trim();
+  return result;
 }
 
 /**

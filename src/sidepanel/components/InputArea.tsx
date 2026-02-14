@@ -1,7 +1,8 @@
-import React, { useRef, useEffect, useCallback } from "react";
-import { Send, StopCircle, MessageCircle, Mic, Loader2 } from "lucide-react";
+import React, { useRef, useEffect, useCallback, useState } from "react";
+import { Send, StopCircle, MessageCircle, Mic, Loader2, Bookmark } from "lucide-react";
 import { useStore } from "../store";
 import { useSpeechToText } from "../hooks/useSpeechToText";
+import { PromptPicker } from "./PromptPicker";
 
 import { clsx } from "clsx";
 
@@ -9,10 +10,14 @@ export function InputArea({
   onSend,
   onSendHint,
   onStop,
+  onOpenSavedPrompts,
+  onSaveCurrent,
 }: {
   onSend: (text: string) => void;
   onSendHint: (text: string) => void;
   onStop: () => void;
+  onOpenSavedPrompts: () => void;
+  onSaveCurrent: () => void;
 }) {
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
@@ -50,6 +55,7 @@ export function InputArea({
   );
 
   const speech = useSpeechToText(speechProvider, groqApiKey, handleTranscript);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   // Smooth auto-resize: measure with transition disabled, then animate
   const MAX_HEIGHT = 120;
@@ -103,7 +109,24 @@ export function InputArea({
   };
 
   return (
-    <div className="p-2 bg-surface-light dark:bg-surface-dark">
+    <div className="p-2 bg-surface-light dark:bg-surface-dark relative">
+      <PromptPicker
+        isOpen={isPickerOpen}
+        onClose={() => setIsPickerOpen(false)}
+        onSelect={(content) => {
+          setInputText(content);
+          setIsPickerOpen(false);
+        }}
+        onManage={() => {
+          setIsPickerOpen(false);
+          onOpenSavedPrompts();
+        }}
+        onSaveCurrent={() => {
+          setIsPickerOpen(false);
+          onSaveCurrent();
+        }}
+        hasInputText={hasText}
+      />
       <div className="relative flex items-end gap-2 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-xl ring-1 ring-transparent focus-within:ring-primary-500 transition-all">
         <textarea
           ref={textareaRef}
@@ -121,6 +144,14 @@ export function InputArea({
           rows={1}
         />
         <div className="flex items-end gap-1">
+          {/* Saved prompts button */}
+          <button
+            onClick={() => setIsPickerOpen(!isPickerOpen)}
+            className="p-1.5 mb-0.5 rounded-lg transition-colors flex-shrink-0 text-warm-400 hover:text-warm-600 dark:hover:text-warm-300"
+            aria-label="Saved prompts"
+          >
+            <Bookmark size={16} />
+          </button>
           {/* Mic button */}
           {speech.isSupported && (
             <button

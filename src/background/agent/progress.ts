@@ -17,18 +17,36 @@ const STATE_ATTRS = [
   "aria-selected",
 ];
 
-/** Cheap content fingerprint — excludes URL so navigation alone doesn't reset stuck detection */
-function contentFingerprint(snap: DomSnapshot): string {
-  const elSigs = snap.elements
-    .map((e) => {
-      const attrSig = STATE_ATTRS.filter((a) => a in e.attributes)
-        .map((a) => `${a}=${e.attributes[a]}`)
-        .join(",");
-      return `${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`;
-    })
-    .sort()
-    .join("|");
-  return `${snap.elements.length}|${elSigs}`;
+/** Minimum fraction of element signatures that must differ to count as progress */
+const PROGRESS_DELTA_THRESHOLD = 0.1;
+
+/** Build a set of element signatures from a snapshot */
+function contentSignatures(snap: DomSnapshot): Set<string> {
+  const sigs = new Set<string>();
+  for (const e of snap.elements) {
+    const attrSig = STATE_ATTRS.filter((a) => a in e.attributes)
+      .map((a) => `${a}=${e.attributes[a]}`)
+      .join(",");
+    sigs.add(`${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`);
+  }
+  return sigs;
+}
+
+/**
+ * Compute the fraction of element signatures that differ between two sets.
+ * Uses symmetric difference / max(size) — both additions and removals count.
+ * Returns 1.0 if either set is empty (treat as full page transition).
+ */
+function signatureDelta(prev: Set<string>, curr: Set<string>): number {
+  if (prev.size === 0 || curr.size === 0) return 1.0;
+  let diffCount = 0;
+  for (const sig of curr) {
+    if (!prev.has(sig)) diffCount++;
+  }
+  for (const sig of prev) {
+    if (!curr.has(sig)) diffCount++;
+  }
+  return diffCount / Math.max(prev.size, curr.size);
 }
 
 const STUCK_NUDGE_MSG =
@@ -41,28 +59,29 @@ const STUCK_ESCALATE_MSG =
   "STUCK ESCALATION: A stronger model is taking over with fresh context. Start with a completely different strategy.";
 
 export class ProgressTracker {
-  private lastFingerprint = "";
+  private lastSignatures = new Set<string>();
   private lastUrl = "";
   private staleTurns = 0;
   private pivotFired = false;
   private escalationFired = false;
 
   onSnapshotRefresh(snap: DomSnapshot): ProgressSignal | null {
-    const fp = contentFingerprint(snap);
+    const currSigs = contentSignatures(snap);
     const url = snap.url || "";
-    const contentChanged = fp !== this.lastFingerprint;
+    const delta = signatureDelta(this.lastSignatures, currSigs);
     const urlChanged = url !== this.lastUrl;
 
-    this.lastFingerprint = fp;
+    this.lastSignatures = currSigs;
     this.lastUrl = url;
 
-    if (contentChanged) {
-      this.staleTurns = 0; // Real progress
+    // Meaningful content change — above noise threshold
+    if (delta >= PROGRESS_DELTA_THRESHOLD) {
+      this.staleTurns = 0;
       return null;
     }
 
     if (urlChanged) {
-      // URL changed but content is similar — halve stale count (partial credit)
+      // URL changed but content barely differs — halve stale count (partial credit)
       this.staleTurns = Math.floor(this.staleTurns / 2);
       return null;
     }
@@ -102,7 +121,7 @@ export class ProgressTracker {
 
   /** Reset all tracking state (new session) */
   reset() {
-    this.lastFingerprint = "";
+    this.lastSignatures = new Set<string>();
     this.lastUrl = "";
     this.staleTurns = 0;
     this.pivotFired = false;
