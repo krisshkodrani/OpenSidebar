@@ -984,7 +984,7 @@ export function registerTools() {
         const tab = await chrome.tabs.get(tabId);
         const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
           format: "jpeg",
-          quality: 40,
+          quality: 70,
         });
 
         // Generate thumbnail and fire callback (before vision LLM call)

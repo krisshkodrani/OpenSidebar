@@ -57,7 +57,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   workspaceEnabled: true,
   theme: "system",
   showElementTags: false,
-  visionModel: "google/gemini-2.5-flash-lite",
+  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   confirmPlan: false,
   showSessionMetrics: false,
   disableScreenshot: false,

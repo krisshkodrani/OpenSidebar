@@ -44,7 +44,7 @@ describe("SidePanel Store", () => {
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
-                visionModel: "google/gemini-2.5-flash-lite",
+                visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 confirmPlan: false,
                 showSessionMetrics: false,
                 disableScreenshot: false,
@@ -375,7 +375,7 @@ describe("SidePanel Store", () => {
 
     test("DEFAULT_SETTINGS includes visionModel and confirmPlan", () => {
         const settings = useStore.getState().settings;
-        expect(settings.visionModel).toBe("google/gemini-2.5-flash-lite");
+        expect(settings.visionModel).toBe("qwen/qwen3-vl-235b-a22b-instruct");
         expect(settings.confirmPlan).toBe(false);
     });
 
