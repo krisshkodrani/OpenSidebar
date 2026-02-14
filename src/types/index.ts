@@ -605,8 +605,10 @@ export interface FindElementArgs {
 
 /** Arguments for wait */
 export interface WaitArgs {
-  /** Milliseconds to wait (max: 5000) */
-  ms: number;
+  /** Seconds to wait (1–10) */
+  seconds: number;
+  /** Why you're pausing — articulating confusion helps re-focus */
+  reason?: string;
 }
 
 /** Arguments for done — signals task completion */

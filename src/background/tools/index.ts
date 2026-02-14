@@ -78,7 +78,7 @@ const CLICK_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
       },
       required: ["id"],
@@ -96,7 +96,7 @@ const TYPE_TEXT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
         text: { type: "string", description: "Text to type." },
         pressEnter: {
@@ -124,7 +124,7 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
         },
         id: {
           type: "integer",
-          description: "Container element tag ID (integer). Omit for window scroll.",
+          description: "Container tag ID. Omit for window.",
         },
       },
       required: ["direction"],
@@ -256,13 +256,22 @@ const WAIT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.WAIT,
-    description: "Wait for content to load.",
+    description:
+      "Pause and re-orient. Returns your original goal, current plan progress, and a fresh page snapshot. Use when confused about which step you're on or when the page needs time to load dynamic content.",
     parameters: {
       type: "object",
       properties: {
-        ms: { type: "integer", description: "Milliseconds (max 5000)." },
+        seconds: {
+          type: "integer",
+          description: "Seconds to wait (1–10).",
+        },
+        reason: {
+          type: "string",
+          description:
+            "Why you're pausing (e.g. 'lost track of which step I'm on').",
+        },
       },
-      required: ["ms"],
+      required: ["seconds"],
     },
   },
 };
@@ -308,7 +317,7 @@ const HOVER_ELEMENT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
       },
       required: ["id"],
@@ -344,7 +353,7 @@ const SELECT_OPTION_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
         value: {
           type: "string",
@@ -392,11 +401,11 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
       properties: {
         sourceId: {
           type: "integer",
-          description: "Element to drag (integer).",
+          description: "Source tag ID.",
         },
         targetId: {
           type: "integer",
-          description: "Drop target element (integer).",
+          description: "Target tag ID.",
         },
       },
       required: ["sourceId", "targetId"],
@@ -414,7 +423,7 @@ const DRAW_STROKE_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Canvas element tag ID (integer).",
+          description: "Canvas tag ID.",
         },
         startX: { type: "number", description: "Start X offset." },
         startY: { type: "number", description: "Start Y offset." },
@@ -436,7 +445,7 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
       },
       required: ["id"],
@@ -503,7 +512,7 @@ const READ_ELEMENT_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
         attribute: {
           type: "string",
@@ -543,7 +552,7 @@ const UPLOAD_FILE_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "File input element tag ID (integer).",
+          description: "File input tag ID.",
         },
         url: {
           type: "string",
@@ -604,7 +613,7 @@ const RIGHT_CLICK_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Element tag ID (integer from Visible Elements list).",
+          description: "Tag ID.",
         },
       },
       required: ["id"],
@@ -622,7 +631,7 @@ const SET_CHECKBOX_DEF: ToolDefinition = {
       properties: {
         id: {
           type: "integer",
-          description: "Checkbox/radio element tag ID (integer).",
+          description: "Checkbox/radio tag ID.",
         },
         checked: {
           type: "boolean",
@@ -961,9 +970,10 @@ export function registerTools() {
   });
 
   toolRegistry.register(ToolName.WAIT, WAIT_DEF, async (args) => {
-    const ms = Math.min(Math.max((args.ms as number) || 2000, 0), 5000);
-    await new Promise((resolve) => setTimeout(resolve, ms));
-    return `Waited ${ms}ms`;
+    // Fallback — normally intercepted in loop.ts for re-orientation
+    const seconds = Math.min(Math.max((args.seconds as number) || 2, 1), 10);
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+    return `Waited ${seconds}s`;
   });
 
   toolRegistry.register(

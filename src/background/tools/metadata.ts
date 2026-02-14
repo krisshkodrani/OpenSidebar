@@ -21,7 +21,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   [ToolName.TAKE_SCREENSHOT]:{ risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.PRESS_KEY]:      { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
   [ToolName.DRAW_STROKE]:    { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
-  [ToolName.WAIT]:           { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
+  [ToolName.WAIT]:           { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.MEMORY_ADD]:     { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
   [ToolName.MEMORY_SEARCH]:  { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
   [ToolName.CREATE_TAB]:     { risk: RiskLevel.HIGH,   domModifying: false, sequential: false },
