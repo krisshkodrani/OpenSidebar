@@ -62,6 +62,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   showSessionMetrics: false,
   disableScreenshot: false,
   disableNavigation: false,
+  speechProvider: "browser",
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;

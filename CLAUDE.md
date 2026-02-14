@@ -72,7 +72,8 @@ React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 - `App.tsx` — Root component. Composes Header, StuckBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
 - `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stuckState, turnProgress).
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
-- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
+- `hooks/useSpeechToText.ts` — `useSpeechToText()` custom hook. Two providers: Browser (Web Speech API, real-time interim + final transcripts) and Groq (MediaRecorder → Whisper `whisper-large-v3-turbo` API). Returns `{ isRecording, isProcessing, error, toggle, stop, isSupported }`.
+- `components/` — `Header`, `MessageBubble`, `InputArea` (mic button for voice input), `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
 ### Offscreen Document (`src/offscreen/`)
 Runs heavy memory operations outside the service worker.
@@ -98,7 +99,7 @@ Single source of truth for all interfaces. Key patterns:
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
 - `Result<T, E>` — discriminated union for fallible operations.
-- `UserSettings` — OpenRouter API key, Groq API key, Cerebras API key, useGroqFast, maxTurns, contextWindowSize, memory/workspace toggles, theme, showElementTags, visionModel, confirmPlan.
+- `UserSettings` — OpenRouter API key, Groq API key, Cerebras API key, useGroqFast, maxTurns, contextWindowSize, memory/workspace toggles, theme, showElementTags, visionModel, confirmPlan, speechProvider (`"browser"` | `"groq"`).
 
 ### Messaging Protocol
 All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content, offscreen), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback } from "react";
-import { Send, StopCircle, MessageCircle } from "lucide-react";
+import { Send, StopCircle, MessageCircle, Mic, Loader2 } from "lucide-react";
 import { useStore } from "../store";
+import { useSpeechToText } from "../hooks/useSpeechToText";
 
 import { clsx } from "clsx";
 
@@ -17,8 +18,38 @@ export function InputArea({
   const setInputText = useStore((s) => s.setInputText);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const awaitingPlanApproval = useStore((s) => s.awaitingPlanApproval);
+  const speechProvider = useStore((s) => s.settings.speechProvider);
+  const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevHeightRef = useRef<number>(0);
+  const interimRef = useRef<string>("");
+
+  // Speech-to-text hook
+  const handleTranscript = useCallback(
+    (text: string, isFinal: boolean) => {
+      const current = useStore.getState().inputText;
+      if (isFinal) {
+        // Replace interim text with final, then clear interim
+        const withoutInterim = interimRef.current
+          ? current.slice(0, current.length - interimRef.current.length)
+          : current;
+        interimRef.current = "";
+        const separator = withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
+        setInputText(withoutInterim + separator + text);
+      } else {
+        // Replace previous interim with new interim
+        const withoutInterim = interimRef.current
+          ? current.slice(0, current.length - interimRef.current.length)
+          : current;
+        const separator = withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
+        interimRef.current = separator + text;
+        setInputText(withoutInterim + interimRef.current);
+      }
+    },
+    [setInputText],
+  );
+
+  const speech = useSpeechToText(speechProvider, groqApiKey, handleTranscript);
 
   // Smooth auto-resize: measure with transition disabled, then animate
   const MAX_HEIGHT = 120;
@@ -53,6 +84,9 @@ export function InputArea({
 
   const handleSubmit = () => {
     if (!hasText) return;
+    // Stop recording on send
+    if (speech.isRecording) speech.stop();
+    interimRef.current = "";
     if (isAgentRunning) {
       onSendHint(inputText);
     } else {
@@ -86,34 +120,65 @@ export function InputArea({
           className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-500"
           rows={1}
         />
-        {isAgentRunning && !hasText ? (
-          <button
-            onClick={onStop}
-            className="p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 bg-red-500 hover:bg-red-600"
-            aria-label="Stop generation"
-          >
-            <StopCircle size={16} />
-          </button>
-        ) : (
-          <button
-            onClick={handleSubmit}
-            disabled={!hasText}
-            className={clsx(
-              "p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed",
-              isAgentRunning
-                ? "bg-amber-500 hover:bg-amber-600"
-                : "bg-primary-600 hover:bg-primary-700",
-            )}
-            aria-label={isAgentRunning ? "Send hint" : "Send message"}
-          >
-            {isAgentRunning ? (
-              <MessageCircle size={16} />
-            ) : (
-              <Send size={16} />
-            )}
-          </button>
-        )}
+        <div className="flex items-end gap-1">
+          {/* Mic button */}
+          {speech.isSupported && (
+            <button
+              onClick={() => {
+                if (speech.isRecording) interimRef.current = "";
+                speech.toggle();
+              }}
+              disabled={speech.isProcessing}
+              className={clsx(
+                "p-1.5 mb-0.5 rounded-lg transition-colors flex-shrink-0",
+                speech.isProcessing
+                  ? "text-warm-400 cursor-wait"
+                  : speech.isRecording
+                    ? "bg-red-500 text-white mic-recording"
+                    : "text-warm-400 hover:text-warm-600 dark:hover:text-warm-300",
+              )}
+              aria-label={speech.isRecording ? "Stop recording" : "Start voice input"}
+            >
+              {speech.isProcessing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Mic size={16} />
+              )}
+            </button>
+          )}
+          {/* Send / Stop button */}
+          {isAgentRunning && !hasText ? (
+            <button
+              onClick={onStop}
+              className="p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 bg-red-500 hover:bg-red-600"
+              aria-label="Stop generation"
+            >
+              <StopCircle size={16} />
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={!hasText}
+              className={clsx(
+                "p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed",
+                isAgentRunning
+                  ? "bg-amber-500 hover:bg-amber-600"
+                  : "bg-primary-600 hover:bg-primary-700",
+              )}
+              aria-label={isAgentRunning ? "Send hint" : "Send message"}
+            >
+              {isAgentRunning ? (
+                <MessageCircle size={16} />
+              ) : (
+                <Send size={16} />
+              )}
+            </button>
+          )}
+        </div>
       </div>
+      {speech.error && (
+        <p className="text-xs text-red-500 mt-1 px-1">{speech.error}</p>
+      )}
     </div>
   );
 }

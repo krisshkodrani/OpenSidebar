@@ -35,14 +35,21 @@ describe("SidePanel Store", () => {
             turnProgress: null,
             settings: {
                 openRouterApiKey: "",
+                groqApiKey: "",
+                cerebrasApiKey: "",
+                useGroqFast: false,
                 maxTurns: 30,
                 contextWindowSize: 128000,
                 memoryEnabled: true,
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
-                visionModel: "google/gemini-2.0-flash-001",
+                visionModel: "google/gemini-2.5-flash-lite",
                 confirmPlan: false,
+                showSessionMetrics: false,
+                disableScreenshot: false,
+                disableNavigation: false,
+                speechProvider: "browser",
             },
         });
     });
@@ -368,7 +375,12 @@ describe("SidePanel Store", () => {
 
     test("DEFAULT_SETTINGS includes visionModel and confirmPlan", () => {
         const settings = useStore.getState().settings;
-        expect(settings.visionModel).toBe("google/gemini-2.0-flash-001");
+        expect(settings.visionModel).toBe("google/gemini-2.5-flash-lite");
         expect(settings.confirmPlan).toBe(false);
+    });
+
+    test("DEFAULT_SETTINGS includes speechProvider", () => {
+        const settings = useStore.getState().settings;
+        expect(settings.speechProvider).toBe("browser");
     });
 });
