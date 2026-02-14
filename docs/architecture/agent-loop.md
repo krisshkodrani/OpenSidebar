@@ -413,7 +413,7 @@ Snapshot fingerprinting hashes `url + element count + sorted element signatures 
 
 ## Vision Bridge
 
-The `vision.ts` module provides `describeScreenshot(dataUrl)` which sends a screenshot to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter. The LLM returns a text description of the page's visual layout, which is used as the `take_screenshot` tool result instead of raw image data.
+The `vision.ts` module provides `describeScreenshot(dataUrl)` which sends a screenshot to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter. The LLM returns a structured text description (page identity, UI state, actionable elements, errors, non-DOM content, scroll position) which is used as the `take_screenshot` tool result instead of raw image data. Think-tags are stripped from the output.
 
 ## Pause / Resume
 

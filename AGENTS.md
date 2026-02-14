@@ -50,7 +50,7 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.5 Flash Lite) and `MODEL_SMART` (MiniMax M2.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 22 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
-- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `google/gemini-2.0-flash-001`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff.
+- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
 - `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
@@ -723,7 +723,7 @@ See `src/background/agent/progress.ts` for implementation.
 
 The agent can analyze screenshots using a vision LLM:
 
-- **Configuration:** Set via `visionModel` in user settings (default: `google/gemini-2.0-flash-001`)
+- **Configuration:** Set via `visionModel` in user settings (default: `qwen/qwen3-vl-235b-a22b-instruct`)
 - **Integration:** Via OpenRouter API
 - **Retry Logic:** Exponential backoff on failure
 
