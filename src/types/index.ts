@@ -1103,6 +1103,8 @@ export interface UserSettings {
   disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;
+  /** Speech-to-text provider for voice input */
+  speechProvider: "browser" | "groq";
 }
 
 // --- Utility Types ---
