@@ -323,10 +323,11 @@ export class LLMClient {
   private async fetchWithRetry(
     url: string,
     init: RequestInit,
-    maxRetries = 3,
-    signal?: AbortSignal,
-    providerId?: string,
-  ): Promise<Response> {
+    maxRetries: number,
+    signal: AbortSignal | undefined,
+    providerId: string,
+    model: string,
+  ): Promise<{ response: Response; actualProviderId: string; actualModel: string }> {
     const RETRYABLE = new Set([429, 502, 503, 504]);
     let lastError: Error | null = null;
 
@@ -334,7 +335,7 @@ export class LLMClient {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       try {
         const response = await fetch(url, { ...init, signal });
-        if (response.ok || !RETRYABLE.has(response.status)) return response;
+        if (response.ok || !RETRYABLE.has(response.status)) return { response, actualProviderId: providerId, actualModel: model };
         // Retryable error
         const body = await response.text();
         lastError = new Error(`LLM API Error (${response.status}): ${body}`);
@@ -353,7 +354,7 @@ export class LLMClient {
             const fb = this.rebuildForProvider(init, fallback);
             try {
               const fbResp = await fetch(fb.url, { ...fb.init, signal });
-              if (fbResp.ok || !RETRYABLE.has(fbResp.status)) return fbResp;
+              if (fbResp.ok || !RETRYABLE.has(fbResp.status)) return { response: fbResp, actualProviderId: fallback.provider.providerId, actualModel: fallback.model };
               const fbBody = await fbResp.text();
               lastError = new Error(
                 `LLM API Error (${fbResp.status}): ${fbBody}`,
@@ -420,7 +421,7 @@ export class LLMClient {
     });
 
     try {
-      const response = await this.fetchWithRetry(
+      const { response, actualModel } = await this.fetchWithRetry(
         provider.baseUrl,
         {
           method: "POST",
@@ -434,6 +435,7 @@ export class LLMClient {
         3,
         request.signal,
         provider.providerId,
+        activeModel,
       );
 
       if (!response.ok) {
@@ -507,6 +509,7 @@ export class LLMClient {
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
         usage: data.usage,
+        actualModel,
       };
     } catch (error: any) {
       logger.error("agent", "LLM Request Failed", { error: error.message });
@@ -553,6 +556,7 @@ export class LLMClient {
       max_tokens: request.max_tokens,
       stop: request.stop,
       stream: true,
+      stream_options: { include_usage: true },
     };
 
     logger.debug("agent", "LLM Stream Request", {
@@ -563,7 +567,7 @@ export class LLMClient {
     });
 
     try {
-      const response = await this.fetchWithRetry(
+      const { response, actualModel } = await this.fetchWithRetry(
         provider.baseUrl,
         {
           method: "POST",
@@ -577,6 +581,7 @@ export class LLMClient {
         3,
         request.signal,
         provider.providerId,
+        activeModel,
       );
 
       if (!response.ok) {
@@ -636,6 +641,7 @@ export class LLMClient {
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
         usage: result.usage,
+        actualModel,
       };
     } catch (error: any) {
       logger.error("agent", "LLM Stream Request Failed", {

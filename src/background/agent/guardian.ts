@@ -52,13 +52,13 @@ Respond with JSON only:
 
 export class PlanGuardian {
     private llm: LLMClient;
-    private usageCallback: ((usage: TokenUsage, llmMs: number) => void) | null = null;
+    private usageCallback: ((usage: TokenUsage, llmMs: number, model: string) => void) | null = null;
 
     constructor(openRouterApiKey: string) {
-        this.llm = new LLMClient(openRouterApiKey, undefined, false, MODEL_SMART);
+        this.llm = new LLMClient(openRouterApiKey, undefined, undefined, false, MODEL_SMART);
     }
 
-    setUsageCallback(cb: ((usage: TokenUsage, llmMs: number) => void) | null) {
+    setUsageCallback(cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null) {
         this.usageCallback = cb;
     }
 
@@ -80,7 +80,7 @@ export class PlanGuardian {
                 signal,
             });
             const llmMs = Date.now() - start;
-            if (response.usage) this.usageCallback?.(response.usage, llmMs);
+            if (response.usage) this.usageCallback?.(response.usage, llmMs, response.actualModel ?? this.llm.getCurrentModel());
 
             const text = (response.content || "").trim();
             const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
@@ -144,7 +144,7 @@ export class PlanGuardian {
                 signal,
             });
             const llmMs = Date.now() - start;
-            if (response.usage) this.usageCallback?.(response.usage, llmMs);
+            if (response.usage) this.usageCallback?.(response.usage, llmMs, response.actualModel ?? this.llm.getCurrentModel());
 
             const text = (response.content || "").trim();
             const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();

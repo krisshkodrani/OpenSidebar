@@ -245,7 +245,7 @@ export class AgentLoop {
     this.metrics.totalLlmTimeMs += llmMs;
     this.metrics.llmCallCount += 1;
 
-    const model = this.llm.getCurrentModel();
+    const model = response.actualModel ?? this.llm.getCurrentModel();
     if (!this.metrics.modelBreakdown[model]) {
       this.metrics.modelBreakdown[model] = {
         promptTokens: 0,
@@ -546,13 +546,14 @@ export class AgentLoop {
     }, tabId);
 
     // Register guardian usage callback for metrics tracking
-    this.guardian.setUsageCallback((usage, llmMs) => {
+    this.guardian.setUsageCallback((usage, llmMs, model) => {
       this.recordUsage(
         {
           role: "assistant",
           content: null,
           finish_reason: "stop",
           usage,
+          actualModel: model,
         } as CompletionResponse,
         llmMs,
       );
