@@ -72,7 +72,7 @@ const CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLICK_ELEMENT,
-    description: "Click an element.",
+    description: "Click an element. Auto-scrolls to it first.",
     parameters: {
       type: "object",
       properties: {
@@ -90,7 +90,7 @@ const TYPE_TEXT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TYPE_TEXT,
-    description: "Type into an input. Auto-focuses. pressEnter submits.",
+    description: "Type into an input field. Clears existing text, auto-focuses, auto-scrolls. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
     parameters: {
       type: "object",
       properties: {
@@ -113,7 +113,7 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SCROLL_PAGE,
-    description: "Scroll the page or a container.",
+    description: "Scroll the page or a container. If you know what text you're looking for, use find_element instead — it scrolls directly to it.",
     parameters: {
       type: "object",
       properties: {
@@ -136,7 +136,7 @@ const READ_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_PAGE,
-    description: "Re-scan page for fresh elements and text. Use after find_element fails, after page state changes, or when unsure which elements are available.",
+    description: "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page.",
     parameters: {
       type: "object",
       properties: {},
@@ -187,7 +187,7 @@ const NAVIGATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.NAVIGATE,
     description:
-      "Navigate to a URL or search query. Provide url OR query, not both.",
+      "Navigate to a URL or search query. Waits for page load to complete. Provide url OR query, not both.",
     parameters: {
       type: "object",
       properties: {
@@ -208,7 +208,7 @@ const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CREATE_TAB,
-    description: "Open a new tab.",
+    description: "Open a new tab. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
     parameters: {
       type: "object",
       properties: {
@@ -223,7 +223,7 @@ const CLOSE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLOSE_TAB,
-    description: "Close a tab.",
+    description: "Close a tab. If closing the current tab, switch_tab to another tab first.",
     parameters: {
       type: "object",
       properties: {
@@ -241,7 +241,7 @@ const SWITCH_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SWITCH_TAB,
-    description: "Switch to another tab.",
+    description: "Switch to another tab. All subsequent tool calls will run on this tab until you switch again.",
     parameters: {
       type: "object",
       properties: {
@@ -257,7 +257,7 @@ const WAIT_DEF: ToolDefinition = {
   function: {
     name: ToolName.WAIT,
     description:
-      "Pause and re-orient. Returns your original goal, current plan progress, and a fresh page snapshot. Use when confused about which step you're on or when the page needs time to load dynamic content.",
+      "Pause for dynamic content to load, then re-orient. Returns your original goal, plan progress, and fresh page state. Use for timed reveals, animations, or AJAX loads — not just to re-read the page (use read_page for that).",
     parameters: {
       type: "object",
       properties: {
@@ -298,7 +298,7 @@ const TAKE_SCREENSHOT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TAKE_SCREENSHOT,
-    description: "Capture and describe the visual layout. Use when stuck, when text-based tools give unexpected results, or to understand spatial relationships.",
+    description: "Capture and describe the visual layout. Use when element tags don't match what you expect, when you need spatial context, or when stuck after 3+ failed attempts.",
     parameters: {
       type: "object",
       properties: {},
@@ -311,7 +311,7 @@ const HOVER_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HOVER_ELEMENT,
-    description: "Hover to reveal menus/tooltips.",
+    description: "Hover to reveal menus, tooltips, or hidden content. Auto-scrolls to element.",
     parameters: {
       type: "object",
       properties: {
@@ -329,7 +329,7 @@ const FIND_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.FIND_ELEMENT,
-    description: "Find text on the page, scroll to it, and return its tag ID for interaction.",
+    description: "Find text on the page, scroll to it, and return its tag ID for interaction. Preferred over blind scroll_page when you know what to look for.",
     parameters: {
       type: "object",
       properties: {
@@ -347,7 +347,7 @@ const SELECT_OPTION_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SELECT_OPTION,
-    description: "Select a dropdown option by text or value.",
+    description: "Select an option from a native HTML <select> dropdown. For custom dropdowns (div-based menus), click the menu to open it then click the option.",
     parameters: {
       type: "object",
       properties: {
@@ -369,13 +369,13 @@ const PRESS_KEY_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.PRESS_KEY,
-    description: "Press a keyboard key.",
+    description: "Press a keyboard key on the page (dispatched to window, not a specific element). For typing into fields, use type_text. Useful for Escape, Tab, Enter, arrow keys.",
     parameters: {
       type: "object",
       properties: {
         key: {
           type: "string",
-          description: 'Key value (e.g. "Enter", "ArrowDown").',
+          description: 'Key name (e.g. "Enter", "Escape", "Tab", "ArrowDown", " " for space).',
         },
         modifiers: {
           type: "array",
@@ -383,7 +383,7 @@ const PRESS_KEY_DEF: ToolDefinition = {
             type: "string",
             enum: ["ctrl", "shift", "alt", "meta"],
           },
-          description: "Modifier keys.",
+          description: "Modifier keys to hold (e.g. ['ctrl'], ['shift', 'alt']).",
         },
       },
       required: ["key"],
@@ -395,7 +395,7 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAG_AND_DROP,
-    description: "Drag and drop between elements.",
+    description: "Drag source element to target element. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
     parameters: {
       type: "object",
       properties: {
@@ -417,7 +417,7 @@ const DRAW_STROKE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAW_STROKE,
-    description: "Draw a stroke on a canvas.",
+    description: "Draw a stroke on a canvas. Coordinates are relative to the element's top-left corner (0,0 = top-left). Auto-scrolls to canvas.",
     parameters: {
       type: "object",
       properties: {
@@ -425,10 +425,10 @@ const DRAW_STROKE_DEF: ToolDefinition = {
           type: "integer",
           description: "Canvas tag ID.",
         },
-        startX: { type: "number", description: "Start X offset." },
-        startY: { type: "number", description: "Start Y offset." },
-        endX: { type: "number", description: "End X offset." },
-        endY: { type: "number", description: "End Y offset." },
+        startX: { type: "number", description: "Start X (relative to element top-left)." },
+        startY: { type: "number", description: "Start Y (relative to element top-left)." },
+        endX: { type: "number", description: "End X (relative to element top-left)." },
+        endY: { type: "number", description: "End Y (relative to element top-left)." },
       },
       required: ["id", "startX", "startY", "endX", "endY"],
     },
@@ -439,7 +439,7 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HIDE_ELEMENT,
-    description: "Hide an overlay or modal blocking interaction (display:none). Only works on overlays (fixed/absolute position, high z-index, dialog roles). Rejects non-overlay elements.",
+    description: "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead.",
     parameters: {
       type: "object",
       properties: {
@@ -506,7 +506,7 @@ const READ_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_ELEMENT,
-    description: "Read text content or a specific attribute of an element.",
+    description: "Read a specific attribute (href, src, value) of an element. For visible text, check the page snapshot first — it's already there.",
     parameters: {
       type: "object",
       properties: {
@@ -528,7 +528,7 @@ const EXECUTE_JS_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.EXECUTE_JS,
-    description: "Run JavaScript in the page context. Returns the result as a string.",
+    description: "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string.",
     parameters: {
       type: "object",
       properties: {
@@ -546,7 +546,7 @@ const UPLOAD_FILE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.UPLOAD_FILE,
-    description: "Upload a file to an <input type=\"file\"> element by URL.",
+    description: "Upload a file to an <input type=\"file\"> element. Downloads the file from the URL (max 10MB), then injects it into the file input.",
     parameters: {
       type: "object",
       properties: {
@@ -568,7 +568,7 @@ const GO_BACK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.GO_BACK,
-    description: "Go back in browser history.",
+    description: "Go back in browser history. Waits for page load to complete.",
     parameters: {
       type: "object",
       properties: {},
@@ -581,7 +581,7 @@ const GO_FORWARD_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.GO_FORWARD,
-    description: "Go forward in browser history.",
+    description: "Go forward in browser history. Waits for page load to complete.",
     parameters: {
       type: "object",
       properties: {},
@@ -607,7 +607,7 @@ const RIGHT_CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.RIGHT_CLICK,
-    description: "Right-click (context menu) on an element.",
+    description: "Right-click on an element (dispatches contextmenu event). Auto-scrolls to element. If no menu appears, the page may not handle contextmenu events.",
     parameters: {
       type: "object",
       properties: {
@@ -625,7 +625,7 @@ const SET_CHECKBOX_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SET_CHECKBOX,
-    description: "Set a checkbox or radio input to checked or unchecked.",
+    description: "Set a checkbox or radio to checked/unchecked. Fires input and change events.",
     parameters: {
       type: "object",
       properties: {
@@ -647,7 +647,7 @@ const DOWNLOAD_FILE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DOWNLOAD_FILE,
-    description: "Download a file from a URL to the user's downloads folder.",
+    description: "Start a download to the user's downloads folder. Returns immediately — download completes in the background.",
     parameters: {
       type: "object",
       properties: {
