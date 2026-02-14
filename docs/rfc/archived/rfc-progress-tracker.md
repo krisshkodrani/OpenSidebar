@@ -1,6 +1,6 @@
 # RFC: Progress Tracker — Turn-Level Observability for the Agent Loop
 
-**Status:** Implemented (Phase 1)
+**Status:** DONE — Archived 2026-02-14. Phase 1 fully implemented: snapshot fingerprinting, graduated intervention (nudge at 6, escalate at 12), AGENT_STUCK broadcasts.
 **Author:** OpenSidebar team
 **Date:** 2026-02-11
 

@@ -1,6 +1,6 @@
 # RFC: Plan Guardian — Smart Model as Task Supervisor
 
-**Status:** Proposed
+**Status:** DONE — Archived 2026-02-14. PlanGuardian class implemented in `agent/guardian.ts` with decompose() + validateDone(). Integrated in loop.ts with MAX_DONE_REJECTIONS=3 safety valve. Usage tracked in session metrics.
 **Author:** OpenSidebar team
 **Date:** 2026-02-12
 **Related:** [RFC: Agent UX Feedback](./rfc-agent-ux-feedback.md), [RFC: Token Usage & Cost Tracking](./rfc-token-usage-cost-tracking.md)

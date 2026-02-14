@@ -1,6 +1,6 @@
 # RFC: Token Usage & Cost Tracking — Session Metrics with OpenRouter
 
-**Status:** Proposed
+**Status:** DONE — Archived 2026-02-14. All P1-P6 implemented: SSE usage capture, SessionMetrics accumulation, SESSION_METRICS broadcast, MetricsBar + CompletionSummary UI, vision call tracking. P7 (historical persistence) deferred.
 **Author:** OpenSidebar team
 **Date:** 2026-02-12
 **Depends on:** None (self-contained)

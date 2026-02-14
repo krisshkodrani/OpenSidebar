@@ -1,5 +1,7 @@
 # DOM Context Optimization — Implementation Plan v2.0
 
+> **Status: DONE** — Archived 2026-02-14. Phases 1 & 3 fully implemented (viewport filtering, attribute whitelisting, scroll indicator, progressive compression, context metrics). Phase 2 (visual debugging) partially shipped (settings toggle exists, screenshot display deferred).
+
 ## Overview
 
 **Problem:** The current DOM context pipeline sends up to 200 interactive elements with full attributes into the system prompt, regularly exceeding 10,000 tokens and triggering "system prompt too large" warnings. On complex SPAs (Gmail, Notion, Google Docs), this saturates the context window, degrades reasoning via the "lost-in-the-middle" phenomenon, and increases latency and API cost.
