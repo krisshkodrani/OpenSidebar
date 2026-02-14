@@ -23,6 +23,7 @@ import {
   MetricsBar,
 } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
+import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 
 const SUGGESTED_ACTIONS = [
@@ -45,8 +46,12 @@ export default function App() {
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
   const setReady = useStore((s) => s.setReady);
   const sessionMetrics = useStore((s) => s.sessionMetrics);
+  const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
+  const inputText = useStore((s) => s.inputText);
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
+  const [savedPromptsPrefill, setSavedPromptsPrefill] = useState<string | undefined>(undefined);
   const [screenshot, setScreenshot] = useState<{
     dataUrl: string;
     context: string;
@@ -54,6 +59,7 @@ export default function App() {
   } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dark Mode Logic
@@ -120,6 +126,8 @@ export default function App() {
 
       // 4. Load messages (now workspace-aware)
       await loadMessagesFromStorage();
+      // 5. Load saved prompts
+      await loadSavedPrompts();
       setReady();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,11 +187,15 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-scroll
+  // Auto-scroll (throttled to max 10/sec)
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollTimerRef.current) return;
+    scrollTimerRef.current = setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+      scrollTimerRef.current = null;
+    }, 100);
   }, [messages]);
 
   // Auto-dismiss error after 8 seconds
@@ -210,19 +222,7 @@ export default function App() {
         isStreaming: false,
       };
 
-      // Add placeholder assistant message for streaming
-      const assistantEntry: ChatEntry = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-        toolCalls: [],
-        isStreaming: true,
-      };
-
-      // Add both messages to store
       addMessage(userEntry);
-      addMessage(assistantEntry);
 
       // Clear input and set running state
       setInputText("");
@@ -336,11 +336,31 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-full bg-warm-50 dark:bg-warm-900 text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
-      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
+      <Header
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSavedPrompts={() => {
+          setSavedPromptsPrefill(undefined);
+          setIsSavedPromptsOpen(true);
+        }}
+      />
 
       <SettingsDrawer
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <SavedPromptsDrawer
+        isOpen={isSavedPromptsOpen}
+        onClose={() => {
+          setIsSavedPromptsOpen(false);
+          setSavedPromptsPrefill(undefined);
+        }}
+        onSelectPrompt={(content) => {
+          setInputText(content);
+          setIsSavedPromptsOpen(false);
+          setSavedPromptsPrefill(undefined);
+        }}
+        prefillContent={savedPromptsPrefill}
       />
 
       <StuckBanner />
@@ -405,6 +425,14 @@ export default function App() {
           onSend={handleSend}
           onSendHint={handleSendHint}
           onStop={handleStop}
+          onOpenSavedPrompts={() => {
+            setSavedPromptsPrefill(undefined);
+            setIsSavedPromptsOpen(true);
+          }}
+          onSaveCurrent={() => {
+            setSavedPromptsPrefill(inputText);
+            setIsSavedPromptsOpen(true);
+          }}
         />
       </div>
 

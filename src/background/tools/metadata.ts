@@ -24,9 +24,9 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   [ToolName.WAIT]:           { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.MEMORY_ADD]:     { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
   [ToolName.MEMORY_SEARCH]:  { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
-  [ToolName.CREATE_TAB]:     { risk: RiskLevel.HIGH,   domModifying: false, sequential: false },
-  [ToolName.CLOSE_TAB]:      { risk: RiskLevel.HIGH,   domModifying: false, sequential: false },
-  [ToolName.SWITCH_TAB]:     { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
+  [ToolName.CREATE_TAB]:     { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
+  [ToolName.CLOSE_TAB]:      { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
+  [ToolName.SWITCH_TAB]:     { risk: RiskLevel.MEDIUM, domModifying: false, sequential: true  },
   [ToolName.ESCALATE]:       { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.UPDATE_PLAN]:    { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.READ_ELEMENT]:   { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
@@ -34,10 +34,11 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   [ToolName.UPLOAD_FILE]:    { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: true  },
   [ToolName.GO_BACK]:        { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
   [ToolName.GO_FORWARD]:     { risk: RiskLevel.HIGH,   domModifying: false, sequential: true  },
-  [ToolName.LIST_TABS]:      { risk: RiskLevel.LOW,    domModifying: false, sequential: false },
+  [ToolName.LIST_TABS]:      { risk: RiskLevel.LOW,    domModifying: false, sequential: true  },
   [ToolName.RIGHT_CLICK]:    { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: false },
   [ToolName.SET_CHECKBOX]:   { risk: RiskLevel.MEDIUM, domModifying: true,  sequential: false },
   [ToolName.DOWNLOAD_FILE]:  { risk: RiskLevel.MEDIUM, domModifying: false, sequential: false },
+  [ToolName.TRANSCRIBE_AUDIO]: { risk: RiskLevel.LOW, domModifying: false, sequential: true },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

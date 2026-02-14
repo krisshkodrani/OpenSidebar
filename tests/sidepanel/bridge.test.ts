@@ -47,7 +47,7 @@ describe("Bridge Message Routing", () => {
                 workspaceEnabled: true,
                 theme: "system",
                 showElementTags: false,
-                visionModel: "google/gemini-2.0-flash-001",
+                visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 confirmPlan: false,
             },
         });

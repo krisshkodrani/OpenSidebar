@@ -1,20 +1,26 @@
 import { UserSettings } from "../types";
 import { logger } from "../utils";
+import { stripThinkTags } from "./llm";
 import { TokenUsage } from "./llm/types";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash-lite";
+const DEFAULT_VISION_MODEL = "qwen/qwen3-vl-235b-a22b-instruct";
+const VISION_TIMEOUT_MS = 25_000;
 
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
 
-const VISION_PROMPT = `Describe this screenshot of a web page concisely. Focus on:
-- Overall layout and visible UI components
-- Text content not easily captured by DOM inspection (images, canvas, charts, rendered visuals)
-- Interactive elements and their apparent state (disabled, selected, expanded)
-- Any error messages, toasts, modals, or overlays visible
-- Scroll position indicators if visible
-Keep the description under 300 words. Be factual, not interpretive.`;
+const VISION_PROMPT = `You are a vision module for a browser automation agent. Analyze this screenshot and report what the agent needs to act.
+
+Report:
+1. PAGE IDENTITY: Page type and title/heading visible.
+2. KEY UI STATE: Which tab/section is active, open dropdowns/menus, selected items, focused inputs, toggle states. Note any modals, dialogs, or overlays blocking the page.
+3. ACTIONABLE ELEMENTS: Buttons, links, inputs, and controls visible — describe their label and approximate screen position (top-left, center, bottom-right, etc.).
+4. ERRORS & FEEDBACK: Toast messages, validation errors, alerts, loading spinners — quote exact text.
+5. NON-DOM CONTENT: Text inside images, canvas elements, charts, SVGs, or iframes that DOM inspection would miss.
+6. SCROLL POSITION: Whether more content exists above/below the visible area.
+
+Be terse. Use sentence fragments. No aesthetic commentary.`;
 
 /**
  * Send a screenshot to a vision model on OpenRouter and return a text description.
@@ -49,8 +55,8 @@ export async function describeScreenshot(dataUrl: string, signal?: AbortSignal):
 
     try {
       const fetchSignal = signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-        : AbortSignal.timeout(15_000);
+        ? AbortSignal.any([signal, AbortSignal.timeout(VISION_TIMEOUT_MS)])
+        : AbortSignal.timeout(VISION_TIMEOUT_MS);
 
       const response = await fetch(OPENROUTER_API_URL, {
         method: "POST",
@@ -71,7 +77,7 @@ export async function describeScreenshot(dataUrl: string, signal?: AbortSignal):
               ],
             },
           ],
-          max_tokens: 500,
+          max_tokens: 800,
           temperature: 0.2,
         }),
         signal: fetchSignal,
@@ -98,6 +104,8 @@ export async function describeScreenshot(dataUrl: string, signal?: AbortSignal):
         return { description: "[Screenshot captured but vision model returned no description]" };
       }
 
+      const cleaned = stripThinkTags(text);
+
       const visionUsage: TokenUsage | undefined = json.usage ? {
         prompt_tokens: json.usage.prompt_tokens ?? 0,
         completion_tokens: json.usage.completion_tokens ?? 0,
@@ -105,9 +113,9 @@ export async function describeScreenshot(dataUrl: string, signal?: AbortSignal):
         cost: json.usage.cost,
       } : undefined;
 
-      logger.info("vision", "Screenshot described", { length: text.length });
+      logger.info("vision", "Screenshot described", { length: cleaned.length });
       return {
-        description: `[Screenshot Description]\n${text}`,
+        description: `[Screenshot Description]\n${cleaned}`,
         usage: visionUsage,
         model: visionModel,
         durationMs: Date.now() - callStart,

@@ -31,6 +31,8 @@ export const ESCALATION_LIMITS = {
   MAX_CYCLES: 3,
   /** Turns of cooldown after de-escalation before re-escalation is allowed */
   COOLDOWN_TURNS: 3,
+  /** Minimum turns the smart model must run before de-escalation is allowed */
+  MIN_SMART_TENURE: 3,
 } as const;
 
 /** Tool failure circuit breaker */
@@ -39,6 +41,24 @@ export const TOOL_FAILURE_THRESHOLDS = {
   WARN: 4,
   /** Exit after this many consecutive failures on the same tool */
   EXIT: 6,
+} as const;
+
+/** Redundant action detection */
+export const REDUNDANT_ACTION = {
+  /** Size of the sliding window for recent successful tool calls */
+  WINDOW: 8,
+  /** Number of exact (tool+args) repetitions before injecting a corrective message */
+  THRESHOLD: 2,
+  /** Number of same tool name (any args) repetitions before injecting a warning */
+  TOOL_NAME_ONLY_THRESHOLD: 4,
+} as const;
+
+/** Step duration watchdog */
+export const STEP_WATCHDOG = {
+  /** Turns on same step before injecting a nudge */
+  WARN_TURNS: 8,
+  /** Turns on same step before forcing escalation */
+  ESCALATE_TURNS: 15,
 } as const;
 
 /** Broadcast intervals (turns) */

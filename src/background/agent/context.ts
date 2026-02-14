@@ -56,6 +56,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
 - When a plan is provided, follow it step by step. Call update_plan after each step.
 - Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
+- If a page returns 404 or "Page not found", do NOT keep trying. Navigate back or call done() explaining the page doesn't exist.
 - Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
 - Work autonomously — do not ask the user for permission between steps.
 
@@ -73,6 +74,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - Batch independent actions in one turn (e.g. fill all form fields).
 - Memory: memory_search to recall, memory_add to save important facts.
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
+- Audio/video: You CANNOT hear or watch media directly. Use transcribe_audio to get a text transcript of spoken content. If transcription isn't available, try read_page or take_screenshot after clicking play — some challenges reveal text visually.
 
 ## Page Context
 Title: {{title}}
@@ -158,7 +160,7 @@ export class ContextManager {
     if (nextStep) {
       block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
     }
-    block += `Execute the current step now. Call update_plan() when done to advance.`;
+    block += `Execute the current step now. After completing this step's objective, IMMEDIATELY call update_plan() to advance. Do not continue performing actions related to this step once the goal is met.`;
     return block;
   }
 
