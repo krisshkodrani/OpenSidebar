@@ -1,6 +1,6 @@
 # RFC: Task Decomposition — Classification, Subtask Breakdown, Progress Tracking
 
-**Status:** Proposed (design phase)
+**Status:** DONE — Archived 2026-02-14. Core concept shipped via PlanGuardian.decompose() + update_plan tool + TASK_PROGRESS broadcasts. SubtaskRunner architecture was replaced by simpler single-loop + guardian-validated progress tracking.
 **Author:** OpenSidebar team
 **Date:** 2026-02-11
 **Depends on:** RFC Progress Tracker (Phase 1)

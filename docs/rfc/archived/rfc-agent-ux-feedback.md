@@ -1,6 +1,6 @@
 # RFC: Agent UX Feedback — Progress Visibility, Stuck Surfaces, and User Control
 
-**Status:** Implemented (core features)
+**Status:** DONE — Archived 2026-02-14. Core features implemented: StuckBanner, TaskProgressPanel, ControlBar (pause/resume/turn counter), InputArea hint mode, CompletionSummary with metrics.
 **Author:** OpenSidebar team
 **Date:** 2026-02-12
 **Depends on:** [RFC: Progress Tracker](./rfc-progress-tracker.md) (Phase 1 implemented, Phase 2 proposed), [RFC: Task Decomposition](./rfc-task-decomposition.md) (proposed)

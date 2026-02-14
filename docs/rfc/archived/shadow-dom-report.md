@@ -1,8 +1,10 @@
 # Shadow DOM Support Implementation Report
 
+> **Status: DONE** — Archived 2026-02-14. Already shipped at time of writing.
+
 ## Executive Summary
 
-**Status:** ✅ Successfully implemented Shadow DOM support in OpenSidebar  
+**Status:** ✅ Successfully implemented Shadow DOM support in OpenSidebar
 **Impact:** Agent can now interact with Web Components and Shadow DOM encapsulated elements  
 **Implementation Date:** February 9, 2026  
 **Test Coverage:** 12 new test cases added

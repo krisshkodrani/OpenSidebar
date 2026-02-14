@@ -1,5 +1,7 @@
 # RFC: Content Script API Guard
 
+> **Status: DONE** — Archived 2026-02-14. Implemented in `src/utils/context.ts` with `getExecutionContext()`, `isContentScript()`, `isBackground()`, etc. Guards added to WorkspaceManager and keepalive.
+
 ## Error
 
 WorkspaceManager and keepalive modules fail to initialize when loaded in content scripts, throwing errors about undefined Chrome APIs (`chrome.tabs.onRemoved`, `chrome.alarms.create`).

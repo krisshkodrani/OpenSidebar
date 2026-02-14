@@ -1,32 +1,33 @@
 # RFCs (Request for Comments)
 
-This directory contains feature proposals, technical decisions, and implementation plans for future enhancements to OpenSidebar.
+This directory contains feature proposals, technical decisions, and implementation plans for OpenSidebar.
 
 ## Active RFCs
 
-### [DOM Context Optimization](./rfc-dom-optimization-plan.md)
-
-**Status:** Proposed  
-Phase-based optimization to reduce system prompt size by 70% while improving agent grounding through viewport-aware filtering, attribute whitelisting, and progressive compression.
-
-### [Content Script API Guard](./rfc-content-script-api-guard.md)
-
-**Status:** Proposed  
-Adds runtime context detection to prevent Chrome API errors when modules are accidentally loaded in content scripts.
-
-### [Shadow DOM Support](./shadow-dom-report.md)
-
-**Status:** Research phase  
-Analysis and implementation plan for supporting web components that use Shadow DOM.
-
-### [Implementation: Locked Workspace](./rfc-locked-workspace.md)
-
-**Status:** Proposed  
-Adds workspace locking functionality to prevent accidental tab modifications during AI operations.
+_No active RFCs. All proposals have been implemented or superseded._
 
 ## Archived RFCs
 
-Completed implementation phases and historical documents are stored in [archived/](./archived/):
+Completed, superseded, and historical documents are stored in [archived/](./archived/).
+
+### Recently Archived (2026-02-14)
+
+| RFC | Status | Summary |
+|-----|--------|---------|
+| [DOM Context Optimization](./archived/rfc-dom-optimization-plan.md) | **Done** | Viewport filtering, attribute whitelisting, progressive compression |
+| [Content Script API Guard](./archived/rfc-content-script-api-guard.md) | **Done** | Runtime context detection in `src/utils/context.ts` |
+| [Shadow DOM Support](./archived/shadow-dom-report.md) | **Done** | `querySelectorAllDeep()` recursive shadow DOM traversal |
+| [Agent UX Feedback](./archived/rfc-agent-ux-feedback.md) | **Done** | StuckBanner, TaskProgressPanel, ControlBar, hints, CompletionSummary |
+| [Progress Tracker](./archived/rfc-progress-tracker.md) | **Done** | Snapshot fingerprinting, graduated nudge/escalate intervention |
+| [Stable Element Identity](./archived/rfc-stable-element-identity.md) | **Done** | FNV-1a hash-based stable IDs + inline clickable detection |
+| [Token Usage & Cost Tracking](./archived/rfc-token-usage-cost-tracking.md) | **Done** | SessionMetrics, MetricsBar, CompletionSummary, vision tracking |
+| [Plan Guardian](./archived/rfc-premature-done-guard.md) | **Done** | PlanGuardian: decompose() + validateDone() in `agent/guardian.ts` |
+| [Locked Workspace](./archived/rfc-locked-workspace.md) | **Done** | Tab re-grouping, auto-delete, panel persistence |
+| [Task Decomposition](./archived/rfc-task-decomposition.md) | **Done** | Guardian-based decomposition + update_plan tool (simplified from SubtaskRunner) |
+| [LLM Provider Fallback](./archived/rfc-llm-provider-fallback.md) | **Superseded** | Replaced by priority-based failover (`ProviderPool`) |
+| [LLM Round-Robin](./archived/rfc-llm-round-robin.md) | **Superseded** | Replaced by priority-based failover (Cerebras→Groq→OpenRouter) |
+
+### Historical
 
 - **Phase 0-8** - Initial implementation phases (all complete)
 - **Technical Master Plan** - Original technical standards
@@ -37,12 +38,12 @@ Completed implementation phases and historical documents are stored in [archived
 
 ### Submitting an RFC
 
-1. **Create RFC document** in this directory using the established template
-2. **Technical review** - Core team evaluates technical feasibility
-3. **Design review** - UX implications are considered
+1. **Create RFC document** in this directory using the template below
+2. **Technical review** - Evaluate technical feasibility
+3. **Design review** - Consider UX implications
 4. **Approval** - RFC moves to "Ready to implement" status
 5. **Implementation** - Assigned to development milestone
-6. **Archival** - Moved to archived/ when complete
+6. **Archival** - Moved to `archived/` with status annotation when complete
 
 ### RFC Template
 
@@ -51,7 +52,7 @@ Completed implementation phases and historical documents are stored in [archived
 
 ## Status
 
-[Proposed | Ready to implement | In progress | Complete]
+[Proposed | Ready to implement | In progress | Complete | Superseded]
 
 ## Problem
 
@@ -73,15 +74,3 @@ Completed implementation phases and historical documents are stored in [archived
 
 [Effects on users, performance, security]
 ```
-
-## Current Priorities
-
-1. **DOM Optimization** - Performance improvements for complex pages
-2. **Content Script Guards** - Prevent runtime errors
-3. **Shadow DOM Support** - Support modern web components
-
-## See Also
-
-- [Features Documentation](../features/) - Implemented functionality
-- [Architecture Documentation](../architecture/) - Technical reference
-- [Agent Guidelines](../../AGENTS.md) - Development standards

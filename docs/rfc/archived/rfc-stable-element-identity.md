@@ -1,6 +1,6 @@
 # RFC: Stable Element Identity & Inline Clickable Tagging
 
-**Status:** Proposed
+**Status:** DONE — Archived 2026-02-14. Both parts implemented: FNV-1a hash-based stable IDs with grace period, and inline clickable detection via TreeWalker (time-budgeted, cursor:pointer scan).
 **Author:** OpenSidebar team
 **Date:** 2026-02-12
 **Depends on:** None (self-contained)

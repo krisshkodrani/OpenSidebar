@@ -1,5 +1,7 @@
 # Implementation Plan: Claude-Style SidePanel Behavior
 
+> **Status: DONE** — Archived 2026-02-14. All proposed features implemented: setPanelBehavior, tabs.onActivated handler, tab re-grouping on manual removal (handleTabUngrouped), auto-delete empty workspaces.
+
 ## Overview
 
 Implement Anthropic-style side panel behavior where:
