@@ -63,6 +63,7 @@ export enum ToolName {
   RIGHT_CLICK = "right_click",
   SET_CHECKBOX = "set_checkbox",
   DOWNLOAD_FILE = "download_file",
+  TRANSCRIBE_AUDIO = "transcribe_audio",
 }
 
 /** Risk classification for a tool invocation */
@@ -727,6 +728,12 @@ export interface DownloadFileArgs {
   filename?: string;
 }
 
+/** Arguments for transcribe_audio */
+export interface TranscribeAudioArgs {
+  /** The numeric tag ID of the <audio> or <video> element */
+  id: number;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -766,6 +773,7 @@ export type ToolArgsMap = {
   [ToolName.RIGHT_CLICK]: RightClickArgs;
   [ToolName.SET_CHECKBOX]: SetCheckboxArgs;
   [ToolName.DOWNLOAD_FILE]: DownloadFileArgs;
+  [ToolName.TRANSCRIBE_AUDIO]: TranscribeAudioArgs;
 };
 
 // --- Content Script Types ---
@@ -896,6 +904,24 @@ export interface AgentStep {
   screenshotUrl?: string;
 }
 
+// --- Saved Prompts ---
+
+/** A user-saved reusable prompt template */
+export interface SavedPrompt {
+  /** Unique ID (crypto.randomUUID()) */
+  id: string;
+  /** Short label ("Summarize article") */
+  title: string;
+  /** Full prompt text */
+  content: string;
+  /** Free-form grouping ("Research", "Forms", "" = uncategorized) */
+  category: string;
+  /** Unix ms */
+  createdAt: number;
+  /** Unix ms */
+  updatedAt: number;
+}
+
 // --- Side Panel UI Types ---
 
 /** A single entry in the chat history UI */
@@ -964,6 +990,8 @@ export interface SidePanelState {
   awaitingPlanApproval: boolean;
   /** Live session metrics (null when no active session or tracking disabled) */
   sessionMetrics: SessionMetrics | null;
+  /** User-saved prompt templates */
+  savedPrompts: SavedPrompt[];
 }
 
 // --- Memory / Second Brain Types ---
