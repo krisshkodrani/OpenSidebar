@@ -324,4 +324,47 @@ describe("ContextManager", () => {
       expect(system!.content).not.toContain("example.com");
     });
   });
+
+  describe("Persona", () => {
+    test("fast persona appears by default", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("sharp, resourceful web automation expert");
+      expect(systemContent).not.toContain("seasoned systems thinker");
+    });
+
+    test("smart persona appears after setModelTier('smart')", () => {
+      context.setModelTier("smart");
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("seasoned systems thinker");
+      expect(systemContent).not.toContain("sharp, resourceful web automation expert");
+    });
+  });
+
+  describe("Plan Instructions Conditionalization", () => {
+    test("Multi-Step Planning section absent when no plan set", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).not.toContain("Multi-Step Planning");
+      expect(systemContent).not.toContain("update_plan({subtasks, currentIndex");
+    });
+
+    test("Multi-Step Planning section present when plan is set", () => {
+      context.setPlanStatus(
+        [
+          { description: "Step 1", status: "running" },
+          { description: "Step 2", status: "pending" },
+        ],
+        0,
+      );
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("Multi-Step Planning");
+      expect(systemContent).toContain("update_plan({subtasks, currentIndex");
+      // Also verify the Active Plan section is present
+      expect(systemContent).toContain("Active Plan");
+      expect(systemContent).toContain("Step 1");
+    });
+  });
 });

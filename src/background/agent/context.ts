@@ -2,6 +2,10 @@ import { LLMMessage } from "../llm/types";
 import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 
+const FAST_PERSONA = `You are a sharp, resourceful web automation expert who thrives on solving problems efficiently. You move fast, think clearly, and always know which tool to reach for next.`;
+
+const SMART_PERSONA = `You are a seasoned systems thinker with decades of experience debugging the web's trickiest edge cases. You take a step back, reason through root causes, and find solutions others miss.`;
+
 export enum CompressionLevel {
   NONE = "none",
   LIGHT = "light",
@@ -25,7 +29,7 @@ export interface PlanStatus {
 }
 
 const SYSTEM_PROMPT_TEMPLATE = `
-You are OpenSidebar, an autonomous browser agent.
+You are OpenSidebar, an autonomous browser agent. {{persona}}
 
 ## Core Loop: Observe → Think → Act → Verify
 Every turn, follow this cycle:
@@ -52,22 +56,11 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
 - When a plan is provided, follow it step by step. Call update_plan after each step.
 - Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
+- Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
 - Work autonomously — do not ask the user for permission between steps.
 
 {{planStatus}}
-## Multi-Step Planning
-When an Active Plan is shown above:
-1. Focus ONLY on the current step. Ignore future steps.
-2. Execute the current step using the appropriate tool(s).
-3. When the step is done, call update_plan({subtasks, currentIndex: NEXT_INDEX, lastResult: "what you did"}).
-   - currentIndex = the 0-based index of the NEXT step to execute.
-   - lastResult = brief description of what you accomplished.
-4. The system will confirm and show the next step. Then execute it.
-5. Only call done() when ALL steps show as completed.
-
-If no Active Plan is shown, the task is simple — act directly and call done() when finished.
-Do NOT call done() until every planned step is complete.
-
+{{planInstructions}}
 ## Tool Tips
 - type_text auto-focuses; pressEnter: true submits forms in one step.
 - hide_element removes overlays/modals blocking interaction (rejects non-overlay elements).
@@ -80,16 +73,6 @@ Do NOT call done() until every planned step is complete.
 - Batch independent actions in one turn (e.g. fill all form fields).
 - Memory: memory_search to recall, memory_add to save important facts.
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
-
-## Common Patterns
-- Login: type username → type password with pressEnter (or click submit).
-- Search: type query into search input + pressEnter, or click search button.
-- Forms: batch all field fills in one turn, then submit.
-- Menus: hover to reveal dropdowns; check aria-expanded after.
-- Overlays: if a surviving overlay is reported, use click_element or hide_element to dismiss it.
-- Multi-page: track which step you're on; verify each before proceeding.
-- Dynamic content: scroll or wait for lazy-loaded items to appear.
-- Visual puzzles: take_screenshot when text alone is insufficient.
 
 ## Page Context
 Title: {{title}}
@@ -110,6 +93,11 @@ export class ContextManager {
   private maxContextTokens: number;
   private planStatus: PlanStatus | null = null;
   private storageKey: string;
+  private modelTier: "fast" | "smart" = "fast";
+
+  public setModelTier(tier: "fast" | "smart"): void {
+    this.modelTier = tier;
+  }
 
   constructor(maxContextTokens: number = 32000, workspaceId?: string | null) {
     this.maxContextTokens = maxContextTokens;
@@ -369,6 +357,33 @@ export class ContextManager {
   private constructSystemMessage(): LLMMessage {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
+    // Persona: fast vs smart model framing
+    content = content.replace(
+      "{{persona}}",
+      this.modelTier === "smart" ? SMART_PERSONA : FAST_PERSONA,
+    );
+
+    // Multi-Step Planning: only include when a plan is active
+    if (this.planStatus) {
+      content = content.replace(
+        "{{planInstructions}}",
+        `## Multi-Step Planning
+When an Active Plan is shown above:
+1. Focus ONLY on the current step. Ignore future steps.
+2. Execute the current step using the appropriate tool(s).
+3. When the step is done, call update_plan({subtasks, currentIndex: NEXT_INDEX, lastResult: "what you did"}).
+   - currentIndex = the 0-based index of the NEXT step to execute.
+   - lastResult = brief description of what you accomplished.
+4. The system will confirm and show the next step. Then execute it.
+5. Only call done() when ALL steps show as completed.
+
+Do NOT call done() until every planned step is complete.
+`,
+      );
+    } else {
+      content = content.replace("{{planInstructions}}", "");
+    }
+
     if (this.snapshot) {
       content = content.replace("{{title}}", this.snapshot.title || "Unknown");
       content = content.replace("{{url}}", this.snapshot.url || "Unknown");
@@ -522,7 +537,7 @@ export class ContextManager {
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)
       : 0;
-    const baseTokens = 550 + planTokens; // ~fixed template overhead + active plan section
+    const baseTokens = (this.planStatus ? 550 : 420) + planTokens; // ~fixed template overhead (lower without planning section)
     const historyTokens = this.history.reduce(
       (sum, msg) => sum + this.estimateMessageTokens(msg),
       0,
