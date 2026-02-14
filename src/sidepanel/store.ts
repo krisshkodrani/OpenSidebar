@@ -4,6 +4,7 @@ import {
   AgentStatus,
   AgentStep,
   ChatEntry,
+  SavedPrompt,
   SessionMetrics,
   SidePanelState,
   StuckState,
@@ -13,6 +14,12 @@ import {
   UserSettings,
 } from "../types";
 import { logger } from "../utils";
+import {
+  loadSavedPrompts as loadFromStorage,
+  addSavedPrompt as addToStorage,
+  updateSavedPrompt as updateInStorage,
+  deleteSavedPrompt as deleteFromStorage,
+} from "./saved-prompts";
 
 interface Actions {
   addMessage: (msg: ChatEntry) => void;
@@ -40,6 +47,11 @@ interface Actions {
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setReady: () => void;
+  // Saved prompts
+  loadSavedPrompts: () => Promise<void>;
+  addSavedPrompt: (title: string, content: string, category: string) => Promise<void>;
+  updateSavedPrompt: (id: string, updates: Partial<Pick<SavedPrompt, "title" | "content" | "category">>) => Promise<void>;
+  deleteSavedPrompt: (id: string) => Promise<void>;
   // Workspace awareness
   setActiveWorkspaceId: (id: string | null) => void;
 }
@@ -98,6 +110,7 @@ export const useStore = create<Store>()(
     turnProgress: null,
     awaitingPlanApproval: false,
     sessionMetrics: null,
+    savedPrompts: [],
 
     // Actions
     addMessage: (msg) =>
@@ -139,16 +152,27 @@ export const useStore = create<Store>()(
 
     addStep: (step) =>
       set((state) => {
-        // Find the last assistant message to attach the step to
+        // Attach to the last STREAMING assistant message (= current turn)
         for (let i = state.messages.length - 1; i >= 0; i--) {
-          if (state.messages[i].role === "assistant") {
+          if (state.messages[i].role === "assistant" && state.messages[i].isStreaming) {
             if (!state.messages[i].steps) {
               state.messages[i].steps = [];
             }
             state.messages[i].steps!.push(step);
-            break;
+            persistMessages(get().messages, get().activeWorkspaceId);
+            return;
           }
         }
+        // No streaming message → create one for this turn
+        state.messages.push({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: true,
+          steps: [step],
+        });
         persistMessages(get().messages, get().activeWorkspaceId);
       }),
 
@@ -296,6 +320,53 @@ export const useStore = create<Store>()(
       set((state) => {
         state.sessionMetrics = null;
       }),
+
+    // --- Saved prompts actions ---
+
+    loadSavedPrompts: async () => {
+      try {
+        const prompts = await loadFromStorage();
+        set((state) => {
+          state.savedPrompts = prompts;
+        });
+      } catch (e) {
+        logger.warn("ui", "Failed to load saved prompts", { error: e });
+      }
+    },
+
+    addSavedPrompt: async (title, content, category) => {
+      try {
+        await addToStorage(title, content, category);
+        const prompts = await loadFromStorage();
+        set((state) => {
+          state.savedPrompts = prompts;
+        });
+      } catch (e) {
+        logger.warn("ui", "Failed to add saved prompt", { error: e });
+      }
+    },
+
+    updateSavedPrompt: async (id, updates) => {
+      try {
+        const prompts = await updateInStorage(id, updates);
+        set((state) => {
+          state.savedPrompts = prompts;
+        });
+      } catch (e) {
+        logger.warn("ui", "Failed to update saved prompt", { error: e });
+      }
+    },
+
+    deleteSavedPrompt: async (id) => {
+      try {
+        const prompts = await deleteFromStorage(id);
+        set((state) => {
+          state.savedPrompts = prompts;
+        });
+      } catch (e) {
+        logger.warn("ui", "Failed to delete saved prompt", { error: e });
+      }
+    },
 
     // Workspace awareness
     setActiveWorkspaceId: (id) => {

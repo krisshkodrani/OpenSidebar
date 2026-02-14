@@ -208,7 +208,7 @@ const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CREATE_TAB,
-    description: "Open a new tab. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
+    description: "Open a new tab in this workspace. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
     parameters: {
       type: "object",
       properties: {
@@ -223,7 +223,7 @@ const CLOSE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLOSE_TAB,
-    description: "Close a tab. If closing the current tab, switch_tab to another tab first.",
+    description: "Close a tab in this workspace. Cannot close the current tab — switch_tab to another tab first.",
     parameters: {
       type: "object",
       properties: {
@@ -241,7 +241,7 @@ const SWITCH_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SWITCH_TAB,
-    description: "Switch to another tab. All subsequent tool calls will run on this tab until you switch again.",
+    description: "Switch to another tab in this workspace. All subsequent tool calls will run on this tab until you switch again.",
     parameters: {
       type: "object",
       properties: {
@@ -594,7 +594,7 @@ const LIST_TABS_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.LIST_TABS,
-    description: "List all open tabs with their IDs, titles, and URLs.",
+    description: "List open tabs in this workspace with their IDs, titles, and URLs.",
     parameters: {
       type: "object",
       properties: {},
@@ -661,6 +661,24 @@ const DOWNLOAD_FILE_DEF: ToolDefinition = {
         },
       },
       required: ["url"],
+    },
+  },
+};
+
+const TRANSCRIBE_AUDIO_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.TRANSCRIBE_AUDIO,
+    description: "Transcribe speech from an <audio> or <video> element. Use when a challenge hides information in audio (spoken codes, instructions, passwords). Returns the full text transcript. Requires a Groq API key in settings.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "Tag ID of the audio/video element.",
+        },
+      },
+      required: ["id"],
     },
   },
 };
@@ -864,7 +882,45 @@ export function registerTools() {
   toolRegistry.register(
     ToolName.DRAG_AND_DROP,
     DRAG_AND_DROP_DEF,
-    (args, tabId) => executeContentTool(ToolName.DRAG_AND_DROP, args, tabId),
+    async (args, tabId) => {
+      const sourceId = args.sourceId as number;
+      const targetId = args.targetId as number;
+
+      // Pre-validation: request a fresh snapshot and check both IDs exist
+      try {
+        const snapResponse = await chrome.tabs.sendMessage(tabId, {
+          type: "DOM_SNAPSHOT_REQUEST",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: { includeText: false, refresh: true, showTags: false },
+        });
+        const elements = snapResponse?.payload?.snapshot?.elements;
+        if (elements && Array.isArray(elements)) {
+          const sourceExists = elements.some((el: any) => el.tag === sourceId);
+          const targetExists = elements.some((el: any) => el.tag === targetId);
+
+          if (!sourceExists || !targetExists) {
+            const missing = [];
+            if (!sourceExists) missing.push(`sourceId [${sourceId}]`);
+            if (!targetExists) missing.push(`targetId [${targetId}]`);
+
+            // Find similar elements to suggest
+            const draggables = elements.filter((el: any) =>
+              el.attributes?.draggable === "true" || el.tagName === "li"
+            ).slice(0, 8);
+            const suggestions = draggables.length > 0
+              ? `\nAvailable draggable/list elements: ${draggables.map((el: any) => `[${el.tag}] ${el.tagName} "${(el.text || "").slice(0, 30)}"`).join(", ")}`
+              : "";
+
+            return `Error: Stale element IDs — ${missing.join(" and ")} no longer exist on the page.${suggestions}\nCall read_page to get fresh element IDs before retrying.`;
+          }
+        }
+      } catch {
+        // Pre-validation failed (non-critical) — proceed with execution anyway
+      }
+
+      return executeContentTool(ToolName.DRAG_AND_DROP, args, tabId);
+    },
   );
   toolRegistry.register(
     ToolName.DRAW_STROKE,
@@ -1173,6 +1229,83 @@ export function registerTools() {
         return `Download started (ID: ${downloadId})`;
       } catch (e: any) {
         return `Error starting download: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.TRANSCRIBE_AUDIO,
+    TRANSCRIBE_AUDIO_DEF,
+    async (args, tabId) => {
+      // 1. Get audio source URL from the element
+      let audioUrl = await executeContentTool(ToolName.READ_ELEMENT, { id: args.id, attribute: "src" }, tabId);
+      if (!audioUrl || audioUrl.startsWith("Error") || audioUrl.trim() === "") {
+        // Fallback: try currentSrc (handles <source> child elements)
+        audioUrl = await executeContentTool(ToolName.READ_ELEMENT, { id: args.id, attribute: "currentSrc" }, tabId);
+      }
+      if (!audioUrl || audioUrl.startsWith("Error") || audioUrl.trim() === "") {
+        return `Error: Element [${args.id}] has no audio source URL. Try execute_js to inspect the element.`;
+      }
+
+      // 2. Validate URL
+      const urlResult = sanitizeUrl(audioUrl);
+      if (!urlResult.ok) return `Error: ${urlResult.error}`;
+
+      // 3. Load Groq API key
+      let groqApiKey = "";
+      try {
+        const stored = await chrome.storage.sync.get("userSettings");
+        const settings = stored.userSettings as UserSettings | undefined;
+        groqApiKey = settings?.groqApiKey || "";
+      } catch { /* ignore */ }
+      if (!groqApiKey) {
+        try {
+          groqApiKey = (globalThis as any).__GROQ_API_KEY__ || "";
+        } catch { /* ignore */ }
+      }
+      if (!groqApiKey) {
+        return "Error: Groq API key required. Configure it in Settings.";
+      }
+
+      // 4. Fetch the audio file (25MB Whisper limit)
+      let audioBlob: Blob;
+      try {
+        const response = await fetch(urlResult.value);
+        if (!response.ok) return `Error: Failed to fetch audio (HTTP ${response.status}).`;
+        const contentLength = response.headers.get("content-length");
+        if (contentLength && parseInt(contentLength, 10) > 25 * 1024 * 1024) {
+          return "Error: Audio file exceeds 25MB Whisper limit.";
+        }
+        audioBlob = await response.blob();
+        if (audioBlob.size > 25 * 1024 * 1024) {
+          return "Error: Audio file exceeds 25MB Whisper limit.";
+        }
+      } catch (e: any) {
+        return `Error fetching audio: ${e.message}`;
+      }
+
+      // 5. Send to Groq Whisper API
+      try {
+        const formData = new FormData();
+        // Derive filename from URL for content-type hint
+        const urlPath = new URL(urlResult.value).pathname;
+        const filename = urlPath.split("/").pop() || "audio.webm";
+        formData.append("file", audioBlob, filename);
+        formData.append("model", "whisper-large-v3-turbo");
+
+        const whisperResponse = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${groqApiKey}` },
+          body: formData,
+        });
+        if (!whisperResponse.ok) {
+          const errText = await whisperResponse.text().catch(() => "");
+          return `Error: Whisper API returned ${whisperResponse.status}. ${errText}`;
+        }
+        const result = await whisperResponse.json();
+        return result.text || "Transcription returned empty text.";
+      } catch (e: any) {
+        return `Error calling Whisper API: ${e.message}`;
       }
     },
   );

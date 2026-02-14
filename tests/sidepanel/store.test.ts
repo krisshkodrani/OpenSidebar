@@ -277,6 +277,62 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().messages[0].steps).toHaveLength(1);
     });
 
+    test("addStep does NOT attach to finalized (non-streaming) assistant message", () => {
+        // Add a finalized assistant message (previous turn)
+        useStore.getState().addMessage({
+            id: "a-final",
+            role: "assistant",
+            content: "Previous turn done",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: false,
+        });
+
+        useStore.getState().addStep({
+            id: "s-new",
+            type: "thinking",
+            label: "New turn thinking",
+            status: "running",
+            timestamp: Date.now(),
+        });
+
+        // Should NOT attach to the finalized message
+        expect(useStore.getState().messages[0].steps).toBeUndefined();
+        // Should create a new streaming message
+        expect(useStore.getState().messages).toHaveLength(2);
+        expect(useStore.getState().messages[1].role).toBe("assistant");
+        expect(useStore.getState().messages[1].isStreaming).toBe(true);
+        expect(useStore.getState().messages[1].steps).toHaveLength(1);
+        expect(useStore.getState().messages[1].steps![0].id).toBe("s-new");
+    });
+
+    test("addStep creates new streaming message when no assistant messages exist", () => {
+        // Only a user message exists
+        useStore.getState().addMessage({
+            id: "u1",
+            role: "user",
+            content: "Hello",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: false,
+        });
+
+        useStore.getState().addStep({
+            id: "s-orphan",
+            type: "tool",
+            label: "Clicking element",
+            status: "running",
+            timestamp: Date.now(),
+        });
+
+        expect(useStore.getState().messages).toHaveLength(2);
+        const newMsg = useStore.getState().messages[1];
+        expect(newMsg.role).toBe("assistant");
+        expect(newMsg.isStreaming).toBe(true);
+        expect(newMsg.content).toBe("");
+        expect(newMsg.steps).toHaveLength(1);
+    });
+
     // --- Agent feedback action tests ---
 
     test("setTaskProgress stores payload", () => {
