@@ -672,12 +672,14 @@ export class AgentLoop {
   /** Escalate to smart model when stuck. Switches both model and provider (Groq→OpenRouter). */
   private escalateModel(): void {
     this.llm.switchToSmart();
+    this.context.setModelTier("smart");
     logger.info("agent", "Escalating to smart model", { model: MODEL_SMART, provider: "openrouter" });
   }
 
   /** De-escalate back to fast model when progress resumes after automatic escalation. */
   private deescalateModel(): void {
     this.llm.switchToFast();
+    this.context.setModelTier("fast");
     logger.info("agent", "De-escalating to fast model");
   }
 
@@ -1517,6 +1519,85 @@ export class AgentLoop {
               this.traceRecorder?.recordEvent("plan_update", {
                 subtaskCount: subtaskDescs.length,
                 currentIndex,
+              });
+              continue;
+            }
+
+            // WAIT tool — re-orientation mechanism
+            if (toolName === ToolName.WAIT) {
+              const seconds = Math.min(
+                Math.max((args.seconds as number) || 2, 1),
+                10,
+              );
+              const reason = (args.reason as string) || "";
+
+              await new Promise((resolve) =>
+                setTimeout(resolve, seconds * 1000),
+              );
+
+              // Refresh DOM snapshot for fresh context
+              prevElementCount = await this.refreshSnapshotWithRetry(
+                tabId,
+                prevElementCount,
+              );
+
+              // Build re-orientation response
+              const snapshot = this.context.getSnapshot();
+              const parts: string[] = [
+                `--- RE-ORIENTATION (waited ${seconds}s) ---`,
+              ];
+              if (reason) parts.push(`Reason: ${reason}`);
+              parts.push(`\nOriginal task: "${this.originalQuery}"`);
+
+              if (this.planSubtasks.length > 0) {
+                const planLines = this.planSubtasks.map((s, i) => {
+                  const marker =
+                    s.status === "completed"
+                      ? "[done]"
+                      : s.status === "running"
+                        ? "[NOW]"
+                        : "[pending]";
+                  return `  ${i + 1}. ${marker} ${s.description}`;
+                });
+                parts.push(`\nPlan progress:\n${planLines.join("\n")}`);
+              }
+
+              parts.push(
+                `\nCurrent page: "${snapshot?.title || "unknown"}" — ${snapshot?.url || "unknown"}`,
+              );
+              parts.push(`Turn: ${this.turnCount} / ${this.maxTurns}`);
+              parts.push(
+                `\nReview the above → observe the page → decide your next action.`,
+              );
+
+              const reorientation = parts.join("\n");
+
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: reorientation,
+              });
+
+              this.stepHandler(
+                {
+                  id: crypto.randomUUID(),
+                  type: "tool",
+                  label: formatStepLabel(toolName, args),
+                  toolName,
+                  status: "done",
+                  timestamp: Date.now(),
+                },
+                false,
+              );
+
+              logger.info("agent", "WAIT_REORIENT", {
+                turn: this.turnCount,
+                seconds,
+                reason: reason.slice(0, 100),
+              });
+              this.traceRecorder?.recordEvent("wait_reorient", {
+                seconds,
+                reason,
               });
               continue;
             }

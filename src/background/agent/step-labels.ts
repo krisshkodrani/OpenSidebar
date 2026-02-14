@@ -65,8 +65,14 @@ export function formatStepLabel(
     }
     case ToolName.MEMORY_ADD:
       return "Save to memory";
-    case ToolName.WAIT:
-      return `Wait ${args.ms ?? "?"}ms`;
+    case ToolName.WAIT: {
+      const secs = args.seconds ?? "?";
+      const reason = args.reason as string | undefined;
+      const reasonStr = reason
+        ? `: "${reason.length > 30 ? reason.slice(0, 30) + "..." : reason}"`
+        : "";
+      return `Wait ${secs}s${reasonStr}`;
+    }
     case ToolName.PRESS_KEY: {
       const key = args.key as string | undefined;
       const mods = args.modifiers as string[] | undefined;
