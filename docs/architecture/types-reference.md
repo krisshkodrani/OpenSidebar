@@ -1222,7 +1222,7 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
-  /** OpenRouter model ID for vision/screenshot analysis (default: google/gemini-2.0-flash-001) */
+  /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
   visionModel: string;
   /** Whether to show a plan confirmation step before executing multi-step tasks */
   confirmPlan: boolean;

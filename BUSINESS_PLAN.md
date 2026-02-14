@@ -194,9 +194,9 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 |---|---|---|---|---|
 | **Fast (primary)** | Cerebras | `gpt-oss-120b` | ~3000 TPS | Default — fastest provider |
 | **Fast (fallback 1)** | Groq | `openai/gpt-oss-120b` | ~250K TPM | Automatic failover on 429 |
-| **Fast (fallback 2)** | OpenRouter | `openai/gpt-4o-mini` | Variable | Always-available fallback |
+| **Fast (fallback 2)** | OpenRouter | `openai/gpt-oss-120b` | Variable | Always-available fallback |
 | **Smart** | OpenRouter | `minimax/minimax-m2.5` | Moderate | Complex reasoning (escalation) |
-| **Vision** | OpenRouter | `google/gemini-2.5-flash-lite` | High | Screenshot analysis |
+| **Vision** | OpenRouter | `qwen/qwen3-vl-235b-a22b-instruct` | Moderate | Screenshot analysis (GUI grounding, OCR) |
 | **Audio** | Groq | `whisper-large-v3-turbo` | Very High | Speech-to-text & Video transcription |
 
 Priority-based failover: Cerebras → Groq → OpenRouter. Automatic 60s cooldown on 429 rate limits with zero-delay fallback to next provider.
@@ -214,7 +214,7 @@ interface UserSettings {
   workspaceEnabled: boolean; // Default: true
   theme: "light" | "dark" | "system";
   showElementTags: boolean; // Debug overlay
-  visionModel: string; // Default: google/gemini-2.5-flash-lite
+  visionModel: string; // Default: qwen/qwen3-vl-235b-a22b-instruct
   confirmPlan: boolean; // Require user confirmation
   showSessionMetrics: boolean; // Show token/cost metrics
 }
@@ -278,10 +278,10 @@ interface UserSettings {
 
 | Model                      | Price (Input) | Price (Output) | Est. Tokens/Month | Cost/Month |
 | -------------------------- | ------------- | -------------- | ----------------- | ---------- |
-| Gemini 2.5 Flash Lite      | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
+| GPT-OSS-120B (OpenRouter)  | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
 | MiniMax M2.5               | $0.40/1M      | $4.00/1M       | 0.1M              | $0.32      |
-| Vision (Gemini Flash Lite) | $0.15/1M      | $0.60/1M       | 0.6M              | $0.27      |
-| **Total LLM**              |               |                |                   | **~$1.04** |
+| Vision (Qwen3 VL 235B)     | $0.14/1M      | $0.14/1M       | 0.6M              | $0.08      |
+| **Total LLM**              |               |                |                   | **~$0.85** |
 
 #### Infrastructure Costs
 
@@ -623,9 +623,9 @@ opensidebar/
 |---|---|---|---|---|
 | Cerebras | gpt-oss-120b | 128K | Free (rate-limited) | Free (rate-limited) |
 | Groq | openai/gpt-oss-120b | 128K | Free (rate-limited) | Free (rate-limited) |
-| OpenRouter | openai/gpt-4o-mini | 128K | $0.15/1M | $0.60/1M |
+| OpenRouter | openai/gpt-oss-120b | 128K | $0.15/1M | $0.60/1M |
 | OpenRouter | minimax/minimax-m2.5 | 1M | $0.40/1M | $4.00/1M |
-| OpenRouter | google/gemini-2.5-flash-lite | 1M | $0.10/1M | $0.40/1M |
+| OpenRouter | qwen/qwen3-vl-235b-a22b-instruct | 128K | $0.14/1M | $0.14/1M |
 | Groq | whisper-large-v3-turbo | N/A | $0.003/min | N/A |
 
 ### Chrome Extension APIs Used

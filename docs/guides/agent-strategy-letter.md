@@ -14,7 +14,7 @@ The entire LLM pipeline runs through a single provider, **OpenRouter**, with two
 
 | Tier | Model | Role |
 |------|-------|------|
-| Fast | `google/gemini-2.5-flash-lite` | Default for all turns — fast, cheap, good enough for most DOM interactions |
+| Fast | `openai/gpt-oss-120b` | Default for all turns — fast, cheap, good enough for most DOM interactions |
 | Smart | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
 
 Both share the same `LLMClient` class. Escalation is a one-way `switchModel()` call — once the smart model is active, it stays active for the remainder of the session.
@@ -384,12 +384,11 @@ When the agent calls `take_screenshot`, the tool:
 2. Generates a **320px-wide JPEG thumbnail** (50% quality) for inline display in the step timeline
 3. Sends the full image to a vision model via OpenRouter for text description
 
-The vision model is configurable (`visionModel` user setting, default `google/gemini-2.5-flash-lite`). The prompt focuses on:
-- Layout and visible UI components
-- Text in images, canvas, charts, rendered visuals
-- Interactive element state (disabled, selected, expanded)
-- Error messages, toasts, modals, overlays
-- Scroll position indicators
+The vision model is configurable (`visionModel` user setting, default `qwen/qwen3-vl-235b-a22b-instruct`). The structured prompt extracts:
+- Page identity and key UI state (active tabs, modals, focused inputs)
+- Actionable elements with approximate screen positions
+- Errors, feedback, and non-DOM content (OCR on images, canvas, SVGs)
+- Scroll position
 
 Response parameters: `max_tokens: 500`, `temperature: 0.2`. Up to 3 attempts total (1 initial + 2 retries) with exponential backoff from an 800ms base delay plus random jitter. Non-retryable errors (4xx except 429) abort immediately. Abort/timeout signals return a graceful fallback message rather than throwing.
 
