@@ -53,25 +53,27 @@ export function ControlBar() {
       ) : isPaused ? (
         <div className="w-2 h-2 bg-yellow-500 rounded-full shrink-0" />
       ) : (
-        <Loader2
-          size={12}
-          className="text-primary-600 animate-spin shrink-0"
-        />
+        <Loader2 size={12} className="text-primary-600 animate-spin shrink-0" />
       )}
       <span className="text-primary-700 dark:text-primary-300 truncate flex-1">
         {isPaused ? "Paused" : detail}
       </span>
 
       {turnProgress?.provider && (
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
-          turnProgress.provider === "cerebras"
-            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+        <span
+          className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${
+            turnProgress.provider === "cerebras"
+              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+              : turnProgress.provider === "groq"
+                ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+          }`}
+        >
+          {turnProgress.provider === "cerebras"
+            ? "Cerebras"
             : turnProgress.provider === "groq"
-              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-              : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-        }`}>
-          {turnProgress.provider === "cerebras" ? "Cerebras"
-            : turnProgress.provider === "groq" ? "Groq" : "OpenRouter"}
+              ? "Groq"
+              : "OpenRouter"}
         </span>
       )}
 

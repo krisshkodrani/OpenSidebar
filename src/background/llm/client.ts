@@ -1,7 +1,13 @@
 import { ToolCall } from "../../types";
 import { logger } from "../../utils";
 import { parseSSEStream } from "../streaming";
-import { CompletionRequest, CompletionResponse, LLMToolCall, ProviderConfig } from "./types";
+import {
+  CompletionRequest,
+  CompletionResponse,
+  LLMMessage,
+  LLMToolCall,
+  ProviderConfig,
+} from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -32,7 +38,7 @@ export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
 /** Fast model tier — used for initial turns (Cerebras, highest priority) */
 export const MODEL_FAST_CEREBRAS = "gpt-oss-120b";
 /** Smart model tier — used after escalation when stuck */
-export const MODEL_SMART = "minimax/minimax-m2.5";
+export const MODEL_SMART = "x-ai/grok-4.1-fast:nitro";
 
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
@@ -69,7 +75,9 @@ export function stripThinkTags(text: string): string {
   // XML think blocks
   let result = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   // Markdown Think/Observe/Verify sections (Cerebras/Groq pattern)
-  result = result.replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "").trim();
+  result = result
+    .replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "")
+    .trim();
   // Strip **Act** header itself (keep content after it)
   result = result.replace(/\*\*Act\*\*:?\s*/gi, "").trim();
   return result;
@@ -221,16 +229,14 @@ export class LLMClient {
   /**
    * Creates a new LLM client with priority-based provider failover.
    * @param openRouterApiKey - OpenRouter key (always needed for smart model + fallback)
-   * @param groqApiKey - Groq key (optional; joins pool if useGroq=true)
+   * @param groqApiKey - Groq key (optional; auto-joins pool when present)
    * @param cerebrasApiKey - Cerebras key (optional; joins pool at highest priority if present)
-   * @param useGroq - Whether Groq joins the fast model pool
    * @param model - Model ID override (defaults to pool's top-priority model)
    */
   constructor(
     openRouterApiKey: string,
     groqApiKey?: string,
     cerebrasApiKey?: string,
-    useGroq: boolean = false,
     model?: string,
   ) {
     this.openRouterApiKey = openRouterApiKey;
@@ -238,7 +244,7 @@ export class LLMClient {
     // Build priority pool: Cerebras → Groq → OpenRouter
     this.fastPool = new ProviderPool(
       openRouterApiKey,
-      useGroq ? groqApiKey : undefined,
+      groqApiKey,
       cerebrasApiKey,
     );
 
@@ -333,7 +339,11 @@ export class LLMClient {
     signal: AbortSignal | undefined,
     providerId: string,
     model: string,
-  ): Promise<{ response: Response; actualProviderId: string; actualModel: string }> {
+  ): Promise<{
+    response: Response;
+    actualProviderId: string;
+    actualModel: string;
+  }> {
     const RETRYABLE = new Set([429, 502, 503, 504]);
     let lastError: Error | null = null;
 
@@ -341,7 +351,8 @@ export class LLMClient {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       try {
         const response = await fetch(url, { ...init, signal });
-        if (response.ok || !RETRYABLE.has(response.status)) return { response, actualProviderId: providerId, actualModel: model };
+        if (response.ok || !RETRYABLE.has(response.status))
+          return { response, actualProviderId: providerId, actualModel: model };
         // Retryable error
         const body = await response.text();
         lastError = new Error(`LLM API Error (${response.status}): ${body}`);
@@ -360,7 +371,12 @@ export class LLMClient {
             const fb = this.rebuildForProvider(init, fallback);
             try {
               const fbResp = await fetch(fb.url, { ...fb.init, signal });
-              if (fbResp.ok || !RETRYABLE.has(fbResp.status)) return { response: fbResp, actualProviderId: fallback.provider.providerId, actualModel: fallback.model };
+              if (fbResp.ok || !RETRYABLE.has(fbResp.status))
+                return {
+                  response: fbResp,
+                  actualProviderId: fallback.provider.providerId,
+                  actualModel: fallback.model,
+                };
               const fbBody = await fbResp.text();
               lastError = new Error(
                 `LLM API Error (${fbResp.status}): ${fbBody}`,
@@ -409,7 +425,8 @@ export class LLMClient {
       );
     }
 
-    const payload = {
+    const reasoningEffort = request.reasoningEffort ?? "none";
+    const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: request.messages,
       tools: request.tools,
@@ -417,13 +434,22 @@ export class LLMClient {
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
+      // Smart model routing: latency-optimized provider selection
+      ...(isSmartModel && {
+        provider: { sort: "latency", require_parameters: true },
+      }),
+      // Reasoning control for models that support it (Grok 4.1)
+      ...(isSmartModel && {
+        reasoning: { effort: reasoningEffort },
+      }),
     };
 
     logger.debug("agent", "LLM Request", {
       model: payload.model,
       provider: provider.providerId,
-      msgCount: payload.messages.length,
-      tools: payload.tools?.length,
+      msgCount: (payload.messages as LLMMessage[]).length,
+      tools: (payload.tools as unknown[] | undefined)?.length,
+      reasoningEffort: isSmartModel ? reasoningEffort : undefined,
     });
 
     try {
@@ -509,12 +535,21 @@ export class LLMClient {
         ? stripThinkTags(rawContent) || null
         : null;
 
+      // Extract cached_tokens from prompt_tokens_details if present
+      const usage = data.usage
+        ? {
+            ...data.usage,
+            cached_tokens:
+              data.usage.prompt_tokens_details?.cached_tokens ?? undefined,
+          }
+        : undefined;
+
       return {
         role: "assistant",
         content: cleanContent,
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
-        usage: data.usage,
+        usage,
         actualModel,
       };
     } catch (error: any) {
@@ -553,7 +588,8 @@ export class LLMClient {
       );
     }
 
-    const payload = {
+    const reasoningEffort = request.reasoningEffort ?? "none";
+    const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: request.messages,
       tools: request.tools,
@@ -563,13 +599,22 @@ export class LLMClient {
       stop: request.stop,
       stream: true,
       stream_options: { include_usage: true },
+      // Smart model routing: latency-optimized provider selection
+      ...(isSmartModel && {
+        provider: { sort: "latency", require_parameters: true },
+      }),
+      // Reasoning control for models that support it (Grok 4.1)
+      ...(isSmartModel && {
+        reasoning: { effort: reasoningEffort },
+      }),
     };
 
     logger.debug("agent", "LLM Stream Request", {
       model: payload.model,
       provider: provider.providerId,
-      msgCount: payload.messages.length,
-      tools: payload.tools?.length,
+      msgCount: (payload.messages as LLMMessage[]).length,
+      tools: (payload.tools as unknown[] | undefined)?.length,
+      reasoningEffort: isSmartModel ? reasoningEffort : undefined,
     });
 
     try {

@@ -49,8 +49,15 @@ interface Actions {
   setReady: () => void;
   // Saved prompts
   loadSavedPrompts: () => Promise<void>;
-  addSavedPrompt: (title: string, content: string, category: string) => Promise<void>;
-  updateSavedPrompt: (id: string, updates: Partial<Pick<SavedPrompt, "title" | "content" | "category">>) => Promise<void>;
+  addSavedPrompt: (
+    title: string,
+    content: string,
+    category: string,
+  ) => Promise<void>;
+  updateSavedPrompt: (
+    id: string,
+    updates: Partial<Pick<SavedPrompt, "title" | "content" | "category">>,
+  ) => Promise<void>;
   deleteSavedPrompt: (id: string) => Promise<void>;
   // Workspace awareness
   setActiveWorkspaceId: (id: string | null) => void;
@@ -62,7 +69,6 @@ const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: __OPENROUTER_API_KEY__,
   groqApiKey: __GROQ_API_KEY__,
   cerebrasApiKey: __CEREBRAS_API_KEY__,
-  useGroqFast: false,
   maxTurns: 30,
   contextWindowSize: 128000,
   memoryEnabled: true,
@@ -154,7 +160,10 @@ export const useStore = create<Store>()(
       set((state) => {
         // Attach to the last STREAMING assistant message (= current turn)
         for (let i = state.messages.length - 1; i >= 0; i--) {
-          if (state.messages[i].role === "assistant" && state.messages[i].isStreaming) {
+          if (
+            state.messages[i].role === "assistant" &&
+            state.messages[i].isStreaming
+          ) {
             if (!state.messages[i].steps) {
               state.messages[i].steps = [];
             }
@@ -245,7 +254,11 @@ export const useStore = create<Store>()(
       try {
         const key = chatStorageKey(get().activeWorkspaceId);
         const result = await chrome.storage.session.get(key);
-        if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
+        if (
+          result[key] &&
+          Array.isArray(result[key]) &&
+          result[key].length > 0
+        ) {
           const messages = (result[key] as ChatEntry[]).map((msg) =>
             msg.isStreaming ? { ...msg, isStreaming: false } : msg,
           );

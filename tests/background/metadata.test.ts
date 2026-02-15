@@ -1,95 +1,95 @@
 import { describe, test, expect } from "bun:test";
 import "../setup";
 import {
-    getToolMeta,
-    DOM_MODIFYING_TOOLS,
-    SEQUENTIAL_TOOLS,
+  getToolMeta,
+  DOM_MODIFYING_TOOLS,
+  SEQUENTIAL_TOOLS,
 } from "../../src/background/tools/metadata";
 import { ToolName, RiskLevel } from "../../src/types";
 import { classifyRisk } from "../../src/background/security";
 
 describe("Tool Metadata", () => {
-    describe("DOM_MODIFYING_TOOLS", () => {
-        test("contains click, type, select, hover, drag, hide, read_page", () => {
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.CLICK_ELEMENT)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.TYPE_TEXT)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.SELECT_OPTION)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.HOVER_ELEMENT)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.DRAG_AND_DROP)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.HIDE_ELEMENT)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_PAGE)).toBe(true);
-        });
-
-        test("contains new DOM-modifying tools", () => {
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.RIGHT_CLICK)).toBe(true);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.SET_CHECKBOX)).toBe(true);
-        });
-
-        test("does not contain read-only tools", () => {
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
-            expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
-        });
+  describe("DOM_MODIFYING_TOOLS", () => {
+    test("contains click, type, select, hover, drag, hide, read_page", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.CLICK_ELEMENT)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.TYPE_TEXT)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.SELECT_OPTION)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.HOVER_ELEMENT)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.DRAG_AND_DROP)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.HIDE_ELEMENT)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_PAGE)).toBe(true);
     });
 
-    describe("SEQUENTIAL_TOOLS", () => {
-        test("contains navigate, done, take_screenshot, escalate, update_plan, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
-            expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.GO_BACK)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.GO_FORWARD)).toBe(true);
-            expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
-        });
-
-        test("has exactly 15 entries", () => {
-            expect(SEQUENTIAL_TOOLS.size).toBe(15);
-        });
+    test("contains new DOM-modifying tools", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.RIGHT_CLICK)).toBe(true);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.SET_CHECKBOX)).toBe(true);
     });
 
-    describe("getToolMeta", () => {
-        test("returns metadata for every ToolName", () => {
-            for (const name of Object.values(ToolName)) {
-                const meta = getToolMeta(name as ToolName);
-                expect(meta).toBeDefined();
-                expect(meta.risk).toBeDefined();
-                expect(typeof meta.domModifying).toBe("boolean");
-                expect(typeof meta.sequential).toBe("boolean");
-            }
-        });
+    test("does not contain read-only tools", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
+    });
+  });
+
+  describe("SEQUENTIAL_TOOLS", () => {
+    test("contains navigate, done, take_screenshot, escalate, update_plan, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
+      expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.GO_BACK)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.GO_FORWARD)).toBe(true);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
     });
 
-    describe("classifyRisk uses metadata", () => {
-        test("read_page is LOW risk", () => {
-            expect(classifyRisk(ToolName.READ_PAGE, {})).toBe(RiskLevel.LOW);
-        });
-
-        test("click_element is MEDIUM risk", () => {
-            expect(classifyRisk(ToolName.CLICK_ELEMENT, {})).toBe(RiskLevel.MEDIUM);
-        });
-
-        test("navigate is HIGH risk", () => {
-            expect(classifyRisk(ToolName.NAVIGATE, {})).toBe(RiskLevel.HIGH);
-        });
-
-        test("done is LOW risk", () => {
-            expect(classifyRisk(ToolName.DONE, {})).toBe(RiskLevel.LOW);
-        });
-
-        test("press_key is MEDIUM risk", () => {
-            expect(classifyRisk(ToolName.PRESS_KEY, {})).toBe(RiskLevel.MEDIUM);
-        });
+    test("has exactly 19 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(19);
     });
+  });
+
+  describe("getToolMeta", () => {
+    test("returns metadata for every ToolName", () => {
+      for (const name of Object.values(ToolName)) {
+        const meta = getToolMeta(name as ToolName);
+        expect(meta).toBeDefined();
+        expect(meta.risk).toBeDefined();
+        expect(typeof meta.domModifying).toBe("boolean");
+        expect(typeof meta.sequential).toBe("boolean");
+      }
+    });
+  });
+
+  describe("classifyRisk uses metadata", () => {
+    test("read_page is LOW risk", () => {
+      expect(classifyRisk(ToolName.READ_PAGE, {})).toBe(RiskLevel.LOW);
+    });
+
+    test("click_element is MEDIUM risk", () => {
+      expect(classifyRisk(ToolName.CLICK_ELEMENT, {})).toBe(RiskLevel.MEDIUM);
+    });
+
+    test("navigate is HIGH risk", () => {
+      expect(classifyRisk(ToolName.NAVIGATE, {})).toBe(RiskLevel.HIGH);
+    });
+
+    test("done is LOW risk", () => {
+      expect(classifyRisk(ToolName.DONE, {})).toBe(RiskLevel.LOW);
+    });
+
+    test("press_key is MEDIUM risk", () => {
+      expect(classifyRisk(ToolName.PRESS_KEY, {})).toBe(RiskLevel.MEDIUM);
+    });
+  });
 });

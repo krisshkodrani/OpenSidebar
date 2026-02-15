@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 32 tools are registered", () => {
+    test("all 45 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(32);
+        expect(defs.length).toBe(45);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -198,5 +198,102 @@ describe("Tool Registration", () => {
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toContain("url");
         expect(def!.function.parameters.properties.filename).toBeDefined();
+    });
+
+    test("group_tabs requires tabIds and title", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.GROUP_TABS);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("tabIds");
+        expect(def!.function.parameters.required).toContain("title");
+        expect(def!.function.parameters.properties.color).toBeDefined();
+    });
+
+    test("ungroup_tabs requires tabIds", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.UNGROUP_TABS);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("tabIds");
+    });
+
+    test("get_cookies has no required parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.GET_COOKIES);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(def!.function.parameters.properties.url).toBeDefined();
+    });
+
+    test("set_cookie requires url, name, value", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.SET_COOKIE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("url");
+        expect(def!.function.parameters.required).toContain("name");
+        expect(def!.function.parameters.required).toContain("value");
+    });
+
+    test("delete_cookie requires url and name", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.DELETE_COOKIE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("url");
+        expect(def!.function.parameters.required).toContain("name");
+    });
+
+    test("copy_to_clipboard requires text", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.COPY_TO_CLIPBOARD);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("text");
+    });
+
+    test("read_pdf requires url", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.READ_PDF);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("url");
+        expect(def!.function.parameters.properties.maxPages).toBeDefined();
+    });
+
+    test("search_history requires query", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.SEARCH_HISTORY);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("query");
+        expect(def!.function.parameters.properties.maxResults).toBeDefined();
+    });
+
+    test("create_bookmark has no required parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.CREATE_BOOKMARK);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(def!.function.parameters.properties.title).toBeDefined();
+        expect(def!.function.parameters.properties.url).toBeDefined();
+    });
+
+    test("get_bookmarks requires query", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.GET_BOOKMARKS);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("query");
+    });
+
+    test("create_window has no required parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.CREATE_WINDOW);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(def!.function.parameters.properties.url).toBeDefined();
+        expect(def!.function.parameters.properties.incognito).toBeDefined();
+    });
+
+    test("send_notification requires title and message", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.SEND_NOTIFICATION);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("title");
+        expect(def!.function.parameters.required).toContain("message");
     });
 });

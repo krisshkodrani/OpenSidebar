@@ -45,7 +45,11 @@ export function sanitizeData(
     }
 
     if (value instanceof Error) {
-      sanitized[key] = { message: value.message, name: value.name, stack: value.stack };
+      sanitized[key] = {
+        message: value.message,
+        name: value.name,
+        stack: value.stack,
+      };
       continue;
     }
 
@@ -116,7 +120,8 @@ class StorageLogger {
       this.flushTimer = null;
     }
 
-    if (this.isFlushing || this.buffer.length === 0 || !this.isAvailable()) return;
+    if (this.isFlushing || this.buffer.length === 0 || !this.isAvailable())
+      return;
 
     this.isFlushing = true;
     const entries = this.buffer.splice(0);
@@ -127,9 +132,10 @@ class StorageLogger {
       const merged = [...existing, ...entries];
 
       // Ring buffer: keep only the newest MAX_ENTRIES
-      const trimmed = merged.length > MAX_ENTRIES
-        ? merged.slice(merged.length - MAX_ENTRIES)
-        : merged;
+      const trimmed =
+        merged.length > MAX_ENTRIES
+          ? merged.slice(merged.length - MAX_ENTRIES)
+          : merged;
 
       await chrome.storage.local.set({ [STORAGE_KEY]: trimmed });
     } catch {

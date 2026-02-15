@@ -23,6 +23,8 @@ export const STUCK_THRESHOLDS = {
   ESCALATE: 9,
   /** Maximum turns before giving up entirely */
   GIVE_UP: 15,
+  /** Tighter give-up when already on the smart model (saves wasted turns) */
+  GIVE_UP_SMART: 10,
 } as const;
 
 /** Escalation/de-escalation cycle limits */

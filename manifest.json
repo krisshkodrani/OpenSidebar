@@ -14,7 +14,11 @@
     "offscreen",
     "alarms",
     "search",
-    "downloads"
+    "downloads",
+    "cookies",
+    "history",
+    "bookmarks",
+    "notifications"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

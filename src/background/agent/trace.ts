@@ -129,10 +129,7 @@ export class TraceRecorder {
   }
 
   /** Record a notable event (escalation, hint, done_rejected, etc.) */
-  recordEvent(
-    type: TraceEvent["type"],
-    data: Record<string, unknown>,
-  ): void {
+  recordEvent(type: TraceEvent["type"], data: Record<string, unknown>): void {
     this.turnEvents.push({ type, timestamp: Date.now(), data });
   }
 
@@ -205,10 +202,7 @@ export class TraceRecorder {
   private async flush(path: string, data: unknown): Promise<void> {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        FLUSH_TIMEOUT_MS,
-      );
+      const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
       await fetch(`${TRACE_SERVER_URL}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

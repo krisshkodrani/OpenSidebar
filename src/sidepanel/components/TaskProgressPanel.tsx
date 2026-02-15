@@ -1,5 +1,11 @@
 import React from "react";
-import { CheckCircle2, Circle, Loader2, XCircle, SkipForward } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  Loader2,
+  XCircle,
+  SkipForward,
+} from "lucide-react";
 import { useStore } from "../store";
 import type { SubtaskSummary } from "../../types";
 
@@ -8,13 +14,20 @@ function SubtaskIcon({ status }: { status: SubtaskSummary["status"] }) {
     case "completed":
       return <CheckCircle2 size={12} className="text-green-500 shrink-0" />;
     case "running":
-      return <Loader2 size={12} className="text-primary-500 animate-spin shrink-0" />;
+      return (
+        <Loader2 size={12} className="text-primary-500 animate-spin shrink-0" />
+      );
     case "failed":
       return <XCircle size={12} className="text-red-500 shrink-0" />;
     case "skipped":
       return <SkipForward size={12} className="text-warm-400 shrink-0" />;
     default:
-      return <Circle size={12} className="text-warm-300 dark:text-warm-600 shrink-0" />;
+      return (
+        <Circle
+          size={12}
+          className="text-warm-300 dark:text-warm-600 shrink-0"
+        />
+      );
   }
 }
 

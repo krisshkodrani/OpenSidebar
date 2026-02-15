@@ -89,7 +89,9 @@ export function formatStepLabel(
       return "Task complete";
     case ToolName.ESCALATE: {
       const reason = args.reason as string | undefined;
-      return reason ? `Escalate: "${reason.slice(0, 40)}"` : "Escalate to smarter model";
+      return reason
+        ? `Escalate: "${reason.slice(0, 40)}"`
+        : "Escalate to smarter model";
     }
     case ToolName.UPDATE_PLAN: {
       const subtasks = args.subtasks as string[] | undefined;
@@ -136,6 +138,64 @@ export function formatStepLabel(
         }
       }
       return "Download file";
+    }
+    case ToolName.CLICK_COORDINATES: {
+      const x = args.x as number | undefined;
+      const y = args.y as number | undefined;
+      return `Click at (${x ?? "?"}, ${y ?? "?"})`;
+    }
+    case ToolName.TRANSCRIBE_AUDIO:
+      return `Transcribe audio [${args.id ?? "?"}]`;
+    case ToolName.GROUP_TABS: {
+      const title = args.title as string | undefined;
+      return title ? `Group tabs: "${title}"` : "Group tabs";
+    }
+    case ToolName.UNGROUP_TABS:
+      return "Ungroup tabs";
+    case ToolName.GET_COOKIES:
+      return "Get cookies";
+    case ToolName.SET_COOKIE: {
+      const name = args.name as string | undefined;
+      return name ? `Set cookie "${name}"` : "Set cookie";
+    }
+    case ToolName.DELETE_COOKIE: {
+      const name = args.name as string | undefined;
+      return name ? `Delete cookie "${name}"` : "Delete cookie";
+    }
+    case ToolName.COPY_TO_CLIPBOARD:
+      return "Copy to clipboard";
+    case ToolName.READ_PDF: {
+      const url = args.url as string | undefined;
+      if (url) {
+        try {
+          return `Read PDF: ${new URL(url).hostname}`;
+        } catch {
+          return "Read PDF";
+        }
+      }
+      return "Read PDF";
+    }
+    case ToolName.SEARCH_HISTORY: {
+      const query = args.query as string | undefined;
+      return query
+        ? `Search history: "${query.slice(0, 30)}"`
+        : "Search history";
+    }
+    case ToolName.CREATE_BOOKMARK:
+      return "Create bookmark";
+    case ToolName.GET_BOOKMARKS: {
+      const query = args.query as string | undefined;
+      return query
+        ? `Search bookmarks: "${query.slice(0, 30)}"`
+        : "Search bookmarks";
+    }
+    case ToolName.CREATE_WINDOW: {
+      const incognito = args.incognito as boolean | undefined;
+      return incognito ? "Open new window (incognito)" : "Open new window";
+    }
+    case ToolName.SEND_NOTIFICATION: {
+      const title = args.title as string | undefined;
+      return title ? `Notify: "${title.slice(0, 30)}"` : "Send notification";
     }
     default:
       return String(toolName);

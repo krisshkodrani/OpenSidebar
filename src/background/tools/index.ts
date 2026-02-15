@@ -17,9 +17,15 @@ import { TokenUsage } from "../llm/types";
 export * from "./registry";
 
 /** Per-tab callbacks for reporting vision usage to the agent loop. */
-const visionUsageCallbacks = new Map<number, (usage: TokenUsage, durationMs: number, model: string) => void>();
+const visionUsageCallbacks = new Map<
+  number,
+  (usage: TokenUsage, durationMs: number, model: string) => void
+>();
 
-export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null, tabId?: number): void {
+export function setVisionUsageCallback(
+  cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null,
+  tabId?: number,
+): void {
   if (tabId != null) {
     if (cb) visionUsageCallbacks.set(tabId, cb);
     else visionUsageCallbacks.delete(tabId);
@@ -30,9 +36,15 @@ export function setVisionUsageCallback(cb: ((usage: TokenUsage, durationMs: numb
 }
 
 /** Per-tab callbacks for passing screenshot thumbnails to the agent loop. */
-const screenshotCaptureCallbacks = new Map<number, (thumbnailDataUrl: string) => void>();
+const screenshotCaptureCallbacks = new Map<
+  number,
+  (thumbnailDataUrl: string) => void
+>();
 
-export function setScreenshotCaptureCallback(cb: ((thumbnailDataUrl: string) => void) | null, tabId?: number): void {
+export function setScreenshotCaptureCallback(
+  cb: ((thumbnailDataUrl: string) => void) | null,
+  tabId?: number,
+): void {
   if (tabId != null) {
     if (cb) screenshotCaptureCallbacks.set(tabId, cb);
     else screenshotCaptureCallbacks.delete(tabId);
@@ -58,11 +70,15 @@ async function createThumbnail(dataUrl: string): Promise<string> {
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
 
-  const thumbBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.5 });
+  const thumbBlob = await canvas.convertToBlob({
+    type: "image/jpeg",
+    quality: 0.5,
+  });
   const arrayBuf = await thumbBlob.arrayBuffer();
   const bytes = new Uint8Array(arrayBuf);
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++)
+    binary += String.fromCharCode(bytes[i]);
   return `data:image/jpeg;base64,${btoa(binary)}`;
 }
 
@@ -90,7 +106,8 @@ const TYPE_TEXT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TYPE_TEXT,
-    description: "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
+    description:
+      "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
     parameters: {
       type: "object",
       properties: {
@@ -113,7 +130,8 @@ const SCROLL_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SCROLL_PAGE,
-    description: "Scroll the page or a container. If you know what text you're looking for, use find_element instead — it scrolls directly to it.",
+    description:
+      "Scroll the page or a container. If you know what text you're looking for, use find_element instead — it scrolls directly to it.",
     parameters: {
       type: "object",
       properties: {
@@ -136,7 +154,8 @@ const READ_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_PAGE,
-    description: "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page.",
+    description:
+      "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page.",
     parameters: {
       type: "object",
       properties: {},
@@ -208,7 +227,8 @@ const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CREATE_TAB,
-    description: "Open a new tab in this workspace. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
+    description:
+      "Open a new tab in this workspace. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
     parameters: {
       type: "object",
       properties: {
@@ -223,7 +243,8 @@ const CLOSE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLOSE_TAB,
-    description: "Close a tab in this workspace. Cannot close the current tab — switch_tab to another tab first.",
+    description:
+      "Close a tab in this workspace. Cannot close the current tab — switch_tab to another tab first.",
     parameters: {
       type: "object",
       properties: {
@@ -241,7 +262,8 @@ const SWITCH_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SWITCH_TAB,
-    description: "Switch to another tab in this workspace. All subsequent tool calls will run on this tab until you switch again.",
+    description:
+      "Switch to another tab in this workspace. All subsequent tool calls will run on this tab until you switch again.",
     parameters: {
       type: "object",
       properties: {
@@ -280,13 +302,15 @@ const DONE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DONE,
-    description: "Signal task completion or answer the user's question with a summary.",
+    description:
+      "Signal task completion or answer the user's question with a summary.",
     parameters: {
       type: "object",
       properties: {
         summary: {
           type: "string",
-          description: "What was accomplished, or your answer to the user's question.",
+          description:
+            "What was accomplished, or your answer to the user's question.",
         },
       },
       required: ["summary"],
@@ -298,7 +322,8 @@ const TAKE_SCREENSHOT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TAKE_SCREENSHOT,
-    description: "Capture and describe the visual layout. Use when element tags don't match what you expect, when you need spatial context, or when stuck after 3+ failed attempts.",
+    description:
+      "Capture and describe the visual layout. Use when element tags don't match what you expect, when you need spatial context, or when stuck after 3+ failed attempts.",
     parameters: {
       type: "object",
       properties: {},
@@ -311,7 +336,8 @@ const HOVER_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HOVER_ELEMENT,
-    description: "Hover to reveal menus, tooltips, or hidden content. Auto-scrolls to element.",
+    description:
+      "Hover to reveal menus, tooltips, or hidden content. Auto-scrolls to element.",
     parameters: {
       type: "object",
       properties: {
@@ -329,7 +355,8 @@ const FIND_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.FIND_ELEMENT,
-    description: "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists.",
+    description:
+      "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists.",
     parameters: {
       type: "object",
       properties: {
@@ -347,7 +374,8 @@ const SELECT_OPTION_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SELECT_OPTION,
-    description: "Select an option from a native HTML <select> dropdown. For custom dropdowns (div-based menus), click the menu to open it then click the option.",
+    description:
+      "Select an option from a native HTML <select> dropdown. For custom dropdowns (div-based menus), click the menu to open it then click the option.",
     parameters: {
       type: "object",
       properties: {
@@ -369,13 +397,15 @@ const PRESS_KEY_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.PRESS_KEY,
-    description: "Press a keyboard key on the page (dispatched to window, not a specific element). For typing into fields, use type_text. Useful for Escape, Tab, Enter, arrow keys.",
+    description:
+      "Press a keyboard key on the page (dispatched to window, not a specific element). For typing into fields, use type_text. Useful for Escape, Tab, Enter, arrow keys.",
     parameters: {
       type: "object",
       properties: {
         key: {
           type: "string",
-          description: 'Key name (e.g. "Enter", "Escape", "Tab", "ArrowDown", " " for space).',
+          description:
+            'Key name (e.g. "Enter", "Escape", "Tab", "ArrowDown", " " for space).',
         },
         modifiers: {
           type: "array",
@@ -383,7 +413,8 @@ const PRESS_KEY_DEF: ToolDefinition = {
             type: "string",
             enum: ["ctrl", "shift", "alt", "meta"],
           },
-          description: "Modifier keys to hold (e.g. ['ctrl'], ['shift', 'alt']).",
+          description:
+            "Modifier keys to hold (e.g. ['ctrl'], ['shift', 'alt']).",
         },
       },
       required: ["key"],
@@ -395,7 +426,8 @@ const DRAG_AND_DROP_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAG_AND_DROP,
-    description: "Drag source element to target element. Look for elements with draggable=true (sources) and dropzone=true (targets) in the page snapshot. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
+    description:
+      "Drag source element to target element. Look for elements with draggable=true (sources) and dropzone=true (targets) in the page snapshot. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
     parameters: {
       type: "object",
       properties: {
@@ -417,7 +449,8 @@ const DRAW_STROKE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DRAW_STROKE,
-    description: "Draw a stroke on a canvas. Coordinates are relative to the element's top-left corner (0,0 = top-left). Auto-scrolls to canvas.",
+    description:
+      "Draw a stroke on a canvas. Coordinates are relative to the element's top-left corner (0,0 = top-left). Auto-scrolls to canvas.",
     parameters: {
       type: "object",
       properties: {
@@ -425,10 +458,22 @@ const DRAW_STROKE_DEF: ToolDefinition = {
           type: "integer",
           description: "Canvas tag ID.",
         },
-        startX: { type: "number", description: "Start X (relative to element top-left)." },
-        startY: { type: "number", description: "Start Y (relative to element top-left)." },
-        endX: { type: "number", description: "End X (relative to element top-left)." },
-        endY: { type: "number", description: "End Y (relative to element top-left)." },
+        startX: {
+          type: "number",
+          description: "Start X (relative to element top-left).",
+        },
+        startY: {
+          type: "number",
+          description: "Start Y (relative to element top-left).",
+        },
+        endX: {
+          type: "number",
+          description: "End X (relative to element top-left).",
+        },
+        endY: {
+          type: "number",
+          description: "End Y (relative to element top-left).",
+        },
       },
       required: ["id", "startX", "startY", "endX", "endY"],
     },
@@ -439,7 +484,8 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.HIDE_ELEMENT,
-    description: "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead.",
+    description:
+      "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead.",
     parameters: {
       type: "object",
       properties: {
@@ -457,7 +503,8 @@ const ESCALATE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.ESCALATE,
-    description: "Switch to a smarter, slower model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
+    description:
+      "Switch to a smarter, slower model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
     parameters: {
       type: "object",
       properties: {
@@ -475,18 +522,21 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.UPDATE_PLAN,
-    description: "Report task progress or REVISE the plan if the current one is failing. Call after each subtask.",
+    description:
+      "Report task progress or REVISE the plan if the current one is failing. Call after each subtask.",
     parameters: {
       type: "object",
       properties: {
         subtasks: {
           type: "array",
           items: { type: "string" },
-          description: "Ordered list of subtask descriptions. You may overwrite the future steps if the current plan is stuck.",
+          description:
+            "Ordered list of subtask descriptions. You may overwrite the future steps if the current plan is stuck.",
         },
         currentIndex: {
           type: "integer",
-          description: "0-based index of the NEXT subtask to execute (after the one you just completed).",
+          description:
+            "0-based index of the NEXT subtask to execute (after the one you just completed).",
         },
         lastResult: {
           type: "string",
@@ -494,7 +544,8 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
         },
         rationale: {
           type: "string",
-          description: "Required if changing the plan: Explain WHY you are modifying the subtasks (e.g., 'Current approach failed because...').",
+          description:
+            "Required if changing the plan: Explain WHY you are modifying the subtasks (e.g., 'Current approach failed because...').",
         },
       },
       required: ["subtasks", "currentIndex"],
@@ -506,7 +557,8 @@ const READ_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.READ_ELEMENT,
-    description: "Read a specific attribute (href, src, value) of an element. For visible text, check the page snapshot first — it's already there.",
+    description:
+      "Read a specific attribute (href, src, value) of an element. For visible text, check the page snapshot first — it's already there.",
     parameters: {
       type: "object",
       properties: {
@@ -516,7 +568,8 @@ const READ_ELEMENT_DEF: ToolDefinition = {
         },
         attribute: {
           type: "string",
-          description: 'Attribute to read (e.g. "href", "src", "value"). Omit for text content.',
+          description:
+            'Attribute to read (e.g. "href", "src", "value"). Omit for text content.',
         },
       },
       required: ["id"],
@@ -528,7 +581,8 @@ const EXECUTE_JS_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.EXECUTE_JS,
-    description: "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string. IMPORTANT: No jQuery — use el.textContent.includes() not :contains(). Use el.getAttribute('class') not el.className (fails on SVG). Use Array.from(querySelectorAll(...)) for array methods. Wrap in (function(){ ... })() if using return.",
+    description:
+      "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string. IMPORTANT: No jQuery — use el.textContent.includes() not :contains(). Use el.getAttribute('class') not el.className (fails on SVG). Use Array.from(querySelectorAll(...)) for array methods. Wrap in (function(){ ... })() if using return.",
     parameters: {
       type: "object",
       properties: {
@@ -546,7 +600,8 @@ const UPLOAD_FILE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.UPLOAD_FILE,
-    description: "Upload a file to an <input type=\"file\"> element. Downloads the file from the URL (max 10MB), then injects it into the file input.",
+    description:
+      'Upload a file to an <input type="file"> element. Downloads the file from the URL (max 10MB), then injects it into the file input.',
     parameters: {
       type: "object",
       properties: {
@@ -581,7 +636,8 @@ const GO_FORWARD_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.GO_FORWARD,
-    description: "Go forward in browser history. Waits for page load to complete.",
+    description:
+      "Go forward in browser history. Waits for page load to complete.",
     parameters: {
       type: "object",
       properties: {},
@@ -594,7 +650,8 @@ const LIST_TABS_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.LIST_TABS,
-    description: "List open tabs in this workspace with their IDs, titles, and URLs.",
+    description:
+      "List open tabs in this workspace with their IDs, titles, and URLs.",
     parameters: {
       type: "object",
       properties: {},
@@ -607,7 +664,8 @@ const RIGHT_CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.RIGHT_CLICK,
-    description: "Right-click on an element (dispatches contextmenu event). Auto-scrolls to element. If no menu appears, the page may not handle contextmenu events.",
+    description:
+      "Right-click on an element (dispatches contextmenu event). Auto-scrolls to element. If no menu appears, the page may not handle contextmenu events.",
     parameters: {
       type: "object",
       properties: {
@@ -625,7 +683,8 @@ const SET_CHECKBOX_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.SET_CHECKBOX,
-    description: "Set a checkbox or radio to checked/unchecked. Fires input and change events.",
+    description:
+      "Set a checkbox or radio to checked/unchecked. Fires input and change events.",
     parameters: {
       type: "object",
       properties: {
@@ -643,11 +702,39 @@ const SET_CHECKBOX_DEF: ToolDefinition = {
   },
 };
 
+const CLICK_COORDINATES_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CLICK_COORDINATES,
+    description:
+      "Click at viewport X/Y coordinates. ONLY use after take_screenshot when the target has no [N] tag (canvas apps, games, obfuscated UIs). Prefer click_element when a tag exists.",
+    parameters: {
+      type: "object",
+      properties: {
+        x: {
+          type: "number",
+          description: "X coordinate in viewport pixels.",
+        },
+        y: {
+          type: "number",
+          description: "Y coordinate in viewport pixels.",
+        },
+        description: {
+          type: "string",
+          description: "What you expect to click (for logging).",
+        },
+      },
+      required: ["x", "y"],
+    },
+  },
+};
+
 const DOWNLOAD_FILE_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.DOWNLOAD_FILE,
-    description: "Start a download to the user's downloads folder. Returns immediately — download completes in the background.",
+    description:
+      "Start a download to the user's downloads folder. Returns immediately — download completes in the background.",
     parameters: {
       type: "object",
       properties: {
@@ -669,7 +756,8 @@ const TRANSCRIBE_AUDIO_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.TRANSCRIBE_AUDIO,
-    description: "Transcribe speech from an <audio> or <video> element. Use when a challenge hides information in audio (spoken codes, instructions, passwords). Returns the full text transcript. Requires a Groq API key in settings.",
+    description:
+      "Transcribe speech from an <audio> or <video> element. Use when a challenge hides information in audio (spoken codes, instructions, passwords). Returns the full text transcript. Requires a Groq API key in settings.",
     parameters: {
       type: "object",
       properties: {
@@ -679,6 +767,237 @@ const TRANSCRIBE_AUDIO_DEF: ToolDefinition = {
         },
       },
       required: ["id"],
+    },
+  },
+};
+
+const GROUP_TABS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GROUP_TABS,
+    description: "Group tabs into a tab group with a title and optional color.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabIds: {
+          type: "array",
+          items: { type: "integer", description: "Tab ID." },
+          description: "Tab IDs to group.",
+        },
+        title: { type: "string", description: "Group title." },
+        color: {
+          type: "string",
+          enum: [
+            "grey",
+            "blue",
+            "red",
+            "yellow",
+            "green",
+            "pink",
+            "purple",
+            "cyan",
+            "orange",
+          ],
+          description: "Group color.",
+        },
+      },
+      required: ["tabIds", "title"],
+    },
+  },
+};
+
+const UNGROUP_TABS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.UNGROUP_TABS,
+    description: "Remove tabs from their tab group.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabIds: {
+          type: "array",
+          items: { type: "integer", description: "Tab ID." },
+          description: "Tab IDs to ungroup.",
+        },
+      },
+      required: ["tabIds"],
+    },
+  },
+};
+
+const GET_COOKIES_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GET_COOKIES,
+    description: "Get cookies for a URL. Defaults to current tab.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "URL to get cookies for. Omit for current tab.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+const SET_COOKIE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SET_COOKIE,
+    description: "Set a cookie for a URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "URL to set cookie on." },
+        name: { type: "string", description: "Cookie name." },
+        value: { type: "string", description: "Cookie value." },
+        domain: { type: "string", description: "Cookie domain." },
+        path: { type: "string", description: "Cookie path." },
+      },
+      required: ["url", "name", "value"],
+    },
+  },
+};
+
+const DELETE_COOKIE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.DELETE_COOKIE,
+    description: "Delete a specific cookie by name and URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "URL the cookie belongs to." },
+        name: { type: "string", description: "Cookie name to delete." },
+      },
+      required: ["url", "name"],
+    },
+  },
+};
+
+const COPY_TO_CLIPBOARD_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.COPY_TO_CLIPBOARD,
+    description: "Copy text to the system clipboard.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Text to copy." },
+      },
+      required: ["text"],
+    },
+  },
+};
+
+const READ_PDF_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.READ_PDF,
+    description: "Extract text from a PDF URL. Returns page-by-page text.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "PDF URL." },
+        maxPages: {
+          type: "integer",
+          description: "Max pages to extract (default: 20).",
+        },
+      },
+      required: ["url"],
+    },
+  },
+};
+
+const SEARCH_HISTORY_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SEARCH_HISTORY,
+    description: "Search browser history by keyword.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search keyword." },
+        maxResults: {
+          type: "integer",
+          description: "Max results (default: 20).",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const CREATE_BOOKMARK_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CREATE_BOOKMARK,
+    description: "Bookmark a page. Defaults to current tab.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Bookmark title." },
+        url: { type: "string", description: "URL to bookmark." },
+        parentId: { type: "string", description: "Parent folder ID." },
+      },
+      required: [],
+    },
+  },
+};
+
+const GET_BOOKMARKS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GET_BOOKMARKS,
+    description: "Search bookmarks by keyword.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search keyword." },
+        maxResults: {
+          type: "integer",
+          description: "Max results (default: 20).",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+const CREATE_WINDOW_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CREATE_WINDOW,
+    description: "Open a new browser window. Optionally incognito.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "URL to open in the new window." },
+        incognito: {
+          type: "boolean",
+          description: "Open in incognito mode.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+const SEND_NOTIFICATION_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SEND_NOTIFICATION,
+    description: "Show a desktop notification to the user.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Notification title." },
+        message: { type: "string", description: "Notification body." },
+      },
+      required: ["title", "message"],
     },
   },
 };
@@ -874,10 +1193,8 @@ export function registerTools() {
     SELECT_OPTION_DEF,
     (args, tabId) => executeContentTool(ToolName.SELECT_OPTION, args, tabId),
   );
-  toolRegistry.register(
-    ToolName.PRESS_KEY,
-    PRESS_KEY_DEF,
-    (args, tabId) => executeContentTool(ToolName.PRESS_KEY, args, tabId),
+  toolRegistry.register(ToolName.PRESS_KEY, PRESS_KEY_DEF, (args, tabId) =>
+    executeContentTool(ToolName.PRESS_KEY, args, tabId),
   );
   toolRegistry.register(
     ToolName.DRAG_AND_DROP,
@@ -905,12 +1222,16 @@ export function registerTools() {
             if (!targetExists) missing.push(`targetId [${targetId}]`);
 
             // Find similar elements to suggest
-            const draggables = elements.filter((el: any) =>
-              el.attributes?.draggable === "true" || el.tagName === "li"
-            ).slice(0, 8);
-            const suggestions = draggables.length > 0
-              ? `\nAvailable draggable/list elements: ${draggables.map((el: any) => `[${el.tag}] ${el.tagName} "${(el.text || "").slice(0, 30)}"`).join(", ")}`
-              : "";
+            const draggables = elements
+              .filter(
+                (el: any) =>
+                  el.attributes?.draggable === "true" || el.tagName === "li",
+              )
+              .slice(0, 8);
+            const suggestions =
+              draggables.length > 0
+                ? `\nAvailable draggable/list elements: ${draggables.map((el: any) => `[${el.tag}] ${el.tagName} "${(el.text || "").slice(0, 30)}"`).join(", ")}`
+                : "";
 
             return `Error: Stale element IDs — ${missing.join(" and ")} no longer exist on the page.${suggestions}\nCall read_page to get fresh element IDs before retrying.`;
           }
@@ -922,10 +1243,8 @@ export function registerTools() {
       return executeContentTool(ToolName.DRAG_AND_DROP, args, tabId);
     },
   );
-  toolRegistry.register(
-    ToolName.DRAW_STROKE,
-    DRAW_STROKE_DEF,
-    (args, tabId) => executeContentTool(ToolName.DRAW_STROKE, args, tabId),
+  toolRegistry.register(ToolName.DRAW_STROKE, DRAW_STROKE_DEF, (args, tabId) =>
+    executeContentTool(ToolName.DRAW_STROKE, args, tabId),
   );
   toolRegistry.register(
     ToolName.HIDE_ELEMENT,
@@ -934,24 +1253,16 @@ export function registerTools() {
   );
 
   // Escalation tool (intercepted by agent loop before executor runs)
-  toolRegistry.register(
-    ToolName.ESCALATE,
-    ESCALATE_DEF,
-    async (args) => {
-      // This executor is a fallback — the loop intercepts escalate before reaching here
-      return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
-    },
-  );
+  toolRegistry.register(ToolName.ESCALATE, ESCALATE_DEF, async (args) => {
+    // This executor is a fallback — the loop intercepts escalate before reaching here
+    return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
+  });
 
   // Plan progress tool (intercepted by agent loop before executor runs)
-  toolRegistry.register(
-    ToolName.UPDATE_PLAN,
-    UPDATE_PLAN_DEF,
-    async (args) => {
-      const subtasks = args.subtasks as string[];
-      return `Plan updated: ${subtasks.length} subtasks, current: ${args.currentIndex}`;
-    },
-  );
+  toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
+    const subtasks = args.subtasks as string[];
+    return `Plan updated: ${subtasks.length} subtasks, current: ${args.currentIndex}`;
+  });
 
   // Service Worker Tools (chrome.* APIs)
   toolRegistry.register(
@@ -1057,7 +1368,12 @@ export function registerTools() {
         const result = await describeScreenshot(dataUrl, signal);
         // Report vision usage to the agent loop if callback is registered
         const usageCallback = visionUsageCallbacks.get(tabId);
-        if (result.usage && result.model && result.durationMs != null && usageCallback) {
+        if (
+          result.usage &&
+          result.model &&
+          result.durationMs != null &&
+          usageCallback
+        ) {
           usageCallback(result.usage, result.durationMs, result.model);
         }
         return result.description;
@@ -1080,16 +1396,21 @@ export function registerTools() {
     (args, tabId) => executeContentTool(ToolName.READ_ELEMENT, args, tabId),
   );
 
-  toolRegistry.register(
-    ToolName.RIGHT_CLICK,
-    RIGHT_CLICK_DEF,
-    (args, tabId) => executeContentTool(ToolName.RIGHT_CLICK, args, tabId),
+  toolRegistry.register(ToolName.RIGHT_CLICK, RIGHT_CLICK_DEF, (args, tabId) =>
+    executeContentTool(ToolName.RIGHT_CLICK, args, tabId),
   );
 
   toolRegistry.register(
     ToolName.SET_CHECKBOX,
     SET_CHECKBOX_DEF,
     (args, tabId) => executeContentTool(ToolName.SET_CHECKBOX, args, tabId),
+  );
+
+  toolRegistry.register(
+    ToolName.CLICK_COORDINATES,
+    CLICK_COORDINATES_DEF,
+    (args, tabId) =>
+      executeContentTool(ToolName.CLICK_COORDINATES, args, tabId),
   );
 
   toolRegistry.register(
@@ -1102,7 +1423,8 @@ export function registerTools() {
 
       try {
         const response = await fetch(urlResult.value);
-        if (!response.ok) return `Error: fetch failed with status ${response.status}`;
+        if (!response.ok)
+          return `Error: fetch failed with status ${response.status}`;
 
         const contentLength = response.headers.get("content-length");
         if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
@@ -1116,39 +1438,41 @@ export function registerTools() {
 
         const bytes = new Uint8Array(buffer);
         let binary = "";
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        for (let i = 0; i < bytes.length; i++)
+          binary += String.fromCharCode(bytes[i]);
         const base64 = btoa(binary);
 
-        const contentType = response.headers.get("content-type") || "application/octet-stream";
+        const contentType =
+          response.headers.get("content-type") || "application/octet-stream";
         const urlPath = new URL(urlResult.value).pathname;
         const filename = urlPath.split("/").pop() || "file";
 
-        return executeContentTool(ToolName.UPLOAD_FILE, {
-          id: args.id,
-          data: base64,
-          filename,
-          mimeType: contentType,
-        }, tabId);
+        return executeContentTool(
+          ToolName.UPLOAD_FILE,
+          {
+            id: args.id,
+            data: base64,
+            filename,
+            mimeType: contentType,
+          },
+          tabId,
+        );
       } catch (e: any) {
         return `Error fetching file: ${e.message}`;
       }
     },
   );
 
-  toolRegistry.register(
-    ToolName.GO_BACK,
-    GO_BACK_DEF,
-    async (_args, tabId) => {
-      try {
-        await chrome.tabs.goBack(tabId);
-        await waitForNavigation(tabId);
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        return "Navigated back. Fresh page snapshot is available.";
-      } catch (e: any) {
-        return `Error going back: ${e.message}`;
-      }
-    },
-  );
+  toolRegistry.register(ToolName.GO_BACK, GO_BACK_DEF, async (_args, tabId) => {
+    try {
+      await chrome.tabs.goBack(tabId);
+      await waitForNavigation(tabId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return "Navigated back. Fresh page snapshot is available.";
+    } catch (e: any) {
+      return `Error going back: ${e.message}`;
+    }
+  });
 
   toolRegistry.register(
     ToolName.GO_FORWARD,
@@ -1165,18 +1489,15 @@ export function registerTools() {
     },
   );
 
-  toolRegistry.register(
-    ToolName.LIST_TABS,
-    LIST_TABS_DEF,
-    async () => {
-      const tabs = await chrome.tabs.query({});
-      if (tabs.length === 0) return "No open tabs.";
-      const lines = tabs.map(
-        (t: any) => `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.active ? " [active]" : ""}`,
-      );
-      return lines.join("\n");
-    },
-  );
+  toolRegistry.register(ToolName.LIST_TABS, LIST_TABS_DEF, async () => {
+    const tabs = await chrome.tabs.query({});
+    if (tabs.length === 0) return "No open tabs.";
+    const lines = tabs.map(
+      (t: any) =>
+        `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.active ? " [active]" : ""}`,
+    );
+    return lines.join("\n");
+  });
 
   toolRegistry.register(
     ToolName.EXECUTE_JS,
@@ -1190,7 +1511,8 @@ export function registerTools() {
           func: (c: string) => {
             try {
               const result = eval(c);
-              if (result === null || result === undefined) return String(result);
+              if (result === null || result === undefined)
+                return String(result);
               if (typeof result === "object") {
                 try {
                   return JSON.stringify(result, null, 2);
@@ -1238,10 +1560,18 @@ export function registerTools() {
     TRANSCRIBE_AUDIO_DEF,
     async (args, tabId) => {
       // 1. Get audio source URL from the element
-      let audioUrl = await executeContentTool(ToolName.READ_ELEMENT, { id: args.id, attribute: "src" }, tabId);
+      let audioUrl = await executeContentTool(
+        ToolName.READ_ELEMENT,
+        { id: args.id, attribute: "src" },
+        tabId,
+      );
       if (!audioUrl || audioUrl.startsWith("Error") || audioUrl.trim() === "") {
         // Fallback: try currentSrc (handles <source> child elements)
-        audioUrl = await executeContentTool(ToolName.READ_ELEMENT, { id: args.id, attribute: "currentSrc" }, tabId);
+        audioUrl = await executeContentTool(
+          ToolName.READ_ELEMENT,
+          { id: args.id, attribute: "currentSrc" },
+          tabId,
+        );
       }
       if (!audioUrl || audioUrl.startsWith("Error") || audioUrl.trim() === "") {
         return `Error: Element [${args.id}] has no audio source URL. Try execute_js to inspect the element.`;
@@ -1257,11 +1587,15 @@ export function registerTools() {
         const stored = await chrome.storage.sync.get("userSettings");
         const settings = stored.userSettings as UserSettings | undefined;
         groqApiKey = settings?.groqApiKey || "";
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       if (!groqApiKey) {
         try {
           groqApiKey = (globalThis as any).__GROQ_API_KEY__ || "";
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       if (!groqApiKey) {
         return "Error: Groq API key required. Configure it in Settings.";
@@ -1271,7 +1605,8 @@ export function registerTools() {
       let audioBlob: Blob;
       try {
         const response = await fetch(urlResult.value);
-        if (!response.ok) return `Error: Failed to fetch audio (HTTP ${response.status}).`;
+        if (!response.ok)
+          return `Error: Failed to fetch audio (HTTP ${response.status}).`;
         const contentLength = response.headers.get("content-length");
         if (contentLength && parseInt(contentLength, 10) > 25 * 1024 * 1024) {
           return "Error: Audio file exceeds 25MB Whisper limit.";
@@ -1293,11 +1628,14 @@ export function registerTools() {
         formData.append("file", audioBlob, filename);
         formData.append("model", "whisper-large-v3-turbo");
 
-        const whisperResponse = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${groqApiKey}` },
-          body: formData,
-        });
+        const whisperResponse = await fetch(
+          "https://api.groq.com/openai/v1/audio/transcriptions",
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${groqApiKey}` },
+            body: formData,
+          },
+        );
         if (!whisperResponse.ok) {
           const errText = await whisperResponse.text().catch(() => "");
           return `Error: Whisper API returned ${whisperResponse.status}. ${errText}`;
@@ -1306,6 +1644,262 @@ export function registerTools() {
         return result.text || "Transcription returned empty text.";
       } catch (e: any) {
         return `Error calling Whisper API: ${e.message}`;
+      }
+    },
+  );
+
+  // --- Chrome API Tools ---
+
+  toolRegistry.register(ToolName.GROUP_TABS, GROUP_TABS_DEF, async (args) => {
+    const tabIds = args.tabIds as number[];
+    const title = args.title as string;
+    const color = args.color as string | undefined;
+    try {
+      const groupId = await chrome.tabs.group({ tabIds });
+      const updateProps: any = { title };
+      if (color) updateProps.color = color;
+      await chrome.tabGroups.update(groupId, updateProps);
+      return `Grouped ${tabIds.length} tab(s) into "${title}" (group ID: ${groupId})`;
+    } catch (e: any) {
+      return `Error grouping tabs: ${e.message}`;
+    }
+  });
+
+  toolRegistry.register(
+    ToolName.UNGROUP_TABS,
+    UNGROUP_TABS_DEF,
+    async (args) => {
+      const tabIds = args.tabIds as number[];
+      try {
+        await chrome.tabs.ungroup(tabIds);
+        return `Ungrouped ${tabIds.length} tab(s).`;
+      } catch (e: any) {
+        return `Error ungrouping tabs: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.GET_COOKIES,
+    GET_COOKIES_DEF,
+    async (args, tabId) => {
+      let url = args.url as string | undefined;
+      if (!url) {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          url = tab.url;
+        } catch {
+          return "Error: Could not determine current tab URL.";
+        }
+      }
+      if (!url) return "Error: No URL available.";
+      try {
+        const cookies = await chrome.cookies.getAll({ url });
+        if (cookies.length === 0) return "No cookies found for this URL.";
+        return cookies.map((c: any) => `${c.name}=${c.value}`).join("\n");
+      } catch (e: any) {
+        return `Error getting cookies: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(ToolName.SET_COOKIE, SET_COOKIE_DEF, async (args) => {
+    const url = args.url as string;
+    const name = args.name as string;
+    const value = args.value as string;
+    const domain = args.domain as string | undefined;
+    const path = args.path as string | undefined;
+    try {
+      const opts: any = { url, name, value };
+      if (domain) opts.domain = domain;
+      if (path) opts.path = path;
+      await chrome.cookies.set(opts);
+      return `Cookie "${name}" set on ${url}`;
+    } catch (e: any) {
+      return `Error setting cookie: ${e.message}`;
+    }
+  });
+
+  toolRegistry.register(
+    ToolName.DELETE_COOKIE,
+    DELETE_COOKIE_DEF,
+    async (args) => {
+      const url = args.url as string;
+      const name = args.name as string;
+      try {
+        await chrome.cookies.remove({ url, name });
+        return `Cookie "${name}" deleted from ${url}`;
+      } catch (e: any) {
+        return `Error deleting cookie: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.COPY_TO_CLIPBOARD,
+    COPY_TO_CLIPBOARD_DEF,
+    async (args, tabId) => {
+      const text = args.text as string;
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (t: string) => {
+            const ta = document.createElement("textarea");
+            ta.value = t;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+          },
+          args: [text],
+        });
+        return "Copied to clipboard.";
+      } catch (e: any) {
+        return `Error copying to clipboard: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(ToolName.READ_PDF, READ_PDF_DEF, async (args) => {
+    const url = args.url as string;
+    const maxPages = args.maxPages as number | undefined;
+    const urlResult = sanitizeUrl(url);
+    if (!urlResult.ok) return `Error: ${urlResult.error}`;
+    try {
+      const res = await sendMessageToMemory({
+        action: "extract_pdf",
+        url: urlResult.value,
+        maxPages,
+      } as any);
+      if ((res as any).action === "extract_pdf") {
+        let text = (res as any).text as string;
+        if (text.length > 50_000) {
+          text = text.slice(0, 50_000) + "\n[...truncated at 50K chars]";
+        }
+        return text || "PDF contained no extractable text.";
+      }
+      return "Error: Unexpected response from PDF extractor.";
+    } catch (e: any) {
+      return `Error reading PDF: ${e.message}`;
+    }
+  });
+
+  toolRegistry.register(
+    ToolName.SEARCH_HISTORY,
+    SEARCH_HISTORY_DEF,
+    async (args) => {
+      const query = args.query as string;
+      const maxResults = (args.maxResults as number) || 20;
+      try {
+        const items = await chrome.history.search({
+          text: query,
+          maxResults,
+        });
+        if (items.length === 0) return "No history entries found.";
+        return items
+          .map((item: any) => {
+            const lastVisit = item.lastVisitTime
+              ? new Date(item.lastVisitTime).toISOString().slice(0, 16)
+              : "unknown";
+            return `${item.title || "(untitled)"} — ${item.url} (visited ${item.visitCount || 1} time(s), last: ${lastVisit})`;
+          })
+          .join("\n");
+      } catch (e: any) {
+        return `Error searching history: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.CREATE_BOOKMARK,
+    CREATE_BOOKMARK_DEF,
+    async (args, tabId) => {
+      let title = args.title as string | undefined;
+      let url = args.url as string | undefined;
+      const parentId = args.parentId as string | undefined;
+      if (!title || !url) {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (!title) title = tab.title || "Untitled";
+          if (!url) url = tab.url || "";
+        } catch {
+          return "Error: Could not determine current tab info.";
+        }
+      }
+      try {
+        const opts: any = { title, url };
+        if (parentId) opts.parentId = parentId;
+        const bm = await chrome.bookmarks.create(opts);
+        return `Bookmarked: "${bm.title}" — ${bm.url}`;
+      } catch (e: any) {
+        return `Error creating bookmark: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.GET_BOOKMARKS,
+    GET_BOOKMARKS_DEF,
+    async (args) => {
+      const query = args.query as string;
+      const maxResults = (args.maxResults as number) || 20;
+      try {
+        const results = await chrome.bookmarks.search(query);
+        if (results.length === 0) return "No bookmarks found.";
+        return results
+          .slice(0, maxResults)
+          .map(
+            (bm: any) =>
+              `${bm.title || "(untitled)"} — ${bm.url || "(folder)"}`,
+          )
+          .join("\n");
+      } catch (e: any) {
+        return `Error searching bookmarks: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.CREATE_WINDOW,
+    CREATE_WINDOW_DEF,
+    async (args) => {
+      const url = args.url as string | undefined;
+      const incognito = args.incognito as boolean | undefined;
+      try {
+        const opts: any = { focused: true };
+        if (url) {
+          const urlResult = sanitizeUrl(url);
+          if (!urlResult.ok) return `Error: ${urlResult.error}`;
+          opts.url = urlResult.value;
+        }
+        if (incognito) opts.incognito = true;
+        const win = await chrome.windows.create(opts);
+        return `Created new ${incognito ? "incognito " : ""}window (ID: ${win.id})`;
+      } catch (e: any) {
+        return `Error creating window: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.SEND_NOTIFICATION,
+    SEND_NOTIFICATION_DEF,
+    async (args) => {
+      const title = args.title as string;
+      const message = args.message as string;
+      try {
+        const notifId = `opensidebar-${Date.now()}`;
+        chrome.notifications.create(notifId, {
+          type: "basic",
+          iconUrl: "/public/icons/icon-128.png",
+          title,
+          message,
+        } as any);
+        return `Notification sent: "${title}"`;
+      } catch (e: any) {
+        return `Error sending notification: ${e.message}`;
       }
     },
   );

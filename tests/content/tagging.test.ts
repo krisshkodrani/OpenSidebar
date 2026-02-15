@@ -6,6 +6,8 @@ import {
   truncateText,
   resetStableIds,
   getTagMap,
+  addDynamicTag,
+  MAX_TAGGED_ELEMENTS,
 } from "../../src/content/tagging";
 import "../../tests/setup";
 
@@ -434,5 +436,81 @@ describe("truncateText", () => {
 
   test("returns empty string for empty input", () => {
     expect(truncateText("", 80)).toBe("");
+  });
+});
+
+describe("dynamic tag preservation", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  test("dynamic tag survives tagElements() refresh", () => {
+    // Create a non-interactive element and dynamically tag it
+    const span = document.createElement("span");
+    span.textContent = "Drop Zone";
+    document.body.appendChild(span);
+
+    const dynId = addDynamicTag(span);
+    expect(getTagMap().has(dynId)).toBe(true);
+
+    // tagElements() clears tagMap, but dynamic tag should be restored
+    const results = tagElements();
+    expect(getTagMap().has(dynId)).toBe(true);
+    expect(getTagMap().get(dynId)).toBe(span);
+    // Should also appear in the results array
+    const dynResult = results.find((r) => r.tag === dynId);
+    expect(dynResult).toBeDefined();
+    expect(dynResult!.text).toBe("Drop Zone");
+  });
+
+  test("dynamic tag cleaned when element removed from DOM", () => {
+    const span = document.createElement("span");
+    span.textContent = "Temp Element";
+    document.body.appendChild(span);
+
+    const dynId = addDynamicTag(span);
+    expect(getTagMap().has(dynId)).toBe(true);
+
+    // Remove element from DOM
+    span.remove();
+
+    // tagElements() should clean up the dynamic tag
+    const results = tagElements();
+    expect(getTagMap().has(dynId)).toBe(false);
+    expect(results.find((r) => r.tag === dynId)).toBeUndefined();
+  });
+
+  test("dynamic tag deduplicates with interactive scan", () => {
+    // A button is interactive — it will be tagged by the normal scan
+    const btn = document.createElement("button");
+    btn.textContent = "Click Me";
+    document.body.appendChild(btn);
+
+    // Dynamically tag it before the scan
+    const dynId = addDynamicTag(btn);
+
+    // tagElements() should tag it via interactive scan, not double-add
+    const results = tagElements();
+    const matches = results.filter((r) => r.tag === dynId);
+    expect(matches.length).toBe(1);
+  });
+
+  test("dynamic tag respects MAX_TAGGED_ELEMENTS cap", () => {
+    // Fill up to MAX with interactive buttons
+    for (let i = 0; i < MAX_TAGGED_ELEMENTS; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Button ${i}`;
+      document.body.appendChild(btn);
+    }
+
+    // Add a dynamic tag for a non-interactive element
+    const span = document.createElement("span");
+    span.textContent = "Overflow Drop Zone";
+    document.body.appendChild(span);
+    addDynamicTag(span);
+
+    const results = tagElements();
+    expect(results.length).toBeLessThanOrEqual(MAX_TAGGED_ELEMENTS);
   });
 });

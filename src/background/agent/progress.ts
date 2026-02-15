@@ -27,7 +27,9 @@ function contentSignatures(snap: DomSnapshot): Set<string> {
     const attrSig = STATE_ATTRS.filter((a) => a in e.attributes)
       .map((a) => `${a}=${e.attributes[a]}`)
       .join(",");
-    sigs.add(`${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`);
+    sigs.add(
+      `${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`,
+    );
   }
   return sigs;
 }

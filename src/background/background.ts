@@ -15,7 +15,11 @@ import {
   registerNavigationListeners,
   setNavigationCallbacks,
 } from "./navigation";
-import { registerAlarmListener, startKeepalive, stopKeepalive } from "./keepalive";
+import {
+  registerAlarmListener,
+  startKeepalive,
+  stopKeepalive,
+} from "./keepalive";
 
 logger.info("system", "Service Worker Initialized");
 
@@ -58,11 +62,16 @@ let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSidePanelOpens = new Set<number>();
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
-async function resolveWorkspaceId(tabId: number, provided?: string | null): Promise<string> {
+async function resolveWorkspaceId(
+  tabId: number,
+  provided?: string | null,
+): Promise<string> {
   if (provided) return provided;
   const ws = await workspaceManager.getWorkspaceForTab(tabId);
   if (ws?.id) return ws.id;
-  logger.debug("workspace", "No workspace found for tab, using default", { tabId });
+  logger.debug("workspace", "No workspace found for tab, using default", {
+    tabId,
+  });
   return "default";
 }
 
@@ -103,7 +112,9 @@ async function hasUserOpenedPanel(tabId: number): Promise<boolean> {
 async function removeUserOpenedPanel(tabId: number): Promise<void> {
   const data = await chrome.storage.session.get(USER_OPENED_KEY);
   const arr: number[] = data[USER_OPENED_KEY] ?? [];
-  await chrome.storage.session.set({ [USER_OPENED_KEY]: arr.filter((id) => id !== tabId) });
+  await chrome.storage.session.set({
+    [USER_OPENED_KEY]: arr.filter((id) => id !== tabId),
+  });
 }
 
 // 6. Restore workspaces on startup (check for existing OpenSidebar tab groups)
@@ -144,7 +155,9 @@ chrome.action.onClicked.addListener(async (tab) => {
       // Fallback: This is the user gesture path.
       try {
         await chrome.sidePanel.open({ tabId });
-      } catch (_e) { /* sidePanel.open fallback; error already logged above */ }
+      } catch (_e) {
+        /* sidePanel.open fallback; error already logged above */
+      }
     }
   }
 });
@@ -291,7 +304,9 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
           .catch(() => {});
       }, 150);
 
-      logger.debug("sidebar", "Panel close scheduled for non-workspace tab", { tabId });
+      logger.debug("sidebar", "Panel close scheduled for non-workspace tab", {
+        tabId,
+      });
     } catch (e) {
       logger.debug("sidebar", "Failed to close panel for non-workspace tab", {
         tabId,
@@ -366,11 +381,17 @@ chrome.runtime.onMessage.addListener(
     ) {
       const wsId = message.payload.workspaceId;
       (async () => {
-        const resolvedWsId = await resolveWorkspaceId(message.payload.tabId, wsId);
+        const resolvedWsId = await resolveWorkspaceId(
+          message.payload.tabId,
+          wsId,
+        );
         const loop = agentLoops.get(resolvedWsId);
         if (message.payload.isHint && loop) {
           // Inject hint into running loop — don't start a new loop
-          logger.debug("agent", "User hint", { text: message.payload.text, workspaceId: resolvedWsId });
+          logger.debug("agent", "User hint", {
+            text: message.payload.text,
+            workspaceId: resolvedWsId,
+          });
           loop.injectHint(message.payload.text);
           // If paused (e.g. awaiting plan approval), auto-resume after hint injection
           if (loop.isPaused()) {
@@ -404,9 +425,12 @@ chrome.runtime.onMessage.addListener(
           await maybeStopKeepalive();
         }
         // Notify content script to remove the border
-        chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-          if (tab?.id) sendAgentActivity(tab.id, false);
-        }).catch(() => {});
+        chrome.tabs
+          .query({ active: true, currentWindow: true })
+          .then(([tab]) => {
+            if (tab?.id) sendAgentActivity(tab.id, false);
+          })
+          .catch(() => {});
       })();
       return false;
     }
@@ -448,7 +472,10 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
-async function handleUserChat(payload: { text: string; tabId: number }, workspaceId: string) {
+async function handleUserChat(
+  payload: { text: string; tabId: number },
+  workspaceId: string,
+) {
   const { tabId } = payload;
   const text = sanitizeUserInput(payload.text);
   logger.debug("agent", "User message", { text, tabId, workspaceId });
@@ -458,8 +485,8 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
   const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
-  const cerebrasApiKey = settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
-  const useGroqFast = !!(settings.useGroqFast && groqApiKey);
+  const cerebrasApiKey =
+    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
 
   if (!openRouterApiKey) {
     chrome.runtime.sendMessage({
@@ -467,7 +494,10 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
       workspaceId,
-      payload: { status: AgentStatus.ERROR, detail: "No OpenRouter API Key configured." },
+      payload: {
+        status: AgentStatus.ERROR,
+        detail: "No OpenRouter API Key configured.",
+      },
     });
     return;
   }
@@ -477,55 +507,61 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
   // 2. Initialize Loop if needed
   let loop = agentLoops.get(workspaceId);
   if (!loop) {
-    loop = new AgentLoop(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast, {
-      onStatusUpdate: (status, detail) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_STATUS",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { status, detail },
-          })
-          .catch(() => {});
-        // Send AGENT_ACTIVITY to content script when agent starts/stops
-        if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
-          sendAgentActivity(tabId, false);
-          agentLoops.delete(workspaceId);
-          maybeStopKeepalive().catch(() => {});
-        }
+    loop = new AgentLoop(
+      openRouterApiKey,
+      groqApiKey,
+      cerebrasApiKey,
+      {
+        onStatusUpdate: (status, detail) => {
+          chrome.runtime
+            .sendMessage({
+              type: "AGENT_STATUS",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              workspaceId,
+              payload: { status, detail },
+            })
+            .catch(() => {});
+          // Send AGENT_ACTIVITY to content script when agent starts/stops
+          if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
+            sendAgentActivity(tabId, false);
+            agentLoops.delete(workspaceId);
+            maybeStopKeepalive().catch(() => {});
+          }
+        },
+        onMessage: (text, toolCalls) => {
+          chrome.runtime
+            .sendMessage({
+              type: "AGENT_RESPONSE",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              workspaceId,
+              payload: { text, toolCalls, isStreaming: false },
+            })
+            .catch(() => {});
+        },
+        onStep: (step, update) => {
+          chrome.runtime
+            .sendMessage({
+              type: "AGENT_STEP",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              workspaceId,
+              payload: { step, update },
+            })
+            .catch(() => {});
+        },
       },
-      onMessage: (text, toolCalls) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_RESPONSE",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { text, toolCalls, isStreaming: false },
-          })
-          .catch(() => {});
+      {
+        maxContextTokens: settings.contextWindowSize || 32000,
+        maxTurns: effectiveMaxTurns,
+        showElementTags: settings.showElementTags ?? false,
+        confirmPlan: settings.confirmPlan ?? false,
+        showSessionMetrics: settings.showSessionMetrics ?? false,
+        disabledTools: buildDisabledTools(settings),
+        workspaceId,
       },
-      onStep: (step, update) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_STEP",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { step, update },
-          })
-          .catch(() => {});
-      },
-    }, {
-      maxContextTokens: settings.contextWindowSize || 32000,
-      maxTurns: effectiveMaxTurns,
-      showElementTags: settings.showElementTags ?? false,
-      confirmPlan: settings.confirmPlan ?? false,
-      showSessionMetrics: settings.showSessionMetrics ?? false,
-      disabledTools: buildDisabledTools(settings),
-      workspaceId,
-    });
+    );
     agentLoops.set(workspaceId, loop);
   }
 
@@ -566,7 +602,11 @@ async function handleUserChat(payload: { text: string; tabId: number }, workspac
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { includeText: true, refresh: true, showTags: settings.showElementTags ?? false },
+        payload: {
+          includeText: true,
+          refresh: true,
+          showTags: settings.showElementTags ?? false,
+        },
       });
       snapshot = response.payload.snapshot;
     }
@@ -604,8 +644,8 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
   const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
-  const cerebrasApiKey = settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
-  const useGroqFast = !!(settings.useGroqFast && groqApiKey);
+  const cerebrasApiKey =
+    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
   const workspaceId = state.workspaceId ?? "default";
 
   if (!openRouterApiKey) {
@@ -625,54 +665,60 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
   }
 
   // Create a new agent loop with restored state
-  const loop = new AgentLoop(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast, {
-    onStatusUpdate: (status, detail) => {
-      chrome.runtime
-        .sendMessage({
-          type: "AGENT_STATUS",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId,
-          payload: { status, detail },
-        })
-        .catch(() => {});
-      if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
-        sendAgentActivity(state.activeTabId, false);
-        agentLoops.delete(workspaceId);
-        maybeStopKeepalive().catch(() => {});
-      }
+  const loop = new AgentLoop(
+    openRouterApiKey,
+    groqApiKey,
+    cerebrasApiKey,
+    {
+      onStatusUpdate: (status, detail) => {
+        chrome.runtime
+          .sendMessage({
+            type: "AGENT_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            workspaceId,
+            payload: { status, detail },
+          })
+          .catch(() => {});
+        if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
+          sendAgentActivity(state.activeTabId, false);
+          agentLoops.delete(workspaceId);
+          maybeStopKeepalive().catch(() => {});
+        }
+      },
+      onMessage: (text, toolCalls) => {
+        chrome.runtime
+          .sendMessage({
+            type: "AGENT_RESPONSE",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            workspaceId,
+            payload: { text, toolCalls, isStreaming: false },
+          })
+          .catch(() => {});
+      },
+      onStep: (step, update) => {
+        chrome.runtime
+          .sendMessage({
+            type: "AGENT_STEP",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            workspaceId,
+            payload: { step, update },
+          })
+          .catch(() => {});
+      },
     },
-    onMessage: (text, toolCalls) => {
-      chrome.runtime
-        .sendMessage({
-          type: "AGENT_RESPONSE",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId,
-          payload: { text, toolCalls, isStreaming: false },
-        })
-        .catch(() => {});
+    {
+      maxContextTokens: settings.contextWindowSize || 32000,
+      maxTurns: settings.maxTurns || 30,
+      showElementTags: settings.showElementTags ?? false,
+      confirmPlan: settings.confirmPlan ?? false,
+      showSessionMetrics: settings.showSessionMetrics ?? false,
+      disabledTools: buildDisabledTools(settings),
+      workspaceId,
     },
-    onStep: (step, update) => {
-      chrome.runtime
-        .sendMessage({
-          type: "AGENT_STEP",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId,
-          payload: { step, update },
-        })
-        .catch(() => {});
-    },
-  }, {
-    maxContextTokens: settings.contextWindowSize || 32000,
-    maxTurns: settings.maxTurns || 30,
-    showElementTags: settings.showElementTags ?? false,
-    confirmPlan: settings.confirmPlan ?? false,
-    showSessionMetrics: settings.showSessionMetrics ?? false,
-    disabledTools: buildDisabledTools(settings),
-    workspaceId,
-  });
+  );
   agentLoops.set(workspaceId, loop);
 
   // Get fresh snapshot from the new page
@@ -683,7 +729,11 @@ async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { includeText: true, refresh: true, showTags: settings.showElementTags ?? false },
+        payload: {
+          includeText: true,
+          refresh: true,
+          showTags: settings.showElementTags ?? false,
+        },
       });
       snapshot = response.payload.snapshot;
     }

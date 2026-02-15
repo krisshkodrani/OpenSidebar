@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import "../../tests/setup";
 import { isElementVisible } from "../../src/content/tagging";
 
 describe("Shadow DOM Support - BEFORE State", () => {

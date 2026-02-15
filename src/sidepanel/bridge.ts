@@ -14,7 +14,11 @@ type StoreApi = typeof useStore;
 export function initializeBridge(
   store: StoreApi,
   callbacks: {
-    onScreenshot: (payload: { dataUrl: string; context: string; timestamp: number }) => void;
+    onScreenshot: (payload: {
+      dataUrl: string;
+      context: string;
+      timestamp: number;
+    }) => void;
     onClose: (windowId: number) => void;
   },
 ): () => void {
@@ -23,8 +27,16 @@ export function initializeBridge(
 
     // Workspace filter: drop messages for other workspaces
     const activeWsId = store.getState().activeWorkspaceId;
-    if (message.workspaceId != null && activeWsId != null && message.workspaceId !== activeWsId) {
-      logger.debug("ui", "Dropping message for different workspace", { type: message.type, messageWs: message.workspaceId, activeWs: activeWsId });
+    if (
+      message.workspaceId != null &&
+      activeWsId != null &&
+      message.workspaceId !== activeWsId
+    ) {
+      logger.debug("ui", "Dropping message for different workspace", {
+        type: message.type,
+        messageWs: message.workspaceId,
+        activeWs: activeWsId,
+      });
       return;
     }
 
@@ -46,12 +58,18 @@ export function initializeBridge(
         } else {
           state.setAgentRunning(true);
           // Clear stale metrics when a new run starts (THINKING is the first status)
-          if (message.payload.status === AgentStatus.THINKING && !state.sessionMetrics) {
+          if (
+            message.payload.status === AgentStatus.THINKING &&
+            !state.sessionMetrics
+          ) {
             // No-op — metrics will arrive via SESSION_METRICS
           }
         }
         // Detect plan approval pause
-        if (message.payload.status === AgentStatus.PAUSED && message.payload.detail.includes("Plan ready")) {
+        if (
+          message.payload.status === AgentStatus.PAUSED &&
+          message.payload.detail.includes("Plan ready")
+        ) {
           state.setAwaitingPlanApproval(true);
         } else if (message.payload.status !== AgentStatus.PAUSED) {
           state.setAwaitingPlanApproval(false);
@@ -148,7 +166,9 @@ export function initializeBridge(
 
       default: {
         const _exhaustive: never = message;
-        logger.debug("ui", "Unknown message type", { type: (_exhaustive as RuntimeMessage).type });
+        logger.debug("ui", "Unknown message type", {
+          type: (_exhaustive as RuntimeMessage).type,
+        });
         break;
       }
     }
