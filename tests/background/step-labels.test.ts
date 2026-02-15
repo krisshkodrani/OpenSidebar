@@ -120,4 +120,59 @@ describe("formatStepLabel", () => {
     test("download_file without url", () => {
         expect(formatStepLabel(ToolName.DOWNLOAD_FILE, {})).toBe("Download file");
     });
+
+    test("inspect_hidden with pattern", () => {
+        const label = formatStepLabel(ToolName.INSPECT_HIDDEN, { pattern: "secret" });
+        expect(label).toBe('Inspect hidden: "secret"');
+    });
+
+    test("inspect_hidden without pattern", () => {
+        expect(formatStepLabel(ToolName.INSPECT_HIDDEN, {})).toBe("Inspect hidden elements");
+    });
+
+    test("xray_page", () => {
+        expect(formatStepLabel(ToolName.XRAY_PAGE, {})).toBe("Toggle X-ray mode");
+    });
+
+    test("fast_forward", () => {
+        expect(formatStepLabel(ToolName.FAST_FORWARD, {})).toBe("Toggle fast-forward");
+    });
+
+    // React toolkit tools
+    test("inspect_react shows tag ID", () => {
+        expect(formatStepLabel(ToolName.INSPECT_REACT, { id: 5 })).toBe("Inspect React state [5]");
+    });
+
+    test("inspect_react with missing id", () => {
+        expect(formatStepLabel(ToolName.INSPECT_REACT, {})).toBe("Inspect React state [?]");
+    });
+
+    test("react_set_input shows value and tag ID", () => {
+        const label = formatStepLabel(ToolName.REACT_SET_INPUT, { id: 3, value: "hello" });
+        expect(label).toContain('"hello"');
+        expect(label).toContain("[3]");
+        expect(label).toContain("React set input");
+    });
+
+    test("react_set_input truncates long value", () => {
+        const label = formatStepLabel(ToolName.REACT_SET_INPUT, { id: 1, value: "a".repeat(30) });
+        expect(label).toContain("...");
+    });
+
+    test("inspect_react_tree without filter", () => {
+        expect(formatStepLabel(ToolName.INSPECT_REACT_TREE, {})).toBe("Inspect React tree");
+    });
+
+    test("inspect_react_tree with filter", () => {
+        const label = formatStepLabel(ToolName.INSPECT_REACT_TREE, { filter: "Button" });
+        expect(label).toBe('React tree: "Button"');
+    });
+
+    test("wait_for_react shows default timeout", () => {
+        expect(formatStepLabel(ToolName.WAIT_FOR_REACT, {})).toBe("Wait for React (3000ms)");
+    });
+
+    test("wait_for_react shows custom timeout", () => {
+        expect(formatStepLabel(ToolName.WAIT_FOR_REACT, { timeout: 5000 })).toBe("Wait for React (5000ms)");
+    });
 });

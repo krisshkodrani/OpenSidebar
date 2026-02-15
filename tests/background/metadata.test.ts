@@ -27,6 +27,10 @@ describe("Tool Metadata", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.SET_CHECKBOX)).toBe(true);
     });
 
+    test("contains xray_page (reveals hidden elements for tagging)", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.XRAY_PAGE)).toBe(true);
+    });
+
     test("does not contain read-only tools", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
@@ -37,6 +41,8 @@ describe("Tool Metadata", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.INSPECT_HIDDEN)).toBe(false);
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.FAST_FORWARD)).toBe(false);
     });
   });
 
@@ -54,8 +60,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
     });
 
-    test("has exactly 19 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(19);
+    test("has exactly 20 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(20);
     });
   });
 
@@ -90,6 +96,73 @@ describe("Tool Metadata", () => {
 
     test("press_key is MEDIUM risk", () => {
       expect(classifyRisk(ToolName.PRESS_KEY, {})).toBe(RiskLevel.MEDIUM);
+    });
+
+    test("xray_page is LOW risk", () => {
+      expect(classifyRisk(ToolName.XRAY_PAGE, {})).toBe(RiskLevel.LOW);
+    });
+
+    test("fast_forward is LOW risk", () => {
+      expect(classifyRisk(ToolName.FAST_FORWARD, {})).toBe(RiskLevel.LOW);
+    });
+  });
+
+  describe("page assist tools metadata", () => {
+    test("xray_page is domModifying but not sequential", () => {
+      const meta = getToolMeta(ToolName.XRAY_PAGE);
+      expect(meta.risk).toBe(RiskLevel.LOW);
+      expect(meta.domModifying).toBe(true);
+      expect(meta.sequential).toBe(false);
+    });
+
+    test("fast_forward is not domModifying and not sequential", () => {
+      const meta = getToolMeta(ToolName.FAST_FORWARD);
+      expect(meta.risk).toBe(RiskLevel.LOW);
+      expect(meta.domModifying).toBe(false);
+      expect(meta.sequential).toBe(false);
+    });
+  });
+
+  describe("React toolkit metadata", () => {
+    test("inspect_react is LOW risk, not domModifying, not sequential", () => {
+      const meta = getToolMeta(ToolName.INSPECT_REACT);
+      expect(meta.risk).toBe(RiskLevel.LOW);
+      expect(meta.domModifying).toBe(false);
+      expect(meta.sequential).toBe(false);
+    });
+
+    test("react_set_input is MEDIUM risk, domModifying, not sequential", () => {
+      const meta = getToolMeta(ToolName.REACT_SET_INPUT);
+      expect(meta.risk).toBe(RiskLevel.MEDIUM);
+      expect(meta.domModifying).toBe(true);
+      expect(meta.sequential).toBe(false);
+    });
+
+    test("inspect_react_tree is LOW risk, not domModifying, not sequential", () => {
+      const meta = getToolMeta(ToolName.INSPECT_REACT_TREE);
+      expect(meta.risk).toBe(RiskLevel.LOW);
+      expect(meta.domModifying).toBe(false);
+      expect(meta.sequential).toBe(false);
+    });
+
+    test("wait_for_react is LOW risk, not domModifying, sequential", () => {
+      const meta = getToolMeta(ToolName.WAIT_FOR_REACT);
+      expect(meta.risk).toBe(RiskLevel.LOW);
+      expect(meta.domModifying).toBe(false);
+      expect(meta.sequential).toBe(true);
+    });
+
+    test("react_set_input is in DOM_MODIFYING_TOOLS", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.REACT_SET_INPUT)).toBe(true);
+    });
+
+    test("wait_for_react is in SEQUENTIAL_TOOLS", () => {
+      expect(SEQUENTIAL_TOOLS.has(ToolName.WAIT_FOR_REACT)).toBe(true);
+    });
+
+    test("inspect_react is not in DOM_MODIFYING_TOOLS or SEQUENTIAL_TOOLS", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
+      expect(SEQUENTIAL_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
     });
   });
 });

@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 45 tools are registered", () => {
+    test("all 52 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(45);
+        expect(defs.length).toBe(52);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -295,5 +295,67 @@ describe("Tool Registration", () => {
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toContain("title");
         expect(def!.function.parameters.required).toContain("message");
+    });
+
+    test("inspect_hidden has no required parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.INSPECT_HIDDEN);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(def!.function.parameters.properties.pattern).toBeDefined();
+        expect(def!.function.parameters.properties.maxResults).toBeDefined();
+    });
+
+    test("xray_page has no required parameters and mentions toggle", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.XRAY_PAGE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
+        expect(def!.function.description).toContain("Toggle");
+        expect(def!.function.description).toContain("hidden");
+    });
+
+    test("fast_forward has no required parameters and mentions toggle", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.FAST_FORWARD);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
+        expect(def!.function.description).toContain("Toggle");
+        expect(def!.function.description).toContain("timer");
+    });
+
+    // React toolkit tools
+    test("inspect_react requires id parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.INSPECT_REACT);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("id");
+        expect(def!.function.parameters.properties.depth).toBeDefined();
+    });
+
+    test("react_set_input requires id and value parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.REACT_SET_INPUT);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("id");
+        expect(def!.function.parameters.required).toContain("value");
+        expect(def!.function.parameters.properties.submit).toBeDefined();
+    });
+
+    test("inspect_react_tree has optional depth and filter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.INSPECT_REACT_TREE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.properties.depth).toBeDefined();
+        expect(def!.function.parameters.properties.filter).toBeDefined();
+    });
+
+    test("wait_for_react has optional timeout parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.WAIT_FOR_REACT);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.properties.timeout).toBeDefined();
     });
 });
