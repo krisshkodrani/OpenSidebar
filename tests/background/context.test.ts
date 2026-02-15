@@ -38,14 +38,14 @@ describe("ContextManager", () => {
     role: "assistant",
     content,
   });
-  const toolCallMsg = (toolId: string): LLMMessage => ({
+  const toolCallMsg = (toolId: string, fnName: string = "test"): LLMMessage => ({
     role: "assistant",
     content: null,
     tool_calls: [
       {
         id: toolId,
         type: "function",
-        function: { name: "test", arguments: "{}" },
+        function: { name: fnName, arguments: "{}" },
       },
     ],
   });
@@ -265,6 +265,76 @@ describe("ContextManager", () => {
         expect(result.content).not.toContain("[truncated]");
       }
     });
+
+    test("preserves discovery tool results with higher limit", () => {
+      // Old discovery tool call with a 400-char result (under 500 limit)
+      context.addMessage(toolCallMsg("call_disc", "inspect_hidden"));
+      const discoveryResult = "Found 5 hidden elements:\n" + "x".repeat(374);
+      context.addMessage(toolResultMsg("call_disc", discoveryResult)); // 400 chars
+
+      // Add 3 more tool results to push the discovery one past preserveRecent=2
+      for (let i = 1; i <= 3; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`, "click_element"));
+        context.addMessage(toolResultMsg(`call_${i}`, `Clicked element ${i}`));
+      }
+
+      const prompt = context.getPrompt();
+      const discResult = prompt.find(
+        (m) => m.role === "tool" && m.tool_call_id === "call_disc",
+      );
+
+      // 400 chars < 500 limit — should NOT be truncated
+      expect(discResult).toBeDefined();
+      expect(discResult!.content).not.toContain("[truncated]");
+    });
+
+    test("truncates discovery tool results above 500 chars", () => {
+      // Old discovery tool call with a 600-char single-line result (over 500 limit)
+      context.addMessage(toolCallMsg("call_js", "execute_js"));
+      const longResult = "Computed values: " + "y".repeat(583);
+      context.addMessage(toolResultMsg("call_js", longResult)); // 600 chars
+
+      // Push past preserveRecent
+      for (let i = 1; i <= 3; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`, "click_element"));
+        context.addMessage(toolResultMsg(`call_${i}`, `Clicked element ${i}`));
+      }
+
+      const prompt = context.getPrompt();
+      const jsResult = prompt.find(
+        (m) => m.role === "tool" && m.tool_call_id === "call_js",
+      );
+
+      expect(jsResult).toBeDefined();
+      expect(jsResult!.content).toContain("[truncated]");
+      // Snippet should be 400 chars (discovery snippet limit), longer than action's 100
+      const snippetLength = jsResult!.content!.replace(" [truncated]", "").length;
+      expect(snippetLength).toBeGreaterThan(100);
+      expect(snippetLength).toBeLessThanOrEqual(400);
+    });
+
+    test("action tool results still truncate at 150 chars", () => {
+      // Old action tool call with a 200-char result
+      context.addMessage(toolCallMsg("call_click", "click_element"));
+      const actionResult = "Clicked successfully.\n" + "z".repeat(179);
+      context.addMessage(toolResultMsg("call_click", actionResult)); // 200 chars
+
+      // Push past preserveRecent
+      for (let i = 1; i <= 3; i++) {
+        context.addMessage(toolCallMsg(`call_${i}`, "type_text"));
+        context.addMessage(toolResultMsg(`call_${i}`, `Typed text ${i}`));
+      }
+
+      const prompt = context.getPrompt();
+      const clickResult = prompt.find(
+        (m) => m.role === "tool" && m.tool_call_id === "call_click",
+      );
+
+      expect(clickResult).toBeDefined();
+      expect(clickResult!.content).toContain("[truncated]");
+      // Snippet should be at most 100 chars + " [truncated]"
+      expect(clickResult!.content!.length).toBeLessThanOrEqual(112);
+    });
   });
 
   describe("clearHistory", () => {
@@ -365,6 +435,33 @@ describe("ContextManager", () => {
       // Also verify the Active Plan section is present
       expect(systemContent).toContain("Active Plan");
       expect(systemContent).toContain("Step 1");
+    });
+  });
+
+  describe("Investigation Guidance", () => {
+    test("system prompt contains investigation guidance", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("Investigation:");
+      expect(systemContent).toContain("inspect_hidden");
+      expect(systemContent).toContain("read_element reads attributes");
+    });
+
+    test("system prompt contains React toolkit guidance", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("React:");
+      expect(systemContent).toContain("inspect_react");
+      expect(systemContent).toContain("react_set_input");
+      expect(systemContent).toContain("inspect_react_tree");
+    });
+
+    test("system prompt contains page assist tool guidance", () => {
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("xray_page");
+      expect(systemContent).toContain("fast_forward");
+      expect(systemContent).toContain("countdown");
     });
   });
 });
