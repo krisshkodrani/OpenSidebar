@@ -9,7 +9,11 @@
  * - Scoped loggers carry requestId for cross-context tracing
  */
 
-import { storageLogger, sanitizeData, type StorageLogEntry } from "./storage-logger";
+import {
+  storageLogger,
+  sanitizeData,
+  type StorageLogEntry,
+} from "./storage-logger";
 
 declare const __DEV__: boolean;
 
@@ -47,7 +51,8 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 
 class Logger {
   private source: LogSource;
-  private minLevel: LogLevel = (typeof __DEV__ !== "undefined" && __DEV__) ? "DEBUG" : "INFO";
+  private minLevel: LogLevel =
+    typeof __DEV__ !== "undefined" && __DEV__ ? "DEBUG" : "INFO";
 
   constructor() {
     this.source = this.detectSource();
@@ -142,16 +147,19 @@ class Logger {
     // Pick the right console method for proper DevTools filtering
     /* eslint-disable no-console -- Logger must use console for DevTools output */
     const consoleFn =
-      level === "ERROR" ? console.error
-      : level === "WARN" ? console.warn
-      : console.log;
+      level === "ERROR"
+        ? console.error
+        : level === "WARN"
+          ? console.warn
+          : console.log;
 
     if (data || requestId) {
       console.groupCollapsed(prefix, ...styles);
       consoleFn("Details:", entry);
       if (requestId) consoleFn("Request ID:", requestId);
       if (data) consoleFn("Payload:", data);
-      if (data && data.error && (data as any).stack) console.error((data as any).stack);
+      if (data && data.error && (data as any).stack)
+        console.error((data as any).stack);
       console.groupEnd();
     } else {
       consoleFn(prefix, ...styles);
@@ -206,19 +214,35 @@ export class ScopedLogger {
     private requestId: string,
   ) {}
 
-  public debug(category: LogCategory, message: string, data?: Record<string, unknown>) {
+  public debug(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
     this.parent.debug(category, message, data, this.requestId);
   }
 
-  public info(category: LogCategory, message: string, data?: Record<string, unknown>) {
+  public info(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
     this.parent.info(category, message, data, this.requestId);
   }
 
-  public warn(category: LogCategory, message: string, data?: Record<string, unknown>) {
+  public warn(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
     this.parent.warn(category, message, data, this.requestId);
   }
 
-  public error(category: LogCategory, message: string, data?: Record<string, unknown>) {
+  public error(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+  ) {
     this.parent.error(category, message, data, this.requestId);
   }
 }

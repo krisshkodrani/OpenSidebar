@@ -62,8 +62,21 @@ export enum ToolName {
   LIST_TABS = "list_tabs",
   RIGHT_CLICK = "right_click",
   SET_CHECKBOX = "set_checkbox",
+  CLICK_COORDINATES = "click_coordinates",
   DOWNLOAD_FILE = "download_file",
   TRANSCRIBE_AUDIO = "transcribe_audio",
+  GROUP_TABS = "group_tabs",
+  UNGROUP_TABS = "ungroup_tabs",
+  GET_COOKIES = "get_cookies",
+  SET_COOKIE = "set_cookie",
+  DELETE_COOKIE = "delete_cookie",
+  COPY_TO_CLIPBOARD = "copy_to_clipboard",
+  READ_PDF = "read_pdf",
+  SEARCH_HISTORY = "search_history",
+  CREATE_BOOKMARK = "create_bookmark",
+  GET_BOOKMARKS = "get_bookmarks",
+  CREATE_WINDOW = "create_window",
+  SEND_NOTIFICATION = "send_notification",
 }
 
 /** Risk classification for a tool invocation */
@@ -389,13 +402,18 @@ export interface SessionMetrics {
   totalSessionTimeMs: number;
   /** Number of LLM calls made (including vision) */
   llmCallCount: number;
+  /** Total prompt tokens served from cache (prefix caching) */
+  totalCachedTokens: number;
   /** Per-model breakdown */
-  modelBreakdown: Record<string, {
-    promptTokens: number;
-    completionTokens: number;
-    cost: number;
-    calls: number;
-  }>;
+  modelBreakdown: Record<
+    string,
+    {
+      promptTokens: number;
+      completionTokens: number;
+      cost: number;
+      calls: number;
+    }
+  >;
 }
 
 // --- Agent Loop Types ---
@@ -720,6 +738,16 @@ export interface SetCheckboxArgs {
   checked: boolean;
 }
 
+/** Arguments for click_coordinates */
+export interface ClickCoordinatesArgs {
+  /** X coordinate in viewport pixels */
+  x: number;
+  /** Y coordinate in viewport pixels */
+  y: number;
+  /** What you expect to click (for logging) */
+  description?: string;
+}
+
 /** Arguments for download_file */
 export interface DownloadFileArgs {
   /** URL of the file to download */
@@ -732,6 +760,80 @@ export interface DownloadFileArgs {
 export interface TranscribeAudioArgs {
   /** The numeric tag ID of the <audio> or <video> element */
   id: number;
+}
+
+/** Arguments for group_tabs */
+export interface GroupTabsArgs {
+  tabIds: number[];
+  title: string;
+  color?: string;
+}
+
+/** Arguments for ungroup_tabs */
+export interface UngroupTabsArgs {
+  tabIds: number[];
+}
+
+/** Arguments for get_cookies */
+export interface GetCookiesArgs {
+  url?: string;
+}
+
+/** Arguments for set_cookie */
+export interface SetCookieArgs {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+}
+
+/** Arguments for delete_cookie */
+export interface DeleteCookieArgs {
+  url: string;
+  name: string;
+}
+
+/** Arguments for copy_to_clipboard */
+export interface CopyToClipboardArgs {
+  text: string;
+}
+
+/** Arguments for read_pdf */
+export interface ReadPdfArgs {
+  url: string;
+  maxPages?: number;
+}
+
+/** Arguments for search_history */
+export interface SearchHistoryArgs {
+  query: string;
+  maxResults?: number;
+}
+
+/** Arguments for create_bookmark */
+export interface CreateBookmarkArgs {
+  title?: string;
+  url?: string;
+  parentId?: string;
+}
+
+/** Arguments for get_bookmarks */
+export interface GetBookmarksArgs {
+  query: string;
+  maxResults?: number;
+}
+
+/** Arguments for create_window */
+export interface CreateWindowArgs {
+  url?: string;
+  incognito?: boolean;
+}
+
+/** Arguments for send_notification */
+export interface SendNotificationArgs {
+  title: string;
+  message: string;
 }
 
 /** Maps tool names to their execution handlers */
@@ -772,8 +874,21 @@ export type ToolArgsMap = {
   [ToolName.LIST_TABS]: ListTabsArgs;
   [ToolName.RIGHT_CLICK]: RightClickArgs;
   [ToolName.SET_CHECKBOX]: SetCheckboxArgs;
+  [ToolName.CLICK_COORDINATES]: ClickCoordinatesArgs;
   [ToolName.DOWNLOAD_FILE]: DownloadFileArgs;
   [ToolName.TRANSCRIBE_AUDIO]: TranscribeAudioArgs;
+  [ToolName.GROUP_TABS]: GroupTabsArgs;
+  [ToolName.UNGROUP_TABS]: UngroupTabsArgs;
+  [ToolName.GET_COOKIES]: GetCookiesArgs;
+  [ToolName.SET_COOKIE]: SetCookieArgs;
+  [ToolName.DELETE_COOKIE]: DeleteCookieArgs;
+  [ToolName.COPY_TO_CLIPBOARD]: CopyToClipboardArgs;
+  [ToolName.READ_PDF]: ReadPdfArgs;
+  [ToolName.SEARCH_HISTORY]: SearchHistoryArgs;
+  [ToolName.CREATE_BOOKMARK]: CreateBookmarkArgs;
+  [ToolName.GET_BOOKMARKS]: GetBookmarksArgs;
+  [ToolName.CREATE_WINDOW]: CreateWindowArgs;
+  [ToolName.SEND_NOTIFICATION]: SendNotificationArgs;
 };
 
 // --- Content Script Types ---
@@ -1029,11 +1144,12 @@ export interface MemoryWorkerMessage extends BaseMessage {
   type: "MEMORY_WORKER";
   source: MessageSource.BACKGROUND;
   payload:
-  | { action: "init" }
-  | { action: "add"; content: string; category: string; sourceUrl: string }
-  | { action: "search"; query: string; limit: number }
-  | { action: "delete"; id: string }
-  | { action: "clear" };
+    | { action: "init" }
+    | { action: "add"; content: string; category: string; sourceUrl: string }
+    | { action: "search"; query: string; limit: number }
+    | { action: "delete"; id: string }
+    | { action: "clear" }
+    | { action: "extract_pdf"; url: string; maxPages?: number };
 }
 
 /** Responses from the memory worker back to the service worker */
@@ -1041,11 +1157,12 @@ export interface MemoryWorkerResponse extends BaseMessage {
   type: "MEMORY_WORKER_RESPONSE";
   source: MessageSource.OFFSCREEN;
   payload:
-  | { action: "init"; success: boolean; error?: string }
-  | { action: "add"; success: boolean; id: string; error?: string }
-  | { action: "search"; results: MemorySearchResult[]; error?: string }
-  | { action: "delete"; success: boolean; error?: string }
-  | { action: "clear"; success: boolean; error?: string };
+    | { action: "init"; success: boolean; error?: string }
+    | { action: "add"; success: boolean; id: string; error?: string }
+    | { action: "search"; results: MemorySearchResult[]; error?: string }
+    | { action: "delete"; success: boolean; error?: string }
+    | { action: "clear"; success: boolean; error?: string }
+    | { action: "extract_pdf"; text: string; success: boolean; error?: string };
 }
 
 /** A row from the SQLite FTS5 table */
@@ -1065,15 +1182,15 @@ export interface Workspace {
   id: string;
   name: string;
   color:
-  | "grey"
-  | "blue"
-  | "red"
-  | "yellow"
-  | "green"
-  | "pink"
-  | "purple"
-  | "cyan"
-  | "orange";
+    | "grey"
+    | "blue"
+    | "red"
+    | "yellow"
+    | "green"
+    | "pink"
+    | "purple"
+    | "cyan"
+    | "orange";
   tabGroupId: number | null;
   tabIds: number[];
 }
@@ -1112,8 +1229,6 @@ export interface UserSettings {
   groqApiKey: string;
   /** Cerebras API key for fast model (highest priority when present) */
   cerebrasApiKey: string;
-  /** Use Groq for fast model instead of OpenRouter */
-  useGroqFast: boolean;
   maxTurns: number;
   contextWindowSize: number;
   memoryEnabled: boolean;
@@ -1172,7 +1287,12 @@ export interface TraceEntry {
     content: string | null;
     toolCalls: ToolCall[];
     finishReason: string;
-    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; cost?: number } | null;
+    usage: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+      cost?: number;
+    } | null;
     durationMs: number;
   };
   /** Tool executions for this turn */
@@ -1201,15 +1321,15 @@ export interface TraceToolExecution {
 /** A notable event that occurred during a trace turn */
 export interface TraceEvent {
   type:
-  | "escalation"
-  | "hint"
-  | "modal_dismiss"
-  | "done_rejected"
-  | "plan_update"
-  | "screenshot"
-  | "stuck_signal"
-  | "circuit_breaker"
-  | "navigate_blocked";
+    | "escalation"
+    | "hint"
+    | "modal_dismiss"
+    | "done_rejected"
+    | "plan_update"
+    | "screenshot"
+    | "stuck_signal"
+    | "circuit_breaker"
+    | "navigate_blocked";
   timestamp: number;
   data: Record<string, unknown>;
 }

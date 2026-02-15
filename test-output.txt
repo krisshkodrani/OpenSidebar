@@ -1,0 +1,3827 @@
+bun test v1.3.8 (b64edcb4)
+content 🐛 [workspace] Skipping WorkspaceManager init in content script
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:38.322Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:38.347Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:38.347Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:38.652Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:38.653Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 130,
+    totalTokens: 822,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 130,
+  totalTokens: 822,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:38.653Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:38.653Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:38.653Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:38.964Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:38.964Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 229,
+    totalTokens: 925,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 229,
+  totalTokens: 925,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:38.965Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:38.965Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:38.995Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 339,
+    totalTokens: 1035,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 339,
+  totalTokens: 1035,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:38.995Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:38.995Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.012Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.013Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:39.013Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:39.323Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.328Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 130,
+    totalTokens: 822,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 130,
+  totalTokens: 822,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.328Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:39.328Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:39.328Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:39.635Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.635Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 229,
+    totalTokens: 925,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 229,
+  totalTokens: 925,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.635Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:39.635Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.654Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 339,
+    totalTokens: 1035,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 339,
+  totalTokens: 1035,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.654Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "Final answer",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "Final answer",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:39.654Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "Final answer",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "Final answer",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.665Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 7,
+    totalTokens: 699,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 7,
+  totalTokens: 699,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.666Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "switch_tab({\"tabId\":456})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "switch_tab({\"tabId\":456})" ],
+  toolCount: 1,
+}
+content ⚠️ [agent] switch_tab blocked — outside workspace
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.676Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 57,
+    totalTokens: 749,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 57,
+  totalTokens: 749,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.676Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:39.677Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:39.690Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 6,
+    totalTokens: 698,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 6,
+  totalTokens: 698,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:39.690Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "switch_tab({\"tabId\":789})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "switch_tab({\"tabId\":789})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] SWITCH_TAB
+Details: {
+  ts: "2026-02-15T09:11:39.994Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "SWITCH_TAB",
+  data: {
+    turn: 1,
+    targetTabId: 789,
+    newTabId: 789,
+  },
+}
+Payload: {
+  turn: 1,
+  targetTabId: 789,
+  newTabId: 789,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.359Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 53,
+    totalTokens: 745,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 53,
+  totalTokens: 745,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.360Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:40.360Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.373Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 6,
+    totalTokens: 698,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 6,
+  totalTokens: 698,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.373Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "close_tab({\"tabId\":456})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "close_tab({\"tabId\":456})" ],
+  toolCount: 1,
+}
+content ⚠️ [agent] close_tab blocked — outside workspace
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.379Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 56,
+    totalTokens: 748,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 56,
+  totalTokens: 748,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.379Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:40.379Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.395Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 7,
+    totalTokens: 699,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 7,
+  totalTokens: 699,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.395Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "close_tab({\"tabId\":123})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "close_tab({\"tabId\":123})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.399Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 62,
+    totalTokens: 754,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 62,
+  totalTokens: 754,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.399Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:40.399Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.410Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 5,
+    totalTokens: 697,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 5,
+  totalTokens: 697,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.410Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "list_tabs({})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "list_tabs({})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] LIST_TABS
+Details: {
+  ts: "2026-02-15T09:11:40.411Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LIST_TABS",
+  data: {
+    turn: 1,
+    count: 2,
+    workspaceScoped: true,
+  },
+}
+Payload: {
+  turn: 1,
+  count: 2,
+  workspaceScoped: true,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.415Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 59,
+    totalTokens: 751,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 59,
+  totalTokens: 751,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.415Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:40.415Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.427Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 6,
+    totalTokens: 698,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 6,
+  totalTokens: 698,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.428Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "list_tabs({})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "list_tabs({})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] LIST_TABS
+Details: {
+  ts: "2026-02-15T09:11:40.428Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LIST_TABS",
+  data: {
+    turn: 1,
+    count: 2,
+    workspaceScoped: false,
+  },
+}
+Payload: {
+  turn: 1,
+  count: 2,
+  workspaceScoped: false,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.436Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 54,
+    totalTokens: 746,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 54,
+  totalTokens: 746,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.436Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: null,
+    toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: null,
+  toolCalls: [ "done({\"summary\":\"Auto-done\"})" ],
+  toolCount: 1,
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:40.437Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 2,
+    url: "",
+    summary: "Auto-done",
+  },
+}
+Payload: {
+  turn: 2,
+  url: "",
+  summary: "Auto-done",
+}
+content ℹ️ [agent] Guardian decomposed task
+Details: {
+  ts: "2026-02-15T09:11:40.495Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Guardian decomposed task",
+  data: {
+    subtaskCount: 4,
+  },
+}
+Payload: {
+  subtaskCount: 4,
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Guardian decomposed task
+Details: {
+  ts: "2026-02-15T09:11:40.496Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Guardian decomposed task",
+  data: {
+    subtaskCount: 3,
+  },
+}
+Payload: {
+  subtaskCount: 3,
+}
+content ℹ️ [agent] Guardian decomposed task
+Details: {
+  ts: "2026-02-15T09:11:40.496Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Guardian decomposed task",
+  data: {
+    subtaskCount: 3,
+  },
+}
+Payload: {
+  subtaskCount: 3,
+}
+content ℹ️ [agent] Guardian validateDone
+Details: {
+  ts: "2026-02-15T09:11:40.497Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Guardian validateDone",
+  data: {
+    approved: true,
+    reason: undefined,
+  },
+}
+Payload: {
+  approved: true,
+  reason: undefined,
+}
+content ℹ️ [agent] Guardian validateDone
+Details: {
+  ts: "2026-02-15T09:11:40.497Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Guardian validateDone",
+  data: {
+    approved: false,
+    reason: "You added to cart but never completed checkout.",
+  },
+}
+Payload: {
+  approved: false,
+  reason: "You added to cart but never completed checkout.",
+}
+content ⚠️ [agent] Guardian validateDone failed, falling back to structural check
+content ⚠️ [agent] Guardian validateDone failed, falling back to structural check
+content ℹ️ [keepalive] Started keepalive alarm
+content 🐛 [keepalive] Already active, skipping
+content ℹ️ [keepalive] Stopped keepalive alarm
+content ℹ️ [keepalive] Alarm listener registered
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.610Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 8,
+    totalTokens: 700,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 8,
+  totalTokens: 700,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.610Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:40.610Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:40.924Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:40.924Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 134,
+    totalTokens: 826,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 134,
+  totalTokens: 826,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:40.925Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:40.925Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:40.926Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:41.230Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.232Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 233,
+    totalTokens: 929,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 233,
+  totalTokens: 929,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.232Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.232Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.242Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 340,
+    totalTokens: 1036,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 340,
+  totalTokens: 1036,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.242Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.242Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.260Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.260Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.260Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:41.576Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.576Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 130,
+    totalTokens: 822,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 130,
+  totalTokens: 822,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.576Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.576Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:41.576Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:41.886Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.887Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 229,
+    totalTokens: 925,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 229,
+  totalTokens: 925,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.887Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.887Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.898Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 336,
+    totalTokens: 1032,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 336,
+  totalTokens: 1032,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.898Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.898Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:41.912Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:41.912Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:41.912Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:42.212Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:42.217Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 130,
+    totalTokens: 822,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 130,
+  totalTokens: 822,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:42.217Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:42.217Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:42.217Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:42.526Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:42.526Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 229,
+    totalTokens: 925,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 229,
+  totalTokens: 925,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:42.527Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:42.527Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:42.929Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 336,
+    totalTokens: 1032,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 336,
+  totalTokens: 1032,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:42.929Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:42.929Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:42.956Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:42.956Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:42.956Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:43.264Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 1,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 1,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.264Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 2,
+    systemTokens: 692,
+    historyTokens: 130,
+    totalTokens: 822,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  systemTokens: 692,
+  historyTokens: 130,
+  totalTokens: 822,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.264Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 2,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 2,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.264Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 2,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 2,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Escalating to smart model
+Details: {
+  ts: "2026-02-15T09:11:43.265Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Escalating to smart model",
+  data: {
+    model: "minimax/minimax-m2.5",
+    provider: "openrouter",
+  },
+}
+Payload: {
+  model: "minimax/minimax-m2.5",
+  provider: "openrouter",
+}
+content ℹ️ [agent] Strategy pivot executed
+Details: {
+  ts: "2026-02-15T09:11:43.572Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Strategy pivot executed",
+  data: {
+    turn: 2,
+    attemptSummaryLen: 29,
+  },
+}
+Payload: {
+  turn: 2,
+  attemptSummaryLen: 29,
+}
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.572Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 3,
+    systemTokens: 696,
+    historyTokens: 229,
+    totalTokens: 925,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  systemTokens: 696,
+  historyTokens: 229,
+  totalTokens: 925,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.572Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 3,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 3,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.572Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 3,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 3,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.590Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 4,
+    systemTokens: 696,
+    historyTokens: 336,
+    totalTokens: 1032,
+    utilization: "3%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  systemTokens: 696,
+  historyTokens: 336,
+  totalTokens: 1032,
+  utilization: "3%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.591Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 4,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [],
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 4,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [],
+  toolCount: 0,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.591Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 4,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 4,
+  text: "ok",
+}
+content ⚠️ [agent] Filler text detected, fast-tracking pivot
+content ⚠️ [agent] LLM emitted text instead of tools, nudging
+content ⚠️ [agent] Loop ended: consecutive nudge limit
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.631Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.632Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [ "done({\"summary\":\"done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [ "done({\"summary\":\"done\"})" ],
+  toolCount: 1,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.632Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:43.632Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 1,
+    url: "",
+    summary: "done",
+  },
+}
+Payload: {
+  turn: 1,
+  url: "",
+  summary: "done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.642Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 7,
+    totalTokens: 699,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 7,
+  totalTokens: 699,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.642Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [ "done({\"summary\":\"done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [ "done({\"summary\":\"done\"})" ],
+  toolCount: 1,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.642Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:43.642Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 1,
+    url: "",
+    summary: "done",
+  },
+}
+Payload: {
+  turn: 1,
+  url: "",
+  summary: "done",
+}
+content ⚠️ [agent] Guardian decompose failed, treating as simple task
+content ℹ️ [agent] Context metrics
+Details: {
+  ts: "2026-02-15T09:11:43.651Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "Context metrics",
+  data: {
+    turn: 1,
+    systemTokens: 692,
+    historyTokens: 4,
+    totalTokens: 696,
+    utilization: "2%",
+    elements: 0,
+    compression: "none",
+    toolCount: 0,
+  },
+}
+Payload: {
+  turn: 1,
+  systemTokens: 692,
+  historyTokens: 4,
+  totalTokens: 696,
+  utilization: "2%",
+  elements: 0,
+  compression: "none",
+  toolCount: 0,
+}
+content ℹ️ [agent] LLM response
+Details: {
+  ts: "2026-02-15T09:11:43.653Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM response",
+  data: {
+    turn: 1,
+    llmMs: 0,
+    url: "",
+    text: "ok",
+    toolCalls: [ "done({\"summary\":\"done\"})" ],
+    toolCount: 1,
+  },
+}
+Payload: {
+  turn: 1,
+  llmMs: 0,
+  url: "",
+  text: "ok",
+  toolCalls: [ "done({\"summary\":\"done\"})" ],
+  toolCount: 1,
+}
+content 🐛 [agent] LLM reasoning (full)
+Details: {
+  ts: "2026-02-15T09:11:43.653Z",
+  level: "DEBUG",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "LLM reasoning (full)",
+  data: {
+    turn: 1,
+    text: "ok",
+  },
+}
+Payload: {
+  turn: 1,
+  text: "ok",
+}
+content ℹ️ [agent] DONE called
+Details: {
+  ts: "2026-02-15T09:11:43.653Z",
+  level: "INFO",
+  source: "content",
+  category: "agent",
+  requestId: undefined,
+  message: "DONE called",
+  data: {
+    turn: 1,
+    url: "",
+    summary: "done",
+  },
+}
+Payload: {
+  turn: 1,
+  url: "",
+  summary: "done",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.718Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://example.com",
+    toUrl: "https://google.com",
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://example.com",
+  toUrl: "https://google.com",
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.719Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://example.com",
+    toUrl: null,
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://example.com",
+  toUrl: null,
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.720Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://a.com",
+    toUrl: "https://b.com",
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://a.com",
+  toUrl: "https://b.com",
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.720Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://a.com",
+    toUrl: null,
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://a.com",
+  toUrl: null,
+  storageKey: "qsidebar:agentState",
+}
+content 🐛 [navigation] Cleared navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.720Z",
+  level: "DEBUG",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Cleared navigation state",
+  data: {
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.720Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://a.com",
+    toUrl: null,
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://a.com",
+  toUrl: null,
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Cleaned up stale navigation state on startup
+Details: {
+  ts: "2026-02-15T09:11:43.721Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Cleaned up stale navigation state on startup",
+  data: {
+    key: "qsidebar:agentState",
+  },
+}
+Payload: {
+  key: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Saved navigation state
+Details: {
+  ts: "2026-02-15T09:11:43.722Z",
+  level: "INFO",
+  source: "content",
+  category: "navigation",
+  requestId: undefined,
+  message: "Saved navigation state",
+  data: {
+    fromUrl: "https://a.com",
+    toUrl: null,
+    storageKey: "qsidebar:agentState",
+  },
+}
+Payload: {
+  fromUrl: "https://a.com",
+  toUrl: null,
+  storageKey: "qsidebar:agentState",
+}
+content ℹ️ [navigation] Navigation listeners registered
+content 🐛 [streaming] Skipping malformed SSE JSON
+content ℹ️ [tools] 32 tools registered
+content ℹ️ [vision] Screenshot described
+Details: {
+  ts: "2026-02-15T09:11:43.776Z",
+  level: "INFO",
+  source: "content",
+  category: "vision",
+  requestId: undefined,
+  message: "Screenshot described",
+  data: {
+    length: 41,
+  },
+}
+Payload: {
+  length: 41,
+}
+content ⚠️ [vision] Vision attempt 1 failed
+content ℹ️ [vision] Retrying vision call (2/3)
+Details: {
+  ts: "2026-02-15T09:11:43.777Z",
+  level: "INFO",
+  source: "content",
+  category: "vision",
+  requestId: undefined,
+  message: "Retrying vision call (2/3)",
+  data: {
+    delay: 951,
+  },
+}
+Payload: {
+  delay: 951,
+}
+content ⚠️ [vision] Vision attempt 2 failed
+content ℹ️ [vision] Retrying vision call (3/3)
+Details: {
+  ts: "2026-02-15T09:11:44.741Z",
+  level: "INFO",
+  source: "content",
+  category: "vision",
+  requestId: undefined,
+  message: "Retrying vision call (3/3)",
+  data: {
+    delay: 1601,
+  },
+}
+Payload: {
+  delay: 1601,
+}
+content ⚠️ [vision] Vision attempt 3 failed
+content 🚨 [vision] Vision failed after all retries
+content 🚨 [vision] Non-retryable vision error
+content ℹ️ [system] Content Script Loaded
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.964Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STATUS",
+  },
+}
+Payload: {
+  type: "AGENT_STATUS",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.966Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STATUS",
+  },
+}
+Payload: {
+  type: "AGENT_STATUS",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.967Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STATUS",
+  },
+}
+Payload: {
+  type: "AGENT_STATUS",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.967Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STUCK",
+  },
+}
+Payload: {
+  type: "AGENT_STUCK",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.967Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STUCK",
+  },
+}
+Payload: {
+  type: "AGENT_STUCK",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.968Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_STUCK",
+  },
+}
+Payload: {
+  type: "AGENT_STUCK",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.968Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "AGENT_TURN",
+  },
+}
+Payload: {
+  type: "AGENT_TURN",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.968Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "TASK_PROGRESS",
+  },
+}
+Payload: {
+  type: "TASK_PROGRESS",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.969Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "TASK_COMPLETION",
+  },
+}
+Payload: {
+  type: "TASK_COMPLETION",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:11:59.969Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a1",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a1",
+  role: "assistant",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.970Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "STREAM_CHUNK",
+  },
+}
+Payload: {
+  type: "STREAM_CHUNK",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:11:59.970Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a1",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a1",
+  role: "assistant",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.970Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "STREAM_CHUNK",
+  },
+}
+Payload: {
+  type: "STREAM_CHUNK",
+}
+content 🐛 [ui] Received message
+Details: {
+  ts: "2026-02-15T09:11:59.971Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Received message",
+  data: {
+    type: "SCREENSHOT_CAPTURED",
+  },
+}
+Payload: {
+  type: "SCREENSHOT_CAPTURED",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:11:59.999Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "1",
+    role: "user",
+  },
+}
+Payload: {
+  id: "1",
+  role: "user",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.000Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "1",
+    role: "user",
+  },
+}
+Payload: {
+  id: "1",
+  role: "user",
+}
+content ℹ️ [ui] Chat history cleared
+content 🐛 [ui] Settings loaded from storage
+content 🐛 [ui] Messages restored from storage
+Details: {
+  ts: "2026-02-15T09:12:00.007Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Messages restored from storage",
+  data: {
+    count: 2,
+    storageKey: "chatMessages",
+  },
+}
+Payload: {
+  count: 2,
+  storageKey: "chatMessages",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.007Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "1",
+    role: "user",
+  },
+}
+Payload: {
+  id: "1",
+  role: "user",
+}
+content ℹ️ [ui] Chat history cleared
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.008Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a1",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a1",
+  role: "assistant",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.009Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a2",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a2",
+  role: "assistant",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.009Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a3",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a3",
+  role: "assistant",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.010Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "a-final",
+    role: "assistant",
+  },
+}
+Payload: {
+  id: "a-final",
+  role: "assistant",
+}
+content 🐛 [ui] Message added to store
+Details: {
+  ts: "2026-02-15T09:12:00.010Z",
+  level: "DEBUG",
+  source: "content",
+  category: "ui",
+  requestId: undefined,
+  message: "Message added to store",
+  data: {
+    id: "u1",
+    role: "user",
+  },
+}
+Payload: {
+  id: "u1",
+  role: "user",
+}

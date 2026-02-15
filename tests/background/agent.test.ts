@@ -5,310 +5,347 @@ import { AgentStatus } from "../../src/types";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 
 // Default completeStream implementation (text only, no tool calls)
-const defaultCompleteStreamFn = (request: any, onTextDelta: (delta: string) => void) => {
-    onTextDelta("Final answer");
-    return Promise.resolve({
-        role: "assistant",
-        content: "Final answer",
-        tool_calls: undefined,
-        finish_reason: "stop",
-    });
+const defaultCompleteStreamFn = (
+  request: any,
+  onTextDelta: (delta: string) => void,
+) => {
+  onTextDelta("Final answer");
+  return Promise.resolve({
+    role: "assistant",
+    content: "Final answer",
+    tool_calls: undefined,
+    finish_reason: "stop",
+  });
 };
 
 // Mock LLM Client — now mocking completeStream instead of complete
 const mockCompleteStream = mock(defaultCompleteStreamFn);
 
 mock.module("../../src/background/llm", () => ({
-    LLMClient: class {
-        private model = "google/gemini-2.5-flash-lite";
-        complete = mock(() => Promise.resolve({
-            role: "assistant",
-            content: "Final answer",
-            tool_calls: undefined,
-            finish_reason: "stop",
-        }));
-        completeStream = mockCompleteStream;
-        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
-        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
-        getCurrentModel = () => this.model;
-        getCurrentProvider = () => "openrouter";
-        getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });
-        setFailoverCallback = mock(() => {});
-    },
-    MODEL_FAST: "google/gemini-2.5-flash-lite",
-    MODEL_SMART: "minimax/minimax-m2.5",
-    stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
+  LLMClient: class {
+    private model = "google/gemini-2.5-flash-lite";
+    complete = mock(() =>
+      Promise.resolve({
+        role: "assistant",
+        content: "Final answer",
+        tool_calls: undefined,
+        finish_reason: "stop",
+      }),
+    );
+    completeStream = mockCompleteStream;
+    switchToSmart = mock(() => {
+      this.model = "minimax/minimax-m2.5";
+    });
+    switchToFast = mock(() => {
+      this.model = "google/gemini-2.5-flash-lite";
+    });
+    getCurrentModel = () => this.model;
+    getCurrentProvider = () => "openrouter";
+    getActiveProviderInfo = () => ({
+      providerId: "openrouter",
+      model: this.model,
+    });
+    setFailoverCallback = mock(() => {});
+  },
+  MODEL_FAST: "google/gemini-2.5-flash-lite",
+  MODEL_SMART: "minimax/minimax-m2.5",
+  stripThinkTags: (text: string) =>
+    text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
 }));
 
 describe("AgentLoop", () => {
-    test("runs simple conversation with streaming", async () => {
-        const onStatus = mock();
-        const onMessage = mock();
-        const onStep = mock();
+  test("runs simple conversation with streaming", async () => {
+    const onStatus = mock();
+    const onMessage = mock();
+    const onStep = mock();
 
-        const agent = new AgentLoop("test-key", undefined, undefined, false, {
-            onStatusUpdate: onStatus,
-            onMessage: onMessage,
-            onStep: onStep,
-        });
-
-        await agent.start("Hello", 123);
-
-        expect(mockCompleteStream).toHaveBeenCalled();
-        expect(onStatus).toHaveBeenCalledWith(AgentStatus.THINKING, "Analyzing...");
-        // Unified mode: nudge→escalate→give-up ends with "Stuck" since mock LLM never emits tools
-        expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Stuck — send a follow-up to continue");
+    const agent = new AgentLoop("test-key", undefined, undefined, {
+      onStatusUpdate: onStatus,
+      onMessage: onMessage,
+      onStep: onStep,
     });
 
-    test("emits thinking steps during simple conversation", async () => {
-        const onStatus = mock();
-        const onMessage = mock();
-        const onStep = mock();
+    await agent.start("Hello", 123);
 
-        const agent = new AgentLoop("test-key", undefined, undefined, false, {
-            onStatusUpdate: onStatus,
-            onMessage: onMessage,
-            onStep: onStep,
-        });
+    expect(mockCompleteStream).toHaveBeenCalled();
+    expect(onStatus).toHaveBeenCalledWith(AgentStatus.THINKING, "Analyzing...");
+    // Unified mode: nudge→escalate→give-up ends with "Stuck" since mock LLM never emits tools
+    expect(onStatus).toHaveBeenCalledWith(
+      AgentStatus.IDLE,
+      "Stuck — send a follow-up to continue",
+    );
+  });
 
-        await agent.start("Hello", 123);
+  test("emits thinking steps during simple conversation", async () => {
+    const onStatus = mock();
+    const onMessage = mock();
+    const onStep = mock();
 
-        // Guardian decompose step + Filler-accelerated nudge→pivot→escalate+pivot→give-up:
-        // "Final answer" (12 chars) is detected as filler → consecutiveNudges += 2 each time
-        // Pre-loop: guardian thinking(running) "Analyzing task scope..."
-        // Turn 1: thinking(running) + thinking(done) → filler, nudges=2 → pivot (info "Rethinking")
-        // Turn 2: thinking(running) + thinking(done) → filler, nudges=2 → escalate+pivot (info "Rethinking" + info "Switching")
-        // Turn 3: thinking(running) + thinking(done) → filler, nudges=2, already escalated → regular nudge
-        // Turn 4: thinking(running) + thinking(done) → filler, nudges=4 → give-up (nudges >= 3)
-        // = 1 guardian + 4 turns × 2 thinking + 1 pivot info + 2 escalate+pivot info = 12
-        expect(onStep).toHaveBeenCalledTimes(12);
-
-        // First call: guardian decompose thinking step
-        const guardianCall = onStep.mock.calls[0];
-        expect(guardianCall[0].type).toBe("thinking");
-        expect(guardianCall[0].status).toBe("running");
-        expect(guardianCall[1]).toBe(false);
-
-        // Second call: turn 1 thinking step with running status
-        const firstCall = onStep.mock.calls[1];
-        expect(firstCall[0].type).toBe("thinking");
-        expect(firstCall[0].status).toBe("running");
-        expect(firstCall[1]).toBe(false); // update = false (new step)
-
-        // Third call: update turn 1 thinking step to done
-        const secondCall = onStep.mock.calls[2];
-        expect(secondCall[0].type).toBe("thinking");
-        expect(secondCall[0].status).toBe("done");
-        expect(secondCall[0].durationMs).toBeDefined();
-        expect(secondCall[1]).toBe(true); // update = true
-
-        // Index 3: info step "Rethinking approach from scratch" from first pivot (filler fast-tracked)
-        const pivotStep = onStep.mock.calls[3];
-        expect(pivotStep[0].type).toBe("info");
-        expect(pivotStep[0].label).toBe("Rethinking approach from scratch");
-        expect(pivotStep[1]).toBe(false);
+    const agent = new AgentLoop("test-key", undefined, undefined, {
+      onStatusUpdate: onStatus,
+      onMessage: onMessage,
+      onStep: onStep,
     });
+
+    await agent.start("Hello", 123);
+
+    // Guardian decompose step + Filler-accelerated nudge→pivot→escalate+pivot→give-up:
+    // "Final answer" (12 chars) is detected as filler → consecutiveNudges += 2 each time
+    // Pre-loop: guardian thinking(running) "Analyzing task scope..."
+    // Turn 1: thinking(running) + thinking(done) → filler, nudges=2 → pivot (info "Rethinking")
+    // Turn 2: thinking(running) + thinking(done) → filler, nudges=2 → escalate+pivot (info "Rethinking" + info "Switching")
+    // Turn 3: thinking(running) + thinking(done) → filler, nudges=2, already escalated → regular nudge
+    // Turn 4: thinking(running) + thinking(done) → filler, nudges=4 → give-up (nudges >= 3)
+    // = 1 guardian + 4 turns × 2 thinking + 1 pivot info + 2 escalate+pivot info = 12
+    expect(onStep).toHaveBeenCalledTimes(12);
+
+    // First call: guardian decompose thinking step
+    const guardianCall = onStep.mock.calls[0];
+    expect(guardianCall[0].type).toBe("thinking");
+    expect(guardianCall[0].status).toBe("running");
+    expect(guardianCall[1]).toBe(false);
+
+    // Second call: turn 1 thinking step with running status
+    const firstCall = onStep.mock.calls[1];
+    expect(firstCall[0].type).toBe("thinking");
+    expect(firstCall[0].status).toBe("running");
+    expect(firstCall[1]).toBe(false); // update = false (new step)
+
+    // Third call: update turn 1 thinking step to done
+    const secondCall = onStep.mock.calls[2];
+    expect(secondCall[0].type).toBe("thinking");
+    expect(secondCall[0].status).toBe("done");
+    expect(secondCall[0].durationMs).toBeDefined();
+    expect(secondCall[1]).toBe(true); // update = true
+
+    // Index 3: info step "Rethinking approach from scratch" from first pivot (filler fast-tracked)
+    const pivotStep = onStep.mock.calls[3];
+    expect(pivotStep[0].type).toBe("info");
+    expect(pivotStep[0].label).toBe("Rethinking approach from scratch");
+    expect(pivotStep[1]).toBe(false);
+  });
 });
 
 describe("Workspace-scoped tab operations", () => {
-    /** Set up mockCompleteStream to return tool calls in order, then done() for all subsequent calls. */
-    function setupLLMSequence(responses: any[]) {
-        let callIdx = 0;
-        const doneResponse = {
-            role: "assistant",
-            content: null,
-            tool_calls: [{
-                id: "tc_auto_done",
-                type: "function",
-                function: { name: "done", arguments: '{"summary":"Auto-done"}' },
-            }],
-            finish_reason: "tool_calls",
-        };
-        mockCompleteStream.mockImplementation((_req: any, _delta: any) => {
-            const resp = callIdx < responses.length ? responses[callIdx] : doneResponse;
-            callIdx++;
-            return Promise.resolve(resp);
-        });
-    }
-
-    function createAgent(workspaceId: string | null = null) {
-        return new AgentLoop("test-key", undefined, undefined, false, {
-            onStatusUpdate: mock(),
-            onMessage: mock(),
-            onStep: mock(),
-        }, { workspaceId });
-    }
-
-    function makeToolCall(id: string, name: string, args: Record<string, unknown>) {
-        return {
-            role: "assistant",
-            content: null,
-            tool_calls: [{
-                id,
-                type: "function",
-                function: { name, arguments: JSON.stringify(args) },
-            }],
-            finish_reason: "tool_calls",
-        };
-    }
-
-    // Save originals for restoration
-    const origGetWorkspaceById = workspaceManager.getWorkspaceById;
-    const origAddTabToWorkspace = workspaceManager.addTabToWorkspace;
-
-    beforeEach(() => {
-        mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
-        mockCompleteStream.mockClear();
-        // Spy on the singleton methods directly
-        workspaceManager.getWorkspaceById = origGetWorkspaceById;
-        workspaceManager.addTabToWorkspace = origAddTabToWorkspace;
-    });
-
-    const testWorkspace = {
-        id: "ws-1", name: "Test", color: "blue" as const, tabGroupId: 1, tabIds: [123, 789],
+  /** Set up mockCompleteStream to return tool calls in order, then done() for all subsequent calls. */
+  function setupLLMSequence(responses: any[]) {
+    let callIdx = 0;
+    const doneResponse = {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "tc_auto_done",
+          type: "function",
+          function: { name: "done", arguments: '{"summary":"Auto-done"}' },
+        },
+      ],
+      finish_reason: "tool_calls",
     };
-
-    function mockWorkspace(ws: any) {
-        workspaceManager.getWorkspaceById = (async () => ws) as any;
-        workspaceManager.addTabToWorkspace = (async () => {}) as any;
-    }
-
-    test("switch_tab rejects tabs outside workspace", async () => {
-        mockWorkspace(testWorkspace);
-
-        setupLLMSequence([
-            makeToolCall("tc_switch", "switch_tab", { tabId: 456 }),
-        ]);
-
-        const agent = createAgent("ws-1");
-        await agent.start("Switch to tab 456", 123);
-
-        // Second completeStream call should have the rejection message
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_switch");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("not in this workspace");
-        expect(toolResult.content).toContain("123, 789");
+    mockCompleteStream.mockImplementation((_req: any, _delta: any) => {
+      const resp =
+        callIdx < responses.length ? responses[callIdx] : doneResponse;
+      callIdx++;
+      return Promise.resolve(resp);
     });
+  }
 
-    test("switch_tab updates tabId for subsequent operations", async () => {
-        mockWorkspace(testWorkspace);
+  function createAgent(workspaceId: string | null = null) {
+    return new AgentLoop(
+      "test-key",
+      undefined,
+      undefined,
+      {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+        onStep: mock(),
+      },
+      { workspaceId },
+    );
+  }
 
-        // Spy on chrome.tabs.sendMessage to verify snapshot refresh targets new tab
-        const originalSendMessage = chrome.tabs.sendMessage;
-        const sendMessageSpy = mock(async () => ({ payload: { result: "ok", success: true } }));
-        (chrome.tabs as any).sendMessage = sendMessageSpy;
+  function makeToolCall(
+    id: string,
+    name: string,
+    args: Record<string, unknown>,
+  ) {
+    return {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+      finish_reason: "tool_calls",
+    };
+  }
 
-        setupLLMSequence([
-            makeToolCall("tc_switch", "switch_tab", { tabId: 789 }),
-        ]);
+  // Save originals for restoration
+  const origGetWorkspaceById = workspaceManager.getWorkspaceById;
+  const origAddTabToWorkspace = workspaceManager.addTabToWorkspace;
 
-        const agent = createAgent("ws-1");
-        await agent.start("Switch to 789", 123);
+  beforeEach(() => {
+    mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
+    mockCompleteStream.mockClear();
+    // Spy on the singleton methods directly
+    workspaceManager.getWorkspaceById = origGetWorkspaceById;
+    workspaceManager.addTabToWorkspace = origAddTabToWorkspace;
+  });
 
-        // Verify switch_tab result confirms the switch
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_switch");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("Switched to tab 789");
+  const testWorkspace = {
+    id: "ws-1",
+    name: "Test",
+    color: "blue" as const,
+    tabGroupId: 1,
+    tabIds: [123, 789],
+  };
 
-        // Verify snapshot refresh targeted the new tab (789)
-        const snapshotCalls = sendMessageSpy.mock.calls.filter(
-            (c: any) => c[1]?.type === "DOM_SNAPSHOT_REQUEST"
-        );
-        const targetedNewTab = snapshotCalls.some((c: any) => c[0] === 789);
-        expect(targetedNewTab).toBe(true);
+  function mockWorkspace(ws: any) {
+    workspaceManager.getWorkspaceById = (async () => ws) as any;
+    workspaceManager.addTabToWorkspace = (async () => {}) as any;
+  }
 
-        (chrome.tabs as any).sendMessage = originalSendMessage;
-    });
+  test("switch_tab rejects tabs outside workspace", async () => {
+    mockWorkspace(testWorkspace);
 
-    test("close_tab rejects tabs outside workspace", async () => {
-        mockWorkspace(testWorkspace);
+    setupLLMSequence([makeToolCall("tc_switch", "switch_tab", { tabId: 456 })]);
 
-        setupLLMSequence([
-            makeToolCall("tc_close", "close_tab", { tabId: 456 }),
-        ]);
+    const agent = createAgent("ws-1");
+    await agent.start("Switch to tab 456", 123);
 
-        const agent = createAgent("ws-1");
-        await agent.start("Close tab 456", 123);
+    // Second completeStream call should have the rejection message
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_switch",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("not in this workspace");
+    expect(toolResult.content).toContain("123, 789");
+  });
 
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_close");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("not in this workspace");
-    });
+  test("switch_tab updates tabId for subsequent operations", async () => {
+    mockWorkspace(testWorkspace);
 
-    test("close_tab rejects closing the current tab", async () => {
-        mockWorkspace(testWorkspace);
+    // Spy on chrome.tabs.sendMessage to verify snapshot refresh targets new tab
+    const originalSendMessage = chrome.tabs.sendMessage;
+    const sendMessageSpy = mock(async () => ({
+      payload: { result: "ok", success: true },
+    }));
+    (chrome.tabs as any).sendMessage = sendMessageSpy;
 
-        setupLLMSequence([
-            makeToolCall("tc_close", "close_tab", { tabId: 123 }),
-        ]);
+    setupLLMSequence([makeToolCall("tc_switch", "switch_tab", { tabId: 789 })]);
 
-        const agent = createAgent("ws-1");
-        await agent.start("Close current tab", 123);
+    const agent = createAgent("ws-1");
+    await agent.start("Switch to 789", 123);
 
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_close");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("Cannot close the current tab");
-    });
+    // Verify switch_tab result confirms the switch
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_switch",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Switched to tab 789");
 
-    test("list_tabs returns only workspace tabs", async () => {
-        mockWorkspace(testWorkspace);
+    // Verify snapshot refresh targeted the new tab (789)
+    const snapshotCalls = sendMessageSpy.mock.calls.filter(
+      (c: any) => c[1]?.type === "DOM_SNAPSHOT_REQUEST",
+    );
+    const targetedNewTab = snapshotCalls.some((c: any) => c[0] === 789);
+    expect(targetedNewTab).toBe(true);
 
-        // Mock chrome.tabs.get to return proper tab objects
-        const originalGet = chrome.tabs.get;
-        (chrome.tabs as any).get = mock(async (id: number) => ({
-            id,
-            title: `Tab ${id}`,
-            url: `https://example.com/${id}`,
-            active: id === 123,
-            groupId: 1,
-        }));
+    (chrome.tabs as any).sendMessage = originalSendMessage;
+  });
 
-        setupLLMSequence([
-            makeToolCall("tc_list", "list_tabs", {}),
-        ]);
+  test("close_tab rejects tabs outside workspace", async () => {
+    mockWorkspace(testWorkspace);
 
-        const agent = createAgent("ws-1");
-        await agent.start("List tabs", 123);
+    setupLLMSequence([makeToolCall("tc_close", "close_tab", { tabId: 456 })]);
 
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_list");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("Tab 123");
-        expect(toolResult.content).toContain("Tab 789");
-        // Should NOT contain tabs outside the workspace
-        expect(toolResult.content).not.toContain("Tab 456");
+    const agent = createAgent("ws-1");
+    await agent.start("Close tab 456", 123);
 
-        (chrome.tabs as any).get = originalGet;
-    });
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_close",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("not in this workspace");
+  });
 
-    test("no workspace — no tab restrictions", async () => {
-        mockWorkspace(null);
+  test("close_tab rejects closing the current tab", async () => {
+    mockWorkspace(testWorkspace);
 
-        // Mock chrome.tabs.query to return all tabs
-        const originalQuery = chrome.tabs.query;
-        (chrome.tabs as any).query = mock(async () => [
-            { id: 123, title: "Tab A", url: "https://a.com", active: true },
-            { id: 456, title: "Tab B", url: "https://b.com", active: false },
-        ]);
+    setupLLMSequence([makeToolCall("tc_close", "close_tab", { tabId: 123 })]);
 
-        setupLLMSequence([
-            makeToolCall("tc_list", "list_tabs", {}),
-        ]);
+    const agent = createAgent("ws-1");
+    await agent.start("Close current tab", 123);
 
-        // No workspaceId — no restrictions
-        const agent = createAgent(null);
-        await agent.start("List all tabs", 123);
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_close",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Cannot close the current tab");
+  });
 
-        const msgs = mockCompleteStream.mock.calls[1][0].messages;
-        const toolResult = msgs.find((m: any) => m.role === "tool" && m.tool_call_id === "tc_list");
-        expect(toolResult).toBeDefined();
-        expect(toolResult.content).toContain("Tab 123");
-        expect(toolResult.content).toContain("Tab 456");
+  test("list_tabs returns only workspace tabs", async () => {
+    mockWorkspace(testWorkspace);
 
-        (chrome.tabs as any).query = originalQuery;
-    });
+    // Mock chrome.tabs.get to return proper tab objects
+    const originalGet = chrome.tabs.get;
+    (chrome.tabs as any).get = mock(async (id: number) => ({
+      id,
+      title: `Tab ${id}`,
+      url: `https://example.com/${id}`,
+      active: id === 123,
+      groupId: 1,
+    }));
+
+    setupLLMSequence([makeToolCall("tc_list", "list_tabs", {})]);
+
+    const agent = createAgent("ws-1");
+    await agent.start("List tabs", 123);
+
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_list",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Tab 123");
+    expect(toolResult.content).toContain("Tab 789");
+    // Should NOT contain tabs outside the workspace
+    expect(toolResult.content).not.toContain("Tab 456");
+
+    (chrome.tabs as any).get = originalGet;
+  });
+
+  test("no workspace — no tab restrictions", async () => {
+    mockWorkspace(null);
+
+    // Mock chrome.tabs.query to return all tabs
+    const originalQuery = chrome.tabs.query;
+    (chrome.tabs as any).query = mock(async () => [
+      { id: 123, title: "Tab A", url: "https://a.com", active: true },
+      { id: 456, title: "Tab B", url: "https://b.com", active: false },
+    ]);
+
+    setupLLMSequence([makeToolCall("tc_list", "list_tabs", {})]);
+
+    // No workspaceId — no restrictions
+    const agent = createAgent(null);
+    await agent.start("List all tabs", 123);
+
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_list",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Tab 123");
+    expect(toolResult.content).toContain("Tab 456");
+
+    (chrome.tabs as any).query = originalQuery;
+  });
 });

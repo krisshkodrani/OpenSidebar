@@ -17,6 +17,9 @@ import { logger } from "../utils";
 /** Maps tag number → DOM element (for action execution) */
 const tagMap = new Map<number, Element>();
 
+/** Elements tagged via addDynamicTag() — survives tagMap.clear() in tagElements() */
+const dynamicTagEntries = new Map<number, Element>();
+
 /** CSS class for the injected label overlay */
 const LABEL_CLASS = "qsidebar-tag";
 
@@ -145,6 +148,7 @@ export function resetStableIds(): void {
   hashToId.clear();
   idToHash.clear();
   tagMap.clear();
+  dynamicTagEntries.clear();
   previousIds.clear();
   nextId = 1;
 }
@@ -194,6 +198,7 @@ export function addDynamicTag(el: Element): number {
   const hash = computeStableHash(el);
   const id = getStableId(hash);
   tagMap.set(id, el);
+  dynamicTagEntries.set(id, el);
   return id;
 }
 
@@ -460,7 +465,40 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
     });
   }
 
-  // 8. Clean up hashes for elements gone for 2+ refreshes
+  // 8. Restore dynamic tags that survived DOM but weren't in interactive scan
+  for (const [id, el] of dynamicTagEntries) {
+    if (tagMap.has(id)) {
+      // Already re-tagged by interactive scan — no longer needs dynamic tracking
+      dynamicTagEntries.delete(id);
+      continue;
+    }
+    if (!document.body.contains(el)) {
+      // Element removed from DOM — clean up
+      dynamicTagEntries.delete(id);
+      continue;
+    }
+    if (!isElementVisible(el)) continue; // Hidden but might reappear — keep entry
+    if (results.length >= MAX_TAGGED_ELEMENTS) break;
+
+    const hash = idToHash.get(id);
+    if (hash) activeHashes.add(hash);
+    previousIds.delete(id);
+    tagMap.set(id, el);
+
+    const rect = el.getBoundingClientRect();
+    results.push({
+      tag: id,
+      tagName: el.tagName.toLowerCase(),
+      role: el.getAttribute("role") || inferRole(el),
+      text: truncateText(getVisibleText(el), 80),
+      attributes: extractAttributes(el),
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      isVisible: true,
+      isDisabled: isDisabled(el),
+    });
+  }
+
+  // 9. Clean up hashes for elements gone for 2+ refreshes
   // previousIds now contains IDs that existed before but weren't seen this refresh.
   // They get one grace cycle. On the NEXT refresh, they'll be cleared from previousIds
   // at the top, and if still not seen, they won't be in previousIds → eligible for cleanup.
@@ -619,6 +657,17 @@ function extractAttributes(el: Element): Record<string, string> {
     }
   }
 
+  // Deduplicate: aria-label supersedes title and alt
+  if (attrs["aria-label"]) {
+    delete attrs["title"];
+    delete attrs["alt"];
+  }
+
+  // Deduplicate: placeholder redundant when label already describes the field
+  if (attrs["placeholder"] && attrs["label"]) {
+    delete attrs["placeholder"];
+  }
+
   // Detect drop zone — JS event handlers aren't HTML attributes, check properties
   if (
     typeof (el as any).ondrop === "function" ||
@@ -666,11 +715,7 @@ function extractAttributes(el: Element): Record<string, string> {
     const style = window.getComputedStyle(el);
     const bg = style.backgroundColor;
     // Only emit non-trivial backgrounds (skip transparent/rgba(0,0,0,0))
-    if (
-      bg &&
-      bg !== "rgba(0, 0, 0, 0)" &&
-      bg !== "transparent"
-    ) {
+    if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
       attrs["bg-color"] = bg;
     }
     const fg = style.color;
@@ -690,6 +735,10 @@ function extractAttributes(el: Element): Record<string, string> {
 export function isRandomHash(value: string): boolean {
   // Double-underscore suffixes are almost always CSS-module / build-tool noise
   if (/__[a-zA-Z0-9]{2,}$/.test(value)) return true;
+
+  // React-generated IDs: multiple underscore-separated segments with mixed alphanumeric parts
+  // e.g., "u_0_j_8W0000", "id_1_a2B3c4"
+  if (/^([a-zA-Z0-9]_)+[a-zA-Z0-9]{4,}$/i.test(value)) return true;
 
   // Check trailing alphanumeric suffix after _ or -
   const suffixMatch = value.match(/[_-]([a-zA-Z0-9]{4,})$/);

@@ -51,7 +51,9 @@ export default function App() {
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
-  const [savedPromptsPrefill, setSavedPromptsPrefill] = useState<string | undefined>(undefined);
+  const [savedPromptsPrefill, setSavedPromptsPrefill] = useState<
+    string | undefined
+  >(undefined);
   const [screenshot, setScreenshot] = useState<{
     dataUrl: string;
     context: string;
@@ -96,11 +98,17 @@ export default function App() {
 
       // 2. Resolve active workspace from current tab
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
         if (tab?.id) {
           // Look up workspace from chrome.storage.local (persisted by WorkspaceManager)
-          const stored = await chrome.storage.local.get("opensidebar:workspaces");
-          const workspaces: Workspace[] = stored["opensidebar:workspaces"] || [];
+          const stored = await chrome.storage.local.get(
+            "opensidebar:workspaces",
+          );
+          const workspaces: Workspace[] =
+            stored["opensidebar:workspaces"] || [];
           const ws = workspaces.find((w) => w.tabIds.includes(tab.id!));
           if (ws) {
             useStore.getState().setActiveWorkspaceId(ws.id);
@@ -146,7 +154,9 @@ export default function App() {
           useStore.getState().setActiveWorkspaceId(newWsId);
         }
       } catch (e) {
-        logger.warn("ui", "Failed to resolve workspace on tab switch", { error: e });
+        logger.warn("ui", "Failed to resolve workspace on tab switch", {
+          error: e,
+        });
       }
     };
 

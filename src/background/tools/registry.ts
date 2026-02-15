@@ -1,59 +1,69 @@
 import { ToolName, ToolCall, ToolDefinition } from "../../types";
 import { logger } from "../../utils";
 
-type ToolExecutor = (args: Record<string, unknown>, tabId: number, signal?: AbortSignal) => Promise<string>;
+type ToolExecutor = (
+  args: Record<string, unknown>,
+  tabId: number,
+  signal?: AbortSignal,
+) => Promise<string>;
 
 export class ToolRegistry {
-    private tools: Map<ToolName, ToolExecutor> = new Map();
-    private definitions: ToolDefinition[] = [];
+  private tools: Map<ToolName, ToolExecutor> = new Map();
+  private definitions: ToolDefinition[] = [];
 
-    register(name: ToolName, definition: ToolDefinition, executor: ToolExecutor) {
-        this.tools.set(name, executor);
-        this.definitions.push(definition);
+  register(name: ToolName, definition: ToolDefinition, executor: ToolExecutor) {
+    this.tools.set(name, executor);
+    this.definitions.push(definition);
+  }
+
+  getDefinitions(exclude?: Set<ToolName>): ToolDefinition[] {
+    if (!exclude || exclude.size === 0) return this.definitions;
+    return this.definitions.filter((d) => !exclude.has(d.function.name));
+  }
+
+  setExecutor(name: ToolName, executor: ToolExecutor) {
+    this.tools.set(name, executor);
+  }
+
+  clear() {
+    this.tools.clear();
+    this.definitions = [];
+  }
+
+  async execute(
+    toolCall: ToolCall,
+    tabId: number,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const name = toolCall.function.name as ToolName;
+    const executor = this.tools.get(name);
+
+    if (!executor) {
+      logger.error("tools", `Tool not found: ${name}`);
+      return `Error: Tool ${name} not found.`;
     }
 
-    getDefinitions(exclude?: Set<ToolName>): ToolDefinition[] {
-        if (!exclude || exclude.size === 0) return this.definitions;
-        return this.definitions.filter(d => !exclude.has(d.function.name));
+    let args: Record<string, unknown> = {};
+    const rawArgs = toolCall.function.arguments;
+    if (rawArgs && rawArgs.trim().length > 0) {
+      try {
+        args = JSON.parse(rawArgs);
+      } catch (e) {
+        logger.error("tools", `Failed to parse arguments for ${name}`, {
+          error: e,
+        });
+        return `Error: Invalid JSON arguments for ${name}.`;
+      }
     }
 
-    setExecutor(name: ToolName, executor: ToolExecutor) {
-        this.tools.set(name, executor);
+    try {
+      const result = await executor(args, tabId, signal);
+      return result;
+    } catch (error: any) {
+      if (error.name === "AbortError") throw error;
+      return `Error executing ${name}: ${error.message}`;
     }
-
-    clear() {
-        this.tools.clear();
-        this.definitions = [];
-    }
-
-    async execute(toolCall: ToolCall, tabId: number, signal?: AbortSignal): Promise<string> {
-        const name = toolCall.function.name as ToolName;
-        const executor = this.tools.get(name);
-
-        if (!executor) {
-            logger.error("tools", `Tool not found: ${name}`);
-            return `Error: Tool ${name} not found.`;
-        }
-
-        let args: Record<string, unknown> = {};
-        const rawArgs = toolCall.function.arguments;
-        if (rawArgs && rawArgs.trim().length > 0) {
-            try {
-                args = JSON.parse(rawArgs);
-            } catch (e) {
-                logger.error("tools", `Failed to parse arguments for ${name}`, { error: e });
-                return `Error: Invalid JSON arguments for ${name}.`;
-            }
-        }
-
-        try {
-            const result = await executor(args, tabId, signal);
-            return result;
-        } catch (error: any) {
-            if (error.name === "AbortError") throw error;
-            return `Error executing ${name}: ${error.message}`;
-        }
-    }
+  }
 }
 
 // Singleton instance

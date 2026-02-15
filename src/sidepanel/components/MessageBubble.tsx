@@ -148,7 +148,11 @@ function CompletionSummary({
   );
 }
 
-export const MessageBubble = React.memo(function MessageBubble({ message }: { message: ChatEntry }) {
+export const MessageBubble = React.memo(function MessageBubble({
+  message,
+}: {
+  message: ChatEntry;
+}) {
   const isUser = message.role === "user";
   const isHint = isUser && message.isHint;
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -157,7 +161,10 @@ export const MessageBubble = React.memo(function MessageBubble({ message }: { me
     if (isUser || !message.content) return "";
     // Strip markdown Think/Observe/Verify reasoning sections before rendering
     const cleaned = message.content
-      .replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "")
+      .replace(
+        /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
+        "",
+      )
       .replace(/\*\*Act\*\*:?\s*/gi, "")
       .trim();
     if (!cleaned) return "";

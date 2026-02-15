@@ -28,8 +28,11 @@ export interface PlanStatus {
   currentIndex: number;
 }
 
-const SYSTEM_PROMPT_TEMPLATE = `
-You are OpenSidebar, an autonomous browser agent. {{persona}}
+// --- System prompt template ---
+// IMPORTANT: Block ordering is designed for LLM prefix caching.
+// Block 1 (static rules) MUST come first so the prefix is stable across turns.
+// Do NOT move persona or dynamic content above the static rules.
+const SYSTEM_PROMPT_TEMPLATE = `You are OpenSidebar, an autonomous browser agent.
 
 ## Core Loop: Observe → Think → Act → Verify
 Every turn, follow this cycle:
@@ -60,8 +63,6 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
 - Work autonomously — do not ask the user for permission between steps.
 
-{{planStatus}}
-{{planInstructions}}
 ## Tool Tips
 - type_text auto-focuses; pressEnter: true submits forms in one step.
 - hide_element removes overlays/modals blocking interaction (rejects non-overlay elements).
@@ -76,6 +77,9 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
 - Audio/video: You CANNOT hear or watch media directly. Use transcribe_audio to get a text transcript of spoken content. If transcription isn't available, try read_page or take_screenshot after clicking play — some challenges reveal text visually.
 
+{{persona}}
+{{planStatus}}
+{{planInstructions}}
 ## Page Context
 Title: {{title}}
 URL: {{url}}
@@ -101,15 +105,31 @@ export class ContextManager {
     this.modelTier = tier;
   }
 
+  /** Dynamically adjust the context window size (e.g. expand on escalation). */
+  public setMaxContextTokens(tokens: number): void {
+    this.maxContextTokens = tokens;
+  }
+
+  /** Get the current max context token budget. */
+  public getMaxContextTokens(): number {
+    return this.maxContextTokens;
+  }
+
   constructor(maxContextTokens: number = 32000, workspaceId?: string | null) {
     this.maxContextTokens = maxContextTokens;
-    this.storageKey = workspaceId ? `agent_context:${workspaceId}` : "agent_context";
+    this.storageKey = workspaceId
+      ? `agent_context:${workspaceId}`
+      : "agent_context";
   }
 
   private capturedOverlays: string[] = [];
 
   public setPlanStatus(
-    subtasks: { description: string; status: string; completedAtUrl?: string }[],
+    subtasks: {
+      description: string;
+      status: string;
+      completedAtUrl?: string;
+    }[],
     currentIndex: number,
   ): void {
     this.planStatus = { subtasks, currentIndex };
@@ -124,43 +144,53 @@ export class ContextManager {
     const { subtasks, currentIndex } = this.planStatus;
     const total = subtasks.length;
 
-    // Helper: format a completed step line, appending URL path if available
-    const formatDoneLine = (s: typeof subtasks[number], i: number): string => {
-      let line = `  ${i + 1}. ${s.description} [done`;
-      if (s.completedAtUrl) {
-        try {
-          const u = new URL(s.completedAtUrl);
-          line += ` @ ${u.pathname}`;
-        } catch {
-          line += ` @ ${s.completedAtUrl}`;
-        }
+    // Compact path extractor
+    const urlPath = (url?: string): string => {
+      if (!url) return "";
+      try {
+        return new URL(url).pathname;
+      } catch {
+        return url;
       }
-      line += "]";
-      return line;
     };
 
     if (currentIndex >= total) {
-      // All steps done
-      const lines = subtasks.map((s, i) => formatDoneLine(s, i));
-      return `## Active Plan\nAll ${total} steps completed.\n${lines.join("\n")}\nCall done() now with a summary of everything accomplished.`;
+      // All steps done — compact summary
+      const doneList = subtasks
+        .map(
+          (s, i) =>
+            `${i + 1}-${s.description}${s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : ""}`,
+        )
+        .join(", ");
+      return `## Plan [${total}/${total}] ALL DONE\nDone: ${doneList}\nCall done() now with a summary.`;
     }
 
     const currentDesc = subtasks[currentIndex]?.description || "Unknown";
-    const completedLines = subtasks
-      .slice(0, currentIndex)
-      .map((s, i) => formatDoneLine(s, i));
+
+    // Compact done list (only completed steps)
+    const doneSteps = subtasks.slice(0, currentIndex);
+    const doneList =
+      doneSteps.length > 0
+        ? doneSteps
+            .map(
+              (s, i) =>
+                `${i + 1}-${s.description}${s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : ""}`,
+            )
+            .join(", ")
+        : "";
+
     const nextStep =
       currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
 
-    let block = `## Active Plan\nStep ${currentIndex + 1} of ${total}: "${currentDesc}"\n`;
-    if (completedLines.length > 0) {
-      block += `Completed:\n${completedLines.join("\n")}\n`;
-      block += `Do NOT navigate back to completed step URLs — this will destroy progress.\n`;
+    let block = `## Plan [${currentIndex + 1}/${total}] "${currentDesc}"\n`;
+    if (doneList) {
+      block += `Done: ${doneList}\n`;
+      block += `Do NOT revisit completed step URLs.\n`;
     }
     if (nextStep) {
       block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
     }
-    block += `Execute the current step now. After completing this step's objective, IMMEDIATELY call update_plan() to advance. Do not continue performing actions related to this step once the goal is met.`;
+    block += `Execute now. Call update_plan() when done.`;
     return block;
   }
 
@@ -174,7 +204,7 @@ export class ContextManager {
       if (this.capturedOverlays.length > 50) {
         this.capturedOverlays = this.capturedOverlays.slice(-50);
       }
-      this.saveState().catch(() => { });
+      this.saveState().catch(() => {});
     }
   }
 
@@ -359,10 +389,10 @@ export class ContextManager {
   private constructSystemMessage(): LLMMessage {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
-    // Persona: fast vs smart model framing
+    // Persona: fast vs smart model framing (placed after static rules for prefix caching)
     content = content.replace(
       "{{persona}}",
-      this.modelTier === "smart" ? SMART_PERSONA : FAST_PERSONA,
+      `## Persona\n${this.modelTier === "smart" ? SMART_PERSONA : FAST_PERSONA}`,
     );
 
     // Multi-Step Planning: only include when a plan is active
@@ -436,9 +466,7 @@ Do NOT call done() until every planned step is complete.
       }
 
       // Archivist: surface text from persisted captured overlays
-      if (
-        this.capturedOverlays.length > 0
-      ) {
+      if (this.capturedOverlays.length > 0) {
         const archived = this.capturedOverlays
           .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${t}`)
           .join("\n\n");
@@ -571,6 +599,9 @@ Do NOT call done() until every planned step is complete.
     if (level === CompressionLevel.HEAVY) {
       // Keep only top 10 by navigation relevance
       processed = this.selectRelevantElements(elements, 10);
+    } else if (level === CompressionLevel.NONE && processed.length > 60) {
+      // Hard cap at 60 elements even at NONE to prevent pathological 3000+ token lists
+      processed = this.selectRelevantElements(elements, 60);
     }
 
     // Determine text/attr compression per level
@@ -587,7 +618,7 @@ Do NOT call done() until every planned step is complete.
         ? (k) => ["role", "type", "description"].includes(k)
         : level === CompressionLevel.MEDIUM
           ? (k) =>
-            ["id", "role", "type", "href", "label", "description"].includes(k)
+              ["id", "role", "type", "href", "label", "description"].includes(k)
           : null;
 
     // Categorize elements into semantic groups
@@ -646,7 +677,8 @@ Do NOT call done() until every planned step is complete.
       } else if (
         el.tagName === "button" ||
         el.role === "button" ||
-        (el.attributes.type === "submit" || el.attributes.type === "button")
+        el.attributes.type === "submit" ||
+        el.attributes.type === "button"
       ) {
         buttons.push(el);
       } else if (el.tagName === "a" || el.role === "link") {
@@ -789,14 +821,14 @@ Do NOT call done() until every planned step is complete.
     this.snapshot = null;
     this.planStatus = null;
     this.capturedOverlays = [];
-    this.saveState().catch(() => { });
+    this.saveState().catch(() => {});
   }
 
   /** Clear conversation history but keep the current DOM snapshot intact.
    *  Used between subtasks so page state carries over. */
   public clearHistory() {
     this.history = [];
-    this.saveState().catch(() => { });
+    this.saveState().catch(() => {});
   }
 
   /**
@@ -809,7 +841,7 @@ Do NOT call done() until every planned step is complete.
     // If we wanted to sync them from `savedState` (AgentLoopState),
     // we'd need to add them to AgentLoopState too.
     // For now, loadState() handles the session persistence, so we are good.
-    this.saveState().catch(() => { });
+    this.saveState().catch(() => {});
     logger.info("agent", "Context restored from navigation state", {
       historyLength: this.history.length,
     });

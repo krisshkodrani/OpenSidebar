@@ -1,16 +1,16 @@
 /**
  * Navigation Bridge — Persists agent state across page navigations
- * 
+ *
  * When the agent triggers a navigation (via navigate() or clicking a link),
  * the content script is destroyed. This module saves state to chrome.storage.local,
  * listens for webNavigation.onCompleted, and resumes the agent loop.
  */
 
 import {
-    AgentStatus,
-    AgentLoopState,
-    NavigationState,
-    MessageSource,
+  AgentStatus,
+  AgentLoopState,
+  NavigationState,
+  MessageSource,
 } from "../types";
 import { logger } from "../utils";
 
@@ -21,7 +21,9 @@ const NAVIGATION_TIMEOUT_MS = 30_000; // 30 seconds
 
 /** Get workspace-scoped storage key */
 function storageKey(workspaceId?: string | null): string {
-    return workspaceId ? `${STORAGE_KEY_PREFIX}:${workspaceId}` : STORAGE_KEY_PREFIX;
+  return workspaceId
+    ? `${STORAGE_KEY_PREFIX}:${workspaceId}`
+    : STORAGE_KEY_PREFIX;
 }
 
 // --- State Management ---
@@ -31,26 +33,30 @@ function storageKey(workspaceId?: string | null): string {
  * Called when navigate() is invoked or click triggers navigation.
  */
 export async function saveNavigationState(
-    state: AgentLoopState,
-    fromUrl: string,
-    expectedUrl: string | null
+  state: AgentLoopState,
+  fromUrl: string,
+  expectedUrl: string | null,
 ): Promise<void> {
-    const navState: NavigationState = {
-        agentState: {
-            ...state,
-            status: AgentStatus.WAITING_FOR_PAGE_LOAD,
-            // Ensure messages are serializable (strip any non-JSON-safe content)
-            messages: state.messages.map(m => ({ ...m })),
-        },
-        fromUrl,
-        toUrl: expectedUrl,
-        navigationStartTs: Date.now(),
-        timeoutMs: NAVIGATION_TIMEOUT_MS,
-    };
+  const navState: NavigationState = {
+    agentState: {
+      ...state,
+      status: AgentStatus.WAITING_FOR_PAGE_LOAD,
+      // Ensure messages are serializable (strip any non-JSON-safe content)
+      messages: state.messages.map((m) => ({ ...m })),
+    },
+    fromUrl,
+    toUrl: expectedUrl,
+    navigationStartTs: Date.now(),
+    timeoutMs: NAVIGATION_TIMEOUT_MS,
+  };
 
-    const key = storageKey(state.workspaceId);
-    await chrome.storage.local.set({ [key]: navState });
-    logger.info("navigation", "Saved navigation state", { fromUrl, toUrl: expectedUrl, storageKey: key });
+  const key = storageKey(state.workspaceId);
+  await chrome.storage.local.set({ [key]: navState });
+  logger.info("navigation", "Saved navigation state", {
+    fromUrl,
+    toUrl: expectedUrl,
+    storageKey: key,
+  });
 }
 
 /**
@@ -58,39 +64,47 @@ export async function saveNavigationState(
  * Checks workspace-scoped key first (by tab lookup), then falls back to the default key.
  */
 export async function loadNavigationState(): Promise<NavigationState | null> {
-    // Try all stored keys matching the prefix pattern
-    const stored = await chrome.storage.local.get(null);
-    for (const [key, value] of Object.entries(stored)) {
-        if (key.startsWith(STORAGE_KEY_PREFIX) && value && (value as NavigationState).agentState) {
-            return value as NavigationState;
-        }
+  // Try all stored keys matching the prefix pattern
+  const stored = await chrome.storage.local.get(null);
+  for (const [key, value] of Object.entries(stored)) {
+    if (
+      key.startsWith(STORAGE_KEY_PREFIX) &&
+      value &&
+      (value as NavigationState).agentState
+    ) {
+      return value as NavigationState;
     }
-    return null;
+  }
+  return null;
 }
 
 /**
  * Retrieves pending navigation state for a specific tab.
  */
-export async function loadNavigationStateForTab(tabId: number): Promise<NavigationState | null> {
-    const stored = await chrome.storage.local.get(null);
-    for (const [key, value] of Object.entries(stored)) {
-        if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
-            const navState = value as NavigationState;
-            if (navState.agentState?.activeTabId === tabId) {
-                return navState;
-            }
-        }
+export async function loadNavigationStateForTab(
+  tabId: number,
+): Promise<NavigationState | null> {
+  const stored = await chrome.storage.local.get(null);
+  for (const [key, value] of Object.entries(stored)) {
+    if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
+      const navState = value as NavigationState;
+      if (navState.agentState?.activeTabId === tabId) {
+        return navState;
+      }
     }
-    return null;
+  }
+  return null;
 }
 
 /**
  * Clears stored navigation state for a given workspace (or default).
  */
-export async function clearNavigationState(workspaceId?: string | null): Promise<void> {
-    const key = storageKey(workspaceId);
-    await chrome.storage.local.remove(key);
-    logger.debug("navigation", "Cleared navigation state", { storageKey: key });
+export async function clearNavigationState(
+  workspaceId?: string | null,
+): Promise<void> {
+  const key = storageKey(workspaceId);
+  await chrome.storage.local.remove(key);
+  logger.debug("navigation", "Cleared navigation state", { storageKey: key });
 }
 
 // --- Event Handlers ---
@@ -99,7 +113,11 @@ export async function clearNavigationState(workspaceId?: string | null): Promise
 export type ResumeCallback = (state: AgentLoopState, newUrl: string) => void;
 
 /** Callback type for broadcasting status updates */
-export type StatusCallback = (status: AgentStatus, detail: string, workspaceId?: string | null) => void;
+export type StatusCallback = (
+  status: AgentStatus,
+  detail: string,
+  workspaceId?: string | null,
+) => void;
 
 let resumeCallback: ResumeCallback | null = null;
 let statusCallback: StatusCallback | null = null;
@@ -109,11 +127,11 @@ let statusCallback: StatusCallback | null = null;
  * Must be called during initialization.
  */
 export function setNavigationCallbacks(
-    onResume: ResumeCallback,
-    onStatus: StatusCallback
+  onResume: ResumeCallback,
+  onStatus: StatusCallback,
 ): void {
-    resumeCallback = onResume;
-    statusCallback = onStatus;
+  resumeCallback = onResume;
+  statusCallback = onStatus;
 }
 
 /**
@@ -121,59 +139,70 @@ export function setNavigationCallbacks(
  * Resumes the agent loop if we have pending navigation state.
  */
 async function handleNavigationComplete(
-    details: chrome.webNavigation.WebNavigationFramedCallbackDetails
+  details: chrome.webNavigation.WebNavigationFramedCallbackDetails,
 ): Promise<void> {
-    // Only care about main frame (not iframes)
-    if (details.frameId !== 0) return;
+  // Only care about main frame (not iframes)
+  if (details.frameId !== 0) return;
 
-    const navState = await loadNavigationStateForTab(details.tabId);
-    if (!navState) return;
+  const navState = await loadNavigationStateForTab(details.tabId);
+  if (!navState) return;
 
-    // Check if agent was waiting for navigation
-    if (navState.agentState.status !== AgentStatus.WAITING_FOR_PAGE_LOAD) return;
+  // Check if agent was waiting for navigation
+  if (navState.agentState.status !== AgentStatus.WAITING_FOR_PAGE_LOAD) return;
 
-    // Check for timeout
-    const elapsed = Date.now() - navState.navigationStartTs;
-    if (elapsed > navState.timeoutMs) {
-        await clearNavigationState(navState.agentState.workspaceId);
-        statusCallback?.(AgentStatus.ERROR, "Navigation timed out", navState.agentState.workspaceId);
-        logger.warn("navigation", "Navigation timed out", { elapsed, timeout: navState.timeoutMs });
-        return;
-    }
-
-    // Clear stored state before resuming
+  // Check for timeout
+  const elapsed = Date.now() - navState.navigationStartTs;
+  if (elapsed > navState.timeoutMs) {
     await clearNavigationState(navState.agentState.workspaceId);
+    statusCallback?.(
+      AgentStatus.ERROR,
+      "Navigation timed out",
+      navState.agentState.workspaceId,
+    );
+    logger.warn("navigation", "Navigation timed out", {
+      elapsed,
+      timeout: navState.timeoutMs,
+    });
+    return;
+  }
 
-    logger.info("navigation", "Navigation completed, resuming agent", { url: details.url });
+  // Clear stored state before resuming
+  await clearNavigationState(navState.agentState.workspaceId);
 
-    // Notify side panel
-    chrome.runtime.sendMessage({
-        type: "NAVIGATION_RESUME",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: {
-            success: true,
-            url: details.url,
-        },
-    }).catch(() => { }); // Ignore if sidepanel closed
+  logger.info("navigation", "Navigation completed, resuming agent", {
+    url: details.url,
+  });
 
-    // Wait a moment for content script to initialize
-    await new Promise(resolve => setTimeout(resolve, 500));
+  // Notify side panel
+  chrome.runtime
+    .sendMessage({
+      type: "NAVIGATION_RESUME",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: {
+        success: true,
+        url: details.url,
+      },
+    })
+    .catch(() => {}); // Ignore if sidepanel closed
 
-    // Add navigation result to messages
-    const state = { ...navState.agentState };
-    if (state.pendingToolCall) {
-        state.messages.push({
-            role: "tool",
-            tool_call_id: state.pendingToolCall.toolCallId,
-            content: `Navigated to ${details.url}. Page has loaded. Fresh page snapshot is available.`,
-        });
-        state.pendingToolCall = null;
-    }
-    state.status = AgentStatus.THINKING;
+  // Wait a moment for content script to initialize
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Resume the agent loop
-    resumeCallback?.(state, details.url);
+  // Add navigation result to messages
+  const state = { ...navState.agentState };
+  if (state.pendingToolCall) {
+    state.messages.push({
+      role: "tool",
+      tool_call_id: state.pendingToolCall.toolCallId,
+      content: `Navigated to ${details.url}. Page has loaded. Fresh page snapshot is available.`,
+    });
+    state.pendingToolCall = null;
+  }
+  state.status = AgentStatus.THINKING;
+
+  // Resume the agent loop
+  resumeCallback?.(state, details.url);
 }
 
 /**
@@ -181,43 +210,48 @@ async function handleNavigationComplete(
  * Resumes the agent loop with an error message.
  */
 async function handleNavigationError(
-    details: chrome.webNavigation.WebNavigationFramedErrorCallbackDetails
+  details: chrome.webNavigation.WebNavigationFramedErrorCallbackDetails,
 ): Promise<void> {
-    // Only care about main frame
-    if (details.frameId !== 0) return;
+  // Only care about main frame
+  if (details.frameId !== 0) return;
 
-    const navState = await loadNavigationStateForTab(details.tabId);
-    if (!navState) return;
+  const navState = await loadNavigationStateForTab(details.tabId);
+  if (!navState) return;
 
-    await clearNavigationState(navState.agentState.workspaceId);
+  await clearNavigationState(navState.agentState.workspaceId);
 
-    logger.warn("navigation", "Navigation failed", { url: details.url, error: details.error });
+  logger.warn("navigation", "Navigation failed", {
+    url: details.url,
+    error: details.error,
+  });
 
-    // Notify side panel
-    chrome.runtime.sendMessage({
-        type: "NAVIGATION_RESUME",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: {
-            success: false,
-            url: details.url,
-            error: details.error,
-        },
-    }).catch(() => { });
+  // Notify side panel
+  chrome.runtime
+    .sendMessage({
+      type: "NAVIGATION_RESUME",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: {
+        success: false,
+        url: details.url,
+        error: details.error,
+      },
+    })
+    .catch(() => {});
 
-    // Add error to messages and resume
-    const state = { ...navState.agentState };
-    if (state.pendingToolCall) {
-        state.messages.push({
-            role: "tool",
-            tool_call_id: state.pendingToolCall.toolCallId,
-            content: `Navigation failed: ${details.error}. The page could not be loaded.`,
-        });
-        state.pendingToolCall = null;
-    }
-    state.status = AgentStatus.THINKING;
+  // Add error to messages and resume
+  const state = { ...navState.agentState };
+  if (state.pendingToolCall) {
+    state.messages.push({
+      role: "tool",
+      tool_call_id: state.pendingToolCall.toolCallId,
+      content: `Navigation failed: ${details.error}. The page could not be loaded.`,
+    });
+    state.pendingToolCall = null;
+  }
+  state.status = AgentStatus.THINKING;
 
-    resumeCallback?.(state, details.url);
+  resumeCallback?.(state, details.url);
 }
 
 /**
@@ -225,12 +259,16 @@ async function handleNavigationError(
  * Cleans up navigation state if the tracked tab is closed.
  */
 async function handleTabRemoved(tabId: number): Promise<void> {
-    const navState = await loadNavigationStateForTab(tabId);
-    if (!navState) return;
+  const navState = await loadNavigationStateForTab(tabId);
+  if (!navState) return;
 
-    await clearNavigationState(navState.agentState.workspaceId);
-    statusCallback?.(AgentStatus.ERROR, "Tab was closed during navigation", navState.agentState.workspaceId);
-    logger.warn("navigation", "Tab closed during navigation", { tabId });
+  await clearNavigationState(navState.agentState.workspaceId);
+  statusCallback?.(
+    AgentStatus.ERROR,
+    "Tab was closed during navigation",
+    navState.agentState.workspaceId,
+  );
+  logger.warn("navigation", "Tab closed during navigation", { tabId });
 }
 
 /**
@@ -238,20 +276,24 @@ async function handleTabRemoved(tabId: number): Promise<void> {
  * Called from runtime.onStartup.
  */
 export async function checkStaleNavigationState(): Promise<void> {
-    // Check all stored navigation states and clean up stale ones
-    const stored = await chrome.storage.local.get(null);
-    for (const [key, value] of Object.entries(stored)) {
-        if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
-            const navState = value as NavigationState;
-            if (navState.navigationStartTs) {
-                const elapsed = Date.now() - navState.navigationStartTs;
-                if (elapsed > (navState.timeoutMs || NAVIGATION_TIMEOUT_MS)) {
-                    await chrome.storage.local.remove(key);
-                    logger.info("navigation", "Cleaned up stale navigation state on startup", { key });
-                }
-            }
+  // Check all stored navigation states and clean up stale ones
+  const stored = await chrome.storage.local.get(null);
+  for (const [key, value] of Object.entries(stored)) {
+    if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
+      const navState = value as NavigationState;
+      if (navState.navigationStartTs) {
+        const elapsed = Date.now() - navState.navigationStartTs;
+        if (elapsed > (navState.timeoutMs || NAVIGATION_TIMEOUT_MS)) {
+          await chrome.storage.local.remove(key);
+          logger.info(
+            "navigation",
+            "Cleaned up stale navigation state on startup",
+            { key },
+          );
         }
+      }
     }
+  }
 }
 
 // --- Registration ---
@@ -261,10 +303,10 @@ export async function checkStaleNavigationState(): Promise<void> {
  * Must be called at the top level of the service worker.
  */
 export function registerNavigationListeners(): void {
-    chrome.webNavigation.onCompleted.addListener(handleNavigationComplete);
-    chrome.webNavigation.onErrorOccurred.addListener(handleNavigationError);
-    chrome.tabs.onRemoved.addListener(handleTabRemoved);
-    chrome.runtime.onStartup.addListener(checkStaleNavigationState);
+  chrome.webNavigation.onCompleted.addListener(handleNavigationComplete);
+  chrome.webNavigation.onErrorOccurred.addListener(handleNavigationError);
+  chrome.tabs.onRemoved.addListener(handleTabRemoved);
+  chrome.runtime.onStartup.addListener(checkStaleNavigationState);
 
-    logger.info("navigation", "Navigation listeners registered");
+  logger.info("navigation", "Navigation listeners registered");
 }

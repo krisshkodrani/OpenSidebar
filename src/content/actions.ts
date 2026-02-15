@@ -14,6 +14,7 @@
 import {
   ToolName,
   ClickElementArgs,
+  ClickCoordinatesArgs,
   TypeTextArgs,
   ScrollPageArgs,
   ScrollDirection,
@@ -35,14 +36,19 @@ import {
 import { buildSnapshot } from "./snapshot";
 
 /** Build a "No element with tag" error with nearby ID hints for LLM recovery */
-function staleIdError(id: number): { success: false; result: string; navigated: false } {
+function staleIdError(id: number): {
+  success: false;
+  result: string;
+  navigated: false;
+} {
   const tagMap = getTagMap();
   const available = Array.from(tagMap.keys())
     .sort((a, b) => Math.abs(a - id) - Math.abs(b - id))
     .slice(0, 5);
-  const hint = available.length > 0
-    ? ` Nearby IDs: ${available.map((n) => `[${n}]`).join(", ")}. Call read_page if none match.`
-    : " No elements tagged — call read_page to refresh.";
+  const hint =
+    available.length > 0
+      ? ` Nearby IDs: ${available.map((n) => `[${n}]`).join(", ")}. Call read_page if none match.`
+      : " No elements tagged — call read_page to refresh.";
   return {
     success: false,
     result: `No element with tag [${id}]${hint}`,
@@ -151,6 +157,8 @@ export async function executeAction(
       return executeRightClick(args as unknown as RightClickArgs);
     case ToolName.SET_CHECKBOX:
       return executeSetCheckbox(args as unknown as SetCheckboxArgs);
+    case ToolName.CLICK_COORDINATES:
+      return executeClickCoordinates(args as unknown as ClickCoordinatesArgs);
     case ToolName.UPLOAD_FILE:
       return executeUploadFile(args as Record<string, unknown>);
     default:
@@ -477,8 +485,7 @@ function executeHover(args: { id: number }): {
 } {
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
-  if (!el)
-    return staleIdError(args.id);
+  if (!el) return staleIdError(args.id);
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
   el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
@@ -1013,6 +1020,53 @@ function executeSetCheckbox(args: SetCheckboxArgs): {
   };
 }
 
+function executeClickCoordinates(args: ClickCoordinatesArgs): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  const { x, y, description } = args;
+
+  // Validate coordinates are within viewport
+  if (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight) {
+    return {
+      success: false,
+      result: `Coordinates (${x}, ${y}) are outside viewport (${window.innerWidth}x${window.innerHeight}).`,
+      navigated: false,
+    };
+  }
+
+  const el = document.elementFromPoint(x, y);
+
+  // Dispatch events on the resolved element, or documentElement as fallback
+  const target = el || document.documentElement;
+  const eventOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+
+  target.dispatchEvent(new MouseEvent("mousedown", eventOpts));
+  target.dispatchEvent(new MouseEvent("mouseup", eventOpts));
+  target.dispatchEvent(new MouseEvent("click", eventOpts));
+
+  // Also call .click() for native handling on HTMLElements
+  if (el instanceof HTMLElement) {
+    el.click();
+  }
+
+  // Detect navigation
+  const willNavigate =
+    el instanceof HTMLAnchorElement && !!el.href && !el.target;
+
+  const label = description ? ` (${description})` : "";
+  const tagInfo = el
+    ? `<${el.tagName.toLowerCase()}> "${getVisibleText(el).slice(0, 40)}"`
+    : "no element at point";
+
+  return {
+    success: true,
+    result: `Clicked at (${x}, ${y})${label} → ${tagInfo}`,
+    navigated: willNavigate,
+  };
+}
+
 function executeUploadFile(args: Record<string, unknown>): {
   success: boolean;
   result: string;
@@ -1024,10 +1078,7 @@ function executeUploadFile(args: Record<string, unknown>): {
     return staleIdError(args.id);
   }
 
-  if (
-    !(el instanceof HTMLInputElement) ||
-    el.type !== "file"
-  ) {
+  if (!(el instanceof HTMLInputElement) || el.type !== "file") {
     return {
       success: false,
       result: `Element [${args.id}] is not a file input`,

@@ -10,7 +10,7 @@ const DEFAULT_PROMPTS: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">[] = [
       "You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:\n" +
       "1. Use update_plan to track which step you're on and what needs to happen\n" +
       "2. Dismiss any modals/popups blocking the page (click Close/Dismiss/Accept buttons)\n" +
-      "3. Find and reveal the hidden code (look for \"Reveal Code\" buttons, delayed reveals, hidden DOM elements)\n" +
+      '3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)\n' +
       "4. Enter the code in the input field and click Submit Code\n" +
       "5. Verify the URL changed to the next step before continuing\n" +
       "If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden elements. Complete all 30 steps to win.",

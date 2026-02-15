@@ -45,6 +45,8 @@ global.chrome = {
         sendMessage: async () => ({ payload: { result: "ok", success: true } }),
         goBack: async () => { },
         goForward: async () => { },
+        group: async () => 1,
+        ungroup: async () => { },
         TAB_ID_NONE: -1,
         onRemoved: { addListener: () => { }, removeListener: () => { } },
         onUpdated: { addListener: () => { }, removeListener: () => { } },
@@ -67,6 +69,24 @@ global.chrome = {
     },
     search: {
         query: async () => { },
+    },
+    cookies: {
+        getAll: async () => [],
+        set: async () => ({ name: "test", value: "v", domain: "example.com", path: "/" }),
+        remove: async () => ({ url: "https://example.com", name: "test" }),
+    },
+    history: {
+        search: async () => [],
+    },
+    bookmarks: {
+        create: async () => ({ id: "1", title: "Test", url: "https://example.com" }),
+        search: async () => [],
+    },
+    notifications: {
+        create: async (_id: string, _opts: any, cb?: () => void) => { if (cb) cb(); return "notif-id"; },
+    },
+    windows: {
+        create: async () => ({ id: 1 }),
     },
 } as any;
 

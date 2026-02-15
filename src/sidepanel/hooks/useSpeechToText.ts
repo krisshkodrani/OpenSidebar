@@ -41,11 +41,22 @@ export function useSpeechToText(
   const cleanup = useCallback(() => {
     if (recognitionRef.current) {
       recordingRef.current = false;
-      try { recognitionRef.current.abort(); } catch { /* ignore */ }
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        /* ignore */
+      }
       recognitionRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        /* ignore */
+      }
     }
     mediaRecorderRef.current = null;
     if (streamRef.current) {
@@ -60,11 +71,18 @@ export function useSpeechToText(
     if (provider === "browser") {
       recordingRef.current = false;
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ignore */ }
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          /* ignore */
+        }
       }
     } else {
       // Groq: stopping MediaRecorder triggers onstop → upload
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state === "recording"
+      ) {
         mediaRecorderRef.current.stop();
       }
     }
@@ -112,7 +130,11 @@ export function useSpeechToText(
     recognition.onend = () => {
       // Chrome stops after silence — auto-restart if we're still recording
       if (recordingRef.current) {
-        try { recognition.start(); } catch { /* ignore */ }
+        try {
+          recognition.start();
+        } catch {
+          /* ignore */
+        }
       } else {
         setIsRecording(false);
       }
@@ -194,9 +216,7 @@ export function useSpeechToText(
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Microphone access denied",
-      );
+      setError(err instanceof Error ? err.message : "Microphone access denied");
       cleanup();
     }
   }, [groqApiKey, cleanup]);

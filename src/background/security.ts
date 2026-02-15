@@ -6,8 +6,11 @@ import { getToolMeta } from "./tools/metadata";
  * Uses consolidated tool metadata from tools/metadata.ts.
  * Non-blocking — risk is informational, not a gate.
  */
-export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>): RiskLevel {
-    return getToolMeta(toolName)?.risk ?? RiskLevel.HIGH;
+export function classifyRisk(
+  toolName: ToolName,
+  _args: Record<string, unknown>,
+): RiskLevel {
+  return getToolMeta(toolName)?.risk ?? RiskLevel.HIGH;
 }
 
 /**
@@ -15,15 +18,15 @@ export function classifyRisk(toolName: ToolName, _args: Record<string, unknown>)
  * Only allows http: and https: protocols.
  */
 export function sanitizeUrl(url: string): Result<string> {
-    try {
-        const parsed = new URL(url);
-        if (!["http:", "https:"].includes(parsed.protocol)) {
-            return { ok: false, error: `Blocked protocol: ${parsed.protocol}` };
-        }
-        return { ok: true, value: parsed.href };
-    } catch {
-        return { ok: false, error: `Invalid URL: ${url}` };
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return { ok: false, error: `Blocked protocol: ${parsed.protocol}` };
     }
+    return { ok: true, value: parsed.href };
+  } catch {
+    return { ok: false, error: `Invalid URL: ${url}` };
+  }
 }
 
 /**
@@ -31,7 +34,7 @@ export function sanitizeUrl(url: string): Result<string> {
  * Removes null bytes and truncates to a reasonable length.
  */
 export function sanitizeUserInput(text: string): string {
-    let sanitized = text.replace(/\0/g, "");
-    sanitized = sanitized.slice(0, 10_000);
-    return sanitized;
+  let sanitized = text.replace(/\0/g, "");
+  sanitized = sanitized.slice(0, 10_000);
+  return sanitized;
 }

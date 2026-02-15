@@ -1,15 +1,18 @@
 import { describe, test, expect, beforeEach } from "bun:test";
+import "../../tests/setup";
 import {
   querySelectorAllDeep,
   isElementVisible,
   tagElements,
   getTagMap,
+  resetStableIds,
 } from "../../src/content/tagging";
 
 describe("Shadow DOM Support - AFTER State", () => {
   beforeEach(() => {
     // Clean up any tags from previous tests
     document.querySelectorAll(".qsidebar-tag").forEach((el) => el.remove());
+    resetStableIds();
   });
 
   test("querySelectorAllDeep finds elements in standard DOM", () => {

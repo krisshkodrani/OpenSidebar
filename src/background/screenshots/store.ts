@@ -15,9 +15,7 @@ interface ScreenshotEntry {
 const MAX_SCREENSHOTS = 20;
 const screenshotStore: ScreenshotEntry[] = [];
 
-export function storeScreenshot(
-  entry: Omit<ScreenshotEntry, "id">,
-): string {
+export function storeScreenshot(entry: Omit<ScreenshotEntry, "id">): string {
   const id = crypto.randomUUID();
   screenshotStore.push({ ...entry, id });
   if (screenshotStore.length > MAX_SCREENSHOTS) {

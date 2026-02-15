@@ -38,6 +38,7 @@ import {
   ESCALATION_LIMITS,
   REDUNDANT_ACTION,
   STEP_WATCHDOG,
+  STUCK_THRESHOLDS,
 } from "./constants";
 
 /** Nudge injected when LLM emits text instead of tool calls. */
@@ -77,8 +78,8 @@ Instructions:
 /** Tracks a recent successful tool call for redundant action detection */
 interface RecentAction {
   tool: string;
-  args: string;    // First 100 chars of JSON args
-  result: string;  // First 60 chars of result
+  args: string; // First 100 chars of JSON args
+  result: string; // First 60 chars of result
 }
 
 /** Filler prefix patterns — text-only responses that start with these are low-information */
@@ -150,9 +151,12 @@ function extractAttemptSummary(messages: LLMMessage[]): string {
             if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
             if (args.url) parts.push(String(args.url).slice(0, 40));
             if (args.direction) parts.push(args.direction);
-            if (args.summary) parts.push(`"${String(args.summary).slice(0, 30)}"`);
+            if (args.summary)
+              parts.push(`"${String(args.summary).slice(0, 30)}"`);
             argSnippet = parts.join(" ");
-          } catch { /* */ }
+          } catch {
+            /* */
+          }
           break;
         }
       }
@@ -163,11 +167,12 @@ function extractAttemptSummary(messages: LLMMessage[]): string {
     if (isFail) {
       const errorSnippet = content.split("\n")[0].slice(0, 60);
       // Deduplicate repeated failures
-      const existing = failures.find(f => f.startsWith(`- ${key}`));
+      const existing = failures.find((f) => f.startsWith(`- ${key}`));
       if (!existing) failures.push(`- ${key} — ${errorSnippet}`);
     } else {
       // Skip internal/noise tools for success tracking
-      if (["read_page", "wait", "update_plan", "escalate"].includes(toolName)) continue;
+      if (["read_page", "wait", "update_plan", "escalate"].includes(toolName))
+        continue;
       const resultSnippet = content.split("\n")[0].slice(0, 60);
       successes.push(`- ${key} → ${resultSnippet}`);
     }
@@ -218,6 +223,7 @@ export interface LoopResult {
 export class AgentLoop {
   private llm: LLMClient;
   private context: ContextManager;
+  private baseContextTokens: number; // Original context window size for de-escalation restore
   private isRunning = false;
   private abortController: AbortController | null = null;
   private statusHandler: (status: AgentStatus, detail: string) => void;
@@ -284,6 +290,7 @@ export class AgentLoop {
       totalLlmTimeMs: 0,
       totalSessionTimeMs: 0,
       llmCallCount: 0,
+      totalCachedTokens: 0,
       modelBreakdown: {},
     };
   }
@@ -296,6 +303,16 @@ export class AgentLoop {
       this.metrics.totalTokens += response.usage.total_tokens;
       if (response.usage.cost != null) {
         this.metrics.totalCost += response.usage.cost;
+      }
+      if (response.usage.cached_tokens) {
+        this.metrics.totalCachedTokens += response.usage.cached_tokens;
+        logger.debug("agent", "Cache hit", {
+          cached: response.usage.cached_tokens,
+          prompt: response.usage.prompt_tokens,
+          pct: Math.round(
+            (response.usage.cached_tokens / response.usage.prompt_tokens) * 100,
+          ),
+        });
       }
     }
     this.metrics.totalLlmTimeMs += llmMs;
@@ -382,7 +399,6 @@ export class AgentLoop {
     openRouterApiKey: string,
     groqApiKey: string | undefined,
     cerebrasApiKey: string | undefined,
-    useGroqFast: boolean,
     callbacks: {
       onStatusUpdate: (status: AgentStatus, detail: string) => void;
       onMessage: (text: string, toolCalls: ToolCall[]) => void;
@@ -402,24 +418,30 @@ export class AgentLoop {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     this.workspaceId = options?.workspaceId ?? null;
-    this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey, useGroqFast);
+    this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
     this.llm.setFailoverCallback((from, to) => {
       const names: Record<string, string> = {
-        cerebras: "Cerebras", groq: "Groq", openrouter: "OpenRouter",
+        cerebras: "Cerebras",
+        groq: "Groq",
+        openrouter: "OpenRouter",
       };
-      this.stepHandler({
-        id: crypto.randomUUID(),
-        type: "info",
-        label: `Rate limited on ${names[from] ?? from} — switched to ${names[to] ?? to}`,
-        status: "done",
-        timestamp: Date.now(),
-      }, false);
+      this.stepHandler(
+        {
+          id: crypto.randomUUID(),
+          type: "info",
+          label: `Rate limited on ${names[from] ?? from} — switched to ${names[to] ?? to}`,
+          status: "done",
+          timestamp: Date.now(),
+        },
+        false,
+      );
     });
     this.guardian = new PlanGuardian(openRouterApiKey);
-    this.context = new ContextManager(options?.maxContextTokens, this.workspaceId);
+    this.baseContextTokens = options?.maxContextTokens ?? 32000;
+    this.context = new ContextManager(this.baseContextTokens, this.workspaceId);
     this.statusHandler = callbacks.onStatusUpdate;
     this.messageHandler = callbacks.onMessage;
-    this.stepHandler = callbacks.onStep ?? (() => { });
+    this.stepHandler = callbacks.onStep ?? (() => {});
     this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
     this.showElementTags = options?.showElementTags ?? false;
   }
@@ -428,7 +450,9 @@ export class AgentLoop {
    * Send a message to the side panel, automatically injecting workspaceId,
    * requestId, and source. Fire-and-forget (errors are silenced).
    */
-  private broadcast(msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">): void {
+  private broadcast(
+    msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">,
+  ): void {
     chrome.runtime
       .sendMessage({
         ...msg,
@@ -436,7 +460,7 @@ export class AgentLoop {
         source: MessageSource.BACKGROUND,
         workspaceId: this.workspaceId,
       } as RuntimeMessage)
-      .catch(() => { });
+      .catch(() => {});
   }
 
   /**
@@ -738,7 +762,13 @@ export class AgentLoop {
   private escalateModel(): void {
     this.llm.switchToSmart();
     this.context.setModelTier("smart");
-    logger.info("agent", "Escalating to smart model", { model: MODEL_SMART, provider: "openrouter" });
+    // Expand context window so smart model can see full history of failed attempts
+    this.context.setMaxContextTokens(Math.max(this.baseContextTokens, 64000));
+    logger.info("agent", "Escalating to smart model", {
+      model: MODEL_SMART,
+      provider: "openrouter",
+      contextTokens: this.context.getMaxContextTokens(),
+    });
   }
 
   /** Get the tab IDs belonging to this agent's workspace, or null if no workspace. */
@@ -752,7 +782,11 @@ export class AgentLoop {
   private deescalateModel(): void {
     this.llm.switchToFast();
     this.context.setModelTier("fast");
-    logger.info("agent", "De-escalating to fast model");
+    // Restore original context window
+    this.context.setMaxContextTokens(this.baseContextTokens);
+    logger.info("agent", "De-escalating to fast model", {
+      contextTokens: this.baseContextTokens,
+    });
   }
 
   /**
@@ -843,6 +877,24 @@ export class AgentLoop {
     return prevCount; // Keep existing count if both attempts fail
   }
 
+  /**
+   * Capture a screenshot for escalation context.
+   * Returns a data URL on success, null on failure (non-critical).
+   */
+  private async captureEscalationScreenshot(
+    tabId: number,
+  ): Promise<string | null> {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      return await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality: 50, // Lower quality is fine for context
+      });
+    } catch {
+      return null;
+    }
+  }
+
   /** Stream a message to side panel and break the loop (for circuit breaker exits) */
   private circuitBreakerExit(message: string): void {
     this.broadcast({
@@ -912,6 +964,7 @@ export class AgentLoop {
     let onSmartModel = false;
     let voluntaryEscalation = false; // escalate tool → permanent, no de-escalation
     let escalationCycles = 0;
+    let useReasoningNextTurn = false; // Enable reasoning on the first turn after escalation
     let cooldownRemaining = 0;
     let smartModelStartTurn = 0; // turn when auto-escalation fired
     let pivotDone = false; // has text-only pivot fired?
@@ -1017,6 +1070,17 @@ export class AgentLoop {
         });
       };
 
+      // Reasoning effort: "high" on first turn after escalation, then "none"
+      const reasoningEffort = useReasoningNextTurn
+        ? ("high" as const)
+        : undefined;
+      if (useReasoningNextTurn) {
+        useReasoningNextTurn = false;
+        logger.info("agent", "Using reasoning effort: high (post-escalation)", {
+          turn: this.turnCount,
+        });
+      }
+
       const llmStart = Date.now();
       let response: CompletionResponse;
       try {
@@ -1024,9 +1088,11 @@ export class AgentLoop {
           {
             messages,
             tools,
-            max_tokens: LLM_CONFIG.MAX_TOKENS,
+            max_tokens:
+              reasoningEffort === "high" ? 2048 : LLM_CONFIG.MAX_TOKENS,
             stop: ["Observation:"], // ReAct pattern stop token just in case
             signal: this.abortController!.signal,
+            reasoningEffort,
           },
           onTextDelta,
         );
@@ -1127,13 +1193,13 @@ export class AgentLoop {
         content: response.content,
         tool_calls: response.tool_calls
           ? response.tool_calls.map((tc) => ({
-            id: tc.id,
-            type: "function",
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            },
-          }))
+              id: tc.id,
+              type: "function",
+              function: {
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              },
+            }))
           : undefined,
       });
 
@@ -1222,7 +1288,13 @@ export class AgentLoop {
                   intention: llmIntention,
                 });
                 this.traceRecorder?.recordToolExecution(
-                  toolCall.id, toolName, args, result, true, toolMs, riskLevel,
+                  toolCall.id,
+                  toolName,
+                  args,
+                  result,
+                  true,
+                  toolMs,
+                  riskLevel,
                 );
 
                 if (
@@ -1248,7 +1320,14 @@ export class AgentLoop {
                   intention: llmIntention,
                 });
                 this.traceRecorder?.recordToolExecution(
-                  toolCall.id, toolName, args, errorMsg, false, toolMs, riskLevel, errorMsg,
+                  toolCall.id,
+                  toolName,
+                  args,
+                  errorMsg,
+                  false,
+                  toolMs,
+                  riskLevel,
+                  errorMsg,
                 );
                 this.stepHandler(
                   {
@@ -1458,6 +1537,7 @@ export class AgentLoop {
                 this.escalateModel();
                 onSmartModel = true;
                 voluntaryEscalation = true;
+                useReasoningNextTurn = true;
                 prevElementCount = await this.refreshSnapshotWithRetry(
                   tabId,
                   prevElementCount,
@@ -1491,7 +1571,10 @@ export class AgentLoop {
                 reason,
                 wasAlreadyEscalated: onSmartModel && reason === "",
               });
-              this.traceRecorder?.recordEvent("escalation", { reason, voluntary: true });
+              this.traceRecorder?.recordEvent("escalation", {
+                reason,
+                voluntary: true,
+              });
               continue;
             }
 
@@ -1523,7 +1606,8 @@ export class AgentLoop {
                         : ("pending" as const),
                   turnsUsed: 0,
                   turnBudget: 0,
-                  result: isJustCompleted && lastResult ? lastResult : undefined,
+                  result:
+                    isJustCompleted && lastResult ? lastResult : undefined,
                   completedAtUrl: isJustCompleted
                     ? this.context.getCurrentUrl() || undefined
                     : existing?.completedAtUrl,
@@ -1924,9 +2008,18 @@ export class AgentLoop {
               }
 
               try {
-                const newTab = await chrome.tabs.create({ url: urlResult.value });
-                if (newTab.id && this.workspaceId && this.workspaceId !== "default") {
-                  await workspaceManager.addTabToWorkspace(newTab.id, this.workspaceId);
+                const newTab = await chrome.tabs.create({
+                  url: urlResult.value,
+                });
+                if (
+                  newTab.id &&
+                  this.workspaceId &&
+                  this.workspaceId !== "default"
+                ) {
+                  await workspaceManager.addTabToWorkspace(
+                    newTab.id,
+                    this.workspaceId,
+                  );
                 }
 
                 // Register callbacks on new tab
@@ -2003,7 +2096,13 @@ export class AgentLoop {
                 intention: llmIntention,
               });
               this.traceRecorder?.recordToolExecution(
-                toolCall.id, toolName, args, result, true, toolMs, riskLevel,
+                toolCall.id,
+                toolName,
+                args,
+                result,
+                true,
+                toolMs,
+                riskLevel,
               );
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
@@ -2020,7 +2119,14 @@ export class AgentLoop {
                 intention: llmIntention,
               });
               this.traceRecorder?.recordToolExecution(
-                toolCall.id, toolName, args, errorMsg, false, toolMs, riskLevel, errorMsg,
+                toolCall.id,
+                toolName,
+                args,
+                errorMsg,
+                false,
+                toolMs,
+                riskLevel,
+                errorMsg,
               );
               this.stepHandler(
                 {
@@ -2236,7 +2342,9 @@ export class AgentLoop {
                 const toolNameCount = recentSuccesses.filter(
                   (entry) => entry.tool === toolName,
                 ).length;
-                if (toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_ONLY_THRESHOLD) {
+                if (
+                  toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_ONLY_THRESHOLD
+                ) {
                   logger.warn("agent", "Tool-name redundancy detected", {
                     turn: this.turnCount,
                     tool: toolName,
@@ -2257,8 +2365,16 @@ export class AgentLoop {
           }
 
           // E. Step duration watchdog
-          if (this.taskId && this.planSubtasks.length > 0 && this.turnsOnCurrentStep > 0) {
-            if (this.turnsOnCurrentStep >= STEP_WATCHDOG.ESCALATE_TURNS && !onSmartModel && cooldownRemaining <= 0) {
+          if (
+            this.taskId &&
+            this.planSubtasks.length > 0 &&
+            this.turnsOnCurrentStep > 0
+          ) {
+            if (
+              this.turnsOnCurrentStep >= STEP_WATCHDOG.ESCALATE_TURNS &&
+              !onSmartModel &&
+              cooldownRemaining <= 0
+            ) {
               logger.warn("agent", "Step watchdog: force escalation", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
@@ -2271,6 +2387,7 @@ export class AgentLoop {
               this.escalateModel();
               onSmartModel = true;
               smartModelStartTurn = this.turnCount;
+              useReasoningNextTurn = true;
               await this.strategyPivot(tabId);
               this.context.addMessage({
                 role: "user",
@@ -2311,11 +2428,18 @@ export class AgentLoop {
           for (let i = recentMsgs.length - 1; i >= 0; i--) {
             const msg = recentMsgs[i];
             if (msg.role !== "tool") break;
-            if (typeof msg.content === "string" && msg.content.includes("No element with tag")) {
+            if (
+              typeof msg.content === "string" &&
+              msg.content.includes("No element with tag")
+            ) {
               domModified = true;
-              logger.info("agent", "Stale element ID detected, forcing snapshot refresh", {
-                turn: this.turnCount,
-              });
+              logger.info(
+                "agent",
+                "Stale element ID detected, forcing snapshot refresh",
+                {
+                  turn: this.turnCount,
+                },
+              );
               break;
             }
           }
@@ -2430,7 +2554,10 @@ export class AgentLoop {
                       {
                         id: `auto_screenshot_${this.turnCount}`,
                         type: "function",
-                        function: { name: ToolName.TAKE_SCREENSHOT, arguments: "{}" },
+                        function: {
+                          name: ToolName.TAKE_SCREENSHOT,
+                          arguments: "{}",
+                        },
                       },
                       tabId,
                       this.abortController!.signal,
@@ -2444,9 +2571,13 @@ export class AgentLoop {
                       staleTurns: progressSignal.staleTurns,
                     });
                   } catch (screenshotErr: any) {
-                    logger.warn("agent", "Auto-screenshot failed (non-critical)", {
-                      error: screenshotErr?.message,
-                    });
+                    logger.warn(
+                      "agent",
+                      "Auto-screenshot failed (non-critical)",
+                      {
+                        error: screenshotErr?.message,
+                      },
+                    );
                   }
                 }
 
@@ -2454,7 +2585,10 @@ export class AgentLoop {
                 this.broadcast({
                   type: "AGENT_STUCK",
                   payload: {
-                    signal: progressSignal.type as "nudge" | "pivot" | "escalate",
+                    signal: progressSignal.type as
+                      | "nudge"
+                      | "pivot"
+                      | "escalate",
                     staleTurns: progressSignal.staleTurns,
                     url: snap.url,
                     message: progressSignal.message,
@@ -2467,13 +2601,41 @@ export class AgentLoop {
                   await this.strategyPivot(tabId);
                   consecutiveNudges = 0;
                   recentSuccesses.length = 0;
-                } else if (progressSignal.type === "escalate" && !onSmartModel && cooldownRemaining <= 0) {
+                } else if (
+                  progressSignal.type === "escalate" &&
+                  !onSmartModel &&
+                  cooldownRemaining <= 0
+                ) {
                   // Escalation + pivot: switch to smart model AND clear context
                   this.escalateModel();
                   onSmartModel = true;
                   smartModelStartTurn = this.turnCount;
+                  useReasoningNextTurn = true;
+                  // Capture screenshot before pivot clears context — gives smart model visual context
+                  const escalationScreenshot =
+                    await this.captureEscalationScreenshot(tabId);
                   await this.strategyPivot(tabId);
-                  this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
+                  // Inject escalation nudge with optional screenshot as multimodal content
+                  if (escalationScreenshot) {
+                    this.context.addMessage({
+                      role: "user",
+                      content: [
+                        { type: "text", text: ESCALATION_NUDGE },
+                        {
+                          type: "image_url",
+                          image_url: {
+                            url: escalationScreenshot,
+                            detail: "low",
+                          },
+                        },
+                      ],
+                    });
+                  } else {
+                    this.context.addMessage({
+                      role: "user",
+                      content: ESCALATION_NUDGE,
+                    });
+                  }
                   consecutiveNudges = 0;
                   recentSuccesses.length = 0;
                   this.stepHandler(
@@ -2516,7 +2678,10 @@ export class AgentLoop {
                   smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
                 ) {
                   this.deescalateModel();
-                  this.context.addMessage({ role: "user", content: DEESCALATION_NUDGE });
+                  this.context.addMessage({
+                    role: "user",
+                    content: DEESCALATION_NUDGE,
+                  });
                   onSmartModel = false;
                   escalationCycles++;
                   cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
@@ -2598,7 +2763,10 @@ export class AgentLoop {
             role: "user",
             content: `If that was your answer to the user's question, wrap it in done({"summary": "..."}) to deliver it. If you need to act on the page, call the appropriate tool.`,
           });
-          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           continue;
         }
 
@@ -2634,7 +2802,10 @@ export class AgentLoop {
           pivotDone = true;
           consecutiveNudges = 0;
           recentSuccesses.length = 0;
-          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           continue;
         }
 
@@ -2643,8 +2814,26 @@ export class AgentLoop {
           this.escalateModel();
           onSmartModel = true;
           smartModelStartTurn = this.turnCount;
+          useReasoningNextTurn = true;
+          const nudgeScreenshot = await this.captureEscalationScreenshot(tabId);
           await this.strategyPivot(tabId);
-          this.context.addMessage({ role: "user", content: ESCALATION_NUDGE });
+          if (nudgeScreenshot) {
+            this.context.addMessage({
+              role: "user",
+              content: [
+                { type: "text", text: ESCALATION_NUDGE },
+                {
+                  type: "image_url",
+                  image_url: { url: nudgeScreenshot, detail: "low" },
+                },
+              ],
+            });
+          } else {
+            this.context.addMessage({
+              role: "user",
+              content: ESCALATION_NUDGE,
+            });
+          }
           consecutiveNudges = 0;
           recentSuccesses.length = 0;
 
@@ -2660,7 +2849,10 @@ export class AgentLoop {
             false,
           );
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
-          this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
           continue;
         }
 
@@ -2674,6 +2866,38 @@ export class AgentLoop {
           });
           const stuckMsg =
             cleanContent || "The agent appears stuck and cannot continue.";
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: stuckMsg, done: false },
+          });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
+          this.statusHandler(
+            AgentStatus.IDLE,
+            "Stuck — send a follow-up to continue",
+          );
+          await this.traceRecorder?.endTurn();
+          break;
+        }
+
+        // Smart model turn-based give-up: tighter threshold saves wasted expensive turns
+        const smartTurns = onSmartModel
+          ? this.turnCount - smartModelStartTurn
+          : 0;
+        if (
+          onSmartModel &&
+          smartTurns >= STUCK_THRESHOLDS.GIVE_UP_SMART &&
+          totalNudges >= 3
+        ) {
+          logger.warn("agent", "Loop ended: smart model turn limit", {
+            turns: this.turnCount,
+            smartTurns,
+            totalNudges,
+          });
+          const stuckMsg =
+            "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
           this.broadcast({
             type: "STREAM_CHUNK",
             payload: { delta: stuckMsg, done: false },
@@ -2726,7 +2950,10 @@ export class AgentLoop {
 
         // Trace: flush turn
         await this.traceRecorder?.endTurn();
-        this.broadcast({ type: "STREAM_CHUNK", payload: { delta: "", done: true } });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
         continue;
       }
 

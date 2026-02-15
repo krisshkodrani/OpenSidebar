@@ -1,5 +1,12 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
-import { Send, StopCircle, MessageCircle, Mic, Loader2, Bookmark } from "lucide-react";
+import {
+  Send,
+  StopCircle,
+  MessageCircle,
+  Mic,
+  Loader2,
+  Bookmark,
+} from "lucide-react";
 import { useStore } from "../store";
 import { useSpeechToText } from "../hooks/useSpeechToText";
 import { PromptPicker } from "./PromptPicker";
@@ -39,14 +46,16 @@ export function InputArea({
           ? current.slice(0, current.length - interimRef.current.length)
           : current;
         interimRef.current = "";
-        const separator = withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
+        const separator =
+          withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
         setInputText(withoutInterim + separator + text);
       } else {
         // Replace previous interim with new interim
         const withoutInterim = interimRef.current
           ? current.slice(0, current.length - interimRef.current.length)
           : current;
-        const separator = withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
+        const separator =
+          withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
         interimRef.current = separator + text;
         setInputText(withoutInterim + interimRef.current);
       }
@@ -168,7 +177,9 @@ export function InputArea({
                     ? "bg-red-500 text-white mic-recording"
                     : "text-warm-400 hover:text-warm-600 dark:hover:text-warm-300",
               )}
-              aria-label={speech.isRecording ? "Stop recording" : "Start voice input"}
+              aria-label={
+                speech.isRecording ? "Stop recording" : "Start voice input"
+              }
             >
               {speech.isProcessing ? (
                 <Loader2 size={16} className="animate-spin" />
