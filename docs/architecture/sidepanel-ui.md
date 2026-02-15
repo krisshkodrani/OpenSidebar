@@ -1,6 +1,6 @@
 # Side Panel UI
 
-The side panel is OpenSidebar's user-facing interface built with React, TypeScript, and Tailwind CSS. It provides a chat interface, real-time streaming display, workspace management, and settings configuration.
+The side panel is OpenSidebar's user-facing interface built with React, TypeScript, and Tailwind CSS. It provides a chat interface, real-time streaming display, workspace management, settings configuration, and session metrics tracking.
 
 ## Architecture
 
@@ -8,10 +8,10 @@ The side panel is OpenSidebar's user-facing interface built with React, TypeScri
 
 **Files:**
 
-- `App.tsx` - Main component, composes all sub-components
+- `App.tsx` - Main component, message listener, composes all sub-components
 - `store.ts` - Zustand + Immer state management
-- `bridge.ts` - Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions
-- `components/` - UI components (Header, InputArea, MessageBubble, ControlBar, StuckBanner, TaskProgressPanel, CompletionSummary, etc.)
+- `bridge.ts` - Centralized message router. Routes all `RuntimeMessage` types to store actions
+- `components/` - UI components (Header, InputArea, MessageBubble, ControlBar, StuckBanner, TaskProgressPanel, MetricsBar, CompletionSummary, SettingsDrawer, SavedPromptsDrawer, etc.)
 
 ## Component Hierarchy
 
@@ -20,6 +20,7 @@ App (Main container)
 ├── Header
 │   └── Settings button
 ├── SettingsDrawer (conditional overlay)
+├── SavedPromptsDrawer (conditional overlay)
 ├── StuckBanner (visible when agent is stuck)
 ├── Main Chat Area
 │   ├── Welcome screen (empty state)
@@ -29,6 +30,7 @@ App (Main container)
 │   ├── Status indicators (incl. PAUSED)
 │   ├── Pause / Resume buttons
 │   └── Turn counter (turn / maxTurns)
+├── MetricsBar (token usage, cost tracking)
 ├── TaskProgressPanel (visible during decomposed tasks)
 └── Bottom Section
     └── InputArea
@@ -41,17 +43,22 @@ The side panel uses **Zustand** with **Immer** for immutable state updates:
 
 ```typescript
 interface SidePanelState {
-  messages: ChatEntry[];                              // Chat history
-  agentStatus: AgentStatus;                           // Current agent state (incl. PAUSED)
-  statusDetail: string;                               // Status description
-  inputText: string;                                  // Current input value
-  isAgentRunning: boolean;                            // Disable input when true
-  settings: UserSettings;                             // App configuration
-  error: string | null;                               // Error message
+  ready: boolean; // Initial load complete
+  activeWorkspaceId: string | null; // Current workspace
+  messages: ChatEntry[]; // Chat history
+  agentStatus: AgentStatus; // Current agent state (incl. PAUSED)
+  statusDetail: string; // Status description
+  inputText: string; // Current input value
+  isAgentRunning: boolean; // Disable input when true
+  settings: UserSettings; // App configuration
+  error: string | null; // Error message
   taskProgress: TaskProgressMessage["payload"] | null; // Active subtask progress
   taskCompletion: TaskCompletionMessage["payload"] | null; // Completed task report
-  stuckState: StuckState | null;                      // Agent stuck detection
-  turnProgress: TurnProgress | null;                  // Current turn / maxTurns
+  stuckState: StuckState | null; // Agent stuck detection
+  turnProgress: TurnProgress | null; // Current turn / maxTurns
+  awaitingPlanApproval: boolean; // Waiting for plan confirmation
+  sessionMetrics: SessionMetrics | null; // Real-time token/cost tracking
+  savedPrompts: SavedPrompt[]; // User-saved prompt templates
 }
 ```
 
@@ -67,6 +74,7 @@ interface SidePanelState {
 - `setTaskProgress(payload)` - Update subtask progress panel
 - `setTaskCompletion(payload)` - Set task completion report
 - `setTurnProgress(payload)` - Update turn counter
+- `setSessionMetrics(payload)` - Update metrics bar
 
 ## Communication Flow
 
@@ -74,45 +82,53 @@ The side panel communicates directly with the background service worker via Chro
 
 ### Message Handling Architecture
 
-**Location:** `bridge.ts` — `initializeBridge()`
-
-The bridge module is the centralized message router. It uses an exhaustive `switch` on `RuntimeMessage.type` with a `never` check to ensure all message types are handled:
+Messages are handled in **App.tsx** at the top level using a `useEffect` hook with `chrome.runtime.onMessage.addListener`:
 
 ```typescript
-// Simplified — bridge.ts routes all RuntimeMessage types to store actions
-chrome.runtime.onMessage.addListener((message: RuntimeMessage) => {
-  switch (message.type) {
-    case "AGENT_STATUS":
-      updateStatus(message.payload.status, message.payload.detail);
-      break;
-    case "STREAM_CHUNK":
-      handleStreamChunk(message.payload);
-      break;
-    case "AGENT_RESPONSE":
-      handleAgentResponse(message.payload);
-      break;
-    case "AGENT_STUCK":
-      setStuckState(message.payload);
-      break;
-    case "AGENT_TURN":
-      setTurnProgress(message.payload);
-      break;
-    case "TASK_PROGRESS":
-      setTaskProgress(message.payload);
-      break;
-    case "TASK_COMPLETION":
-      setTaskCompletion(message.payload);
-      break;
-    // ... all 26 message types handled
-    default:
-      const _exhaustive: never = message;
-  }
-});
+useEffect(() => {
+  const listener = (message: RuntimeMessage) => {
+    if (message.source !== MessageSource.BACKGROUND) return;
+
+    switch (message.type) {
+      case "AGENT_STATUS":
+        updateStatus(message.payload.status, message.payload.detail);
+        setAgentRunning(message.payload.status !== AgentStatus.IDLE);
+        break;
+      case "STREAM_CHUNK":
+        handleStreamChunk(message.payload);
+        break;
+      case "AGENT_RESPONSE":
+        handleAgentResponse(message.payload);
+        break;
+      case "AGENT_STUCK":
+        setStuckState(message.payload);
+        break;
+      case "AGENT_TURN":
+        setTurnProgress(message.payload);
+        break;
+      case "TASK_PROGRESS":
+        setTaskProgress(message.payload);
+        break;
+      case "TASK_COMPLETION":
+        setTaskCompletion(message.payload);
+        break;
+      case "SESSION_METRICS":
+        setSessionMetrics(message.payload);
+        break;
+      // ... all message types handled
+    }
+  };
+
+  chrome.runtime.onMessage.addListener(listener);
+  return () => chrome.runtime.onMessage.removeListener(listener);
+}, []);
 ```
+
+The **bridge.ts** module (`initializeBridge()`) provides a centralized router with exhaustive `never` check for routing messages to store actions.
 
 ### Sending Messages to Agent
 
-**Location:** `App.tsx` - `handleSend` function (lines 218-276)
+**Location:** `App.tsx` - `handleSend` function
 
 ```typescript
 const handleSend = useCallback(async (text: string) => {
@@ -152,15 +168,13 @@ const handleSend = useCallback(async (text: string) => {
         payload: {
             text,
             tabId: tab?.id ?? 0,
-            workspaceId: store.activeWorkspace?.id ?? null,
+            workspaceId: store.activeWorkspaceId ?? null,
         },
     });
 }, [...]);
 ```
 
 ### Streaming Handler
-
-**Location:** `App.tsx` - `handleStreamChunk` (lines 172-180)
 
 ```typescript
 const handleStreamChunk = useCallback(
@@ -187,7 +201,7 @@ const handleStreamChunk = useCallback(
     type: "AGENT_STATUS",
     source: "background",
     payload: {
-        status: AgentStatus,    // THINKING, ACTING, IDLE, etc.
+        status: AgentStatus,    // THINKING, ACTING, IDLE, PAUSED, ERROR
         detail: string          // Human-readable description
     }
 }
@@ -220,15 +234,21 @@ const handleStreamChunk = useCallback(
 }
 ```
 
-**WORKSPACE_UPDATE**
+**SESSION_METRICS**
 
 ```typescript
 {
-    type: "WORKSPACE_UPDATE",
+    type: "SESSION_METRICS",
     source: "background",
     payload: {
-        workspaces: Workspace[],
-        activeWorkspaceId: string | null
+        totalPromptTokens: number,
+        totalCompletionTokens: number,
+        totalTokens: number,
+        totalCost: number,
+        totalLlmTimeMs: number,
+        totalSessionTimeMs: number,
+        llmCallCount: number,
+        modelBreakdown: {...}
     }
 }
 ```
@@ -257,7 +277,7 @@ const handleStreamChunk = useCallback(
     type: "STOP_AGENT",
     source: "sidepanel",
     requestId: string,
-    payload: {}
+    payload: { workspaceId?: string | null }
 }
 ```
 
@@ -271,30 +291,39 @@ Displays chat messages with:
 - Assistant messages (left-aligned, gray background)
 - Tool call badges (collapsible)
 - Streaming indicator (pulsing cursor)
+- Screenshot thumbnails in step timeline
 
 ### InputArea
 
 - Auto-resizing textarea
 - Send button (converts to Stop button when running)
-- **Hint mode**: When agent is running, input stays enabled — messages are sent as hints with amber "Send Hint" button and MessageCircle icon
+- **Hint mode**: When agent is running, input stays enabled — messages are sent as hints with amber "Send Hint" button
 - Enter to submit, Shift+Enter for new line
 
 ### StuckBanner
 
 - Fixed-position banner between Header and main chat area
 - Visible only when `stuckState !== null`
-- **Nudge**: yellow styling (`bg-yellow-50`)
-- **Escalate**: orange styling (`bg-orange-50`)
+- **Nudge**: yellow styling
+- **Pivot**: orange styling
+- **Escalate**: red styling
 - Dismissible; auto-clears on `AGENT_STUCK` with `signal: "resolved"` or when agent goes idle
 
 ### TaskProgressPanel
 
-- Anchored between ControlBar and InputArea
+- Anchored between ControlBar and MetricsBar
 - Shows subtask checklist with status icons (pending/running/completed/failed/skipped)
 - Turn counter per subtask and total turns used
 - "Skip" button for current running subtask
 - Collapsible; auto-expands when a subtask transitions to `running`
 - Hidden when `taskProgress` is null
+
+### MetricsBar
+
+- Real-time token usage display
+- Cost tracking in USD
+- Per-model breakdown
+- Collapsible; hidden when `sessionMetrics` is null or settings disabled
 
 ### CompletionSummary
 
@@ -305,15 +334,26 @@ Displays chat messages with:
 ### SettingsDrawer
 
 - OpenRouter API key input
+- Groq API key input
+- Cerebras API key input
 - Max turns slider (cap: 500)
 - Context window selector (8k/32k/128k)
 - Memory enabled toggle
 - Workspace enabled toggle
 - Confirm plan toggle
+- Show session metrics toggle
 - Theme selector (light/dark/system)
 - **Show element tags** toggle
 - Clear history button
 - Export logs button
+
+### SavedPromptsDrawer
+
+- List of user-saved prompt templates
+- Create new prompt
+- Edit/delete prompts
+- Categorize prompts
+- Quick-insert into InputArea
 
 ## Dark Mode
 
@@ -339,12 +379,16 @@ useEffect(() => {
 ## Lifecycle
 
 1. **Mount** - App.tsx initializes, sets up message listener
-2. **Load Workspaces** - Fetches initial workspace list from background
-3. **User Input** - Text entered in InputArea
-4. **Send** - handleSend called, messages added to store
-5. **Background Processing** - Agent loop processes request
-6. **Streaming** - STREAM_CHUNK messages update UI in real-time
-7. **Complete** - AGENT_STATUS: IDLE or AGENT_RESPONSE finalizes
+2. **Load Settings** - Fetch settings from storage
+3. **Resolve Workspace** - Get active workspace from current tab
+4. **Load Messages** - Restore chat history from storage
+5. **Load Saved Prompts** - Fetch user-saved prompts
+6. **User Input** - Text entered in InputArea
+7. **Send** - handleSend called, messages added to store
+8. **Background Processing** - Agent loop processes request
+9. **Streaming** - STREAM_CHUNK messages update UI in real-time
+10. **Metrics Update** - SESSION_METRICS broadcast during execution
+11. **Complete** - AGENT_STATUS: IDLE or TASK_COMPLETION finalizes
 
 ## Testing
 

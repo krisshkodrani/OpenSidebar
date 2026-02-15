@@ -30,30 +30,24 @@ All AI actions are classified by risk level:
 
 ### LOW RISK (Read-only)
 
-- **Reading pages** - `read_page` tool
-- **Scrolling** - `scroll_page` tool
-- **Memory search** - `memory_search` tool
-- **Taking screenshots** - `take_screenshot` tool
-- **Hovering** - `hover_element` tool
-- **Finding elements** - `find_element` tool
-- **Waiting** - `wait` tool
+- **Reading pages** - `read_page`, `read_element`, `read_pdf`
+- **Scrolling** - `scroll_page`
+- **Memory** - `memory_search`
+- **Inspection** - `hover_element`, `find_element`, `inspect_hidden`, `list_tabs`, `get_cookies`, `search_history`, `get_bookmarks`
+- **Utility** - `take_screenshot`, `wait`, `escalate`, `update_plan`, `transcribe_audio`, `copy_to_clipboard`, `send_notification`
 
 ### MEDIUM RISK (State Changes)
 
-- **Clicking elements** - `click_element` tool
-- **Typing text** - `type_text` tool
-- **Memory additions** - `memory_add` tool
-- **Selecting options** - `select_option` tool
-- **Pressing keys** - `press_key` tool
-- **Drag and drop** - `drag_and_drop` tool
-- **Drawing on canvas** - `draw_stroke` tool
-- **Hiding elements** - `hide_element` tool
-- **Task completion** - `done` tool
+- **Interaction** - `click_element`, `type_text`, `select_option`, `press_key`, `drag_and_drop`, `draw_stroke`, `right_click`, `set_checkbox`, `click_coordinates`
+- **Modification** - `hide_element`
+- **Files** - `upload_file`, `download_file`
+- **Memory/Tabs** - `memory_add`, `switch_tab`, `group_tabs`, `ungroup_tabs`, `create_bookmark`
 
 ### HIGH RISK (Navigation & System)
 
-- **Navigation** - `navigate` tool
-- **Tab management** - `create_tab`, `close_tab`, `switch_tab`
+- **Navigation** - `navigate`, `go_back`, `go_forward`
+- **Tab/Window Management** - `create_tab`, `close_tab`, `create_window`
+- **System** - `execute_js` (Arbitrary Code Execution), `set_cookie`, `delete_cookie`
 
 ### Risk Source of Truth
 

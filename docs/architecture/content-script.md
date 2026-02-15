@@ -8,9 +8,9 @@ The content script is OpenSidebar's "eyes and hands" — it runs in every tab an
 
 **Files:**
 
-- `content.ts` - Main entry, message handling, `autoDismissModals()` modal auto-dismiss
+- `content.ts` - Main entry, message handling, Janitor for cookie banner auto-dismiss
 - `snapshot.ts` - DOM snapshot generation
-- `tagging.ts` - Element discovery, tagging, and label association
+- `tagging.ts` - Element discovery, tagging, label association, dynamic tagging
 - `actions.ts` - Tool execution (click, type, scroll, select, press_key, drag, draw, hide, etc.)
 
 ## DOM Snapshot
@@ -25,6 +25,8 @@ interface DomSnapshot {
   viewportText: string; // Visible text content
   viewport: { width: number; height: number };
   scroll: { x: number; y: number; maxY: number };
+  survivingOverlays?: { tagId: number; coveragePercent: number }[];
+  capturedTexts?: string[];
 }
 
 interface TaggedElement {
@@ -32,7 +34,7 @@ interface TaggedElement {
   tagName: string; // HTML tag
   role: string; // ARIA role or inferred
   text: string; // Visible text (truncated)
-  attributes: Record<string, string>; // href, placeholder, etc.
+  attributes: Record<string, string>; // href, placeholder, aria-label, type, name
   rect: ElementRect; // Position and size
   isVisible: boolean;
   isDisabled: boolean;
@@ -43,7 +45,7 @@ interface TaggedElement {
 
 ### Interactive Element Selectors
 
-The content script tags 18 types of interactive elements:
+The content script tags 20+ types of interactive elements:
 
 ```typescript
 const INTERACTIVE_SELECTORS = [
@@ -131,6 +133,8 @@ Scrolls the page up or down:
 
 ```typescript
 scroll_page({ direction: "down", amount: 500 });
+// or
+scroll_page({ direction: "top" });
 ```
 
 ### read_page
@@ -162,6 +166,7 @@ Finds text on the page using `window.find()`, then walks up the DOM from the mat
 Returns: `Found "text" near [tagId] <tagname> "context". Use tag [tagId] to interact with it.`
 
 Walk-up strategy:
+
 1. Check each ancestor against interactive selectors (`a[href]`, `button`, `input`, etc.)
 2. Check semantic containers (`p`, `li`, `td`, `h1`-`h6`, `form`, etc.)
 3. Fallback to direct parent element
@@ -186,9 +191,43 @@ Performs a mouse stroke on a canvas element: `mousedown` at start coordinates, 1
 
 Sets `element.style.display = "none"` on a tagged element. Useful for dismissing overlay modals without clicking (which might trigger navigation).
 
-## Modal Auto-Dismiss
+### read_element
 
-The `autoDismissModals()` function in `content.ts` automatically dismisses common cookie consent banners, overlay modals, and notification popups on page load. It uses heuristic selectors for common frameworks (OneTrust, Google Funding Choices, etc.) and runs before the first LLM turn. The background can also trigger it via the `DISMISS_MODALS` message.
+Reads a specific attribute (href, src, value) of an element. For visible text, check the page snapshot first.
+
+### execute_js
+
+Runs JavaScript code in the page context using `eval()`.
+
+### right_click
+
+Dispatches a contextmenu event on the element.
+
+### set_checkbox
+
+Sets checkbox/radio state to checked/unchecked, firing input and change events.
+
+### click_coordinates
+
+Clicks at specific viewport X/Y coordinates.
+
+### inspect_hidden
+
+Scans for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, etc.).
+
+## Janitor (Modal Auto-Dismiss)
+
+The `runJanitor()` function in `content.ts` automatically dismisses common cookie consent banners, overlay modals, and notification popups on page load. It uses heuristic selectors for common frameworks:
+
+- OneTrust: `#onetrust-accept-btn-handler`
+- Google Funding Choices: `.fc-cta-consent`
+- Generic: `.cookie-banner button.primary`, `button[aria-label='Accept all']`
+
+The background can also trigger dismissal via the `DISMISS_MODALS` message.
+
+### Surviving Overlays
+
+If auto-dismiss cannot remove a viewport-covering overlay, it's included in the DOM snapshot as `survivingOverlays`, telling the agent to handle it manually.
 
 ## Label Association
 
@@ -213,7 +252,8 @@ Background requests a fresh snapshot:
     source: "background",
     payload: {
         includeText: boolean,  // Include viewport text?
-        refresh: boolean       // Re-tag elements?
+        refresh: boolean,     // Re-tag elements?
+        showTags?: boolean    // Render visual [N] overlays?
     }
 }
 ```
@@ -233,11 +273,26 @@ Background requests action execution:
         toolName: ToolName,
         args: Record<string, unknown>,
         toolCallId: string
-    }
+   : `TOOL }
 }
 ```
 
-Response: `TOOL_RESULT` with success/failure and result text.
+Response_RESULT` with success/failure and result text.
+
+### DISMISS_MODALS
+
+Background triggers manual modal dismissal:
+
+```typescript
+{
+    type: "DISMISS_MODALS",
+    requestId: string,
+    source: "background",
+    payload: {}
+}
+```
+
+Response: `DISMISS_MODALS_RESPONSE` with dismissed count, remaining overlay info, and captured texts.
 
 ## Edge Cases
 
@@ -303,8 +358,6 @@ export function querySelectorAllDeep(
 
 - **Before:** ~70% DOM coverage (standard DOM only)
 - **After:** ~95% DOM coverage (includes open shadow DOM up to 3 levels)
-
-See `docs/SHADOW_DOM_REPORT.md` for comprehensive implementation report.
 
 ### SPAs (Single-Page Applications)
 

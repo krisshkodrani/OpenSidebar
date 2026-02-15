@@ -1,10 +1,10 @@
 # Project Setup
 
-This document describes the build system, configuration, and development environment for QSidebar.
+This document describes the build system, configuration, and development environment for OpenSidebar.
 
 ## Overview
 
-QSidebar is a Chrome Manifest V3 extension built with:
+OpenSidebar is a Chrome Manifest V3 extension built with:
 
 - **Vite 5** + **@crxjs/vite-plugin** for building and HMR
 - **React 18** for the side panel UI
@@ -15,7 +15,7 @@ QSidebar is a Chrome Manifest V3 extension built with:
 ## Directory Structure
 
 ```
-qsidebar/
+opensidebar/
 ├── .env.example
 ├── .gitignore
 ├── .eslintrc.cjs
@@ -27,27 +27,47 @@ qsidebar/
 ├── vite.config.ts
 ├── src/
 │   ├── types/
-│   │   └── index.ts           # All shared TypeScript types
-│   ├── background/            # Service worker
-│   │   ├── background.ts      # Entry point
-│   │   ├── agent/             # Agent loop
-│   │   ├── llm/               # LLM clients
-│   │   ├── tools/             # Tool definitions
-│   │   └── ...
-│   ├── content/               # Content script
-│   │   ├── content.ts
-│   │   ├── snapshot.ts
-│   │   ├── tagging.ts
-│   │   └── actions.ts
-│   ├── sidepanel/             # React UI
-│   │   ├── App.tsx
-│   │   ├── store.ts
-│   │   ├── bridge.ts
-│   │   └── components/
-│   └── offscreen/             # Offscreen document (memory)
-│       └── memory/
-├── tests/                     # Test files
-└── docs/                      # Documentation
+│   │   └── index.ts           # All shared TypeScript types (single source of truth)
+│   ├── background/           # Service worker
+│   │   ├── background.ts     # Entry point
+│   │   ├── agent/            # Agent loop
+│   │   │   ├── loop.ts       # Main orchestration
+│   │   │   ├── context.ts    # Context manager (sliding window)
+│   │   │   ├── progress.ts    # Stuck detection
+│   │   │   ├── executor.ts   # Tool execution
+│   │   │   ├── guardian.ts   # Plan guardian
+│   │   │   ├── step-labels.ts # Step labels
+│   │   │   ├── tool-recovery.ts # Tool call recovery
+│   │   │   └── trace.ts      # Session recording
+│   │   ├── llm/              # LLM clients (multi-provider)
+│   │   ├── tools/            # 52 tool definitions
+│   │   ├── memory/           # Memory bridge
+│   │   ├── workspaces/        # Workspace manager
+│   │   ├── vision.ts         # Vision LLM
+│   │   ├── navigation.ts      # Navigation bridge
+│   │   ├── keepalive.ts      # SW keepalive
+│   │   ├── streaming.ts       # SSE parser
+│   │   └── security.ts       # Risk classification
+│   ├── content/              # Content script
+│   │   ├── content.ts        # Message listener + Janitor
+│   │   ├── snapshot.ts       # DOM distillation
+│   │   ├── tagging.ts        # Element tagging
+│   │   └── actions.ts        # DOM actions
+│   ├── sidepanel/            # React UI
+│   │   ├── App.tsx          # Main component
+│   │   ├── store.ts         # Zustand state
+│   │   ├── bridge.ts        # Message routing
+│   │   └── components/      # UI components
+│   ├── offscreen/            # Offscreen document (memory)
+│   │   └── memory/
+│   │       ├── main.ts      # SQLite + Voy
+│   │       ├── worker.ts    # Embeddings
+│   │       └── utils.ts     # RRF
+│   └── utils/               # Shared utilities
+├── tests/                   # Test files (mirror src structure)
+├── docs/                    # Architecture docs
+│   └── architecture/
+└── evals/                   # Offline evaluation framework
 ```
 
 ## Configuration Files
@@ -154,6 +174,15 @@ bun test
 
 # Format code
 bun run fmt
+
+# Run evaluation suite
+bun run evals
+
+# Show eval statistics
+bun run evals:stats
+
+# Analyze evals with suggestions
+bun run evals:analyze
 ```
 
 ## Development Workflow
@@ -208,6 +237,26 @@ Run specific test files:
 bun test tests/background/streaming.test.ts
 bun test --grep "AgentLoop"
 ```
+
+## Logging System
+
+OpenSidebar includes structured logging with multiple output destinations:
+
+```bash
+# Start log drain server (127.0.0.1:7589)
+bun run logs
+
+# Show last 50 entries
+bun run logs:tail
+
+# Show error-level entries
+bun run logs:errors
+
+# Query logs
+bun run logs:query search <text>
+```
+
+Log file: `logs/opensidebar.jsonl` (JSONL format, 50MB rotation, 5 files max).
 
 ## Key Design Decisions
 

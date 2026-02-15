@@ -107,23 +107,59 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 
 ### Tools Used
 
+### Tools Used
+
+**DOM Interaction:**
 - `click_element` - Click tagged elements
 - `type_text` - Type into input fields
 - `scroll_page` - Scroll up/down (supports scrolling within container elements)
 - `read_page` - Get full page content
-- `navigate` - Go to URLs
-- `create_tab` - Open new tabs
-- `switch_tab` - Switch between tabs
-- `close_tab` - Close tabs
 - `hover_element` - Hover over elements
 - `find_element` - Find elements by text, scroll to match, and return tag ID for interaction
-- `take_screenshot` - Capture viewport (analyzed by vision LLM for text description)
 - `select_option` - Select dropdown `<select>` options by text or value
 - `press_key` - Dispatch keyboard events (with optional modifiers)
 - `drag_and_drop` - Full drag sequence between two tagged elements
 - `draw_stroke` - Mouse stroke on canvas elements (interpolated points)
 - `hide_element` - Hide an element via `display: none` (useful for dismissing overlays)
-- `escalate` - Switch to a smarter model for complex reasoning (riddles, puzzles, math)
+- `read_element` - Read text content of a specific element
+- `right_click` - Right-click context menu
+- `set_checkbox` - Set checkbox state (true/false)
+- `click_coordinates` - Click at specific X,Y coordinates
+- `inspect_hidden` - Inspect hidden elements
+
+**Navigation & Tabs:**
+- `navigate` - Go to URLs
+- `create_tab` - Open new tabs
+- `switch_tab` - Switch between tabs
+- `close_tab` - Close tabs
+- `group_tabs` - Create a tab group
+- `ungroup_tabs` - Remove tabs from a group
+- `list_tabs` - List all open tabs
+- `go_back` - Navigate back in history
+- `go_forward` - Navigate forward in history
+- `create_window` - Open a new browser window
+
+**System & Utility:**
+- `take_screenshot` - Capture viewport (analyzed by vision LLM for text description)
+- `wait` - Pause execution for a specified duration
+- `escalate` - Switch to a smarter model for complex reasoning
+- `done` - Mark task as complete
+- `update_plan` - Update the current plan
+- `execute_js` - Execute custom JavaScript (High Risk)
+- `upload_file` - Upload a file to a form
+- `download_file` - Download a file from a URL
+- `transcribe_audio` - Transcribe audio from the current tab
+- `get_cookies` - Get cookies for the current domain
+- `set_cookie` - Set a cookie
+- `delete_cookie` - Delete a cookie
+- `copy_to_clipboard` - Copy text to clipboard
+- `read_pdf` - Read text content from a PDF
+- `search_history` - Search browser history
+- `create_bookmark` - Create a new bookmark
+- `get_bookmarks` - List bookmarks
+- `send_notification` - Send a browser notification
+- `memory_add` - Save information to long-term memory
+- `memory_search` - Search long-term memory
 
 ### DOM Snapshot Format
 

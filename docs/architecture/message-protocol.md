@@ -20,28 +20,29 @@
 
 OpenSidebar has four execution contexts that communicate via Chrome's messaging APIs:
 
-| Context | Process | Lifecycle | File |
-|---------|---------|-----------|------|
-| **Service Worker** (background) | Extension process | Ephemeral (terminates after ~30s idle) | `src/background/background.ts` |
-| **Side Panel** (UI) | Extension process | Lives while panel is open | `src/sidepanel/App.tsx` |
-| **Content Script** | Tab renderer process | Lives while page is loaded | `src/content/content.ts` |
-| **Offscreen Document** | Extension process | Created on demand for memory WASM | `src/offscreen/offscreen.ts` |
+| Context                         | Process              | Lifecycle                              | File                           |
+| ------------------------------- | -------------------- | -------------------------------------- | ------------------------------ |
+| **Service Worker** (background) | Extension process    | Ephemeral (terminates after ~30s idle) | `src/background/background.ts` |
+| **Side Panel** (UI)             | Extension process    | Lives while panel is open              | `src/sidepanel/App.tsx`        |
+| **Content Script**              | Tab renderer process | Lives while page is loaded             | `src/content/content.ts`       |
+| **Offscreen Document**          | Extension process    | Created on demand for memory WASM      | `src/offscreen/offscreen.ts`   |
 
 ### Communication Paths
 
 ```
 Side Panel ←——chrome.runtime——→ Service Worker ←——chrome.tabs.sendMessage——→ Content Script
-                                       ↕
-                                chrome.runtime
-                                       ↕
-                              Offscreen Document
-                                       ↕
-                                  postMessage
-                                       ↕
-                                  Web Worker (embeddings)
+                                        ↕
+                                 chrome.runtime
+                                        ↕
+                               Offscreen Document
+                                        ↕
+                                   postMessage
+                                        ↕
+                                   Web Worker (embeddings)
 ```
 
 **Rules:**
+
 - Content scripts **cannot** talk directly to the side panel — all messages route through the service worker.
 - The offscreen document **only** communicates with the service worker.
 - The web worker inside the offscreen document uses `postMessage` (not chrome.runtime).
@@ -60,16 +61,18 @@ const response = await chrome.runtime.sendMessage({
   type: "USER_CHAT",
   requestId: crypto.randomUUID(),
   source: "sidepanel",
-  payload: { text: "Search for flights to NYC", tabId: 123, workspaceId: null }
+  payload: { text: "Search for flights to NYC", tabId: 123, workspaceId: null },
 });
 
 // Receiver (background.ts)
-chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {
-  if (message.type === "USER_CHAT") {
-    handleUserChat(message).then(sendResponse);
-    return true; // async response
-  }
-});
+chrome.runtime.onMessage.addListener(
+  (message: RuntimeMessage, sender, sendResponse) => {
+    if (message.type === "USER_CHAT") {
+      handleUserChat(message).then(sendResponse);
+      return true; // async response
+    }
+  },
+);
 ```
 
 ### 2. `chrome.tabs.sendMessage` (background → content script)
@@ -82,7 +85,7 @@ const response = await chrome.tabs.sendMessage(tabId, {
   type: "DOM_SNAPSHOT_REQUEST",
   requestId: crypto.randomUUID(),
   source: "background",
-  payload: { includeText: true, refresh: true }
+  payload: { includeText: true, refresh: true },
 });
 ```
 
@@ -112,84 +115,62 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 2. **Tool call tracking** — `TOOL_EXECUTE` and `TOOL_RESULT` share the same `requestId`.
 3. **Timeout detection** — If no response arrives within 10s, the sender logs an error and surfaces it to the user.
 
-```typescript
-// Helper: send a message and await its correlated response
-function sendAndWait<T extends RuntimeMessage>(
-  message: RuntimeMessage,
-  timeoutMs = 10_000
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Timeout waiting for response to ${message.type}`)),
-      timeoutMs
-    );
-    chrome.runtime.sendMessage(message, (response: T) => {
-      clearTimeout(timer);
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(response);
-      }
-    });
-  });
-}
-```
-
 ---
 
 ## Message Catalog
 
 ### Side Panel → Service Worker
 
-| Message Type | Purpose | Payload | Expected Response |
-|---|---|---|---|
-| `USER_CHAT` | User sends a chat message | `{ text, tabId, workspaceId, isHint? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
-| `STOP_AGENT` | User clicks stop button | `{}` | `AGENT_STATUS` with `status: IDLE` |
-| `SETTINGS_UPDATE` | User changes settings | `{ settings: Partial<UserSettings> }` | `{ ok: true }` (sync response) |
-| `PAUSE_AGENT` | User pauses agent execution | `{}` | `AGENT_STATUS` with `status: PAUSED` |
-| `RESUME_AGENT` | User resumes paused agent | `{}` | `AGENT_STATUS` with `status: THINKING` |
-| `SKIP_SUBTASK` | User skips current subtask | `{ taskId }` | — |
+| Message Type      | Purpose                     | Payload                                 | Expected Response                                                                             |
+| ----------------- | --------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `USER_CHAT`       | User sends a chat message   | `{ text, tabId, workspaceId, isHint? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
+| `STOP_AGENT`      | User clicks stop button     | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: IDLE`                                                            |
+| `SETTINGS_UPDATE` | User changes settings       | `{ settings: Partial<UserSettings> }`   | `{ ok: true }` (sync response)                                                                |
+| `PAUSE_AGENT`     | User pauses agent execution | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: PAUSED`                                                          |
+| `RESUME_AGENT`    | User resumes paused agent   | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: THINKING`                                                        |
+| `SKIP_SUBTASK`    | User skips current subtask  | `{ taskId }`                            | —                                                                                             |
 
 ### Service Worker → Side Panel
 
-| Message Type | Purpose | Payload |
-|---|---|---|
-| `AGENT_STATUS` | Agent state machine changed | `{ status: AgentStatus, detail: string }` |
-| `STREAM_CHUNK` | Incremental LLM output | `{ delta: string, done: boolean }` |
-| `AGENT_RESPONSE` | Final agent response for a turn | `{ text, isStreaming, toolCalls }` |
-| `NAVIGATION_RESUME` | Page load completed after navigation | `{ success, url, error? }` |
-| `AGENT_STEP` | Step timeline update | `{ step: AgentStep, update: boolean }` |
-| `AGENT_STUCK` | Agent stuck detection signal | `{ signal, staleTurns, url, message }` |
-| `AGENT_TURN` | Turn progress update | `{ turn, maxTurns }` |
-| `TASK_PROGRESS` | Subtask progress update | `{ taskId, subtasks, currentIndex, totalTurnsUsed }` |
-| `TASK_COMPLETION` | Task completion report | `{ taskId, status, totalTurns, totalTimeMs, summary, subtaskResults, urlHistory }` |
+| Message Type        | Purpose                              | Payload                                                                                          |
+| ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ | ------- | ---------- | --------------------------------------- |
+| `AGENT_STATUS`      | Agent state machine changed          | `{ status: AgentStatus, detail: string }`                                                        |
+| `STREAM_CHUNK`      | Incremental LLM output               | `{ delta: string, done: boolean }`                                                               |
+| `AGENT_RESPONSE`    | Final agent response for a turn      | `{ text, isStreaming, toolCalls }`                                                               |
+| `NAVIGATION_RESUME` | Page load completed after navigation | `{ success, url, error? }`                                                                       |
+| `AGENT_STEP`        | Step timeline update                 | `{ step: AgentStep, update: boolean }`                                                           |
+| `AGENT_STUCK`       | Agent stuck detection signal         | `{ signal: "nudge"                                                                               | "pivot" | "escalate" | "resolved", staleTurns, url, message }` |
+| `AGENT_TURN`        | Turn progress update                 | `{ turn, maxTurns, provider? }`                                                                  |
+| `TASK_PROGRESS`     | Subtask progress update              | `{ taskId, subtasks, currentIndex, totalTurnsUsed }`                                             |
+| `TASK_COMPLETION`   | Task completion report               | `{ taskId, status, totalTurnsUsed, totalTimeMs, summary, subtaskResults, urlHistory, metrics? }` |
+| `SESSION_METRICS`   | Real-time token/cost tracking        | `{ totalPromptTokens, totalCompletionTokens, totalTokens, totalCost, ... }`                      |
 
 ### Service Worker → Content Script
 
-| Message Type | Purpose | Payload | Expected Response |
-|---|---|---|---|
-| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation | `{ includeText, refresh, showTags? }` | `DOM_SNAPSHOT_RESPONSE` |
-| `TOOL_EXECUTE` | Execute a DOM action | `{ toolName, args, toolCallId }` | `TOOL_RESULT` |
-| `DISMISS_MODALS` | Auto-dismiss modal overlays | `{}` | `DISMISS_MODALS_RESPONSE` |
+| Message Type           | Purpose                     | Payload                               | Expected Response         |
+| ---------------------- | --------------------------- | ------------------------------------- | ------------------------- |
+| `DOM_SNAPSHOT_REQUEST` | Request DOM distillation    | `{ includeText, refresh, showTags? }` | `DOM_SNAPSHOT_RESPONSE`   |
+| `TOOL_EXECUTE`         | Execute a DOM action        | `{ toolName, args, toolCallId }`      | `TOOL_RESULT`             |
+| `DISMISS_MODALS`       | Auto-dismiss modal overlays | `{}`                                  | `DISMISS_MODALS_RESPONSE` |
 
 ### Content Script → Service Worker
 
-| Message Type | Purpose | Payload |
-|---|---|---|
-| `DOM_SNAPSHOT_RESPONSE` | Return DOM snapshot | `{ snapshot: DomSnapshot, durationMs }` |
-| `TOOL_RESULT` | Return tool execution result | `{ toolCallId, success, result, navigated }` |
-| `DISMISS_MODALS_RESPONSE` | Report dismissed modals count | `{ dismissed: number }` |
+| Message Type              | Purpose                       | Payload                                                     |
+| ------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| `DOM_SNAPSHOT_RESPONSE`   | Return DOM snapshot           | `{ snapshot: DomSnapshot, durationMs }`                     |
+| `TOOL_RESULT`             | Return tool execution result  | `{ toolCallId, success, result, navigated }`                |
+| `DISMISS_MODALS_RESPONSE` | Report dismissed modals count | `{ dismissed: number, remainingOverlay?, capturedTexts[] }` |
 
 ### Service Worker → Offscreen Document
 
-| Message Type | Purpose | Payload | Expected Response |
-|---|---|---|---|
-| `MEMORY_WORKER` | Memory operation | `{ action: "init" \| "add" \| "search" \| "delete" \| "clear", ... }` | `MEMORY_WORKER_RESPONSE` |
+| Message Type    | Purpose          | Payload                                                                                | Expected Response        |
+| --------------- | ---------------- | -------------------------------------------------------------------------------------- | ------------------------ |
+| `MEMORY_WORKER` | Memory operation | `{ action: "init" \| "add" \| "search" \| "delete" \| "clear" \| "extract_pdf", ... }` | `MEMORY_WORKER_RESPONSE` |
 
 ### Offscreen Document → Service Worker
 
-| Message Type | Purpose | Payload |
-|---|---|---|
+| Message Type             | Purpose                 | Payload                                 |
+| ------------------------ | ----------------------- | --------------------------------------- |
 | `MEMORY_WORKER_RESPONSE` | Memory operation result | `{ action, success, results?, error? }` |
 
 ---
@@ -227,28 +208,29 @@ Side Panel          Service Worker          Content Script
 ### 2. Navigation Bridge
 
 ```
-Side Panel          Service Worker          Content Script (old)    Content Script (new)
-    │                     │                       │                       │
-    │                     │── TOOL_EXECUTE ──────→ │                       │
-    │                     │   (navigate url)      │                       │
-    │                     │←── TOOL_RESULT ──────  │ (navigated: true)     │
-    │                     │                       │                       │
-    │← AGENT_STATUS ────  │ (WAITING_FOR_PAGE_LOAD)                       │
-    │                     │                       │                       │
-    │                     │ (save state to         │ (destroyed)           │
-    │                     │  chrome.storage.local) │                       │
-    │                     │                       ×                       │
-    │                     │                                               │
-    │                     │←── webNavigation.onCompleted ────────────────  │
-    │                     │                                               │
-    │                     │ (restore state from storage)                   │
-    │                     │── DOM_SNAPSHOT_REQUEST ──────────────────────→ │
-    │                     │←── DOM_SNAPSHOT_RESPONSE ───────────────────  │
-    │                     │                                               │
-    │← NAVIGATION_RESUME  │                                               │
-    │← AGENT_STATUS ────  │ (status: THINKING)                            │
-    │                     │ (resume agent loop)                            │
-    │                     │                                               │
+Service Worker          Content Script (old)    Content Script (new)
+    │                       │                       │
+    │── TOOL_EXECUTE ──────→ │                       │
+    │   (navigate url)      │                       │
+    │←── TOOL_RESULT ──────  │ (navigated: true)   │
+    │                     │                       │
+    │← AGENT_STATUS ────  │ (WAITING_FOR_PAGE_LOAD)
+    │                     │                       │
+    │                     │ (save state to         │
+    │                     │  chrome.storage.local) │
+    │                     │                       │
+    │                     │ (destroyed)           │
+    │                     │                       │
+    │←── webNavigation.onCompleted ────────────────  │
+    │                     │                       │
+    │                     │ (restore state from storage)
+    │                     │── DOM_SNAPSHOT_REQUEST ─→│
+    │                     │←── DOM_SNAPSHOT_RESPONSE  │
+    │                     │                       │
+    │← NAVIGATION_RESUME  │                       │
+    │← AGENT_STATUS ────  │ (status: THINKING)    │
+    │                     │ (resume agent loop)    │
+    │                     │                       │
 ```
 
 ### 3. Memory Search Flow
@@ -306,7 +288,7 @@ Side Panel          Service Worker          Content Script
     │                     │                       │
 ```
 
-### 6. Turn Progress Tracking
+### 6. Turn Progress + Metrics
 
 ```
 Side Panel          Service Worker
@@ -315,6 +297,8 @@ Side Panel          Service Worker
     │← AGENT_TURN ──────  │ (turn: 14, maxTurns: 100)
     │                     │
     │                     │ ... (LLM + tool execution) ...
+    │                     │
+    │← SESSION_METRICS ── │ (totalTokens: 4500, cost: $0.02)
     │                     │
     │← AGENT_TURN ──────  │ (turn: 15, maxTurns: 100)
     │                     │
@@ -332,30 +316,30 @@ Every response can optionally include an `error` field. Receivers check this fir
 // Pattern used throughout the codebase
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message)
-    .then(result => sendResponse({ ok: true, ...result }))
-    .catch(err => sendResponse({ ok: false, error: err.message }));
+    .then((result) => sendResponse({ ok: true, ...result }))
+    .catch((err) => sendResponse({ ok: false, error: err.message }));
   return true; // async
 });
 ```
 
 ### Disconnected Contexts
 
-| Scenario | Detection | Recovery |
-|---|---|---|
-| Content script destroyed (navigation) | `chrome.runtime.lastError` on `sendMessage` | Navigation Bridge restores state after new page loads |
-| Service worker terminated (idle) | Side panel detects missed `AGENT_STATUS` | Side panel re-sends last `USER_CHAT`; service worker restores from `chrome.storage.local` |
-| Offscreen document closed | `chrome.runtime.lastError` | Service worker re-creates offscreen document via `chrome.offscreen.createDocument()` |
-| Side panel closed by user | N/A (service worker continues if mid-loop) | Agent loop completes silently; results available when panel reopens |
+| Scenario                              | Detection                                   | Recovery                                                                                  |
+| ------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Content script destroyed (navigation) | `chrome.runtime.lastError` on `sendMessage` | Navigation Bridge restores state after new page loads                                     |
+| Service worker terminated (idle)      | Side panel detects missed `AGENT_STATUS`    | Side panel re-sends last `USER_CHAT`; service worker restores from `chrome.storage.local` |
+| Offscreen document closed             | `chrome.runtime.lastError`                  | Service worker re-creates offscreen document via `chrome.offscreen.createDocument()`      |
+| Side panel closed by user             | N/A (service worker continues if mid-loop)  | Agent loop completes silently; results available when panel reopens                       |
 
 ### Timeout Constants
 
-| Operation | Timeout | Action on Timeout |
-|---|---|---|
-| DOM snapshot request | 5,000 ms | Return error to agent: "Page not responding" |
-| Tool execution | 10,000 ms | Return error to agent: "Action timed out" |
-| LLM API call (OpenRouter) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel |
-| Navigation bridge wait | 30,000 ms | Abort navigation, set `AgentStatus.ERROR` |
-| Memory worker init | 15,000 ms | Disable memory features, warn user |
+| Operation                 | Timeout   | Action on Timeout                            |
+| ------------------------- | --------- | -------------------------------------------- |
+| DOM snapshot request      | 5,000 ms  | Return error to agent: "Page not responding" |
+| Tool execution            | 10,000 ms | Return error to agent: "Action timed out"    |
+| LLM API call (OpenRouter) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel   |
+| Navigation bridge wait    | 30,000 ms | Abort navigation, set `AgentStatus.ERROR`    |
+| Memory worker init        | 15,000 ms | Disable memory features, warn user           |
 
 ---
 
