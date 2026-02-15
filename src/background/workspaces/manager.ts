@@ -27,7 +27,7 @@ export class WorkspaceManager {
     this.init();
   }
 
-  private async init(retryCount = 0) {
+  private async init(retryCount = 0): Promise<void> {
     if (this.initialized) return;
 
     if (isContentScript()) {
@@ -72,14 +72,29 @@ export class WorkspaceManager {
       return;
     }
 
+    // Defensive: skip if chrome APIs not available (e.g., in test environment)
+    if (typeof chrome === "undefined" || !chrome.tabs?.onRemoved) {
+      logger.debug(
+        "workspace",
+        "Skipping listener setup - chrome.tabs not available",
+      );
+      return;
+    }
+
     // Listen for tab removal to update workspace tab lists and auto-delete empty workspaces
     chrome.tabs.onRemoved.addListener(this.handleTabRemoved.bind(this));
 
     // Listen for tab group removal to clean up workspaces
-    chrome.tabGroups.onRemoved.addListener(this.handleGroupRemoved.bind(this));
+    if (chrome.tabGroups?.onRemoved) {
+      chrome.tabGroups.onRemoved.addListener(
+        this.handleGroupRemoved.bind(this),
+      );
+    }
 
     // Listen for tabs being ungrouped (manual drag out) - RE-ADD them to lock workspace
-    chrome.tabs.onUpdated.addListener(this.handleTabUngrouped.bind(this));
+    if (chrome.tabs?.onUpdated) {
+      chrome.tabs.onUpdated.addListener(this.handleTabUngrouped.bind(this));
+    }
   }
 
   /**
