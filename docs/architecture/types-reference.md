@@ -19,7 +19,8 @@
 10. [Workspace / Tab Group Types](#workspace--tab-group-types)
 11. [Navigation Bridge Types](#navigation-bridge-types)
 12. [Configuration Types](#configuration-types)
-13. [Utility Types](#utility-types)
+13. [Trace Types](#trace-types)
+14. [Utility Types](#utility-types)
 
 ---
 
@@ -63,7 +64,7 @@ export enum MessageSource {
 
 ### `ToolName`
 
-All 21 tool names the agent can invoke.
+All 52 tool names the agent can invoke.
 
 ```typescript
 /** Tool identifiers exposed to the LLM */
@@ -89,6 +90,31 @@ export enum ToolName {
   DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
+  UPDATE_PLAN = "update_plan",
+  READ_ELEMENT = "read_element",
+  EXECUTE_JS = "execute_js",
+  UPLOAD_FILE = "upload_file",
+  GO_BACK = "go_back",
+  GO_FORWARD = "go_forward",
+  LIST_TABS = "list_tabs",
+  RIGHT_CLICK = "right_click",
+  SET_CHECKBOX = "set_checkbox",
+  CLICK_COORDINATES = "click_coordinates",
+  DOWNLOAD_FILE = "download_file",
+  TRANSCRIBE_AUDIO = "transcribe_audio",
+  GROUP_TABS = "group_tabs",
+  UNGROUP_TABS = "ungroup_tabs",
+  GET_COOKIES = "get_cookies",
+  SET_COOKIE = "set_cookie",
+  DELETE_COOKIE = "delete_cookie",
+  COPY_TO_CLIPBOARD = "copy_to_clipboard",
+  READ_PDF = "read_pdf",
+  SEARCH_HISTORY = "search_history",
+  CREATE_BOOKMARK = "create_bookmark",
+  GET_BOOKMARKS = "get_bookmarks",
+  CREATE_WINDOW = "create_window",
+  SEND_NOTIFICATION = "send_notification",
+  INSPECT_HIDDEN = "inspect_hidden",
 }
 ```
 
@@ -115,6 +141,8 @@ export enum RiskLevel {
 export enum ScrollDirection {
   UP = "up",
   DOWN = "down",
+  TOP = "top",
+  BOTTOM = "bottom",
 }
 ```
 
@@ -125,7 +153,6 @@ export enum ScrollDirection {
 ### `RuntimeMessage`
 
 Discriminated union for all `chrome.runtime.sendMessage` / `onMessage` payloads.
-See [`docs/message-protocol.md`](./message-protocol.md) for the full protocol.
 
 ```typescript
 /** Base shape shared by every runtime message */
@@ -134,10 +161,12 @@ export interface BaseMessage {
   requestId: string;
   /** Where this message originated */
   source: MessageSource | string;
+  /** Workspace this message belongs to (null = global / unscoped) */
+  workspaceId?: string | null;
 }
 
 /**
- * Discriminated union of all message types (26 members).
+ * Discriminated union of all message types (27+ members).
  * The `type` field is the discriminant.
  */
 export type RuntimeMessage =
@@ -167,7 +196,8 @@ export type RuntimeMessage =
   | TaskCompletionMessage
   | SkipSubtaskMessage
   | PauseAgentMessage
-  | ResumeAgentMessage;
+  | ResumeAgentMessage
+  | SessionMetricsMessage;
 ```
 
 ### `UserChatMessage`
@@ -244,7 +274,9 @@ export interface StreamChunkMessage extends BaseMessage {
 export interface StopAgentMessage extends BaseMessage {
   type: "STOP_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
 }
 ```
 
@@ -322,7 +354,13 @@ export interface DismissModalsMessage extends BaseMessage {
 export interface DismissModalsResponse extends BaseMessage {
   type: "DISMISS_MODALS_RESPONSE";
   source: MessageSource.CONTENT;
-  payload: { dismissed: number };
+  payload: {
+    dismissed: number;
+    /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
+    remainingOverlay: OverlayDescriptor | null;
+    /** Text content extracted from dismissed overlays (deduplicated) */
+    capturedTexts: string[];
+  };
 }
 ```
 
@@ -360,7 +398,7 @@ export interface AgentStuckMessage extends BaseMessage {
   type: "AGENT_STUCK";
   source: MessageSource.BACKGROUND;
   payload: {
-    signal: "nudge" | "escalate" | "resolved";
+    signal: "nudge" | "pivot" | "escalate" | "resolved";
     staleTurns: number;
     url: string;
     /** Human-readable explanation */
@@ -379,6 +417,7 @@ export interface AgentTurnMessage extends BaseMessage {
   payload: {
     turn: number;
     maxTurns: number;
+    provider?: string;
   };
 }
 ```
@@ -410,6 +449,8 @@ export interface SubtaskSummary {
   turnsUsed: number;
   turnBudget: number;
   result?: string;
+  /** URL (origin+pathname) where this step was completed — used by navigate guard */
+  completedAtUrl?: string;
 }
 ```
 
@@ -423,11 +464,13 @@ export interface TaskCompletionMessage extends BaseMessage {
   payload: {
     taskId: string;
     status: "completed" | "partial" | "failed";
-    totalTurns: number;
+    totalTurnsUsed: number;
     totalTimeMs: number;
     summary: string;
     subtaskResults: SubtaskResult[];
     urlHistory: string[];
+    /** Session metrics (token usage, cost, timing) */
+    metrics?: SessionMetrics;
   };
 }
 ```
@@ -464,7 +507,9 @@ export interface SkipSubtaskMessage extends BaseMessage {
 export interface PauseAgentMessage extends BaseMessage {
   type: "PAUSE_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
 }
 ```
 
@@ -475,7 +520,54 @@ export interface PauseAgentMessage extends BaseMessage {
 export interface ResumeAgentMessage extends BaseMessage {
   type: "RESUME_AGENT";
   source: MessageSource.SIDEPANEL;
-  payload: Record<string, never>;
+  payload: {
+    workspaceId?: string | null;
+  };
+}
+```
+
+### `SessionMetricsMessage`
+
+```typescript
+/** Background broadcasts session token/cost metrics to the side panel */
+export interface SessionMetricsMessage extends BaseMessage {
+  type: "SESSION_METRICS";
+  source: MessageSource.BACKGROUND;
+  payload: SessionMetrics;
+}
+```
+
+### `SessionMetrics`
+
+```typescript
+/** Accumulated token usage, cost, and timing for an agent session */
+export interface SessionMetrics {
+  /** Total prompt tokens across all LLM calls this session */
+  totalPromptTokens: number;
+  /** Total completion tokens across all LLM calls this session */
+  totalCompletionTokens: number;
+  /** Total tokens (prompt + completion) */
+  totalTokens: number;
+  /** Cumulative cost in USD from OpenRouter */
+  totalCost: number;
+  /** Total LLM call time in ms (wall clock, not including tool execution) */
+  totalLlmTimeMs: number;
+  /** Total session wall clock time in ms */
+  totalSessionTimeMs: number;
+  /** Number of LLM calls made (including vision) */
+  llmCallCount: number;
+  /** Total prompt tokens served from cache (prefix caching) */
+  totalCachedTokens: number;
+  /** Per-model breakdown */
+  modelBreakdown: Record<
+    string,
+    {
+      promptTokens: number;
+      completionTokens: number;
+      cost: number;
+      calls: number;
+    }
+  >;
 }
 ```
 
@@ -620,6 +712,8 @@ export interface AgentStep {
   timestamp: number;
   durationMs?: number;
   errorMessage?: string;
+  /** Base64 data URL of a downsized screenshot thumbnail (~320px wide) */
+  screenshotUrl?: string;
 }
 ```
 
@@ -664,7 +758,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (21 tools):
+Each tool has a typed argument interface (52 tools):
 
 ```typescript
 /** Arguments for click_element */
@@ -699,7 +793,9 @@ export type ReadPageArgs = Record<string, never>;
 /** Arguments for navigate */
 export interface NavigateArgs {
   /** Full URL to navigate to */
-  url: string;
+  url?: string;
+  /** Search query (uses default search engine). Provide url OR query, not both. */
+  query?: string;
 }
 
 /** Arguments for memory_search */
@@ -753,8 +849,10 @@ export interface FindElementArgs {
 
 /** Arguments for wait */
 export interface WaitArgs {
-  /** Milliseconds to wait (max: 5000) */
-  ms: number;
+  /** Seconds to wait (1–10) */
+  seconds: number;
+  /** Why you're pausing — articulating confusion helps re-focus */
+  reason?: string;
 }
 
 /** Arguments for done — signals task completion */
@@ -812,6 +910,164 @@ export interface EscalateArgs {
   /** Why the fast model can't handle this (e.g. "riddle requires multi-step reasoning") */
   reason: string;
 }
+
+/** Arguments for update_plan — report task plan and progress */
+export interface UpdatePlanArgs {
+  subtasks: string[];
+  currentIndex: number;
+  lastResult?: string;
+}
+
+/** Arguments for read_element */
+export interface ReadElementArgs {
+  /** The numeric tag ID of the element */
+  id: number;
+  /** Attribute name to read (e.g. "href", "src"). Omit to read text content. */
+  attribute?: string;
+}
+
+/** Arguments for execute_js */
+export interface ExecuteJsArgs {
+  /** JavaScript code to evaluate in the page's MAIN world */
+  code: string;
+}
+
+/** Arguments for upload_file */
+export interface UploadFileArgs {
+  /** The numeric tag ID of the <input type="file"> element */
+  id: number;
+  /** URL of the file to upload (fetched by the service worker) */
+  url: string;
+}
+
+/** Arguments for go_back */
+export type GoBackArgs = Record<string, never>;
+
+/** Arguments for go_forward */
+export type GoForwardArgs = Record<string, never>;
+
+/** Arguments for list_tabs */
+export type ListTabsArgs = Record<string, never>;
+
+/** Arguments for right_click */
+export interface RightClickArgs {
+  /** The numeric tag ID of the element to right-click */
+  id: number;
+}
+
+/** Arguments for set_checkbox */
+export interface SetCheckboxArgs {
+  /** The numeric tag ID of the checkbox or radio input */
+  id: number;
+  /** Whether the checkbox should be checked */
+  checked: boolean;
+}
+
+/** Arguments for click_coordinates */
+export interface ClickCoordinatesArgs {
+  /** X coordinate in viewport pixels */
+  x: number;
+  /** Y coordinate in viewport pixels */
+  y: number;
+  /** What you expect to click (for logging) */
+  description?: string;
+}
+
+/** Arguments for download_file */
+export interface DownloadFileArgs {
+  /** URL of the file to download */
+  url: string;
+  /** Optional filename for the downloaded file */
+  filename?: string;
+}
+
+/** Arguments for transcribe_audio */
+export interface TranscribeAudioArgs {
+  /** The numeric tag ID of the <audio> or <video> element */
+  id: number;
+}
+
+/** Arguments for group_tabs */
+export interface GroupTabsArgs {
+  tabIds: number[];
+  title: string;
+  color?: string;
+}
+
+/** Arguments for ungroup_tabs */
+export interface UngroupTabsArgs {
+  tabIds: number[];
+}
+
+/** Arguments for get_cookies */
+export interface GetCookiesArgs {
+  url?: string;
+}
+
+/** Arguments for set_cookie */
+export interface SetCookieArgs {
+  url: string;
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+}
+
+/** Arguments for delete_cookie */
+export interface DeleteCookieArgs {
+  url: string;
+  name: string;
+}
+
+/** Arguments for copy_to_clipboard */
+export interface CopyToClipboardArgs {
+  text: string;
+}
+
+/** Arguments for read_pdf */
+export interface ReadPdfArgs {
+  url: string;
+  maxPages?: number;
+}
+
+/** Arguments for search_history */
+export interface SearchHistoryArgs {
+  query: string;
+  maxResults?: number;
+}
+
+/** Arguments for create_bookmark */
+export interface CreateBookmarkArgs {
+  title?: string;
+  url?: string;
+  parentId?: string;
+}
+
+/** Arguments for get_bookmarks */
+export interface GetBookmarksArgs {
+  query: string;
+  maxResults?: number;
+}
+
+/** Arguments for create_window */
+export interface CreateWindowArgs {
+  url?: string;
+  incognito?: boolean;
+}
+
+/** Arguments for send_notification */
+export interface SendNotificationArgs {
+  title: string;
+  message: string;
+}
+
+/** Arguments for inspect_hidden */
+export interface InspectHiddenArgs {
+  /** Case-insensitive text filter */
+  pattern?: string;
+  /** Maximum results to return (default: 25, max: 50) */
+  maxResults?: number;
+}
 ```
 
 ### `ToolRouter`
@@ -824,27 +1080,10 @@ export type ToolRouter = {
 
 /** Maps each tool name to its argument type */
 export type ToolArgsMap = {
+  // ... (46 entries mapping each ToolName to its Args type)
   [ToolName.CLICK_ELEMENT]: ClickElementArgs;
   [ToolName.TYPE_TEXT]: TypeTextArgs;
-  [ToolName.SCROLL_PAGE]: ScrollPageArgs;
-  [ToolName.READ_PAGE]: ReadPageArgs;
-  [ToolName.NAVIGATE]: NavigateArgs;
-  [ToolName.MEMORY_SEARCH]: MemorySearchArgs;
-  [ToolName.MEMORY_ADD]: MemoryAddArgs;
-  [ToolName.CREATE_TAB]: CreateTabArgs;
-  [ToolName.CLOSE_TAB]: CloseTabArgs;
-  [ToolName.SWITCH_TAB]: SwitchTabArgs;
-  [ToolName.TAKE_SCREENSHOT]: TakeScreenshotArgs;
-  [ToolName.HOVER_ELEMENT]: HoverElementArgs;
-  [ToolName.FIND_ELEMENT]: FindElementArgs;
-  [ToolName.WAIT]: WaitArgs;
-  [ToolName.DONE]: DoneArgs;
-  [ToolName.SELECT_OPTION]: SelectOptionArgs;
-  [ToolName.PRESS_KEY]: PressKeyArgs;
-  [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
-  [ToolName.DRAW_STROKE]: DrawStrokeArgs;
-  [ToolName.HIDE_ELEMENT]: HideElementArgs;
-  [ToolName.ESCALATE]: EscalateArgs;
+  // ... etc.
 };
 ```
 
@@ -869,6 +1108,10 @@ export interface DomSnapshot {
   viewport: { width: number; height: number };
   /** Scroll position */
   scroll: { x: number; y: number; maxY: number };
+  /** Overlays that survived auto-dismiss (agent should handle manually) */
+  survivingOverlays?: { tagId: number; coveragePercent: number }[];
+  /** Text content extracted from overlays that were dismissed (deduplicated) */
+  capturedTexts?: string[];
 }
 ```
 
@@ -885,7 +1128,7 @@ export interface TaggedElement {
   role: string;
   /** Visible text content (truncated to 80 chars) */
   text: string;
-  /** Key attributes: href, placeholder, aria-label, type, name, label */
+  /** Key attributes: href, placeholder, aria-label, type, name */
   attributes: Record<string, string>;
   /** Bounding rect relative to viewport */
   rect: ElementRect;
@@ -905,6 +1148,22 @@ export interface ElementRect {
   y: number;
   width: number;
   height: number;
+}
+```
+
+### `OverlayDescriptor`
+
+```typescript
+/** Describes a viewport-covering overlay that heuristic dismissal couldn't remove */
+export interface OverlayDescriptor {
+  /** outerHTML truncated to 3000 chars */
+  html: string;
+  /** Assigned via addDynamicTag */
+  tagId: number;
+  /** Bounding rect of the overlay */
+  rect: ElementRect;
+  /** Percentage of viewport covered by this overlay */
+  coveragePercent: number;
 }
 ```
 
@@ -1004,7 +1263,7 @@ export interface ChatEntry {
 ```typescript
 /** Stuck detection state for the side panel */
 export interface StuckState {
-  signal: "nudge" | "escalate";
+  signal: "nudge" | "pivot" | "escalate";
   staleTurns: number;
   url: string;
   /** Timestamp of the stuck signal (for auto-dismiss timing) */
@@ -1019,6 +1278,7 @@ export interface StuckState {
 export interface TurnProgress {
   turn: number;
   maxTurns: number;
+  provider?: string;
 }
 ```
 
@@ -1027,6 +1287,10 @@ export interface TurnProgress {
 ```typescript
 /** Top-level React state for the side panel */
 export interface SidePanelState {
+  /** Whether initial load (settings + messages) is complete */
+  ready: boolean;
+  /** Active workspace ID for message scoping (null = global) */
+  activeWorkspaceId: string | null;
   /** Chat history */
   messages: ChatEntry[];
   /** Current agent status (drives status indicator) */
@@ -1049,6 +1313,32 @@ export interface SidePanelState {
   stuckState: StuckState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
+  /** True when agent is paused waiting for plan approval */
+  awaitingPlanApproval: boolean;
+  /** Live session metrics (null when no active session or tracking disabled) */
+  sessionMetrics: SessionMetrics | null;
+  /** User-saved prompt templates */
+  savedPrompts: SavedPrompt[];
+}
+```
+
+### `SavedPrompt`
+
+```typescript
+/** A user-saved reusable prompt template */
+export interface SavedPrompt {
+  /** Unique ID (crypto.randomUUID()) */
+  id: string;
+  /** Short label ("Summarize article") */
+  title: string;
+  /** Full prompt text */
+  content: string;
+  /** Free-form grouping ("Research", "Forms", "" = uncategorized) */
+  category: string;
+  /** Unix ms */
+  createdAt: number;
+  /** Unix ms */
+  updatedAt: number;
 }
 ```
 
@@ -1104,7 +1394,8 @@ export interface MemoryWorkerMessage extends BaseMessage {
     | { action: "add"; content: string; category: string; sourceUrl: string }
     | { action: "search"; query: string; limit: number }
     | { action: "delete"; id: string }
-    | { action: "clear" };
+    | { action: "clear" }
+    | { action: "extract_pdf"; url: string; maxPages?: number };
 }
 ```
 
@@ -1120,7 +1411,8 @@ export interface MemoryWorkerResponse extends BaseMessage {
     | { action: "add"; success: boolean; id: string; error?: string }
     | { action: "search"; results: MemorySearchResult[]; error?: string }
     | { action: "delete"; success: boolean; error?: string }
-    | { action: "clear"; success: boolean; error?: string };
+    | { action: "clear"; success: boolean; error?: string }
+    | { action: "extract_pdf"; text: string; success: boolean; error?: string };
 }
 ```
 
@@ -1208,24 +1500,141 @@ export interface NavigationResumeMessage extends BaseMessage {
 
 ```typescript
 export interface UserSettings {
-  /** OpenRouter API key */
   openRouterApiKey: string;
-  /** Maximum agent loop turns per request (default: 25, slider cap: 500) */
+  /** Groq API key for fast model (GPT-OSS-120B) */
+  groqApiKey: string;
+  /** Cerebras API key for fast model (highest priority when present) */
+  cerebrasApiKey: string;
   maxTurns: number;
-  /** Sliding window max tokens (default: 16000) */
   contextWindowSize: number;
-  /** Enable/disable memory system (default: true) */
   memoryEnabled: boolean;
-  /** Enable/disable workspace isolation (default: true) */
   workspaceEnabled: boolean;
-  /** Theme: follows system by default */
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
   /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
   visionModel: string;
-  /** Whether to show a plan confirmation step before executing multi-step tasks */
+  /** Show action plan and wait for confirmation before executing (default: false) */
   confirmPlan: boolean;
+  /** Show token usage and cost metrics during and after agent sessions */
+  showSessionMetrics: boolean;
+  /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
+  disableScreenshot: boolean;
+  /** Hide navigate from tools */
+  disableNavigation: boolean;
+  /** Speech-to-text provider for voice input */
+  speechProvider: "browser" | "groq";
+}
+```
+
+---
+
+## Trace Types
+
+### `TraceEntry`
+
+```typescript
+/** A single turn's full-fidelity recording for offline eval replay */
+export interface TraceEntry {
+  sessionId: string;
+  turnNumber: number;
+  timestamp: number;
+  /** Workspace ID for session isolation correlation */
+  workspaceId?: string | null;
+  /** DOM state at turn start */
+  snapshot: {
+    url: string;
+    title: string;
+    elementCount: number;
+    viewportTextLength: number;
+    scrollY: number;
+  };
+  /** Full elements array (for eval replay — reconstruct system prompt) */
+  elements: TaggedElement[];
+  /** LLM call metadata */
+  llmRequest: {
+    model: string;
+    messageCount: number;
+    toolCount: number;
+    compressionLevel: string;
+  };
+  /** LLM response data */
+  llmResponse: {
+    content: string | null;
+    toolCalls: ToolCall[];
+    finishReason: string;
+    usage: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+      cost?: number;
+    } | null;
+    durationMs: number;
+  };
+  /** Tool executions for this turn */
+  toolExecutions: TraceToolExecution[];
+  /** Events that occurred during this turn */
+  events: TraceEvent[];
+  /** Progress tracker state */
+  progressState: {
+    staleTurns: number;
+    signal: string | null;
+  };
+}
+```
+
+### `TraceToolExecution`
+
+```typescript
+/** A single tool execution within a trace turn */
+export interface TraceToolExecution {
+  toolCallId: string;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+  riskLevel: RiskLevel;
+}
+```
+
+### `TraceEvent`
+
+```typescript
+/** A notable event that occurred during a trace turn */
+export interface TraceEvent {
+  type:
+    | "escalation"
+    | "hint"
+    | "modal_dismiss"
+    | "done_rejected"
+    | "plan_update"
+    | "screenshot"
+    | "stuck_signal"
+    | "circuit_breaker"
+    | "navigate_blocked";
+  timestamp: number;
+  data: Record<string, unknown>;
+}
+```
+
+### `TraceSession`
+
+```typescript
+/** Session-level metadata written to traces/index.jsonl on session end */
+export interface TraceSession {
+  sessionId: string;
+  startTime: number;
+  endTime: number;
+  query: string;
+  startUrl: string;
+  outcome: "completed" | "stopped" | "max_turns" | "error";
+  turnCount: number;
+  summary: string;
+  metrics: SessionMetrics | null;
+  /** Workspace ID for session isolation correlation */
+  workspaceId?: string | null;
 }
 ```
 

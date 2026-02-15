@@ -9,7 +9,7 @@ Service Worker              Offscreen Document          Web Worker
      │                             │                         │
      │── MEMORY_WORKER ───────────→│                         │
      │   { action: "search" }      │── postMessage ─────────→│
-     │                             │   { action: "embed" }     │
+     │                             │   { action: "embed" }   │
      │                             │                         │
      │                             │                   ┌─────┴─────┐
      │                             │                   │Transformers│
@@ -22,7 +22,7 @@ Service Worker              Offscreen Document          Web Worker
      │                       ┌─────┴─────┐                   │
      │                       │           │                   │
      │                   Voy query   SQLite FTS5             │
-     │                   (semantic)  (keyword)               │
+     │                   (semantic)  (keyword)              │
      │                       │           │                   │
      │                       └─────┬─────┘                   │
      │                             │                         │
@@ -308,7 +308,7 @@ Two tools expose memory functionality to the LLM:
 ```typescript
 {
     name: "memory_add",
-    description: "Store information in your memory for future reference.",
+    description: "Save info to long-term memory.",
     parameters: {
         content: string,    // Required: text to remember
         category: string    // Optional: category tag
@@ -321,10 +321,9 @@ Two tools expose memory functionality to the LLM:
 ```typescript
 {
     name: "memory_search",
-    description: "Search your memory for previously stored information.",
+    description: "Search long-term memory.",
     parameters: {
-        query: string,      // Required: search query
-        limit: number       // Optional: max results (default: 5)
+        query: string      // Required: search query
     }
 }
 ```
@@ -407,7 +406,7 @@ export default defineConfig({
 ## Testing
 
 **tests/memory/rrf.test.ts** - RRF algorithm
-**tests/memory/fts5.test.ts** - SQLite FTS5 (TODO)
+**tests/memory/fts5.test.ts** - SQLite FTS5
 
 ## See Also
 

@@ -16,6 +16,7 @@ The agent loop is the core orchestration engine that runs in the service worker.
 - `executor.ts` - Tool execution logic (parallel/sequential strategies)
 - `guardian.ts` - `PlanGuardian` for task decomposition and completion validation
 - `tool-recovery.ts` - Extract tool calls from plain text LLM responses
+- `trace.ts` - `TraceRecorder` for full-fidelity session recording
 
 ## AgentLoop Class
 
@@ -214,40 +215,11 @@ This is critical because Chrome terminates service workers after ~30 seconds of 
 
 ## System Prompt
 
-The system prompt provides instructions and context to the LLM:
+The system prompt provides instructions and context to the LLM. The agent receives instructions about:
 
-```
-You are QSidebar, a browser agent that helps users interact with web pages.
-
-You can see the current page through a distilled DOM snapshot showing interactive elements tagged with numeric IDs like [1], [2], etc.
-
-## Capabilities
-- Click any tagged element using click_element
-- Type text into input fields using type_text
-- Scroll the page using scroll_page
-- Read the full page content using read_page
-- Navigate to URLs using navigate
-- Open, close, and switch tabs
-- Search and store information in your memory
-
-## Rules
-1. ALWAYS call read_page first to understand the current page before taking any action.
-2. When clicking or typing, use the exact numeric tag ID from the DOM snapshot.
-3. After each action, call read_page again to see the updated page state.
-4. If a page is loading, use wait(ms=2000) and then read_page.
-5. When you have completed the user's task, call done with a summary.
-6. Never fabricate element IDs — only use IDs from the most recent read_page result.
-7. Keep your text responses concise — the user sees your actions in the status bar.
-
-## Context
-You receive the current page state automatically. Interactive elements are shown as:
-  [tag] <tagName attributes> "visible text"
-
-To interact, use the tag number. Example: to click a button labeled "Search" with tag [5], call click_element(id=5).
-
-## Vision
-You can also see a screenshot of the current viewport by calling take_screenshot(). Use this when the DOM is confusing or visual layout is important.
-```
+- **Capabilities** - 46 available tools for DOM manipulation, tab management, memory, etc.
+- **Rules** - Always call read_page first, use exact numeric tags, call done when complete
+- **Vision** - Screenshot analysis via configurable vision LLM
 
 ## Streaming
 
@@ -315,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports 21 tools across four categories:
+The agent supports **52 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -330,15 +302,42 @@ The agent supports 21 tools across four categories:
 - `drag_and_drop` - Full drag sequence between elements
 - `draw_stroke` - Mouse stroke on canvas elements
 - `hide_element` - Hide element via `display: none`
+- `read_element` - Read specific attribute or text content
+- `execute_js` - Run JavaScript in page context
+- `upload_file` - Upload file to input element
+- `right_click` - Right-click on element
+- `set_checkbox` - Set checkbox/radio state
+- `click_coordinates` - Click at viewport X/Y coordinates
+- `inspect_hidden` - Scan for hidden DOM elements
 
-### Service Worker Tools (Chrome APIs)
+### Tab Tools (Service Worker)
 
-- `navigate` - Navigate to URL
+- `navigate` - Navigate to URL (or search query)
 - `create_tab` - Open new tab
 - `close_tab` - Close tab
 - `switch_tab` - Switch to tab
+- `list_tabs` - List open tabs in workspace
+- `go_back` - Go back in history
+- `go_forward` - Go forward in history
 - `wait` - Wait for duration
 - `take_screenshot` - Capture viewport (analyzed by vision LLM)
+- `group_tabs` - Group tabs into tab group
+- `ungroup_tabs` - Remove tabs from group
+- `create_window` - Open new browser window
+
+### Browser API Tools
+
+- `get_cookies` - Get cookies for URL
+- `set_cookie` - Set a cookie
+- `delete_cookie` - Delete a cookie
+- `copy_to_clipboard` - Copy text to clipboard
+- `read_pdf` - Extract text from PDF
+- `search_history` - Search browser history
+- `create_bookmark` - Bookmark a page
+- `get_bookmarks` - Search bookmarks
+- `download_file` - Start file download
+- `transcribe_audio` - Transcribe audio/video element
+- `send_notification` - Show desktop notification
 
 ### Special Tools
 
@@ -346,6 +345,7 @@ The agent supports 21 tools across four categories:
 - `memory_search` - Search memory
 - `done` - Task completion
 - `escalate` - Voluntary model upgrade (switch from fast to smart model)
+- `update_plan` - Report task progress, revise plan
 
 ## Safety & Limits
 
@@ -369,9 +369,9 @@ if (!isAllowed) {
 
 Tools classified by risk level (LOW/MEDIUM/HIGH):
 
-- LOW: Read-only (read_page, scroll_page)
-- MEDIUM: Mutates state (click_element, type_text)
-- HIGH: Navigation/tabs (navigate, close_tab)
+- LOW: Read-only (read_page, scroll_page, memory_search, list_tabs, etc.)
+- MEDIUM: Mutates state (click_element, type_text, hover_element, etc.)
+- HIGH: Navigation/tabs (navigate, create_tab, close_tab, escalate, etc.)
 
 Risk is logged and displayed in UI (informational only).
 
@@ -406,6 +406,7 @@ See [Navigation Bridge](./navigation-bridge.md) for details.
 The `ProgressTracker` (`progress.ts`) detects when the agent is stuck in a loop by fingerprinting DOM snapshots after each DOM-modifying action. If the snapshot fingerprint doesn't change for multiple consecutive turns, it intervenes:
 
 - **Nudge** (6 stale turns): Injects a user message suggesting alternative approaches
+- **Pivot** (9 stale turns): More aggressive strategy change
 - **Escalate** (12 stale turns): Fires once, suggests more drastic action changes
 - **Subsequent signals** (every 6 turns after): Repeat nudges
 
@@ -438,12 +439,71 @@ Users can send messages while the agent is running. These are treated as hints:
 
 The agent loop operates in a single unified mode that combines the best behaviors:
 
-- **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot) are present, all tool calls execute via `Promise.all`.
+- **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
-- **Nudge→Escalate→Give-up** — Text-only responses trigger nudges. After 2 consecutive nudges, the model escalates from Gemini 2.5 Flash Lite to MiniMax M2.5 via `switchModel()`. After 3 more nudges post-escalation, the loop gives up. The agent can also voluntarily escalate early by calling the `escalate` tool (e.g., when it encounters riddles, puzzles, or complex reasoning tasks).
+- **Nudge→Pivot→Escalate→Give-up** — Text-only responses trigger nudges. After consecutive nudges, the model escalates from fast to smart model. After more failures, the loop gives up.
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
 - **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
 - **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.
+- **Session metrics** — Real-time token usage and cost tracking.
+- **Trace recording** — Full-fidelity session recording for offline evaluation.
+
+## Session Metrics
+
+The agent tracks real-time token usage and cost:
+
+```typescript
+interface SessionMetrics {
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalCost: number; // USD
+  totalLlmTimeMs: number;
+  totalSessionTimeMs: number;
+  llmCallCount: number;
+  totalCachedTokens: number;
+  modelBreakdown: Record<
+    string,
+    {
+      promptTokens: number;
+      completionTokens: number;
+      cost: number;
+      calls: number;
+    }
+  >;
+}
+```
+
+Metrics are broadcast to the side panel during and after the session.
+
+## Trace Recording
+
+The `TraceRecorder` captures full-fidelity session data for offline evaluation:
+
+```typescript
+interface TraceEntry {
+  sessionId: string;
+  turnNumber: number;
+  snapshot: { url; title; elementCount; viewportTextLength; scrollY };
+  elements: TaggedElement[];
+  llmRequest: { model; messageCount; toolCount; compressionLevel };
+  llmResponse: { content; toolCalls; finishReason; usage; durationMs };
+  toolExecutions: TraceToolExecution[];
+  events: TraceEvent[];
+  progressState: { staleTurns; signal };
+}
+```
+
+## Multi-Provider LLM Support
+
+The agent supports multiple LLM providers with automatic fallback:
+
+- **OpenRouter** (GPT-OSS-120B) - Default fast model
+- **Groq** (GPT-OSS-120B) - Low latency option
+- **Cerebras** (GPT-OSS-120B) - Highest priority when API key configured
+- **X.AI Grok 4.1 Fast** - Smart model for escalation
+
+Priority: Cerebras > Groq > OpenRouter
 
 ## Testing
 
@@ -464,9 +524,10 @@ The agent loop operates in a single unified mode that combines the best behavior
 | `src/background/agent/progress.ts`    | ProgressTracker - stuck detection    |
 | `src/background/agent/guardian.ts`    | PlanGuardian - task decomposition    |
 | `src/background/agent/step-labels.ts` | Step label generation                |
-| `src/background/llm/client.ts`        | LLM API client                       |
+| `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
+| `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (22 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (52 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
 | `src/background/vision.ts`            | Vision LLM bridge                    |
 | `src/background/security.ts`          | Risk classification                  |

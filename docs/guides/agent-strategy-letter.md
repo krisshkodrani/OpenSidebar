@@ -99,9 +99,9 @@ MiniMax M2.5 emits `<think>...</think>` reasoning blocks inline. These are handl
 
 ---
 
-## 4. The 22-Tool Ecosystem
+## 4. The 52-Tool Ecosystem
 
-The agent has 22 tools organized into six categories:
+The agent has 52 tools organized into six categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |
