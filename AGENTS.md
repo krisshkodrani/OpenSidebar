@@ -9,7 +9,7 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 ✅ **Core Systems (All Working):**
 
 - Side Panel UI - Fully wired to background agent with real-time streaming
-- Agent Loop - Complete with 22 tools, sliding window context, progress tracking
+- Agent Loop - Complete with 52 tools, sliding window context, progress tracking
 - Content Script - DOM distillation, element tagging, action execution, shadow DOM support
 - Navigation Bridge - State persistence across page loads
 - Memory System - SQLite FTS5 + Voy vector search + RRF fusion
@@ -47,8 +47,8 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (Gemini 2.5 Flash Lite) and `MODEL_SMART` (MiniMax M2.5). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 22 tools and bridges to content script / memory.
+- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (gpt-oss-120b via Cerebras/Groq/OpenRouter) and `MODEL_SMART` (x-ai/grok-4.1-fast:nitro). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 52 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
 - `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
@@ -530,7 +530,7 @@ enum AgentStatus {
 }
 ```
 
-**ToolName** - 22 tools:
+**ToolName** - 52 tools:
 
 ```typescript
 enum ToolName {
@@ -601,7 +601,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 ### Tool System
 
-22 tools registered in `src/background/tools/index.ts`:
+52 tools registered in `src/background/tools/index.ts`:
 
 **DOM Tools (Content Script):**
 
@@ -630,7 +630,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 - `memory_add` - Save to Second Brain
 - `memory_search` - Search Second Brain
-- `escalate` - Switch to smarter model (MiniMax M2.5)
+- `escalate` - Switch to smarter model (Grok 4.1 Fast)
 - `done` - Mark task complete
 - `pause_agent` - Pause agent execution
 - `resume_agent` - Resume agent execution
