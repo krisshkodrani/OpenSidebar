@@ -18,6 +18,7 @@ import {
   setScreenshotCaptureCallback,
 } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
+import { REACT_TOOL_NAMES } from "../tools/react";
 import { classifyRisk, sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
@@ -417,6 +418,10 @@ export class AgentLoop {
     this.confirmPlan = options?.confirmPlan ?? false;
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
+    // React toolkit gated by default — enabled when React is detected on the page
+    for (const tool of REACT_TOOL_NAMES) {
+      this.disabledTools.add(tool);
+    }
     this.workspaceId = options?.workspaceId ?? null;
     this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
     this.llm.setFailoverCallback((from, to) => {
@@ -978,6 +983,9 @@ export class AgentLoop {
     // Redundant action detection: sliding window of recent successful tool calls
     const recentSuccesses: RecentAction[] = [];
 
+    // React toolkit: enable on first snapshot that detects React
+    let reactToolsEnabled = false;
+
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
@@ -1012,6 +1020,20 @@ export class AgentLoop {
             provider: this.llm.getActiveProviderInfo().providerId,
           },
         });
+      }
+
+      // React toolkit: enable tools when React is detected on the page
+      if (!reactToolsEnabled) {
+        const fw = this.context.getSnapshot()?.framework;
+        if (fw?.name === "react") {
+          reactToolsEnabled = true;
+          for (const tool of REACT_TOOL_NAMES) {
+            this.disabledTools.delete(tool);
+          }
+          logger.info("agent", "React detected — toolkit enabled", {
+            version: fw.version,
+          });
+        }
       }
 
       // 1. LLM Inference (streamed)

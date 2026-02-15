@@ -232,6 +232,43 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: false,
   },
+  [ToolName.INSPECT_HIDDEN]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.XRAY_PAGE]: {
+    risk: RiskLevel.LOW,
+    domModifying: true,
+    sequential: false,
+  },
+  [ToolName.FAST_FORWARD]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+
+  // React toolkit (on-demand)
+  [ToolName.INSPECT_REACT]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.REACT_SET_INPUT]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: false,
+  },
+  [ToolName.INSPECT_REACT_TREE]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.WAIT_FOR_REACT]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: true,
+  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

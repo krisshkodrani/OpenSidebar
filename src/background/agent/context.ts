@@ -6,6 +6,22 @@ const FAST_PERSONA = `You are a sharp, resourceful web automation expert who thr
 
 const SMART_PERSONA = `You are a seasoned systems thinker with decades of experience debugging the web's trickiest edge cases. You take a step back, reason through root causes, and find solutions others miss.`;
 
+/** Tools whose results carry reference data worth preserving longer in history. */
+const DISCOVERY_TOOLS: ReadonlySet<string> = new Set([
+  "inspect_hidden",
+  "take_screenshot",
+  "execute_js",
+  "memory_search",
+  "transcribe_audio",
+  "get_cookies",
+  "read_pdf",
+  "search_history",
+  "get_bookmarks",
+  "read_element",
+  "inspect_react",
+  "inspect_react_tree",
+]);
+
 export enum CompressionLevel {
   NONE = "none",
   LIGHT = "light",
@@ -75,6 +91,11 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - Batch independent actions in one turn (e.g. fill all form fields).
 - Memory: memory_search to recall, memory_add to save important facts.
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
+- Investigation: When stuck or content may be hidden/missing, use inspect_hidden, execute_js, or take_screenshot to gather evidence before retrying. Check get_cookies or execute_js for auth/session state.
+- xray_page toggles a CSS override that forces ALL hidden elements visible (display:none, opacity:0, visibility:hidden). Use when inspect_hidden finds content you need to interact with. Call again to disable. Triggers a snapshot refresh so new elements get tagged.
+- fast_forward accelerates all page timers (setTimeout/setInterval) to fire instantly. Use when content appears after a countdown or timed delay. Call again to restore normal timing.
+- read_element reads attributes (href, src, value) cheaply — verify link targets before navigating.
+- React: When React tools appear, inspect_react reads component state/props, react_set_input handles controlled inputs, inspect_react_tree shows the component hierarchy. Use wait_for_react after actions that trigger async state changes.
 - Audio/video: You CANNOT hear or watch media directly. Use transcribe_audio to get a text transcript of spoken content. If transcription isn't available, try read_page or take_screenshot after clicking play — some challenges reveal text visually.
 
 {{persona}}
@@ -768,15 +789,37 @@ Do NOT call done() until every planned step is complete.
     }
   }
 
+  private findToolNameForResult(toolCallId: string | undefined): string | null {
+    if (!toolCallId) return null;
+    for (let j = this.history.length - 1; j >= 0; j--) {
+      const msg = this.history[j];
+      if (msg.role === "assistant" && msg.tool_calls) {
+        const tc = msg.tool_calls.find((c) => c.id === toolCallId);
+        if (tc) return tc.function.name;
+      }
+    }
+    return null;
+  }
+
   private compressToolResultsBeforeIndex(beforeIndex: number): void {
-    const maxLen = 150;
-    const snippetLen = 100;
+    const ACTION_MAX = 150;
+    const ACTION_SNIPPET = 100;
+    const DISCOVERY_MAX = 500;
+    const DISCOVERY_SNIPPET = 400;
+
     for (let i = 0; i <= beforeIndex; i++) {
       const msg = this.history[i];
       if (msg.role === "tool" && msg.content) {
         if (Array.isArray(msg.content)) {
           msg.content = "[screenshot truncated]";
-        } else if (msg.content.length > maxLen) {
+          continue;
+        }
+        const toolName = this.findToolNameForResult(msg.tool_call_id);
+        const isDiscovery = toolName !== null && DISCOVERY_TOOLS.has(toolName);
+        const maxLen = isDiscovery ? DISCOVERY_MAX : ACTION_MAX;
+        const snippetLen = isDiscovery ? DISCOVERY_SNIPPET : ACTION_SNIPPET;
+
+        if (typeof msg.content === "string" && msg.content.length > maxLen) {
           const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);
           msg.content = firstLine + " [truncated]";
         }

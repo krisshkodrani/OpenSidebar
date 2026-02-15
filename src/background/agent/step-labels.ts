@@ -197,6 +197,35 @@ export function formatStepLabel(
       const title = args.title as string | undefined;
       return title ? `Notify: "${title.slice(0, 30)}"` : "Send notification";
     }
+    case ToolName.INSPECT_HIDDEN: {
+      const pattern = args.pattern as string | undefined;
+      return pattern
+        ? `Inspect hidden: "${pattern.slice(0, 30)}"`
+        : "Inspect hidden elements";
+    }
+    case ToolName.XRAY_PAGE:
+      return "Toggle X-ray mode";
+    case ToolName.FAST_FORWARD:
+      return "Toggle fast-forward";
+    case ToolName.INSPECT_REACT:
+      return `Inspect React state [${args.id ?? "?"}]`;
+    case ToolName.REACT_SET_INPUT: {
+      const val = args.value as string | undefined;
+      const preview = val
+        ? val.length > 20
+          ? `"${val.slice(0, 20)}..."`
+          : `"${val}"`
+        : "";
+      return `React set input ${preview} on [${args.id ?? "?"}]`;
+    }
+    case ToolName.INSPECT_REACT_TREE: {
+      const filter = args.filter as string | undefined;
+      return filter
+        ? `React tree: "${filter.slice(0, 20)}"`
+        : "Inspect React tree";
+    }
+    case ToolName.WAIT_FOR_REACT:
+      return `Wait for React (${args.timeout ?? 3000}ms)`;
     default:
       return String(toolName);
   }
