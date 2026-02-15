@@ -12,6 +12,7 @@ import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
 import { describeScreenshot } from "../vision";
 import { TokenUsage } from "../llm/types";
+import { registerReactTools } from "./react";
 
 // Export registry and types
 export * from "./registry";
@@ -986,6 +987,50 @@ const CREATE_WINDOW_DEF: ToolDefinition = {
   },
 };
 
+const INSPECT_HIDDEN_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_HIDDEN,
+    description:
+      "Scan the page for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, color camouflage, aria-hidden, etc). Use when you suspect content is intentionally hidden in the page — hidden codes, invisible text, or CSS-concealed elements that don't appear in the normal page snapshot.",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description:
+            "Case-insensitive text filter. Only return elements whose text contains this substring.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Max results (default: 25, max: 50).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+const XRAY_PAGE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.XRAY_PAGE,
+    description:
+      "Toggle X-ray mode: forces all hidden elements visible (overrides display:none, opacity:0, visibility:hidden). Call again to disable. Use when you suspect content is hidden by CSS.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
+const FAST_FORWARD_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.FAST_FORWARD,
+    description:
+      "Toggle fast-forward mode: accelerates all page timers (setTimeout/setInterval) to fire instantly. Use when content appears after a countdown or timed delay. Call again to restore normal timing.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
 const SEND_NOTIFICATION_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -1884,6 +1929,177 @@ export function registerTools() {
   );
 
   toolRegistry.register(
+    ToolName.INSPECT_HIDDEN,
+    INSPECT_HIDDEN_DEF,
+    async (args, tabId) => {
+      const pattern = (args.pattern as string) || "";
+      const maxResults = Math.min(Math.max((args.maxResults as number) || 25, 1), 50);
+
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "MAIN" as any,
+          func: (pat: string, max: number) => {
+            const SKIP_TAGS = new Set([
+              "SCRIPT", "STYLE", "NOSCRIPT", "META", "LINK", "HEAD",
+              "BR", "HR", "WBR", "TEMPLATE",
+            ]);
+            const startTime = performance.now();
+            const TIME_BUDGET = 50; // ms
+            const TEXT_MAX = 200;
+
+            interface HiddenEntry {
+              method: string;
+              selector: string;
+              text: string;
+            }
+            const found: HiddenEntry[] = [];
+            const seenTexts = new Set<string>();
+
+            function getDirectText(el: Element): string {
+              let text = "";
+              for (const node of el.childNodes) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  text += (node as Text).textContent || "";
+                }
+              }
+              return text.trim();
+            }
+
+            function describeElement(el: Element): string {
+              const tag = el.tagName.toLowerCase();
+              const id = el.id ? `#${el.id}` : "";
+              const cls = el.className && typeof el.className === "string"
+                ? `.${el.className.split(/\s+/).slice(0, 2).join(".")}`
+                : "";
+              return `${tag}${id}${cls}`.slice(0, 60);
+            }
+
+            function isAncestorHidden(el: Element): string | null {
+              let current = el.parentElement;
+              let depth = 0;
+              while (current && depth < 10) {
+                if (current.tagName === "BODY" || current.tagName === "HTML") break;
+                const style = getComputedStyle(current);
+                if (style.display === "none") return `parent(display:none)`;
+                if (style.visibility === "hidden") return `parent(visibility:hidden)`;
+                if (parseFloat(style.opacity) === 0) return `parent(opacity:0)`;
+                if (current.getAttribute("aria-hidden") === "true") return `parent(aria-hidden)`;
+                current = current.parentElement;
+                depth++;
+              }
+              return null;
+            }
+
+            function detectHiding(el: Element): string | null {
+              // aria-hidden on the element itself
+              if (el.getAttribute("aria-hidden") === "true") return "aria-hidden";
+
+              const style = getComputedStyle(el);
+
+              if (style.display === "none") return "display:none";
+              if (style.visibility === "hidden") return "visibility:hidden";
+              if (parseFloat(style.opacity) === 0) return "opacity:0";
+
+              // clip / clip-path
+              if (style.clip === "rect(0px, 0px, 0px, 0px)" ||
+                  style.clipPath === "inset(100%)" ||
+                  style.clipPath === "polygon(0px 0px, 0px 0px, 0px 0px)") {
+                return "clip";
+              }
+
+              // Zero-size with overflow hidden
+              const rect = el.getBoundingClientRect();
+              if (rect.width === 0 && rect.height === 0 &&
+                  (style.overflow === "hidden" || style.overflow === "clip")) {
+                return "zero-size+overflow:hidden";
+              }
+
+              // Off-screen positioning
+              if (rect.right < -500 || rect.bottom < -500 ||
+                  rect.left > window.innerWidth + 500 ||
+                  rect.top > window.innerHeight + 500) {
+                return "off-screen";
+              }
+
+              // Negative text-indent
+              const textIndent = parseFloat(style.textIndent);
+              if (textIndent < -500) return "text-indent";
+
+              // Color camouflage: text color matches background
+              if (style.color && style.backgroundColor &&
+                  style.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+                  style.backgroundColor !== "transparent" &&
+                  style.color === style.backgroundColor) {
+                return "color-camouflage";
+              }
+
+              // Font-size: 0
+              if (parseFloat(style.fontSize) === 0) return "font-size:0";
+
+              // Check parent hiding
+              return isAncestorHidden(el);
+            }
+
+            const allElements = document.querySelectorAll("*");
+            for (let i = 0; i < allElements.length; i++) {
+              if (performance.now() - startTime > TIME_BUDGET) break;
+              if (found.length >= max) break;
+
+              const el = allElements[i];
+              if (SKIP_TAGS.has(el.tagName)) continue;
+              // Skip SVG internals
+              if (el.closest("svg") && el.tagName !== "SVG") continue;
+
+              const method = detectHiding(el);
+              if (!method) continue;
+
+              // Prefer direct text to avoid duplicates from parent containers
+              let text = getDirectText(el);
+              if (!text) text = (el.textContent || "").trim();
+              if (!text) continue;
+
+              // Truncate
+              if (text.length > TEXT_MAX) text = text.slice(0, TEXT_MAX) + "...";
+
+              // Pattern filter
+              if (pat && !text.toLowerCase().includes(pat.toLowerCase())) continue;
+
+              // Dedup by text
+              if (seenTexts.has(text)) continue;
+              seenTexts.add(text);
+
+              found.push({
+                method,
+                selector: describeElement(el),
+                text,
+              });
+            }
+
+            // Sort by text length descending (longer = more meaningful)
+            found.sort((a, b) => b.text.length - a.text.length);
+
+            const elapsed = Math.round(performance.now() - startTime);
+            if (found.length === 0) {
+              return `No hidden elements found${pat ? ` matching "${pat}"` : ""} (scanned in ${elapsed}ms).`;
+            }
+
+            const lines = found.map((entry, idx) =>
+              `${idx + 1}. [${entry.method}] ${entry.selector}\n   Text: "${entry.text}"`
+            );
+            return `Found ${found.length} hidden element(s)${pat ? ` matching "${pat}"` : ""} (scanned in ${elapsed}ms):\n\n${lines.join("\n\n")}`;
+          },
+          args: [pattern, maxResults],
+        });
+        const value = results?.[0]?.result;
+        return value !== undefined ? value : "No hidden elements found.";
+      } catch (e: any) {
+        return `Error scanning hidden elements: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
     ToolName.SEND_NOTIFICATION,
     SEND_NOTIFICATION_DEF,
     async (args) => {
@@ -1903,6 +2119,69 @@ export function registerTools() {
       }
     },
   );
+
+  // Page Assist Tools (xray_page, fast_forward)
+  toolRegistry.register(
+    ToolName.XRAY_PAGE,
+    XRAY_PAGE_DEF,
+    async (_args, tabId) => {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN" as any,
+        func: () => {
+          const existing = document.querySelector("style[data-osb-xray]");
+          if (existing) {
+            existing.remove();
+            return "X-ray disabled. Hidden elements are hidden again.";
+          }
+          const s = document.createElement("style");
+          s.setAttribute("data-osb-xray", "true");
+          s.textContent = `
+            * { visibility: visible !important; opacity: 1 !important; }
+            [hidden], .hidden, [aria-hidden="true"] { display: block !important; }
+          `;
+          document.head.appendChild(s);
+          return "X-ray enabled. All hidden elements are now visible. Call read_page to see them.";
+        },
+      });
+      return results?.[0]?.result ?? "X-ray toggled.";
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.FAST_FORWARD,
+    FAST_FORWARD_DEF,
+    async (_args, tabId) => {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN" as any,
+        func: () => {
+          const g = globalThis as any;
+          if (g.__osb_origTimers) {
+            window.setTimeout = g.__osb_origTimers.setTimeout;
+            window.setInterval = g.__osb_origTimers.setInterval;
+            delete g.__osb_origTimers;
+            return "Fast-forward disabled. Timers restored to normal speed.";
+          }
+          g.__osb_origTimers = {
+            setTimeout: window.setTimeout.bind(window),
+            setInterval: window.setInterval.bind(window),
+          };
+          const origST = g.__osb_origTimers.setTimeout;
+          const origSI = g.__osb_origTimers.setInterval;
+          (window as any).setTimeout = (fn: any, delay?: number, ...a: any[]) =>
+            origST(fn, Math.min(delay || 0, 10), ...a);
+          (window as any).setInterval = (fn: any, delay?: number, ...a: any[]) =>
+            origSI(fn, Math.max(Math.min(delay || 0, 10), 1), ...a);
+          return "Fast-forward enabled. All timers now fire instantly.";
+        },
+      });
+      return results?.[0]?.result ?? "Fast-forward toggled.";
+    },
+  );
+
+  // React toolkit — gated behind disabledTools until React is detected
+  registerReactTools(toolRegistry);
 
   logger.info(
     "tools",

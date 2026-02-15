@@ -367,8 +367,9 @@ function shortHint(el: Element): string {
 }
 
 export function tagElements(showTags: boolean = false): TaggedElement[] {
-  // 1. Remove old visual labels
+  // 1. Remove old visual labels and MAIN-world bridge attributes
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
+  document.querySelectorAll("[data-os-tag]").forEach((el) => el.removeAttribute("data-os-tag"));
 
   // 2. Move current IDs into grace period; clear tagMap for fresh population
   previousIds.clear();
@@ -421,6 +422,9 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
     const tag = getStableId(finalHash);
     previousIds.delete(tag); // Still alive — remove from grace
     tagMap.set(tag, el);
+
+    // Bridge attribute: MAIN-world scripts (React toolkit) use this to find elements by tag ID
+    (el as HTMLElement).setAttribute("data-os-tag", String(tag));
 
     const rect = el.getBoundingClientRect();
 

@@ -77,6 +77,15 @@ export enum ToolName {
   GET_BOOKMARKS = "get_bookmarks",
   CREATE_WINDOW = "create_window",
   SEND_NOTIFICATION = "send_notification",
+  INSPECT_HIDDEN = "inspect_hidden",
+  XRAY_PAGE = "xray_page",
+  FAST_FORWARD = "fast_forward",
+
+  // React toolkit (on-demand — enabled only when React is detected on the page)
+  INSPECT_REACT = "inspect_react",
+  REACT_SET_INPUT = "react_set_input",
+  INSPECT_REACT_TREE = "inspect_react_tree",
+  WAIT_FOR_REACT = "wait_for_react",
 }
 
 /** Risk classification for a tool invocation */
@@ -836,6 +845,54 @@ export interface SendNotificationArgs {
   message: string;
 }
 
+/** Arguments for inspect_hidden */
+export interface InspectHiddenArgs {
+  /** Case-insensitive text filter */
+  pattern?: string;
+  /** Maximum results to return (default: 25, max: 50) */
+  maxResults?: number;
+}
+
+/** Arguments for xray_page — no arguments, simple toggle */
+export type XrayPageArgs = Record<string, never>;
+
+/** Arguments for fast_forward — no arguments, simple toggle */
+export type FastForwardArgs = Record<string, never>;
+
+// --- React Toolkit Args ---
+
+/** Arguments for inspect_react — read component state/props for a tagged element */
+export interface InspectReactArgs {
+  /** Tag ID of the element to inspect */
+  id: number;
+  /** How many parent components to traverse (default 3, max 8) */
+  depth?: number;
+}
+
+/** Arguments for react_set_input — set a React controlled input value */
+export interface ReactSetInputArgs {
+  /** Tag ID of the input element */
+  id: number;
+  /** The value to set */
+  value: string;
+  /** Press Enter after setting value (default false) */
+  submit?: boolean;
+}
+
+/** Arguments for inspect_react_tree — component hierarchy overview */
+export interface InspectReactTreeArgs {
+  /** Max tree depth (default 5, max 10) */
+  depth?: number;
+  /** Only show components whose name contains this string (case-insensitive) */
+  filter?: string;
+}
+
+/** Arguments for wait_for_react — wait for React renders to settle */
+export interface WaitForReactArgs {
+  /** Max wait time in ms (default 3000, max 10000) */
+  timeout?: number;
+}
+
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
   [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
@@ -889,11 +946,28 @@ export type ToolArgsMap = {
   [ToolName.GET_BOOKMARKS]: GetBookmarksArgs;
   [ToolName.CREATE_WINDOW]: CreateWindowArgs;
   [ToolName.SEND_NOTIFICATION]: SendNotificationArgs;
+  [ToolName.INSPECT_HIDDEN]: InspectHiddenArgs;
+  [ToolName.XRAY_PAGE]: XrayPageArgs;
+  [ToolName.FAST_FORWARD]: FastForwardArgs;
+  [ToolName.INSPECT_REACT]: InspectReactArgs;
+  [ToolName.REACT_SET_INPUT]: ReactSetInputArgs;
+  [ToolName.INSPECT_REACT_TREE]: InspectReactTreeArgs;
+  [ToolName.WAIT_FOR_REACT]: WaitForReactArgs;
 };
 
 // --- Content Script Types ---
 
 /** The distilled DOM representation sent to the LLM */
+/** Detected front-end framework on the page (used for on-demand toolkit injection) */
+export interface FrameworkInfo {
+  /** Framework identifier (e.g. "react") */
+  name: string;
+  /** Semver version string, or "unknown" if undetectable */
+  version: string;
+  /** Internal key used to access the fiber tree (e.g. "__reactFiber$abc123") */
+  fiberKey: string;
+}
+
 export interface DomSnapshot {
   /** Page title */
   title: string;
@@ -911,6 +985,8 @@ export interface DomSnapshot {
   survivingOverlays?: { tagId: number; coveragePercent: number }[];
   /** Text content extracted from overlays that were dismissed (deduplicated) */
   capturedTexts?: string[];
+  /** Front-end framework detected on the page (null if none) */
+  framework?: FrameworkInfo | null;
 }
 
 /** A single interactive DOM element with a numeric tag */
