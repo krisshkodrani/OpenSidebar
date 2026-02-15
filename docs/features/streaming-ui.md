@@ -63,8 +63,8 @@ When the AI performs actions, you see:
 
 ### OpenRouter Models
 
-- **Gemini 2.5 Flash Lite** - Fast model for initial responses (~3000 tok/s)
-- **MiniMax M2.5** - Smart model, activated via automatic escalation when stuck
+- **Fast Tier (gpt-oss-120b)** - Fast model via Cerebras (~3000 TPS), Groq fallback, or OpenRouter fallback
+- **Smart Tier (Grok 4.1 Fast)** - Smart model, activated via automatic escalation when stuck
 - **Automatic switching** - Agent starts fast, escalates to smart model if needed
 
 ## Streaming Architecture

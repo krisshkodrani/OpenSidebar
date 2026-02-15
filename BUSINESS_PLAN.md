@@ -63,32 +63,32 @@ This means OpenSidebar cannot compete on general brand awareness or funding. It 
 
 #### Tier 1: Big Tech (unlimited resources, massive distribution)
 
-| Competitor | Price | Approach | Strengths | Weaknesses |
-|---|---|---|---|---|
-| **OpenAI Operator** | $200/mo (Pro) | Cloud-hosted browser VM | Brand trust, best distribution, strong reasoning | Expensive, can't access user's logged-in sessions, cloud-only |
-| **Anthropic Cowork** | $20/mo (Pro) | Desktop agent + Chrome extension | Best reasoning model (Claude), Cowork on Win+Mac | Requires desktop app, not a pure browser extension, limited browser control |
-| **Google Gemini + Project Mariner** | Free (bundled) | Native Chrome integration | Owns Chrome, can integrate at browser level | Not yet fully shipped, Google kills products |
+| Competitor                          | Price          | Approach                         | Strengths                                        | Weaknesses                                                                  |
+| ----------------------------------- | -------------- | -------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| **OpenAI Operator**                 | $200/mo (Pro)  | Cloud-hosted browser VM          | Brand trust, best distribution, strong reasoning | Expensive, can't access user's logged-in sessions, cloud-only               |
+| **Anthropic Cowork**                | $20/mo (Pro)   | Desktop agent + Chrome extension | Best reasoning model (Claude), Cowork on Win+Mac | Requires desktop app, not a pure browser extension, limited browser control |
+| **Google Gemini + Project Mariner** | Free (bundled) | Native Chrome integration        | Owns Chrome, can integrate at browser level      | Not yet fully shipped, Google kills products                                |
 
-**Implication:** These set the ceiling for user expectations but all use cloud-side or desktop-side execution. None run *inside* the user's browser with full session context.
+**Implication:** These set the ceiling for user expectations but all use cloud-side or desktop-side execution. None run _inside_ the user's browser with full session context.
 
 #### Tier 2: VC-Funded Startups (well-resourced, specific niches)
 
-| Competitor | Funding | Approach | Strengths | Weaknesses |
-|---|---|---|---|---|
-| **MultiOn** | VC-funded | API-based autonomous agent | Enterprise focus, transactional tasks | API-only, no end-user product, cloud execution |
-| **Browserbase / Stagehand** | VC-funded | Cloud browser infra + open-source SDK | Developer tooling, headless browsers | Infrastructure layer, not end-user facing |
-| **Dia Browser** | Acquired ($610M by Atlassian) | AI-native browser | Full browser replacement, enterprise backing | Replaces Chrome entirely, enterprise-only trajectory |
+| Competitor                  | Funding                       | Approach                              | Strengths                                    | Weaknesses                                           |
+| --------------------------- | ----------------------------- | ------------------------------------- | -------------------------------------------- | ---------------------------------------------------- |
+| **MultiOn**                 | VC-funded                     | API-based autonomous agent            | Enterprise focus, transactional tasks        | API-only, no end-user product, cloud execution       |
+| **Browserbase / Stagehand** | VC-funded                     | Cloud browser infra + open-source SDK | Developer tooling, headless browsers         | Infrastructure layer, not end-user facing            |
+| **Dia Browser**             | Acquired ($610M by Atlassian) | AI-native browser                     | Full browser replacement, enterprise backing | Replaces Chrome entirely, enterprise-only trajectory |
 
 **Implication:** These target enterprises and developers building agents, not end users who want a Chrome extension. Different market segment, but validates the space.
 
 #### Tier 3: Open Source (direct competitors, same positioning)
 
-| Competitor | GitHub Stars | Approach | Strengths | Weaknesses |
-|---|---|---|---|---|
-| **Browser-Use** | 60K+ | Python library for browser automation | Massive community, strong benchmarks (beats Operator on WebVoyager) | Requires Python, headless browser, not a Chrome extension |
-| **Nanobrowser** | Growing | Chrome extension, multi-agent, BYOK | Nearly identical concept to OpenSidebar | No memory system, no multi-provider failover, no eval pipeline, less mature |
-| **Steel Browser** | Active | Open-source browser API sandbox | Batteries-included infra | Infrastructure layer, not end-user product |
-| **A5 Browser-Use** | Active | Chrome extension wrapping Browser-Use | Bridges Python ecosystem to Chrome | Thin wrapper, limited native tooling |
+| Competitor         | GitHub Stars | Approach                              | Strengths                                                           | Weaknesses                                                                  |
+| ------------------ | ------------ | ------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Browser-Use**    | 60K+         | Python library for browser automation | Massive community, strong benchmarks (beats Operator on WebVoyager) | Requires Python, headless browser, not a Chrome extension                   |
+| **Nanobrowser**    | Growing      | Chrome extension, multi-agent, BYOK   | Nearly identical concept to OpenSidebar                             | No memory system, no multi-provider failover, no eval pipeline, less mature |
+| **Steel Browser**  | Active       | Open-source browser API sandbox       | Batteries-included infra                                            | Infrastructure layer, not end-user product                                  |
+| **A5 Browser-Use** | Active       | Chrome extension wrapping Browser-Use | Bridges Python ecosystem to Chrome                                  | Thin wrapper, limited native tooling                                        |
 
 **Implication:** Nanobrowser is the closest direct competitor. Browser-Use has the largest community but is a Python library, not a Chrome extension. OpenSidebar's engineering depth (31 tools, memory, vision, eval pipeline, multi-provider failover) is a genuine moat over these.
 
@@ -96,12 +96,12 @@ This means OpenSidebar cannot compete on general brand awareness or funding. It 
 
 Most competitors use one of two approaches, both with fundamental limitations:
 
-| Approach | Used by | Limitation |
-|---|---|---|
-| **Cloud VM** (remote browser) | Operator, MultiOn, Browserbase | Cannot access user's logged-in sessions, cookies, or extensions. Every task starts from scratch. |
-| **Desktop agent** (screenshot + click) | Cowork, Computer Use | Pixel-based — slow, fragile, resolution-dependent. Cannot read DOM structure. |
+| Approach                               | Used by                        | Limitation                                                                                       |
+| -------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Cloud VM** (remote browser)          | Operator, MultiOn, Browserbase | Cannot access user's logged-in sessions, cookies, or extensions. Every task starts from scratch. |
+| **Desktop agent** (screenshot + click) | Cowork, Computer Use           | Pixel-based — slow, fragile, resolution-dependent. Cannot read DOM structure.                    |
 
-**OpenSidebar uses a third approach: in-browser DOM agent.** It runs as a Chrome extension *inside* the user's actual browser. This means:
+**OpenSidebar uses a third approach: in-browser DOM agent.** It runs as a Chrome extension _inside_ the user's actual browser. This means:
 
 1. **Full session context** — The agent operates on the user's logged-in pages (Gmail, CRM, banking, internal tools). No re-authentication needed.
 2. **DOM-level precision** — Reads structured HTML elements, not screenshots. Faster, cheaper, more reliable than pixel-based agents.
@@ -125,18 +125,19 @@ OpenSidebar bets that the winning browser agent will be **inside the browser, no
 
 The direct competitor is Nanobrowser. To win this comparison:
 
-| Dimension | Nanobrowser | OpenSidebar | Action needed |
-|---|---|---|---|
-| Memory system | None | Hybrid search (semantic + keyword) | Already ahead — promote it |
-| Provider failover | Single provider | Cerebras → Groq → OpenRouter | Already ahead — promote it |
-| Tool count | ~15 | 31 | Already ahead — promote it |
-| Eval pipeline | None | Trace-based evals | Already ahead — promote it |
-| Documentation | Basic | Needs work | Write great docs + video demos |
-| Community | Small | None yet | Launch Discord, respond fast to issues |
+| Dimension         | Nanobrowser     | OpenSidebar                        | Action needed                          |
+| ----------------- | --------------- | ---------------------------------- | -------------------------------------- |
+| Memory system     | None            | Hybrid search (semantic + keyword) | Already ahead — promote it             |
+| Provider failover | Single provider | Cerebras → Groq → OpenRouter       | Already ahead — promote it             |
+| Tool count        | ~15             | 31                                 | Already ahead — promote it             |
+| Eval pipeline     | None            | Trace-based evals                  | Already ahead — promote it             |
+| Documentation     | Basic           | Needs work                         | Write great docs + video demos         |
+| Community         | Small           | None yet                           | Launch Discord, respond fast to issues |
 
 **Key insight:** Don't compete with Browser-Use (Python, 60K stars). Compete with Nanobrowser and position as "Browser-Use but native to Chrome, no Python required."
 
 Content strategy:
+
 - "OpenSidebar vs Nanobrowser" comparison page
 - "Why in-browser agents beat cloud VMs" blog post
 - Video: "Automate your logged-in Gmail/CRM in 60 seconds" (something Operator literally cannot do)
@@ -148,12 +149,12 @@ Content strategy:
 
 General-purpose "do anything on the web" agents are a commodity. The winners will own specific workflows. Candidates:
 
-| Wedge candidate | Why OpenSidebar wins | Target user |
-|---|---|---|
-| **CRM data entry** | Runs on user's logged-in Salesforce/HubSpot. No API integration needed. | SDRs, sales ops |
-| **Research + memory** | Agent browses, collects facts, stores in local memory, recalls later. No other extension has hybrid search memory. | Analysts, journalists, academics |
-| **Internal tool automation** | Works behind corporate VPNs and SSO — cloud agents can't reach these. | Enterprise employees |
-| **Form filling across sites** | Agent remembers context from site A and applies it on site B. | Insurance agents, recruiters, accountants |
+| Wedge candidate               | Why OpenSidebar wins                                                                                               | Target user                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| **CRM data entry**            | Runs on user's logged-in Salesforce/HubSpot. No API integration needed.                                            | SDRs, sales ops                           |
+| **Research + memory**         | Agent browses, collects facts, stores in local memory, recalls later. No other extension has hybrid search memory. | Analysts, journalists, academics          |
+| **Internal tool automation**  | Works behind corporate VPNs and SSO — cloud agents can't reach these.                                              | Enterprise employees                      |
+| **Form filling across sites** | Agent remembers context from site A and applies it on site B.                                                      | Insurance agents, recruiters, accountants |
 
 **How to find the wedge:** After open source launch, monitor which use cases users actually succeed at (via traces + evals). Double down on the top 2-3 with dedicated prompt engineering, custom tools, and marketing.
 
@@ -163,13 +164,13 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 
 **The upgrade trigger must be a capability, not just convenience.** "No API key setup" alone won't convert developers. Paid-only features should include:
 
-| Paid feature | Why it drives conversion | Effort |
-|---|---|---|
-| **Scheduled automations** | "Check this page every morning and email me changes." Requires a backend. | High |
-| **Cross-device memory sync** | Research on laptop, recall on desktop. Requires cloud storage. | Medium |
-| **Higher turn limits** | Free: 15 turns/task. Paid: 50+. Power users hit the wall fast. | Low |
-| **Team workspaces** | Shared memory + shared automations for small teams. | High |
-| **Priority model routing** | Paid users get faster models, free users get queued during peak. | Low |
+| Paid feature                 | Why it drives conversion                                                  | Effort |
+| ---------------------------- | ------------------------------------------------------------------------- | ------ |
+| **Scheduled automations**    | "Check this page every morning and email me changes." Requires a backend. | High   |
+| **Cross-device memory sync** | Research on laptop, recall on desktop. Requires cloud storage.            | Medium |
+| **Higher turn limits**       | Free: 15 turns/task. Paid: 50+. Power users hit the wall fast.            | Low    |
+| **Team workspaces**          | Shared memory + shared automations for small teams.                       | High   |
+| **Priority model routing**   | Paid users get faster models, free users get queued during peak.          | Low    |
 
 ### Positioning Statement
 
@@ -190,14 +191,14 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 
 #### Models Used
 
-| Model Tier | Provider | Model ID | Speed | Use Case |
-|---|---|---|---|---|
-| **Fast (primary)** | Cerebras | `gpt-oss-120b` | ~3000 TPS | Default — fastest provider |
-| **Fast (fallback 1)** | Groq | `openai/gpt-oss-120b` | ~250K TPM | Automatic failover on 429 |
-| **Fast (fallback 2)** | OpenRouter | `openai/gpt-oss-120b` | Variable | Always-available fallback |
-| **Smart** | OpenRouter | `minimax/minimax-m2.5` | Moderate | Complex reasoning (escalation) |
-| **Vision** | OpenRouter | `qwen/qwen3-vl-235b-a22b-instruct` | Moderate | Screenshot analysis (GUI grounding, OCR) |
-| **Audio** | Groq | `whisper-large-v3-turbo` | Very High | Speech-to-text & Video transcription |
+| Model Tier            | Provider   | Model ID                           | Speed     | Use Case                                 |
+| --------------------- | ---------- | ---------------------------------- | --------- | ---------------------------------------- |
+| **Fast (primary)**    | Cerebras   | `gpt-oss-120b`                     | ~3000 TPS | Default — fastest provider               |
+| **Fast (fallback 1)** | Groq       | `openai/gpt-oss-120b`              | ~250K TPM | Automatic failover on 429                |
+| **Fast (fallback 2)** | OpenRouter | `openai/gpt-oss-120b`              | Variable  | Always-available fallback                |
+| **Smart**             | OpenRouter | `x-ai/grok-4.1-fast:nitro`         | Moderate  | Complex reasoning (escalation)           |
+| **Vision**            | OpenRouter | `qwen/qwen3-vl-235b-a22b-instruct` | Moderate  | Screenshot analysis (GUI grounding, OCR) |
+| **Audio**             | Groq       | `whisper-large-v3-turbo`           | Very High | Speech-to-text & Video transcription     |
 
 Priority-based failover: Cerebras → Groq → OpenRouter. Automatic 60s cooldown on 429 rate limits with zero-delay fallback to next provider.
 
@@ -276,12 +277,12 @@ interface UserSettings {
 
 #### OpenRouter Costs
 
-| Model                      | Price (Input) | Price (Output) | Est. Tokens/Month | Cost/Month |
-| -------------------------- | ------------- | -------------- | ----------------- | ---------- |
-| GPT-OSS-120B (OpenRouter)  | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
-| MiniMax M2.5               | $0.40/1M      | $4.00/1M       | 0.1M              | $0.32      |
-| Vision (Qwen3 VL 235B)     | $0.14/1M      | $0.14/1M       | 0.6M              | $0.08      |
-| **Total LLM**              |               |                |                   | **~$0.85** |
+| Model                     | Price (Input) | Price (Output) | Est. Tokens/Month | Cost/Month |
+| ------------------------- | ------------- | -------------- | ----------------- | ---------- |
+| GPT-OSS-120B (OpenRouter) | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
+| Grok 4.1 Fast (Nitro)     | $0.40/1M      | $4.00/1M       | 0.1M              | $0.32      |
+| Vision (Qwen3 VL 235B)    | $0.14/1M      | $0.14/1M       | 0.6M              | $0.08      |
+| **Total LLM**             |               |                |                   | **~$0.85** |
 
 #### Infrastructure Costs
 
@@ -435,15 +436,15 @@ model UsageLog {
 
 ## Risk Assessment
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| **Google ships native browser agent in Chrome** | Medium | Critical | Focus on power-user features Google won't build (memory, multi-provider, BYOK). Worst case: pivot to Firefox/Edge. |
-| **LLM API costs exceed revenue (heavy users)** | High | High | Token-based usage tiers, hard caps, auto-fallback to BYOK mode when limit exceeded. |
-| **Nanobrowser or similar OSS catches up** | Medium | High | Move fast on wedge use cases. Engineering depth (evals, traces, memory) is hard to replicate quickly. |
-| **Too few paid conversions (free is too good)** | High | High | Gate specific capabilities (scheduled tasks, higher turn limits, team features), not just convenience. |
-| **Chrome Web Store rejection** | Low | High | Follow MV3 policies strictly. No eval() in content scripts. Declare permissions minimally. |
-| **API provider price changes** | Low | High | Multi-provider architecture already built. Can swap models without user-facing changes. |
-| **Solo founder burnout** | High | High | Automate support with docs/Discord bots. Limit scope. Don't chase enterprise early. |
+| Risk                                            | Likelihood | Impact   | Mitigation                                                                                                         |
+| ----------------------------------------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Google ships native browser agent in Chrome** | Medium     | Critical | Focus on power-user features Google won't build (memory, multi-provider, BYOK). Worst case: pivot to Firefox/Edge. |
+| **LLM API costs exceed revenue (heavy users)**  | High       | High     | Token-based usage tiers, hard caps, auto-fallback to BYOK mode when limit exceeded.                                |
+| **Nanobrowser or similar OSS catches up**       | Medium     | High     | Move fast on wedge use cases. Engineering depth (evals, traces, memory) is hard to replicate quickly.              |
+| **Too few paid conversions (free is too good)** | High       | High     | Gate specific capabilities (scheduled tasks, higher turn limits, team features), not just convenience.             |
+| **Chrome Web Store rejection**                  | Low        | High     | Follow MV3 policies strictly. No eval() in content scripts. Declare permissions minimally.                         |
+| **API provider price changes**                  | Low        | High     | Multi-provider architecture already built. Can swap models without user-facing changes.                            |
+| **Solo founder burnout**                        | High       | High     | Automate support with docs/Discord bots. Limit scope. Don't chase enterprise early.                                |
 
 ### Mitigation Strategies
 
@@ -619,14 +620,14 @@ opensidebar/
 
 ### LLM Providers & Models
 
-| Provider | Model | Context | Input | Output |
-|---|---|---|---|---|
-| Cerebras | gpt-oss-120b | 128K | Free (rate-limited) | Free (rate-limited) |
-| Groq | openai/gpt-oss-120b | 128K | Free (rate-limited) | Free (rate-limited) |
-| OpenRouter | openai/gpt-oss-120b | 128K | $0.15/1M | $0.60/1M |
-| OpenRouter | minimax/minimax-m2.5 | 1M | $0.40/1M | $4.00/1M |
-| OpenRouter | qwen/qwen3-vl-235b-a22b-instruct | 128K | $0.14/1M | $0.14/1M |
-| Groq | whisper-large-v3-turbo | N/A | $0.003/min | N/A |
+| Provider   | Model                            | Context | Input               | Output              |
+| ---------- | -------------------------------- | ------- | ------------------- | ------------------- |
+| Cerebras   | gpt-oss-120b                     | 128K    | Free (rate-limited) | Free (rate-limited) |
+| Groq       | openai/gpt-oss-120b              | 128K    | Free (rate-limited) | Free (rate-limited) |
+| OpenRouter | openai/gpt-oss-120b              | 128K    | $0.15/1M            | $0.60/1M            |
+| OpenRouter | minimax/minimax-m2.5             | 1M      | $0.40/1M            | $4.00/1M            |
+| OpenRouter | qwen/qwen3-vl-235b-a22b-instruct | 128K    | $0.14/1M            | $0.14/1M            |
+| Groq       | whisper-large-v3-turbo           | N/A     | $0.003/min          | N/A                 |
 
 ### Chrome Extension APIs Used
 

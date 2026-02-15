@@ -2,7 +2,7 @@
 
 A bimodal, open-source Chrome extension that transforms your browser into an AI-powered agentic workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses **OpenRouter** to access fast models (Gemini 2.5 Flash Lite) for real-time interactions with dynamic model escalation for complex tasks, plus a **local Second Brain** for persistent memory.
+OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses **OpenRouter** to access fast models (gpt-oss-120b via Cerebras/Groq/OpenRouter) for real-time interactions with dynamic model escalation to Grok 4.1 for complex tasks, plus a **local Second Brain** for persistent memory.
 
 ---
 
@@ -28,15 +28,16 @@ Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM
                      (Memory: SQLite + Voy + Transformers.js)
 ```
 
-| Component      | Technology                         |
-| -------------- | ---------------------------------- |
-| Fast LLM       | OpenRouter (Gemini 2.5 Flash Lite) |
-| Smart LLM      | OpenRouter (model escalation)      |
-| Embeddings     | Transformers.js (all-MiniLM-L6-v2) |
-| Vector Search  | Voy (WASM)                         |
-| Keyword Search | SQLite WASM (FTS5)                 |
-| UI             | React 18 + Tailwind CSS            |
-| Build          | Vite + @crxjs/vite-plugin          |
+| Component      | Technology                             |
+| -------------- | -------------------------------------- |
+| Fast LLM       | OpenRouter (gpt-oss-120b via Cerebras) |
+| Smart LLM      | OpenRouter (Grok 4.1 Fast)             |
+| Vision LLM     | OpenRouter (Qwen3 VL)                  |
+| Embeddings     | Transformers.js (all-MiniLM-L6-v2)     |
+| Vector Search  | Voy (WASM)                             |
+| Keyword Search | SQLite WASM (FTS5)                     |
+| UI             | React 18 + Tailwind CSS                |
+| Build          | Vite + @crxjs/vite-plugin              |
 
 Complete technical documentation: [docs/architecture/](./docs/architecture/)
 
