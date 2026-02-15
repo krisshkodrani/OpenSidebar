@@ -1,4 +1,12 @@
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  mock,
+  spyOn,
+} from "bun:test";
 import "../setup";
 
 // Mock context module before importing WorkspaceManager
@@ -38,10 +46,12 @@ describe("WorkspaceManager.init()", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     consoleSpy?.mockRestore();
     groupSpy?.mockRestore();
     groupEndSpy?.mockRestore();
+    // Wait for any pending async operations from managers
+    await new Promise((r) => setTimeout(r, 100));
   });
 
   test("skips init in content script context", async () => {
@@ -70,7 +80,13 @@ describe("WorkspaceManager.init()", () => {
     const origGet = chrome.storage.local.get;
     (chrome.storage.local as any).get = async () => ({
       "opensidebar:workspaces": [
-        { id: "ws1", name: "OpenSidebar 1", tabIds: [1], color: "blue", tabGroupId: null },
+        {
+          id: "ws1",
+          name: "OpenSidebar 1",
+          tabIds: [1],
+          color: "blue",
+          tabGroupId: null,
+        },
       ],
       "opensidebar:nextWorkspaceNum": 2,
     });
@@ -124,7 +140,8 @@ describe("WorkspaceManager.init()", () => {
     const origGet = chrome.storage.local.get;
     (chrome.storage.local as any).get = async (keys: unknown) => {
       // Only count WorkspaceManager init calls (passes array of keys)
-      if (!Array.isArray(keys)) throw new Error("Storage permanently unavailable");
+      if (!Array.isArray(keys))
+        throw new Error("Storage permanently unavailable");
       callCount++;
       throw new Error("Storage permanently unavailable");
     };

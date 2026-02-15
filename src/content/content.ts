@@ -340,91 +340,93 @@ function autoDismissModals(): DismissResult {
 
 // --- Message Handler ---
 
-chrome.runtime.onMessage.addListener(
-  (message: RuntimeMessage, _sender, sendResponse) => {
-    if (message.type === "AGENT_ACTIVITY") {
-      setAgentBorder(message.payload.active);
-      return;
-    }
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener(
+    (message: RuntimeMessage, _sender, sendResponse) => {
+      if (message.type === "AGENT_ACTIVITY") {
+        setAgentBorder(message.payload.active);
+        return;
+      }
 
-    if (message.type === "DISMISS_MODALS") {
-      const result = autoDismissModals();
-      sendResponse({
-        type: "DISMISS_MODALS_RESPONSE",
-        requestId: message.requestId,
-        source: MessageSource.CONTENT,
-        payload: {
-          dismissed: result.dismissed,
-          remainingOverlay: result.remainingOverlay,
-          capturedTexts: result.capturedTexts,
-        },
-      });
-      return true;
-    }
-
-    if (message.type === "DOM_SNAPSHOT_REQUEST") {
-      (async () => {
-        const start = performance.now();
-
-        // Auto-dismiss overlays that block the viewport
-        let dismissedTexts: string[] = [];
-        const overlays = detectViewportCoveringOverlays();
-        if (overlays.length > 0) {
-          const result = autoDismissModals();
-          dismissedTexts = result.capturedTexts;
-          if (result.dismissed > 0) {
-            await new Promise((r) => setTimeout(r, 50)); // DOM settle
-          }
-        }
-
-        const snapshot = buildSnapshot(
-          message.payload.includeText,
-          message.payload.refresh,
-          message.payload.showTags ?? false,
-        );
-
-        // Archivist: attach captured overlay text to snapshot for LLM context
-        if (dismissedTexts.length > 0) {
-          snapshot.capturedTexts = dismissedTexts;
-        }
-
-        // Detect survivors and attach to snapshot
-        const survivors = detectViewportCoveringOverlays();
-        if (survivors.length > 0) {
-          snapshot.survivingOverlays = survivors.map((s) => ({
-            tagId: addDynamicTag(s.el),
-            coveragePercent: Math.round(s.coverage),
-          }));
-        }
-
+      if (message.type === "DISMISS_MODALS") {
+        const result = autoDismissModals();
         sendResponse({
-          type: "DOM_SNAPSHOT_RESPONSE",
+          type: "DISMISS_MODALS_RESPONSE",
           requestId: message.requestId,
           source: MessageSource.CONTENT,
           payload: {
-            snapshot,
-            durationMs: Math.round(performance.now() - start),
+            dismissed: result.dismissed,
+            remainingOverlay: result.remainingOverlay,
+            capturedTexts: result.capturedTexts,
           },
         });
-      })();
-      return true; // async response
-    }
+        return true;
+      }
 
-    if (message.type === "TOOL_EXECUTE") {
-      const { toolName, args, toolCallId } = message.payload;
-      const result = executeAction(toolName, args);
-      Promise.resolve(result).then((res) => {
-        sendResponse({
-          type: "TOOL_RESULT",
-          requestId: message.requestId,
-          source: MessageSource.CONTENT,
-          payload: { toolCallId, ...res },
+      if (message.type === "DOM_SNAPSHOT_REQUEST") {
+        (async () => {
+          const start = performance.now();
+
+          // Auto-dismiss overlays that block the viewport
+          let dismissedTexts: string[] = [];
+          const overlays = detectViewportCoveringOverlays();
+          if (overlays.length > 0) {
+            const result = autoDismissModals();
+            dismissedTexts = result.capturedTexts;
+            if (result.dismissed > 0) {
+              await new Promise((r) => setTimeout(r, 50)); // DOM settle
+            }
+          }
+
+          const snapshot = buildSnapshot(
+            message.payload.includeText,
+            message.payload.refresh,
+            message.payload.showTags ?? false,
+          );
+
+          // Archivist: attach captured overlay text to snapshot for LLM context
+          if (dismissedTexts.length > 0) {
+            snapshot.capturedTexts = dismissedTexts;
+          }
+
+          // Detect survivors and attach to snapshot
+          const survivors = detectViewportCoveringOverlays();
+          if (survivors.length > 0) {
+            snapshot.survivingOverlays = survivors.map((s) => ({
+              tagId: addDynamicTag(s.el),
+              coveragePercent: Math.round(s.coverage),
+            }));
+          }
+
+          sendResponse({
+            type: "DOM_SNAPSHOT_RESPONSE",
+            requestId: message.requestId,
+            source: MessageSource.CONTENT,
+            payload: {
+              snapshot,
+              durationMs: Math.round(performance.now() - start),
+            },
+          });
+        })();
+        return true; // async response
+      }
+
+      if (message.type === "TOOL_EXECUTE") {
+        const { toolName, args, toolCallId } = message.payload;
+        const result = executeAction(toolName, args);
+        Promise.resolve(result).then((res) => {
+          sendResponse({
+            type: "TOOL_RESULT",
+            requestId: message.requestId,
+            source: MessageSource.CONTENT,
+            payload: { toolCallId, ...res },
+          });
         });
-      });
-      return true; // async response
-    }
-  },
-);
+        return true; // async response
+      }
+    },
+  );
+}
 
 // --- Agent Activity Border Overlay ---
 
