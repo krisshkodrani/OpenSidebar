@@ -65,6 +65,12 @@ export function formatStepLabel(
     }
     case ToolName.MEMORY_ADD:
       return "Save to memory";
+    case ToolName.MEMORY_UPDATE:
+      return `Update memory [${args.id ?? "?"}]`;
+    case ToolName.MEMORY_DELETE:
+      return `Delete memory [${args.id ?? "?"}]`;
+    case ToolName.MEMORY_LIST_CATEGORIES:
+      return "List memory categories";
     case ToolName.WAIT: {
       const secs = args.seconds ?? "?";
       const reason = args.reason as string | undefined;

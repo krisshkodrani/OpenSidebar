@@ -92,6 +92,21 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: false,
   },
+  [ToolName.MEMORY_UPDATE]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.MEMORY_DELETE]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.MEMORY_LIST_CATEGORIES]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
   [ToolName.CREATE_TAB]: {
     risk: RiskLevel.HIGH,
     domModifying: false,

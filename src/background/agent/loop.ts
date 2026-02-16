@@ -31,6 +31,7 @@ import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
 import { formatStepLabel } from "./step-labels";
 import { PlanGuardian } from "./guardian";
 import { TraceRecorder } from "./trace";
+import { AgentMiddleware } from "./middleware";
 import {
   AGENT_LIMITS,
   BATCH_LIMITS,
@@ -47,6 +48,7 @@ import {
 } from "./constants";
 
 const APPROVAL_TIMEOUT_MS = 30000;
+const MAX_SESSION_MS = 20 * 60 * 1000;
 
 /** Tools that cannot appear inside a batch_execute step. */
 const BATCH_BLOCKED_TOOLS = new Set<string>([
@@ -262,10 +264,19 @@ export class AgentLoop {
   private maxTurns: number;
   private showElementTags: boolean;
   private showSessionMetrics: boolean;
+  private preferredModelTier: "fast" | "smart" | "default";
+  private executionContract:
+    | {
+        role: string;
+        modelTier: "fast" | "smart";
+        allowedTools: ToolName[];
+      }
+    | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
+  private approvalTimeoutMs: number;
   private onMemoryAdd:
     | ((item: {
         content: string;
@@ -274,6 +285,7 @@ export class AgentLoop {
         createdAt: number;
       }) => void)
     | null;
+  private middleware: AgentMiddleware;
 
   /** Workspace ID for session isolation */
   public readonly workspaceId: string | null;
@@ -452,6 +464,12 @@ export class AgentLoop {
       maxTurns?: number;
       showElementTags?: boolean;
       showSessionMetrics?: boolean;
+      preferredModelTier?: "fast" | "smart";
+      executionContract?: {
+        role: string;
+        modelTier: "fast" | "smart";
+        allowedTools: ToolName[];
+      };
       disabledTools?: Set<ToolName>;
       workspaceId?: string | null;
       workerId?: string | null;
@@ -460,6 +478,7 @@ export class AgentLoop {
       suppressUiBroadcast?: boolean;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
+      approvalTimeoutMs?: number;
       onMemoryAdd?: (item: {
         content: string;
         category: string;
@@ -469,6 +488,8 @@ export class AgentLoop {
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
+    this.preferredModelTier = options?.preferredModelTier ?? "default";
+    this.executionContract = options?.executionContract ?? null;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     // React toolkit gated by default — enabled when React is detected on the page
     for (const tool of REACT_TOOL_NAMES) {
@@ -483,8 +504,28 @@ export class AgentLoop {
     this.suppressUiBroadcast = options?.suppressUiBroadcast ?? false;
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
+    this.approvalTimeoutMs = options?.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
     this.onMemoryAdd = options?.onMemoryAdd ?? null;
+    this.middleware = new AgentMiddleware({
+      disabledTools: this.disabledTools,
+      bypassApprovals: this.bypassApprovals,
+      workspaceId: this.workspaceId,
+      workerId: this.workerId,
+      maxSessionMs: MAX_SESSION_MS,
+    });
     this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
+    if (this.preferredModelTier === "smart") {
+      this.llm.switchToSmart();
+    } else if (this.preferredModelTier === "fast") {
+      this.llm.switchToFast();
+    }
+    logger.debug("policy", "Initial model tier selected", {
+      preferredModelTier: this.preferredModelTier,
+      model: this.llm.getCurrentModel(),
+      provider: this.llm.getCurrentProvider(),
+      workspaceId: this.workspaceId,
+      workerId: this.workerId,
+    });
     this.llm.setFailoverCallback((from, to) => {
       const names: Record<string, string> = {
         cerebras: "Cerebras",
@@ -540,37 +581,123 @@ export class AgentLoop {
     context: string,
   ): Promise<boolean> {
     const approvalId = crypto.randomUUID();
-
-    chrome.runtime
-      .sendMessage({
-        type: "APPROVAL_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId: this.workspaceId,
-        payload: {
-          approvalId,
-          toolName,
-          args,
-          risk: RiskLevel.HIGH,
-          context,
-          timeoutMs: APPROVAL_TIMEOUT_MS,
-        },
-      } as RuntimeMessage)
-      .catch(() => {});
-
     this.statusHandler(AgentStatus.ACTING, "Waiting for approval...");
+    const approvalStep: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "info",
+      label: `Approval requested: ${context}`,
+      status: "running",
+      timestamp: Date.now(),
+    };
+    this.stepHandler(approvalStep, false);
+    logger.info("policy", "Approval request created", {
+      approvalId,
+      turn: this.turnCount,
+      toolName,
+      context,
+      timeoutMs: this.approvalTimeoutMs,
+      bypassApprovals: this.bypassApprovals,
+      workspaceId: this.workspaceId,
+      workerId: this.workerId,
+    });
+    this.traceRecorder?.recordEvent("approval", {
+      approvalId,
+      stage: "requested",
+      turn: this.turnCount,
+      toolName,
+      context,
+      timeoutMs: this.approvalTimeoutMs,
+      bypassApprovals: this.bypassApprovals,
+    });
 
-    return await new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
+    const approvalPromise = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (approved: boolean, outcome: "approved" | "rejected" | "timeout" | "dispatch_failed") => {
+        if (settled) return;
+        settled = true;
         AgentLoop.approvalWaiters.delete(approvalId);
-        resolve(false);
-      }, APPROVAL_TIMEOUT_MS);
+        const stepStatus = approved ? "done" : "error";
+        const errorMessage =
+          outcome === "timeout"
+            ? "Approval timed out."
+            : outcome === "dispatch_failed"
+              ? "Approval request dispatch failed."
+              : outcome === "rejected"
+                ? "Approval rejected by user."
+                : undefined;
+        this.stepHandler(
+          {
+            ...approvalStep,
+            label: approved
+              ? `Approval granted: ${context}`
+              : `Approval denied: ${context}`,
+            status: stepStatus,
+            durationMs: Date.now() - approvalStep.timestamp,
+            errorMessage,
+          },
+          true,
+        );
+        logger.info("policy", "Approval decision settled", {
+          approvalId,
+          turn: this.turnCount,
+          toolName,
+          outcome,
+          approved,
+          workspaceId: this.workspaceId,
+          workerId: this.workerId,
+        });
+        this.traceRecorder?.recordEvent("approval", {
+          approvalId,
+          stage: "settled",
+          turn: this.turnCount,
+          toolName,
+          outcome,
+          approved,
+        });
+        resolve(approved);
+      };
+
+      const timer = setTimeout(() => {
+        settle(false, "timeout");
+      }, this.approvalTimeoutMs);
 
       AgentLoop.approvalWaiters.set(approvalId, (approved: boolean) => {
         clearTimeout(timer);
-        resolve(approved);
+        settle(approved, approved ? "approved" : "rejected");
       });
+
+      // Register waiter before emitting the request to avoid missing
+      // synchronous approval responses from tests or fast UI handlers.
+      chrome.runtime
+        .sendMessage({
+          type: "APPROVAL_REQUEST",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          workspaceId: this.workspaceId,
+          payload: {
+            approvalId,
+            toolName,
+            args,
+            risk: RiskLevel.HIGH,
+            context,
+            timeoutMs: this.approvalTimeoutMs,
+          },
+        } as RuntimeMessage)
+        .catch((error: any) => {
+          clearTimeout(timer);
+          logger.error("policy", "Failed to dispatch approval request", {
+            approvalId,
+            turn: this.turnCount,
+            toolName,
+            error: error?.message ?? String(error),
+            workspaceId: this.workspaceId,
+            workerId: this.workerId,
+          });
+          settle(false, "dispatch_failed");
+        });
     });
+
+    return await approvalPromise;
   }
 
   private async ensureToolApproval(
@@ -579,13 +706,39 @@ export class AgentLoop {
     riskLevel: RiskLevel,
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH) return true;
-    if (this.bypassApprovals) return true;
+    if (this.bypassApprovals) {
+      const bypassContext = formatStepLabel(toolName, args);
+      this.stepHandler(
+        {
+          id: crypto.randomUUID(),
+          type: "info",
+          label: `Approval bypassed: ${bypassContext}`,
+          status: "done",
+          timestamp: Date.now(),
+        },
+        false,
+      );
+      logger.warn("policy", "Approval bypass applied to high-risk tool", {
+        turn: this.turnCount,
+        tool: toolName,
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
+      });
+      this.traceRecorder?.recordEvent("approval", {
+        stage: "bypassed",
+        turn: this.turnCount,
+        toolName,
+      });
+      return true;
+    }
     const context = formatStepLabel(toolName, args);
     const approved = await this.requestApproval(toolName, args, context);
     if (!approved) {
-      logger.warn("agent", "High-risk tool denied or timed out", {
+      logger.warn("policy", "High-risk tool denied or timed out", {
         turn: this.turnCount,
         tool: toolName,
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
       });
     }
     return approved;
@@ -633,6 +786,24 @@ export class AgentLoop {
       initialSnapshot?.url || "",
     );
     this.traceRecorder.setWorkspaceId(this.workspaceId);
+    const allowedTools = this.executionContract?.allowedTools
+      ? [...this.executionContract.allowedTools]
+      : Object.values(ToolName).filter((tool) => !this.disabledTools.has(tool));
+    this.traceRecorder.recordEvent("execution_contract", {
+      role: this.executionContract?.role || (this.workerId ? "executor" : "single_agent"),
+      modelTier:
+        this.executionContract?.modelTier ||
+        (this.preferredModelTier === "default"
+          ? this.llm.isSmartTier()
+            ? "smart"
+            : "fast"
+          : this.preferredModelTier),
+      initialModel: this.llm.getCurrentModel(),
+      allowedTools,
+      workspaceId: this.workspaceId,
+      workerId: this.workerId,
+      nodeId: this.nodeId,
+    });
 
     // Clear or restore context
     if (options?.clearHistory) {
@@ -1144,6 +1315,32 @@ export class AgentLoop {
       this.turnCount++;
       this.turnsOnCurrentStep++;
 
+      if (
+        this.middleware.shouldHaltTurn(
+          this.turnCount,
+          this.maxTurns,
+          this.sessionStartTime,
+        )
+      ) {
+        const haltMessage =
+          "Stopped by policy middleware due to session budget limits.";
+        logger.warn("policy", "Halting loop turn", {
+          turn: this.turnCount,
+          workspaceId: this.workspaceId,
+          workerId: this.workerId,
+        });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: haltMessage, done: false },
+        });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
+        this.statusHandler(AgentStatus.IDLE, "Stopped by middleware policy");
+        break;
+      }
+
       // Decrement de-escalation cooldown
       if (cooldownRemaining > 0) cooldownRemaining--;
 
@@ -1450,7 +1647,11 @@ export class AgentLoop {
                 // Registry will handle parse error on execute
               }
 
-              const riskLevel = classifyRisk(toolName, args);
+              const preDecision = this.middleware.evaluatePreTool(
+                toolName,
+                args,
+                this.turnCount,
+              );
 
               const toolStep: AgentStep = {
                 id: crypto.randomUUID(),
@@ -1463,9 +1664,36 @@ export class AgentLoop {
               };
               this.stepHandler(toolStep, false);
 
+              if (!preDecision.allowed) {
+                const deniedReason =
+                  preDecision.denyReason || `Tool ${toolName} denied by middleware`;
+                const toolMs = Date.now() - toolStep.timestamp;
+                this.stepHandler(
+                  {
+                    ...toolStep,
+                    status: "error",
+                    durationMs: toolMs,
+                    errorMessage: deniedReason,
+                  },
+                  true,
+                );
+                return {
+                  toolCall,
+                  result: null,
+                  error: deniedReason,
+                };
+              }
+
               try {
                 const result = await this.executeToolCall(toolCall, tabId);
                 const toolMs = Date.now() - toolStep.timestamp;
+                this.middleware.evaluatePostTool(
+                  toolName,
+                  result,
+                  null,
+                  toolMs,
+                  this.turnCount,
+                );
                 this.stepHandler(
                   {
                     ...toolStep,
@@ -1477,7 +1705,7 @@ export class AgentLoop {
                 logger.info("tools", `${toolName} OK`, {
                   turn: this.turnCount,
                   tool: toolName,
-                  risk: riskLevel,
+                  risk: preDecision.riskLevel,
                   mode: "parallel",
                   args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
                   result: result.slice(0, STRING_LIMITS.RESULT_LOG),
@@ -1491,7 +1719,7 @@ export class AgentLoop {
                   result,
                   true,
                   toolMs,
-                  riskLevel,
+                  preDecision.riskLevel,
                 );
 
                 if (
@@ -1506,10 +1734,17 @@ export class AgentLoop {
                 if (toolError.name === "AbortError") throw toolError;
                 const errorMsg = toolError.message || String(toolError);
                 const toolMs = Date.now() - toolStep.timestamp;
+                this.middleware.evaluatePostTool(
+                  toolName,
+                  null,
+                  errorMsg,
+                  toolMs,
+                  this.turnCount,
+                );
                 logger.error("tools", `${toolName} FAIL`, {
                   turn: this.turnCount,
                   tool: toolName,
-                  risk: riskLevel,
+                  risk: preDecision.riskLevel,
                   mode: "parallel",
                   args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
                   error: errorMsg,
@@ -1523,7 +1758,7 @@ export class AgentLoop {
                   errorMsg,
                   false,
                   toolMs,
-                  riskLevel,
+                  preDecision.riskLevel,
                   errorMsg,
                 );
                 this.stepHandler(
@@ -1562,20 +1797,48 @@ export class AgentLoop {
               // Registry will handle parse error on execute
             }
 
-            // Risk classification (informational, non-blocking)
-            const riskLevel = classifyRisk(toolName, args);
-            const approved = await this.ensureToolApproval(
+            const preDecision = this.middleware.evaluatePreTool(
               toolName,
               args,
-              riskLevel,
+              this.turnCount,
             );
-            if (!approved) {
+            if (!preDecision.allowed) {
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content: "Error: Action denied by user approval policy.",
+                content: `Error: ${preDecision.denyReason || "Blocked by policy middleware."}`,
               });
               continue;
+            }
+            if (
+              preDecision.approvalMode === "bypassed" &&
+              preDecision.riskLevel === RiskLevel.HIGH
+            ) {
+              this.stepHandler(
+                {
+                  id: crypto.randomUUID(),
+                  type: "info",
+                  label: `Approval bypassed: ${formatStepLabel(toolName, args)}`,
+                  status: "done",
+                  timestamp: Date.now(),
+                },
+                false,
+              );
+            }
+            if (preDecision.requiresApproval) {
+              const approved = await this.ensureToolApproval(
+                toolName,
+                args,
+                preDecision.riskLevel,
+              );
+              if (!approved) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: "Error: Action denied by user approval policy.",
+                });
+                continue;
+              }
             }
 
             // DONE tool — guardian-validated exit
@@ -2243,6 +2506,13 @@ export class AgentLoop {
             try {
               result = await this.executeToolCall(toolCall, tabId);
               const toolMs = Date.now() - toolStep.timestamp;
+              this.middleware.evaluatePostTool(
+                toolName,
+                result,
+                null,
+                toolMs,
+                this.turnCount,
+              );
               const screenshotUrl = this.pendingScreenshotUrl;
               this.pendingScreenshotUrl = null;
               this.stepHandler(
@@ -2257,7 +2527,7 @@ export class AgentLoop {
               logger.info("tools", `${toolName} OK`, {
                 turn: this.turnCount,
                 tool: toolName,
-                risk: riskLevel,
+                risk: preDecision.riskLevel,
                 mode: "sequential",
                 args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
                 result: result.slice(0, STRING_LIMITS.RESULT_LOG),
@@ -2271,16 +2541,23 @@ export class AgentLoop {
                 result,
                 true,
                 toolMs,
-                riskLevel,
+                preDecision.riskLevel,
               );
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
               const errorMsg = toolError.message || String(toolError);
               const toolMs = Date.now() - toolStep.timestamp;
+              this.middleware.evaluatePostTool(
+                toolName,
+                null,
+                errorMsg,
+                toolMs,
+                this.turnCount,
+              );
               logger.error("tools", `${toolName} FAIL`, {
                 turn: this.turnCount,
                 tool: toolName,
-                risk: riskLevel,
+                risk: preDecision.riskLevel,
                 mode: "sequential",
                 args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
                 error: errorMsg,
@@ -2294,7 +2571,7 @@ export class AgentLoop {
                 errorMsg,
                 false,
                 toolMs,
-                riskLevel,
+                preDecision.riskLevel,
                 errorMsg,
               );
               this.stepHandler(

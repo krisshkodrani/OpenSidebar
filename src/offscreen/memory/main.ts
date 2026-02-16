@@ -246,6 +246,8 @@ chrome.runtime.onMessage.addListener(
           await persist();
 
           responsePayload = { action: "add", success: true, id };
+        } else if (payload.action === "init") {
+          responsePayload = { action: "init", success: true };
         } else if (payload.action === "batch_add") {
           const items = payload.items || [];
           let count = 0;
@@ -272,6 +274,78 @@ chrome.runtime.onMessage.addListener(
           }
           await persist();
           responsePayload = { action: "batch_add", success: true, count };
+        } else if (payload.action === "update") {
+          const { id, content, category } = payload;
+          const rowStmt = db!.prepare(
+            "SELECT category, source_url FROM memories WHERE id = ? LIMIT 1",
+          );
+          rowStmt.bind([id]);
+          if (!rowStmt.step()) {
+            rowStmt.free();
+            throw new Error(`Memory not found: ${id}`);
+          }
+          const existing = rowStmt.get();
+          rowStmt.free();
+          const nextCategory =
+            typeof category === "string" && category.trim().length > 0
+              ? category.trim()
+              : (existing[0] as string);
+          const sourceUrl = existing[1] as string;
+
+          db!.run("UPDATE memories SET content = ?, category = ? WHERE id = ?", [
+            content,
+            nextCategory,
+            id,
+          ]);
+
+          // Best-effort vector update; if Voy rejects duplicate IDs, keep FTS state authoritative.
+          try {
+            const embedding = await getEmbedding(content);
+            voy!.add({
+              id,
+              title: nextCategory,
+              url: sourceUrl || "",
+              embeddings: [embedding],
+            });
+          } catch (e) {
+            logger.warn("memory", "Voy update failed during memory_update", {
+              id,
+              error: e,
+            });
+          }
+
+          await persist();
+          responsePayload = { action: "update", success: true, id };
+        } else if (payload.action === "delete") {
+          const { id } = payload;
+          db!.run("DELETE FROM memories WHERE id = ?", [id]);
+          await persist();
+          responsePayload = { action: "delete", success: true };
+        } else if (payload.action === "list_categories") {
+          const categories: Array<{ name: string; count: number }> = [];
+          const stmt = db!.prepare(`
+                    SELECT category, COUNT(*) as count
+                    FROM memories
+                    GROUP BY category
+                    ORDER BY count DESC, category ASC
+                `);
+          try {
+            while (stmt.step()) {
+              const row = stmt.get();
+              categories.push({
+                name: String(row[0] || "general"),
+                count: Number(row[1] || 0),
+              });
+            }
+          } finally {
+            stmt.free();
+          }
+          responsePayload = { action: "list_categories", categories };
+        } else if (payload.action === "clear") {
+          db!.run("DELETE FROM memories");
+          voy = new Voy();
+          await persist();
+          responsePayload = { action: "clear", success: true };
         } else if (payload.action === "search") {
           const { query, limit } = payload;
           const embedding = await getEmbedding(query);
@@ -318,7 +392,7 @@ chrome.runtime.onMessage.addListener(
               "SELECT content, category, source_url, created_at FROM memories WHERE id = ?",
             );
             stmt.bind([id]);
-            let entry: any = { id };
+            let entry: any = null;
             if (stmt.step()) {
               const row = stmt.get();
               entry = {

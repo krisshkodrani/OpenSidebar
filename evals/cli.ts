@@ -15,6 +15,7 @@
 import { convertSession } from "./converter";
 import { runEvals } from "./runner";
 import { readEvalResults, readEvalCases, readSessionIndex } from "./utils";
+import { analyzeSessionsContractCompliance } from "./contract-compliance";
 
 const c = {
   reset: "\x1b[0m",
@@ -160,6 +161,25 @@ function cmdStats() {
     const p = stratResults.filter((r) => r.status === "pass").length;
     console.log(`  ${strategy.padEnd(15)} ${p}/${stratResults.length} passed (${pct(p, stratResults.length)})`);
   }
+
+  const compliance = analyzeSessionsContractCompliance(
+    Array.from(new Set(cases.map((cs) => cs.sourceSessionId))),
+  );
+  const compliantSessions = Math.max(
+    0,
+    compliance.sessionsWithContract -
+      new Set(compliance.violations.map((v) => v.sessionId)).size,
+  );
+  console.log(`\n${c.bold}Role Contract Compliance:${c.reset}`);
+  console.log(
+    `  Sessions analyzed: ${compliance.sessionsAnalyzed} (with contracts: ${compliance.sessionsWithContract})`,
+  );
+  if (compliance.sessionsWithContract > 0) {
+    console.log(
+      `  Compliant sessions: ${compliantSessions}/${compliance.sessionsWithContract} (${pct(compliantSessions, compliance.sessionsWithContract)})`,
+    );
+  }
+  console.log(`  Violations: ${compliance.violations.length}`);
 }
 
 function cmdAnalyze() {
@@ -216,6 +236,28 @@ function cmdAnalyze() {
     console.log(`    Task completion: ${avgTask.toFixed(1)}/10`);
     console.log(`    Tool selection:  ${avgTool.toFixed(1)}/10`);
     console.log(`    Efficiency:      ${avgEff.toFixed(1)}/10`);
+  }
+
+  const compliance = analyzeSessionsContractCompliance(
+    Array.from(new Set(cases.map((cs) => cs.sourceSessionId))),
+  );
+  if (compliance.sessionsWithContract > 0) {
+    console.log(`\n  ${c.bold}Role Contract Violations:${c.reset}`);
+    if (compliance.violations.length === 0) {
+      console.log(`    ${c.green}No violations detected.${c.reset}`);
+    } else {
+      const byType: Record<string, number> = {};
+      for (const violation of compliance.violations) {
+        byType[violation.type] = (byType[violation.type] || 0) + 1;
+      }
+      for (const [type, count] of Object.entries(byType).sort((a, b) => b[1] - a[1])) {
+        console.log(`    ${c.red}${type.padEnd(24)}${c.reset} ${count}`);
+      }
+      const sample = compliance.violations[0];
+      console.log(
+        `\n    First violation: session=${sample.sessionId.slice(0, 8)} role=${sample.role} turn=${sample.turnNumber ?? "-"} ${sample.message}`,
+      );
+    }
   }
 }
 

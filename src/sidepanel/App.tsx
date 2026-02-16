@@ -21,7 +21,8 @@ import {
   StuckBanner,
   RecoveryBanner,
   ApprovalBanner,
-  TaskProgressPanel,
+  OrchestratorConsole,
+  PlanBoard,
   MetricsBar,
 } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -379,6 +380,8 @@ export default function App() {
       <StuckBanner />
       <RecoveryBanner />
       <ApprovalBanner />
+      <OrchestratorConsole />
+      <PlanBoard />
 
       <main className="flex-1 overflow-hidden relative flex flex-col">
         {error && (
@@ -435,7 +438,6 @@ export default function App() {
         {settings.showSessionMetrics && sessionMetrics && (
           <MetricsBar metrics={sessionMetrics} />
         )}
-        <TaskProgressPanel />
         <InputArea
           onSend={handleSend}
           onSendHint={handleSendHint}

@@ -74,7 +74,47 @@ The Orchestrator's **Scheduler** loop:
 3.  Spawn `AgentLoop` for each `ready` task (up to a concurrency limit).
 4.  When `AgentLoop` finishes, mark task `completed`, save result, and repeat loop.
 
+## Stability Enhancements (Implemented)
+
+Based on the evaluation against *Designing Multi-Agent Systems* (plan-based orchestration guidance, Chapter 2):
+
+1.  **Structured Planner Output**
+    - Planner now supports structured steps with:
+      - objective
+      - success criteria
+      - dependencies (DAG)
+      - assumptions
+    - This reduces plan ambiguity and improves scheduler correctness.
+
+2.  **Dependency-Aware Scheduling**
+    - Orchestrator launches only dependency-ready nodes.
+    - Nodes blocked by failed/missing dependencies are failed explicitly with tactical logs.
+
+3.  **Plan-Reality Drift Signaling**
+    - Planner assumptions are checked against live page snapshot signals (title/url/viewport text).
+    - Drift is surfaced to executors as a "reality check signal" and logged for debugging.
+
+4.  **Dynamic Handoff on Reroute**
+    - Verifier reroute creates a new linked executor node (handoff chain), instead of mutating the same node.
+
 ## Migration
 
 1.  **Step 1**: Update `PlanGuardian` to output a simplified JSON with `parallel: boolean` flag.
 2.  **Step 2**: Implement the full Graph based Planner.
+
+## Implementation Status (2026-02-16)
+
+Completed in current implementation:
+1. Dependency-aware scheduler with explicit blocked-node failure handling.
+2. Verifier-driven reroute handoff nodes and replanning paths.
+3. Assumption drift signaling from live snapshot state into executor instructions.
+4. Replan budget guardrails and global budget termination signals.
+5. Deterministic orchestration integration tests with constructor-injected dependencies.
+
+Validation snapshot:
+- `bun test`: pass
+- `bun run lint`: pass (warnings only)
+- `bun run build`: pass
+
+For gap-to-100% tracking and next milestones, see:
+- `docs/research/dmas-gap-closure-plan.md`

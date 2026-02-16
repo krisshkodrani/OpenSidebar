@@ -29,6 +29,9 @@ export enum MessageSource {
   OFFSCREEN = "offscreen",
 }
 
+/** Role contract for orchestrator-managed agent collaboration */
+export type AgentRole = "planner" | "executor" | "verifier";
+
 /** Tool identifiers exposed to the LLM */
 export enum ToolName {
   CLICK_ELEMENT = "click_element",
@@ -39,6 +42,9 @@ export enum ToolName {
 
   MEMORY_SEARCH = "memory_search",
   MEMORY_ADD = "memory_add",
+  MEMORY_UPDATE = "memory_update",
+  MEMORY_DELETE = "memory_delete",
+  MEMORY_LIST_CATEGORIES = "memory_list_categories",
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",
   SWITCH_TAB = "switch_tab",
@@ -424,6 +430,8 @@ export interface TaskCompletionMessage extends BaseMessage {
     urlHistory: string[];
     /** Session metrics (token usage, cost, timing) */
     metrics?: SessionMetrics;
+    /** Explicit termination reason for budget/guardrail stops */
+    terminationReason?: string;
   };
 }
 
@@ -677,6 +685,25 @@ export interface MemoryAddArgs {
   /** Category tag for organization */
   category?: string;
 }
+
+/** Arguments for memory_update */
+export interface MemoryUpdateArgs {
+  /** Memory entry ID to update */
+  id: string;
+  /** New memory content */
+  content: string;
+  /** Optional replacement category */
+  category?: string;
+}
+
+/** Arguments for memory_delete */
+export interface MemoryDeleteArgs {
+  /** Memory entry ID to delete */
+  id: string;
+}
+
+/** Arguments for memory_list_categories */
+export type MemoryListCategoriesArgs = Record<string, never>;
 
 /** Arguments for create_tab */
 export interface CreateTabArgs {
@@ -1002,6 +1029,9 @@ export type ToolArgsMap = {
 
   [ToolName.MEMORY_SEARCH]: MemorySearchArgs;
   [ToolName.MEMORY_ADD]: MemoryAddArgs;
+  [ToolName.MEMORY_UPDATE]: MemoryUpdateArgs;
+  [ToolName.MEMORY_DELETE]: MemoryDeleteArgs;
+  [ToolName.MEMORY_LIST_CATEGORIES]: MemoryListCategoriesArgs;
   [ToolName.CREATE_TAB]: CreateTabArgs;
   [ToolName.CLOSE_TAB]: CloseTabArgs;
   [ToolName.SWITCH_TAB]: SwitchTabArgs;
@@ -1345,7 +1375,9 @@ export interface MemoryWorkerMessage extends BaseMessage {
         items: { content: string; category: string; sourceUrl: string }[];
       }
     | { action: "search"; query: string; limit: number }
+    | { action: "update"; id: string; content: string; category?: string }
     | { action: "delete"; id: string }
+    | { action: "list_categories" }
     | { action: "clear" }
     | { action: "extract_pdf"; url: string; maxPages?: number };
 }
@@ -1359,7 +1391,13 @@ export interface MemoryWorkerResponse extends BaseMessage {
     | { action: "add"; success: boolean; id: string; error?: string }
     | { action: "batch_add"; success: boolean; count: number; error?: string }
     | { action: "search"; results: MemorySearchResult[]; error?: string }
+    | { action: "update"; success: boolean; id: string; error?: string }
     | { action: "delete"; success: boolean; error?: string }
+    | {
+        action: "list_categories";
+        categories: { name: string; count: number }[];
+        error?: string;
+      }
     | { action: "clear"; success: boolean; error?: string }
     | { action: "extract_pdf"; text: string; success: boolean; error?: string };
 }
@@ -1530,7 +1568,9 @@ export interface TraceEvent {
     | "screenshot"
     | "stuck_signal"
     | "circuit_breaker"
-    | "navigate_blocked";
+    | "navigate_blocked"
+    | "approval"
+    | "execution_contract";
   timestamp: number;
   data: Record<string, unknown>;
 }

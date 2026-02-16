@@ -13,7 +13,7 @@ export function reciprocalRankFusion(
   semanticResults: Array<{ id: string; score: number }>,
   keywordResults: Array<{ id: string; rank: number }>,
   limit: number,
-  fetchEntry: (id: string) => any, // Dependency injection for data retrieval
+  fetchEntry: (id: string) => MemorySearchResult["entry"] | null, // Dependency injection for data retrieval
 ): MemorySearchResult[] {
   const scores = new Map<
     string,
@@ -47,16 +47,18 @@ export function reciprocalRankFusion(
     .slice(0, limit);
 
   // 4. Hydrate
-  return sortedIds.map(([id, scoreData]) => {
+  const hydrated: MemorySearchResult[] = [];
+  for (const [id, scoreData] of sortedIds) {
     const entry = fetchEntry(id);
-
-    return {
+    if (!entry) continue;
+    hydrated.push({
       entry,
       score: scoreData.rrf,
       scores: {
         semantic: scoreData.semantic,
         keyword: scoreData.keyword,
       },
-    };
-  });
+    });
+  }
+  return hydrated;
 }

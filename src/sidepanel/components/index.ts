@@ -1,4 +1,5 @@
 export * from "./Header";
+export * from "./ArchitectureStrip";
 export * from "./MessageBubble";
 export * from "./InputArea";
 export * from "./ControlBar";
@@ -6,6 +7,8 @@ export * from "./StepTimeline";
 export * from "./StuckBanner";
 export * from "./RecoveryBanner";
 export * from "./ApprovalBanner";
+export * from "./OrchestratorConsole";
+export * from "./PlanBoard";
 export * from "./TaskProgressPanel";
 export * from "./MetricsBar";
 export * from "./SavedPromptsDrawer";

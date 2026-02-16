@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 53 tools are registered", () => {
+    test("all 56 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(53);
+        expect(defs.length).toBe(56);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -131,6 +131,30 @@ describe("Tool Registration", () => {
         const find = defs.find(d => d.function.name === ToolName.FIND_ELEMENT);
         expect(find).toBeDefined();
         expect(find!.function.description).toContain("tag ID");
+    });
+
+    test("memory_update requires id and content", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.MEMORY_UPDATE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("id");
+        expect(def!.function.parameters.required).toContain("content");
+        expect(def!.function.parameters.properties.category).toBeDefined();
+    });
+
+    test("memory_delete requires id", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.MEMORY_DELETE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual(["id"]);
+    });
+
+    test("memory_list_categories requires no parameters", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.MEMORY_LIST_CATEGORIES);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toEqual([]);
+        expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
     });
 
     test("read_element requires id parameter", () => {

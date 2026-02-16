@@ -20,6 +20,23 @@ OpenSidebar is a Chrome extension implementing an AI browser agent with a bimoda
 
 ---
 
+## 0. Status Update (2026-02-16)
+
+Recent stabilization and hardening work has been completed, focused on orchestration reliability and deterministic testing:
+
+- Orchestrator dependency injection seams added for planner/verifier/loop/LLM/workspace dependencies.
+- Workspace manager dependency injection seams added for context and storage.
+- Cross-suite flaky tests removed by replacing module-level coupling with constructor-injected fakes.
+- Integration joins were revalidated end-to-end in full suite runs.
+
+Current verification status:
+- `bun test`: pass (572 pass, 0 fail)
+- `bun run lint`: pass (warnings only)
+- `bun run build`: pass
+
+Progress and next critical milestones are tracked in:
+- `docs/research/dmas-gap-closure-plan.md`
+
 ## 1. Good Practices Already in Use
 
 ### 1.1 Tool System Design ✅ **EXCELLENT**

@@ -419,6 +419,21 @@ chrome.runtime.onMessage.addListener(
       orchestrator.resumeTask(wsId ?? undefined);
       return false;
     }
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "SKIP_SUBTASK"
+    ) {
+      const wsId = message.workspaceId ?? undefined;
+      void orchestrator.skipSubtask(wsId, message.payload.taskId).then((ok) => {
+        if (!ok) {
+          logger.warn("orchestrator", "Skip subtask request ignored", {
+            workspaceId: wsId,
+            taskId: message.payload.taskId,
+          });
+        }
+      });
+      return false;
+    }
 
     // 3b. Approval decision from side panel
     if (

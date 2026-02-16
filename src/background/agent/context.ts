@@ -95,7 +95,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - select_option for <select> dropdowns — pass visible option text.
 - take_screenshot when the page doesn't match expectations.
 - Batch independent actions in one turn (e.g. fill all form fields).
-- Memory: memory_search to recall, memory_add to save important facts.
+- Memory: memory_search to recall, memory_add to save, memory_update to correct, memory_delete to remove stale entries, memory_list_categories to inspect organization.
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
 - Investigation: When stuck or content may be hidden/missing, use inspect_hidden, execute_js, or take_screenshot to gather evidence before retrying. Check get_cookies or execute_js for auth/session state.
 - xray_page toggles a CSS override that forces ALL hidden elements visible (display:none, opacity:0, visibility:hidden). Use when inspect_hidden finds content you need to interact with. Call again to disable. Triggers a snapshot refresh so new elements get tagged.

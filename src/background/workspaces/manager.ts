@@ -18,19 +18,36 @@ const WORKSPACE_COLORS: chrome.tabGroups.ColorEnum[] = [
   "orange",
 ];
 
+type WorkspaceManagerDeps = {
+  isContentScript?: () => boolean;
+  storageLocal?: Pick<chrome.storage.StorageArea, "get" | "set">;
+};
+
 export class WorkspaceManager {
   private workspaces: Workspace[] = [];
   private nextWorkspaceNum = 1;
   private initialized = false;
+  private deps: Required<WorkspaceManagerDeps>;
 
-  constructor() {
+  constructor(deps: WorkspaceManagerDeps = {}) {
+    const defaultStorageLocal: Pick<chrome.storage.StorageArea, "get" | "set"> =
+      typeof chrome !== "undefined" && chrome.storage?.local
+        ? chrome.storage.local
+        : {
+            get: async () => ({}),
+            set: async () => undefined,
+          };
+    this.deps = {
+      isContentScript: deps.isContentScript ?? isContentScript,
+      storageLocal: deps.storageLocal ?? defaultStorageLocal,
+    };
     this.init();
   }
 
   private async init(retryCount = 0): Promise<void> {
     if (this.initialized) return;
 
-    if (isContentScript()) {
+    if (this.deps.isContentScript()) {
       logger.debug(
         "workspace",
         "Skipping WorkspaceManager init in content script",
@@ -39,7 +56,7 @@ export class WorkspaceManager {
     }
 
     try {
-      const stored = await chrome.storage.local.get([
+      const stored = await this.deps.storageLocal.get([
         STORAGE_KEY_WORKSPACES,
         STORAGE_KEY_NEXT_NUM,
       ]);
@@ -67,7 +84,7 @@ export class WorkspaceManager {
 
   private setupListeners() {
     // Skip in content scripts - APIs not available
-    if (isContentScript()) {
+    if (this.deps.isContentScript()) {
       logger.debug("workspace", "Skipping listener setup in content script");
       return;
     }
@@ -409,7 +426,7 @@ export class WorkspaceManager {
   }
 
   private async save() {
-    await chrome.storage.local.set({
+    await this.deps.storageLocal.set({
       [STORAGE_KEY_WORKSPACES]: this.workspaces,
       [STORAGE_KEY_NEXT_NUM]: this.nextWorkspaceNum,
     });

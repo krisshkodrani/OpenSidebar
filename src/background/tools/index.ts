@@ -203,6 +203,57 @@ const MEMORY_SEARCH_DEF: ToolDefinition = {
   },
 };
 
+const MEMORY_UPDATE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.MEMORY_UPDATE,
+    description: "Update an existing long-term memory entry by ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Memory ID to update." },
+        content: {
+          type: "string",
+          description: "Replacement memory text.",
+        },
+        category: {
+          type: "string",
+          description: "Optional replacement category tag.",
+        },
+      },
+      required: ["id", "content"],
+    },
+  },
+};
+
+const MEMORY_DELETE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.MEMORY_DELETE,
+    description: "Delete a long-term memory entry by ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Memory ID to delete." },
+      },
+      required: ["id"],
+    },
+  },
+};
+
+const MEMORY_LIST_CATEGORIES_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.MEMORY_LIST_CATEGORIES,
+    description: "List memory categories and how many entries each contains.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
 const NAVIGATE_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -1235,6 +1286,69 @@ export function registerTools() {
               (r: any) =>
                 `- [${r.entry.category}] ${r.entry.content} (Score: ${r.score.toFixed(2)})`,
             )
+            .join("\n")
+        );
+      }
+      return "Error: Unexpected response from memory worker.";
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.MEMORY_UPDATE,
+    MEMORY_UPDATE_DEF,
+    async (args) => {
+      logger.info("tools", "memory_update", { id: args.id });
+      const res = await sendMessageToMemory({
+        action: "update",
+        id: args.id as string,
+        content: args.content as string,
+        category: args.category as string | undefined,
+      });
+
+      if (res.action === "update") {
+        return res.success
+          ? `Memory updated (ID: ${res.id})`
+          : `Failed to update memory: ${res.error || "unknown error"}`;
+      }
+      return "Error: Unexpected response from memory worker.";
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.MEMORY_DELETE,
+    MEMORY_DELETE_DEF,
+    async (args) => {
+      logger.info("tools", "memory_delete", { id: args.id });
+      const res = await sendMessageToMemory({
+        action: "delete",
+        id: args.id as string,
+      });
+
+      if (res.action === "delete") {
+        return res.success
+          ? `Memory deleted (ID: ${args.id})`
+          : `Failed to delete memory: ${res.error || "unknown error"}`;
+      }
+      return "Error: Unexpected response from memory worker.";
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.MEMORY_LIST_CATEGORIES,
+    MEMORY_LIST_CATEGORIES_DEF,
+    async () => {
+      logger.info("tools", "memory_list_categories");
+      const res = await sendMessageToMemory({
+        action: "list_categories",
+      });
+      if (res.action === "list_categories") {
+        if (!res.categories || res.categories.length === 0) {
+          return "No memory categories found.";
+        }
+        return (
+          "Memory categories:\n" +
+          res.categories
+            .map((c) => `- ${c.name}: ${c.count}`)
             .join("\n")
         );
       }

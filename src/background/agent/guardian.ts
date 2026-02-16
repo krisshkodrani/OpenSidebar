@@ -6,6 +6,14 @@ import { logger } from "../../utils";
 /** Result of task decomposition */
 export interface PlanDecomposition {
   subtasks: string[];
+  steps?: PlanStep[];
+}
+
+export interface PlanStep {
+  objective: string;
+  successCriteria: string;
+  dependencies: number[];
+  assumptions: string[];
 }
 
 /** Result of done() validation */
@@ -30,9 +38,22 @@ Criteria for Simple (Single-Step):
 Response Rules:
 - Simple tasks: return {"isMultiStep": false}
 - Multi-step tasks: return {"isMultiStep": true, "subtasks": ["step 1", ...]}
+- Prefer structured plans when possible:
+{
+  "isMultiStep": true,
+  "steps": [
+    {
+      "objective": "concrete step objective",
+      "successCriteria": "observable completion condition",
+      "dependencies": [0],
+      "assumptions": ["short assumption about page state"]
+    }
+  ]
+}
 - 3-8 subtasks maximum.
 - Group related actions into single steps.
 - Last subtask should verify the overall goal was achieved.
+- Dependencies must reference earlier step indexes only.
 
 Respond with JSON only.`;
 
@@ -113,25 +134,109 @@ export class PlanGuardian {
       }
 
       if (!parsed.isMultiStep) return null;
-      if (!Array.isArray(parsed.subtasks) || parsed.subtasks.length < 2)
-        return null;
+
+      const parseSteps = (value: unknown): PlanStep[] | null => {
+        if (!Array.isArray(value) || value.length < 2) return null;
+        const result: PlanStep[] = [];
+        for (let i = 0; i < value.length; i++) {
+          const raw = value[i];
+          if (!raw || typeof raw !== "object") return null;
+          const obj = raw as Record<string, unknown>;
+          if (
+            typeof obj.objective !== "string" ||
+            obj.objective.trim().length === 0
+          ) {
+            return null;
+          }
+          const successCriteria =
+            typeof obj.successCriteria === "string" &&
+            obj.successCriteria.trim().length > 0
+              ? obj.successCriteria.trim()
+              : `Step "${obj.objective.trim()}" is completed and verified.`;
+
+          const dependencies: number[] = [];
+          if (Array.isArray(obj.dependencies)) {
+            for (const dep of obj.dependencies) {
+              if (!Number.isInteger(dep)) continue;
+              const idx = dep as number;
+              if (idx >= 0 && idx < i && !dependencies.includes(idx)) {
+                dependencies.push(idx);
+              }
+            }
+          }
+          const assumptions: string[] = [];
+          if (Array.isArray(obj.assumptions)) {
+            for (const assumption of obj.assumptions) {
+              if (typeof assumption !== "string") continue;
+              const trimmed = assumption.trim();
+              if (trimmed.length > 0 && !assumptions.includes(trimmed)) {
+                assumptions.push(trimmed);
+              }
+            }
+          }
+          result.push({
+            objective: obj.objective.trim(),
+            successCriteria,
+            dependencies,
+            assumptions,
+          });
+        }
+        return result;
+      };
+
+      const steps = parseSteps(parsed.steps);
+      const legacySubtasks = Array.isArray(parsed.subtasks)
+        ? parsed.subtasks
+            .filter((step: unknown): step is string => typeof step === "string")
+            .map((step) => step.trim())
+            .filter((step) => step.length > 0)
+        : [];
+      const subtasks =
+        steps?.map((step) => step.objective) ||
+        (legacySubtasks.length >= 2 ? legacySubtasks : []);
+      if (subtasks.length < 2) return null;
 
       // Hard cap: truncate to 8 subtasks max
-      if (parsed.subtasks.length > 8) {
+      if (subtasks.length > 8) {
         logger.warn(
           "agent",
           "Guardian decomposition exceeded 8 subtasks, truncating",
           {
-            original: parsed.subtasks.length,
+            original: subtasks.length,
           },
         );
-        parsed.subtasks = parsed.subtasks.slice(0, 8);
+        if (steps) {
+          const cappedSteps = steps.slice(0, 8);
+          for (const step of cappedSteps) {
+            step.dependencies = step.dependencies.filter(
+              (dep) => dep < cappedSteps.length,
+            );
+          }
+          logger.info("agent", "Guardian produced structured plan", {
+            subtaskCount: cappedSteps.length,
+          });
+          return {
+            subtasks: cappedSteps.map((step) => step.objective),
+            steps: cappedSteps,
+          };
+        }
+        return { subtasks: subtasks.slice(0, 8) };
+      }
+
+      if (steps) {
+        logger.info("agent", "Guardian produced structured plan", {
+          subtaskCount: steps.length,
+        });
+        return {
+          subtasks: steps.map((step) => step.objective),
+          steps,
+        };
       }
 
       logger.info("agent", "Guardian decomposed task", {
-        subtaskCount: parsed.subtasks.length,
+        subtaskCount: subtasks.length,
       });
-      return { subtasks: parsed.subtasks };
+      return { subtasks };
     } catch (err: any) {
       logger.warn(
         "agent",

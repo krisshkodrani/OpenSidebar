@@ -1,10 +1,41 @@
 import { AgentLoop } from "../agent";
-import { UserSettings } from "../../types";
+import { AgentRole, SessionMetrics, ToolName, UserSettings } from "../../types";
+
+export interface PlannerAssignment {
+  role: Extract<AgentRole, "executor">;
+  objective: string;
+  successCriteria: string;
+  allowedTools: ToolName[];
+  dependencies?: string[];
+  assumptions?: string[];
+}
+
+export interface NodeHandoffArtifact {
+  role: AgentRole;
+  phase:
+    | "planned"
+    | "planner_replan"
+    | "executor_started"
+    | "executor_finished"
+    | "verifier_accept"
+    | "verifier_retry"
+    | "verifier_reroute";
+  note: string;
+  timestamp: number;
+}
 
 export interface TaskNode {
   id: string;
+  role: Extract<AgentRole, "executor">;
   description: string;
-  status: "pending" | "running" | "completed" | "failed";
+  successCriteria: string;
+  allowedTools: ToolName[];
+  dependencies: string[];
+  assumptions: string[];
+  handoffArtifacts: NodeHandoffArtifact[];
+  handoffDepth: number;
+  handoffFromNodeId?: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
   retries: number;
   result?: string;
   error?: string;
@@ -21,7 +52,16 @@ export interface OrchestratorTask {
   finishedAt?: number;
   nodes: TaskNode[];
   maxWorkers: number;
+  maxReplans: number;
+  replansUsed: number;
   currentIndex: number;
+  sessionMetrics: SessionMetrics;
+  budget: {
+    maxSessionTimeMs: number;
+    maxTotalTokens: number;
+    maxTotalCostUsd: number;
+  };
+  terminationReason?: string;
 }
 
 export interface OrchestratorCheckpoint {

@@ -1,6 +1,7 @@
 import React from "react";
 import { Settings, Bookmark } from "lucide-react";
 import { StatusBar } from "./StatusBar";
+import { ArchitectureStrip } from "./ArchitectureStrip";
 
 interface Props {
   onOpenSettings: () => void;
@@ -25,6 +26,7 @@ export function Header({
           )}
         </div>
         <StatusBar />
+        <ArchitectureStrip />
       </div>
 
       <div className="flex items-center gap-1">

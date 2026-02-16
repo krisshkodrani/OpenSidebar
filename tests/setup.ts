@@ -9,6 +9,24 @@ GlobalRegistrator.register();
 (globalThis as any).__GROQ_API_KEY__ = "";
 (globalThis as any).__CEREBRAS_API_KEY__ = "";
 
+// Avoid noisy ECONNREFUSED errors in tests when optional local log/trace server
+// is not running. Only stub localhost drain endpoints; keep other fetch calls real.
+const originalFetch = globalThis.fetch?.bind(globalThis);
+if (originalFetch) {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+            typeof input === "string"
+                ? input
+                : input instanceof URL
+                    ? input.toString()
+                    : (input as Request).url;
+        if (url.startsWith("http://127.0.0.1:7589/")) {
+            return new Response(null, { status: 204 });
+        }
+        return originalFetch(input as any, init);
+    }) as typeof fetch;
+}
+
 // Mock Chrome API
 global.chrome = {
     runtime: {

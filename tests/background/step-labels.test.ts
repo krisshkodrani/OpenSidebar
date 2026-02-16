@@ -29,6 +29,18 @@ describe("formatStepLabel", () => {
         expect(formatStepLabel(ToolName.DONE, { summary: "all done" })).toBe("Task complete");
     });
 
+    test("memory_update shows memory id", () => {
+        expect(formatStepLabel(ToolName.MEMORY_UPDATE, { id: "mem-1" })).toBe("Update memory [mem-1]");
+    });
+
+    test("memory_delete shows memory id", () => {
+        expect(formatStepLabel(ToolName.MEMORY_DELETE, { id: "mem-2" })).toBe("Delete memory [mem-2]");
+    });
+
+    test("memory_list_categories label", () => {
+        expect(formatStepLabel(ToolName.MEMORY_LIST_CATEGORIES, {})).toBe("List memory categories");
+    });
+
     test("click_element shows tag ID", () => {
         expect(formatStepLabel(ToolName.CLICK_ELEMENT, { id: 7 })).toBe("Click element [7]");
     });

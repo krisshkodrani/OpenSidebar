@@ -82,6 +82,44 @@ describe("PlanGuardian.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("parses structured step graph with dependencies and assumptions", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                steps: [
+                    {
+                        objective: "Open checkout page",
+                        successCriteria: "Checkout page loaded",
+                        dependencies: [],
+                        assumptions: ["user is logged in"],
+                    },
+                    {
+                        objective: "Submit payment",
+                        successCriteria: "Confirmation visible",
+                        dependencies: [0],
+                        assumptions: ["payment form present"],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new PlanGuardian("test-key");
+        const result = await guardian.decompose(
+            "Buy this item",
+            "Product Page",
+            "https://shop.com/item",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.subtasks).toEqual(["Open checkout page", "Submit payment"]);
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps![1].dependencies).toEqual([0]);
+        expect(result!.steps![0].assumptions).toEqual(["user is logged in"]);
+    });
+
     test("returns null for simple query", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

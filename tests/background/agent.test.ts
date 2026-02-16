@@ -131,6 +131,199 @@ describe("AgentLoop", () => {
   });
 });
 
+describe("High-risk approval policy", () => {
+  function setupLLMSequence(responses: any[]) {
+    let callIdx = 0;
+    const doneResponse = {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "tc_auto_done",
+          type: "function",
+          function: { name: "done", arguments: '{"summary":"Auto-done"}' },
+        },
+      ],
+      finish_reason: "tool_calls",
+    };
+    mockCompleteStream.mockImplementation((_req: any, _delta: any) => {
+      const resp =
+        callIdx < responses.length ? responses[callIdx] : doneResponse;
+      callIdx++;
+      return Promise.resolve(resp);
+    });
+  }
+
+  function makeToolCall(
+    id: string,
+    name: string,
+    args: Record<string, unknown>,
+  ) {
+    return {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+      finish_reason: "tool_calls",
+    };
+  }
+
+  function findToolResultInCalls(toolCallId: string): string | null {
+    for (const call of mockCompleteStream.mock.calls) {
+      const request = call[0];
+      const messages = request?.messages;
+      if (!Array.isArray(messages)) continue;
+      const msg = messages.find(
+        (m: any) => m.role === "tool" && m.tool_call_id === toolCallId,
+      );
+      if (msg?.content) return String(msg.content);
+    }
+    return null;
+  }
+
+  beforeEach(() => {
+    mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
+    mockCompleteStream.mockClear();
+    (chrome.runtime as any).sendMessage = mock(async () => ({ success: true }));
+  });
+
+  test("requests explicit approval for high-risk tool when bypass is off", async () => {
+    setupLLMSequence([
+      makeToolCall("tc_nav", "navigate", { url: "https://example.com" }),
+    ]);
+
+    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+      if (msg?.type === "APPROVAL_REQUEST") {
+        AgentLoop.resolveApproval(msg.payload.approvalId, true);
+      }
+      return { success: true };
+    });
+
+    const onStep = mock();
+    const agent = new AgentLoop(
+      "test-key",
+      undefined,
+      undefined,
+      {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+        onStep,
+      },
+      { bypassApprovals: false },
+    );
+
+    await agent.start("Go to example.com", 123);
+
+    const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
+      (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
+    );
+    expect(approvalRequests.length).toBeGreaterThan(0);
+    const approvalStep = onStep.mock.calls.find(
+      (call: any[]) =>
+        call[0]?.type === "info" &&
+        String(call[0]?.label || "").includes("Approval granted"),
+    );
+    expect(approvalStep).toBeDefined();
+  });
+
+  test("denies high-risk action when user rejects approval", async () => {
+    setupLLMSequence([
+      makeToolCall("tc_nav_reject", "navigate", { url: "https://example.com" }),
+    ]);
+
+    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+      if (msg?.type === "APPROVAL_REQUEST") {
+        AgentLoop.resolveApproval(msg.payload.approvalId, false);
+      }
+      return { success: true };
+    });
+
+    const agent = new AgentLoop(
+      "test-key",
+      undefined,
+      undefined,
+      {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+      },
+      { bypassApprovals: false },
+    );
+
+    await agent.start("Navigate to example.com", 123);
+
+    const toolResult = findToolResultInCalls("tc_nav_reject");
+    expect(toolResult).toContain("Action denied by user approval policy");
+  });
+
+  test("times out high-risk approval and denies tool execution", async () => {
+    setupLLMSequence([
+      makeToolCall("tc_nav_timeout", "navigate", { url: "https://example.com" }),
+    ]);
+
+    // No resolveApproval call -> should timeout and deny.
+    (chrome.runtime as any).sendMessage = mock(async (_msg: any) => ({
+      success: true,
+    }));
+
+    const agent = new AgentLoop(
+      "test-key",
+      undefined,
+      undefined,
+      {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+      },
+      { bypassApprovals: false, approvalTimeoutMs: 5 },
+    );
+
+    await agent.start("Navigate to example.com", 123);
+
+    const toolResult = findToolResultInCalls("tc_nav_timeout");
+    expect(toolResult).toContain("Action denied by user approval policy");
+  });
+
+  test("skips approval requests when bypass is enabled", async () => {
+    setupLLMSequence([
+      makeToolCall("tc_nav_bypass", "navigate", { url: "https://example.com" }),
+    ]);
+
+    (chrome.runtime as any).sendMessage = mock(async (_msg: any) => ({
+      success: true,
+    }));
+
+    const onStep = mock();
+    const agent = new AgentLoop(
+      "test-key",
+      undefined,
+      undefined,
+      {
+        onStatusUpdate: mock(),
+        onMessage: mock(),
+        onStep,
+      },
+      { bypassApprovals: true },
+    );
+
+    await agent.start("Navigate quickly", 123);
+
+    const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
+      (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
+    );
+    expect(approvalRequests.length).toBe(0);
+    const bypassStep = onStep.mock.calls.find(
+      (call: any[]) =>
+        call[0]?.type === "info" &&
+        String(call[0]?.label || "").includes("Approval bypassed"),
+    );
+    expect(bypassStep).toBeDefined();
+  });
+});
+
 describe("Workspace-scoped tab operations", () => {
   /** Set up mockCompleteStream to return tool calls in order, then done() for all subsequent calls. */
   function setupLLMSequence(responses: any[]) {
