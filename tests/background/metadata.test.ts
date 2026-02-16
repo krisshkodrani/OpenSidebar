@@ -37,7 +37,6 @@ describe("Tool Metadata", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
@@ -47,12 +46,11 @@ describe("Tool Metadata", () => {
   });
 
   describe("SEQUENTIAL_TOOLS", () => {
-    test("contains navigate, done, take_screenshot, escalate, update_plan, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
+    test("contains navigate, done, take_screenshot, escalate, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
-      expect(SEQUENTIAL_TOOLS.has(ToolName.UPDATE_PLAN)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.GO_BACK)).toBe(true);
@@ -60,8 +58,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
     });
 
-    test("has exactly 21 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(21);
+    test("has exactly 20 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(20);
     });
   });
 

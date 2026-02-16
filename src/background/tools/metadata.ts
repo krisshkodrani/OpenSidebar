@@ -112,11 +112,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: true,
   },
-  [ToolName.UPDATE_PLAN]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: true,
-  },
   [ToolName.READ_ELEMENT]: {
     risk: RiskLevel.LOW,
     domModifying: false,

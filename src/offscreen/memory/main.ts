@@ -246,6 +246,32 @@ chrome.runtime.onMessage.addListener(
           await persist();
 
           responsePayload = { action: "add", success: true, id };
+        } else if (payload.action === "batch_add") {
+          const items = payload.items || [];
+          let count = 0;
+          for (const item of items) {
+            const id = crypto.randomUUID();
+            const embedding = await getEmbedding(item.content);
+            db!.run(
+              "INSERT INTO memories (id, content, category, source_url, created_at) VALUES (?, ?, ?, ?, ?)",
+              [
+                id,
+                item.content,
+                item.category || "general",
+                item.sourceUrl || "",
+                Date.now(),
+              ],
+            );
+            voy!.add({
+              id,
+              title: item.category || "general",
+              url: item.sourceUrl || "",
+              embeddings: [embedding],
+            });
+            count++;
+          }
+          await persist();
+          responsePayload = { action: "batch_add", success: true, count };
         } else if (payload.action === "search") {
           const { query, limit } = payload;
           const embedding = await getEmbedding(query);

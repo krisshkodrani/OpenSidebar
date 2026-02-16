@@ -4,6 +4,8 @@ export * from "./InputArea";
 export * from "./ControlBar";
 export * from "./StepTimeline";
 export * from "./StuckBanner";
+export * from "./RecoveryBanner";
+export * from "./ApprovalBanner";
 export * from "./TaskProgressPanel";
 export * from "./MetricsBar";
 export * from "./SavedPromptsDrawer";

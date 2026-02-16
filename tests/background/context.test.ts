@@ -417,7 +417,7 @@ describe("ContextManager", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).not.toContain("Multi-Step Planning");
-      expect(systemContent).not.toContain("update_plan({subtasks, currentIndex");
+      expect(systemContent).not.toContain("Active Plan");
     });
 
     test("Multi-Step Planning section present when plan is set", () => {
@@ -431,7 +431,7 @@ describe("ContextManager", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).toContain("Multi-Step Planning");
-      expect(systemContent).toContain("update_plan({subtasks, currentIndex");
+      expect(systemContent).toContain("Only call done() when ALL steps are completed");
       // Also verify the Active Plan section is present
       expect(systemContent).toContain("Active Plan");
       expect(systemContent).toContain("Step 1");

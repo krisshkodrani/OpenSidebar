@@ -534,41 +534,6 @@ const ESCALATE_DEF: ToolDefinition = {
   },
 };
 
-const UPDATE_PLAN_DEF: ToolDefinition = {
-  type: "function",
-  function: {
-    name: ToolName.UPDATE_PLAN,
-    description:
-      "Report task progress or REVISE the plan if the current one is failing. Call after each subtask.",
-    parameters: {
-      type: "object",
-      properties: {
-        subtasks: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Ordered list of subtask descriptions. You may overwrite the future steps if the current plan is stuck.",
-        },
-        currentIndex: {
-          type: "integer",
-          description:
-            "0-based index of the NEXT subtask to execute (after the one you just completed).",
-        },
-        lastResult: {
-          type: "string",
-          description: "Brief result of the last completed subtask.",
-        },
-        rationale: {
-          type: "string",
-          description:
-            "Required if changing the plan: Explain WHY you are modifying the subtasks (e.g., 'Current approach failed because...').",
-        },
-      },
-      required: ["subtasks", "currentIndex"],
-    },
-  },
-};
-
 const BATCH_EXECUTE_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -1441,12 +1406,6 @@ export function registerTools() {
   toolRegistry.register(ToolName.ESCALATE, ESCALATE_DEF, async (args) => {
     // This executor is a fallback — the loop intercepts escalate before reaching here
     return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
-  });
-
-  // Plan progress tool (intercepted by agent loop before executor runs)
-  toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
-    const subtasks = args.subtasks as string[];
-    return `Plan updated: ${subtasks.length} subtasks, current: ${args.currentIndex}`;
   });
 
   // Service Worker Tools (chrome.* APIs)

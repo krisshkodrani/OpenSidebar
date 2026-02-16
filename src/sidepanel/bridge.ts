@@ -53,7 +53,8 @@ export function initializeBridge(
           state.setAgentRunning(false);
           state.clearStuckState();
           state.clearTurnProgress();
-          state.setAwaitingPlanApproval(false);
+          state.clearPendingApproval();
+          state.clearTaskRecovery();
           // Keep sessionMetrics visible after completion (cleared on next run start)
         } else {
           state.setAgentRunning(true);
@@ -65,15 +66,21 @@ export function initializeBridge(
             // No-op — metrics will arrive via SESSION_METRICS
           }
         }
-        // Detect plan approval pause
-        if (
-          message.payload.status === AgentStatus.PAUSED &&
-          message.payload.detail.includes("Plan ready")
-        ) {
-          state.setAwaitingPlanApproval(true);
-        } else if (message.payload.status !== AgentStatus.PAUSED) {
-          state.setAwaitingPlanApproval(false);
-        }
+        break;
+
+      case "APPROVAL_REQUEST":
+        state.setPendingApproval({
+          ...message.payload,
+          requestedAt: Date.now(),
+        });
+        break;
+
+      case "TASK_RECOVERY":
+        state.setTaskRecovery({
+          workspaceId: message.workspaceId ?? activeWsId ?? null,
+          ...message.payload,
+          recoveredAt: Date.now(),
+        });
         break;
 
       case "STREAM_CHUNK": {
@@ -149,6 +156,7 @@ export function initializeBridge(
       case "STOP_AGENT":
       case "SETTINGS_UPDATE":
       case "SIDE_PANEL_OPENED":
+      case "APPROVAL_RESPONSE":
       case "TOOL_EXECUTE":
       case "TOOL_RESULT":
       case "DOM_SNAPSHOT_REQUEST":

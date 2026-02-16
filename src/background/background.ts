@@ -1,14 +1,12 @@
 import { logger } from "../utils";
 import { registerTools } from "./tools";
-import { AgentLoop } from "./agent";
 import {
   RuntimeMessage,
   MessageSource,
   AgentStatus,
-  AgentLoopState,
   UserSettings,
-  ToolName,
 } from "../types";
+import { AgentLoop } from "./agent";
 import { workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
 import {
@@ -20,7 +18,8 @@ import {
   startKeepalive,
   stopKeepalive,
 } from "./keepalive";
-import { registerContentScriptReadyListener, waitForContentScriptReady } from "./tab-ready";
+import { registerContentScriptReadyListener } from "./tab-ready";
+import { orchestrator } from "./orchestrator";
 
 logger.info("system", "Service Worker Initialized");
 
@@ -34,9 +33,7 @@ registerContentScriptReadyListener();
 registerNavigationListeners();
 setNavigationCallbacks(
   // Resume callback — called when navigation completes
-  (state: AgentLoopState, newUrl: string) => {
-    handleNavigationResume(state, newUrl);
-  },
+  (_state, _newUrl: string) => {},
   // Status callback — broadcasts status updates (includes workspaceId from nav state)
   (status: AgentStatus, detail: string, workspaceId?: string | null) => {
     chrome.runtime
@@ -61,7 +58,6 @@ chrome.sidePanel.setPanelBehavior({
 });
 
 // 5. State — per-workspace agent loops
-const agentLoops = new Map<string, AgentLoop>();
 let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSidePanelOpens = new Set<number>();
 
@@ -79,22 +75,9 @@ async function resolveWorkspaceId(
   return "default";
 }
 
-/** Start keepalive if any loops are active */
-async function ensureKeepalive(): Promise<void> {
-  if (agentLoops.size > 0) await startKeepalive();
-}
-
 /** Stop keepalive only when all loops are done */
 async function maybeStopKeepalive(): Promise<void> {
-  if (agentLoops.size === 0) await stopKeepalive();
-}
-
-/** Build tool exclusion set from user settings */
-function buildDisabledTools(settings: UserSettings): Set<ToolName> {
-  const disabled = new Set<ToolName>();
-  if (settings.disableScreenshot) disabled.add(ToolName.TAKE_SCREENSHOT);
-  if (settings.disableNavigation) disabled.add(ToolName.NAVIGATE);
-  return disabled;
+  if (!orchestrator.hasActiveTasks()) await stopKeepalive();
 }
 
 // --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
@@ -122,7 +105,13 @@ async function removeUserOpenedPanel(tabId: number): Promise<void> {
 }
 
 // 6. Restore workspaces on startup (check for existing OpenSidebar tab groups)
-restoreWorkspacesFromExistingGroups();
+void (async () => {
+  await restoreWorkspacesFromExistingGroups();
+  await orchestrator.restoreFromCheckpoints();
+  if (orchestrator.hasActiveTasks()) {
+    await startKeepalive();
+  }
+})();
 
 // 7. Listeners
 chrome.runtime.onInstalled.addListener(() => {
@@ -389,18 +378,12 @@ chrome.runtime.onMessage.addListener(
           message.payload.tabId,
           wsId,
         );
-        const loop = agentLoops.get(resolvedWsId);
-        if (message.payload.isHint && loop) {
-          // Inject hint into running loop — don't start a new loop
+        if (message.payload.isHint) {
           logger.debug("agent", "User hint", {
             text: message.payload.text,
             workspaceId: resolvedWsId,
           });
-          loop.injectHint(message.payload.text);
-          // If paused (e.g. awaiting plan approval), auto-resume after hint injection
-          if (loop.isPaused()) {
-            loop.resume();
-          }
+          orchestrator.injectHint(resolvedWsId, message.payload.text);
         } else {
           handleUserChat(message.payload, resolvedWsId);
         }
@@ -412,22 +395,8 @@ chrome.runtime.onMessage.addListener(
     if (message.type === "STOP_AGENT") {
       const wsId = message.payload?.workspaceId;
       (async () => {
-        // If wsId provided, stop that specific loop; otherwise stop all
-        if (wsId) {
-          const loop = agentLoops.get(wsId);
-          if (loop) {
-            loop.stop();
-            agentLoops.delete(wsId);
-            await maybeStopKeepalive();
-          }
-        } else {
-          // Backwards compat: stop all loops
-          for (const [id, loop] of agentLoops) {
-            loop.stop();
-            agentLoops.delete(id);
-          }
-          await maybeStopKeepalive();
-        }
+        await orchestrator.stopTask(wsId ?? undefined);
+        await maybeStopKeepalive();
         // Notify content script to remove the border
         chrome.tabs
           .query({ active: true, currentWindow: true })
@@ -442,24 +411,24 @@ chrome.runtime.onMessage.addListener(
     // 3. Pause / Resume Agent
     if (message.type === "PAUSE_AGENT") {
       const wsId = message.payload?.workspaceId;
-      if (wsId) {
-        const loop = agentLoops.get(wsId);
-        if (loop) loop.pause();
-      } else {
-        // Backwards compat: pause all
-        for (const loop of agentLoops.values()) loop.pause();
-      }
+      orchestrator.pauseTask(wsId ?? undefined);
       return false;
     }
     if (message.type === "RESUME_AGENT") {
       const wsId = message.payload?.workspaceId;
-      if (wsId) {
-        const loop = agentLoops.get(wsId);
-        if (loop) loop.resume();
-      } else {
-        // Backwards compat: resume all
-        for (const loop of agentLoops.values()) loop.resume();
-      }
+      orchestrator.resumeTask(wsId ?? undefined);
+      return false;
+    }
+
+    // 3b. Approval decision from side panel
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "APPROVAL_RESPONSE"
+    ) {
+      AgentLoop.resolveApproval(
+        message.payload.approvalId,
+        message.payload.approved,
+      );
       return false;
     }
 
@@ -505,125 +474,24 @@ async function handleUserChat(
     });
     return;
   }
-
-  const effectiveMaxTurns = settings.maxTurns || 30;
-
-  // 2. Initialize Loop if needed
-  let loop = agentLoops.get(workspaceId);
-  if (!loop) {
-    loop = new AgentLoop(
-      openRouterApiKey,
-      groqApiKey,
-      cerebrasApiKey,
-      {
-        onStatusUpdate: (status, detail) => {
-          chrome.runtime
-            .sendMessage({
-              type: "AGENT_STATUS",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              workspaceId,
-              payload: { status, detail },
-            })
-            .catch(() => {});
-          // Send AGENT_ACTIVITY to content script when agent starts/stops
-          if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
-            sendAgentActivity(tabId, false);
-            agentLoops.delete(workspaceId);
-            maybeStopKeepalive().catch(() => {});
-          }
-        },
-        onMessage: (text, toolCalls) => {
-          chrome.runtime
-            .sendMessage({
-              type: "AGENT_RESPONSE",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              workspaceId,
-              payload: { text, toolCalls, isStreaming: false },
-            })
-            .catch(() => {});
-        },
-        onStep: (step, update) => {
-          chrome.runtime
-            .sendMessage({
-              type: "AGENT_STEP",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              workspaceId,
-              payload: { step, update },
-            })
-            .catch(() => {});
-        },
-      },
-      {
-        maxContextTokens: settings.contextWindowSize || 32000,
-        maxTurns: effectiveMaxTurns,
-        showElementTags: settings.showElementTags ?? false,
-        confirmPlan: settings.confirmPlan ?? false,
-        showSessionMetrics: settings.showSessionMetrics ?? false,
-        disabledTools: buildDisabledTools(settings),
-        workspaceId,
-      },
-    );
-    agentLoops.set(workspaceId, loop);
-  }
-
-  // 3. Start Agent
-  let snapshot = undefined;
-  try {
-    if (tabId && tabId !== chrome.tabs.TAB_ID_NONE) {
-      // First, try to inject content script if not already present
-      try {
-        const manifest = chrome.runtime.getManifest();
-        const contentScriptPath = manifest.content_scripts?.[0]?.js?.[0];
-
-        if (contentScriptPath) {
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: [contentScriptPath],
-          });
-          logger.debug("agent", "Content script injected", {
-            tabId,
-            path: contentScriptPath,
-          });
-        }
-        // Wait for content script to be ready (replaces fixed 100ms sleep)
-        await waitForContentScriptReady(tabId, 2000);
-      } catch (injectError) {
-        logger.debug(
-          "agent",
-          "Content script injection failed or already exists",
-          {
-            tabId,
-            error: injectError,
-          },
-        );
-      }
-
-      // Now request snapshot
-      const response = await chrome.tabs.sendMessage(tabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: {
-          includeText: true,
-          refresh: true,
-          showTags: settings.showElementTags ?? false,
-        },
-      });
-      snapshot = response.payload.snapshot;
-    }
-  } catch (e) {
-    logger.warn("agent", "Failed to get snapshot", { error: e });
-  }
-
   // Notify content script that agent is active
   sendAgentActivity(tabId, true);
 
-  // Start keepalive and run the loop
-  await ensureKeepalive();
-  loop.start(text, tabId, snapshot);
+  await startKeepalive();
+  try {
+    await orchestrator.startTask({
+      query: text,
+      tabId,
+      workspaceId,
+      settings,
+      openRouterApiKey,
+      groqApiKey,
+      cerebrasApiKey,
+    });
+  } finally {
+    sendAgentActivity(tabId, false);
+    await maybeStopKeepalive();
+  }
 }
 
 /** Send AGENT_ACTIVITY message to the content script on a specific tab */
@@ -637,122 +505,6 @@ function sendAgentActivity(tabId: number, active: boolean) {
       payload: { active },
     })
     .catch(() => {});
-}
-
-/**
- * Resume agent loop after navigation completes.
- * Called by the navigation bridge when webNavigation.onCompleted fires.
- */
-async function handleNavigationResume(state: AgentLoopState, _newUrl: string) {
-  const stored = await chrome.storage.sync.get("userSettings");
-  const settings = (stored.userSettings ?? {}) as UserSettings;
-  const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
-  const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
-  const cerebrasApiKey =
-    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
-  const workspaceId = state.workspaceId ?? "default";
-
-  if (!openRouterApiKey) {
-    chrome.runtime
-      .sendMessage({
-        type: "AGENT_STATUS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId,
-        payload: {
-          status: AgentStatus.ERROR,
-          detail: "No OpenRouter API Key configured.",
-        },
-      })
-      .catch(() => {});
-    return;
-  }
-
-  // Create a new agent loop with restored state
-  const loop = new AgentLoop(
-    openRouterApiKey,
-    groqApiKey,
-    cerebrasApiKey,
-    {
-      onStatusUpdate: (status, detail) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_STATUS",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { status, detail },
-          })
-          .catch(() => {});
-        if (status === AgentStatus.IDLE || status === AgentStatus.ERROR) {
-          sendAgentActivity(state.activeTabId, false);
-          agentLoops.delete(workspaceId);
-          maybeStopKeepalive().catch(() => {});
-        }
-      },
-      onMessage: (text, toolCalls) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_RESPONSE",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { text, toolCalls, isStreaming: false },
-          })
-          .catch(() => {});
-      },
-      onStep: (step, update) => {
-        chrome.runtime
-          .sendMessage({
-            type: "AGENT_STEP",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            workspaceId,
-            payload: { step, update },
-          })
-          .catch(() => {});
-      },
-    },
-    {
-      maxContextTokens: settings.contextWindowSize || 32000,
-      maxTurns: settings.maxTurns || 30,
-      showElementTags: settings.showElementTags ?? false,
-      confirmPlan: settings.confirmPlan ?? false,
-      showSessionMetrics: settings.showSessionMetrics ?? false,
-      disabledTools: buildDisabledTools(settings),
-      workspaceId,
-    },
-  );
-  agentLoops.set(workspaceId, loop);
-
-  // Get fresh snapshot from the new page
-  let snapshot = undefined;
-  try {
-    if (state.activeTabId && state.activeTabId !== chrome.tabs.TAB_ID_NONE) {
-      const response = await chrome.tabs.sendMessage(state.activeTabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: {
-          includeText: true,
-          refresh: true,
-          showTags: settings.showElementTags ?? false,
-        },
-      });
-      snapshot = response.payload.snapshot;
-    }
-  } catch (e) {
-    logger.warn("agent", "Failed to get snapshot after navigation", {
-      error: e,
-    });
-  }
-
-  // Notify content script that agent is active
-  sendAgentActivity(state.activeTabId, true);
-
-  // Start keepalive and resume from saved state
-  await ensureKeepalive();
-  loop.resumeFromNavigation(state, snapshot);
 }
 
 /**

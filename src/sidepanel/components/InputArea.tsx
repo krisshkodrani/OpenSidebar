@@ -29,7 +29,6 @@ export function InputArea({
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
-  const awaitingPlanApproval = useStore((s) => s.awaitingPlanApproval);
   const speechProvider = useStore((s) => s.settings.speechProvider);
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -142,13 +141,7 @@ export function InputArea({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={
-            awaitingPlanApproval
-              ? "Send corrections or click Approve..."
-              : isAgentRunning
-                ? "Send a hint..."
-                : "Ask OpenSidebar..."
-          }
+          placeholder={isAgentRunning ? "Send a hint..." : "Ask OpenSidebar..."}
           className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-500"
           rows={1}
         />

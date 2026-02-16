@@ -253,22 +253,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium dark:text-warm-300">
-                  Confirm Plan
-                </label>
-                <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Show action plan and wait for approval before executing
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={formState.confirmPlan}
-                onChange={(e) => handleChange("confirmPlan", e.target.checked)}
-                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
-              />
-            </div>
           </section>
 
           {/* Usage & Cost */}
@@ -364,6 +348,25 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 checked={formState.disableNavigation}
                 onChange={(e) =>
                   handleChange("disableNavigation", e.target.checked)
+                }
+                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium dark:text-warm-300">
+                  Bypass Approvals
+                </label>
+                <p className="text-xs text-warm-400 dark:text-warm-500">
+                  Execute high-risk tools without confirmation prompts
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={formState.bypassApprovals}
+                onChange={(e) =>
+                  handleChange("bypassApprovals", e.target.checked)
                 }
                 className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
               />

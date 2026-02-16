@@ -4,6 +4,7 @@ import {
   AgentStep,
   MessageSource,
   RuntimeMessage,
+  RiskLevel,
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
@@ -45,10 +46,12 @@ import {
   STUCK_THRESHOLDS,
 } from "./constants";
 
+const APPROVAL_TIMEOUT_MS = 30000;
+
 /** Tools that cannot appear inside a batch_execute step. */
 const BATCH_BLOCKED_TOOLS = new Set<string>([
   ToolName.NAVIGATE, ToolName.DONE, ToolName.ESCALATE,
-  ToolName.UPDATE_PLAN, ToolName.BATCH_EXECUTE,
+  ToolName.BATCH_EXECUTE,
   ToolName.TAKE_SCREENSHOT, ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB, ToolName.SWITCH_TAB,
   ToolName.CREATE_WINDOW, ToolName.EXECUTE_JS,
@@ -76,7 +79,7 @@ Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What
 /** Nudge injected when BRAINS→HANDS handoff completes (orientation phase ends). */
 const HANDOFF_NUDGE = `Orientation complete — you are now executing the plan.
 The smarter model has analyzed the page and started the task. Your job: execute the remaining steps efficiently.
-Follow the plan. Call update_plan() after each step. If stuck, call escalate().`;
+Follow the plan. Complete the current subtask before moving to the next. If stuck, call escalate().`;
 
 /** Message injected during a strategy pivot — tells the agent what NOT to retry. */
 const PIVOT_MESSAGE = (attemptSummary: string) =>
@@ -188,7 +191,7 @@ function extractAttemptSummary(messages: LLMMessage[]): string {
       if (!existing) failures.push(`- ${key} — ${errorSnippet}`);
     } else {
       // Skip internal/noise tools for success tracking
-      if (["read_page", "wait", "update_plan", "escalate"].includes(toolName))
+      if (["read_page", "wait", "escalate"].includes(toolName))
         continue;
       const resultSnippet = content.split("\n")[0].slice(0, 60);
       successes.push(`- ${key} → ${resultSnippet}`);
@@ -238,6 +241,16 @@ export interface LoopResult {
  * - Model escalation on stuck
  */
 export class AgentLoop {
+  private static approvalWaiters = new Map<string, (approved: boolean) => void>();
+
+  public static resolveApproval(approvalId: string, approved: boolean): boolean {
+    const waiter = AgentLoop.approvalWaiters.get(approvalId);
+    if (!waiter) return false;
+    AgentLoop.approvalWaiters.delete(approvalId);
+    waiter(approved);
+    return true;
+  }
+
   private llm: LLMClient;
   private context: ContextManager;
   private baseContextTokens: number; // Original context window size for de-escalation restore
@@ -248,12 +261,25 @@ export class AgentLoop {
   private stepHandler: (step: AgentStep, update: boolean) => void;
   private maxTurns: number;
   private showElementTags: boolean;
-  private confirmPlan: boolean;
   private showSessionMetrics: boolean;
   private disabledTools: Set<ToolName>;
+  private suppressUiBroadcast: boolean;
+  private disableInternalPlanning: boolean;
+  private bypassApprovals: boolean;
+  private onMemoryAdd:
+    | ((item: {
+        content: string;
+        category: string;
+        sourceUrl: string;
+        createdAt: number;
+      }) => void)
+    | null;
 
   /** Workspace ID for session isolation */
   public readonly workspaceId: string | null;
+  public readonly workerId: string | null;
+  public readonly taskIdRef: string | null;
+  public readonly nodeId: string | null;
 
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
@@ -273,7 +299,7 @@ export class AgentLoop {
   private guardian: PlanGuardian;
   /** Number of times done() has been rejected by the guardian */
   private doneRejections = 0;
-  /** Turns spent on the current plan step (reset on update_plan advancement) */
+  /** Turns spent on the current plan step */
   private turnsOnCurrentStep = 0;
   /** Last plan index — used to detect step transitions */
   private lastPlanIndex = 0;
@@ -425,13 +451,23 @@ export class AgentLoop {
       maxContextTokens?: number;
       maxTurns?: number;
       showElementTags?: boolean;
-      confirmPlan?: boolean;
       showSessionMetrics?: boolean;
       disabledTools?: Set<ToolName>;
       workspaceId?: string | null;
+      workerId?: string | null;
+      taskId?: string | null;
+      nodeId?: string | null;
+      suppressUiBroadcast?: boolean;
+      disableInternalPlanning?: boolean;
+      bypassApprovals?: boolean;
+      onMemoryAdd?: (item: {
+        content: string;
+        category: string;
+        sourceUrl: string;
+        createdAt: number;
+      }) => void;
     },
   ) {
-    this.confirmPlan = options?.confirmPlan ?? false;
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     // React toolkit gated by default — enabled when React is detected on the page
@@ -441,6 +477,13 @@ export class AgentLoop {
     // Screenshots restricted to tier 1 (smart model) — too expensive for fast tier
     this.disabledTools.add(ToolName.TAKE_SCREENSHOT);
     this.workspaceId = options?.workspaceId ?? null;
+    this.workerId = options?.workerId ?? null;
+    this.taskIdRef = options?.taskId ?? null;
+    this.nodeId = options?.nodeId ?? null;
+    this.suppressUiBroadcast = options?.suppressUiBroadcast ?? false;
+    this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
+    this.bypassApprovals = options?.bypassApprovals ?? false;
+    this.onMemoryAdd = options?.onMemoryAdd ?? null;
     this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
     this.llm.setFailoverCallback((from, to) => {
       const names: Record<string, string> = {
@@ -461,7 +504,11 @@ export class AgentLoop {
     });
     this.guardian = new PlanGuardian(openRouterApiKey, cerebrasApiKey);
     this.baseContextTokens = options?.maxContextTokens ?? 32000;
-    this.context = new ContextManager(this.baseContextTokens, this.workspaceId);
+    this.context = new ContextManager(
+      this.baseContextTokens,
+      this.workspaceId,
+      this.workerId,
+    );
     this.statusHandler = callbacks.onStatusUpdate;
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});
@@ -476,14 +523,72 @@ export class AgentLoop {
   private broadcast(
     msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">,
   ): void {
+    if (this.suppressUiBroadcast) return;
     chrome.runtime
       .sendMessage({
         ...msg,
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
         workspaceId: this.workspaceId,
+        } as RuntimeMessage)
+        .catch(() => {});
+  }
+
+  private async requestApproval(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    context: string,
+  ): Promise<boolean> {
+    const approvalId = crypto.randomUUID();
+
+    chrome.runtime
+      .sendMessage({
+        type: "APPROVAL_REQUEST",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId: this.workspaceId,
+        payload: {
+          approvalId,
+          toolName,
+          args,
+          risk: RiskLevel.HIGH,
+          context,
+          timeoutMs: APPROVAL_TIMEOUT_MS,
+        },
       } as RuntimeMessage)
       .catch(() => {});
+
+    this.statusHandler(AgentStatus.ACTING, "Waiting for approval...");
+
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        AgentLoop.approvalWaiters.delete(approvalId);
+        resolve(false);
+      }, APPROVAL_TIMEOUT_MS);
+
+      AgentLoop.approvalWaiters.set(approvalId, (approved: boolean) => {
+        clearTimeout(timer);
+        resolve(approved);
+      });
+    });
+  }
+
+  private async ensureToolApproval(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    riskLevel: RiskLevel,
+  ): Promise<boolean> {
+    if (riskLevel !== RiskLevel.HIGH) return true;
+    if (this.bypassApprovals) return true;
+    const context = formatStepLabel(toolName, args);
+    const approved = await this.requestApproval(toolName, args, context);
+    if (!approved) {
+      logger.warn("agent", "High-risk tool denied or timed out", {
+        turn: this.turnCount,
+        tool: toolName,
+      });
+    }
+    return approved;
   }
 
   /**
@@ -549,17 +654,15 @@ export class AgentLoop {
       }
     }
 
-    // 2. Add User Message (with plan prefix when confirmPlan is enabled)
-    const userContent = this.confirmPlan
-      ? `Before executing, briefly outline your action plan as a numbered list. Then wait for my approval. After I approve, proceed with execution.\n\n${initialUserText}`
-      : initialUserText;
+    // 2. Add User Message
+    const userContent = initialUserText;
     this.context.addMessage({
       role: "user",
       content: userContent,
     });
 
     // --- Guardian: decompose task into plan (task-agnostic) ---
-    if (!this.confirmPlan) {
+    if (!this.disableInternalPlanning) {
       try {
         this.stepHandler(
           {
@@ -605,8 +708,8 @@ export class AgentLoop {
               decomposition.subtasks
                 .map((s, i) => `${i + 1}. ${s}`)
                 .join("\n") +
-              `\n\nExecute step 1 now. Call update_plan({subtasks, currentIndex, lastResult}) after each step to report progress. ` +
-              `If the plan fails, you may REVISE it using update_plan() with a rationale. ` +
+              `\n\nExecute step 1 now. Complete each step in order and verify progress before continuing. ` +
+              `If the plan fails, revise your approach and continue from the best next step. ` +
               `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
           });
 
@@ -915,6 +1018,37 @@ export class AgentLoop {
     }
   }
 
+  /** Execute a tool call with optional orchestration hooks (e.g. buffered memory). */
+  private async executeToolCall(
+    toolCall: ToolCall,
+    tabId: number,
+  ): Promise<string> {
+    const toolName = toolCall.function.name as ToolName;
+    if (toolName === ToolName.MEMORY_ADD && this.onMemoryAdd) {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        return "Error: Invalid memory_add arguments.";
+      }
+
+      const content = String(args.content ?? "").trim();
+      if (!content) return "Error: memory_add requires non-empty content.";
+      const category = String(args.category ?? "general");
+      const sourceUrl = this.context.getCurrentUrl() || "unknown";
+
+      this.onMemoryAdd({
+        content,
+        category,
+        sourceUrl,
+        createdAt: Date.now(),
+      });
+      return `Buffered memory entry in category "${category}".`;
+    }
+
+    return await toolRegistry.execute(toolCall, tabId, this.abortController!.signal);
+  }
+
   /** Stream a message to side panel and break the loop (for circuit breaker exits) */
   private circuitBreakerExit(message: string): void {
     this.broadcast({
@@ -961,7 +1095,7 @@ export class AgentLoop {
           return (
             `BLOCKED: Cannot navigate to "${targetUrl}" — matches completed step ${step.index + 1} ("${step.description}").\n` +
             `Navigating back would undo progress. Continue with the current step.\n` +
-            `If re-visiting is genuinely needed, call update_plan() with a revised plan first.`
+            `If re-visiting is genuinely needed, revise your plan first.`
           );
         }
       } catch {
@@ -1290,8 +1424,19 @@ export class AgentLoop {
         const hasSequentialTool = response.tool_calls.some((tc) =>
           SEQUENTIAL_TOOLS.has(tc.function.name as ToolName),
         );
+        const hasHighRiskTool = response.tool_calls.some((tc) => {
+          try {
+            const parsed = JSON.parse(tc.function.arguments || "{}");
+            return (
+              classifyRisk(tc.function.name as ToolName, parsed) ===
+              RiskLevel.HIGH
+            );
+          } catch {
+            return classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH;
+          }
+        });
         const canParallelize =
-          !hasSequentialTool && response.tool_calls.length > 1;
+          !hasSequentialTool && !hasHighRiskTool && response.tool_calls.length > 1;
 
         if (canParallelize) {
           // PARALLEL EXECUTION
@@ -1319,11 +1464,7 @@ export class AgentLoop {
               this.stepHandler(toolStep, false);
 
               try {
-                const result = await toolRegistry.execute(
-                  toolCall,
-                  tabId,
-                  this.abortController!.signal,
-                );
+                const result = await this.executeToolCall(toolCall, tabId);
                 const toolMs = Date.now() - toolStep.timestamp;
                 this.stepHandler(
                   {
@@ -1423,6 +1564,19 @@ export class AgentLoop {
 
             // Risk classification (informational, non-blocking)
             const riskLevel = classifyRisk(toolName, args);
+            const approved = await this.ensureToolApproval(
+              toolName,
+              args,
+              riskLevel,
+            );
+            if (!approved) {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: "Error: Action denied by user approval policy.",
+              });
+              continue;
+            }
 
             // DONE tool — guardian-validated exit
             if (toolName === ToolName.DONE) {
@@ -1635,163 +1789,6 @@ export class AgentLoop {
               continue;
             }
 
-            // UPDATE_PLAN tool — task decomposition and progress tracking
-            if (toolName === ToolName.UPDATE_PLAN) {
-              const subtaskDescs = (args.subtasks as string[]) || [];
-              const currentIndex = (args.currentIndex as number) || 0;
-              const lastResult = args.lastResult as string | undefined;
-
-              if (!this.taskId) {
-                this.taskId = crypto.randomUUID();
-                this.taskStartTime = Date.now();
-              }
-
-              // Detect step advancement (index moved forward)
-              const stepAdvanced = currentIndex > this.lastPlanIndex;
-
-              this.planSubtasks = subtaskDescs.map((desc, i) => {
-                // Preserve existing completedAtUrl for previously-completed steps
-                const existing = this.planSubtasks[i];
-                const isJustCompleted = i === currentIndex - 1;
-                return {
-                  description: desc,
-                  status:
-                    i < currentIndex
-                      ? ("completed" as const)
-                      : i === currentIndex
-                        ? ("running" as const)
-                        : ("pending" as const),
-                  turnsUsed: 0,
-                  turnBudget: 0,
-                  result:
-                    isJustCompleted && lastResult ? lastResult : undefined,
-                  completedAtUrl: isJustCompleted
-                    ? this.context.getCurrentUrl() || undefined
-                    : existing?.completedAtUrl,
-                };
-              });
-
-              // Update plan status in system prompt (visible every turn)
-              this.context.setPlanStatus(
-                subtaskDescs.map((desc, i) => ({
-                  description: desc,
-                  status:
-                    i < currentIndex
-                      ? "done"
-                      : i === currentIndex
-                        ? "running"
-                        : "pending",
-                  completedAtUrl: this.planSubtasks[i]?.completedAtUrl,
-                })),
-                currentIndex,
-              );
-
-              this.broadcast({
-                type: "TASK_PROGRESS",
-                payload: {
-                  taskId: this.taskId,
-                  subtasks: this.planSubtasks,
-                  currentIndex,
-                  totalTurnsUsed: this.turnCount,
-                },
-              });
-
-              this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "info",
-                  label: lastResult
-                    ? `Step ${currentIndex + 1}/${subtaskDescs.length}: "${subtaskDescs[currentIndex]?.slice(0, 40) || "done"}"`
-                    : `Plan: ${subtaskDescs.length} steps`,
-                  status: "done",
-                  timestamp: Date.now(),
-                },
-                false,
-              );
-
-              // Step-transition context reset: clear history so the LLM
-              // cannot see prior step's tool calls and repeat them
-              if (stepAdvanced && currentIndex < subtaskDescs.length) {
-                this.context.clearHistory();
-
-                // Re-inject the original user goal (Goal Amnesia Prevention)
-                this.context.addMessage({
-                  role: "user",
-                  content: this.originalQuery,
-                });
-
-                // Inject context-switch message to orient on the new step
-                const newStepDesc = subtaskDescs[currentIndex] || "next step";
-                this.context.addMessage({
-                  role: "user",
-                  content: `STEP TRANSITION: Step ${currentIndex} is COMPLETE. You are now on Step ${currentIndex + 1}: "${newStepDesc}".\nRead the page state fresh. The previous step's approach may be IRRELEVANT.\nDo NOT repeat tools from the previous step unless they match the NEW step.`,
-                });
-
-                logger.info("agent", "Step-transition history cleared", {
-                  turn: this.turnCount,
-                  fromStep: this.lastPlanIndex,
-                  toStep: currentIndex,
-                });
-              } else {
-                // No step advancement — standard directive response
-                let planResponse: string;
-                if (currentIndex >= subtaskDescs.length) {
-                  planResponse = lastResult
-                    ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
-                    : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
-                } else {
-                  const prevStepNote = lastResult
-                    ? `Step ${currentIndex} complete: "${lastResult}"\n\n`
-                    : "";
-                  planResponse = `${prevStepNote}NOW EXECUTE Step ${currentIndex + 1} of ${subtaskDescs.length}: "${subtaskDescs[currentIndex]}"\nFocus on this step only. Call update_plan() when done.`;
-                }
-
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: planResponse,
-                });
-              }
-
-              // Handle "all steps done" — still need the directive even after clear
-              if (stepAdvanced && currentIndex >= subtaskDescs.length) {
-                this.context.clearHistory();
-                this.context.addMessage({
-                  role: "user",
-                  content: this.originalQuery,
-                });
-                const doneDirective = lastResult
-                  ? `Step ${subtaskDescs.length} complete: "${lastResult}"\n\nAll ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`
-                  : `All ${subtaskDescs.length} steps are done. Call done() now with a summary of everything accomplished.`;
-                this.context.addMessage({
-                  role: "user",
-                  content: doneDirective,
-                });
-              }
-
-              // Reset step watchdog on advancement
-              if (stepAdvanced) {
-                this.turnsOnCurrentStep = 0;
-                this.lastPlanIndex = currentIndex;
-              }
-
-              logger.info("agent", "UPDATE_PLAN", {
-                turn: this.turnCount,
-                taskId: this.taskId,
-                subtaskCount: subtaskDescs.length,
-                currentIndex,
-                lastResult: lastResult?.slice(0, 100),
-                stepAdvanced,
-              });
-              this.traceRecorder?.recordEvent("plan_update", {
-                subtaskCount: subtaskDescs.length,
-                currentIndex,
-                stepAdvanced,
-              });
-              recentSuccesses.length = 0; // Reset on plan update
-              continue;
-            }
-
             // BATCH_EXECUTE tool — execute pre-planned tool sequence without LLM roundtrips
             if (toolName === ToolName.BATCH_EXECUTE) {
               const rawSteps = (args.steps as Array<{ tool: string; args: Record<string, unknown>; expect?: string }>) || [];
@@ -1820,6 +1817,14 @@ export class AgentLoop {
                   bailReason = `Step ${i}: "${step.tool}" is not allowed in batch`;
                   break;
                 }
+                const stepRisk = classifyRisk(
+                  step.tool as ToolName,
+                  step.args || {},
+                );
+                if (stepRisk === RiskLevel.HIGH) {
+                  bailReason = `Step ${i}: "${step.tool}" requires explicit user approval and cannot run in batch`;
+                  break;
+                }
 
                 // Execute via toolRegistry
                 const syntheticToolCall: ToolCall = {
@@ -1830,7 +1835,7 @@ export class AgentLoop {
 
                 let result: string;
                 try {
-                  result = await toolRegistry.execute(syntheticToolCall, tabId, this.abortController!.signal);
+                  result = await this.executeToolCall(syntheticToolCall, tabId);
                 } catch (e: any) {
                   if (e.name === "AbortError") throw e;
                   bailReason = `Step ${i} ("${step.tool}"): ${e.message}`;
@@ -2236,11 +2241,7 @@ export class AgentLoop {
 
             let result: string;
             try {
-              result = await toolRegistry.execute(
-                toolCall,
-                tabId,
-                this.abortController!.signal,
-              );
+              result = await this.executeToolCall(toolCall, tabId);
               const toolMs = Date.now() - toolStep.timestamp;
               const screenshotUrl = this.pendingScreenshotUrl;
               this.pendingScreenshotUrl = null;
@@ -2524,7 +2525,7 @@ export class AgentLoop {
                   });
                   this.context.addMessage({
                     role: "user",
-                    content: `WARNING: You have called ${toolName} ${toolNameCount} times in recent turns (with different arguments each time). If the step is already done, call update_plan() to advance. If your approach isn't working, try take_screenshot or a completely different strategy.`,
+                    content: `WARNING: You have called ${toolName} ${toolNameCount} times in recent turns (with different arguments each time). If the step is already done, advance to the next one. If your approach isn't working, try take_screenshot or a completely different strategy.`,
                   });
                   recentSuccesses.length = 0;
                 }
@@ -2562,7 +2563,7 @@ export class AgentLoop {
               this.progress.resetEscalation();
               this.context.addMessage({
                 role: "user",
-                content: `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_NUDGE}\nEither complete this step and call update_plan(), or revise the plan if the step is impossible.`,
+                content: `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_NUDGE}\nEither complete this step and move forward, or revise the plan if the step is impossible.`,
               });
               this.stepHandler(
                 {
@@ -2586,7 +2587,7 @@ export class AgentLoop {
               });
               this.context.addMessage({
                 role: "user",
-                content: `You have spent ${this.turnsOnCurrentStep} turns on this step. Either the step is ALREADY COMPLETE (call update_plan to advance) or your approach isn't working (try take_screenshot or escalate).`,
+                content: `You have spent ${this.turnsOnCurrentStep} turns on this step. Either the step is ALREADY COMPLETE (advance) or your approach isn't working (try take_screenshot or escalate).`,
               });
             }
           }
@@ -2873,36 +2874,6 @@ export class AgentLoop {
       } else {
         // TEXT RESPONSE — no tool calls
 
-        // Plan confirmation: on turn 1 with confirmPlan, pause for user approval
-        if (this.confirmPlan && this.turnCount === 1 && response.content) {
-          // Finalize stream so the plan text appears as a complete message
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
-
-          logger.info("agent", "Plan ready — pausing for user approval");
-          this.statusHandler(
-            AgentStatus.PAUSED,
-            "Plan ready — waiting for approval",
-          );
-
-          // Block until user approves (RESUME_AGENT) or injects a hint
-          if (!this.pauseGate) {
-            let resolve: () => void;
-            const promise = new Promise<void>((r) => {
-              resolve = r;
-            });
-            this.pauseGate = { promise, resolve: resolve! };
-          }
-          await this.pauseGate.promise;
-          this.pauseGate = null;
-          if (!this.isRunning) break;
-
-          this.statusHandler(AgentStatus.THINKING, "Executing plan...");
-          continue; // Continue the loop — user approved
-        }
-
         // Soft nudge: turn 1, no plan, substantive text — likely an answer to a question
         if (
           this.turnCount === 1 &&
@@ -3164,6 +3135,7 @@ export class AgentLoop {
       maxTurns: this.maxTurns,
       activeTabId: tabId,
       workspaceId: this.workspaceId,
+      workerId: this.workerId,
       lastActivityTs: Date.now(),
       pendingToolCall: null,
     };

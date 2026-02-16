@@ -21,9 +21,11 @@ const STORAGE_KEY_PREFIX = "qsidebar:agentState";
 const NAVIGATION_TIMEOUT_MS = 30_000; // 30 seconds
 
 /** Get workspace-scoped storage key */
-function storageKey(workspaceId?: string | null): string {
+function storageKey(workspaceId?: string | null, workerId?: string | null): string {
   return workspaceId
-    ? `${STORAGE_KEY_PREFIX}:${workspaceId}`
+    ? workerId
+      ? `${STORAGE_KEY_PREFIX}:${workspaceId}:${workerId}`
+      : `${STORAGE_KEY_PREFIX}:${workspaceId}`
     : STORAGE_KEY_PREFIX;
 }
 
@@ -51,7 +53,7 @@ export async function saveNavigationState(
     timeoutMs: NAVIGATION_TIMEOUT_MS,
   };
 
-  const key = storageKey(state.workspaceId);
+  const key = storageKey(state.workspaceId, state.workerId);
   await chrome.storage.local.set({ [key]: navState });
   logger.info("navigation", "Saved navigation state", {
     fromUrl,
@@ -102,8 +104,9 @@ export async function loadNavigationStateForTab(
  */
 export async function clearNavigationState(
   workspaceId?: string | null,
+  workerId?: string | null,
 ): Promise<void> {
-  const key = storageKey(workspaceId);
+  const key = storageKey(workspaceId, workerId);
   await chrome.storage.local.remove(key);
   logger.debug("navigation", "Cleared navigation state", { storageKey: key });
 }
@@ -154,7 +157,10 @@ async function handleNavigationComplete(
   // Check for timeout
   const elapsed = Date.now() - navState.navigationStartTs;
   if (elapsed > navState.timeoutMs) {
-    await clearNavigationState(navState.agentState.workspaceId);
+    await clearNavigationState(
+      navState.agentState.workspaceId,
+      navState.agentState.workerId,
+    );
     statusCallback?.(
       AgentStatus.ERROR,
       "Navigation timed out",
@@ -168,7 +174,10 @@ async function handleNavigationComplete(
   }
 
   // Clear stored state before resuming
-  await clearNavigationState(navState.agentState.workspaceId);
+  await clearNavigationState(
+    navState.agentState.workspaceId,
+    navState.agentState.workerId,
+  );
 
   logger.info("navigation", "Navigation completed, resuming agent", {
     url: details.url,
@@ -219,7 +228,10 @@ async function handleNavigationError(
   const navState = await loadNavigationStateForTab(details.tabId);
   if (!navState) return;
 
-  await clearNavigationState(navState.agentState.workspaceId);
+  await clearNavigationState(
+    navState.agentState.workspaceId,
+    navState.agentState.workerId,
+  );
 
   logger.warn("navigation", "Navigation failed", {
     url: details.url,

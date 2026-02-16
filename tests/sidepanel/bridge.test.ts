@@ -39,8 +39,12 @@ describe("Bridge Message Routing", () => {
             taskCompletion: null,
             stuckState: null,
             turnProgress: null,
+            pendingApproval: null,
+            taskRecovery: null,
             settings: {
                 openRouterApiKey: "",
+                groqApiKey: "",
+                cerebrasApiKey: "",
                 maxTurns: 30,
                 contextWindowSize: 128000,
                 memoryEnabled: true,
@@ -48,7 +52,11 @@ describe("Bridge Message Routing", () => {
                 theme: "system",
                 showElementTags: false,
                 visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
-                confirmPlan: false,
+                showSessionMetrics: false,
+                disableScreenshot: false,
+                disableNavigation: false,
+                bypassApprovals: false,
+                speechProvider: "browser",
             },
         });
     });
@@ -107,6 +115,23 @@ describe("Bridge Message Routing", () => {
             receivedAt: Date.now(),
         });
         useStore.getState().setTurnProgress({ turn: 10, maxTurns: 30 });
+        useStore.getState().setPendingApproval({
+            approvalId: "a1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate to example.com",
+            timeoutMs: 30000,
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setTaskRecovery({
+            workspaceId: "ws-1",
+            taskId: "task-1",
+            totalSubtasks: 5,
+            completedSubtasks: 2,
+            pendingSubtasks: 3,
+            recoveredAt: Date.now(),
+        });
 
         setupBridge();
         send("AGENT_STATUS", { status: AgentStatus.IDLE, detail: "Done" });
@@ -114,6 +139,8 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().isAgentRunning).toBe(false);
         expect(useStore.getState().stuckState).toBeNull();
         expect(useStore.getState().turnProgress).toBeNull();
+        expect(useStore.getState().pendingApproval).toBeNull();
+        expect(useStore.getState().taskRecovery).toBeNull();
     });
 
     test("AGENT_STATUS ERROR clears running state", () => {
@@ -230,6 +257,61 @@ describe("Bridge Message Routing", () => {
         send("STREAM_CHUNK", { delta: " world", done: false });
 
         expect(useStore.getState().messages[0].content).toBe("Hello world");
+    });
+
+    test("APPROVAL_REQUEST stores pending approval", () => {
+        setupBridge();
+        send("APPROVAL_REQUEST", {
+            approvalId: "approval-1",
+            toolName: "navigate",
+            args: { url: "https://example.com" },
+            risk: "high",
+            context: "Navigate to example.com",
+            timeoutMs: 30000,
+        });
+
+        const pending = useStore.getState().pendingApproval;
+        expect(pending).not.toBeNull();
+        expect(pending!.approvalId).toBe("approval-1");
+        expect(pending!.risk).toBe("high");
+    });
+
+    test("TASK_RECOVERY stores recovery state", () => {
+        setupBridge();
+        send("TASK_RECOVERY", {
+            taskId: "task-123",
+            totalSubtasks: 10,
+            completedSubtasks: 4,
+            pendingSubtasks: 6,
+        });
+
+        const recovery = useStore.getState().taskRecovery;
+        expect(recovery).not.toBeNull();
+        expect(recovery!.workspaceId).toBeNull();
+        expect(recovery!.taskId).toBe("task-123");
+        expect(recovery!.totalSubtasks).toBe(10);
+        expect(recovery!.completedSubtasks).toBe(4);
+        expect(recovery!.pendingSubtasks).toBe(6);
+    });
+
+    test("TASK_RECOVERY keeps message workspace for stop targeting", () => {
+        setupBridge();
+        capturedListener!({
+            type: "TASK_RECOVERY",
+            requestId: "test-req",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-recovered",
+            payload: {
+                taskId: "task-456",
+                totalSubtasks: 3,
+                completedSubtasks: 1,
+                pendingSubtasks: 2,
+            },
+        });
+
+        const recovery = useStore.getState().taskRecovery;
+        expect(recovery).not.toBeNull();
+        expect(recovery!.workspaceId).toBe("ws-recovered");
     });
 
     test("STREAM_CHUNK done finalizes streaming", () => {

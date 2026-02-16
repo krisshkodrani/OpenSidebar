@@ -53,7 +53,6 @@ export enum ToolName {
   DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
-  UPDATE_PLAN = "update_plan",
   READ_ELEMENT = "read_element",
   EXECUTE_JS = "execute_js",
   UPLOAD_FILE = "upload_file",
@@ -128,6 +127,9 @@ export type RuntimeMessage =
   | UserChatMessage
   | AgentResponseMessage
   | AgentStatusMessage
+  | TaskRecoveryMessage
+  | ApprovalRequestMessage
+  | ApprovalResponseMessage
   | AgentStepMessage
   | AgentActivityMessage
   | StreamChunkMessage
@@ -193,6 +195,30 @@ export interface AgentStatusMessage extends BaseMessage {
     status: AgentStatus;
     /** Human-readable description (e.g. "Clicking button [12]") */
     detail: string;
+  };
+}
+
+/** Background requests user approval before executing a high-risk tool */
+export interface ApprovalRequestMessage extends BaseMessage {
+  type: "APPROVAL_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    approvalId: string;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    risk: RiskLevel.HIGH;
+    context: string;
+    timeoutMs: number;
+  };
+}
+
+/** Side panel responds to a pending approval request */
+export interface ApprovalResponseMessage extends BaseMessage {
+  type: "APPROVAL_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    approvalId: string;
+    approved: boolean;
   };
 }
 
@@ -361,6 +387,18 @@ export interface TaskProgressMessage extends BaseMessage {
   };
 }
 
+/** Background informs the side panel that an unfinished task was recovered from checkpoint */
+export interface TaskRecoveryMessage extends BaseMessage {
+  type: "TASK_RECOVERY";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    totalSubtasks: number;
+    completedSubtasks: number;
+    pendingSubtasks: number;
+  };
+}
+
 /** Summary of a single subtask within a decomposed task */
 export interface SubtaskSummary {
   description: string;
@@ -479,6 +517,8 @@ export interface AgentLoopState {
   activeTabId: number;
   /** Workspace ID for context isolation */
   workspaceId: string | null;
+  /** Optional worker identity for orchestrator-managed runs */
+  workerId?: string | null;
   /** Timestamp of last activity (for timeout detection) */
   lastActivityTs: number;
   /** Pending tool call that triggered navigation, if any */
@@ -735,13 +775,6 @@ export interface EscalateArgs {
   reason: string;
 }
 
-/** Arguments for update_plan — report task plan and progress */
-export interface UpdatePlanArgs {
-  subtasks: string[];
-  currentIndex: number;
-  lastResult?: string;
-}
-
 /** Arguments for read_element */
 export interface ReadElementArgs {
   /** The numeric tag ID of the element */
@@ -983,7 +1016,6 @@ export type ToolArgsMap = {
   [ToolName.DRAW_STROKE]: DrawStrokeArgs;
   [ToolName.HIDE_ELEMENT]: HideElementArgs;
   [ToolName.ESCALATE]: EscalateArgs;
-  [ToolName.UPDATE_PLAN]: UpdatePlanArgs;
   [ToolName.READ_ELEMENT]: ReadElementArgs;
   [ToolName.EXECUTE_JS]: ExecuteJsArgs;
   [ToolName.UPLOAD_FILE]: UploadFileArgs;
@@ -1212,6 +1244,27 @@ export interface TurnProgress {
   provider?: string;
 }
 
+/** Pending user approval request displayed in the side panel */
+export interface PendingApproval {
+  approvalId: string;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  risk: RiskLevel.HIGH;
+  context: string;
+  timeoutMs: number;
+  requestedAt: number;
+}
+
+/** Recovery state for resumed orchestrator tasks */
+export interface TaskRecoveryState {
+  workspaceId: string | null;
+  taskId: string;
+  totalSubtasks: number;
+  completedSubtasks: number;
+  pendingSubtasks: number;
+  recoveredAt: number;
+}
+
 /** Top-level React state for the side panel */
 export interface SidePanelState {
   /** Whether initial load (settings + messages) is complete */
@@ -1240,8 +1293,10 @@ export interface SidePanelState {
   stuckState: StuckState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
-  /** True when agent is paused waiting for plan approval */
-  awaitingPlanApproval: boolean;
+  /** Pending high-risk action awaiting user approval */
+  pendingApproval: PendingApproval | null;
+  /** Non-null when a task has been recovered from checkpoint */
+  taskRecovery: TaskRecoveryState | null;
   /** Live session metrics (null when no active session or tracking disabled) */
   sessionMetrics: SessionMetrics | null;
   /** User-saved prompt templates */
@@ -1285,6 +1340,10 @@ export interface MemoryWorkerMessage extends BaseMessage {
   payload:
     | { action: "init" }
     | { action: "add"; content: string; category: string; sourceUrl: string }
+    | {
+        action: "batch_add";
+        items: { content: string; category: string; sourceUrl: string }[];
+      }
     | { action: "search"; query: string; limit: number }
     | { action: "delete"; id: string }
     | { action: "clear" }
@@ -1298,6 +1357,7 @@ export interface MemoryWorkerResponse extends BaseMessage {
   payload:
     | { action: "init"; success: boolean; error?: string }
     | { action: "add"; success: boolean; id: string; error?: string }
+    | { action: "batch_add"; success: boolean; count: number; error?: string }
     | { action: "search"; results: MemorySearchResult[]; error?: string }
     | { action: "delete"; success: boolean; error?: string }
     | { action: "clear"; success: boolean; error?: string }
@@ -1377,16 +1437,18 @@ export interface UserSettings {
   showElementTags: boolean;
   /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
   visionModel: string;
-  /** Show action plan and wait for confirmation before executing (default: false) */
-  confirmPlan: boolean;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
   /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
   disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;
+  /** Skip all user approval prompts (including high-risk tool approvals) */
+  bypassApprovals: boolean;
   /** Speech-to-text provider for voice input */
   speechProvider: "browser" | "groq";
+  /** Max parallel workers for orchestrator task execution */
+  orchestratorMaxWorkers?: number;
 }
 
 // --- Utility Types ---

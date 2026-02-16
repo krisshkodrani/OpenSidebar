@@ -19,6 +19,8 @@ import {
   InputArea,
   ControlBar,
   StuckBanner,
+  RecoveryBanner,
+  ApprovalBanner,
   TaskProgressPanel,
   MetricsBar,
 } from "./components";
@@ -352,6 +354,7 @@ export default function App() {
           setSavedPromptsPrefill(undefined);
           setIsSavedPromptsOpen(true);
         }}
+        showApprovalBypassBadge={settings.bypassApprovals}
       />
 
       <SettingsDrawer
@@ -374,6 +377,8 @@ export default function App() {
       />
 
       <StuckBanner />
+      <RecoveryBanner />
+      <ApprovalBanner />
 
       <main className="flex-1 overflow-hidden relative flex flex-col">
         {error && (

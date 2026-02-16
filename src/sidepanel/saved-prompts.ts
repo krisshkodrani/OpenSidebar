@@ -8,7 +8,7 @@ const DEFAULT_PROMPTS: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">[] = [
     title: "Browser Navigation Challenge",
     content:
       "You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:\n" +
-      "1. Use update_plan to track which step you're on and what needs to happen\n" +
+      "1. Track which step you're on and what needs to happen\n" +
       "2. Dismiss any modals/popups blocking the page (click Close/Dismiss/Accept buttons)\n" +
       '3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)\n' +
       "4. Enter the code in the input field and click Submit Code\n" +

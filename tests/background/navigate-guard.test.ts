@@ -235,6 +235,6 @@ describe("Navigate Guard", () => {
         expect(result).not.toBeNull();
         expect(result).toContain("step 2");
         expect(result).toContain("Navigate to search");
-        expect(result).toContain("update_plan()");
+        expect(result).toContain("revise your plan first");
     });
 });

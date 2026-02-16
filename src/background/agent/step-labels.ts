@@ -93,14 +93,6 @@ export function formatStepLabel(
         ? `Escalate: "${reason.slice(0, 40)}"`
         : "Escalate to smarter model";
     }
-    case ToolName.UPDATE_PLAN: {
-      const subtasks = args.subtasks as string[] | undefined;
-      const idx = args.currentIndex as number | undefined;
-      if (subtasks && idx !== undefined) {
-        return `Plan: step ${idx + 1} of ${subtasks.length}`;
-      }
-      return "Update plan";
-    }
     case ToolName.READ_ELEMENT: {
       const attr = args.attribute as string | undefined;
       return attr

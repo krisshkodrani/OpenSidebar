@@ -5,14 +5,24 @@ import { StatusBar } from "./StatusBar";
 interface Props {
   onOpenSettings: () => void;
   onOpenSavedPrompts: () => void;
+  showApprovalBypassBadge?: boolean;
 }
 
-export function Header({ onOpenSettings, onOpenSavedPrompts }: Props) {
+export function Header({
+  onOpenSettings,
+  onOpenSavedPrompts,
+  showApprovalBypassBadge = false,
+}: Props) {
   return (
     <header className="flex items-center justify-between p-4 border-b border-warm-200 dark:border-warm-800 glass-surface sticky top-0 z-10 transition-colors">
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
           {/* Logo removed as per user request */}
+          {showApprovalBypassBadge && (
+            <span className="inline-flex items-center rounded-full border border-amber-300 dark:border-amber-700 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+              Approval bypass ON
+            </span>
+          )}
         </div>
         <StatusBar />
       </div>

@@ -191,13 +191,18 @@ describe("Workspace-scoped tab operations", () => {
   // Save originals for restoration
   const origGetWorkspaceById = workspaceManager.getWorkspaceById;
   const origAddTabToWorkspace = workspaceManager.addTabToWorkspace;
-
   beforeEach(() => {
     mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
     mockCompleteStream.mockClear();
     // Spy on the singleton methods directly
     workspaceManager.getWorkspaceById = origGetWorkspaceById;
     workspaceManager.addTabToWorkspace = origAddTabToWorkspace;
+    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+      if (msg?.type === "APPROVAL_REQUEST") {
+        AgentLoop.resolveApproval(msg.payload.approvalId, true);
+      }
+      return { success: true };
+    });
   });
 
   const testWorkspace = {

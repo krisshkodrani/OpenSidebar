@@ -8,6 +8,8 @@ import {
   SessionMetrics,
   SidePanelState,
   StuckState,
+  PendingApproval,
+  TaskRecoveryState,
   TaskCompletionMessage,
   TaskProgressMessage,
   TurnProgress,
@@ -43,7 +45,10 @@ interface Actions {
   clearStuckState: () => void;
   setTurnProgress: (progress: TurnProgress) => void;
   clearTurnProgress: () => void;
-  setAwaitingPlanApproval: (awaiting: boolean) => void;
+  setPendingApproval: (approval: PendingApproval) => void;
+  clearPendingApproval: () => void;
+  setTaskRecovery: (recovery: TaskRecoveryState) => void;
+  clearTaskRecovery: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setReady: () => void;
@@ -76,10 +81,10 @@ const DEFAULT_SETTINGS: UserSettings = {
   theme: "system",
   showElementTags: false,
   visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
-  confirmPlan: false,
   showSessionMetrics: true,
   disableScreenshot: false,
   disableNavigation: false,
+  bypassApprovals: false,
   speechProvider: "browser",
 };
 
@@ -114,7 +119,8 @@ export const useStore = create<Store>()(
     taskCompletion: null,
     stuckState: null,
     turnProgress: null,
-    awaitingPlanApproval: false,
+    pendingApproval: null,
+    taskRecovery: null,
     sessionMetrics: null,
     savedPrompts: [],
 
@@ -319,9 +325,24 @@ export const useStore = create<Store>()(
         state.turnProgress = null;
       }),
 
-    setAwaitingPlanApproval: (awaiting) =>
+    setPendingApproval: (approval) =>
       set((state) => {
-        state.awaitingPlanApproval = awaiting;
+        state.pendingApproval = approval;
+      }),
+
+    clearPendingApproval: () =>
+      set((state) => {
+        state.pendingApproval = null;
+      }),
+
+    setTaskRecovery: (recovery) =>
+      set((state) => {
+        state.taskRecovery = recovery;
+      }),
+
+    clearTaskRecovery: () =>
+      set((state) => {
+        state.taskRecovery = null;
       }),
 
     setSessionMetrics: (metrics) =>
@@ -388,6 +409,12 @@ export const useStore = create<Store>()(
       set((state) => {
         state.activeWorkspaceId = id;
         state.messages = []; // Clear current messages when switching workspace
+        state.taskProgress = null;
+        state.taskCompletion = null;
+        state.stuckState = null;
+        state.turnProgress = null;
+        state.pendingApproval = null;
+        state.taskRecovery = null;
       });
       // Load messages for the new workspace
       get().loadMessagesFromStorage();

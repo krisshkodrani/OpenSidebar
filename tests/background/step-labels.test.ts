@@ -57,19 +57,6 @@ describe("formatStepLabel", () => {
         expect(formatStepLabel(ToolName.HIDE_ELEMENT, { id: 12 })).toBe("Hide element [12]");
     });
 
-    test("update_plan shows step progress", () => {
-        const label = formatStepLabel(ToolName.UPDATE_PLAN, {
-            subtasks: ["Search Google", "Open result", "Find info"],
-            currentIndex: 1,
-        });
-        expect(label).toBe("Plan: step 2 of 3");
-    });
-
-    test("update_plan without args shows default label", () => {
-        const label = formatStepLabel(ToolName.UPDATE_PLAN, {});
-        expect(label).toBe("Update plan");
-    });
-
     test("read_element shows text by default", () => {
         expect(formatStepLabel(ToolName.READ_ELEMENT, { id: 5 })).toBe('Read text of [5]');
     });

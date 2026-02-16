@@ -6,6 +6,7 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
+import "../setup";
 import { detectFramework } from "../../src/content/framework-detect";
 
 describe("detectFramework", () => {

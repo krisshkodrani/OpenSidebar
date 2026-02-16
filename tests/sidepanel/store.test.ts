@@ -33,6 +33,8 @@ describe("SidePanel Store", () => {
             taskCompletion: null,
             stuckState: null,
             turnProgress: null,
+            pendingApproval: null,
+            taskRecovery: null,
             settings: {
                 openRouterApiKey: "",
                 groqApiKey: "",
@@ -45,10 +47,10 @@ describe("SidePanel Store", () => {
                 theme: "system",
                 showElementTags: false,
                 visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
-                confirmPlan: false,
                 showSessionMetrics: false,
                 disableScreenshot: false,
                 disableNavigation: false,
+                bypassApprovals: false,
                 speechProvider: "browser",
             },
         });
@@ -429,14 +431,96 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().turnProgress).toBeNull();
     });
 
-    test("DEFAULT_SETTINGS includes visionModel and confirmPlan", () => {
+    test("setPendingApproval and clearPendingApproval", () => {
+        useStore.getState().setPendingApproval({
+            approvalId: "ap-1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate to example.com",
+            timeoutMs: 30000,
+            requestedAt: Date.now(),
+        });
+        expect(useStore.getState().pendingApproval).not.toBeNull();
+        useStore.getState().clearPendingApproval();
+        expect(useStore.getState().pendingApproval).toBeNull();
+    });
+
+    test("setTaskRecovery and clearTaskRecovery", () => {
+        useStore.getState().setTaskRecovery({
+            workspaceId: "ws-1",
+            taskId: "task-1",
+            totalSubtasks: 8,
+            completedSubtasks: 3,
+            pendingSubtasks: 5,
+            recoveredAt: Date.now(),
+        });
+        expect(useStore.getState().taskRecovery).not.toBeNull();
+        useStore.getState().clearTaskRecovery();
+        expect(useStore.getState().taskRecovery).toBeNull();
+    });
+
+    test("DEFAULT_SETTINGS includes visionModel", () => {
         const settings = useStore.getState().settings;
         expect(settings.visionModel).toBe("qwen/qwen3-vl-235b-a22b-instruct");
-        expect(settings.confirmPlan).toBe(false);
     });
 
     test("DEFAULT_SETTINGS includes speechProvider", () => {
         const settings = useStore.getState().settings;
         expect(settings.speechProvider).toBe("browser");
+    });
+
+    test("DEFAULT_SETTINGS includes bypassApprovals", () => {
+        const settings = useStore.getState().settings;
+        expect(settings.bypassApprovals).toBe(false);
+    });
+
+    test("setActiveWorkspaceId clears workspace-scoped transient state", () => {
+        useStore.getState().setTaskProgress({
+            taskId: "task-1",
+            subtasks: [],
+            currentIndex: 0,
+            totalTurnsUsed: 0,
+        });
+        useStore.getState().setTaskCompletion({
+            taskId: "task-1",
+            status: "completed",
+            summary: "done",
+            totalTurnsUsed: 0,
+            subtaskResults: [],
+        });
+        useStore.getState().setStuckState({
+            signal: "nudge" as const,
+            staleTurns: 6,
+            url: "https://example.com",
+            receivedAt: Date.now(),
+        });
+        useStore.getState().setTurnProgress({ turn: 1, maxTurns: 30 });
+        useStore.getState().setPendingApproval({
+            approvalId: "a1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate",
+            timeoutMs: 30000,
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setTaskRecovery({
+            workspaceId: "ws-1",
+            taskId: "task-1",
+            totalSubtasks: 2,
+            completedSubtasks: 1,
+            pendingSubtasks: 1,
+            recoveredAt: Date.now(),
+        });
+
+        useStore.getState().setActiveWorkspaceId("ws-2");
+        const state = useStore.getState();
+        expect(state.taskProgress).toBeNull();
+        expect(state.taskCompletion).toBeNull();
+        expect(state.stuckState).toBeNull();
+        expect(state.turnProgress).toBeNull();
+        expect(state.pendingApproval).toBeNull();
+        expect(state.taskRecovery).toBeNull();
     });
 });

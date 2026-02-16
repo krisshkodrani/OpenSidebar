@@ -73,7 +73,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - If an action had no visible effect, do NOT repeat it. Try an alternative.
 - If find_element fails or returns unexpected results, call read_page to see all available elements.
 - If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
-- When a plan is provided, follow it step by step. Call update_plan after each step.
+- When a subtask is active, focus only on completing that subtask before moving on.
 - Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
 - If a page returns 404 or "Page not found", do NOT keep trying. Navigate back or call done() explaining the page doesn't exist.
 - Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
@@ -142,10 +142,16 @@ export class ContextManager {
     return this.maxContextTokens;
   }
 
-  constructor(maxContextTokens: number = 32000, workspaceId?: string | null) {
+  constructor(
+    maxContextTokens: number = 32000,
+    workspaceId?: string | null,
+    workerId?: string | null,
+  ) {
     this.maxContextTokens = maxContextTokens;
     this.storageKey = workspaceId
-      ? `agent_context:${workspaceId}`
+      ? workerId
+        ? `agent_context:${workspaceId}:${workerId}`
+        : `agent_context:${workspaceId}`
       : "agent_context";
   }
 
@@ -217,7 +223,7 @@ export class ContextManager {
     if (nextStep) {
       block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
     }
-    block += `Execute now. Call update_plan() when done.`;
+    block += `Execute now and mark this subtask complete when verified.`;
     return block;
   }
 
@@ -430,11 +436,8 @@ export class ContextManager {
 When an Active Plan is shown above:
 1. Focus ONLY on the current step. Ignore future steps.
 2. Execute the current step using the appropriate tool(s).
-3. When the step is done, call update_plan({subtasks, currentIndex: NEXT_INDEX, lastResult: "what you did"}).
-   - currentIndex = the 0-based index of the NEXT step to execute.
-   - lastResult = brief description of what you accomplished.
-4. The system will confirm and show the next step. Then execute it.
-5. Only call done() when ALL steps show as completed.
+3. Verify the expected result is visible before proceeding.
+4. Only call done() when ALL steps are completed.
 
 Do NOT call done() until every planned step is complete.
 `,
@@ -950,7 +953,7 @@ export function summarizeHistory(
     for (const tc of msg.tool_calls) {
       const toolName = tc.function.name;
       // Skip noise tools
-      if (["wait", "update_plan"].includes(toolName)) continue;
+      if (["wait"].includes(toolName)) continue;
 
       let argSnippet = "";
       try {
