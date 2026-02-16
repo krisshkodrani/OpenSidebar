@@ -10,7 +10,6 @@ Open the settings drawer and configure:
 |---------|-------|-----|
 | Max Turns | 500 | 30 tasks need headroom for retries and escalation |
 | Show Element Tags | OFF | Visual overlays are a debugging aid — the LLM never sees them |
-| Confirm Plan | OFF | Skips the plan confirmation step so the agent runs without pausing |
 | Show Session Metrics | ON | Track token usage and cost across the run |
 
 All other settings can stay at defaults. Memory and workspace can be left enabled — the agent may use `memory_add` to save strategies it discovers.
@@ -21,7 +20,7 @@ Paste this into the input area after navigating to the challenge URL:
 
 ```
 You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:
-1. Use update_plan to track which step you're on and what needs to happen
+1. Track current step progress and what needs to happen next
 2. Dismiss any modals/popups blocking the page (click Close/Dismiss/Accept buttons)
 3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)
 4. Enter the code in the input field and click Submit Code
@@ -31,7 +30,7 @@ If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden el
 
 **Why this works:**
 - **Explicit per-step workflow** prevents aimless loops — each step has a clear 5-action pattern
-- **Calls out `update_plan`** — trace analysis shows runs that use `update_plan` consistently are 10x more efficient (23 turns vs 246)
+- **Calls out progress tracking** — trace analysis shows runs with explicit step tracking are much more efficient (23 turns vs 246)
 - **"Verify URL changed"** prevents false progress detection — the agent sometimes thinks it advanced when it didn't
 - **Tool hints** (`execute_js`, `take_screenshot`) for the hardest patterns (hidden DOM, delayed reveals)
 - **"5+ actions" self-imposed stuck threshold** beats the system's default 6-turn detection, triggering self-correction earlier
@@ -94,8 +93,8 @@ The fast model emitted text-only responses like "I'm ready...", "We need to reso
 **Fix applied:** Filler text fast-track. Responses under 60 chars, matching filler prefixes, or with >40% non-alphanumeric characters skip the normal 2-turn tolerance and immediately trigger a strategy pivot.
 
 ### Pattern: No Plan Tracking
-The 246-turn run never called `update_plan`. A separate 23-turn run on the same challenge used `update_plan` 6 times and completed more efficiently.
-**Fix applied:** The updated prompt explicitly instructs the agent to use `update_plan` for step tracking.
+The 246-turn run had no explicit step tracking behavior. A separate 23-turn run tracked steps explicitly and completed more efficiently.
+**Fix applied:** The updated prompt explicitly instructs the agent to track progress step-by-step.
 
 ### Combined Impact
 ~80 turns out of 246 (33%) were wasted by these patterns. The redundant action detector and filler fast-track are expected to reduce waste by 20-30%.
@@ -106,4 +105,4 @@ Track each attempt here:
 
 | Attempt | Tasks Completed | Turns Used | Failure Point | Root Cause | Fix Applied |
 |---------|----------------|------------|---------------|------------|-------------|
-| 1 | ~5/30 | 246 | Steps 3-5: repeated find_element loops, filler text | No plan tracking, no redundant action detection, filler tolerance too high | Added update_plan to prompt, redundant action detector, filler fast-track |
+| 1 | ~5/30 | 246 | Steps 3-5: repeated find_element loops, filler text | No plan tracking, no redundant action detection, filler tolerance too high | Added explicit progress-tracking prompt, redundant action detector, filler fast-track |

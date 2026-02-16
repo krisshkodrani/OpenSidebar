@@ -26,7 +26,7 @@
 1. **Massive latency win for deterministic sequences.** A 5-step form fill goes from ~4s (5 LLM roundtrips × 800ms) to ~250ms (5 tool calls × 50ms). That's a **16x speedup** for the batch.
 2. **Zero architectural risk.** No new concurrency primitives, no DOM locking, no context forking. The loop just runs tools in sequence — it already does this.
 3. **Cheaper.** Eliminates LLM calls entirely for batched steps. Each batch saves $0.001-0.005 in API costs.
-4. **Trivial to implement.** One new tool definition, one intercept block in loop.ts (similar pattern to `escalate` and `update_plan`). No new files.
+4. **Trivial to implement.** One new tool definition, one intercept block in loop.ts (similar pattern to `escalate`). No new files.
 5. **Composable with BRAINS→HANDS.** Smart model batches during orientation, fast model can also batch later. No special coordination needed.
 6. **Predictable behavior.** Serial execution means no race conditions, no element conflicts, no interleaved logs.
 7. **Bail-out gives enough agency.** The executor can stop on any error, element not found, or unexpected result. This covers the common failure modes.

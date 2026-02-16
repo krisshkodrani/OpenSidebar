@@ -345,7 +345,6 @@ The agent supports **52 tools** across four categories:
 - `memory_search` - Search memory
 - `done` - Task completion
 - `escalate` - Voluntary model upgrade (switch from fast to smart model)
-- `update_plan` - Report task progress, revise plan
 
 ## Safety & Limits
 
@@ -441,7 +440,7 @@ The agent loop operates in a single unified mode that combines the best behavior
 
 - **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
-- **Nudge→Pivot→Escalate→Give-up** — Text-only responses trigger nudges. After consecutive nudges, the model escalates from fast to smart model. After more failures, the loop gives up.
+- **Two-tier escalation** — Text-only responses trigger nudge→escalate→give-up. The system has two tiers (fast/smart) with a single escalation step. Context distillation compresses history before smart model handoff.
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
 - **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
 - **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.
@@ -496,14 +495,22 @@ interface TraceEntry {
 
 ## Multi-Provider LLM Support
 
-The agent supports multiple LLM providers with automatic fallback:
+The agent uses a two-tier architecture with independent provider pools for each tier:
 
-- **OpenRouter** (GPT-OSS-120B) - Default fast model
-- **Groq** (GPT-OSS-120B) - Low latency option
-- **Cerebras** (GPT-OSS-120B) - Highest priority when API key configured
-- **X.AI Grok 4.1 Fast** - Smart model for escalation
+### Fast Tier (observe→act cycles)
+- **Cerebras** (`gpt-oss-120b`) — Highest priority, ~3000 TPS, prefix caching
+- **Groq** (`openai/gpt-oss-120b`) — 250K TPM
+- **OpenRouter** (`openai/gpt-oss-120b`) — Absolute fallback
 
-Priority: Cerebras > Groq > OpenRouter
+### Smart Tier (reasoning/escalation)
+- **Cerebras** (`zai-glm-4.7`) — Highest priority, native reasoning + prefix caching
+- **OpenRouter** (`z-ai/glm-4.7`) — Fallback
+
+Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `PlanGuardian` also uses the smart pool.
+
+### Context Distillation
+
+On escalation, `distillForEscalation()` compresses the full conversation history (potentially 40K+ tokens) into a ~1K token structured timeline before handing off to the smart model. This preserves Cerebras prefix caching and gives the smart model a cleaner signal than raw history.
 
 ## Testing
 

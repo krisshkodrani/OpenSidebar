@@ -87,7 +87,6 @@ These tools control the agent itself or provide memory capabilities.
 | --------------- | ----------------------- | --------------------------------------------------------------------------------------- |
 | `done`          | Mark task as complete   | `{ summary: string }`                                                                   |
 | `escalate`      | Switch to smarter model | `{ reason: string }`                                                                    |
-| `update_plan`   | Report task progress    | `{ subtasks: string[], currentIndex: number, lastResult?: string, rationale?: string }` |
 | `memory_add`    | Save to memory          | `{ content: string, category?: string }`                                                |
 | `memory_search` | Search memory           | `{ query: string }`                                                                     |
 

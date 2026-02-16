@@ -8,7 +8,7 @@ The agent treats your input as a **task to accomplish on the current page**. It 
 
 1. **Decompose** multi-step tasks into a plan (via the guardian model)
 2. **Execute** each step by reading the page, finding elements, and interacting with them
-3. **Track progress** using `update_plan()` to report what step it's on
+3. **Track progress** step-by-step and verify completion before moving on
 4. **Signal completion** by calling `done()` with a summary
 
 If your prompt looks like a **question** ("What color is the submit button?"), the agent will try to answer it by reading the page and calling `done({"summary": "..."})`.
@@ -126,6 +126,6 @@ Return the results as a formatted list via done().
 
 ### Navigation challenge
 ```
-Complete every challenge task on this page. Use update_plan to track your progress through each step.
+Complete every challenge task on this page. Track your progress through each step explicitly.
 If stuck for 5+ actions on a step, take a screenshot and try execute_js to inspect the DOM.
 ```

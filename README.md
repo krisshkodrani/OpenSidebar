@@ -2,7 +2,7 @@
 
 A bimodal, open-source Chrome extension that transforms your browser into an AI-powered agentic workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses **OpenRouter** to access fast models (gpt-oss-120b via Cerebras/Groq/OpenRouter) for real-time interactions with dynamic model escalation to Grok 4.1 for complex tasks, plus a **local Second Brain** for persistent memory.
+OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses a **two-tier LLM architecture** — a fast model (GPT-OSS-120B via Cerebras/Groq/OpenRouter) for real-time observe→act cycles, with automatic escalation to a smart model (GLM-4.7 with native reasoning via Cerebras/OpenRouter) for complex tasks. Both tiers use **priority-based provider failover** for resilience. A **local Second Brain** provides persistent memory across sessions.
 
 ---
 
@@ -10,7 +10,7 @@ OpenSidebar can navigate, read, click, type, and research across web pages — a
 
 - **Browser Automation** — Click buttons, fill forms, scroll pages, and navigate — all via natural language commands.
 - **Visual DOM Understanding** — Vimium-style numeric tagging of interactive elements. The AI sees `[3] <button> "Submit"` and calls `click_element(id=3)`.
-- **Dynamic Model Escalation** — Fast model for instant actions, automatic escalation to more powerful models when needed.
+- **Two-Tier Model Escalation** — Fast model (GPT-OSS-120B) for instant actions, automatic escalation to smart model (GLM-4.7 with native reasoning) when stuck. Context distillation compresses history before escalation for efficient handoff.
 - **Local Memory** — Hybrid semantic + keyword search (Transformers.js + SQLite FTS5 + Voy) with Reciprocal Rank Fusion. All data stays in your browser.
 - **Auto-Managed Workspaces** — Chrome Tab Groups automatically organize your agent sessions. Click the extension icon on any tab to create a new workspace; tabs created by the agent auto-group together. Workspaces auto-delete when empty.
 - **Per-Tab Sidebar** — Sidebar opens only when you click the extension icon and closes automatically when you switch tabs. Each tab gets its own sidebar session and workspace.
@@ -28,16 +28,16 @@ Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM
                      (Memory: SQLite + Voy + Transformers.js)
 ```
 
-| Component      | Technology                             |
-| -------------- | -------------------------------------- |
-| Fast LLM       | OpenRouter (gpt-oss-120b via Cerebras) |
-| Smart LLM      | OpenRouter (Grok 4.1 Fast)             |
-| Vision LLM     | OpenRouter (Qwen3 VL)                  |
-| Embeddings     | Transformers.js (all-MiniLM-L6-v2)     |
-| Vector Search  | Voy (WASM)                             |
-| Keyword Search | SQLite WASM (FTS5)                     |
-| UI             | React 18 + Tailwind CSS                |
-| Build          | Vite + @crxjs/vite-plugin              |
+| Component      | Technology                                          |
+| -------------- | --------------------------------------------------- |
+| Fast LLM       | GPT-OSS-120B (Cerebras → Groq → OpenRouter)         |
+| Smart LLM      | GLM-4.7 (Cerebras → OpenRouter), native reasoning   |
+| Vision LLM     | OpenRouter (configurable, default Qwen3 VL)         |
+| Embeddings     | Transformers.js (all-MiniLM-L6-v2)                  |
+| Vector Search  | Voy (WASM)                                          |
+| Keyword Search | SQLite WASM (FTS5)                                  |
+| UI             | React 18 + Tailwind CSS                             |
+| Build          | Vite + @crxjs/vite-plugin                           |
 
 Complete technical documentation: [docs/architecture/](./docs/architecture/)
 

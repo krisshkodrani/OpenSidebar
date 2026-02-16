@@ -126,8 +126,8 @@ Background → Side Panel: TASK_COMPLETION (with metrics summary)
 | **Package Manager** | Bun                                            |
 | **UI**              | React 18 + Tailwind CSS 3.4                    |
 | **State**           | Zustand + Immer                                |
-| **Fast LLM**        | OpenRouter (GPT-OSS-120B), Groq, or Cerebras   |
-| **Smart LLM**       | X.AI Grok 4.1 Fast (via escalation)            |
+| **Fast LLM**        | GPT-OSS-120B (Cerebras → Groq → OpenRouter)    |
+| **Smart LLM**       | GLM-4.7 (Cerebras → OpenRouter), native reasoning |
 | **Vision LLM**      | OpenRouter API (configurable, default Qwen VL) |
 | **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)             |
 | **Vector Search**   | Voy (WASM)                                     |

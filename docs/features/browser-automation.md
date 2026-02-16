@@ -144,7 +144,6 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 - `wait` - Pause execution for a specified duration
 - `escalate` - Switch to a smarter model for complex reasoning
 - `done` - Mark task as complete
-- `update_plan` - Update the current plan
 - `execute_js` - Execute custom JavaScript (High Risk)
 - `upload_file` - Upload a file to a form
 - `download_file` - Download a file from a URL

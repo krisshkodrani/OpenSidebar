@@ -138,11 +138,10 @@ The agent has 52 tools organized into six categories:
 | `memory_add` | Save info to long-term memory (hybrid vector + FTS5) |
 | `memory_search` | Search long-term memory |
 
-### Agent Control (2 tools)
+### Agent Control (1 tool)
 | Tool | Description | Sequential |
 |------|-------------|:----------:|
 | `escalate` | Request smarter model with reason | Yes |
-| `update_plan` | Report task progress, advance to next subtask | Yes |
 
 ### Meta (1 tool)
 | Tool | Description | Sequential |
@@ -151,7 +150,7 @@ The agent has 52 tools organized into six categories:
 
 ### Parallel vs. Sequential Execution
 
-Tools are classified as **sequential** or **parallelizable** via the `ToolMeta` interface. The sequential set is: `navigate`, `done`, `take_screenshot`, `escalate`, `update_plan`.
+Tools are classified as **sequential** or **parallelizable** via the `ToolMeta` interface. The sequential set includes `navigate`, `done`, `take_screenshot`, and `escalate`.
 
 When the LLM emits multiple tool calls in a single turn:
 - If **none** are sequential → all execute in parallel via `Promise.all()`
@@ -190,14 +189,14 @@ Step 2 of 4: "Fill out the shipping address form"
 Completed:
   1. Navigate to the checkout page [done]
 Next: 3. Select shipping method
-Execute the current step now. Call update_plan() when done to advance.
+Execute the current step now and verify completion before continuing.
 ```
 
 This keeps the agent oriented on exactly one step at a time, preventing it from jumping ahead or losing track.
 
 ### Advancing the Plan
 
-When the agent completes a subtask, it calls `update_plan({subtasks, currentIndex, lastResult})`. This tool is **intercepted by the loop** before reaching the executor:
+When the agent completes a subtask, the loop advances plan state internally:
 
 1. Updates `planSubtasks` status (completed / running / pending)
 2. Updates the system prompt's plan section via `context.setPlanStatus()`

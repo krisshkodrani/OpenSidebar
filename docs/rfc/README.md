@@ -23,7 +23,7 @@ Completed, superseded, and historical documents are stored in [archived/](./arch
 | [Token Usage & Cost Tracking](./archived/rfc-token-usage-cost-tracking.md) | **Done** | SessionMetrics, MetricsBar, CompletionSummary, vision tracking |
 | [Plan Guardian](./archived/rfc-premature-done-guard.md) | **Done** | PlanGuardian: decompose() + validateDone() in `agent/guardian.ts` |
 | [Locked Workspace](./archived/rfc-locked-workspace.md) | **Done** | Tab re-grouping, auto-delete, panel persistence |
-| [Task Decomposition](./archived/rfc-task-decomposition.md) | **Done** | Guardian-based decomposition + update_plan tool (simplified from SubtaskRunner) |
+| [Task Decomposition](./archived/rfc-task-decomposition.md) | **Done** | Guardian-based decomposition with loop-managed step progress (simplified from SubtaskRunner) |
 | [LLM Provider Fallback](./archived/rfc-llm-provider-fallback.md) | **Superseded** | Replaced by priority-based failover (`ProviderPool`) |
 | [LLM Round-Robin](./archived/rfc-llm-round-robin.md) | **Superseded** | Replaced by priority-based failover (Cerebras→Groq→OpenRouter) |
 

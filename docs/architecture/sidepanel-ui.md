@@ -56,7 +56,6 @@ interface SidePanelState {
   taskCompletion: TaskCompletionMessage["payload"] | null; // Completed task report
   stuckState: StuckState | null; // Agent stuck detection
   turnProgress: TurnProgress | null; // Current turn / maxTurns
-  awaitingPlanApproval: boolean; // Waiting for plan confirmation
   sessionMetrics: SessionMetrics | null; // Real-time token/cost tracking
   savedPrompts: SavedPrompt[]; // User-saved prompt templates
 }

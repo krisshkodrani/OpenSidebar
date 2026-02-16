@@ -253,7 +253,7 @@ Executors get a **restricted tool set** — no state-changing or context-switchi
 | click_element | navigate |
 | type_text | done |
 | select_option | escalate |
-| scroll_page | update_plan |
+| scroll_page | group_tabs / ungroup_tabs |
 | press_key | create_tab / close_tab / switch_tab |
 | read_page | execute_js |
 | find_element | batch_execute |

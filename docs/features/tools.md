@@ -689,19 +689,6 @@ Switch to a smarter, slower model for complex reasoning.
 
 ---
 
-### update_plan
-
-Report task progress or REVISE the plan if the current one is failing.
-
-| Parameter    | Type    | Required | Description                                  |
-| ------------ | ------- | -------- | -------------------------------------------- |
-| subtasks     | array   | Yes      | Ordered list of subtask descriptions         |
-| currentIndex | integer | Yes      | 0-based index of the NEXT subtask to execute |
-| lastResult   | string  | No       | Brief result of the last completed subtask   |
-| rationale    | string  | No\*     | Required if changing the plan                |
-
----
-
 ## Audio/Video Tools
 
 ### transcribe_audio
@@ -743,7 +730,7 @@ Show a desktop notification to the user.
 | **Browser Management** | wait, take_screenshot, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                        |
 | **Page Analysis**      | inspect_hidden, xray_page, fast_forward, read_pdf                                                                                                                                                                                      |
 | **React Toolkit**      | inspect_react, react_set_input, inspect_react_tree, wait_for_react                                                                                                                                                                     |
-| **Control Flow**       | escalate, update_plan                                                                                                                                                                                                                  |
+| **Control Flow**       | escalate                                                                                                                                                                                                                               |
 | **Audio/Video**        | transcribe_audio                                                                                                                                                                                                                       |
 | **Utilities**          | send_notification                                                                                                                                                                                                                      |
 

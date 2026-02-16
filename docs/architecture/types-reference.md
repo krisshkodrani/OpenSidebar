@@ -90,7 +90,6 @@ export enum ToolName {
   DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
-  UPDATE_PLAN = "update_plan",
   READ_ELEMENT = "read_element",
   EXECUTE_JS = "execute_js",
   UPLOAD_FILE = "upload_file",
@@ -911,13 +910,6 @@ export interface EscalateArgs {
   reason: string;
 }
 
-/** Arguments for update_plan — report task plan and progress */
-export interface UpdatePlanArgs {
-  subtasks: string[];
-  currentIndex: number;
-  lastResult?: string;
-}
-
 /** Arguments for read_element */
 export interface ReadElementArgs {
   /** The numeric tag ID of the element */
@@ -1313,8 +1305,6 @@ export interface SidePanelState {
   stuckState: StuckState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
-  /** True when agent is paused waiting for plan approval */
-  awaitingPlanApproval: boolean;
   /** Live session metrics (null when no active session or tracking disabled) */
   sessionMetrics: SessionMetrics | null;
   /** User-saved prompt templates */
@@ -1514,8 +1504,6 @@ export interface UserSettings {
   showElementTags: boolean;
   /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
   visionModel: string;
-  /** Show action plan and wait for confirmation before executing (default: false) */
-  confirmPlan: boolean;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
   /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */

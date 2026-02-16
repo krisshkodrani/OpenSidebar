@@ -172,7 +172,7 @@ const BATCH_EXECUTE_DEF: ToolDefinition = {
 |-----------|--------|--------|
 | `types/index.ts` | New `ToolScript` types | Low |
 | `tools/index.ts` | Register `batch_execute` tool | Low |
-| `loop.ts` | Batch execution loop (intercept like escalate/update_plan) | Medium |
+| `loop.ts` | Batch execution loop (intercept like escalate) | Medium |
 | `constants.ts` | `MAX_BATCH_STEPS: 10` | Trivial |
 | `metadata.ts` | Add `batch_execute` to sequential tools | Trivial |
 
