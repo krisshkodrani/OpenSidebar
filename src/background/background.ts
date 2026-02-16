@@ -20,11 +20,15 @@ import {
   startKeepalive,
   stopKeepalive,
 } from "./keepalive";
+import { registerContentScriptReadyListener, waitForContentScriptReady } from "./tab-ready";
 
 logger.info("system", "Service Worker Initialized");
 
 // 1. Initialize Tools
 registerTools();
+
+// 1b. Track content script readiness (eliminates init sleep delays)
+registerContentScriptReadyListener();
 
 // 2. Initialize Navigation Bridge
 registerNavigationListeners();
@@ -584,8 +588,8 @@ async function handleUserChat(
             path: contentScriptPath,
           });
         }
-        // Give script a moment to initialize
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Wait for content script to be ready (replaces fixed 100ms sleep)
+        await waitForContentScriptReady(tabId, 2000);
       } catch (injectError) {
         logger.debug(
           "agent",

@@ -80,7 +80,7 @@ export function TaskProgressPanel() {
         </span>
         {totalTurnsUsed > 0 && <span>{totalTurnsUsed} turns used</span>}
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1 max-h-[120px] overflow-y-auto">
         {subtasks.map((st, i) => (
           <div key={i} className="flex items-center gap-1.5 text-xs">
             <SubtaskIcon status={st.status} />

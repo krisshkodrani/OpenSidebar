@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 52 tools are registered", () => {
+    test("all 54 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(52);
+        expect(defs.length).toBe(54);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -324,6 +324,15 @@ describe("Tool Registration", () => {
         expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
         expect(def!.function.description).toContain("Toggle");
         expect(def!.function.description).toContain("timer");
+    });
+
+    test("batch_execute requires steps parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.BATCH_EXECUTE);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("steps");
+        expect(def!.function.parameters.properties.steps.type).toBe("array");
+        expect(def!.function.parameters.properties.verify).toBeDefined();
     });
 
     // React toolkit tools

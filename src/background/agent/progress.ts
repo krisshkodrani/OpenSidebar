@@ -2,7 +2,7 @@ import { DomSnapshot } from "../../types";
 import { STUCK_THRESHOLDS } from "./constants";
 
 export interface ProgressSignal {
-  type: "nudge" | "pivot" | "escalate";
+  type: "escalate";
   message: string;
   staleTurns: number;
 }
@@ -51,20 +51,13 @@ function signatureDelta(prev: Set<string>, curr: Set<string>): number {
   return diffCount / Math.max(prev.size, curr.size);
 }
 
-const STUCK_NUDGE_MSG =
-  "STUCK: Your last actions changed nothing. STOP and apply the Verify step:\n1. Why did the last action fail?\n2. Is the current plan still valid?\nThen try ONE different approach:\n- take_screenshot — see the reality\n- scroll_page — target might be off-screen\n- update_plan — if the current step is impossible, REVISE the plan (provide a rationale)\n- find_element — search for the element by text";
-
-const STUCK_PIVOT_MSG =
-  "STRATEGY PIVOT REQUIRED: Multiple actions have failed. The system will clear your failed context and let you start fresh with a different approach.";
-
 const STUCK_ESCALATE_MSG =
-  "STUCK ESCALATION: A stronger model is taking over with fresh context. Start with a completely different strategy.";
+  "No progress detected. Escalating to next model tier.";
 
 export class ProgressTracker {
   private lastSignatures = new Set<string>();
   private lastUrl = "";
   private staleTurns = 0;
-  private pivotFired = false;
   private escalationFired = false;
 
   onSnapshotRefresh(snap: DomSnapshot): ProgressSignal | null {
@@ -91,30 +84,11 @@ export class ProgressTracker {
     // Same content, same URL — stuck
     this.staleTurns++;
 
-    // Check in descending order: escalate first, then pivot, then nudge
     if (this.staleTurns >= STUCK_THRESHOLDS.ESCALATE && !this.escalationFired) {
       this.escalationFired = true;
       return {
         type: "escalate",
         message: STUCK_ESCALATE_MSG,
-        staleTurns: this.staleTurns,
-      };
-    }
-    if (this.staleTurns >= STUCK_THRESHOLDS.PIVOT && !this.pivotFired) {
-      this.pivotFired = true;
-      return {
-        type: "pivot",
-        message: STUCK_PIVOT_MSG,
-        staleTurns: this.staleTurns,
-      };
-    }
-    if (
-      this.staleTurns >= STUCK_THRESHOLDS.NUDGE &&
-      this.staleTurns % STUCK_THRESHOLDS.NUDGE === 0
-    ) {
-      return {
-        type: "nudge",
-        message: STUCK_NUDGE_MSG,
         staleTurns: this.staleTurns,
       };
     }
@@ -126,13 +100,11 @@ export class ProgressTracker {
     this.lastSignatures = new Set<string>();
     this.lastUrl = "";
     this.staleTurns = 0;
-    this.pivotFired = false;
     this.escalationFired = false;
   }
 
-  /** Reset escalation/pivot flags so they can fire again (after a pivot clears context) */
+  /** Reset escalation flag and stale counter so escalation can fire again for the next tier */
   resetEscalation() {
-    this.pivotFired = false;
     this.escalationFired = false;
     this.staleTurns = 0;
   }

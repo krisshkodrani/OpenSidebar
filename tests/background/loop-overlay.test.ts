@@ -5,6 +5,7 @@ import "../setup";
 mock.module("../../src/background/llm", () => ({
   LLMClient: class {
     private model = "google/gemini-2.5-flash-lite";
+    _isSmartTier = false;
     complete = mock(() =>
       Promise.resolve({
         role: "assistant",
@@ -29,11 +30,12 @@ mock.module("../../src/background/llm", () => ({
       });
     });
     switchToSmart = mock(() => {
-      this.model = "minimax/minimax-m2.5";
+      this.model = "minimax/minimax-m2.5"; this._isSmartTier = true;
     });
     switchToFast = mock(() => {
-      this.model = "google/gemini-2.5-flash-lite";
+      this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false;
     });
+    isSmartTier = () => this._isSmartTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
     setFailoverCallback = mock(() => {});

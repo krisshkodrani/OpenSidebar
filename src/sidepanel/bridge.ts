@@ -162,6 +162,9 @@ export function initializeBridge(
       case "SKIP_SUBTASK":
       case "PAUSE_AGENT":
       case "RESUME_AGENT":
+      case "CONTENT_SCRIPT_READY":
+      case "DOM_READY_PROBE":
+      case "DOM_READY_ACK":
         break;
 
       default: {

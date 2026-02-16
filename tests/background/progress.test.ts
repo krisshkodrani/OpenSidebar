@@ -64,83 +64,49 @@ describe("ProgressTracker", () => {
     expect(tracker.onSnapshotRefresh(changed)).toBeNull();
   });
 
-  it("returns nudge at 3 stale turns", () => {
+  it("returns escalate at 3 stale turns", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap); // stale 1-2
-    }
+    tracker.onSnapshotRefresh(snap); // stale 1
+    tracker.onSnapshotRefresh(snap); // stale 2
     const signal = tracker.onSnapshotRefresh(snap); // stale 3
     expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
+    expect(signal!.type).toBe("escalate");
     expect(signal!.staleTurns).toBe(3);
   });
 
   it("returns null between thresholds (stale 1-2)", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 2; i++) {
-      const signal = tracker.onSnapshotRefresh(snap);
-      expect(signal).toBeNull();
-    }
-  });
-
-  it("returns pivot at 6 stale turns", () => {
-    const snap = makeSnap();
-    tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 5; i++) {
-      tracker.onSnapshotRefresh(snap); // stale 1-5 (nudge fires at 3)
-    }
-    const signal = tracker.onSnapshotRefresh(snap); // stale 6
-    expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("pivot");
-    expect(signal!.staleTurns).toBe(6);
-  });
-
-  it("returns escalation at 9 stale turns", () => {
-    const snap = makeSnap();
-    tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 8; i++) {
-      tracker.onSnapshotRefresh(snap); // stale 1-8 (nudge at 3, pivot at 6)
-    }
-    const signal = tracker.onSnapshotRefresh(snap); // stale 9
-    expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(9);
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 1
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 2
   });
 
   it("fires escalation only once", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 8; i++) {
-      tracker.onSnapshotRefresh(snap);
-    }
-    const first = tracker.onSnapshotRefresh(snap); // stale 9 → escalate
+    tracker.onSnapshotRefresh(snap); // stale 1
+    tracker.onSnapshotRefresh(snap); // stale 2
+    const first = tracker.onSnapshotRefresh(snap); // stale 3 → escalate
     expect(first!.type).toBe("escalate");
 
-    // Stale 10-11 should be silent (nudge fires every 3, but 10 and 11 aren't multiples)
-    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 10
-    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 11
-
-    // Stale 12 → nudge (12 % 3 === 0)
-    const second = tracker.onSnapshotRefresh(snap);
-    expect(second).not.toBeNull();
-    expect(second!.type).toBe("nudge");
-    expect(second!.staleTurns).toBe(12);
+    // Further stale turns return null (one-shot)
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 4
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 5
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 6
   });
 
-  it("continues nudging every 3 turns after escalation", () => {
+  it("no further signals after escalation fires", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
 
-    // Drive to stale 15
-    for (let i = 0; i < 14; i++) {
+    // Drive to stale 10
+    for (let i = 0; i < 9; i++) {
       tracker.onSnapshotRefresh(snap);
     }
-    const signal = tracker.onSnapshotRefresh(snap); // stale 15
-    expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
-    expect(signal!.staleTurns).toBe(15);
+    const signal = tracker.onSnapshotRefresh(snap); // stale 10
+    // Only the first escalate at 3 fired, everything after is null
+    expect(signal).toBeNull();
   });
 
   it("treats text change on same URL as progress", () => {
@@ -153,17 +119,15 @@ describe("ProgressTracker", () => {
     });
 
     // Build up 2 stale on snap1
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap1);
-    }
-    // snap2 resets stale counter
+    tracker.onSnapshotRefresh(snap1); // stale 1
+    tracker.onSnapshotRefresh(snap1); // stale 2
+    // snap2 resets stale counter (content changed)
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
 
-    // 2 more stale won't trigger nudge (counter was reset)
-    for (let i = 0; i < 2; i++) {
-      expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
-    }
+    // 2 more stale won't trigger escalation (counter was reset, need 3)
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
   });
 
   it("treats attribute change as progress (e.g. disabled→enabled)", () => {
@@ -179,10 +143,9 @@ describe("ProgressTracker", () => {
       elements: [makeElement({ text: "Submit" })],
     });
 
-    // Build 2 stale on snap1 (would nudge at 3 if no change)
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap1);
-    }
+    // Build 2 stale on snap1
+    tracker.onSnapshotRefresh(snap1); // stale 1
+    tracker.onSnapshotRefresh(snap1); // stale 2
     // snap2 has different attributes → resets stale counter
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
   });
@@ -190,10 +153,10 @@ describe("ProgressTracker", () => {
   it("reset() clears all state", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 2; i++) {
       tracker.onSnapshotRefresh(snap);
     }
-    // stale 9 would escalate
+    // stale 3 would escalate
     tracker.reset();
 
     // After reset, baseline again
@@ -201,31 +164,28 @@ describe("ProgressTracker", () => {
     expect(signal).toBeNull();
   });
 
-  it("resetEscalation() clears pivot and escalation flags", () => {
+  it("resetEscalation() clears escalation flag and stale counter", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
 
-    // Drive to pivot at 6
-    for (let i = 0; i < 5; i++) {
-      tracker.onSnapshotRefresh(snap);
-    }
-    const pivot = tracker.onSnapshotRefresh(snap); // stale 6 → pivot
-    expect(pivot!.type).toBe("pivot");
+    // Drive to escalate at 3
+    tracker.onSnapshotRefresh(snap); // stale 1
+    tracker.onSnapshotRefresh(snap); // stale 2
+    const esc = tracker.onSnapshotRefresh(snap); // stale 3 → escalate
+    expect(esc!.type).toBe("escalate");
 
-    // Reset escalation state (as strategy pivot does)
+    // Reset escalation state (as the loop does after handling)
     tracker.resetEscalation();
     // staleTurns is now 0, but lastSignatures still match snap.
-    // So subsequent calls with the same snap see no content change and increment stale.
 
-    // 5 more stale turns: stale 1-5 (nudge fires at 3)
-    for (let i = 0; i < 5; i++) {
-      tracker.onSnapshotRefresh(snap);
-    }
-    // stale 6 → pivot fires again (because pivotFired was cleared)
-    const pivot2 = tracker.onSnapshotRefresh(snap);
-    expect(pivot2).not.toBeNull();
-    expect(pivot2!.type).toBe("pivot");
-    expect(pivot2!.staleTurns).toBe(6);
+    // 2 more stale turns — no signal yet
+    tracker.onSnapshotRefresh(snap); // stale 1
+    tracker.onSnapshotRefresh(snap); // stale 2
+    // stale 3 → escalate fires again (because flag was cleared)
+    const esc2 = tracker.onSnapshotRefresh(snap);
+    expect(esc2).not.toBeNull();
+    expect(esc2!.type).toBe("escalate");
+    expect(esc2!.staleTurns).toBe(3);
   });
 
   it("URL-only change halves stale count instead of resetting", () => {
@@ -236,18 +196,13 @@ describe("ProgressTracker", () => {
     for (let i = 0; i < 4; i++) {
       tracker.onSnapshotRefresh(snap1);
     }
-    // staleTurns = 4
+    // staleTurns = 4 (escalation already fired at 3)
 
     // Navigate to different URL with same content → halve to 2
     const snap2 = makeSnap({ url: "https://other.com" });
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
-
-    // 1 more stale → staleTurns = 3 → nudge
-    const nudge = tracker.onSnapshotRefresh(snap2);
-    expect(nudge).not.toBeNull();
-    expect(nudge!.type).toBe("nudge");
-    expect(nudge!.staleTurns).toBe(3);
+    // staleTurns = 2 after halving
   });
 
   it("content change still fully resets stale count to 0", () => {
@@ -255,9 +210,8 @@ describe("ProgressTracker", () => {
     tracker.onSnapshotRefresh(snap1); // baseline
 
     // Build up 2 stale turns
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap1);
-    }
+    tracker.onSnapshotRefresh(snap1); // stale 1
+    tracker.onSnapshotRefresh(snap1); // stale 2
 
     // Content change on different URL → full reset
     const snap2 = makeSnap({
@@ -268,32 +222,29 @@ describe("ProgressTracker", () => {
     });
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
 
-    // 2 more stale turns should NOT trigger nudge (counter was reset to 0)
-    for (let i = 0; i < 2; i++) {
-      expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
-    }
+    // 2 more stale turns should NOT trigger escalation (counter was reset to 0, need 3)
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
   });
 
-  it("URL change does not prevent eventual nudge/pivot if content stays stale", () => {
+  it("URL change does not prevent eventual escalation if content stays stale", () => {
     const snap1 = makeSnap();
     tracker.onSnapshotRefresh(snap1); // baseline
 
     // Build stale turns, periodically changing URL with same content
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap1); // staleTurns 1-2
-    }
+    tracker.onSnapshotRefresh(snap1); // stale 1
+    tracker.onSnapshotRefresh(snap1); // stale 2
     // staleTurns = 2, navigate away → halve to 1
     const snapOther = makeSnap({ url: "https://other.com" });
     tracker.onSnapshotRefresh(snapOther);
     // staleTurns = 1, navigate back → halve to 0
     tracker.onSnapshotRefresh(snap1);
     // staleTurns = 0, keep going stale on same URL
-    for (let i = 0; i < 2; i++) {
-      tracker.onSnapshotRefresh(snap1); // staleTurns 1-2
-    }
-    const signal = tracker.onSnapshotRefresh(snap1); // staleTurns = 3 → nudge
+    tracker.onSnapshotRefresh(snap1); // stale 1
+    tracker.onSnapshotRefresh(snap1); // stale 2
+    const signal = tracker.onSnapshotRefresh(snap1); // stale 3 → escalate
     expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
+    expect(signal!.type).toBe("escalate");
   });
 
   it("URL-only change does not count as content change (fingerprint excludes URL)", () => {
@@ -309,10 +260,10 @@ describe("ProgressTracker", () => {
     }
     // staleTurns = 4, URL change halves to 2
     tracker.onSnapshotRefresh(snap2);
-    // 1 more stale → staleTurns = 3 → nudge
+    // 1 more stale → staleTurns = 3 → escalation would fire but already fired at 3
+    // Since escalationFired is true, no signal
     const signal = tracker.onSnapshotRefresh(snap2);
-    expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
+    expect(signal).toBeNull();
   });
 });
 
@@ -324,8 +275,7 @@ describe("ProgressTracker — delta threshold", () => {
   });
 
   it("small DOM change (< 10%) does NOT reset stale count", () => {
-    // 20 elements, change 1 element text → delta = 2/20 = 10%... that's right at threshold
-    // Use 30 elements, change 1 → delta = 2/30 ≈ 6.7% → below threshold → stale
+    // 30 elements, change 1 element text → delta = 2/30 ≈ 6.7% → below threshold → stale
     const snap1 = makeManyElementSnap(30);
     tracker.onSnapshotRefresh(snap1); // baseline
 
@@ -338,21 +288,11 @@ describe("ProgressTracker — delta threshold", () => {
     tracker.onSnapshotRefresh(snap1); // stale 1
     tracker.onSnapshotRefresh(snap1); // stale 2
 
-    // The small change should NOT reset stale count
-    tracker.onSnapshotRefresh(snap2); // delta ≈ 6.7%, below 10% → still stale (3)
-
-    // One more identical snap2 → stale 4 (no nudge at 3 because snap2 was also stale)
-    // Actually: after snap2, lastSignatures = snap2's sigs. Next snap2 = delta 0 → stale increments.
-    // At this point staleTurns should be 4, so one more gets us to nudge territory.
-    // Let's verify: snap2 didn't reset, so staleTurns went from 2 → 3 (the snap2 call incremented it).
-    // Next snap2 call → delta 0 → stale 4. We need 3 total for nudge.
-    // stale count after baseline: snap1→1, snap1→2, snap2→3 (below threshold, +1), so nudge fires at 3.
-    const signal = tracker.onSnapshotRefresh(snap2); // stale 3 was the snap2 call
-    // The snap2 call was stale turn 3, which should have triggered nudge.
-    // Let's check: we've called onSnapshotRefresh 4 times after baseline:
-    //   snap1 → stale 1, snap1 → stale 2, snap2 → stale 3 (nudge!), snap2 → stale 4
-    // So the third call (snap2) already returned the nudge. Let's restructure this test.
-    expect(signal).toBeNull(); // stale 4, no signal (nudge only at multiples of 3)
+    // Noise change — below 10% threshold → should NOT reset, stale becomes 3 → escalate
+    const signal = tracker.onSnapshotRefresh(snap2);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe("escalate");
+    expect(signal!.staleTurns).toBe(3);
   });
 
   it("small DOM change below threshold keeps stale count incrementing", () => {
@@ -372,7 +312,7 @@ describe("ProgressTracker — delta threshold", () => {
     // Noise change — below 10% threshold → should NOT reset, stale becomes 3
     const signal = tracker.onSnapshotRefresh(snapNoise);
     expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
+    expect(signal!.type).toBe("escalate");
     expect(signal!.staleTurns).toBe(3);
   });
 
@@ -394,7 +334,7 @@ describe("ProgressTracker — delta threshold", () => {
     const signal = tracker.onSnapshotRefresh(snap2); // delta = 30% → progress
     expect(signal).toBeNull(); // stale count reset
 
-    // 2 more stale turns should NOT trigger nudge (counter was reset)
+    // 2 more stale turns should NOT trigger escalation (counter was reset, need 3)
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
   });
@@ -407,9 +347,6 @@ describe("ProgressTracker — delta threshold", () => {
     tracker.onSnapshotRefresh(snap1); // stale 2
 
     // Completely different page
-    const snap2 = makeManyElementSnap(15);
-    // All elements have different text ("Element 1" through "Element 15" vs "Element 1" through "Element 20")
-    // Actually some overlap — let's make them truly different
     const elements = Array.from({ length: 15 }, (_, i) =>
       makeElement({ tag: i + 100, text: `New page item ${i}`, tagName: "div" }),
     );
@@ -447,10 +384,10 @@ describe("ProgressTracker — delta threshold", () => {
     ];
     const snapLazy = makeManyElementSnap(50, extras);
 
-    // delta = 3 new / 53 max = 5.7% → below threshold → stale 3 → nudge
+    // delta = 3 new / 53 max = 5.7% → below threshold → stale 3 → escalate
     const signal = tracker.onSnapshotRefresh(snapLazy);
     expect(signal).not.toBeNull();
-    expect(signal!.type).toBe("nudge");
+    expect(signal!.type).toBe("escalate");
     expect(signal!.staleTurns).toBe(3);
   });
 });

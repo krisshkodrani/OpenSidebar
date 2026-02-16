@@ -1,4 +1,4 @@
-import { LLMClient, MODEL_SMART } from "../llm";
+import { LLMClient } from "../llm";
 import { TokenUsage } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
@@ -56,14 +56,10 @@ export class PlanGuardian {
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
 
-  constructor(openRouterApiKey: string) {
-    this.llm = new LLMClient(
-      openRouterApiKey,
-      undefined,
-      undefined,
-      false,
-      MODEL_SMART,
-    );
+  constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
+    this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
+    // Guardian always uses the smart model tier
+    this.llm.switchToSmart();
   }
 
   setUsageCallback(

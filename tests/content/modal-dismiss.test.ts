@@ -83,17 +83,17 @@ describe("detectViewportCoveringOverlays", () => {
         document.body.innerHTML = "";
     });
 
-    test("detects fixed element covering >50% viewport", () => {
+    test("detects fixed element covering >30% viewport", () => {
         createFixedOverlay({ coverage: "full" });
         const overlays = detectViewportCoveringOverlays();
         expect(overlays.length).toBeGreaterThanOrEqual(1);
-        expect(overlays[0].coverage).toBeGreaterThan(50);
+        expect(overlays[0].coverage).toBeGreaterThan(30);
     });
 
-    test("ignores small fixed elements (<50%)", () => {
+    test("ignores small fixed elements (<30%)", () => {
         createFixedOverlay({ coverage: "small" });
         const overlays = detectViewportCoveringOverlays();
-        // 50*50 / (1024*768) = ~0.3%, well below 50%
+        // 50*50 / (1024*768) = ~0.3%, well below 30%
         expect(overlays.length).toBe(0);
     });
 

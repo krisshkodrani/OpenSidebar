@@ -37,8 +37,10 @@ export const MODEL_FAST = "openai/gpt-oss-120b";
 export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
 /** Fast model tier — used for initial turns (Cerebras, highest priority) */
 export const MODEL_FAST_CEREBRAS = "gpt-oss-120b";
-/** Smart model tier — used after escalation when stuck */
-export const MODEL_SMART = "x-ai/grok-4.1-fast:nitro";
+/** Smart model tier — used after escalation (OpenRouter fallback) */
+export const MODEL_SMART = "z-ai/glm-4.7";
+/** Smart model tier — used after escalation (Cerebras, highest priority) */
+export const MODEL_SMART_CEREBRAS = "zai-glm-4.7";
 
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
@@ -146,36 +148,48 @@ export interface ProviderSlot {
   model: string;
 }
 
+/** Model identifiers per provider for a given tier. */
+export interface PoolConfig {
+  cerebrasModel?: string;
+  groqModel?: string;
+  openRouterModel: string;
+}
+
 /**
- * Priority-based provider pool for the fast model tier.
- * Cerebras → Groq → OpenRouter (fastest first).
+ * Priority-based provider pool. Cerebras → Groq → OpenRouter (fastest first).
  * On 429, the provider is placed on a 60s cooldown and the next provider is used.
+ * Used for both fast and smart model tiers with different PoolConfig.
  */
 export class ProviderPool {
   private slots: ProviderSlot[];
 
-  constructor(openRouterKey: string, groqKey?: string, cerebrasKey?: string) {
+  constructor(
+    openRouterKey: string,
+    config: PoolConfig,
+    groqKey?: string,
+    cerebrasKey?: string,
+  ) {
     this.slots = [];
     // Priority: fastest first
-    if (cerebrasKey) {
+    if (cerebrasKey && config.cerebrasModel) {
       this.slots.push({
         provider: cerebrasProvider(cerebrasKey),
         cooldownUntil: 0,
-        model: MODEL_FAST_CEREBRAS,
+        model: config.cerebrasModel,
       });
     }
-    if (groqKey) {
+    if (groqKey && config.groqModel) {
       this.slots.push({
         provider: groqProvider(groqKey),
         cooldownUntil: 0,
-        model: MODEL_FAST_GROQ,
+        model: config.groqModel,
       });
     }
     // OpenRouter always present as last resort
     this.slots.push({
       provider: openRouterProvider(openRouterKey),
       cooldownUntil: 0,
-      model: MODEL_FAST,
+      model: config.openRouterModel,
     });
   }
 
@@ -225,13 +239,17 @@ export class LLMClient {
   private openRouterApiKey: string;
   /** Priority-based provider pool for fast model failover */
   private fastPool: ProviderPool;
+  /** Priority-based provider pool for smart model failover */
+  private smartPool: ProviderPool;
+  /** Whether the client is currently in smart model tier */
+  private _isSmartTier = false;
 
   /**
    * Creates a new LLM client with priority-based provider failover.
    * @param openRouterApiKey - OpenRouter key (always needed for smart model + fallback)
-   * @param groqApiKey - Groq key (optional; auto-joins pool when present)
-   * @param cerebrasApiKey - Cerebras key (optional; joins pool at highest priority if present)
-   * @param model - Model ID override (defaults to pool's top-priority model)
+   * @param groqApiKey - Groq key (optional; auto-joins fast pool when present)
+   * @param cerebrasApiKey - Cerebras key (optional; joins both pools at highest priority)
+   * @param model - Model ID override (defaults to fast pool's top-priority model)
    */
   constructor(
     openRouterApiKey: string,
@@ -241,17 +259,38 @@ export class LLMClient {
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    // Build priority pool: Cerebras → Groq → OpenRouter
+    // Build fast pool: Cerebras → Groq → OpenRouter
     this.fastPool = new ProviderPool(
       openRouterApiKey,
+      {
+        cerebrasModel: MODEL_FAST_CEREBRAS,
+        groqModel: MODEL_FAST_GROQ,
+        openRouterModel: MODEL_FAST,
+      },
       groqApiKey,
       cerebrasApiKey,
     );
 
-    // Initialize from pool's top priority
+    // Build smart pool: Cerebras → OpenRouter (no Groq for smart tier)
+    this.smartPool = new ProviderPool(
+      openRouterApiKey,
+      {
+        cerebrasModel: MODEL_SMART_CEREBRAS,
+        openRouterModel: MODEL_SMART,
+      },
+      undefined,
+      cerebrasApiKey,
+    );
+
+    // Initialize from fast pool's top priority
     const initialSlot = this.fastPool.getActive();
     this.model = model ?? initialSlot.model;
     this.provider = initialSlot.provider;
+  }
+
+  /** Whether the client is currently using the smart model tier */
+  public isSmartTier(): boolean {
+    return this._isSmartTier;
   }
 
   /** Get the currently active model ID */
@@ -266,11 +305,11 @@ export class LLMClient {
 
   /** Get provider info for the currently active fast/smart slot */
   public getActiveProviderInfo(): { providerId: string; model: string } {
-    const isSmartModel = this.model === MODEL_SMART;
-    const slot = isSmartModel ? null : this.fastPool.getActive();
+    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const slot = pool.getActive();
     return {
-      providerId: (slot?.provider ?? this.provider).providerId,
-      model: slot?.model ?? this.model,
+      providerId: slot.provider.providerId,
+      model: slot.model,
     };
   }
 
@@ -281,23 +320,25 @@ export class LLMClient {
   }
 
   /**
-   * Switch to smart model on OpenRouter. Used during escalation.
-   * Changes BOTH the provider (Groq→OpenRouter) and the model.
+   * Switch to smart model tier. Used during escalation.
+   * Reads from smart pool (Cerebras → OpenRouter) for best available provider.
    */
   public switchToSmart(): void {
+    const slot = this.smartPool.getActive();
     logger.info("agent", "Switching to smart model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
-      toModel: MODEL_SMART,
-      toProvider: "openrouter",
+      toModel: slot.model,
+      toProvider: slot.provider.providerId,
     });
-    this.model = MODEL_SMART;
-    this.provider = openRouterProvider(this.openRouterApiKey);
+    this.model = slot.model;
+    this.provider = slot.provider;
+    this._isSmartTier = true;
   }
 
   /**
    * Switch back to fast model. Used during de-escalation when progress resumes.
-   * Reads from pool to get the fastest available provider (respects cooldowns).
+   * Reads from fast pool to get the fastest available provider (respects cooldowns).
    */
   public switchToFast(): void {
     const slot = this.fastPool.getActive();
@@ -309,6 +350,7 @@ export class LLMClient {
     });
     this.model = slot.model;
     this.provider = slot.provider;
+    this._isSmartTier = false;
   }
 
   /** Rebuild request for a different provider (swaps URL, headers, AND model in body) */
@@ -318,6 +360,7 @@ export class LLMClient {
   ): { url: string; init: RequestInit } {
     const body = JSON.parse(init.body as string);
     body.model = slot.model;
+    delete body.provider;
     return {
       url: slot.provider.baseUrl,
       init: {
@@ -359,8 +402,9 @@ export class LLMClient {
 
         // Immediate provider failover on 429 (rate limit)
         if (response.status === 429 && providerId) {
-          this.fastPool.cooldown(providerId);
-          const fallback = this.fastPool.getNextFallback(providerId);
+          const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+          pool.cooldown(providerId);
+          const fallback = pool.getNextFallback(providerId);
           if (fallback) {
             logger.warn("agent", "Provider rate-limited, failing over", {
               from: providerId,
@@ -407,11 +451,11 @@ export class LLMClient {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
-    // Use pool for fast model, direct provider for smart model
-    const isSmartModel = this.model === MODEL_SMART;
-    const slot = isSmartModel ? null : this.fastPool.getActive();
-    const provider = slot?.provider ?? this.provider;
-    const activeModel = slot?.model ?? this.model;
+    // Use the appropriate pool based on current tier
+    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const slot = pool.getActive();
+    const provider = slot.provider;
+    const activeModel = slot.model;
 
     if (!provider.apiKey) {
       const name =
@@ -425,7 +469,6 @@ export class LLMClient {
       );
     }
 
-    const reasoningEffort = request.reasoningEffort ?? "none";
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: request.messages,
@@ -434,14 +477,6 @@ export class LLMClient {
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
-      // Smart model routing: latency-optimized provider selection
-      ...(isSmartModel && {
-        provider: { sort: "latency", require_parameters: true },
-      }),
-      // Reasoning control for models that support it (Grok 4.1)
-      ...(isSmartModel && {
-        reasoning: { effort: reasoningEffort },
-      }),
     };
 
     logger.debug("agent", "LLM Request", {
@@ -449,7 +484,6 @@ export class LLMClient {
       provider: provider.providerId,
       msgCount: (payload.messages as LLMMessage[]).length,
       tools: (payload.tools as unknown[] | undefined)?.length,
-      reasoningEffort: isSmartModel ? reasoningEffort : undefined,
     });
 
     try {
@@ -570,11 +604,11 @@ export class LLMClient {
     request: CompletionRequest,
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
-    // Use pool for fast model, direct provider for smart model
-    const isSmartModel = this.model === MODEL_SMART;
-    const slot = isSmartModel ? null : this.fastPool.getActive();
-    const provider = slot?.provider ?? this.provider;
-    const activeModel = slot?.model ?? this.model;
+    // Use the appropriate pool based on current tier
+    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const slot = pool.getActive();
+    const provider = slot.provider;
+    const activeModel = slot.model;
 
     if (!provider.apiKey) {
       const name =
@@ -588,7 +622,6 @@ export class LLMClient {
       );
     }
 
-    const reasoningEffort = request.reasoningEffort ?? "none";
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: request.messages,
@@ -599,14 +632,6 @@ export class LLMClient {
       stop: request.stop,
       stream: true,
       stream_options: { include_usage: true },
-      // Smart model routing: latency-optimized provider selection
-      ...(isSmartModel && {
-        provider: { sort: "latency", require_parameters: true },
-      }),
-      // Reasoning control for models that support it (Grok 4.1)
-      ...(isSmartModel && {
-        reasoning: { effort: reasoningEffort },
-      }),
     };
 
     logger.debug("agent", "LLM Stream Request", {
@@ -614,7 +639,6 @@ export class LLMClient {
       provider: provider.providerId,
       msgCount: (payload.messages as LLMMessage[]).length,
       tools: (payload.tools as unknown[] | undefined)?.length,
-      reasoningEffort: isSmartModel ? reasoningEffort : undefined,
     });
 
     try {

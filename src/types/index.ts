@@ -80,6 +80,8 @@ export enum ToolName {
   INSPECT_HIDDEN = "inspect_hidden",
   XRAY_PAGE = "xray_page",
   FAST_FORWARD = "fast_forward",
+  DISMISS_OVERLAYS = "dismiss_overlays",
+  BATCH_EXECUTE = "batch_execute",
 
   // React toolkit (on-demand — enabled only when React is detected on the page)
   INSPECT_REACT = "inspect_react",
@@ -150,7 +152,10 @@ export type RuntimeMessage =
   | SkipSubtaskMessage
   | PauseAgentMessage
   | ResumeAgentMessage
-  | SessionMetricsMessage;
+  | SessionMetricsMessage
+  | ContentScriptReadyMessage
+  | DomReadyProbeMessage
+  | DomReadyAckMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -272,6 +277,37 @@ export interface DismissModalsResponse extends BaseMessage {
   };
 }
 
+/** Content script announces it's initialized and ready to receive messages */
+export interface ContentScriptReadyMessage extends BaseMessage {
+  type: "CONTENT_SCRIPT_READY";
+  source: MessageSource.CONTENT;
+  payload: { tabId: number };
+}
+
+/** Background asks content script to signal when DOM has settled (no mutations) */
+export interface DomReadyProbeMessage extends BaseMessage {
+  type: "DOM_READY_PROBE";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    /** Hard cap in ms — respond even if DOM hasn't fully settled */
+    timeoutMs: number;
+    /** If true, wait until at least one element is present before responding */
+    waitForElements?: boolean;
+  };
+}
+
+/** Content script responds when DOM quiescence is reached */
+export interface DomReadyAckMessage extends BaseMessage {
+  type: "DOM_READY_ACK";
+  source: MessageSource.CONTENT;
+  payload: {
+    /** How long the content script waited before responding (ms) */
+    waitedMs: number;
+    /** Number of elements currently in DOM (0 = page still loading) */
+    elementCount: number;
+  };
+}
+
 /** Background sends a step update to the side panel for the timeline */
 export interface AgentStepMessage extends BaseMessage {
   type: "AGENT_STEP";
@@ -293,7 +329,7 @@ export interface AgentStuckMessage extends BaseMessage {
   type: "AGENT_STUCK";
   source: MessageSource.BACKGROUND;
   payload: {
-    signal: "nudge" | "pivot" | "escalate" | "resolved";
+    signal: "escalate" | "resolved";
     staleTurns: number;
     url: string;
     /** Human-readable explanation */
@@ -538,11 +574,15 @@ export interface JsonSchema {
 }
 
 export interface JsonSchemaProperty {
-  type: "string" | "number" | "integer" | "boolean" | "array";
+  type: "string" | "number" | "integer" | "boolean" | "array" | "object";
   description: string;
   enum?: (string | number)[];
   items?: JsonSchemaProperty;
   default?: unknown;
+  /** Nested properties (when type is "object") */
+  properties?: Record<string, JsonSchemaProperty>;
+  /** Required fields (when type is "object") */
+  required?: string[];
 }
 
 /** Arguments for click_element */
@@ -859,6 +899,27 @@ export type XrayPageArgs = Record<string, never>;
 /** Arguments for fast_forward — no arguments, simple toggle */
 export type FastForwardArgs = Record<string, never>;
 
+/** Arguments for dismiss_overlays — no arguments */
+export type DismissOverlaysArgs = Record<string, never>;
+
+/** A single step inside a batch_execute script */
+export interface BatchExecuteStep {
+  /** Tool name to execute */
+  tool: string;
+  /** Arguments for the tool */
+  args: Record<string, unknown>;
+  /** Optional expected outcome — bail if result doesn't contain this */
+  expect?: string;
+}
+
+/** Arguments for batch_execute */
+export interface BatchExecuteArgs {
+  /** Ordered list of tool calls to execute without LLM roundtrips */
+  steps: BatchExecuteStep[];
+  /** What to verify after all steps complete (informational, not enforced) */
+  verify?: string;
+}
+
 // --- React Toolkit Args ---
 
 /** Arguments for inspect_react — read component state/props for a tagged element */
@@ -949,6 +1010,8 @@ export type ToolArgsMap = {
   [ToolName.INSPECT_HIDDEN]: InspectHiddenArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.FAST_FORWARD]: FastForwardArgs;
+  [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
+  [ToolName.BATCH_EXECUTE]: BatchExecuteArgs;
   [ToolName.INSPECT_REACT]: InspectReactArgs;
   [ToolName.REACT_SET_INPUT]: ReactSetInputArgs;
   [ToolName.INSPECT_REACT_TREE]: InspectReactTreeArgs;
@@ -1135,7 +1198,7 @@ export interface ChatEntry {
 
 /** Stuck detection state for the side panel */
 export interface StuckState {
-  signal: "nudge" | "pivot" | "escalate";
+  signal: "escalate";
   staleTurns: number;
   url: string;
   /** Timestamp of the stuck signal (for auto-dismiss timing) */

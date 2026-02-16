@@ -4,53 +4,88 @@ import {
   MODEL_FAST,
   MODEL_FAST_GROQ,
   MODEL_FAST_CEREBRAS,
+  MODEL_SMART,
+  MODEL_SMART_CEREBRAS,
+  PoolConfig,
 } from "../../src/background/llm/client";
 
+const FAST_CONFIG: PoolConfig = {
+  cerebrasModel: MODEL_FAST_CEREBRAS,
+  groqModel: MODEL_FAST_GROQ,
+  openRouterModel: MODEL_FAST,
+};
+
+const SMART_CONFIG: PoolConfig = {
+  cerebrasModel: MODEL_SMART_CEREBRAS,
+  openRouterModel: MODEL_SMART,
+};
+
 describe("ProviderPool", () => {
-  describe("priority ordering", () => {
+  describe("priority ordering (fast)", () => {
     test("returns Cerebras when all providers are healthy", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("cerebras");
       expect(slot.model).toBe(MODEL_FAST_CEREBRAS);
     });
 
     test("returns Groq when no Cerebras key", () => {
-      const pool = new ProviderPool("or-key", "groq-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key");
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("groq");
       expect(slot.model).toBe(MODEL_FAST_GROQ);
     });
 
     test("returns OpenRouter when only OpenRouter key", () => {
-      const pool = new ProviderPool("or-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG);
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("openrouter");
       expect(slot.model).toBe(MODEL_FAST);
     });
 
     test("pool has correct number of slots", () => {
-      const full = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const full = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       expect(full.getSlots().length).toBe(3);
 
-      const noGroq = new ProviderPool("or-key", undefined, "cerebras-key");
+      const noGroq = new ProviderPool("or-key", FAST_CONFIG, undefined, "cerebras-key");
       expect(noGroq.getSlots().length).toBe(2);
 
-      const onlyOR = new ProviderPool("or-key");
+      const onlyOR = new ProviderPool("or-key", FAST_CONFIG);
       expect(onlyOR.getSlots().length).toBe(1);
+    });
+  });
+
+  describe("priority ordering (smart)", () => {
+    test("returns Cerebras when key present", () => {
+      const pool = new ProviderPool("or-key", SMART_CONFIG, undefined, "cerebras-key");
+      const slot = pool.getActive();
+      expect(slot.provider.providerId).toBe("cerebras");
+      expect(slot.model).toBe(MODEL_SMART_CEREBRAS);
+    });
+
+    test("returns OpenRouter when no Cerebras key", () => {
+      const pool = new ProviderPool("or-key", SMART_CONFIG);
+      const slot = pool.getActive();
+      expect(slot.provider.providerId).toBe("openrouter");
+      expect(slot.model).toBe(MODEL_SMART);
+    });
+
+    test("smart pool has 2 slots max (no Groq)", () => {
+      const pool = new ProviderPool("or-key", SMART_CONFIG, undefined, "cerebras-key");
+      expect(pool.getSlots().length).toBe(2);
     });
   });
 
   describe("cooldown", () => {
     test("skips cooled-down provider and returns next", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("cerebras");
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("groq");
     });
 
     test("cascade cooldown — both Cerebras + Groq cooled → OpenRouter", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("cerebras");
       pool.cooldown("groq");
       const slot = pool.getActive();
@@ -58,7 +93,7 @@ describe("ProviderPool", () => {
     });
 
     test("OpenRouter is absolute fallback even when all cooled", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("cerebras");
       pool.cooldown("groq");
       pool.cooldown("openrouter");
@@ -68,7 +103,7 @@ describe("ProviderPool", () => {
     });
 
     test("cooldown expiry restores provider priority", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("cerebras");
 
       // Manually expire the cooldown by setting cooldownUntil in the past
@@ -83,36 +118,44 @@ describe("ProviderPool", () => {
     });
 
     test("cooldown for unknown provider is a no-op", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("nonexistent");
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("cerebras");
+    });
+
+    test("smart pool cooldown falls to OpenRouter", () => {
+      const pool = new ProviderPool("or-key", SMART_CONFIG, undefined, "cerebras-key");
+      pool.cooldown("cerebras");
+      const slot = pool.getActive();
+      expect(slot.provider.providerId).toBe("openrouter");
+      expect(slot.model).toBe(MODEL_SMART);
     });
   });
 
   describe("getNextFallback", () => {
     test("returns Groq as fallback after Cerebras", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const fallback = pool.getNextFallback("cerebras");
       expect(fallback).not.toBeNull();
       expect(fallback!.provider.providerId).toBe("groq");
     });
 
     test("returns OpenRouter as fallback after Groq", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const fallback = pool.getNextFallback("groq");
       expect(fallback).not.toBeNull();
       expect(fallback!.provider.providerId).toBe("openrouter");
     });
 
     test("returns null when OpenRouter is last (no more providers)", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const fallback = pool.getNextFallback("openrouter");
       expect(fallback).toBeNull();
     });
 
     test("skips cooled-down intermediate providers", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("groq");
       const fallback = pool.getNextFallback("cerebras");
       // Should skip Groq (cooled) and return OpenRouter
@@ -121,7 +164,7 @@ describe("ProviderPool", () => {
     });
 
     test("returns OpenRouter fallback even when all downstream cooled", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       pool.cooldown("groq");
       pool.cooldown("openrouter");
       const fallback = pool.getNextFallback("cerebras");
@@ -131,7 +174,7 @@ describe("ProviderPool", () => {
     });
 
     test("returns null for unknown provider", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const fallback = pool.getNextFallback("nonexistent");
       expect(fallback).toBeNull();
     });
@@ -139,7 +182,7 @@ describe("ProviderPool", () => {
 
   describe("single provider pool", () => {
     test("works with only OpenRouter", () => {
-      const pool = new ProviderPool("or-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG);
       const slot = pool.getActive();
       expect(slot.provider.providerId).toBe("openrouter");
       expect(slot.model).toBe(MODEL_FAST);
@@ -150,7 +193,7 @@ describe("ProviderPool", () => {
     });
 
     test("cooldown on single provider still returns it", () => {
-      const pool = new ProviderPool("or-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG);
       pool.cooldown("openrouter");
       // Fallback to last slot (same provider)
       const slot = pool.getActive();
@@ -160,7 +203,7 @@ describe("ProviderPool", () => {
 
   describe("model assignment", () => {
     test("each provider slot has correct model", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const slots = pool.getSlots();
 
       expect(slots[0].model).toBe(MODEL_FAST_CEREBRAS); // "gpt-oss-120b"
@@ -169,7 +212,7 @@ describe("ProviderPool", () => {
     });
 
     test("provider URLs are correct", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const slots = pool.getSlots();
 
       expect(slots[0].provider.baseUrl).toContain("cerebras.ai");
@@ -178,7 +221,7 @@ describe("ProviderPool", () => {
     });
 
     test("API keys are correctly assigned", () => {
-      const pool = new ProviderPool("or-key", "groq-key", "cerebras-key");
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
       const slots = pool.getSlots();
 
       expect(slots[0].provider.apiKey).toBe("cerebras-key");

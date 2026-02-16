@@ -60,8 +60,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
     });
 
-    test("has exactly 20 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(20);
+    test("has exactly 21 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(21);
     });
   });
 

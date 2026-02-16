@@ -247,6 +247,16 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: false,
   },
+  [ToolName.DISMISS_OVERLAYS]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: false,
+  },
+  [ToolName.BATCH_EXECUTE]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: true,
+  },
 
   // React toolkit (on-demand)
   [ToolName.INSPECT_REACT]: {

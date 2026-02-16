@@ -148,7 +148,8 @@ Turn  4 [fast/cerebras]  → page has a CAPTCHA puzzle        ✗ stale
 Turn  5 [fast/cerebras]  → tries clicking CAPTCHA           ✗ stale
 Turn  6 [fast/cerebras]  → tries again                      ✗ stale
                            ↳ nudge injected
-Turn  7 [fast/cerebras]  → tries execute_js                 ✗ stale
+Turn  7 [fast/cerebras]  → tries 
+                 ✗ stale
 Turn  8 [fast/cerebras]  → tries take_screenshot            ✗ stale
 Turn  9 [fast/cerebras]  → still stuck                      ✗ stale
                            ↳ ESCALATE: pivot + screenshot + nudge

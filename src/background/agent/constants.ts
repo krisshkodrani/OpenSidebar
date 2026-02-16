@@ -15,16 +15,12 @@ export const AGENT_LIMITS = {
 
 /** Stuck detection thresholds */
 export const STUCK_THRESHOLDS = {
-  /** Turns of no progress before nudging the agent */
-  NUDGE: 3,
-  /** Turns of no progress before strategy pivot (prune history, fresh start) */
-  PIVOT: 6,
-  /** Turns of no progress before escalating to smarter model + pivot */
-  ESCALATE: 9,
+  /** Turns of no progress before escalating to next tier */
+  ESCALATE: 3,
   /** Maximum turns before giving up entirely */
-  GIVE_UP: 15,
+  GIVE_UP: 10,
   /** Tighter give-up when already on the smart model (saves wasted turns) */
-  GIVE_UP_SMART: 10,
+  GIVE_UP_SMART: 8,
 } as const;
 
 /** Escalation/de-escalation cycle limits */
@@ -35,6 +31,12 @@ export const ESCALATION_LIMITS = {
   COOLDOWN_TURNS: 3,
   /** Minimum turns the smart model must run before de-escalation is allowed */
   MIN_SMART_TENURE: 3,
+} as const;
+
+/** BRAINS→HANDS: smart model orients, then fast model executes */
+export const ORIENTATION = {
+  /** Turns the smart model ("brains") runs before handing off to fast ("hands") */
+  PHASE_TURNS: 2,
 } as const;
 
 /** Tool failure circuit breaker */
@@ -58,9 +60,9 @@ export const REDUNDANT_ACTION = {
 /** Step duration watchdog */
 export const STEP_WATCHDOG = {
   /** Turns on same step before injecting a nudge */
-  WARN_TURNS: 8,
+  WARN_TURNS: 5,
   /** Turns on same step before forcing escalation */
-  ESCALATE_TURNS: 15,
+  ESCALATE_TURNS: 10,
 } as const;
 
 /** Broadcast intervals (turns) */
@@ -101,6 +103,12 @@ export const STRING_LIMITS = {
   ESCALATION_REASON: 60,
   /** Tool call snippet in logs */
   TOOL_CALL_SNIPPET: 80,
+} as const;
+
+/** Batch execution limits */
+export const BATCH_LIMITS = {
+  /** Maximum steps in a single batch_execute call */
+  MAX_STEPS: 10,
 } as const;
 
 /** Timing constants (milliseconds) */

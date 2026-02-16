@@ -7,6 +7,7 @@ import { SubtaskSummary } from "../../src/types";
 mock.module("../../src/background/llm", () => ({
     LLMClient: class {
         private model = "google/gemini-2.5-flash-lite";
+        _isSmartTier = false;
         complete = mock(() => Promise.resolve({
             role: "assistant",
             content: "ok",
@@ -22,8 +23,9 @@ mock.module("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
-        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; });
-        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; });
+        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; this._isSmartTier = true; });
+        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false; });
+        isSmartTier = () => this._isSmartTier;
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "openrouter";
         getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });

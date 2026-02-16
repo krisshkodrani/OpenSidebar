@@ -13,6 +13,7 @@ import { takeScreenshotWithTags } from "./screenshot";
 import { describeScreenshot } from "../vision";
 import { TokenUsage } from "../llm/types";
 import { registerReactTools } from "./react";
+import { waitForContentScriptReady } from "../tab-ready";
 
 // Export registry and types
 export * from "./registry";
@@ -500,6 +501,20 @@ const HIDE_ELEMENT_DEF: ToolDefinition = {
   },
 };
 
+const DISMISS_OVERLAYS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.DISMISS_OVERLAYS,
+    description:
+      "Aggressively dismiss ALL visible popups, modals, cookie banners, overlays, and dialogs on the page. Fast — no text is captured. Use when overlays block interaction and you don't need their content.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
 const ESCALATE_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -550,6 +565,43 @@ const UPDATE_PLAN_DEF: ToolDefinition = {
         },
       },
       required: ["subtasks", "currentIndex"],
+    },
+  },
+};
+
+const BATCH_EXECUTE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.BATCH_EXECUTE,
+    description:
+      "Execute a pre-planned sequence of tool calls without LLM roundtrips. " +
+      "Use for deterministic sequences where all element IDs are known (form fills, multi-click flows). " +
+      "Stops on first error. Only non-navigating tools allowed inside steps.",
+    parameters: {
+      type: "object",
+      properties: {
+        steps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              tool: { type: "string", description: "Tool name to call" },
+              args: { type: "object", description: "Tool arguments" },
+              expect: {
+                type: "string",
+                description: "Bail if result doesn't contain this substring",
+              },
+            },
+            required: ["tool", "args"],
+          },
+          description: "Ordered tool calls (max 10). Executed serially, no LLM between steps.",
+        },
+        verify: {
+          type: "string",
+          description: "What to check after all steps complete.",
+        },
+      },
+      required: ["steps"],
     },
   },
 };
@@ -1058,6 +1110,7 @@ async function executeContentTool(
     return "Error: No active tab to execute tool on.";
   }
 
+  logger.debug("tools", `bridge → ${startName}`, { tabId, args });
   try {
     const response = await chrome.tabs.sendMessage(tabId, {
       type: "TOOL_EXECUTE",
@@ -1179,6 +1232,7 @@ export function registerTools() {
         sourceUrl = "unknown";
       }
 
+      logger.info("tools", "memory_add", { category: (args.category as string) || "general", contentLen: (args.content as string).length, sourceUrl });
       const res = await sendMessageToMemory({
         action: "add",
         content: args.content as string,
@@ -1199,6 +1253,7 @@ export function registerTools() {
     ToolName.MEMORY_SEARCH,
     MEMORY_SEARCH_DEF,
     async (args) => {
+      logger.info("tools", "memory_search", { query: args.query });
       const res = await sendMessageToMemory({
         action: "search",
         query: args.query as string,
@@ -1297,6 +1352,91 @@ export function registerTools() {
     (args, tabId) => executeContentTool(ToolName.HIDE_ELEMENT, args, tabId),
   );
 
+  toolRegistry.register(
+    ToolName.DISMISS_OVERLAYS,
+    DISMISS_OVERLAYS_DEF,
+    async (_args, tabId) => {
+      logger.info("tools", "dismiss_overlays", { tabId });
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            let dismissed = 0;
+
+            // Phase 1: Selector-based — dialogs, modals, overlays, banners, cookie consent
+            const selectors = [
+              "[role='dialog']", "[role='alertdialog']",
+              ".modal", ".overlay", ".popup", ".banner",
+              ".cookie", ".consent", ".notice",
+              "[class*='modal']", "[class*='overlay']", "[class*='popup']",
+              "[class*='banner']", "[class*='cookie']", "[class*='consent']",
+              "[class*='notification']", "[class*='toast']", "[class*='snackbar']",
+              "#onetrust-consent-sdk", ".fc-consent-root",
+              "[class*='gdpr']", "[class*='privacy']",
+            ];
+            for (const sel of selectors) {
+              const els = document.querySelectorAll(sel);
+              for (const el of els) {
+                if (!(el instanceof HTMLElement)) continue;
+                const style = getComputedStyle(el);
+                if (style.display === "none" || style.visibility === "hidden") continue;
+                const isOverlay = style.position === "fixed" || style.position === "sticky"
+                  || style.position === "absolute" || parseInt(style.zIndex, 10) > 100;
+                if (!isOverlay) continue;
+                el.style.display = "none";
+                dismissed++;
+              }
+            }
+
+            // Phase 2: Viewport-covering elements (>30% coverage, fixed/absolute)
+            const vpW = window.innerWidth;
+            const vpH = window.innerHeight;
+            const vpArea = vpW * vpH;
+            if (vpArea > 0) {
+              const all = document.querySelectorAll("*");
+              for (const raw of all) {
+                if (!(raw instanceof HTMLElement)) continue;
+                const s = getComputedStyle(raw);
+                if (s.display === "none" || s.visibility === "hidden") continue;
+                if (s.position !== "fixed" && s.position !== "absolute") continue;
+                const r = raw.getBoundingClientRect();
+                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
+                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
+                if ((vW * vH) / vpArea > 0.3) {
+                  raw.style.display = "none";
+                  dismissed++;
+                }
+              }
+            }
+
+            // Phase 3: ESC key
+            if (dismissed > 0) {
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            }
+
+            // Phase 4: Remove overflow:hidden from body (often set by modals)
+            const bodyStyle = getComputedStyle(document.body);
+            if (bodyStyle.overflow === "hidden") {
+              document.body.style.overflow = "";
+              document.documentElement.style.overflow = "";
+            }
+
+            return `Dismissed ${dismissed} overlay(s).`;
+          },
+        });
+        return results?.[0]?.result ?? "No overlays found.";
+      } catch (e: any) {
+        return `Error dismissing overlays: ${e.message}`;
+      }
+    },
+  );
+
+  // Batch execution tool (intercepted by agent loop before executor runs)
+  toolRegistry.register(ToolName.BATCH_EXECUTE, BATCH_EXECUTE_DEF, async (args) => {
+    // Fallback — the loop intercepts batch_execute before reaching here
+    return `Batch requested: ${(args.steps as unknown[])?.length ?? 0} steps`;
+  });
+
   // Escalation tool (intercepted by agent loop before executor runs)
   toolRegistry.register(ToolName.ESCALATE, ESCALATE_DEF, async (args) => {
     // This executor is a fallback — the loop intercepts escalate before reaching here
@@ -1320,6 +1460,9 @@ export function registerTools() {
       if (url && query) return "Error: provide url OR query, not both.";
       if (!url && !query) return "Error: provide either url or query.";
 
+      const target = url ? url : `search: "${query}"`;
+      logger.info("tools", "navigate", { tabId, url, query, target });
+
       if (url) {
         const urlResult = sanitizeUrl(url);
         if (!urlResult.ok) return `Error: ${urlResult.error}`;
@@ -1329,9 +1472,7 @@ export function registerTools() {
       }
 
       await waitForNavigation(tabId);
-      // Brief wait for content script initialization
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const target = url ? url : `search: "${query}"`;
+      await waitForContentScriptReady(tabId, 2000);
       return `Navigated to ${target}. Page has loaded. Fresh page snapshot is available.`;
     },
   );
@@ -1339,16 +1480,20 @@ export function registerTools() {
   toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args) => {
     const urlResult = sanitizeUrl(args.url as string);
     if (!urlResult.ok) return `Error: ${urlResult.error}`;
+    logger.info("tools", "create_tab", { url: urlResult.value });
     const tab = await chrome.tabs.create({ url: urlResult.value });
+    logger.info("tools", "create_tab created", { tabId: tab.id, url: urlResult.value });
 
     // Auto-add to active workspace if exists
     const activeWorkspace = await workspaceManager.getActiveWorkspace();
     if (activeWorkspace && tab.id) {
       try {
         await workspaceManager.addTabToWorkspace(tab.id, activeWorkspace.id);
+        logger.info("tools", "create_tab grouped", { tabId: tab.id, workspace: activeWorkspace.name });
         return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${activeWorkspace.name})`;
       } catch (e) {
         logger.warn("tools", "Failed to auto-group tab to workspace", {
+          tabId: tab.id,
           error: e,
         });
       }
@@ -1362,6 +1507,7 @@ export function registerTools() {
     CLOSE_TAB_DEF,
     async (args, tabId) => {
       const targetTabId = (args.tabId as number) || tabId;
+      logger.info("tools", "close_tab", { targetTabId, requestedTabId: args.tabId, currentTabId: tabId });
       try {
         await chrome.tabs.remove(targetTabId);
         return `Closed tab ${targetTabId}`;
@@ -1373,6 +1519,7 @@ export function registerTools() {
 
   toolRegistry.register(ToolName.SWITCH_TAB, SWITCH_TAB_DEF, async (args) => {
     const targetTabId = args.tabId as number;
+    logger.info("tools", "switch_tab", { targetTabId });
     try {
       await chrome.tabs.update(targetTabId, { active: true });
       return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
@@ -1509,10 +1656,11 @@ export function registerTools() {
   );
 
   toolRegistry.register(ToolName.GO_BACK, GO_BACK_DEF, async (_args, tabId) => {
+    logger.info("tools", "go_back", { tabId });
     try {
       await chrome.tabs.goBack(tabId);
       await waitForNavigation(tabId);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForContentScriptReady(tabId, 2000);
       return "Navigated back. Fresh page snapshot is available.";
     } catch (e: any) {
       return `Error going back: ${e.message}`;
@@ -1523,10 +1671,11 @@ export function registerTools() {
     ToolName.GO_FORWARD,
     GO_FORWARD_DEF,
     async (_args, tabId) => {
+      logger.info("tools", "go_forward", { tabId });
       try {
         await chrome.tabs.goForward(tabId);
         await waitForNavigation(tabId);
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await waitForContentScriptReady(tabId, 2000);
         return "Navigated forward. Fresh page snapshot is available.";
       } catch (e: any) {
         return `Error going forward: ${e.message}`;
@@ -1536,6 +1685,7 @@ export function registerTools() {
 
   toolRegistry.register(ToolName.LIST_TABS, LIST_TABS_DEF, async () => {
     const tabs = await chrome.tabs.query({});
+    logger.info("tools", "list_tabs", { count: tabs.length });
     if (tabs.length === 0) return "No open tabs.";
     const lines = tabs.map(
       (t: any) =>
@@ -1549,6 +1699,7 @@ export function registerTools() {
     EXECUTE_JS_DEF,
     async (args, tabId) => {
       const code = args.code as string;
+      logger.info("tools", "execute_js", { tabId, codeLen: code.length, codeSnippet: code.slice(0, 120) });
       try {
         const results = await chrome.scripting.executeScript({
           target: { tabId },
@@ -1588,6 +1739,7 @@ export function registerTools() {
       const filename = args.filename as string | undefined;
       const urlResult = sanitizeUrl(url);
       if (!urlResult.ok) return `Error: ${urlResult.error}`;
+      logger.info("tools", "download_file", { url: urlResult.value, filename });
 
       try {
         const opts: any = { url: urlResult.value };
@@ -1604,6 +1756,7 @@ export function registerTools() {
     ToolName.TRANSCRIBE_AUDIO,
     TRANSCRIBE_AUDIO_DEF,
     async (args, tabId) => {
+      logger.info("tools", "transcribe_audio", { elementId: args.id, tabId });
       // 1. Get audio source URL from the element
       let audioUrl = await executeContentTool(
         ToolName.READ_ELEMENT,
@@ -1699,6 +1852,7 @@ export function registerTools() {
     const tabIds = args.tabIds as number[];
     const title = args.title as string;
     const color = args.color as string | undefined;
+    logger.info("tools", "group_tabs", { tabIds, title, color });
     try {
       const groupId = await chrome.tabs.group({ tabIds });
       const updateProps: any = { title };
@@ -1715,6 +1869,7 @@ export function registerTools() {
     UNGROUP_TABS_DEF,
     async (args) => {
       const tabIds = args.tabIds as number[];
+      logger.info("tools", "ungroup_tabs", { tabIds });
       try {
         await chrome.tabs.ungroup(tabIds);
         return `Ungrouped ${tabIds.length} tab(s).`;
@@ -1738,6 +1893,7 @@ export function registerTools() {
         }
       }
       if (!url) return "Error: No URL available.";
+      logger.info("tools", "get_cookies", { url });
       try {
         const cookies = await chrome.cookies.getAll({ url });
         if (cookies.length === 0) return "No cookies found for this URL.";
@@ -1754,6 +1910,7 @@ export function registerTools() {
     const value = args.value as string;
     const domain = args.domain as string | undefined;
     const path = args.path as string | undefined;
+    logger.info("tools", "set_cookie", { url, name, domain, path });
     try {
       const opts: any = { url, name, value };
       if (domain) opts.domain = domain;
@@ -1771,6 +1928,7 @@ export function registerTools() {
     async (args) => {
       const url = args.url as string;
       const name = args.name as string;
+      logger.info("tools", "delete_cookie", { url, name });
       try {
         await chrome.cookies.remove({ url, name });
         return `Cookie "${name}" deleted from ${url}`;
@@ -1812,6 +1970,7 @@ export function registerTools() {
     const maxPages = args.maxPages as number | undefined;
     const urlResult = sanitizeUrl(url);
     if (!urlResult.ok) return `Error: ${urlResult.error}`;
+    logger.info("tools", "read_pdf", { url: urlResult.value, maxPages });
     try {
       const res = await sendMessageToMemory({
         action: "extract_pdf",
@@ -1837,6 +1996,7 @@ export function registerTools() {
     async (args) => {
       const query = args.query as string;
       const maxResults = (args.maxResults as number) || 20;
+      logger.info("tools", "search_history", { query, maxResults });
       try {
         const items = await chrome.history.search({
           text: query,
@@ -1873,6 +2033,7 @@ export function registerTools() {
           return "Error: Could not determine current tab info.";
         }
       }
+      logger.info("tools", "create_bookmark", { title, url, parentId });
       try {
         const opts: any = { title, url };
         if (parentId) opts.parentId = parentId;
@@ -1890,6 +2051,7 @@ export function registerTools() {
     async (args) => {
       const query = args.query as string;
       const maxResults = (args.maxResults as number) || 20;
+      logger.info("tools", "get_bookmarks", { query, maxResults });
       try {
         const results = await chrome.bookmarks.search(query);
         if (results.length === 0) return "No bookmarks found.";
@@ -1912,6 +2074,7 @@ export function registerTools() {
     async (args) => {
       const url = args.url as string | undefined;
       const incognito = args.incognito as boolean | undefined;
+      logger.info("tools", "create_window", { url, incognito });
       try {
         const opts: any = { focused: true };
         if (url) {

@@ -26,28 +26,64 @@ logger.info("system", "Content Script Loaded");
 
 function runJanitor() {
   const COMMON_selectors = [
+    // Generic aria-labels
     "button[aria-label='Accept all']",
     "button[aria-label='Reject all']",
-    ".cookie-banner button.primary",
+    "button[aria-label='Accept cookies']",
+    "button[aria-label='Accept All Cookies']",
+    "button[aria-label='Close']",
+    // Common cookie/consent platforms
     "#onetrust-accept-btn-handler", // OneTrust
+    "#onetrust-reject-all-handler",
     ".fc-cta-consent", // Google Funding Choices
+    "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll", // Cookiebot
+    "[data-cookiefirst-action='accept']", // CookieFirst
+    ".cookie-banner button.primary",
+    // Class-based patterns
+    "[class*='cookie'] button[class*='accept']",
+    "[class*='cookie'] button[class*='close']",
+    "[class*='consent'] button[class*='accept']",
+    "[class*='gdpr'] button[class*='accept']",
+    "[class*='privacy'] button[class*='accept']",
+    // ID-based patterns
+    "[id*='cookie-accept']",
+    "[id*='cookie-close']",
+    "[id*='accept-cookies']",
   ];
 
   for (const sel of COMMON_selectors) {
-    const el = document.querySelector(sel);
-    if (el && isElementVisible(el)) {
-      (el as HTMLElement).click();
-      logger.info("tools", "Auto-clicked cookie banner", { selector: sel });
+    try {
+      const el = document.querySelector(sel);
+      if (el && isElementVisible(el)) {
+        (el as HTMLElement).click();
+        logger.info("tools", "Auto-clicked cookie banner", { selector: sel });
+      }
+    } catch {
+      // Invalid selector on some pages — skip silently
     }
   }
 }
 
-// Prepare Janitor
+// Prepare Janitor — run on load + MutationObserver re-run for async-injected banners
 if (document.readyState === "complete") {
   runJanitor();
 } else {
   window.addEventListener("load", runJanitor);
 }
+// Watch for late-injected cookie/GDPR banners (no delay — react to DOM mutations)
+let janitorRan = false;
+const janitorObserver = new MutationObserver(() => {
+  if (janitorRan) return;
+  janitorRan = true;
+  janitorObserver.disconnect();
+  runJanitor();
+});
+janitorObserver.observe(document.body ?? document.documentElement, {
+  childList: true,
+  subtree: true,
+});
+// Self-cleanup: stop observing after 3s regardless (no lingering observers)
+setTimeout(() => janitorObserver.disconnect(), 3000);
 
 // Reset stable element IDs on full page navigation (not SPA transitions)
 let lastHref = window.location.href;
@@ -59,12 +95,22 @@ window.addEventListener("pageshow", () => {
   }
 });
 
+// Announce readiness to background — eliminates all "wait for content script" sleeps
+if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+  chrome.runtime.sendMessage({
+    type: "CONTENT_SCRIPT_READY",
+    requestId: crypto.randomUUID(),
+    source: MessageSource.CONTENT,
+    payload: { tabId: -1 }, // Background resolves actual tabId from sender
+  }).catch(() => {}); // Ignore if background not ready yet
+}
+
 // --- Overlay Detection Helpers ---
 
 const AGENT_BORDER_ID = "opensidebar-agent-border";
 
 /**
- * Detect elements that cover >50% of the viewport via fixed/absolute positioning.
+ * Detect elements that cover >30% of the viewport via fixed/absolute positioning.
  * Returns elements sorted by coverage descending.
  */
 export function detectViewportCoveringOverlays(): {
@@ -99,7 +145,7 @@ export function detectViewportCoveringOverlays(): {
     const visibleArea = visibleW * visibleH;
     const coverage = (visibleArea / vpArea) * 100;
 
-    if (coverage > 50) {
+    if (coverage > 30) {
       results.push({ el: raw, coverage, rect });
     }
   }
@@ -229,9 +275,9 @@ function autoDismissModals(): DismissResult {
     });
   }
 
-  // Phase A: Selector-based dismissal (existing logic, enhanced)
+  // Phase A: Selector-based dismissal (broad selectors for modals, banners, cookie/GDPR overlays)
   const containers = document.querySelectorAll(
-    "[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent",
+    "[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent, [class*='gdpr'], [class*='privacy'], [class*='cookie-notice'], [class*='consent-banner'], [id*='cookie'], [id*='consent']",
   );
 
   for (const el of containers) {
@@ -364,19 +410,89 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true;
       }
 
+      // DOM readiness probe — waits for DOM quiescence using MutationObserver + rAF
+      if (message.type === "DOM_READY_PROBE") {
+        const { timeoutMs, waitForElements } = message.payload;
+        const probeStart = performance.now();
+
+        const respond = () => {
+          const elCount = document.querySelectorAll(
+            "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
+          ).length;
+          sendResponse({
+            type: "DOM_READY_ACK",
+            requestId: message.requestId,
+            source: MessageSource.CONTENT,
+            payload: {
+              waitedMs: Math.round(performance.now() - probeStart),
+              elementCount: elCount,
+            },
+          });
+        };
+
+        // Fast path: if DOM already has elements and we don't need to wait for mutations
+        const quickCount = document.querySelectorAll(
+          "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
+        ).length;
+        if (quickCount > 0 && !waitForElements) {
+          respond();
+          return true;
+        }
+
+        // Watch for DOM mutations, respond after 2 idle frames or timeout
+        let idleFrames = 0;
+        let settled = false;
+        const cap = Math.min(timeoutMs || 150, 500); // hard cap 500ms
+
+        const observer = new MutationObserver(() => {
+          idleFrames = 0; // reset on any mutation
+        });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+        });
+
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            observer.disconnect();
+            respond();
+          }
+        }, cap);
+
+        const checkIdle = () => {
+          if (settled) return;
+          idleFrames++;
+          if (idleFrames >= 2) {
+            // 2 consecutive animation frames with no mutations → DOM is stable
+            const elCount = document.querySelectorAll(
+              "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
+            ).length;
+            if (!waitForElements || elCount > 0) {
+              settled = true;
+              observer.disconnect();
+              clearTimeout(timer);
+              respond();
+              return;
+            }
+          }
+          requestAnimationFrame(checkIdle);
+        };
+        requestAnimationFrame(checkIdle);
+        return true; // async response
+      }
+
       if (message.type === "DOM_SNAPSHOT_REQUEST") {
         (async () => {
           const start = performance.now();
 
-          // Auto-dismiss overlays that block the viewport
+          // Auto-dismiss overlays that block the viewport (synchronous — no sleep needed)
           let dismissedTexts: string[] = [];
           const overlays = detectViewportCoveringOverlays();
           if (overlays.length > 0) {
             const result = autoDismissModals();
             dismissedTexts = result.capturedTexts;
-            if (result.dismissed > 0) {
-              await new Promise((r) => setTimeout(r, 50)); // DOM settle
-            }
           }
 
           const snapshot = buildSnapshot(

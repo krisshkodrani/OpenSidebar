@@ -11,7 +11,7 @@ import {
   ToolName,
 } from "../../types";
 import { logger } from "../../utils";
-import { LLMClient, MODEL_SMART, stripThinkTags } from "../llm";
+import { LLMClient, stripThinkTags } from "../llm";
 import {
   toolRegistry,
   setVisionUsageCallback,
@@ -20,6 +20,7 @@ import {
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
 import { REACT_TOOL_NAMES } from "../tools/react";
 import { classifyRisk, sanitizeUrl } from "../security";
+import { waitForDomReady } from "../tab-ready";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager } from "./context";
 import { ProgressTracker } from "./progress";
@@ -31,23 +32,33 @@ import { PlanGuardian } from "./guardian";
 import { TraceRecorder } from "./trace";
 import {
   AGENT_LIMITS,
+  BATCH_LIMITS,
   TOOL_FAILURE_THRESHOLDS,
   BROADCAST_INTERVALS,
   LLM_CONFIG,
   STRING_LIMITS,
   TIMING,
   ESCALATION_LIMITS,
+  ORIENTATION,
   REDUNDANT_ACTION,
   STEP_WATCHDOG,
   STUCK_THRESHOLDS,
 } from "./constants";
 
-/** Nudge injected when LLM emits text instead of tool calls. */
-const NUDGE_MESSAGE = `You responded with text but no tool call. Either:
+/** Tools that cannot appear inside a batch_execute step. */
+const BATCH_BLOCKED_TOOLS = new Set<string>([
+  ToolName.NAVIGATE, ToolName.DONE, ToolName.ESCALATE,
+  ToolName.UPDATE_PLAN, ToolName.BATCH_EXECUTE,
+  ToolName.TAKE_SCREENSHOT, ToolName.CREATE_TAB,
+  ToolName.CLOSE_TAB, ToolName.SWITCH_TAB,
+  ToolName.CREATE_WINDOW, ToolName.EXECUTE_JS,
+]);
+
+/** Format correction when LLM emits text instead of tool calls. */
+const TEXT_ONLY_CORRECTION = `You responded with text but no tool call. Either:
 - Call a tool to advance the task (read_page, click, type_text, scroll_page, etc.)
 - If the user asked a question and you already know the answer, call done({"summary": "your answer"})
-- If you need to see the page first, call read_page or take_screenshot
-Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?`;
+- If you need to see the page first, call read_page or take_screenshot`;
 
 /** Nudge injected when escalating to the smart model — orients it on the situation. */
 const ESCALATION_NUDGE = `You are now the upgraded model, brought in because the previous model got stuck.
@@ -61,6 +72,11 @@ If the page state is unclear, start with read_page or take_screenshot.`;
 const DEESCALATION_NUDGE = `The smarter model made progress and you're back in control.
 Review the recent history to understand what was accomplished. Continue from where it left off.
 Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?`;
+
+/** Nudge injected when BRAINS→HANDS handoff completes (orientation phase ends). */
+const HANDOFF_NUDGE = `Orientation complete — you are now executing the plan.
+The smarter model has analyzed the page and started the task. Your job: execute the remaining steps efficiently.
+Follow the plan. Call update_plan() after each step. If stuck, call escalate().`;
 
 /** Message injected during a strategy pivot — tells the agent what NOT to retry. */
 const PIVOT_MESSAGE = (attemptSummary: string) =>
@@ -422,6 +438,8 @@ export class AgentLoop {
     for (const tool of REACT_TOOL_NAMES) {
       this.disabledTools.add(tool);
     }
+    // Screenshots restricted to tier 1 (smart model) — too expensive for fast tier
+    this.disabledTools.add(ToolName.TAKE_SCREENSHOT);
     this.workspaceId = options?.workspaceId ?? null;
     this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
     this.llm.setFailoverCallback((from, to) => {
@@ -441,7 +459,7 @@ export class AgentLoop {
         false,
       );
     });
-    this.guardian = new PlanGuardian(openRouterApiKey);
+    this.guardian = new PlanGuardian(openRouterApiKey, cerebrasApiKey);
     this.baseContextTokens = options?.maxContextTokens ?? 32000;
     this.context = new ContextManager(this.baseContextTokens, this.workspaceId);
     this.statusHandler = callbacks.onStatusUpdate;
@@ -763,16 +781,17 @@ export class AgentLoop {
     return this.pauseGate !== null;
   }
 
-  /** Escalate to smart model when stuck. Switches both model and provider (Groq→OpenRouter). */
+  /** Escalate to smart model when stuck. Distills context, then switches model via smart pool. */
   private escalateModel(): void {
+    // Distill verbose history into compact situation report (unless orientation phase — no history yet)
+    if (this.turnCount > 1) {
+      this.context.distillForEscalation(this.originalQuery);
+    }
     this.llm.switchToSmart();
     this.context.setModelTier("smart");
-    // Expand context window so smart model can see full history of failed attempts
-    this.context.setMaxContextTokens(Math.max(this.baseContextTokens, 64000));
     logger.info("agent", "Escalating to smart model", {
-      model: MODEL_SMART,
-      provider: "openrouter",
-      contextTokens: this.context.getMaxContextTokens(),
+      model: this.llm.getCurrentModel(),
+      provider: this.llm.getCurrentProvider(),
     });
   }
 
@@ -787,10 +806,9 @@ export class AgentLoop {
   private deescalateModel(): void {
     this.llm.switchToFast();
     this.context.setModelTier("fast");
-    // Restore original context window
-    this.context.setMaxContextTokens(this.baseContextTokens);
     logger.info("agent", "De-escalating to fast model", {
-      contextTokens: this.baseContextTokens,
+      model: this.llm.getCurrentModel(),
+      provider: this.llm.getCurrentProvider(),
     });
   }
 
@@ -821,10 +839,7 @@ export class AgentLoop {
     // 5. Refresh DOM snapshot for current state
     await this.refreshSnapshotWithRetry(tabId, -1);
 
-    // 6. Reset progress tracker so it can fire signals again
-    this.progress.resetEscalation();
-
-    // 7. User-visible feedback
+    // 6. User-visible feedback
     this.stepHandler(
       {
         id: crypto.randomUUID(),
@@ -875,8 +890,8 @@ export class AgentLoop {
   ): Promise<number> {
     let count = await this.refreshSnapshot(tabId);
     if (count >= 0) return count;
-    // Retry once after a brief delay
-    await new Promise((r) => setTimeout(r, TIMING.SNAPSHOT_RETRY_DELAY));
+    // Retry once after DOM readiness probe (replaces fixed 300ms sleep)
+    await waitForDomReady(tabId, { timeoutMs: 300, waitForElements: true });
     count = await this.refreshSnapshot(tabId);
     if (count >= 0) return count;
     return prevCount; // Keep existing count if both attempts fail
@@ -960,19 +975,20 @@ export class AgentLoop {
   private async loop(initialTabId: number): Promise<LoopResult> {
     let tabId = initialTabId;
     let prevElementCount = -1; // Track element count for empty-page retry
-    let consecutiveNudges = 0;
-    let totalNudges = 0;
+    let consecutiveTextOnly = 0;
+    let totalTextOnly = 0;
     let doneSummary = "";
     let wasStuck = false; // Track stuck state for "resolved" signal
 
-    // Escalation/de-escalation state machine
-    let onSmartModel = false;
+    // Two-tier escalation: 0=fast, 1=smart (GLM-4.7 with native reasoning)
+    // BRAINS→HANDS: start at tier 1 (smart) for orientation, then hand off to tier 0 (fast)
+    let escalationTier = 1;
+    this.escalateModel(); // Start with BRAINS (smart model)
     let voluntaryEscalation = false; // escalate tool → permanent, no de-escalation
+    let orientationPhase = true; // true during initial smart model orientation
     let escalationCycles = 0;
-    let useReasoningNextTurn = false; // Enable reasoning on the first turn after escalation
     let cooldownRemaining = 0;
     let smartModelStartTurn = 0; // turn when auto-escalation fired
-    let pivotDone = false; // has text-only pivot fired?
 
     // Circuit breaker: consecutive all-fail turns
     let consecutiveAllFailTurns = 0;
@@ -996,6 +1012,37 @@ export class AgentLoop {
 
       // Decrement de-escalation cooldown
       if (cooldownRemaining > 0) cooldownRemaining--;
+
+      // BRAINS→HANDS handoff: smart model has oriented, hand off to fast model
+      if (
+        orientationPhase &&
+        this.turnCount > ORIENTATION.PHASE_TURNS &&
+        escalationTier === 1
+      ) {
+        orientationPhase = false;
+        this.deescalateModel();
+        escalationTier = 0;
+        cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
+        this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
+        this.context.addMessage({
+          role: "user",
+          content: HANDOFF_NUDGE,
+        });
+        this.stepHandler(
+          {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: "Handing off to fast model",
+            status: "done",
+            timestamp: Date.now(),
+          },
+          false,
+        );
+        logger.info("agent", "BRAINS→HANDS handoff", {
+          turn: this.turnCount,
+          orientationTurns: ORIENTATION.PHASE_TURNS,
+        });
+      }
 
       // Inject pending hint from user before LLM call
       if (this.pendingHint) {
@@ -1092,17 +1139,6 @@ export class AgentLoop {
         });
       };
 
-      // Reasoning effort: "high" on first turn after escalation, then "none"
-      const reasoningEffort = useReasoningNextTurn
-        ? ("high" as const)
-        : undefined;
-      if (useReasoningNextTurn) {
-        useReasoningNextTurn = false;
-        logger.info("agent", "Using reasoning effort: high (post-escalation)", {
-          turn: this.turnCount,
-        });
-      }
-
       const llmStart = Date.now();
       let response: CompletionResponse;
       try {
@@ -1110,11 +1146,9 @@ export class AgentLoop {
           {
             messages,
             tools,
-            max_tokens:
-              reasoningEffort === "high" ? 2048 : LLM_CONFIG.MAX_TOKENS,
+            max_tokens: LLM_CONFIG.MAX_TOKENS,
             stop: ["Observation:"], // ReAct pattern stop token just in case
             signal: this.abortController!.signal,
-            reasoningEffort,
           },
           onTextDelta,
         );
@@ -1238,7 +1272,7 @@ export class AgentLoop {
       // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
         // ACTION REQUIRED
-        consecutiveNudges = 0;
+        consecutiveTextOnly = 0;
         const firstToolName = response.tool_calls[0].function.name;
         this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
 
@@ -1555,11 +1589,12 @@ export class AgentLoop {
             // ESCALATE tool — voluntary model upgrade (permanent, no de-escalation)
             if (toolName === ToolName.ESCALATE) {
               const reason = (args.reason as string) || "";
-              if (!onSmartModel) {
+              if (escalationTier < 1) {
                 this.escalateModel();
-                onSmartModel = true;
+                escalationTier = 1;
                 voluntaryEscalation = true;
-                useReasoningNextTurn = true;
+                orientationPhase = false; // Cancel BRAINS→HANDS handoff
+                this.disabledTools.delete(ToolName.TAKE_SCREENSHOT); // Unlock screenshots
                 prevElementCount = await this.refreshSnapshotWithRetry(
                   tabId,
                   prevElementCount,
@@ -1569,7 +1604,7 @@ export class AgentLoop {
                     id: crypto.randomUUID(),
                     type: "info",
                     label: reason
-                      ? `Escalating: "${reason.slice(0, 60)}"`
+                      ? `Escalating: "${reason.slice(0, STRING_LIMITS.ESCALATION_REASON)}"`
                       : "Escalating to smarter model",
                     status: "done",
                     timestamp: Date.now(),
@@ -1591,7 +1626,7 @@ export class AgentLoop {
               logger.info("agent", "ESCALATE called", {
                 turn: this.turnCount,
                 reason,
-                wasAlreadyEscalated: onSmartModel && reason === "",
+                tier: escalationTier,
               });
               this.traceRecorder?.recordEvent("escalation", {
                 reason,
@@ -1755,6 +1790,117 @@ export class AgentLoop {
               });
               recentSuccesses.length = 0; // Reset on plan update
               continue;
+            }
+
+            // BATCH_EXECUTE tool — execute pre-planned tool sequence without LLM roundtrips
+            if (toolName === ToolName.BATCH_EXECUTE) {
+              const rawSteps = (args.steps as Array<{ tool: string; args: Record<string, unknown>; expect?: string }>) || [];
+              const verify = (args.verify as string) || "";
+              const maxSteps = Math.min(rawSteps.length, BATCH_LIMITS.MAX_STEPS);
+              const completedResults: string[] = [];
+              let bailReason = "";
+
+              this.stepHandler({
+                id: crypto.randomUUID(),
+                type: "tool",
+                label: `Batch: ${maxSteps} steps`,
+                toolName: ToolName.BATCH_EXECUTE,
+                status: "running",
+                timestamp: Date.now(),
+              }, false);
+
+              const batchStartTime = Date.now();
+
+              for (let i = 0; i < maxSteps; i++) {
+                if (!this.isRunning) { bailReason = "Agent stopped"; break; }
+                const step = rawSteps[i];
+
+                // Validate tool name
+                if (BATCH_BLOCKED_TOOLS.has(step.tool)) {
+                  bailReason = `Step ${i}: "${step.tool}" is not allowed in batch`;
+                  break;
+                }
+
+                // Execute via toolRegistry
+                const syntheticToolCall: ToolCall = {
+                  id: `batch_${toolCall.id}_${i}`,
+                  type: "function",
+                  function: { name: step.tool as ToolName, arguments: JSON.stringify(step.args) },
+                };
+
+                let result: string;
+                try {
+                  result = await toolRegistry.execute(syntheticToolCall, tabId, this.abortController!.signal);
+                } catch (e: any) {
+                  if (e.name === "AbortError") throw e;
+                  bailReason = `Step ${i} ("${step.tool}"): ${e.message}`;
+                  break;
+                }
+
+                // Check for error results
+                if (result.startsWith("Error")) {
+                  bailReason = `Step ${i} ("${step.tool}"): ${result}`;
+                  break;
+                }
+
+                // Check expect condition
+                if (step.expect && !result.toLowerCase().includes(step.expect.toLowerCase())) {
+                  bailReason = `Step ${i} ("${step.tool}"): expected "${step.expect}" not found in result`;
+                  break;
+                }
+
+                completedResults.push(`[${i}] ${step.tool}: ${result}`);
+
+                // Track DOM modifications
+                if (DOM_MODIFYING_TOOLS.has(step.tool as ToolName)) {
+                  domModified = true;
+                }
+              }
+
+              // Build consolidated result
+              const header = bailReason
+                ? `Batch BAILED after ${completedResults.length}/${maxSteps} steps: ${bailReason}`
+                : `Batch OK: ${completedResults.length}/${maxSteps} steps completed`;
+              const body = completedResults.join("\n");
+              const footer = verify ? `\nVerify: ${verify}` : "";
+              const batchResult = `${header}\n${body}${footer}`;
+
+              const batchDurationMs = Date.now() - batchStartTime;
+
+              // Update step
+              this.stepHandler({
+                id: crypto.randomUUID(),
+                type: "tool",
+                label: bailReason
+                  ? `Batch: ${completedResults.length}/${maxSteps} (bailed)`
+                  : `Batch: ${maxSteps} steps OK`,
+                toolName: ToolName.BATCH_EXECUTE,
+                status: bailReason ? "error" : "done",
+                timestamp: Date.now(),
+                durationMs: batchDurationMs,
+              }, true);
+
+              // Log + trace
+              logger.info("tools", "batch_execute", {
+                turn: this.turnCount,
+                stepsPlanned: maxSteps,
+                stepsCompleted: completedResults.length,
+                bailed: !!bailReason,
+                bailReason: bailReason || undefined,
+                durationMs: batchDurationMs,
+              });
+              this.traceRecorder?.recordToolExecution(
+                toolCall.id, ToolName.BATCH_EXECUTE, args,
+                batchResult, !bailReason, batchDurationMs,
+                classifyRisk(ToolName.BATCH_EXECUTE, args),
+              );
+
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: batchResult,
+              });
+              continue; // Skip normal executor
             }
 
             // WAIT tool — re-orientation mechanism
@@ -2394,23 +2540,26 @@ export class AgentLoop {
           ) {
             if (
               this.turnsOnCurrentStep >= STEP_WATCHDOG.ESCALATE_TURNS &&
-              !onSmartModel &&
+              escalationTier < 1 &&
               cooldownRemaining <= 0
             ) {
               logger.warn("agent", "Step watchdog: force escalation", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
+                fromTier: escalationTier,
               });
               this.traceRecorder?.recordEvent("step_watchdog_escalate", {
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
               });
               this.escalateModel();
-              onSmartModel = true;
+              escalationTier = 1;
+              orientationPhase = false;
+              this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
               smartModelStartTurn = this.turnCount;
-              useReasoningNextTurn = true;
               await this.strategyPivot(tabId);
+              this.progress.resetEscalation();
               this.context.addMessage({
                 role: "user",
                 content: `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_NUDGE}\nEither complete this step and call update_plan(), or revise the plan if the step is impossible.`,
@@ -2419,14 +2568,14 @@ export class AgentLoop {
                 {
                   id: crypto.randomUUID(),
                   type: "info",
-                  label: `Stuck on step ${this.lastPlanIndex + 1} — escalating`,
+                  label: `Stuck on step ${this.lastPlanIndex + 1} — escalating to smart model`,
                   status: "done",
                   timestamp: Date.now(),
                 },
                 false,
               );
             } else if (this.turnsOnCurrentStep === STEP_WATCHDOG.WARN_TURNS) {
-              logger.warn("agent", "Step watchdog: nudge", {
+              logger.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
@@ -2470,7 +2619,18 @@ export class AgentLoop {
         // Batch snapshot refresh: ONE refresh after all tools complete
         if (domModified && !doneSignaled) {
           try {
-            await new Promise((resolve) => setTimeout(resolve, 100)); // SPA wait
+            // Wait for DOM to settle instead of fixed 100ms sleep
+            // Uses MutationObserver + rAF in content script — responds when idle
+            const readiness = await waitForDomReady(tabId, {
+              timeoutMs: 150,
+              waitForElements: prevElementCount > 0,
+            });
+            logger.debug("agent", "DOM ready probe", {
+              turn: this.turnCount,
+              waitedMs: readiness.waitedMs,
+              elementCount: readiness.elementCount,
+            });
+
             let snapResponse = await chrome.tabs.sendMessage(tabId, {
               type: "DOM_SNAPSHOT_REQUEST",
               requestId: crypto.randomUUID(),
@@ -2483,29 +2643,25 @@ export class AgentLoop {
             });
             let snap = snapResponse?.payload?.snapshot;
 
-            // Retry if elements dropped to 0 (SPA hasn't rendered yet)
+            // Retry once if elements dropped to 0 (SPA still rendering)
             if (snap && snap.elements.length === 0 && prevElementCount > 0) {
-              const retryDelays = [300, 500];
-              for (const delay of retryDelays) {
-                logger.info("agent", "Empty snapshot after action, retrying", {
-                  turn: this.turnCount,
-                  delay,
-                  prevElements: prevElementCount,
-                });
-                await new Promise((resolve) => setTimeout(resolve, delay));
-                snapResponse = await chrome.tabs.sendMessage(tabId, {
-                  type: "DOM_SNAPSHOT_REQUEST",
-                  requestId: crypto.randomUUID(),
-                  source: MessageSource.BACKGROUND,
-                  payload: {
-                    includeText: true,
-                    refresh: true,
-                    showTags: this.showElementTags,
-                  },
-                });
-                snap = snapResponse?.payload?.snapshot;
-                if (snap && snap.elements.length > 0) break;
-              }
+              logger.info("agent", "Empty snapshot after action, waiting for elements", {
+                turn: this.turnCount,
+                prevElements: prevElementCount,
+              });
+              // Use DOM probe with waitForElements — content script watches for element insertion
+              await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
+              snapResponse = await chrome.tabs.sendMessage(tabId, {
+                type: "DOM_SNAPSHOT_REQUEST",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: {
+                  includeText: true,
+                  refresh: true,
+                  showTags: this.showElementTags,
+                },
+              });
+              snap = snapResponse?.payload?.snapshot;
             }
 
             if (snap) {
@@ -2607,10 +2763,7 @@ export class AgentLoop {
                 this.broadcast({
                   type: "AGENT_STUCK",
                   payload: {
-                    signal: progressSignal.type as
-                      | "nudge"
-                      | "pivot"
-                      | "escalate",
+                    signal: "escalate",
                     staleTurns: progressSignal.staleTurns,
                     url: snap.url,
                     message: progressSignal.message,
@@ -2618,26 +2771,17 @@ export class AgentLoop {
                 });
                 wasStuck = true;
 
-                if (progressSignal.type === "pivot") {
-                  // Strategy pivot: clear failing history, fresh start on same model
-                  await this.strategyPivot(tabId);
-                  consecutiveNudges = 0;
-                  recentSuccesses.length = 0;
-                } else if (
-                  progressSignal.type === "escalate" &&
-                  !onSmartModel &&
-                  cooldownRemaining <= 0
-                ) {
-                  // Escalation + pivot: switch to smart model AND clear context
+                // Escalate: fast → smart (with screenshot context)
+                if (escalationTier === 0 && cooldownRemaining <= 0) {
                   this.escalateModel();
-                  onSmartModel = true;
+                  escalationTier = 1;
+                  orientationPhase = false;
+                  this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
                   smartModelStartTurn = this.turnCount;
-                  useReasoningNextTurn = true;
-                  // Capture screenshot before pivot clears context — gives smart model visual context
                   const escalationScreenshot =
                     await this.captureEscalationScreenshot(tabId);
                   await this.strategyPivot(tabId);
-                  // Inject escalation nudge with optional screenshot as multimodal content
+                  this.progress.resetEscalation();
                   if (escalationScreenshot) {
                     this.context.addMessage({
                       role: "user",
@@ -2658,7 +2802,7 @@ export class AgentLoop {
                       content: ESCALATION_NUDGE,
                     });
                   }
-                  consecutiveNudges = 0;
+                  consecutiveTextOnly = 0;
                   recentSuccesses.length = 0;
                   this.stepHandler(
                     {
@@ -2670,12 +2814,6 @@ export class AgentLoop {
                     },
                     false,
                   );
-                } else {
-                  // Nudge: just inject the message (no context clearing)
-                  this.context.addMessage({
-                    role: "user",
-                    content: progressSignal.message,
-                  });
                 }
               } else if (wasStuck) {
                 // Agent recovered — broadcast resolved signal
@@ -2694,7 +2832,7 @@ export class AgentLoop {
                 // and the smart model has had enough turns to actually work
                 const smartTenure = this.turnCount - smartModelStartTurn;
                 if (
-                  onSmartModel &&
+                  escalationTier > 0 &&
                   !voluntaryEscalation &&
                   escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
                   smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
@@ -2704,7 +2842,8 @@ export class AgentLoop {
                     role: "user",
                     content: DEESCALATION_NUDGE,
                   });
-                  onSmartModel = false;
+                  escalationTier = 0;
+                  this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
                   escalationCycles++;
                   cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
                   this.progress.resetEscalation();
@@ -2771,8 +2910,8 @@ export class AgentLoop {
           cleanContent &&
           cleanContent.trim().length > 20
         ) {
-          consecutiveNudges++;
-          totalNudges++;
+          consecutiveTextOnly++;
+          totalTextOnly++;
           logger.info(
             "agent",
             "Soft nudge: turn 1 text response, suggesting done()",
@@ -2792,74 +2931,33 @@ export class AgentLoop {
           continue;
         }
 
-        // Unified nudge→pivot→escalate+pivot→give-up for text-only responses
-        // Filler detection: low-information text fast-tracks to immediate pivot
+        // Text-only escalation: 1st → format correction, 2nd → escalate, 3rd → give-up
         const filler = cleanContent ? isFillerText(cleanContent) : true;
-        if (filler) {
-          consecutiveNudges += 2; // Immediately satisfies the >= 2 pivot threshold
-          logger.warn("agent", "Filler text detected, fast-tracking pivot", {
-            turn: this.turnCount,
-            text: cleanContent?.slice(0, 80),
-          });
-          this.traceRecorder?.recordEvent("filler_text", {
-            length: cleanContent?.length ?? 0,
-            turn: this.turnCount,
-          });
-        } else {
-          consecutiveNudges++;
-        }
-        totalNudges++;
-        logger.warn("agent", "LLM emitted text instead of tools, nudging", {
+        consecutiveTextOnly += filler ? 2 : 1; // Filler fast-tracks
+        totalTextOnly++;
+        logger.warn("agent", "LLM emitted text instead of tools", {
           turn: this.turnCount,
-          consecutiveNudges,
-          pivotDone,
-          onSmartModel,
+          consecutiveTextOnly,
+          tier: escalationTier,
           filler,
           text: cleanContent?.slice(0, 80),
         });
 
-        // Pivot gate: 2 text-only nudges → try fresh context on same model
-        if (consecutiveNudges >= 2 && !pivotDone) {
-          await this.strategyPivot(tabId);
-          pivotDone = true;
-          consecutiveNudges = 0;
-          recentSuccesses.length = 0;
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
-          continue;
-        }
-
-        // Escalation + pivot gate: 2 more text-only after pivot → escalate + pivot
-        if (consecutiveNudges >= 2 && !onSmartModel && cooldownRemaining <= 0) {
+        // Escalate to next tier on 2nd consecutive text-only
+        if (consecutiveTextOnly >= 2 && escalationTier < 1 && cooldownRemaining <= 0) {
           this.escalateModel();
-          onSmartModel = true;
+          escalationTier = 1;
+          orientationPhase = false;
+          this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
           smartModelStartTurn = this.turnCount;
-          useReasoningNextTurn = true;
-          const nudgeScreenshot = await this.captureEscalationScreenshot(tabId);
           await this.strategyPivot(tabId);
-          if (nudgeScreenshot) {
-            this.context.addMessage({
-              role: "user",
-              content: [
-                { type: "text", text: ESCALATION_NUDGE },
-                {
-                  type: "image_url",
-                  image_url: { url: nudgeScreenshot, detail: "low" },
-                },
-              ],
-            });
-          } else {
-            this.context.addMessage({
-              role: "user",
-              content: ESCALATION_NUDGE,
-            });
-          }
-          consecutiveNudges = 0;
+          this.progress.resetEscalation();
+          this.context.addMessage({
+            role: "user",
+            content: ESCALATION_NUDGE,
+          });
+          consecutiveTextOnly = 0;
           recentSuccesses.length = 0;
-
-          // User-visible feedback
           this.stepHandler(
             {
               id: crypto.randomUUID(),
@@ -2878,13 +2976,13 @@ export class AgentLoop {
           continue;
         }
 
-        // Give-up gate: 3 consecutive nudges after escalate+pivot
-        if (consecutiveNudges >= 3) {
-          logger.warn("agent", "Loop ended: consecutive nudge limit", {
+        // Give-up: 3 consecutive text-only at max tier
+        if (consecutiveTextOnly >= 3) {
+          logger.warn("agent", "Loop ended: consecutive text-only limit", {
             turns: this.turnCount,
-            consecutiveNudges,
-            totalNudges,
-            onSmartModel,
+            consecutiveTextOnly,
+            totalTextOnly,
+            tier: escalationTier,
           });
           const stuckMsg =
             cleanContent || "The agent appears stuck and cannot continue.";
@@ -2904,48 +3002,20 @@ export class AgentLoop {
           break;
         }
 
-        // Smart model turn-based give-up: tighter threshold saves wasted expensive turns
-        const smartTurns = onSmartModel
+        // Smart model turn-based give-up
+        const smartTurns = escalationTier > 0
           ? this.turnCount - smartModelStartTurn
           : 0;
         if (
-          onSmartModel &&
+          escalationTier > 0 &&
           smartTurns >= STUCK_THRESHOLDS.GIVE_UP_SMART &&
-          totalNudges >= 3
+          totalTextOnly >= 3
         ) {
           logger.warn("agent", "Loop ended: smart model turn limit", {
             turns: this.turnCount,
             smartTurns,
-            totalNudges,
-          });
-          const stuckMsg =
-            "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: stuckMsg, done: false },
-          });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
-          this.statusHandler(
-            AgentStatus.IDLE,
-            "Stuck — send a follow-up to continue",
-          );
-          await this.traceRecorder?.endTurn();
-          break;
-        }
-
-        // Ratio-based give-up: if >40% of turns are text-only after 10+ turns post-escalation
-        if (
-          onSmartModel &&
-          this.turnCount >= 10 &&
-          totalNudges / this.turnCount > 0.4
-        ) {
-          logger.warn("agent", "Loop ended: excessive nudge ratio", {
-            turns: this.turnCount,
-            totalNudges,
-            ratio: (totalNudges / this.turnCount).toFixed(2),
+            totalTextOnly,
+            tier: escalationTier,
           });
           const stuckMsg =
             "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
@@ -2968,7 +3038,7 @@ export class AgentLoop {
         // Regular nudge: refresh snapshot + inject message
         const count = await this.refreshSnapshot(tabId);
         if (count >= 0) prevElementCount = count;
-        this.context.addMessage({ role: "user", content: NUDGE_MESSAGE });
+        this.context.addMessage({ role: "user", content: TEXT_ONLY_CORRECTION });
 
         // Trace: flush turn
         await this.traceRecorder?.endTurn();

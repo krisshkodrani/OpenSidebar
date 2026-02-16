@@ -44,8 +44,6 @@ export interface CompletionRequest {
   model?: string;
   stop?: string[];
   signal?: AbortSignal;
-  /** Reasoning effort for models that support it (e.g. Grok 4.1) */
-  reasoningEffort?: "none" | "low" | "high";
 }
 
 /** Token usage data returned by OpenRouter in every response */

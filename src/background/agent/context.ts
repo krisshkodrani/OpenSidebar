@@ -79,6 +79,12 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
 - Work autonomously — do not ask the user for permission between steps.
 
+## Form Submission
+- Single-field forms (search, login code): type_text with pressEnter: true.
+- Multi-field forms: fill ALL fields first, then click the submit button.
+- If pressEnter doesn't submit: press_key("Enter") as fallback, then look for a Submit/Send/Continue button and click it.
+- After submitting, verify the page changed — if nothing happened, try clicking the submit button instead.
+
 ## Tool Tips
 - type_text auto-focuses; pressEnter: true submits forms in one step.
 - hide_element removes overlays/modals blocking interaction (rejects non-overlay elements).
@@ -896,4 +902,92 @@ Do NOT call done() until every planned step is complete.
   public getMessages(): LLMMessage[] {
     return [...this.history];
   }
+
+  /**
+   * Distill conversation history into a compact situation report for escalation.
+   * Replaces verbose tool call/result pairs with a structured timeline,
+   * dramatically reducing context size while preserving essential signal.
+   *
+   * After distillation, history contains: original query + distilled summary.
+   * The current DOM snapshot is preserved (in system prompt, not history).
+   */
+  public distillForEscalation(originalQuery: string): void {
+    const timeline = summarizeHistory(this.history);
+
+    // Replace history with compact context
+    this.history = [];
+    this.history.push({ role: "user", content: originalQuery });
+
+    if (timeline.length > 0) {
+      const report = `ATTEMPT LOG (${timeline.length} actions):\n${timeline.join("\n")}`;
+      this.history.push({ role: "user", content: report });
+    }
+
+    this.saveState().catch(() => {});
+    logger.info("agent", "Context distilled for escalation", {
+      timelineEntries: timeline.length,
+      historyLength: this.history.length,
+    });
+  }
+}
+
+/**
+ * Shared utility: walk message history and extract a compact action→outcome timeline.
+ * Used by both `distillForEscalation()` and `extractAttemptSummary()`.
+ */
+export function summarizeHistory(
+  messages: LLMMessage[],
+  maxEntries = 20,
+): string[] {
+  const entries: string[] = [];
+  let turnNum = 0;
+
+  // Walk forward to produce a chronological timeline
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== "assistant" || !msg.tool_calls) continue;
+
+    for (const tc of msg.tool_calls) {
+      const toolName = tc.function.name;
+      // Skip noise tools
+      if (["wait", "update_plan"].includes(toolName)) continue;
+
+      let argSnippet = "";
+      try {
+        const args = JSON.parse(tc.function.arguments);
+        const parts: string[] = [];
+        if (args.id != null) parts.push(`[${args.id}]`);
+        if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
+        if (args.url) parts.push(String(args.url).slice(0, 40));
+        if (args.direction) parts.push(args.direction);
+        if (args.summary) parts.push(`"${String(args.summary).slice(0, 30)}"`);
+        if (args.reason) parts.push(`"${String(args.reason).slice(0, 30)}"`);
+        argSnippet = parts.join(" ");
+      } catch {
+        /* */
+      }
+
+      // Find the corresponding tool result
+      let outcome = "no result";
+      for (let j = i + 1; j < messages.length; j++) {
+        if (
+          messages[j].role === "tool" &&
+          messages[j].tool_call_id === tc.id
+        ) {
+          const content =
+            typeof messages[j].content === "string"
+              ? messages[j].content ?? ""
+              : "";
+          outcome = content.split("\n")[0].slice(0, 80);
+          break;
+        }
+      }
+
+      turnNum++;
+      entries.push(`T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`);
+      if (entries.length >= maxEntries) return entries;
+    }
+  }
+
+  return entries;
 }

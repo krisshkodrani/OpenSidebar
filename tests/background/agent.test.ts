@@ -33,12 +33,16 @@ mock.module("../../src/background/llm", () => ({
       }),
     );
     completeStream = mockCompleteStream;
+    _isSmartTier = false;
     switchToSmart = mock(() => {
       this.model = "minimax/minimax-m2.5";
+      this._isSmartTier = true;
     });
     switchToFast = mock(() => {
       this.model = "google/gemini-2.5-flash-lite";
+      this._isSmartTier = false;
     });
+    isSmartTier = () => this._isSmartTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
     getActiveProviderInfo = () => ({
@@ -89,15 +93,14 @@ describe("AgentLoop", () => {
 
     await agent.start("Hello", 123);
 
-    // Guardian decompose step + Filler-accelerated nudge→pivot→escalate+pivot→give-up:
-    // "Final answer" (12 chars) is detected as filler → consecutiveNudges += 2 each time
+    // Guardian decompose step + Filler-accelerated text-only give-up:
+    // "Final answer" (12 chars) is detected as filler → consecutiveTextOnly += 2 each time
+    // BRAINS→HANDS: starts at tier 1 (smart model, max tier in 2-tier system)
     // Pre-loop: guardian thinking(running) "Analyzing task scope..."
-    // Turn 1: thinking(running) + thinking(done) → filler, nudges=2 → pivot (info "Rethinking")
-    // Turn 2: thinking(running) + thinking(done) → filler, nudges=2 → escalate+pivot (info "Rethinking" + info "Switching")
-    // Turn 3: thinking(running) + thinking(done) → filler, nudges=2, already escalated → regular nudge
-    // Turn 4: thinking(running) + thinking(done) → filler, nudges=4 → give-up (nudges >= 3)
-    // = 1 guardian + 4 turns × 2 thinking + 1 pivot info + 2 escalate+pivot info = 12
-    expect(onStep).toHaveBeenCalledTimes(12);
+    // Turn 1: thinking(running) + thinking(done) → filler, textOnly=2 → already at tier 1, can't escalate
+    // Turn 2: thinking(running) + thinking(done) → filler, textOnly=4 → give-up (>= 3)
+    // = 1 guardian + 2 turns × 2 thinking = 5
+    expect(onStep).toHaveBeenCalledTimes(5);
 
     // First call: guardian decompose thinking step
     const guardianCall = onStep.mock.calls[0];
@@ -118,11 +121,13 @@ describe("AgentLoop", () => {
     expect(secondCall[0].durationMs).toBeDefined();
     expect(secondCall[1]).toBe(true); // update = true
 
-    // Index 3: info step "Rethinking approach from scratch" from first pivot (filler fast-tracked)
-    const pivotStep = onStep.mock.calls[3];
-    expect(pivotStep[0].type).toBe("info");
-    expect(pivotStep[0].label).toBe("Rethinking approach from scratch");
-    expect(pivotStep[1]).toBe(false);
+    // Index 3-4: turn 2 thinking step (running + done), then give-up (consecutiveTextOnly >= 3)
+    const turn2Start = onStep.mock.calls[3];
+    expect(turn2Start[0].type).toBe("thinking");
+    expect(turn2Start[0].status).toBe("running");
+    const turn2Done = onStep.mock.calls[4];
+    expect(turn2Done[0].type).toBe("thinking");
+    expect(turn2Done[0].status).toBe("done");
   });
 });
 

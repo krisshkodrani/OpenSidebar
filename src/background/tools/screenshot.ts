@@ -1,4 +1,5 @@
 import { logger } from "@/utils";
+import { waitForDomReady } from "../tab-ready";
 
 interface ScreenshotOptions {
   format: "jpeg" | "png";
@@ -26,8 +27,8 @@ export async function takeScreenshotWithTags(
         source: "background",
         payload: { showTags: true },
       });
-      // Wait for tag overlays to render
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for tag overlays to render (DOM readiness probe instead of fixed delay)
+      await waitForDomReady(tabId, { timeoutMs: 100 });
     }
 
     // captureVisibleTab takes windowId (optional), then options.
