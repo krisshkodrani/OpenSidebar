@@ -18,6 +18,7 @@ function node(
     dependencies,
     assumptions: [],
     handoffArtifacts: [],
+    reflexionLog: [],
     handoffDepth: 0,
     status,
     retries: 0,

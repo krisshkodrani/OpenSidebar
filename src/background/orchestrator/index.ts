@@ -31,11 +31,13 @@ import {
   OrchestratorCheckpoint,
   OrchestratorStartInput,
   OrchestratorTask,
+  ReflexionEntry,
   TaskNode,
   WorkerInstance,
 } from "./types";
 import { MemoryBuffer } from "./memory-buffer";
 import {
+  DialogueResult,
   NodeVerificationResult,
   OrchestratorVerifier,
   VerificationReflectionInput,
@@ -59,7 +61,7 @@ const DEFAULT_MAX_REPLANS = 3;
 const DEFAULT_MAX_SESSION_TIME_MS = 12 * 60 * 1000;
 const DEFAULT_MAX_TOTAL_TOKENS = 75_000;
 const DEFAULT_MAX_TOTAL_COST_USD = 1.5;
-const MAX_VERIFIER_REFLECTION_ROUNDS = 1;
+const MAX_VERIFIER_REFLECTION_ROUNDS = 2;
 const MIN_CRITIC_CONFIDENCE_DELTA = 0.15;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
@@ -158,7 +160,7 @@ class LaneIsolationError extends Error {
 
 type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode">;
 type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
-  Partial<Pick<OrchestratorVerifier, "reflectDecision">>;
+  Partial<Pick<OrchestratorVerifier, "reflectDecision" | "runDialogue" | "advise">>;
 type LlmLike = Pick<LLMClient, "switchToSmart" | "complete">;
 
 type CreateAgentLoopInput = {
@@ -273,7 +275,8 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
         artifact.phase === "executor_finished" ||
         artifact.phase === "verifier_accept" ||
         artifact.phase === "verifier_retry" ||
-        artifact.phase === "verifier_reroute") &&
+        artifact.phase === "verifier_reroute" ||
+        artifact.phase === "verifier_advisory") &&
       typeof artifact.note === "string" &&
       isNonNegativeInteger(artifact.timestamp),
   );
@@ -303,6 +306,32 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
     }
   }
 
+  const reflexionLog: ReflexionEntry[] = [];
+  if (Array.isArray(raw.reflexionLog)) {
+    for (const entry of raw.reflexionLog) {
+      if (
+        isRecord(entry) &&
+        isNonNegativeInteger(entry.attempt) &&
+        typeof entry.executorSummary === "string" &&
+        (entry.verifierDecision === "retry" || entry.verifierDecision === "reroute") &&
+        typeof entry.verifierReason === "string" &&
+        typeof entry.confidence === "number" &&
+        isNonNegativeInteger(entry.timestamp)
+      ) {
+        reflexionLog.push({
+          attempt: entry.attempt as number,
+          executorSummary: entry.executorSummary,
+          verifierDecision: entry.verifierDecision,
+          verifierReason: entry.verifierReason,
+          failureType: typeof entry.failureType === "string" ? entry.failureType : undefined,
+          confidence: entry.confidence as number,
+          suggestedApproach: typeof entry.suggestedApproach === "string" ? entry.suggestedApproach : undefined,
+          timestamp: entry.timestamp as number,
+        });
+      }
+    }
+  }
+
   const node: TaskNode = {
     id: raw.id,
     role: raw.role,
@@ -312,6 +341,7 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
     dependencies,
     assumptions,
     handoffArtifacts,
+    reflexionLog,
     handoffDepth: raw.handoffDepth,
     status: raw.status,
     retries: raw.retries,
@@ -616,6 +646,23 @@ function isVerificationDecisionChanged(
     previous.failureType !== next.failureType ||
     previous.rerouteObjective !== next.rerouteObjective
   );
+}
+
+function deriveSuggestedApproach(
+  verification: NodeVerificationResult,
+): string | undefined {
+  switch (verification.failureType) {
+    case "blocked":
+      return "Try an alternate navigation path or use a different element to bypass the block.";
+    case "state_mismatch":
+      return "Re-read the page state and adapt to what is actually present instead of assumed state.";
+    case "insufficient_evidence":
+      return "Gather more evidence before calling done — verify success criteria explicitly.";
+    case "transient":
+      return "Wait briefly and retry the same action — the failure may be timing-related.";
+    default:
+      return undefined;
+  }
 }
 
 function clampConfidence(value: number | undefined): number {
@@ -1854,6 +1901,7 @@ export class Orchestrator {
               timestamp: Date.now(),
             },
           ],
+          reflexionLog: [],
           handoffDepth: 0,
           status: "pending",
           retries: 0,
@@ -2110,11 +2158,51 @@ export class Orchestrator {
       });
 
       try {
-        const executorInstruction = buildExecutorInstruction(
+        let executorInstruction = buildExecutorInstruction(
           node,
           taskStateBrief,
           driftSignal,
         );
+
+        if (
+          (node.retries > 0 || node.handoffFromNodeId) &&
+          verifier.advise &&
+          snapshot
+        ) {
+          try {
+            const advisory = await this.runInLane(task, "verifier", async () =>
+              verifier.advise!({
+                executorInstruction,
+                pageTitle: snapshot.title || "",
+                pageUrl: snapshot.url || "",
+                viewportText: snapshot.viewportText || "",
+              }),
+            );
+            if (advisory) {
+              executorInstruction += `\n\nPre-execution advisory:\n${advisory}`;
+              this.appendHandoffArtifact(node, {
+                role: "verifier",
+                phase: "verifier_advisory",
+                note: advisory.slice(0, 200),
+              });
+              logger.debug("orchestrator", "Advisory appended to executor instruction", {
+                taskId: task.id,
+                nodeId: node.id,
+                advisoryChars: advisory.length,
+              });
+            }
+          } catch (error) {
+            if (isLaneIsolationError(error, "verifier")) {
+              throw error;
+            }
+            logger.warn("orchestrator", "Advisory call failed, continuing without", {
+              taskId: task.id,
+              nodeId: node.id,
+              error,
+            });
+          }
+        }
+
         logger.debug("orchestrator", "Executor instruction prepared", {
           taskId: task.id,
           nodeId: node.id,
@@ -2432,6 +2520,16 @@ export class Orchestrator {
               });
 
               if (retryDecision.shouldRetry) {
+                node.reflexionLog.push({
+                  attempt: node.retries + 1,
+                  executorSummary: result.summary || "No executor summary.",
+                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
+                  verifierReason: verification.reason,
+                  failureType: verification.failureType,
+                  confidence: verification.confidence,
+                  suggestedApproach: deriveSuggestedApproach(verification),
+                  timestamp: Date.now(),
+                });
                 node.status = "pending";
                 node.retries += 1;
                 node.error = verification.reason;
@@ -2750,6 +2848,7 @@ export class Orchestrator {
           timestamp: Date.now(),
         },
       ],
+      reflexionLog: [],
       handoffDepth: 0,
       handoffFromNodeId: index > 0 ? `skill-step-${index - 1}` : undefined,
       status: "pending",
@@ -3116,7 +3215,54 @@ export class Orchestrator {
   }): Promise<NodeVerificationResult> {
     const { task, node, verifier, reflectionInput } = params;
     let current = params.verification;
-    if (current.decision === "accept" || !verifier.reflectDecision) return current;
+    if (current.decision === "accept") return current;
+
+    if (verifier.runDialogue) {
+      try {
+        const dialogueResult: DialogueResult = await this.runInLane(
+          task,
+          "verifier",
+          async () =>
+            verifier.runDialogue!(
+              {
+                taskQuery: reflectionInput.taskQuery,
+                objective: reflectionInput.objective,
+                successCriteria: reflectionInput.successCriteria,
+                output: reflectionInput.output,
+                handoffContext: reflectionInput.handoffContext,
+              },
+              MAX_VERIFIER_REFLECTION_ROUNDS,
+              MIN_CRITIC_CONFIDENCE_DELTA,
+            ),
+        );
+        for (const turn of dialogueResult.turns) {
+          this.emitCriticStep(
+            task.workspaceId,
+            node.id,
+            `[Round ${turn.round} ${turn.role}] ${turn.decision.decision}: ${turn.decision.reason}`,
+          );
+        }
+        logger.info("orchestrator", "Verifier dialogue completed", {
+          taskId: task.id,
+          nodeId: node.id,
+          totalRounds: dialogueResult.totalRounds,
+          converged: dialogueResult.converged,
+          finalDecision: dialogueResult.finalDecision.decision,
+        });
+        return dialogueResult.finalDecision;
+      } catch (error) {
+        if (isLaneIsolationError(error, "verifier")) {
+          throw error;
+        }
+        logger.warn("orchestrator", "Verifier dialogue failed, falling back to single-round", {
+          taskId: task.id,
+          nodeId: node.id,
+          error,
+        });
+      }
+    }
+
+    if (!verifier.reflectDecision) return current;
 
     for (let round = 1; round <= MAX_VERIFIER_REFLECTION_ROUNDS; round += 1) {
       try {

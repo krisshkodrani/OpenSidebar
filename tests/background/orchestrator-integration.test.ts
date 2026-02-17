@@ -94,6 +94,7 @@ function makeNode(
     dependencies,
     assumptions,
     handoffArtifacts: [],
+    reflexionLog: [],
     handoffDepth: 0,
     status: "pending",
     retries: 0,

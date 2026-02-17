@@ -26,8 +26,20 @@ export interface NodeHandoffArtifact {
     | "executor_finished"
     | "verifier_accept"
     | "verifier_retry"
-    | "verifier_reroute";
+    | "verifier_reroute"
+    | "verifier_advisory";
   note: string;
+  timestamp: number;
+}
+
+export interface ReflexionEntry {
+  attempt: number;
+  executorSummary: string;
+  verifierDecision: "retry" | "reroute";
+  verifierReason: string;
+  failureType?: string;
+  confidence: number;
+  suggestedApproach?: string;
   timestamp: number;
 }
 
@@ -40,6 +52,7 @@ export interface TaskNode {
   dependencies: string[];
   assumptions: string[];
   handoffArtifacts: NodeHandoffArtifact[];
+  reflexionLog: ReflexionEntry[];
   handoffDepth: number;
   handoffFromNodeId?: string;
   status: "pending" | "running" | "completed" | "failed" | "skipped";

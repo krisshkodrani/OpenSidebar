@@ -33,6 +33,7 @@ function makeNode(allowedTools: ToolName[]): TaskNode {
     dependencies: [],
     assumptions: [],
     handoffArtifacts: [],
+    reflexionLog: [],
     handoffDepth: 0,
     status: "pending",
     retries: 0,

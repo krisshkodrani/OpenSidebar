@@ -1,4 +1,4 @@
-import { NodeHandoffArtifact, TaskNode } from "./types";
+import { NodeHandoffArtifact, ReflexionEntry, TaskNode } from "./types";
 
 const MAX_HANDOFF_ARTIFACTS = 8;
 const MAX_NOTE_LEN = 200;
@@ -14,6 +14,7 @@ const PHASE_LABELS: Record<NodeHandoffArtifact["phase"], string> = {
   verifier_accept: "Verifier accept",
   verifier_retry: "Verifier retry",
   verifier_reroute: "Verifier reroute",
+  verifier_advisory: "Advisory",
 };
 
 function normalizeNote(note: string): string {
@@ -37,6 +38,28 @@ export function formatHandoffBrief(artifacts: NodeHandoffArtifact[]): string {
       return `- ${label} (${artifact.role}): ${normalizeNote(artifact.note)}`;
     })
     .join("\n");
+}
+
+const MAX_REFLEXION_ENTRIES = 3;
+
+export function formatReflexionContext(entries: ReflexionEntry[]): string {
+  if (entries.length === 0) return "";
+  const recent = entries.slice(-MAX_REFLEXION_ENTRIES);
+  const lines = recent.map((entry) => {
+    const parts = [
+      `Attempt ${entry.attempt}: ${entry.verifierDecision}`,
+      `  What was tried: ${normalizeNote(entry.executorSummary)}`,
+      `  Why it failed: ${normalizeNote(entry.verifierReason)}`,
+    ];
+    if (entry.failureType) {
+      parts.push(`  Failure type: ${entry.failureType}`);
+    }
+    if (entry.suggestedApproach) {
+      parts.push(`  Suggested change: ${normalizeNote(entry.suggestedApproach)}`);
+    }
+    return parts.join("\n");
+  });
+  return lines.join("\n\n");
 }
 
 export function buildTaskStateBrief(
@@ -71,14 +94,24 @@ export function buildExecutorInstruction(
   realitySignal?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
+  const reflexionContext = formatReflexionContext(node.reflexionLog);
   const assumptions =
     node.assumptions.length > 0
       ? node.assumptions.map((item) => `- ${normalizeNote(item)}`).join("\n")
       : "- No explicit assumptions from planner.";
-  return [
+  const sections = [
     `Objective: ${node.description}`,
     `Success criteria: ${node.successCriteria}`,
     "",
+  ];
+  if (reflexionContext) {
+    sections.push(
+      "Prior attempt analysis (DO NOT repeat these failures):",
+      reflexionContext,
+      "",
+    );
+  }
+  sections.push(
     "Planner assumptions (validate against current page before acting):",
     assumptions,
     "",
@@ -96,8 +129,12 @@ export function buildExecutorInstruction(
     "- Continue from prior context; do not repeat completed work.",
     "- Use global context to avoid duplicating sibling node outcomes.",
     "- If verifier requested reroute/retry, adapt strategy before acting.",
+    node.reflexionLog.length > 0
+      ? "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy."
+      : "- Call done() only when success criteria are satisfied.",
     "- Call done() only when success criteria are satisfied.",
-  ].join("\n");
+  );
+  return sections.join("\n");
 }
 
 export function buildVerifierContext(
@@ -176,6 +213,7 @@ export function createRerouteNode(
         timestamp: Date.now(),
       },
     ],
+    reflexionLog: sourceNode.reflexionLog.slice(-MAX_REFLEXION_ENTRIES),
     handoffDepth: sourceNode.handoffDepth + 1,
     handoffFromNodeId: sourceNode.id,
     status: "pending",

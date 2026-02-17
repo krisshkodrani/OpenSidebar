@@ -36,6 +36,19 @@ export interface VerificationReflectionInput {
   staleSignalCount?: number;
 }
 
+export interface VerifierDialogueTurn {
+  role: "verifier" | "critic";
+  decision: NodeVerificationResult;
+  round: number;
+}
+
+export interface DialogueResult {
+  finalDecision: NodeVerificationResult;
+  turns: VerifierDialogueTurn[];
+  converged: boolean;
+  totalRounds: number;
+}
+
 const VERIFY_SYSTEM = renderPrompt("orchestrator.verifier.system");
 const REFLECT_SYSTEM = renderPrompt("orchestrator.verifier.critic.system");
 
@@ -144,6 +157,43 @@ export class OrchestratorVerifier {
     this.llm.switchToSmart();
   }
 
+  async advise(
+    input: {
+      executorInstruction: string;
+      pageTitle: string;
+      pageUrl: string;
+      viewportText: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    const ADVISORY_SYSTEM = renderPrompt("orchestrator.advisory.system");
+    try {
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: ADVISORY_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Executor instruction:\n${input.executorInstruction}\n\n` +
+              `Current page: ${input.pageTitle} (${input.pageUrl})\n` +
+              `Viewport text (first 500 chars):\n${input.viewportText.slice(0, 500)}`,
+          },
+        ],
+        max_tokens: 150,
+        temperature: 0,
+        signal,
+      });
+      const text = (response.content || "").trim();
+      if (!text || text.toLowerCase().includes("no advisory needed")) {
+        return null;
+      }
+      return text;
+    } catch (error) {
+      logger.warn("orchestrator", "Advisory call failed, skipping", { error });
+      return null;
+    }
+  }
+
   async verifyNode(
     input: NodeVerificationInput,
     signal?: AbortSignal,
@@ -214,6 +264,119 @@ export class OrchestratorVerifier {
         error,
       });
       return deriveVerifierFallbackDecision(input);
+    }
+  }
+
+  async runDialogue(
+    input: NodeVerificationInput,
+    maxRounds: number,
+    confidenceDelta: number,
+    signal?: AbortSignal,
+  ): Promise<DialogueResult> {
+    const turns: VerifierDialogueTurn[] = [];
+
+    const initial = await this.verifyNode(input, signal);
+    turns.push({ role: "verifier", decision: initial, round: 0 });
+
+    if (initial.decision === "accept") {
+      return { finalDecision: initial, turns, converged: true, totalRounds: 1 };
+    }
+
+    let current = initial;
+    for (let round = 1; round <= maxRounds; round += 1) {
+      const dialogueHistory = this.formatDialogueHistory(turns);
+      const challenge = await this.criticChallenge(input, current, dialogueHistory, signal);
+      turns.push({ role: "critic", decision: challenge, round });
+
+      if (challenge.decision === "accept") {
+        return { finalDecision: challenge, turns, converged: true, totalRounds: round + 1 };
+      }
+
+      if (
+        challenge.decision === current.decision &&
+        Math.abs(challenge.confidence - current.confidence) < confidenceDelta
+      ) {
+        return { finalDecision: challenge, turns, converged: true, totalRounds: round + 1 };
+      }
+
+      current = challenge;
+    }
+
+    return { finalDecision: current, turns, converged: false, totalRounds: turns.length };
+  }
+
+  private formatDialogueHistory(turns: VerifierDialogueTurn[]): string {
+    return turns
+      .map((turn) => {
+        const d = turn.decision;
+        return `[Round ${turn.round} - ${turn.role}]: decision=${d.decision}, confidence=${d.confidence.toFixed(2)}, reason="${d.reason}"`;
+      })
+      .join("\n");
+  }
+
+  private async criticChallenge(
+    input: NodeVerificationInput,
+    priorDecision: NodeVerificationResult,
+    dialogueHistory: string,
+    signal?: AbortSignal,
+  ): Promise<NodeVerificationResult> {
+    try {
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: REFLECT_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Task: ${input.taskQuery}\n` +
+              `Objective: ${input.objective}\n` +
+              `Success criteria: ${input.successCriteria}\n` +
+              `Executor output: ${input.output}\n` +
+              `\nPrior verifier decision:\n${JSON.stringify(priorDecision)}\n` +
+              `\nDialogue history:\n${dialogueHistory}\n` +
+              `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
+          },
+        ],
+        max_tokens: 220,
+        temperature: 0,
+        signal,
+      });
+
+      const parsed = parseJsonObject(response.content || "");
+      const decision = normalizeDecision(parsed?.decision);
+      const reason =
+        typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
+          ? parsed.reason.trim()
+          : "No reason provided by critic.";
+      const confidence = normalizeConfidence(parsed?.confidence) ?? priorDecision.confidence;
+
+      if (!decision) {
+        throw new Error("Critic returned invalid decision.");
+      }
+
+      if (decision === "reroute") {
+        const failureType = normalizeFailureType(parsed?.failureType) ?? "blocked";
+        const rerouteObjective =
+          typeof parsed?.rerouteObjective === "string" &&
+          parsed.rerouteObjective.trim().length > 0
+            ? parsed.rerouteObjective.trim()
+            : priorDecision.rerouteObjective ||
+              `Use an alternate approach for: ${input.objective}`;
+        return { decision, reason, confidence, failureType, rerouteObjective };
+      }
+
+      const failureType =
+        decision === "accept"
+          ? undefined
+          : normalizeFailureType(parsed?.failureType) ??
+            priorDecision.failureType ??
+            "insufficient_evidence";
+      return { decision, reason, confidence, failureType };
+    } catch (error) {
+      logger.warn("orchestrator", "Critic challenge failed, keeping prior decision", {
+        error,
+        priorDecision,
+      });
+      return priorDecision;
     }
   }
 
