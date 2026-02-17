@@ -31,6 +31,10 @@ This now captures both:
 - agent turn traces: `traces/<session-id>.jsonl`
 - orchestrator run traces: `traces/runs/<run-id>.jsonl`
 
+If you forgot to start `bun run logs`, manual runs still exist in the in-extension
+buffer (`chrome.storage.local`, key `opensidebar_logs`). Export them from
+`Settings -> Export Logs` as `opensidebar-logs.jsonl`.
+
 ### 2) Run baseline
 
 ```bash

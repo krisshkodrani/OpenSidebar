@@ -622,6 +622,16 @@ function summarizeRunTraceSignals(runFilter?: string) {
     counts[type] = (counts[type] || 0) + 1;
   }
 
+  const skillOutcomeEvents = (events as any[]).filter(
+    (event) => event.type === "skill_replay_outcome",
+  );
+  const durationDeltas = skillOutcomeEvents
+    .map((event) => Number(event?.data?.durationDeltaMs))
+    .filter((n) => Number.isFinite(n));
+  const tokenDeltas = skillOutcomeEvents
+    .map((event) => Number(event?.data?.tokenDelta))
+    .filter((n) => Number.isFinite(n));
+
   return {
     runId: selected.runId,
     source: selected.source ?? null,
@@ -632,6 +642,19 @@ function summarizeRunTraceSignals(runFilter?: string) {
     escalationsRequested: counts["escalation_requested"] || 0,
     checkpointResumes: counts["task_resumed_from_checkpoint"] || 0,
     completions: counts["task_completed"] || 0,
+    skillReplayAttempts: counts["skill_replay_attempted"] || 0,
+    skillReplayHits: counts["skill_replay_selected"] || 0,
+    skillReplayMisses: counts["skill_replay_miss"] || 0,
+    skillReplayDryRunMatches: counts["skill_replay_dry_run_match"] || 0,
+    skillReplaySuccesses: skillOutcomeEvents.filter(
+      (event) => event?.data?.success === true,
+    ).length,
+    skillReplayFailures: skillOutcomeEvents.filter(
+      (event) => event?.data?.success === false,
+    ).length,
+    skillLearnedEvents: counts["skill_learned"] || 0,
+    avgReplayDurationDeltaMs: durationDeltas.length ? avg(durationDeltas) : 0,
+    avgReplayTokenDelta: tokenDeltas.length ? avg(tokenDeltas) : 0,
   };
 }
 
@@ -763,7 +786,7 @@ function renderCritiqueMarkdown(report: any): string {
 
   const suggestions = report.suggestions.map((s: string) => `- ${s}`).join("\n");
   const runTraceSection = report.runTraceSignals
-    ? `## Run Trace Signals\n\n- runId: ${report.runTraceSignals.runId}\n- totalEvents: ${report.runTraceSignals.totalEvents}\n- laneIsolated: ${report.runTraceSignals.laneIsolated}\n- escalationsRequested: ${report.runTraceSignals.escalationsRequested}\n- checkpointResumes: ${report.runTraceSignals.checkpointResumes}\n- completions: ${report.runTraceSignals.completions}\n`
+    ? `## Run Trace Signals\n\n- runId: ${report.runTraceSignals.runId}\n- totalEvents: ${report.runTraceSignals.totalEvents}\n- laneIsolated: ${report.runTraceSignals.laneIsolated}\n- escalationsRequested: ${report.runTraceSignals.escalationsRequested}\n- checkpointResumes: ${report.runTraceSignals.checkpointResumes}\n- completions: ${report.runTraceSignals.completions}\n- skillReplayAttempts: ${report.runTraceSignals.skillReplayAttempts}\n- skillReplayHits: ${report.runTraceSignals.skillReplayHits}\n- skillReplayMisses: ${report.runTraceSignals.skillReplayMisses}\n- skillReplayDryRunMatches: ${report.runTraceSignals.skillReplayDryRunMatches}\n- skillReplaySuccesses: ${report.runTraceSignals.skillReplaySuccesses}\n- skillReplayFailures: ${report.runTraceSignals.skillReplayFailures}\n- skillLearnedEvents: ${report.runTraceSignals.skillLearnedEvents}\n- avgReplayDurationDeltaMs: ${Number(report.runTraceSignals.avgReplayDurationDeltaMs || 0).toFixed(2)}\n- avgReplayTokenDelta: ${Number(report.runTraceSignals.avgReplayTokenDelta || 0).toFixed(2)}\n`
     : "## Run Trace Signals\n\n- none\n";
 
   return `# Evals Critique Report

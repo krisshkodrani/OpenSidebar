@@ -4,6 +4,7 @@ import { TaskNode } from "../orchestrator/types";
 import { LearnedSkill, SkillStep, SKILLS_STORAGE_KEY } from "../../skills/types";
 const MAX_SKILLS = 200;
 const MAX_SKILL_STEPS = 24;
+const AUTO_DISABLE_REPLAY_FAILURES = 3;
 
 export interface SkillMatchResult {
   skill: LearnedSkill;
@@ -119,6 +120,10 @@ function parseSkill(raw: unknown): LearnedSkill | null {
     successfulRuns:
       typeof raw.successfulRuns === "number" ? Math.max(0, raw.successfulRuns) : 0,
     failedRuns: typeof raw.failedRuns === "number" ? Math.max(0, raw.failedRuns) : 0,
+    consecutiveReplayFailures:
+      typeof raw.consecutiveReplayFailures === "number"
+        ? Math.max(0, raw.consecutiveReplayFailures)
+        : 0,
     avgDurationMs:
       typeof raw.avgDurationMs === "number" ? Math.max(0, raw.avgDurationMs) : 0,
     avgTokens: typeof raw.avgTokens === "number" ? Math.max(0, raw.avgTokens) : 0,
@@ -216,10 +221,18 @@ export class SkillStore {
     const updated = skills.map((skill) => {
       if (skill.id !== skillId) return skill;
       const outcomeCount = skill.successfulRuns + skill.failedRuns;
+      const nextConsecutiveReplayFailures = success
+        ? 0
+        : skill.consecutiveReplayFailures + 1;
       return {
         ...skill,
         successfulRuns: skill.successfulRuns + (success ? 1 : 0),
         failedRuns: skill.failedRuns + (success ? 0 : 1),
+        consecutiveReplayFailures: nextConsecutiveReplayFailures,
+        enabled:
+          !success && nextConsecutiveReplayFailures >= AUTO_DISABLE_REPLAY_FAILURES
+            ? false
+            : skill.enabled,
         avgDurationMs: rollingAverage(skill.avgDurationMs, outcomeCount, durationMs),
         avgTokens: rollingAverage(skill.avgTokens, outcomeCount, totalTokens),
         updatedAt: Date.now(),
@@ -316,6 +329,7 @@ export class SkillStore {
       steps,
       enabled: true,
       pinned: false,
+      consecutiveReplayFailures: 0,
     };
     await this.writeAll([created, ...skills]);
     return created;

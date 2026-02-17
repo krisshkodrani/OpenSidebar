@@ -1000,4 +1000,57 @@ describe("Orchestrator integration join tests", () => {
 
     expect(createdLoopNodeIds).toEqual(["n1"]);
   });
+
+  test("skill replay dry-run records match but executes planner path", async () => {
+    skillStoreSnapshot = [
+      {
+        id: "skill-dryrun",
+        name: "dry-run flow",
+        sourceQuery: "checkout flow",
+        createdAt: Date.now() - 1000,
+        updatedAt: Date.now() - 1000,
+        uses: 0,
+        successfulRuns: 1,
+        failedRuns: 0,
+        consecutiveReplayFailures: 0,
+        avgDurationMs: 2000,
+        avgTokens: 500,
+        matchTokens: ["checkout", "flow"],
+        steps: [
+          {
+            objective: "Open cart",
+            successCriteria: "Cart visible",
+            allowedTools: [ToolName.CLICK_ELEMENT],
+            assumptions: [],
+          },
+        ],
+        enabled: true,
+        pinned: true,
+      },
+    ];
+    plannerBuildNodesImpl = async () => [makeNode("n1", "planner path with dry run")];
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask({
+      ...makeInput("checkout flow now"),
+      settings: {
+        ...baseSettings,
+        skillReplayDryRun: true,
+      },
+    });
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes("Skill dry-run match"),
+      ),
+    ).toBe(true);
+  });
 });

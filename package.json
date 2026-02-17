@@ -25,7 +25,8 @@
     "evals:convert": "bun run evals/cli.ts convert",
     "evals:run": "bun run evals/cli.ts run",
     "evals:stats": "bun run evals/cli.ts stats",
-    "evals:analyze": "bun run evals/cli.ts analyze"
+    "evals:analyze": "bun run evals/cli.ts analyze",
+    "challenge:discover": "bun run scripts/challenge-discover.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

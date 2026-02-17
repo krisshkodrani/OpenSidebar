@@ -95,6 +95,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   teachModeEnabled: true,
   autoSkillReplayEnabled: true,
   skillReplayPinnedOnly: false,
+  skillReplayDryRun: false,
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;

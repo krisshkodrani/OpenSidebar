@@ -1575,6 +1575,8 @@ export interface UserSettings {
   autoSkillReplayEnabled?: boolean;
   /** Restrict skill replay to explicitly pinned skills */
   skillReplayPinnedOnly?: boolean;
+  /** Evaluate skill matches without executing them (planner still runs) */
+  skillReplayDryRun?: boolean;
 }
 
 // --- Utility Types ---

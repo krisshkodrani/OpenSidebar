@@ -23,15 +23,21 @@ function successRate(skill: LearnedSkill): number {
 function parseSkills(raw: unknown): LearnedSkill[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((entry): entry is LearnedSkill => {
+    .filter((entry): entry is Partial<LearnedSkill> => {
       return (
         !!entry &&
         typeof entry === "object" &&
-        typeof (entry as LearnedSkill).id === "string" &&
-        typeof (entry as LearnedSkill).name === "string" &&
-        Array.isArray((entry as LearnedSkill).steps)
+        typeof (entry as Partial<LearnedSkill>).id === "string" &&
+        typeof (entry as Partial<LearnedSkill>).name === "string" &&
+        Array.isArray((entry as Partial<LearnedSkill>).steps)
       );
     })
+    .map((entry) => ({
+      ...entry,
+      enabled: entry.enabled !== false,
+      pinned: entry.pinned === true,
+      consecutiveReplayFailures: Number(entry.consecutiveReplayFailures || 0),
+    }) as LearnedSkill)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 

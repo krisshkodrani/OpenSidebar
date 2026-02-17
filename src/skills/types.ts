@@ -19,6 +19,7 @@ export interface LearnedSkill {
   uses: number;
   successfulRuns: number;
   failedRuns: number;
+  consecutiveReplayFailures: number;
   avgDurationMs: number;
   avgTokens: number;
   matchTokens: string[];

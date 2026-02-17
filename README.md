@@ -134,6 +134,34 @@ When `bun run logs` is active, execution traces are persisted under:
 - `traces/<session-id>.jsonl` (agent turn traces)
 - `traces/runs/<run-id>.jsonl` (orchestrator run traces)
 
+### Manual Runs: Where Logs Come From
+
+Yes, manual browser runs produce logs.
+
+- Always-on buffer: structured logs are written to `chrome.storage.local` (`opensidebar_logs`) via `StorageLogger`.
+- Optional disk persistence: if `bun run logs` is running, the extension also drains logs/traces to local files:
+  - `logs/opensidebar.jsonl`
+  - `traces/<session-id>.jsonl`
+  - `traces/runs/<run-id>.jsonl`
+
+### How Info Is Extracted
+
+1. Start drain server in a terminal:
+   - `bun run logs`
+2. Run your task manually in Chrome (open side panel, execute workflow).
+3. Inspect raw logs/traces:
+   - `bun run logs:tail`
+   - `bun run logs:query search "task_completed"`
+   - `bun run traces:list`
+   - `bun run traces:stats`
+4. Convert captured traces into eval cases:
+   - `bun run evals convert <session-id> --strategy all`
+5. Generate AI-readable critique artifacts:
+   - `bun run evals critique`
+
+If you forgot to start `bun run logs`, you can still export buffered logs from the side panel:
+- `Settings -> Export Logs` downloads `opensidebar-logs.jsonl`.
+
 ---
 
 ## Documentation
@@ -160,6 +188,7 @@ When `bun run logs` is active, execution traces are persisted under:
 
 - [RFCs](./docs/rfc/)
 - [Evals Program Guide](./docs/guides/evals-program.md)
+- [Manual Evals Runbook](./docs/guides/manual-evals-runbook.md)
 - [Evals Manual Workflow](./evals/README.md)
 - [Contributing Guide](./CONTRIBUTING.md)
 - [Agent Guidelines](./AGENTS.md)

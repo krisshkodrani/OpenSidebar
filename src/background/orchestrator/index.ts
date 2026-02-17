@@ -71,6 +71,14 @@ type AgentLoopCallbacksArg = ConstructorParameters<typeof AgentLoop>[3];
 type AgentLoopOptionsArg = ConstructorParameters<typeof AgentLoop>[4];
 type RuntimeLane = "planner" | "executor" | "verifier";
 type EscalationDecisionPayload = EscalationDecisionMessage["payload"];
+type ReplayMatchContext = {
+  skillId: string;
+  skillName: string;
+  score: number;
+  baselineDurationMs: number;
+  baselineTokens: number;
+  dryRun: boolean;
+};
 
 type LaneBudgetPolicy = {
   maxConcurrent: number;
@@ -1699,29 +1707,77 @@ export class Orchestrator {
 
     let nodes: TaskNode[] = [];
     let replaySkillId: string | null = null;
+    let replayMatchContext: ReplayMatchContext | null = null;
+    const replayAttempted = Boolean(input.settings.autoSkillReplayEnabled);
     if (input.settings.autoSkillReplayEnabled) {
+      this.emitTraceEvent(
+        task,
+        "skill_replay_attempted",
+        {
+          pinnedOnly: Boolean(input.settings.skillReplayPinnedOnly),
+          dryRun: Boolean(input.settings.skillReplayDryRun),
+        },
+        "planner",
+      );
       const matched = await this.skillStore.matchSkill(input.query, {
         pinnedOnly: input.settings.skillReplayPinnedOnly,
       });
       if (matched) {
-        replaySkillId = matched.skill.id;
-        await this.skillStore.recordSkillSelection(matched.skill.id);
-        nodes = this.buildNodesFromSkill(matched.skill);
-        this.sendMessage({
-          type: "AGENT_STEP",
-          workspaceId: input.workspaceId,
-          payload: {
-            step: {
-              id: crypto.randomUUID(),
-              type: "info",
-              label: `Skill replay: ${matched.skill.name}`,
-              detail: `Matched learned skill (${matched.score.toFixed(2)} confidence)`,
-              status: "done",
-              timestamp: Date.now(),
+        replayMatchContext = {
+          skillId: matched.skill.id,
+          skillName: matched.skill.name,
+          score: matched.score,
+          baselineDurationMs: matched.skill.avgDurationMs,
+          baselineTokens: matched.skill.avgTokens,
+          dryRun: Boolean(input.settings.skillReplayDryRun),
+        };
+        if (input.settings.skillReplayDryRun) {
+          this.sendMessage({
+            type: "AGENT_STEP",
+            workspaceId: input.workspaceId,
+            payload: {
+              step: {
+                id: crypto.randomUUID(),
+                type: "info",
+                label: `Skill dry-run match: ${matched.skill.name}`,
+                detail: `Would replay learned skill (${matched.score.toFixed(2)} confidence), planner path continues`,
+                status: "done",
+                timestamp: Date.now(),
+              },
+              update: false,
             },
-            update: false,
-          },
-        });
+          });
+          this.emitTraceEvent(
+            task,
+            "skill_replay_dry_run_match",
+            {
+              skillId: matched.skill.id,
+              skillName: matched.skill.name,
+              score: matched.score,
+              stepCount: matched.skill.steps.length,
+            },
+            "planner",
+          );
+        } else {
+          replaySkillId = matched.skill.id;
+          await this.skillStore.recordSkillSelection(matched.skill.id);
+          nodes = this.buildNodesFromSkill(matched.skill);
+          this.sendMessage({
+            type: "AGENT_STEP",
+            workspaceId: input.workspaceId,
+            payload: {
+              step: {
+                id: crypto.randomUUID(),
+                type: "info",
+                label: `Skill replay: ${matched.skill.name}`,
+                detail: `Matched learned skill (${matched.score.toFixed(2)} confidence)`,
+                status: "done",
+                timestamp: Date.now(),
+              },
+              update: false,
+            },
+          });
+        }
         this.emitTraceEvent(
           task,
           "skill_replay_selected",
@@ -1733,6 +1789,10 @@ export class Orchestrator {
           },
           "planner",
         );
+      } else {
+        this.emitTraceEvent(task, "skill_replay_miss", {
+          pinnedOnly: Boolean(input.settings.skillReplayPinnedOnly),
+        }, "planner");
       }
     }
 
@@ -1841,13 +1901,15 @@ export class Orchestrator {
     this.sendProgress(task);
     this.sendStatus(input.workspaceId, AgentStatus.ACTING, "Executing subtasks...");
 
-    await this.runTask(task, input, replaySkillId);
+    await this.runTask(task, input, replaySkillId, replayMatchContext, replayAttempted);
   }
 
   private async runTask(
     task: OrchestratorTask,
     input: OrchestratorStartInput,
     replaySkillId?: string | null,
+    replayMatchContext?: ReplayMatchContext | null,
+    replayAttempted = false,
   ): Promise<void> {
     const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
@@ -2638,6 +2700,7 @@ export class Orchestrator {
         terminationReason: task.terminationReason,
       },
     });
+    const totalDurationMs = task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
       task,
       "task_completed",
@@ -2647,13 +2710,24 @@ export class Orchestrator {
         completed,
         failed,
         skipped,
+        totalDurationMs,
+        totalTokens: task.sessionMetrics.totalTokens,
+        totalCostUsd: task.sessionMetrics.totalCost,
+        replayAttempted,
+        replayHit: Boolean(replaySkillId),
         terminationReason: task.terminationReason ?? null,
       },
       "system",
     );
 
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
-    await this.maybeLearnOrUpdateSkill(task, input, completionStatus, replaySkillId);
+    await this.maybeLearnOrUpdateSkill(
+      task,
+      input,
+      completionStatus,
+      replaySkillId,
+      replayMatchContext,
+    );
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
@@ -2691,6 +2765,7 @@ export class Orchestrator {
     input: OrchestratorStartInput,
     completionStatus: "completed" | "partial" | "failed",
     replaySkillId?: string | null,
+    replayMatchContext?: ReplayMatchContext | null,
   ): Promise<void> {
     try {
       const durationMs = task.finishedAt
@@ -2699,11 +2774,35 @@ export class Orchestrator {
       const totalTokens = task.sessionMetrics.totalTokens;
 
       if (replaySkillId) {
+        const replaySuccess = completionStatus !== "failed";
         await this.skillStore.recordSkillOutcome(
           replaySkillId,
-          completionStatus !== "failed",
+          replaySuccess,
           durationMs,
           totalTokens,
+        );
+        this.emitTraceEvent(
+          task,
+          "skill_replay_outcome",
+          {
+            skillId: replaySkillId,
+            skillName: replayMatchContext?.skillName ?? null,
+            score: replayMatchContext?.score ?? null,
+            success: replaySuccess,
+            durationMs,
+            totalTokens,
+            baselineDurationMs: replayMatchContext?.baselineDurationMs ?? null,
+            baselineTokens: replayMatchContext?.baselineTokens ?? null,
+            durationDeltaMs:
+              replayMatchContext && replayMatchContext.baselineDurationMs > 0
+                ? replayMatchContext.baselineDurationMs - durationMs
+                : null,
+            tokenDelta:
+              replayMatchContext && replayMatchContext.baselineTokens > 0
+                ? replayMatchContext.baselineTokens - totalTokens
+                : null,
+          },
+          "executor",
         );
       }
 
