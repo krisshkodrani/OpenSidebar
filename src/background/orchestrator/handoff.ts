@@ -1,4 +1,10 @@
-import { NodeHandoffArtifact, ReflexionEntry, TaskNode } from "./types";
+import {
+  NodeHandoffArtifact,
+  PlannerReflexionEntry,
+  ReflexionEntry,
+  StructuredEvidence,
+  TaskNode,
+} from "./types";
 
 const MAX_HANDOFF_ARTIFACTS = 8;
 const MAX_NOTE_LEN = 200;
@@ -137,18 +143,56 @@ export function buildExecutorInstruction(
   return sections.join("\n");
 }
 
+export function formatEvidenceChain(evidence: StructuredEvidence[]): string {
+  if (evidence.length === 0) return "";
+  return evidence
+    .map((e) => {
+      const parts = [`- [${e.basis}] ${normalizeNote(e.claim)} (confidence=${e.confidence.toFixed(2)})`];
+      if (e.sourceToolCall) parts.push(`  source: ${e.sourceToolCall}`);
+      return parts.join("\n");
+    })
+    .join("\n");
+}
+
 export function buildVerifierContext(
   node: TaskNode,
   taskStateBrief: string,
 ): string {
   const nodeHandoff = formatHandoffBrief(node.handoffArtifacts);
-  return [
+  const sections = [
     "Node handoff context:",
     nodeHandoff,
-    "",
-    "Global task context:",
-    taskStateBrief,
-  ].join("\n");
+  ];
+
+  const allEvidence = node.handoffArtifacts
+    .filter((a) => a.evidence && a.evidence.length > 0)
+    .flatMap((a) => a.evidence!);
+  if (allEvidence.length > 0) {
+    sections.push("", "Structured evidence chain:", formatEvidenceChain(allEvidence));
+  }
+
+  sections.push("", "Global task context:", taskStateBrief);
+  return sections.join("\n");
+}
+
+const MAX_PLANNER_REFLEXION_ENTRIES = 5;
+
+export function formatPlannerReflexionContext(
+  entries: PlannerReflexionEntry[],
+): string {
+  if (entries.length === 0) return "";
+  const recent = entries.slice(-MAX_PLANNER_REFLEXION_ENTRIES);
+  return recent
+    .map((e) => {
+      const parts = [
+        `- Node ${e.nodeId.slice(0, 8)}: verifier ${e.verifierDecision}`,
+        `  Executor summary: ${normalizeNote(e.executorSummary)}`,
+      ];
+      if (e.failureType) parts.push(`  Failure type: ${e.failureType}`);
+      if (e.plannerLesson) parts.push(`  Lesson: ${normalizeNote(e.plannerLesson)}`);
+      return parts.join("\n");
+    })
+    .join("\n");
 }
 
 function tokenizeAssumption(assumption: string): string[] {

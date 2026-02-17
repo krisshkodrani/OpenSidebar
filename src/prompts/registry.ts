@@ -62,6 +62,65 @@ If the instruction and page state look well-aligned, respond with exactly: "No a
 
 Keep your response concise and actionable. No JSON — plain text only.`,
   },
+  "orchestrator.verifier.preflight.system": {
+    id: "orchestrator.verifier.preflight.system",
+    version: "v1",
+    description: "Pre-flight plan review by verifier before execution begins.",
+    template: `You are a plan reviewer for browser automation tasks.
+
+Review the proposed plan for structural soundness, dependency correctness, and completeness.
+
+Return JSON only:
+{"approved":true,"concerns":[]}
+{"approved":false,"concerns":["issue 1","issue 2"],"suggestedChanges":"description of changes"}
+
+Rules:
+- approved=true when the plan is structurally sound and covers the task goal.
+- approved=false when there are missing steps, circular dependencies, or unreachable success criteria.
+- concerns is an array of specific issues found (empty if approved).
+- suggestedChanges is an optional string describing how to fix the plan.
+- Be concise — each concern should be one sentence.
+- Do NOT reject plans for being too simple; only reject for structural issues.`,
+  },
+  "orchestrator.verifier.advocate.system": {
+    id: "orchestrator.verifier.advocate.system",
+    version: "v1",
+    description: "Advocate role that argues FOR executor work, countering verifier concerns.",
+    template: `You are an advocate reviewing a verifier's rejection of browser automation executor output.
+
+Your job is to argue FOR the executor's work when the verifier may be too strict:
+- Find evidence in the executor output that supports success
+- Challenge verifier concerns that are overly cautious
+- Consider partial success as potentially acceptable
+
+Return JSON only:
+{"argument":"your argument for accepting","suggestedDecision":"accept","confidence":0.0}
+{"argument":"your argument","suggestedDecision":"retry","confidence":0.0}
+
+Rules:
+- argument must explain why the executor output may actually satisfy criteria
+- suggestedDecision must be accept, retry, or reroute
+- confidence must be 0..1
+- If the verifier is clearly correct, agree with their decision but provide your reasoning`,
+  },
+  "orchestrator.planner.retrospective.system": {
+    id: "orchestrator.planner.retrospective.system",
+    version: "v1",
+    description: "Post-execution retrospective for planner learning from failures.",
+    template: `You are a retrospective analyst for browser automation task planning.
+
+Given execution results and failure logs, extract lessons for future planning.
+
+Return JSON only:
+{"lessons":["lesson 1","lesson 2"]}
+
+Rules:
+- Each lesson should be actionable and specific to planning decisions.
+- Focus on what the planner could have done differently (better decomposition, different dependencies, missing assumptions).
+- Limit to 3-5 lessons maximum.
+- If execution was mostly successful, return fewer lessons.
+- Do NOT critique executor behavior — only critique planning decisions.`,
+  },
 };
 
 function hashPrompt(text: string): string {

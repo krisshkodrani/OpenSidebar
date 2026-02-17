@@ -1,6 +1,12 @@
 import { LLMClient } from "../llm";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
+import {
+  AdvocateResponse,
+  OrchestratorTask,
+  PlanReviewResult,
+  TaskNode,
+} from "./types";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -51,6 +57,8 @@ export interface DialogueResult {
 
 const VERIFY_SYSTEM = renderPrompt("orchestrator.verifier.system");
 const REFLECT_SYSTEM = renderPrompt("orchestrator.verifier.critic.system");
+const PREFLIGHT_SYSTEM = renderPrompt("orchestrator.verifier.preflight.system");
+const ADVOCATE_SYSTEM = renderPrompt("orchestrator.verifier.advocate.system");
 
 const BLOCKED_MARKERS = [
   "captcha",
@@ -443,6 +451,102 @@ export class OrchestratorVerifier {
         priorDecision: input.priorDecision,
       });
       return input.priorDecision;
+    }
+  }
+
+  async reviewPlan(
+    task: OrchestratorTask,
+    nodes: TaskNode[],
+    opts?: { timeout?: number },
+    signal?: AbortSignal,
+  ): Promise<PlanReviewResult> {
+    try {
+      const nodeDescriptions = nodes
+        .map((n, i) => `${i + 1}. ${n.description} [criteria: ${n.successCriteria}] [deps: ${n.dependencies.length > 0 ? n.dependencies.join(", ") : "none"}]`)
+        .join("\n");
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: PREFLIGHT_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Task: ${task.query}\n\n` +
+              `Plan (${nodes.length} nodes):\n${nodeDescriptions}`,
+          },
+        ],
+        max_tokens: 300,
+        temperature: 0,
+        signal,
+      });
+
+      const parsed = parseJsonObject(response.content || "");
+      if (!parsed) {
+        return { approved: true, concerns: [] };
+      }
+      const approved = parsed.approved === true;
+      const concerns = Array.isArray(parsed.concerns)
+        ? parsed.concerns.filter((c): c is string => typeof c === "string")
+        : [];
+      const suggestedChanges =
+        typeof parsed.suggestedChanges === "string" && parsed.suggestedChanges.trim().length > 0
+          ? parsed.suggestedChanges.trim()
+          : undefined;
+      return { approved, concerns, suggestedChanges };
+    } catch (error) {
+      logger.warn("orchestrator", "Plan review failed, auto-approving", { error });
+      return { approved: true, concerns: [] };
+    }
+  }
+
+  async advocateChallenge(
+    task: OrchestratorTask,
+    node: TaskNode,
+    verifierDecision: NodeVerificationResult,
+    signal?: AbortSignal,
+  ): Promise<AdvocateResponse> {
+    try {
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: ADVOCATE_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Task: ${task.query}\n` +
+              `Objective: ${node.description}\n` +
+              `Success criteria: ${node.successCriteria}\n` +
+              `Executor result: ${node.result || "No result"}\n\n` +
+              `Verifier decision: ${JSON.stringify(verifierDecision)}`,
+          },
+        ],
+        max_tokens: 250,
+        temperature: 0,
+        signal,
+      });
+
+      const parsed = parseJsonObject(response.content || "");
+      if (!parsed) {
+        return {
+          argument: "Unable to parse advocate response.",
+          suggestedDecision: verifierDecision.decision,
+          confidence: verifierDecision.confidence,
+        };
+      }
+
+      const argument =
+        typeof parsed.argument === "string" && parsed.argument.trim().length > 0
+          ? parsed.argument.trim()
+          : "No argument provided.";
+      const suggestedDecision = normalizeDecision(parsed.suggestedDecision) ?? verifierDecision.decision;
+      const confidence = normalizeConfidence(parsed.confidence) ?? verifierDecision.confidence;
+
+      return { argument, suggestedDecision, confidence };
+    } catch (error) {
+      logger.warn("orchestrator", "Advocate challenge failed", { error });
+      return {
+        argument: "Advocate call failed.",
+        suggestedDecision: verifierDecision.decision,
+        confidence: verifierDecision.confidence,
+      };
     }
   }
 }

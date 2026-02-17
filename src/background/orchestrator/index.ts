@@ -26,12 +26,17 @@ import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
 import {
+  AdvocateResponse,
   BufferedMemory,
   NodeHandoffArtifact,
   OrchestratorCheckpoint,
   OrchestratorStartInput,
   OrchestratorTask,
+  PlannerReflexionEntry,
+  PlanReviewResult,
   ReflexionEntry,
+  RetrospectiveResult,
+  StructuredEvidence,
   TaskNode,
   WorkerInstance,
 } from "./types";
@@ -46,6 +51,7 @@ import {
   buildAssumptionDriftSignal,
   buildExecutorInstruction,
   createRerouteNode,
+  formatPlannerReflexionContext,
   MAX_HANDOFF_DEPTH,
   buildTaskStateBrief,
   buildVerifierContext,
@@ -158,9 +164,10 @@ class LaneIsolationError extends Error {
   }
 }
 
-type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode">;
+type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode"> &
+  Partial<Pick<OrchestratorPlanner, "retrospective">>;
 type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
-  Partial<Pick<OrchestratorVerifier, "reflectDecision" | "runDialogue" | "advise">>;
+  Partial<Pick<OrchestratorVerifier, "reflectDecision" | "runDialogue" | "advise" | "reviewPlan" | "advocateChallenge">>;
 type LlmLike = Pick<LLMClient, "switchToSmart" | "complete">;
 
 type CreateAgentLoopInput = {
@@ -409,6 +416,9 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
     status: raw.status,
     createdAt: raw.createdAt,
     nodes: nodes as TaskNode[],
+    plannerReflexionLog: Array.isArray(raw.plannerReflexionLog)
+      ? (raw.plannerReflexionLog as PlannerReflexionEntry[])
+      : [],
     maxWorkers: raw.maxWorkers,
     maxReplans,
     replansUsed,
@@ -872,6 +882,9 @@ export class Orchestrator {
       "orchestrator.verifier.system",
       "orchestrator.verifier.critic.system",
       "orchestrator.advisory.system",
+      "orchestrator.verifier.preflight.system",
+      "orchestrator.verifier.advocate.system",
+      "orchestrator.planner.retrospective.system",
     ]);
     return {
       runId: task.runId || task.id,
@@ -1727,6 +1740,7 @@ export class Orchestrator {
       status: "planning",
       createdAt: Date.now(),
       nodes: [],
+      plannerReflexionLog: [],
       maxWorkers: Math.max(
         1,
         Math.min(8, input.settings.orchestratorMaxWorkers || DEFAULT_MAX_WORKERS),
@@ -1951,6 +1965,61 @@ export class Orchestrator {
     }
 
     task.nodes = nodes;
+
+    // WS3: Pre-flight plan review (only for non-trivial plans with ≥3 nodes)
+    if (nodes.length >= 3) {
+      try {
+        const verifier = this.deps.createVerifier(
+          input.openRouterApiKey,
+          input.cerebrasApiKey,
+        );
+        if (verifier.reviewPlan) {
+          const planReview = await this.runInLane(task, "verifier", async () =>
+            verifier.reviewPlan!(task, nodes),
+          );
+          this.emitTraceEvent(task, "plan_reviewed", {
+            nodeCount: nodes.length,
+            approved: planReview.approved,
+            concernCount: planReview.concerns.length,
+          }, "verifier");
+          if (!planReview.approved && planReview.suggestedChanges) {
+            logger.info("orchestrator", "Verifier rejected plan, requesting refinement", {
+              taskId: task.id,
+              concerns: planReview.concerns,
+              suggestedChanges: planReview.suggestedChanges,
+            });
+            try {
+              const replanner = this.deps.createPlanner(
+                input.openRouterApiKey,
+                input.cerebrasApiKey,
+              );
+              const tab = await chrome.tabs.get(input.tabId);
+              const refinedNodes = await this.runInLane(task, "planner", async () =>
+                replanner.expandNode(
+                  nodes[0],
+                  tab.title || "Untitled",
+                  tab.url || "",
+                  `Pre-flight review concerns: ${planReview.concerns.join("; ")}. ${planReview.suggestedChanges}`,
+                ),
+              );
+              if (refinedNodes && refinedNodes.length >= 2) {
+                nodes = refinedNodes;
+                task.nodes = nodes;
+                logger.info("orchestrator", "Plan refined after verifier review", {
+                  taskId: task.id,
+                  refinedCount: refinedNodes.length,
+                });
+              }
+            } catch (error) {
+              logger.warn("orchestrator", "Plan refinement failed, using original plan", { error });
+            }
+          }
+        }
+      } catch (error) {
+        logger.warn("orchestrator", "Pre-flight review failed, continuing with plan", { error });
+      }
+    }
+
     this.applyPreflightBudget(task);
     task.status = "running";
     task.startedAt = Date.now();
@@ -2261,11 +2330,23 @@ export class Orchestrator {
           this.memoryBuffer.discardWorker(workerId);
           return;
         }
+        const executorEvidence: StructuredEvidence[] = [
+          {
+            claim: result.summary || "Executor finished without summary.",
+            basis: "tool_output",
+            confidence: result.outcome === "completed" ? 1.0 : 0.5,
+          },
+        ];
         this.appendHandoffArtifact(node, {
           role: "executor",
           phase: "executor_finished",
           note: result.summary || "Executor finished without summary.",
+          evidence: executorEvidence,
         });
+        this.emitTraceEvent(task, "evidence_attached", {
+          nodeId: node.id,
+          entryCount: executorEvidence.length,
+        }, "executor");
         if (result.outcome === "completed") {
           const verifierHandoffContext = buildVerifierContext(node, taskStateBrief);
           const initialVerification = await this.runInLane(task, "verifier", async () =>
@@ -2447,12 +2528,16 @@ export class Orchestrator {
                 replanned = true;
               } else {
               try {
+                const reflexionContext = formatPlannerReflexionContext(task.plannerReflexionLog);
+                const replanReason = reflexionContext
+                  ? `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})\n\nPrior failure lessons:\n${reflexionContext}`
+                  : `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`;
                 const expandedNodes = await this.runInLane(task, "planner", async () =>
                   replanner.expandNode(
                     node,
                     snapshot?.title || "",
                     snapshot?.url || "",
-                    `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`,
+                    replanReason,
                   ),
                 );
                 if (expandedNodes && expandedNodes.length > 0) {
@@ -2569,6 +2654,18 @@ export class Orchestrator {
                   failureType: verification.failureType,
                   confidence: verification.confidence,
                   reflexionCount: node.reflexionLog.length,
+                }, "verifier");
+                task.plannerReflexionLog.push({
+                  nodeId: node.id,
+                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
+                  failureType: verification.failureType,
+                  executorSummary: result.summary || "No executor summary.",
+                  plannerLesson: "",
+                  timestamp: Date.now(),
+                });
+                this.emitTraceEvent(task, "cross_role_reflexion", {
+                  nodeId: node.id,
+                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
                 }, "verifier");
                 node.status = "pending";
                 node.retries += 1;
@@ -2832,6 +2929,37 @@ export class Orchestrator {
     task.finishedAt = Date.now();
     task.sessionMetrics.totalSessionTimeMs = task.finishedAt - (task.startedAt || task.createdAt);
     task.status = failed > 0 ? "failed" : "completed";
+
+    // WS4: Planner retrospective — only when at least 1 node failed or was retried
+    const hasFailures = task.plannerReflexionLog.length > 0 ||
+      task.nodes.some((n) => n.status === "failed");
+    if (hasFailures) {
+      try {
+        const retrospectivePlanner = this.deps.createPlanner(
+          input.openRouterApiKey,
+          input.cerebrasApiKey,
+        );
+        if (retrospectivePlanner.retrospective) {
+          const retro = await this.runInLane(task, "planner", async () =>
+            retrospectivePlanner.retrospective!(
+              task,
+              task.nodes,
+              task.plannerReflexionLog,
+            ),
+          );
+          this.emitTraceEvent(task, "planner_retrospective", {
+            lessonCount: retro.lessons.length,
+            failedNodes: task.nodes.filter((n) => n.status === "failed").map((n) => n.id),
+          }, "planner");
+          logger.info("orchestrator", "Planner retrospective completed", {
+            taskId: task.id,
+            lessonCount: retro.lessons.length,
+          });
+        }
+      } catch (error) {
+        logger.warn("orchestrator", "Planner retrospective failed", { error });
+      }
+    }
 
     const summary = await this.summarizeTask(task, input.openRouterApiKey);
     this.sendMessage({
@@ -3339,6 +3467,50 @@ export class Orchestrator {
           finalDecision: dialogueResult.finalDecision.decision,
           finalConfidence: dialogueResult.finalDecision.confidence,
         }, "verifier");
+
+        // WS5: Advocate-Critic Triad — advocate argues FOR executor when verifier
+        // leans toward rejection with low confidence on first attempt
+        const advocateDecision = dialogueResult.finalDecision;
+        if (
+          verifier.advocateChallenge &&
+          advocateDecision.decision === "retry" &&
+          advocateDecision.confidence < 0.7 &&
+          node.retries === 0
+        ) {
+          try {
+            const advocateResponse = await this.runInLane(
+              task,
+              "verifier",
+              async () =>
+                verifier.advocateChallenge!(task, node, advocateDecision),
+            );
+            this.emitTraceEvent(task, "advocate_challenge", {
+              nodeId: node.id,
+              advocateDecision: advocateResponse.suggestedDecision,
+              confidence: advocateResponse.confidence,
+            }, "verifier");
+            logger.info("orchestrator", "Advocate challenge completed", {
+              taskId: task.id,
+              nodeId: node.id,
+              advocateDecision: advocateResponse.suggestedDecision,
+              advocateConfidence: advocateResponse.confidence,
+            });
+            // If advocate recommends accept with higher confidence, override
+            if (
+              advocateResponse.suggestedDecision === "accept" &&
+              advocateResponse.confidence > advocateDecision.confidence
+            ) {
+              return {
+                decision: "accept",
+                reason: `Advocate override: ${advocateResponse.argument}`,
+                confidence: advocateResponse.confidence,
+              };
+            }
+          } catch (error) {
+            logger.warn("orchestrator", "Advocate challenge failed", { error });
+          }
+        }
+
         return dialogueResult.finalDecision;
       } catch (error) {
         if (isLaneIsolationError(error, "verifier")) {

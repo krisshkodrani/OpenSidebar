@@ -17,6 +17,14 @@ export interface PlannerAssignment {
   assumptions?: string[];
 }
 
+export interface StructuredEvidence {
+  claim: string;
+  basis: "tool_output" | "observation" | "inference" | "user_input";
+  confidence: number;
+  sourceToolCall?: string;
+  turnNumber?: number;
+}
+
 export interface NodeHandoffArtifact {
   role: AgentRole;
   phase:
@@ -30,6 +38,32 @@ export interface NodeHandoffArtifact {
     | "verifier_advisory";
   note: string;
   timestamp: number;
+  evidence?: StructuredEvidence[];
+}
+
+export interface PlannerReflexionEntry {
+  nodeId: string;
+  verifierDecision: "retry" | "reroute";
+  failureType?: string;
+  executorSummary: string;
+  plannerLesson: string;
+  timestamp: number;
+}
+
+export interface PlanReviewResult {
+  approved: boolean;
+  concerns: string[];
+  suggestedChanges?: string;
+}
+
+export interface RetrospectiveResult {
+  lessons: string[];
+}
+
+export interface AdvocateResponse {
+  argument: string;
+  suggestedDecision: "accept" | "retry" | "reroute";
+  confidence: number;
 }
 
 export interface ReflexionEntry {
@@ -72,6 +106,7 @@ export interface OrchestratorTask {
   startedAt?: number;
   finishedAt?: number;
   nodes: TaskNode[];
+  plannerReflexionLog: PlannerReflexionEntry[];
   maxWorkers: number;
   maxReplans: number;
   replansUsed: number;
