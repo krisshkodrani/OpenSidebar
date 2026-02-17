@@ -92,6 +92,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   disableNavigation: false,
   bypassApprovals: false,
   speechProvider: "browser",
+  teachModeEnabled: true,
+  autoSkillReplayEnabled: true,
+  skillReplayPinnedOnly: false,
 };
 
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;

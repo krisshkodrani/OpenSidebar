@@ -1569,6 +1569,12 @@ export interface UserSettings {
   speechProvider: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
   orchestratorMaxWorkers?: number;
+  /** Learn reusable skills from successful task executions */
+  teachModeEnabled?: boolean;
+  /** Attempt learned-skill replay before planner decomposition */
+  autoSkillReplayEnabled?: boolean;
+  /** Restrict skill replay to explicitly pinned skills */
+  skillReplayPinnedOnly?: boolean;
 }
 
 // --- Utility Types ---

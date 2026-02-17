@@ -12,6 +12,7 @@ OpenSidebar can navigate, read, click, type, and research across web pages from 
 - Visual DOM understanding with Vimium-style element tags (`[1]`, `[2]`, ...).
 - Two-tier model execution with automatic escalation when needed.
 - Runtime lane isolation in the orchestrator (planner, executor, verifier).
+- Teach Mode with learned skill replay (capture successful runs and reuse them, with pin/enable controls).
 - Local memory with hybrid retrieval (Transformers.js + SQLite FTS5 + Voy + RRF).
 - Auto-managed workspaces using Chrome Tab Groups.
 - Per-tab sidebar behavior (open on click, auto-close on tab switch).

@@ -52,6 +52,7 @@ import { buildRoleExecutionContract } from "./contracts";
 import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
+import { LearnedSkill, SkillStore } from "../skills/store";
 
 const DEFAULT_MAX_WORKERS = 3;
 const DEFAULT_MAX_REPLANS = 3;
@@ -715,6 +716,7 @@ export class Orchestrator {
     Record<RuntimeLane, LaneSupervisorState>
   >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
+  private skillStore = new SkillStore();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       logger.debug("trace", "Run trace manifest", {
@@ -1696,6 +1698,45 @@ export class Orchestrator {
     this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
 
     let nodes: TaskNode[] = [];
+    let replaySkillId: string | null = null;
+    if (input.settings.autoSkillReplayEnabled) {
+      const matched = await this.skillStore.matchSkill(input.query, {
+        pinnedOnly: input.settings.skillReplayPinnedOnly,
+      });
+      if (matched) {
+        replaySkillId = matched.skill.id;
+        await this.skillStore.recordSkillSelection(matched.skill.id);
+        nodes = this.buildNodesFromSkill(matched.skill);
+        this.sendMessage({
+          type: "AGENT_STEP",
+          workspaceId: input.workspaceId,
+          payload: {
+            step: {
+              id: crypto.randomUUID(),
+              type: "info",
+              label: `Skill replay: ${matched.skill.name}`,
+              detail: `Matched learned skill (${matched.score.toFixed(2)} confidence)`,
+              status: "done",
+              timestamp: Date.now(),
+            },
+            update: false,
+          },
+        });
+        this.emitTraceEvent(
+          task,
+          "skill_replay_selected",
+          {
+            skillId: matched.skill.id,
+            skillName: matched.skill.name,
+            score: matched.score,
+            stepCount: matched.skill.steps.length,
+          },
+          "planner",
+        );
+      }
+    }
+
+    if (nodes.length === 0) {
     try {
       const plannerContract = buildRoleExecutionContract(
         "planner",
@@ -1774,6 +1815,7 @@ export class Orchestrator {
         },
       });
     }
+    }
 
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
@@ -1799,12 +1841,13 @@ export class Orchestrator {
     this.sendProgress(task);
     this.sendStatus(input.workspaceId, AgentStatus.ACTING, "Executing subtasks...");
 
-    await this.runTask(task, input);
+    await this.runTask(task, input, replaySkillId);
   }
 
   private async runTask(
     task: OrchestratorTask,
     input: OrchestratorStartInput,
+    replaySkillId?: string | null,
   ): Promise<void> {
     const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
@@ -2610,9 +2653,100 @@ export class Orchestrator {
     );
 
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
+    await this.maybeLearnOrUpdateSkill(task, input, completionStatus, replaySkillId);
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
+  }
+
+  private buildNodesFromSkill(skill: LearnedSkill): TaskNode[] {
+    return skill.steps.map((step, index) => ({
+      id: crypto.randomUUID(),
+      role: "executor",
+      description: step.objective,
+      successCriteria: step.successCriteria,
+      allowedTools: step.allowedTools,
+      dependencies: index === 0 ? [] : [`skill-step-${index - 1}`],
+      assumptions: step.assumptions,
+      handoffArtifacts: [
+        {
+          role: "planner",
+          phase: "planned",
+          note: `Skill replay from ${skill.name} (${skill.id})`,
+          timestamp: Date.now(),
+        },
+      ],
+      handoffDepth: 0,
+      handoffFromNodeId: index > 0 ? `skill-step-${index - 1}` : undefined,
+      status: "pending",
+      retries: 0,
+    })).map((node, index) => ({
+      ...node,
+      id: `skill-step-${index}`,
+    }));
+  }
+
+  private async maybeLearnOrUpdateSkill(
+    task: OrchestratorTask,
+    input: OrchestratorStartInput,
+    completionStatus: "completed" | "partial" | "failed",
+    replaySkillId?: string | null,
+  ): Promise<void> {
+    try {
+      const durationMs = task.finishedAt
+        ? task.finishedAt - (task.startedAt || task.createdAt)
+        : Date.now() - (task.startedAt || task.createdAt);
+      const totalTokens = task.sessionMetrics.totalTokens;
+
+      if (replaySkillId) {
+        await this.skillStore.recordSkillOutcome(
+          replaySkillId,
+          completionStatus !== "failed",
+          durationMs,
+          totalTokens,
+        );
+      }
+
+      if (!input.settings.teachModeEnabled) return;
+      if (completionStatus === "failed") return;
+
+      const learned = await this.skillStore.learnFromTask({
+        query: input.query,
+        nodes: task.nodes,
+        totalDurationMs: durationMs,
+        totalTokens,
+      });
+      if (!learned) return;
+
+      this.sendMessage({
+        type: "AGENT_STEP",
+        workspaceId: task.workspaceId,
+        payload: {
+          step: {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: `Teach mode: updated skill "${learned.name}"`,
+            detail: `Stored ${learned.steps.length} reusable steps`,
+            status: "done",
+            timestamp: Date.now(),
+          },
+          update: false,
+        },
+      });
+      this.emitTraceEvent(
+        task,
+        "skill_learned",
+        {
+          skillId: learned.id,
+          skillName: learned.name,
+          stepCount: learned.steps.length,
+          completionStatus,
+        },
+        "planner",
+      );
+    } catch (error) {
+      logger.warn("skills", "Failed skill learn/replay bookkeeping", { error });
+    }
   }
 
   async stopTask(workspaceId?: string): Promise<void> {
