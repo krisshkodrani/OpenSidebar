@@ -27,31 +27,30 @@ This plan tracks OpenSidebar's remaining gap against the evaluation in:
 1. Tool system design: 95%
 2. Memory architecture (hybrid retrieval + persistence): 90%
 3. Observability/tracing and tactical logs: 90%
-4. Plan-based orchestration robustness (deps, retries, drift, handoffs): 88%
-5. Human-in-the-loop controls (approval, pause/resume/skip): 82%
-6. Multi-agent specialization (planner/executor/verifier as independent workers): 65%
-7. Conversation-driven multi-agent collaboration (group-chat/reflection patterns): 35%
-8. Evaluation and contract-compliance coverage for orchestration joins: 80%
+4. Plan-based orchestration robustness (deps, retries, drift, handoffs): 92%
+5. Human-in-the-loop controls (approval, pause/resume/skip): 90%
+6. Multi-agent specialization (planner/executor/verifier as independent workers): 88%
+7. Conversation-driven multi-agent collaboration (group-chat/reflection patterns): 72%
+8. Evaluation and contract-compliance coverage for orchestration joins: 86%
 
 ## Remaining Critical Path To 100%
 
-1. Introduce explicit multi-agent worker isolation at runtime
-   - Separate execution lanes for planner/executor/verifier with independent budgets.
-   - Add deterministic handoff contracts and failure containment per lane.
-2. Add conversation-driven critic/reflection loop for hard tasks
-   - Lightweight verifier-critic exchange before retry/reroute decisions.
-   - Enforce bounded turns and explicit stop conditions.
-3. Close human delegation loop for high-risk uncertainty
-   - Structured operator escalation packet (state summary, confidence, options).
-   - Post-decision replay logs and eval cases.
-4. Raise integration coverage for crucial joins
-   - Cross-lane handoff + checkpoint restore + skip/race + budget termination permutations.
-   - Promote these to required CI gates.
+1. Unify trace pipelines between production orchestrator and eval tooling
+   - Persist orchestrator run manifests/events to local trace artifacts.
+   - Consume run traces in eval conversion/analysis workflows (not only agent turn traces).
+2. Expand eval datasets for orchestration-specific behavior contracts
+   - Add golden cases for lane isolation, critic adoption/rejection, operator decision branches.
+   - Add explicit must-not regressions for cross-lane contamination and retry loops.
+3. Tighten UX/runtime policy alignment
+   - Keep per-tab sidepanel behavior strictly manual-open only.
+   - Ensure escalation and recovery state transitions remain workspace-scoped and deterministic.
+4. Promote orchestration joins to stricter quality gates
+   - Keep integration coverage for checkpoint recovery, budget termination, skip/race, escalation resume.
+   - Add required runbooks for manual replay and AI critique loops.
 
 ## Next Milestone (Recommended)
 
-Implement **runtime-isolated planner/executor/verifier workers with bounded handoff protocol**, then add integration tests validating:
-- worker isolation under retries/reroutes
-- deterministic checkpoint recovery across worker boundaries
-- bounded termination under budget + stale signals
-
+Implement **trace/evals harmonization for orchestrator runs**, then validate:
+- orchestrator run traces are persisted and queryable
+- eval analysis consumes orchestrator run signals alongside turn traces
+- golden tracks cover escalation, lane isolation, critic reflection, and checkpoint recovery

@@ -3,7 +3,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from "fs";
-import { join, dirname } from "path";
+import { isAbsolute, join, dirname, resolve } from "path";
 import type { EvalCase, EvalResult } from "./types";
 
 const PROJECT_ROOT = join(dirname(import.meta.dir));
@@ -11,6 +11,8 @@ export const TRACE_DIR = join(PROJECT_ROOT, "traces");
 export const CASES_DIR = join(PROJECT_ROOT, "evals", "cases");
 export const RESULTS_DIR = join(PROJECT_ROOT, "evals", "results");
 const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
+const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
+const RUN_TRACE_INDEX = join(RUN_TRACE_DIR, "index.jsonl");
 
 /** Read and parse a trace JSONL file for a given session ID */
 export function readTrace(sessionId: string): Record<string, unknown>[] {
@@ -29,6 +31,27 @@ export function readTrace(sessionId: string): Record<string, unknown>[] {
 export function readSessionIndex(): Record<string, unknown>[] {
   if (!existsSync(TRACE_INDEX)) return [];
   return readFileSync(TRACE_INDEX, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+/** Read orchestrator run manifests from traces/runs/index.jsonl */
+export function readRunTraceManifests(): Record<string, unknown>[] {
+  if (!existsSync(RUN_TRACE_INDEX)) return [];
+  return readFileSync(RUN_TRACE_INDEX, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+/** Read orchestrator run trace events from traces/runs/{runId}.jsonl */
+export function readRunTraceEvents(runId: string): Record<string, unknown>[] {
+  const file = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf-8")
     .trim()
     .split("\n")
     .filter(Boolean)
@@ -125,4 +148,17 @@ export function resolveSessionId(prefix: string): string {
     throw new Error(`No session found matching: ${prefix}`);
   }
   return (match as any).sessionId;
+}
+
+/** Read a prompt file from absolute or project-relative path */
+export function readPromptFile(pathArg: string): string {
+  const resolved = isAbsolute(pathArg) ? pathArg : resolve(PROJECT_ROOT, pathArg);
+  if (!existsSync(resolved)) {
+    throw new Error(`Prompt file not found: ${resolved}`);
+  }
+  const text = readFileSync(resolved, "utf-8").trim();
+  if (!text) {
+    throw new Error(`Prompt file is empty: ${resolved}`);
+  }
+  return text;
 }

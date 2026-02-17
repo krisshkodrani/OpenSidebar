@@ -32,6 +32,26 @@ export interface EvalCase {
     difficulty: "easy" | "medium" | "hard";
     tags: string[];
   };
+  /**
+   * Prompt-quality expectations for orchestration behaviors.
+   * Optional to keep backward compatibility with older cases.
+   */
+  promptQuality?: {
+    promptVersion?: string;
+    track?:
+      | "orchestrator_lane_isolation"
+      | "verifier_critic"
+      | "human_escalation"
+      | "budget_and_termination"
+      | "checkpoint_resume"
+      | "core_task_success";
+    expectedPlanShape?: string[];
+    expectedLaneEvents?: string[];
+    expectedEscalation?: "none" | "requested" | "decision";
+    expectedVerifierDecision?: "accept" | "retry" | "reroute";
+    mustNot?: string[];
+    notes?: string;
+  };
 }
 
 /** Result of running a single eval case */
@@ -40,6 +60,7 @@ export interface EvalResult {
   timestamp: string;
   durationMs: number;
   status: "pass" | "fail" | "error";
+  promptVariant?: string;
   actual: {
     toolCalls: { toolName: string; args: Record<string, unknown> }[];
     text: string | null;
@@ -48,6 +69,7 @@ export interface EvalResult {
     toolNameMatch: number;
     toolParamMatch: number;
     sequenceMatch: number;
+    composite?: number;
     judge?: JudgeScore;
   };
   error?: string;

@@ -17,6 +17,8 @@ const LOG_DIR = join(PROJECT_ROOT, "logs");
 const LOG_FILE = join(LOG_DIR, "opensidebar.jsonl");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
+const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
+const RUN_TRACE_INDEX = join(RUN_TRACE_DIR, "index.jsonl");
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
@@ -30,6 +32,9 @@ if (!existsSync(LOG_DIR)) {
 }
 if (!existsSync(TRACE_DIR)) {
   mkdirSync(TRACE_DIR, { recursive: true });
+}
+if (!existsSync(RUN_TRACE_DIR)) {
+  mkdirSync(RUN_TRACE_DIR, { recursive: true });
 }
 
 /** Rotate log file when it exceeds MAX_FILE_SIZE */
@@ -141,6 +146,42 @@ const server = Bun.serve({
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       } catch (err) {
         return new Response(`Trace session error: ${err}`, {
+          status: 500,
+          headers: CORS_HEADERS,
+        });
+      }
+    }
+
+    // Orchestrator run-trace event endpoint
+    if (url.pathname === "/run-traces" && req.method === "POST") {
+      try {
+        const event = await req.json();
+        const runId = event?.runId;
+        if (!runId || typeof runId !== "string") {
+          return new Response("Missing runId", {
+            status: 400,
+            headers: CORS_HEADERS,
+          });
+        }
+        const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+        await appendFile(traceFile, JSON.stringify(event) + "\n");
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      } catch (err) {
+        return new Response(`Run trace error: ${err}`, {
+          status: 500,
+          headers: CORS_HEADERS,
+        });
+      }
+    }
+
+    // Orchestrator run-trace manifest endpoint
+    if (url.pathname === "/run-traces/session" && req.method === "POST") {
+      try {
+        const manifest = await req.json();
+        await appendFile(RUN_TRACE_INDEX, JSON.stringify(manifest) + "\n");
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      } catch (err) {
+        return new Response(`Run manifest error: ${err}`, {
           status: 500,
           headers: CORS_HEADERS,
         });

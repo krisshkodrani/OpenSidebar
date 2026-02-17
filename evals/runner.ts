@@ -4,12 +4,14 @@
  */
 
 import { existsSync, mkdirSync } from "fs";
-import { appendFile } from "fs/promises";
+import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
+import { createHash, randomUUID } from "crypto";
 import type { EvalCase, EvalResult } from "./types";
 import { readEvalCases, RESULTS_DIR, loadApiKey } from "./utils";
 import { scoreToolNameMatch, scoreToolParamMatch, scoreSequenceMatch } from "./scorer";
 import { judgeCase } from "./judge";
+import { RunManifest, RunPromptRef, RunTraceWriter } from "../src/utils/run-trace";
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -21,6 +23,9 @@ export async function runEvals(options: {
   all?: boolean;
   judge?: boolean;
   model?: string;
+  promptOverride?: string;
+  promptVariant?: string;
+  promptRef?: RunPromptRef;
 }): Promise<EvalResult[]> {
   const apiKey = loadApiKey();
   let cases = readEvalCases();
@@ -44,20 +49,68 @@ export async function runEvals(options: {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outputFile = join(RESULTS_DIR, `run-${timestamp}.jsonl`);
+  const traceFile = join(RESULTS_DIR, `run-${timestamp}.trace.jsonl`);
+  const manifestFile = join(RESULTS_DIR, `run-${timestamp}.manifest.json`);
+  const runId = randomUUID();
   const results: EvalResult[] = [];
+  const traceWriter = new RunTraceWriter(async (record) => {
+    await appendFile(traceFile, JSON.stringify(record) + "\n");
+  });
+
+  const promptText = options.promptOverride || "";
+  const promptHash = promptText
+    ? createHash("sha256").update(promptText).digest("hex").slice(0, 16)
+    : "runtime-default";
+  const promptSet = options.promptRef
+    ? [options.promptRef]
+    : [
+        {
+          id: "eval.system",
+          version: options.promptVariant || "default",
+          hash: promptHash,
+        },
+      ];
+  const manifest: RunManifest = {
+    runId,
+    environment: "eval",
+    startedAt: new Date().toISOString(),
+    source: "evals.runner",
+    promptSet,
+    model: options.model,
+    caseId: options.caseId,
+  };
+  await writeFile(manifestFile, JSON.stringify(manifest, null, 2), "utf-8");
+  await traceWriter.emitManifest(manifest);
 
   console.log(`Running ${cases.length} eval case(s)...\n`);
 
   for (let i = 0; i < cases.length; i++) {
     const evalCase = cases[i];
     const model = options.model || evalCase.input.model;
+    await traceWriter.emitEvent({
+      runId,
+      type: "eval_case_started",
+      role: "system",
+      turn: evalCase.sourceTurn,
+      data: {
+        caseId: evalCase.id,
+        strategy: evalCase.strategy,
+        sourceSessionId: evalCase.sourceSessionId,
+        promptVariant: options.promptVariant || "default",
+      },
+    });
     process.stdout.write(`  [${i + 1}/${cases.length}] ${evalCase.strategy} T${evalCase.sourceTurn} `);
 
     const start = Date.now();
     let result: EvalResult;
 
     try {
-      const actual = await replayCase(apiKey, evalCase, model);
+      const actual = await replayCase(
+        apiKey,
+        evalCase,
+        model,
+        options.promptOverride,
+      );
       const durationMs = Date.now() - start;
 
       const expectedToolCalls = evalCase.expected.toolCalls.map((tc) => ({
@@ -69,17 +122,20 @@ export async function runEvals(options: {
       const toolParamScore = scoreToolParamMatch(expectedToolCalls, actual.toolCalls);
       const sequenceScore = scoreSequenceMatch(expectedToolCalls, actual.toolCalls);
       const pass = toolNameScore >= 0.8 && sequenceScore >= 0.7;
+      const composite = computeCompositeScore(toolNameScore, toolParamScore, sequenceScore);
 
       result = {
         caseId: evalCase.id,
         timestamp: new Date().toISOString(),
         durationMs,
         status: pass ? "pass" : "fail",
+        promptVariant: options.promptVariant,
         actual,
         scores: {
           toolNameMatch: toolNameScore,
           toolParamMatch: toolParamScore,
           sequenceMatch: sequenceScore,
+          composite,
         },
       };
 
@@ -102,6 +158,20 @@ export async function runEvals(options: {
         `names=${toolNameScore.toFixed(2)} params=${toolParamScore.toFixed(2)} seq=${sequenceScore.toFixed(2)} ` +
         `${durationMs}ms`,
       );
+      await traceWriter.emitEvent({
+        runId,
+        type: "eval_case_completed",
+        role: "system",
+        turn: evalCase.sourceTurn,
+        data: {
+          caseId: evalCase.id,
+          status: result.status,
+          model,
+          scores: result.scores,
+          durationMs,
+          promptVariant: options.promptVariant || "default",
+        },
+      });
     } catch (err: any) {
       const durationMs = Date.now() - start;
       result = {
@@ -109,11 +179,24 @@ export async function runEvals(options: {
         timestamp: new Date().toISOString(),
         durationMs,
         status: "error",
+        promptVariant: options.promptVariant,
         actual: { toolCalls: [], text: null },
         scores: { toolNameMatch: 0, toolParamMatch: 0, sequenceMatch: 0 },
         error: err.message,
       };
       console.log(`\x1b[31merror\x1b[0m ${err.message}`);
+      await traceWriter.emitEvent({
+        runId,
+        type: "eval_case_error",
+        role: "system",
+        turn: evalCase.sourceTurn,
+        data: {
+          caseId: evalCase.id,
+          error: err.message,
+          durationMs,
+          promptVariant: options.promptVariant || "default",
+        },
+      });
     }
 
     results.push(result);
@@ -126,6 +209,8 @@ export async function runEvals(options: {
   const errors = results.filter((r) => r.status === "error").length;
   console.log(`\nResults: ${passed} passed, ${failed} failed, ${errors} errors`);
   console.log(`Written to: ${outputFile}`);
+  console.log(`Trace events: ${traceFile}`);
+  console.log(`Run manifest: ${manifestFile}`);
 
   return results;
 }
@@ -134,14 +219,17 @@ async function replayCase(
   apiKey: string,
   evalCase: EvalCase,
   model: string,
+  promptOverride?: string,
 ): Promise<{ toolCalls: { toolName: string; args: Record<string, unknown> }[]; text: string | null }> {
   const messages = evalCase.input.conversationHistory.length > 0
     ? evalCase.input.conversationHistory
     : [{ role: "user" as const, content: evalCase.metadata.query }];
 
+  const resolvedMessages = applyPromptOverride(messages, promptOverride);
+
   const body: Record<string, unknown> = {
     model,
-    messages,
+    messages: resolvedMessages,
     max_tokens: 4096,
     temperature: 0,
   };
@@ -183,4 +271,28 @@ async function replayCase(
     toolCalls,
     text: choice.message?.content ?? null,
   };
+}
+
+function computeCompositeScore(
+  toolNameMatch: number,
+  toolParamMatch: number,
+  sequenceMatch: number,
+): number {
+  return toolNameMatch * 0.45 + toolParamMatch * 0.25 + sequenceMatch * 0.3;
+}
+
+function applyPromptOverride(
+  messages: EvalCase["input"]["conversationHistory"],
+  promptOverride?: string,
+): EvalCase["input"]["conversationHistory"] {
+  if (!promptOverride) return messages;
+
+  const clone = messages.map((m) => ({ ...m }));
+  const firstSystemIdx = clone.findIndex((m) => m.role === "system");
+  if (firstSystemIdx >= 0) {
+    clone[firstSystemIdx].content = promptOverride;
+    return clone;
+  }
+
+  return [{ role: "system", content: promptOverride }, ...clone];
 }

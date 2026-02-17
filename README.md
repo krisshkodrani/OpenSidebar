@@ -1,43 +1,56 @@
 # OpenSidebar
 
-A bimodal, open-source Chrome extension that transforms your browser into an AI-powered agentic workspace.
+An open-source Chrome extension that turns your browser into an AI-powered agent workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages — all from a convenient side panel. It uses a **two-tier LLM architecture** — a fast model (GPT-OSS-120B via Cerebras/Groq/OpenRouter) for real-time observe→act cycles, with automatic escalation to a smart model (GLM-4.7 with native reasoning via Cerebras/OpenRouter) for complex tasks. Both tiers use **priority-based provider failover** for resilience. A **local Second Brain** provides persistent memory across sessions.
+OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: a fast model (`gpt-oss-120b`) for quick observe -> act cycles, with escalation to a smart model (`x-ai/grok-4.1-fast:nitro`) when tasks get harder. A local "Second Brain" provides persistent memory across sessions.
 
 ---
 
 ## Features
 
-- **Browser Automation** — Click buttons, fill forms, scroll pages, and navigate — all via natural language commands.
-- **Visual DOM Understanding** — Vimium-style numeric tagging of interactive elements. The AI sees `[3] <button> "Submit"` and calls `click_element(id=3)`.
-- **Two-Tier Model Escalation** — Fast model (GPT-OSS-120B) for instant actions, automatic escalation to smart model (GLM-4.7 with native reasoning) when stuck. Context distillation compresses history before escalation for efficient handoff.
-- **Local Memory** — Hybrid semantic + keyword search (Transformers.js + SQLite FTS5 + Voy) with Reciprocal Rank Fusion. All data stays in your browser.
-- **Auto-Managed Workspaces** — Chrome Tab Groups automatically organize your agent sessions. Click the extension icon on any tab to create a new workspace; tabs created by the agent auto-group together. Workspaces auto-delete when empty.
-- **Per-Tab Sidebar** — Sidebar opens only when you click the extension icon and closes automatically when you switch tabs. Each tab gets its own sidebar session and workspace.
-- **Navigation Survival** — Agent state persists across page loads and service worker restarts.
-- **Streaming Responses** — Real-time text streaming from both LLM engines.
+- Browser automation via natural language (click, type, scroll, navigate).
+- Visual DOM understanding with Vimium-style element tags (`[1]`, `[2]`, ...).
+- Two-tier model execution with automatic escalation when needed.
+- Runtime lane isolation in the orchestrator (planner, executor, verifier).
+- Local memory with hybrid retrieval (Transformers.js + SQLite FTS5 + Voy + RRF).
+- Auto-managed workspaces using Chrome Tab Groups.
+- Per-tab sidebar behavior (open on click, auto-close on tab switch).
+- Navigation survival across page loads and service-worker lifecycle changes.
+- Real-time streaming responses.
 
 ---
 
 ## Architecture
 
-```
-Side Panel (React) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM)
-                              ↕
-                      Offscreen Document
-                     (Memory: SQLite + Voy + Transformers.js)
+```text
+Side Panel (React) <-> Service Worker (Agent Loop / Orchestrator) <-> Content Script (DOM)
+                                  |
+                           Offscreen Document
+                    (Memory: SQLite + Voy + Transformers.js)
 ```
 
-| Component      | Technology                                          |
-| -------------- | --------------------------------------------------- |
-| Fast LLM       | GPT-OSS-120B (Cerebras → Groq → OpenRouter)         |
-| Smart LLM      | GLM-4.7 (Cerebras → OpenRouter), native reasoning   |
-| Vision LLM     | OpenRouter (configurable, default Qwen3 VL)         |
-| Embeddings     | Transformers.js (all-MiniLM-L6-v2)                  |
-| Vector Search  | Voy (WASM)                                          |
-| Keyword Search | SQLite WASM (FTS5)                                  |
-| UI             | React 18 + Tailwind CSS                             |
-| Build          | Vite + @crxjs/vite-plugin                           |
+| Component | Technology |
+| --- | --- |
+| Fast LLM | `gpt-oss-120b` via OpenRouter providers |
+| Smart LLM | `x-ai/grok-4.1-fast:nitro` via OpenRouter |
+| Vision LLM | Configurable via OpenRouter (default `qwen/qwen3-vl-235b-a22b-instruct`) |
+| Embeddings | Transformers.js (`all-MiniLM-L6-v2`) |
+| Vector Search | Voy (WASM) |
+| Keyword Search | SQLite WASM (FTS5) |
+| UI | React 18 + Tailwind CSS |
+| Build | Vite + `@crxjs/vite-plugin` |
+
+### Orchestrator Runtime Lanes
+
+The orchestrator runs isolated runtime lanes per workspace:
+
+- `planner` lane: low concurrency, isolates quickly on repeated failures.
+- `executor` lane: high concurrency for throughput.
+- `verifier` lane: high concurrency with stricter failure isolation than executor.
+
+Each lane tracks active calls, total calls, failures, cumulative runtime, and cooldown isolation state. Lane isolation emits `AGENT_STEP` warnings so containment is visible in the UI timeline.
+
+Lane policy overrides are wired through `OrchestratorDeps.lanePolicies`; explicit overrides win, then runtime defaults derived from `maxWorkers`, then lane base defaults.
 
 Complete technical documentation: [docs/architecture/](./docs/architecture/)
 
@@ -46,18 +59,18 @@ Complete technical documentation: [docs/architecture/](./docs/architecture/)
 ## Screenshots
 
 ![Main Interface](docs/screenshots/main-interface.png)
-_The OpenSidebar side panel with chat interface and welcome screen_
+_The OpenSidebar side panel with chat interface and welcome screen._
 
 ![Element Tagging](docs/screenshots/element-tagging.png)
-_Interactive elements tagged with numeric IDs [1], [2], [3] for AI interaction_
+_Interactive elements tagged with numeric IDs for AI interaction._
 
 ![Settings Panel](docs/screenshots/settings-panel.png)
-_API key configuration in the settings drawer_
+_API key configuration in the settings drawer._
 
 ![Agent Demo](docs/screenshots/agent-demo.gif)
-_OpenSidebar automatically navigating and interacting with web pages_
+_OpenSidebar automatically navigating and interacting with web pages._
 
-> 📸 **Contributing Screenshots:** See [docs/screenshots/README.md](docs/screenshots/README.md) for guidelines on adding screenshots.
+Contributing screenshots: [docs/screenshots/README.md](docs/screenshots/README.md)
 
 ---
 
@@ -66,9 +79,10 @@ _OpenSidebar automatically navigating and interacting with web pages_
 ### Prerequisites
 
 - Node.js 18+
-- An OpenRouter API key ([openrouter.ai](https://openrouter.ai))
+- Bun
+- OpenRouter API key ([openrouter.ai](https://openrouter.ai))
 
-### Install & Build
+### Install and Build
 
 ```bash
 git clone https://github.com/OpenSidebar/OpenSidebar.git
@@ -80,8 +94,8 @@ bun run build
 ### Load in Chrome
 
 1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
+2. Enable Developer mode
+3. Click Load unpacked
 4. Select the `dist/` folder
 
 ### Development
@@ -90,25 +104,34 @@ bun run build
 bun run dev
 ```
 
-This starts Vite with HMR. Load the `dist/` folder as an unpacked extension — changes auto-reload.
-
 ### Configure
 
-1. Click the OpenSidebar icon to open the side panel
-2. Click the settings gear icon
-3. Enter your OpenRouter API key
+1. Click the OpenSidebar icon to open the side panel.
+2. Open Settings.
+3. Enter your OpenRouter API key.
 
 ---
 
 ## Commands
 
-| Command         | Description                         |
-| --------------- | ----------------------------------- |
-| `bun run dev`   | Start dev server with HMR           |
-| `bun run build` | Type-check and build for production |
-| `bun run lint`  | Run ESLint                          |
-| `bun test`      | Run tests (Bun)                     |
-| `bun run fmt`   | Format with Prettier                |
+| Command | Description |
+| --- | --- |
+| `bun run dev` | Start dev server with HMR |
+| `bun run build` | Build extension for production |
+| `bun run lint` | Run ESLint |
+| `bun test` | Run all tests |
+| `bun test tests/background/orchestrator-integration.test.ts` | Run orchestrator integration tests |
+| `bun run evals` | Run evaluation suite |
+| `bun run evals run --all --prompt-id orchestrator.verifier.system` | Run evals with shared production prompt id |
+| `bun run evals:stats` | Show eval statistics |
+| `bun run evals:analyze` | Analyze eval results and suggestions |
+| `bun run logs` | Start log drain server |
+| `bun run logs:errors` | Query error logs |
+| `bun run fmt` | Format source files |
+
+When `bun run logs` is active, execution traces are persisted under:
+- `traces/<session-id>.jsonl` (agent turn traces)
+- `traces/runs/<run-id>.jsonl` (orchestrator run traces)
 
 ---
 
@@ -116,48 +139,49 @@ This starts Vite with HMR. Load the `dist/` folder as an unpacked extension — 
 
 ### User Guides
 
-- **[Features Overview](./docs/features/)** - Complete user-facing feature documentation
-  - [Browser Automation](./docs/features/browser-automation.md) - Click, type, scroll, navigate
-  - [Memory System](./docs/features/memory-system.md) - Local Second Brain
-  - [Workspace Management](./docs/features/workspace-management.md) - Auto tab groups
-  - [Streaming UI](./docs/features/streaming-ui.md) - Real-time responses
-  - [Security & Privacy](./docs/features/security.md) - Privacy-first design
+- [Features Overview](./docs/features/)
+- [Browser Automation](./docs/features/browser-automation.md)
+- [Memory System](./docs/features/memory-system.md)
+- [Workspace Management](./docs/features/workspace-management.md)
+- [Streaming UI](./docs/features/streaming-ui.md)
+- [Security and Privacy](./docs/features/security.md)
 
 ### Technical Architecture
 
-- **[Architecture Overview](./docs/architecture/overview.md)** - System design and components
-- **[Agent Loop](./docs/architecture/agent-loop.md)** - Core orchestration
-- **[Memory System](./docs/architecture/memory-system.md)** - Implementation details
-- **[Message Protocol](./docs/architecture/message-protocol.md)** - Inter-context messaging API
-- **[Type Reference](./docs/architecture/types-reference.md)** - All TypeScript types
+- [Architecture Overview](./docs/architecture/overview.md)
+- [Agent Loop](./docs/architecture/agent-loop.md)
+- [Memory System](./docs/architecture/memory-system.md)
+- [Message Protocol](./docs/architecture/message-protocol.md)
+- [Types Reference](./docs/architecture/types-reference.md)
+- [Orchestrator RFCs](./docs/rfc/orchestrator/)
 
 ### Development
 
-- **[RFCs](./docs/rfc/)** - Feature proposals and technical decisions
-- **[Contributing Guide](./CONTRIBUTING.md)** - Development setup and guidelines
-- **[Agent Guidelines](./AGENTS.md)** - Technical reference for developers
+- [RFCs](./docs/rfc/)
+- [Evals Program Guide](./docs/guides/evals-program.md)
+- [Evals Manual Workflow](./evals/README.md)
+- [Contributing Guide](./CONTRIBUTING.md)
+- [Agent Guidelines](./AGENTS.md)
 
 ---
 
 ## Organization
 
-OpenSidebar is developed by the **OpenSidebar Organization** — a community-driven effort to build the best open-source browser agent.
+OpenSidebar is developed by the OpenSidebar organization.
 
-- **GitHub:** [github.com/OpenSidebar](https://github.com/OpenSidebar)
-- **Repository:** [github.com/OpenSidebar/OpenSidebar](https://github.com/OpenSidebar/OpenSidebar)
-- **Issues:** [github.com/OpenSidebar/OpenSidebar/issues](https://github.com/OpenSidebar/OpenSidebar/issues)
-
-We welcome contributors of all skill levels!
+- GitHub: [github.com/OpenSidebar](https://github.com/OpenSidebar)
+- Repository: [github.com/OpenSidebar/OpenSidebar](https://github.com/OpenSidebar/OpenSidebar)
+- Issues: [github.com/OpenSidebar/OpenSidebar/issues](https://github.com/OpenSidebar/OpenSidebar/issues)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and contribution workflow.
 
-1. Fork the repository from the OpenSidebar organization
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request against the main repository
+1. Fork the repository.
+2. Create a branch (`git checkout -b feature/my-feature`).
+3. Commit your changes.
+4. Push your branch.
+5. Open a pull request.
 
 ---
 
@@ -165,13 +189,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 See [SECURITY.md](SECURITY.md) for the security policy.
 
-- API keys are stored in `chrome.storage.sync` (encrypted at rest by Chrome)
-- All memory data stays locally in IndexedDB
-- No telemetry, analytics, or external data collection
-- URL sanitization blocks non-HTTP protocols
+- API keys are stored in `chrome.storage.sync`.
+- Memory data stays in local browser storage.
+- No telemetry or analytics by default.
+- URL sanitization blocks non-http(s) protocols.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

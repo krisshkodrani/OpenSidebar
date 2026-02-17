@@ -149,5 +149,16 @@ function buildCase(
       difficulty,
       tags: [strategy, ...(turn.events?.map((e: any) => e.type) ?? [])],
     },
+    promptQuality: {
+      promptVersion: "baseline",
+      track:
+        strategy === "escalation"
+          ? "human_escalation"
+          : strategy === "recovery"
+            ? "orchestrator_lane_isolation"
+            : "core_task_success",
+      expectedEscalation: strategy === "escalation" ? "requested" : "none",
+      mustNot: [],
+    },
   };
 }
