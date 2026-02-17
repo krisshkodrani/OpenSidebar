@@ -134,6 +134,8 @@ export type RuntimeMessage =
   | AgentResponseMessage
   | AgentStatusMessage
   | TaskRecoveryMessage
+  | EscalationRequestMessage
+  | EscalationDecisionMessage
   | ApprovalRequestMessage
   | ApprovalResponseMessage
   | AgentStepMessage
@@ -351,7 +353,24 @@ export interface AgentStepMessage extends BaseMessage {
 export interface AgentActivityMessage extends BaseMessage {
   type: "AGENT_ACTIVITY";
   source: MessageSource.BACKGROUND;
-  payload: { active: boolean };
+  payload: {
+    active: boolean;
+    laneTelemetry?: LaneTelemetrySnapshot;
+  };
+}
+
+export interface LaneTelemetry {
+  activeCalls: number;
+  queueDepth: number;
+  restartCount: number;
+  consecutiveCrashes: number;
+  circuitOpenUntilMs: number;
+  lastCrashError?: string;
+}
+
+export interface LaneTelemetrySnapshot {
+  timestamp: number;
+  lanes: Record<AgentRole, LaneTelemetry>;
 }
 
 // --- Agent Feedback & Control Messages ---
@@ -402,6 +421,61 @@ export interface TaskRecoveryMessage extends BaseMessage {
     totalSubtasks: number;
     completedSubtasks: number;
     pendingSubtasks: number;
+  };
+}
+
+export type EscalationRisk = "medium" | "high" | "critical";
+
+export type EscalationOptionId =
+  | "approve_continue"
+  | "reroute_with_option"
+  | "skip_node"
+  | "stop_task";
+
+export interface EscalationOption {
+  id: EscalationOptionId;
+  label: string;
+  impact: string;
+  rerouteObjective?: string;
+}
+
+export interface EscalationPacket {
+  escalationId: string;
+  taskId: string;
+  workspaceId: string;
+  nodeId: string;
+  risk: EscalationRisk;
+  confidence: number;
+  reason: string;
+  options: EscalationOption[];
+  recommendedOption: EscalationOptionId;
+  snapshotSummary: string;
+  lastActions: string[];
+  budgetState: {
+    elapsedMs: number;
+    maxSessionTimeMs: number;
+    totalTokens: number;
+    maxTotalTokens: number;
+    totalCostUsd: number;
+    maxTotalCostUsd: number;
+  };
+  timeoutMs: number;
+  timestamp: number;
+}
+
+export interface EscalationRequestMessage extends BaseMessage {
+  type: "ESCALATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: EscalationPacket;
+}
+
+export interface EscalationDecisionMessage extends BaseMessage {
+  type: "ESCALATION_DECISION";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    escalationId: string;
+    optionId: EscalationOptionId;
+    rerouteObjective?: string;
   };
 }
 
@@ -1285,6 +1359,10 @@ export interface PendingApproval {
   requestedAt: number;
 }
 
+export interface PendingEscalation extends EscalationPacket {
+  requestedAt: number;
+}
+
 /** Recovery state for resumed orchestrator tasks */
 export interface TaskRecoveryState {
   workspaceId: string | null;
@@ -1325,10 +1403,14 @@ export interface SidePanelState {
   turnProgress: TurnProgress | null;
   /** Pending high-risk action awaiting user approval */
   pendingApproval: PendingApproval | null;
+  /** Pending orchestrator escalation requiring user decision */
+  pendingEscalation: PendingEscalation | null;
   /** Non-null when a task has been recovered from checkpoint */
   taskRecovery: TaskRecoveryState | null;
   /** Live session metrics (null when no active session or tracking disabled) */
   sessionMetrics: SessionMetrics | null;
+  /** Runtime lane telemetry from orchestrator lane supervisors */
+  laneTelemetry: LaneTelemetrySnapshot | null;
   /** User-saved prompt templates */
   savedPrompts: SavedPrompt[];
 }

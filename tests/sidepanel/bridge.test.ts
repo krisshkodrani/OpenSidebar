@@ -40,7 +40,9 @@ describe("Bridge Message Routing", () => {
             stuckState: null,
             turnProgress: null,
             pendingApproval: null,
+            pendingEscalation: null,
             taskRecovery: null,
+            laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
                 groqApiKey: "",
@@ -219,6 +221,44 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().taskProgress).toEqual(payload);
     });
 
+    test("AGENT_ACTIVITY stores lane telemetry snapshot", () => {
+        setupBridge();
+        send("AGENT_ACTIVITY", {
+            active: true,
+            laneTelemetry: {
+                timestamp: Date.now(),
+                lanes: {
+                    planner: {
+                        activeCalls: 0,
+                        queueDepth: 1,
+                        restartCount: 2,
+                        consecutiveCrashes: 0,
+                        circuitOpenUntilMs: 0,
+                    },
+                    executor: {
+                        activeCalls: 1,
+                        queueDepth: 2,
+                        restartCount: 3,
+                        consecutiveCrashes: 1,
+                        circuitOpenUntilMs: 0,
+                    },
+                    verifier: {
+                        activeCalls: 0,
+                        queueDepth: 0,
+                        restartCount: 0,
+                        consecutiveCrashes: 0,
+                        circuitOpenUntilMs: 0,
+                    },
+                },
+            },
+        });
+
+        const laneTelemetry = useStore.getState().laneTelemetry;
+        expect(laneTelemetry).not.toBeNull();
+        expect(laneTelemetry!.lanes.executor.queueDepth).toBe(2);
+        expect(laneTelemetry!.lanes.planner.restartCount).toBe(2);
+    });
+
     test("TASK_COMPLETION sets completion and clears progress", () => {
         useStore.getState().setTaskProgress({
             taskId: "t1",
@@ -274,6 +314,44 @@ describe("Bridge Message Routing", () => {
         expect(pending).not.toBeNull();
         expect(pending!.approvalId).toBe("approval-1");
         expect(pending!.risk).toBe("high");
+    });
+
+    test("ESCALATION_REQUEST stores pending escalation", () => {
+        setupBridge();
+        send("ESCALATION_REQUEST", {
+            escalationId: "esc-1",
+            taskId: "task-1",
+            workspaceId: "ws-1",
+            nodeId: "node-1",
+            risk: "high",
+            confidence: 0.32,
+            reason: "Need operator decision",
+            options: [
+                {
+                    id: "approve_continue",
+                    label: "Continue",
+                    impact: "Retry policy applies",
+                },
+            ],
+            recommendedOption: "approve_continue",
+            snapshotSummary: "Example | https://example.com",
+            lastActions: [],
+            budgetState: {
+                elapsedMs: 1000,
+                maxSessionTimeMs: 10000,
+                totalTokens: 100,
+                maxTotalTokens: 1000,
+                totalCostUsd: 0.01,
+                maxTotalCostUsd: 1,
+            },
+            timeoutMs: 60000,
+            timestamp: Date.now(),
+        });
+
+        const escalation = useStore.getState().pendingEscalation;
+        expect(escalation).not.toBeNull();
+        expect(escalation!.escalationId).toBe("esc-1");
+        expect(escalation!.risk).toBe("high");
     });
 
     test("TASK_RECOVERY stores recovery state", () => {

@@ -54,7 +54,9 @@ export function initializeBridge(
           state.clearStuckState();
           state.clearTurnProgress();
           state.clearPendingApproval();
+          state.clearPendingEscalation();
           state.clearTaskRecovery();
+          state.clearLaneTelemetry();
           // Keep sessionMetrics visible after completion (cleared on next run start)
         } else {
           state.setAgentRunning(true);
@@ -80,6 +82,13 @@ export function initializeBridge(
           workspaceId: message.workspaceId ?? activeWsId ?? null,
           ...message.payload,
           recoveredAt: Date.now(),
+        });
+        break;
+
+      case "ESCALATION_REQUEST":
+        state.setPendingEscalation({
+          ...message.payload,
+          requestedAt: Date.now(),
         });
         break;
 
@@ -150,6 +159,10 @@ export function initializeBridge(
         state.setSessionMetrics(message.payload);
         break;
 
+      case "AGENT_ACTIVITY":
+        state.setLaneTelemetry(message.payload.laneTelemetry ?? null);
+        break;
+
       // Messages from other sources (sidepanel→background, background→content, etc.)
       // These are filtered by the source check above, but listed for exhaustiveness.
       case "USER_CHAT":
@@ -157,6 +170,7 @@ export function initializeBridge(
       case "SETTINGS_UPDATE":
       case "SIDE_PANEL_OPENED":
       case "APPROVAL_RESPONSE":
+      case "ESCALATION_DECISION":
       case "TOOL_EXECUTE":
       case "TOOL_RESULT":
       case "DOM_SNAPSHOT_REQUEST":
@@ -164,7 +178,6 @@ export function initializeBridge(
       case "NAVIGATION_RESUME":
       case "MEMORY_WORKER":
       case "MEMORY_WORKER_RESPONSE":
-      case "AGENT_ACTIVITY":
       case "DISMISS_MODALS":
       case "DISMISS_MODALS_RESPONSE":
       case "SKIP_SUBTASK":

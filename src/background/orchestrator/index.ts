@@ -3,6 +3,11 @@ import { LLMClient } from "../llm";
 import {
   AgentStatus,
   AgentStep,
+  EscalationDecisionMessage,
+  EscalationOption,
+  EscalationOptionId,
+  EscalationPacket,
+  EscalationRisk,
   MessageSource,
   SessionMetrics,
   SubtaskResult,
@@ -10,7 +15,13 @@ import {
   ToolName,
   UserSettings,
 } from "../../types";
-import { logger } from "../../utils";
+import {
+  createHttpRunTraceWriter,
+  logger,
+  RunManifest,
+  RunTraceWriter,
+} from "../../utils";
+import { listPromptDescriptors } from "../../prompts";
 import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
@@ -24,7 +35,11 @@ import {
   WorkerInstance,
 } from "./types";
 import { MemoryBuffer } from "./memory-buffer";
-import { OrchestratorVerifier } from "./verifier";
+import {
+  NodeVerificationResult,
+  OrchestratorVerifier,
+  VerificationReflectionInput,
+} from "./verifier";
 import {
   buildAssumptionDriftSignal,
   buildExecutorInstruction,
@@ -43,15 +58,98 @@ const DEFAULT_MAX_REPLANS = 3;
 const DEFAULT_MAX_SESSION_TIME_MS = 12 * 60 * 1000;
 const DEFAULT_MAX_TOTAL_TOKENS = 75_000;
 const DEFAULT_MAX_TOTAL_COST_USD = 1.5;
+const MAX_VERIFIER_REFLECTION_ROUNDS = 1;
+const MIN_CRITIC_CONFIDENCE_DELTA = 0.15;
+const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
+const ESCALATION_MAX_REASON_CHARS = 220;
 const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
 const CHECKPOINT_VERSION = 1;
 const CHECKPOINT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const TOOL_NAME_VALUES = new Set<string>(Object.values(ToolName));
 type AgentLoopCallbacksArg = ConstructorParameters<typeof AgentLoop>[3];
 type AgentLoopOptionsArg = ConstructorParameters<typeof AgentLoop>[4];
+type RuntimeLane = "planner" | "executor" | "verifier";
+type EscalationDecisionPayload = EscalationDecisionMessage["payload"];
+
+type LaneBudgetPolicy = {
+  maxConcurrent: number;
+  maxFailuresBeforeIsolation: number;
+  isolationCooldownMs: number;
+  maxCallMs: number;
+};
+
+type LaneRuntimeState = {
+  lane: RuntimeLane;
+  activeCalls: number;
+  totalCalls: number;
+  failures: number;
+  totalDurationMs: number;
+  isolatedUntilMs: number;
+  lastError?: string;
+  policy: LaneBudgetPolicy;
+};
+
+type LaneOperationInstance = {
+  operationId: string;
+  lane: Exclude<RuntimeLane, "executor">;
+  taskId: string;
+  workspaceId: string;
+  startedAt: number;
+  timeoutMs: number;
+  label: string;
+  nodeId?: string;
+};
+
+type QueuedLaneOperation = {
+  operationId: string;
+  taskId: string;
+  workspaceId: string;
+  label: string;
+  nodeId?: string;
+  enqueuedAt: number;
+  operation: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+};
+
+type LaneSupervisorState = {
+  lane: RuntimeLane;
+  queue: QueuedLaneOperation[];
+  active: number;
+  draining: boolean;
+  restartCount: number;
+  consecutiveCrashes: number;
+  circuitOpenUntilMs: number;
+  lastCrashAtMs?: number;
+  lastCrashError?: string;
+  resumeTimer: ReturnType<typeof setTimeout> | null;
+};
+
+type WorkspaceLanePools = {
+  planner: Map<string, LaneOperationInstance>;
+  executor: Map<string, WorkerInstance>;
+  verifier: Map<string, LaneOperationInstance>;
+};
+
+class LaneIsolationError extends Error {
+  readonly lane: RuntimeLane;
+  readonly remainingMs: number;
+  readonly lastError?: string;
+
+  constructor(lane: RuntimeLane, remainingMs: number, lastError?: string) {
+    super(
+      `${lane} lane is isolated for ${remainingMs}ms (lastError=${lastError || "unknown"})`,
+    );
+    this.name = "LaneIsolationError";
+    this.lane = lane;
+    this.remainingMs = remainingMs;
+    this.lastError = lastError;
+  }
+}
 
 type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode">;
-type VerifierLike = Pick<OrchestratorVerifier, "verifyNode">;
+type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
+  Partial<Pick<OrchestratorVerifier, "reflectDecision">>;
 type LlmLike = Pick<LLMClient, "switchToSmart" | "complete">;
 
 type CreateAgentLoopInput = {
@@ -81,6 +179,28 @@ export type OrchestratorDeps = {
     tabId: number,
     timeoutMs: number,
   ) => Promise<boolean>;
+  lanePolicies?: Partial<Record<RuntimeLane, Partial<LaneBudgetPolicy>>>;
+};
+
+const DEFAULT_LANE_POLICIES: Record<RuntimeLane, LaneBudgetPolicy> = {
+  planner: {
+    maxConcurrent: 1,
+    maxFailuresBeforeIsolation: 2,
+    isolationCooldownMs: 20_000,
+    maxCallMs: 20_000,
+  },
+  executor: {
+    maxConcurrent: 8,
+    maxFailuresBeforeIsolation: 6,
+    isolationCooldownMs: 10_000,
+    maxCallMs: 5 * 60_000,
+  },
+  verifier: {
+    maxConcurrent: 8,
+    maxFailuresBeforeIsolation: 3,
+    isolationCooldownMs: 15_000,
+    maxCallMs: 20_000,
+  },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -242,6 +362,7 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (!budget) return null;
 
   const task: OrchestratorTask = {
+    runId: typeof raw.runId === "string" && raw.runId.length > 0 ? raw.runId : undefined,
     id: raw.id,
     workspaceId: raw.workspaceId,
     rootTabId: raw.rootTabId,
@@ -256,6 +377,34 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
     sessionMetrics,
     budget,
   };
+
+  if (raw.pendingEscalation !== undefined) {
+    if (!isRecord(raw.pendingEscalation)) return null;
+    const packet = sanitizeEscalationPacket(raw.pendingEscalation.packet);
+    if (!packet) return null;
+    let selectedOption: EscalationDecisionPayload | undefined;
+    if (raw.pendingEscalation.selectedOption !== undefined) {
+      if (!isRecord(raw.pendingEscalation.selectedOption)) return null;
+      const optionId = normalizeEscalationOptionId(
+        raw.pendingEscalation.selectedOption.optionId,
+      );
+      if (
+        typeof raw.pendingEscalation.selectedOption.escalationId !== "string" ||
+        !optionId
+      ) {
+        return null;
+      }
+      selectedOption = {
+        escalationId: raw.pendingEscalation.selectedOption.escalationId,
+        optionId,
+        rerouteObjective:
+          typeof raw.pendingEscalation.selectedOption.rerouteObjective === "string"
+            ? raw.pendingEscalation.selectedOption.rerouteObjective
+            : undefined,
+      };
+    }
+    task.pendingEscalation = { packet, selectedOption };
+  }
 
   if (raw.startedAt !== undefined) {
     if (!isNonNegativeInteger(raw.startedAt)) return null;
@@ -437,11 +586,154 @@ function isUserSkippedNode(node: Pick<TaskNode, "status">): boolean {
   return node.status === "skipped";
 }
 
+function clampInteger(value: number, min: number, max?: number): number {
+  const safe = Number.isFinite(value) ? Math.floor(value) : min;
+  const lowerBounded = Math.max(min, safe);
+  return typeof max === "number" ? Math.min(max, lowerBounded) : lowerBounded;
+}
+
+function isLaneIsolationError(error: unknown, lane?: RuntimeLane): boolean {
+  if (!(error instanceof LaneIsolationError)) return false;
+  return lane ? error.lane === lane : true;
+}
+
+function isVerificationDecisionChanged(
+  previous: NodeVerificationResult,
+  next: NodeVerificationResult,
+): boolean {
+  return (
+    previous.decision !== next.decision ||
+    previous.reason !== next.reason ||
+    previous.failureType !== next.failureType ||
+    previous.rerouteObjective !== next.rerouteObjective
+  );
+}
+
+function clampConfidence(value: number | undefined): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return 0.5;
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeEscalationOptionId(value: unknown): EscalationOptionId | null {
+  if (
+    value === "approve_continue" ||
+    value === "reroute_with_option" ||
+    value === "skip_node" ||
+    value === "stop_task"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.escalationId !== "string" || raw.escalationId.length === 0) return null;
+  if (typeof raw.taskId !== "string" || raw.taskId.length === 0) return null;
+  if (typeof raw.workspaceId !== "string" || raw.workspaceId.length === 0) return null;
+  if (typeof raw.nodeId !== "string" || raw.nodeId.length === 0) return null;
+  if (raw.risk !== "medium" && raw.risk !== "high" && raw.risk !== "critical") return null;
+  if (typeof raw.reason !== "string") return null;
+  if (typeof raw.snapshotSummary !== "string") return null;
+  if (!Array.isArray(raw.options) || raw.options.length === 0) return null;
+  const options = raw.options
+    .map((option) => {
+      if (!isRecord(option)) return null;
+      const id = normalizeEscalationOptionId(option.id);
+      if (!id) return null;
+      if (typeof option.label !== "string" || typeof option.impact !== "string") return null;
+      const parsed: EscalationOption = { id, label: option.label, impact: option.impact };
+      if (typeof option.rerouteObjective === "string" && option.rerouteObjective.length > 0) {
+        parsed.rerouteObjective = option.rerouteObjective;
+      }
+      return parsed;
+    })
+    .filter((option): option is EscalationOption => option !== null);
+  if (options.length !== raw.options.length) return null;
+  const recommendedOption = normalizeEscalationOptionId(raw.recommendedOption);
+  if (!recommendedOption) return null;
+  if (!Array.isArray(raw.lastActions)) return null;
+  if (raw.lastActions.some((entry) => typeof entry !== "string")) return null;
+  if (!isRecord(raw.budgetState)) return null;
+  const budgetState = raw.budgetState;
+  const keys = [
+    "elapsedMs",
+    "maxSessionTimeMs",
+    "totalTokens",
+    "maxTotalTokens",
+    "totalCostUsd",
+    "maxTotalCostUsd",
+  ] as const;
+  for (const key of keys) {
+    if (typeof budgetState[key] !== "number" || Number.isNaN(budgetState[key])) return null;
+  }
+  if (typeof raw.timeoutMs !== "number" || raw.timeoutMs < 0) return null;
+  if (typeof raw.timestamp !== "number" || raw.timestamp < 0) return null;
+
+  return {
+    escalationId: raw.escalationId,
+    taskId: raw.taskId,
+    workspaceId: raw.workspaceId,
+    nodeId: raw.nodeId,
+    risk: raw.risk as EscalationRisk,
+    confidence: clampConfidence(
+      typeof raw.confidence === "number" ? raw.confidence : undefined,
+    ),
+    reason: raw.reason,
+    options,
+    recommendedOption,
+    snapshotSummary: raw.snapshotSummary,
+    lastActions: raw.lastActions as string[],
+    budgetState: {
+      elapsedMs: budgetState.elapsedMs as number,
+      maxSessionTimeMs: budgetState.maxSessionTimeMs as number,
+      totalTokens: budgetState.totalTokens as number,
+      maxTotalTokens: budgetState.maxTotalTokens as number,
+      totalCostUsd: budgetState.totalCostUsd as number,
+      maxTotalCostUsd: budgetState.maxTotalCostUsd as number,
+    },
+    timeoutMs: raw.timeoutMs,
+    timestamp: raw.timestamp,
+  };
+}
+
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
-  private workersByWorkspace = new Map<string, Map<string, WorkerInstance>>();
+  private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private memoryBuffer = new MemoryBuffer();
-  private budgetEstimator = new BudgetEstimator();
+  private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
+  private laneRuntimeByWorkspace = new Map<
+    string,
+    Record<RuntimeLane, LaneRuntimeState>
+  >();
+  private pendingEscalationResolvers = new Map<
+    string,
+    (decision: EscalationDecisionPayload) => void
+  >();
+  private laneSupervisorsByWorkspace = new Map<
+    string,
+    Record<RuntimeLane, LaneSupervisorState>
+  >();
+  private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
+  private traceFallbackWriter = new RunTraceWriter(async (record) => {
+    if (record.kind === "manifest") {
+      logger.debug("trace", "Run trace manifest", {
+        runId: record.manifest.runId,
+        source: record.manifest.source,
+        environment: record.manifest.environment,
+        promptCount: record.manifest.promptSet.length,
+        taskId: record.manifest.taskId,
+        workspaceId: record.manifest.workspaceId,
+      });
+      return;
+    }
+    logger.debug("trace", "Run trace event", {
+      runId: record.event.runId,
+      type: record.event.type,
+      role: record.event.role,
+      turn: record.event.turn,
+    });
+  });
   private deps: Required<OrchestratorDeps>;
 
   constructor(deps: OrchestratorDeps = {}) {
@@ -471,7 +763,554 @@ export class Orchestrator {
       workspaceManager: deps.workspaceManager ?? workspaceManager,
       waitForContentScriptReady:
         deps.waitForContentScriptReady ?? waitForContentScriptReady,
+      lanePolicies: deps.lanePolicies ?? {},
     };
+  }
+
+  private async emitTraceManifest(manifest: RunManifest): Promise<void> {
+    try {
+      await this.traceWriter.emitManifest(manifest);
+    } catch (error) {
+      logger.debug("trace", "Failed to emit orchestrator trace manifest", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.traceFallbackWriter.emitManifest(manifest);
+    }
+  }
+
+  private emitTraceEvent(
+    task: Pick<OrchestratorTask, "runId"> | null | undefined,
+    type: string,
+    data?: Record<string, unknown>,
+    role?: "planner" | "executor" | "verifier" | "system",
+  ): void {
+    if (!task?.runId) return;
+    void this.traceWriter
+      .emitEvent({
+        runId: task.runId,
+        type,
+        role,
+        data,
+      })
+      .catch((error) => {
+        logger.debug("trace", "Failed to emit orchestrator trace event", {
+          runId: task.runId,
+          type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        void this.traceFallbackWriter.emitEvent({
+          runId: task.runId!,
+          type,
+          role,
+          data,
+        });
+      });
+  }
+
+  private buildTaskManifest(
+    task: OrchestratorTask,
+    _input: OrchestratorStartInput,
+  ): RunManifest {
+    const promptSet = listPromptDescriptors([
+      "orchestrator.verifier.system",
+      "orchestrator.verifier.critic.system",
+    ]);
+    return {
+      runId: task.runId || task.id,
+      environment: "production",
+      startedAt: new Date().toISOString(),
+      source: "background.orchestrator",
+      promptSet,
+      taskId: task.id,
+      workspaceId: task.workspaceId,
+    };
+  }
+
+  private buildLanePolicy(
+    lane: RuntimeLane,
+    maxWorkers?: number,
+  ): LaneBudgetPolicy {
+    const base = DEFAULT_LANE_POLICIES[lane];
+    const override = this.deps.lanePolicies[lane] ?? {};
+    const runtimeDefaultMaxConcurrent =
+      lane === "executor" || lane === "verifier"
+        ? maxWorkers || base.maxConcurrent
+        : base.maxConcurrent;
+
+    return {
+      maxConcurrent: clampInteger(
+        override.maxConcurrent ?? runtimeDefaultMaxConcurrent,
+        1,
+        8,
+      ),
+      maxFailuresBeforeIsolation: clampInteger(
+        override.maxFailuresBeforeIsolation ?? base.maxFailuresBeforeIsolation,
+        1,
+      ),
+      isolationCooldownMs: clampInteger(
+        override.isolationCooldownMs ?? base.isolationCooldownMs,
+        1_000,
+      ),
+      maxCallMs: clampInteger(override.maxCallMs ?? base.maxCallMs, 1_000),
+    };
+  }
+
+  private createWorkspaceLanePools(): WorkspaceLanePools {
+    return {
+      planner: new Map<string, LaneOperationInstance>(),
+      executor: new Map<string, WorkerInstance>(),
+      verifier: new Map<string, LaneOperationInstance>(),
+    };
+  }
+
+  private createLaneSupervisor(lane: RuntimeLane): LaneSupervisorState {
+    return {
+      lane,
+      queue: [],
+      active: 0,
+      draining: false,
+      restartCount: 0,
+      consecutiveCrashes: 0,
+      circuitOpenUntilMs: 0,
+      resumeTimer: null,
+    };
+  }
+
+  private getWorkspaceLanePools(workspaceId: string): WorkspaceLanePools {
+    let pools = this.workersByWorkspace.get(workspaceId);
+    if (!pools) {
+      pools = this.createWorkspaceLanePools();
+      this.workersByWorkspace.set(workspaceId, pools);
+    }
+    return pools;
+  }
+
+  private initializeWorkspaceRuntime(workspaceId: string, maxWorkers: number): void {
+    this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
+    this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
+    this.laneSupervisorsByWorkspace.set(workspaceId, {
+      planner: this.createLaneSupervisor("planner"),
+      executor: this.createLaneSupervisor("executor"),
+      verifier: this.createLaneSupervisor("verifier"),
+    });
+    this.laneRuntimeByWorkspace.set(workspaceId, {
+      planner: {
+        lane: "planner",
+        activeCalls: 0,
+        totalCalls: 0,
+        failures: 0,
+        totalDurationMs: 0,
+        isolatedUntilMs: 0,
+        policy: this.buildLanePolicy("planner", maxWorkers),
+      },
+      executor: {
+        lane: "executor",
+        activeCalls: 0,
+        totalCalls: 0,
+        failures: 0,
+        totalDurationMs: 0,
+        isolatedUntilMs: 0,
+        policy: this.buildLanePolicy("executor", maxWorkers),
+      },
+      verifier: {
+        lane: "verifier",
+        activeCalls: 0,
+        totalCalls: 0,
+        failures: 0,
+        totalDurationMs: 0,
+        isolatedUntilMs: 0,
+        policy: this.buildLanePolicy("verifier", maxWorkers),
+      },
+    });
+    logger.debug("orchestrator", "Workspace runtime isolation initialized", {
+      workspaceId,
+      maxWorkers,
+    });
+    this.emitLaneSupervisorActivity(workspaceId);
+  }
+
+  private cleanupWorkspaceRuntime(workspaceId: string): void {
+    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
+    for (const lane of ["planner", "executor", "verifier"] as const) {
+      const supervisor = supervisors?.[lane];
+      if (supervisor?.resumeTimer) clearTimeout(supervisor.resumeTimer);
+    }
+    this.laneSupervisorsByWorkspace.delete(workspaceId);
+    this.workersByWorkspace.delete(workspaceId);
+    this.budgetEstimatorsByWorkspace.delete(workspaceId);
+    this.laneRuntimeByWorkspace.delete(workspaceId);
+  }
+
+  private getBudgetEstimator(workspaceId: string): BudgetEstimator {
+    let estimator = this.budgetEstimatorsByWorkspace.get(workspaceId);
+    if (!estimator) {
+      estimator = new BudgetEstimator();
+      this.budgetEstimatorsByWorkspace.set(workspaceId, estimator);
+    }
+    return estimator;
+  }
+
+  private getLaneRuntimeState(
+    workspaceId: string,
+    lane: RuntimeLane,
+  ): LaneRuntimeState {
+    const runtime = this.laneRuntimeByWorkspace.get(workspaceId);
+    if (!runtime) {
+      this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
+      return this.laneRuntimeByWorkspace.get(workspaceId)![lane];
+    }
+    return runtime[lane];
+  }
+
+  private getLaneSupervisorState(
+    workspaceId: string,
+    lane: RuntimeLane,
+  ): LaneSupervisorState {
+    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
+    if (!supervisors) {
+      this.initializeWorkspaceRuntime(workspaceId, DEFAULT_MAX_WORKERS);
+      return this.laneSupervisorsByWorkspace.get(workspaceId)![lane];
+    }
+    return supervisors[lane];
+  }
+
+  private buildLaneTelemetrySnapshot(workspaceId: string): {
+    timestamp: number;
+    lanes: Record<
+      RuntimeLane,
+      {
+        activeCalls: number;
+        queueDepth: number;
+        restartCount: number;
+        consecutiveCrashes: number;
+        circuitOpenUntilMs: number;
+        lastCrashError?: string;
+      }
+    >;
+  } {
+    const runtime = this.laneRuntimeByWorkspace.get(workspaceId);
+    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
+    const now = Date.now();
+
+    const buildLane = (lane: RuntimeLane) => {
+      const activeCalls = runtime?.[lane]?.activeCalls ?? 0;
+      const supervisor = supervisors?.[lane];
+      return {
+        activeCalls,
+        queueDepth: supervisor?.queue.length ?? 0,
+        restartCount: supervisor?.restartCount ?? 0,
+        consecutiveCrashes: supervisor?.consecutiveCrashes ?? 0,
+        circuitOpenUntilMs:
+          (supervisor?.circuitOpenUntilMs ?? 0) > now
+            ? supervisor?.circuitOpenUntilMs ?? 0
+            : 0,
+        lastCrashError: supervisor?.lastCrashError,
+      };
+    };
+
+    return {
+      timestamp: now,
+      lanes: {
+        planner: buildLane("planner"),
+        executor: buildLane("executor"),
+        verifier: buildLane("verifier"),
+      },
+    };
+  }
+
+  private emitLaneSupervisorActivity(workspaceId: string): void {
+    const task = this.tasksByWorkspace.get(workspaceId);
+    const telemetry = this.buildLaneTelemetrySnapshot(workspaceId);
+    const activeFromTask = task?.status === "running" || task?.status === "planning";
+    const activeFromLanes = Object.values(telemetry.lanes).some(
+      (lane) => lane.activeCalls > 0 || lane.queueDepth > 0,
+    );
+    this.sendMessage({
+      type: "AGENT_ACTIVITY",
+      workspaceId,
+      payload: {
+        active: Boolean(activeFromTask || activeFromLanes),
+        laneTelemetry: telemetry,
+      },
+    });
+  }
+
+  private isLaneIsolated(state: LaneRuntimeState): boolean {
+    return state.isolatedUntilMs > Date.now();
+  }
+
+  private emitLaneIsolationStep(
+    workspaceId: string,
+    state: LaneRuntimeState,
+    detail: string,
+  ): void {
+    this.sendMessage({
+      type: "AGENT_STEP",
+      workspaceId,
+      payload: {
+        step: {
+          id: crypto.randomUUID(),
+          type: "warning",
+          label: `${state.lane} lane isolated`,
+          detail,
+          status: "done",
+          timestamp: Date.now(),
+        },
+        update: false,
+      },
+    });
+  }
+
+  private async executeLaneOperation<T>(
+    task: Pick<OrchestratorTask, "id" | "workspaceId">,
+    lane: RuntimeLane,
+    queued: QueuedLaneOperation,
+  ): Promise<T> {
+    const state = this.getLaneRuntimeState(task.workspaceId, lane);
+    const supervisor = this.getLaneSupervisorState(task.workspaceId, lane);
+    supervisor.active += 1;
+    state.activeCalls = supervisor.active;
+    state.totalCalls += 1;
+    const startedAt = Date.now();
+    const queueLatencyMs = startedAt - queued.enqueuedAt;
+    const laneOperationId =
+      lane === "executor" ? null : `${lane}-op-${crypto.randomUUID()}`;
+    if (laneOperationId) {
+      const pools = this.getWorkspaceLanePools(task.workspaceId);
+      const op: LaneOperationInstance = {
+        operationId: laneOperationId,
+        lane,
+        taskId: queued.taskId,
+        workspaceId: queued.workspaceId,
+        startedAt,
+        timeoutMs: state.policy.maxCallMs,
+        label: queued.label,
+        nodeId: queued.nodeId,
+      };
+      pools[lane].set(laneOperationId, op);
+      logger.debug("orchestrator", "Lane operation registered", {
+        taskId: queued.taskId,
+        workspaceId: queued.workspaceId,
+        lane,
+        operationId: laneOperationId,
+        activeLaneOperations: pools[lane].size,
+        queueLatencyMs,
+      });
+    }
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        (timeoutId = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `${lane} lane timeout (${state.policy.maxCallMs}ms)`,
+              ),
+            ),
+          state.policy.maxCallMs,
+        )),
+      );
+      const result = (await Promise.race([queued.operation(), timeout])) as T;
+      state.totalDurationMs += Date.now() - startedAt;
+      if (state.failures > 0) {
+        state.failures = Math.max(0, state.failures - 1);
+      }
+      supervisor.consecutiveCrashes = 0;
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      state.failures += 1;
+      state.lastError = message;
+      state.totalDurationMs += Date.now() - startedAt;
+      supervisor.restartCount += 1;
+      supervisor.consecutiveCrashes += 1;
+      supervisor.lastCrashAtMs = Date.now();
+      supervisor.lastCrashError = message;
+      const backoffMs = Math.min(
+        250 * 2 ** Math.max(0, supervisor.consecutiveCrashes - 1),
+        5_000,
+      );
+      logger.warn("orchestrator", "Lane execution failed", {
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        lane,
+        failures: state.failures,
+        maxFailuresBeforeIsolation: state.policy.maxFailuresBeforeIsolation,
+        error: message,
+        laneRestartCount: supervisor.restartCount,
+        laneConsecutiveCrashes: supervisor.consecutiveCrashes,
+        backoffMs,
+      });
+      if (state.failures >= state.policy.maxFailuresBeforeIsolation) {
+        state.isolatedUntilMs = Date.now() + state.policy.isolationCooldownMs;
+        const detail =
+          `${lane} lane entered cooldown after ${state.failures} failure(s). ` +
+          `Cooldown=${state.policy.isolationCooldownMs}ms. Last error: ${message}`;
+        logger.warn("orchestrator", "Lane isolated", {
+          workspaceId: task.workspaceId,
+          taskId: task.id,
+          lane,
+          isolatedUntilMs: state.isolatedUntilMs,
+          detail,
+        });
+        this.emitTraceEvent(
+          task,
+          "lane_isolated",
+          {
+            taskId: task.id,
+            workspaceId: task.workspaceId,
+            lane,
+            failures: state.failures,
+            isolatedUntilMs: state.isolatedUntilMs,
+            detail,
+          },
+          lane,
+        );
+        this.emitLaneIsolationStep(task.workspaceId, state, detail);
+        throw new LaneIsolationError(
+          lane,
+          state.policy.isolationCooldownMs,
+          message,
+        );
+      }
+
+      supervisor.circuitOpenUntilMs = Date.now() + backoffMs;
+      logger.warn("orchestrator", "Lane supervisor backoff", {
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        lane,
+        backoffMs,
+        circuitOpenUntilMs: supervisor.circuitOpenUntilMs,
+        restartCount: supervisor.restartCount,
+        queueDepth: supervisor.queue.length,
+      });
+      this.emitLaneSupervisorActivity(task.workspaceId);
+      throw error;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (laneOperationId) {
+        const pools = this.getWorkspaceLanePools(task.workspaceId);
+        pools[lane].delete(laneOperationId);
+        logger.debug("orchestrator", "Lane operation released", {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          lane,
+          operationId: laneOperationId,
+          activeLaneOperations: pools[lane].size,
+        });
+      }
+      supervisor.active = Math.max(0, supervisor.active - 1);
+      state.activeCalls = supervisor.active;
+      this.emitLaneSupervisorActivity(task.workspaceId);
+      void this.drainLaneQueue(task.workspaceId, lane);
+    }
+  }
+
+  private async drainLaneQueue(workspaceId: string, lane: RuntimeLane): Promise<void> {
+    const supervisor = this.getLaneSupervisorState(workspaceId, lane);
+    const runtimeState = this.getLaneRuntimeState(workspaceId, lane);
+    if (supervisor.draining) return;
+    supervisor.draining = true;
+    try {
+      let shouldContinue = true;
+      while (shouldContinue) {
+        const now = Date.now();
+        if (this.isLaneIsolated(runtimeState)) {
+          const remainingMs = runtimeState.isolatedUntilMs - now;
+          const pending = supervisor.queue.splice(0, supervisor.queue.length);
+          for (const queued of pending) {
+            queued.reject(
+              new LaneIsolationError(lane, remainingMs, runtimeState.lastError),
+            );
+          }
+          shouldContinue = false;
+          continue;
+        }
+
+        if (supervisor.circuitOpenUntilMs > now) {
+          const waitMs = supervisor.circuitOpenUntilMs - now;
+          if (!supervisor.resumeTimer) {
+            supervisor.resumeTimer = setTimeout(() => {
+              supervisor.resumeTimer = null;
+              void this.drainLaneQueue(workspaceId, lane);
+            }, waitMs);
+            logger.debug("orchestrator", "Lane supervisor waiting for backoff", {
+              workspaceId,
+              lane,
+              waitMs,
+              queueDepth: supervisor.queue.length,
+            });
+          }
+          shouldContinue = false;
+          continue;
+        }
+
+        if (
+          supervisor.queue.length === 0 ||
+          supervisor.active >= runtimeState.policy.maxConcurrent
+        ) {
+          shouldContinue = false;
+          continue;
+        }
+
+        const queued = supervisor.queue.shift();
+        if (!queued) {
+          shouldContinue = false;
+          continue;
+        }
+
+        void this.executeLaneOperation(
+          { id: queued.taskId, workspaceId: queued.workspaceId },
+          lane,
+          queued,
+        )
+          .then((result) => queued.resolve(result))
+          .catch((error) => queued.reject(error));
+      }
+    } finally {
+      supervisor.draining = false;
+    }
+  }
+
+  private runInLane<T>(
+    task: OrchestratorTask,
+    lane: RuntimeLane,
+    operation: () => Promise<T>,
+    metadata?: { label?: string; nodeId?: string },
+  ): Promise<T> {
+    const state = this.getLaneRuntimeState(task.workspaceId, lane);
+    const supervisor = this.getLaneSupervisorState(task.workspaceId, lane);
+    const now = Date.now();
+    if (this.isLaneIsolated(state)) {
+      const remainingMs = state.isolatedUntilMs - now;
+      return Promise.reject(new LaneIsolationError(lane, remainingMs, state.lastError));
+    }
+
+    const operationId = `${lane}-queued-${crypto.randomUUID()}`;
+    return new Promise<T>((resolve, reject) => {
+      supervisor.queue.push({
+        operationId,
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        label: metadata?.label || `${lane} lane call`,
+        nodeId: metadata?.nodeId,
+        enqueuedAt: Date.now(),
+        operation: operation as () => Promise<unknown>,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
+      logger.debug("orchestrator", "Lane operation queued", {
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        lane,
+        operationId,
+        nodeId: metadata?.nodeId,
+        queueDepth: supervisor.queue.length,
+        activeLaneCalls: supervisor.active,
+      });
+      this.emitLaneSupervisorActivity(task.workspaceId);
+      void this.drainLaneQueue(task.workspaceId, lane);
+    });
   }
 
   private appendHandoffArtifact(
@@ -688,11 +1527,28 @@ export class Orchestrator {
       task.nodes = task.nodes.map((node) =>
         node.status === "running" ? { ...node, status: "pending" } : node,
       );
+      if (!task.runId) {
+        task.runId = crypto.randomUUID();
+      }
       task.status = "running";
       task.currentIndex = currentIndex(task.nodes);
       this.tasksByWorkspace.set(task.workspaceId, task);
-      this.workersByWorkspace.set(task.workspaceId, new Map());
+      this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers);
       await this.persistTaskCheckpoint(task);
+      await this.emitTraceManifest({
+        ...this.buildTaskManifest(task, resumeInput),
+        source: "background.orchestrator.recovery",
+      });
+      this.emitTraceEvent(
+        task,
+        "task_resumed_from_checkpoint",
+        {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          resumeTabId,
+        },
+        "system",
+      );
 
       const completedSubtasks = task.nodes.filter(
         (n) => n.status === "completed",
@@ -724,7 +1580,7 @@ export class Orchestrator {
         task.finishedAt = Date.now();
         await this.clearTaskCheckpoint(task.workspaceId);
         this.tasksByWorkspace.delete(task.workspaceId);
-        this.workersByWorkspace.delete(task.workspaceId);
+        this.cleanupWorkspaceRuntime(task.workspaceId);
         this.sendStatus(task.workspaceId, AgentStatus.ERROR, "Recovered task failed");
       });
     }
@@ -735,8 +1591,9 @@ export class Orchestrator {
   }
 
   private applyPreflightBudget(task: OrchestratorTask): void {
-    const capacity = this.budgetEstimator.estimateCapacity(task.budget);
-    const estimate = this.budgetEstimator.getEstimate();
+    const estimator = this.getBudgetEstimator(task.workspaceId);
+    const capacity = estimator.estimateCapacity(task.budget);
+    const estimate = estimator.getEstimate();
     const originalPending = task.nodes.filter((node) => node.status === "pending");
     if (originalPending.length <= capacity.maxNodesOverall) return;
 
@@ -804,6 +1661,7 @@ export class Orchestrator {
 
     const taskId = crypto.randomUUID();
     const task: OrchestratorTask = {
+      runId: crypto.randomUUID(),
       id: taskId,
       workspaceId: input.workspaceId,
       rootTabId: input.tabId,
@@ -826,8 +1684,14 @@ export class Orchestrator {
       },
     };
     this.tasksByWorkspace.set(input.workspaceId, task);
-    this.workersByWorkspace.set(input.workspaceId, new Map());
+    this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
+    await this.emitTraceManifest(this.buildTaskManifest(task, input));
+    this.emitTraceEvent(task, "task_started", {
+      query: input.query,
+      tabId: input.tabId,
+      maxWorkers: task.maxWorkers,
+    }, "system");
 
     this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
 
@@ -847,10 +1711,12 @@ export class Orchestrator {
         input.cerebrasApiKey,
       );
       const tab = await chrome.tabs.get(input.tabId);
-      nodes = await planner.buildNodes(
-        input.query,
-        tab.title || "Untitled",
-        tab.url || "",
+      nodes = await this.runInLane(task, "planner", async () =>
+        planner.buildNodes(
+          input.query,
+          tab.title || "Untitled",
+          tab.url || "",
+        ),
       );
       this.sendMessage({
         type: "AGENT_STEP",
@@ -912,8 +1778,14 @@ export class Orchestrator {
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
       this.tasksByWorkspace.delete(task.workspaceId);
-      this.workersByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
+      this.emitTraceEvent(
+        task,
+        "task_stopped",
+        { taskId: task.id, phase: "planning" },
+        "system",
+      );
       this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
       return;
     }
@@ -934,6 +1806,7 @@ export class Orchestrator {
     task: OrchestratorTask,
     input: OrchestratorStartInput,
   ): Promise<void> {
+    const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
     const verifierContract = buildRoleExecutionContract("verifier", input.settings);
     logger.debug("policy", "Role execution contract resolved", {
@@ -1120,8 +1993,16 @@ export class Orchestrator {
         },
       });
 
-      const wsWorkers = this.workersByWorkspace.get(task.workspaceId)!;
-      wsWorkers.set(workerId, { workerId, nodeId: node.id, tabId, loop });
+      const wsPools = this.getWorkspaceLanePools(task.workspaceId);
+      wsPools.executor.set(workerId, { workerId, nodeId: node.id, tabId, loop });
+      logger.debug("orchestrator", "Executor worker registered in lane pool", {
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        workerId,
+        nodeId: node.id,
+        lane: "executor",
+        activeExecutorWorkers: wsPools.executor.size,
+      });
 
       try {
         const executorInstruction = buildExecutorInstruction(
@@ -1136,11 +2017,13 @@ export class Orchestrator {
           handoffArtifactCount: node.handoffArtifacts.length,
           instructionChars: executorInstruction.length,
         });
-        const result = await loop.start(executorInstruction, tabId, snapshot, {
-          clearHistory: true,
-        });
+        const result = await this.runInLane(task, "executor", async () =>
+          loop.start(executorInstruction, tabId, snapshot, {
+            clearHistory: true,
+          }),
+        );
         task.sessionMetrics = mergeSessionMetrics(task.sessionMetrics, result.metrics);
-        this.budgetEstimator.recordObservation({
+        budgetEstimator.recordObservation({
           tokens: result.metrics?.totalTokens ?? 0,
           costUsd: result.metrics?.totalCost ?? 0,
           timeMs: Math.max(
@@ -1155,7 +2038,7 @@ export class Orchestrator {
           totalCost: task.sessionMetrics.totalCost,
           totalLlmTimeMs: task.sessionMetrics.totalLlmTimeMs,
           llmCallCount: task.sessionMetrics.llmCallCount,
-          budgetEstimate: this.budgetEstimator.getEstimate(),
+          budgetEstimate: budgetEstimator.getEstimate(),
         });
         if (node.status !== "running") {
           this.memoryBuffer.discardWorker(workerId);
@@ -1168,12 +2051,29 @@ export class Orchestrator {
         });
         if (result.outcome === "completed") {
           const verifierHandoffContext = buildVerifierContext(node, taskStateBrief);
-          const verification = await verifier.verifyNode({
-            taskQuery: task.query,
-            objective: node.description,
-            successCriteria: node.successCriteria,
-            output: result.summary,
-            handoffContext: verifierHandoffContext,
+          const initialVerification = await this.runInLane(task, "verifier", async () =>
+            verifier.verifyNode({
+              taskQuery: task.query,
+              objective: node.description,
+              successCriteria: node.successCriteria,
+              output: result.summary,
+              handoffContext: verifierHandoffContext,
+            }),
+          );
+          const verification = await this.applyVerifierCriticReflection({
+            task,
+            node,
+            verifier,
+            verification: initialVerification,
+            reflectionInput: {
+              taskQuery: task.query,
+              objective: node.description,
+              successCriteria: node.successCriteria,
+              output: result.summary,
+              handoffContext: verifierHandoffContext,
+              driftDetected,
+              staleSignalCount,
+            },
           });
           const verificationConfidence =
             typeof verification.confidence === "number"
@@ -1191,6 +2091,60 @@ export class Orchestrator {
             handoffContextChars: verifierHandoffContext.length,
           });
           this.emitVerifierStep(task.workspaceId, node.id, verification.reason);
+
+          if (task.status === "running" && this.shouldEscalateForDecision(task, node, verification)) {
+            const escalationPacket =
+              task.pendingEscalation?.packet.nodeId === node.id
+                ? task.pendingEscalation.packet
+                : this.buildEscalationPacket({
+                    task,
+                    node,
+                    verification,
+                    snapshot,
+                  });
+            const escalationDecision = await this.requestEscalationDecision(
+              task,
+              escalationPacket,
+            );
+            task.pendingEscalation = {
+              packet: escalationPacket,
+              selectedOption: escalationDecision,
+            };
+            await this.persistTaskCheckpoint(task);
+            logger.info("orchestrator", "Escalation decision received", {
+              taskId: task.id,
+              nodeId: node.id,
+              escalationId: escalationPacket.escalationId,
+              optionId: escalationDecision.optionId,
+            });
+
+            if (escalationDecision.optionId === "stop_task") {
+              task.status = "stopped";
+              node.status = "failed";
+              node.error = "Stopped by operator escalation decision.";
+              this.memoryBuffer.discardWorker(workerId);
+              await this.clearPendingEscalation(task);
+              return;
+            }
+            if (escalationDecision.optionId === "skip_node") {
+              node.status = "skipped";
+              node.error = "Skipped by operator escalation decision.";
+              this.memoryBuffer.discardWorker(workerId);
+              await this.clearPendingEscalation(task);
+              return;
+            }
+            if (escalationDecision.optionId === "reroute_with_option") {
+              verification.decision = "reroute";
+              verification.rerouteObjective =
+                escalationDecision.rerouteObjective ||
+                escalationPacket.options.find((o) => o.id === "reroute_with_option")
+                  ?.rerouteObjective ||
+                verification.rerouteObjective ||
+                `Use an alternate path for: ${node.description}`;
+              verification.reason = `Operator reroute decision: ${verification.rerouteObjective}`;
+            }
+            await this.clearPendingEscalation(task);
+          }
 
           if (verification.decision === "accept") {
             this.appendHandoffArtifact(node, {
@@ -1268,11 +2222,13 @@ export class Orchestrator {
                 replanned = true;
               } else {
               try {
-                const expandedNodes = await replanner.expandNode(
-                  node,
-                  snapshot?.title || "",
-                  snapshot?.url || "",
-                  `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`,
+                const expandedNodes = await this.runInLane(task, "planner", async () =>
+                  replanner.expandNode(
+                    node,
+                    snapshot?.title || "",
+                    snapshot?.url || "",
+                    `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`,
+                  ),
                 );
                 if (expandedNodes && expandedNodes.length > 0) {
                   this.appendHandoffArtifact(node, {
@@ -1298,11 +2254,48 @@ export class Orchestrator {
                   });
                 }
               } catch (error) {
-                logger.warn("orchestrator", "Dynamic replanning failed; falling back to retry", {
-                  taskId: task.id,
-                  nodeId: node.id,
-                  error,
-                });
+                if (isLaneIsolationError(error, "planner")) {
+                  node.status = "failed";
+                  node.error =
+                    `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`;
+                  this.memoryBuffer.discardWorker(workerId);
+                  replanned = true;
+                  logger.warn(
+                    "orchestrator",
+                    "Planner lane isolated, failing node without retry",
+                    {
+                      taskId: task.id,
+                      nodeId: node.id,
+                      error,
+                    },
+                  );
+                  this.sendMessage({
+                    type: "AGENT_STEP",
+                    workspaceId: task.workspaceId,
+                    payload: {
+                      step: {
+                        id: crypto.randomUUID(),
+                        type: "warning",
+                        label: `Planner lane isolated for node ${node.id.slice(0, 6)}`,
+                        detail: node.error,
+                        status: "done",
+                        timestamp: Date.now(),
+                      },
+                      update: false,
+                    },
+                  });
+                }
+                if (!replanned) {
+                  logger.warn(
+                    "orchestrator",
+                    "Dynamic replanning failed; falling back to retry",
+                    {
+                      taskId: task.id,
+                      nodeId: node.id,
+                      error,
+                    },
+                  );
+                }
               }
               }
             }
@@ -1389,6 +2382,22 @@ export class Orchestrator {
           }
         }
       } catch (error: any) {
+        if (
+          isLaneIsolationError(error, "executor") ||
+          isLaneIsolationError(error, "verifier") ||
+          isLaneIsolationError(error, "planner")
+        ) {
+          node.status = "failed";
+          node.error =
+            `Critical lane isolation while executing node: ${error?.message || String(error)}`;
+          this.memoryBuffer.discardWorker(workerId);
+          logger.warn("orchestrator", "Failing node due to lane isolation", {
+            taskId: task.id,
+            nodeId: node.id,
+            error,
+          });
+          return;
+        }
         const retryDecision = decideRetryPolicy(
           {
             source: "system",
@@ -1406,7 +2415,16 @@ export class Orchestrator {
           this.memoryBuffer.discardWorker(workerId);
         }
       } finally {
-        wsWorkers.delete(workerId);
+        const wsPools = this.getWorkspaceLanePools(task.workspaceId);
+        wsPools.executor.delete(workerId);
+        logger.debug("orchestrator", "Executor worker released from lane pool", {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          workerId,
+          nodeId: node.id,
+          lane: "executor",
+          activeExecutorWorkers: wsPools.executor.size,
+        });
         task.currentIndex = currentIndex(task.nodes);
         this.sendProgress(task);
         await this.persistTaskCheckpoint(task);
@@ -1415,6 +2433,14 @@ export class Orchestrator {
 
     while (task.status === "running") {
       const runnable = getRunnablePendingNodes(task.nodes);
+      const executorMaxConcurrent = this.getLaneRuntimeState(
+        task.workspaceId,
+        "executor",
+      ).policy.maxConcurrent;
+      const schedulerConcurrency = Math.max(
+        1,
+        Math.min(task.maxWorkers, executorMaxConcurrent),
+      );
       logger.debug("orchestrator", "Scheduler cycle", {
         taskId: task.id,
         pending: task.nodes.filter((n) => n.status === "pending").length,
@@ -1422,6 +2448,7 @@ export class Orchestrator {
         completed: task.nodes.filter((n) => n.status === "completed").length,
         failed: task.nodes.filter((n) => n.status === "failed").length,
         runnable: runnable.length,
+        schedulerConcurrency,
       });
 
       const budgetReason = getBudgetExhaustionReason();
@@ -1430,7 +2457,29 @@ export class Orchestrator {
         break;
       }
 
-      while (runnable.length > 0 && running.size < task.maxWorkers) {
+      if (
+        running.size === 0 &&
+        runnable.length > 0 &&
+        this.isLaneIsolated(this.getLaneRuntimeState(task.workspaceId, "executor"))
+      ) {
+        const executorLaneState = this.getLaneRuntimeState(task.workspaceId, "executor");
+        const reason =
+          `Executor lane isolated until ${new Date(executorLaneState.isolatedUntilMs).toISOString()} ` +
+          `(lastError=${executorLaneState.lastError || "unknown"})`;
+        logger.warn("orchestrator", "Executor lane isolation blocked scheduler", {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          reason,
+          runnableNodeIds: runnable.map((node) => node.id),
+        });
+        for (const node of runnable) {
+          node.status = "failed";
+          node.error = reason;
+        }
+        break;
+      }
+
+      while (runnable.length > 0 && running.size < schedulerConcurrency) {
         const node = runnable.shift()!;
         const tracked = launchWorker(node);
         running.add(tracked);
@@ -1477,8 +2526,14 @@ export class Orchestrator {
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
       this.tasksByWorkspace.delete(task.workspaceId);
-      this.workersByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
+      this.emitTraceEvent(
+        task,
+        "task_stopped",
+        { taskId: task.id, phase: "execution" },
+        "system",
+      );
       this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
       return;
     }
@@ -1540,10 +2595,23 @@ export class Orchestrator {
         terminationReason: task.terminationReason,
       },
     });
+    this.emitTraceEvent(
+      task,
+      "task_completed",
+      {
+        taskId: task.id,
+        completionStatus,
+        completed,
+        failed,
+        skipped,
+        terminationReason: task.terminationReason ?? null,
+      },
+      "system",
+    );
 
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
     this.tasksByWorkspace.delete(task.workspaceId);
-    this.workersByWorkspace.delete(task.workspaceId);
+    this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
   }
 
@@ -1578,7 +2646,7 @@ export class Orchestrator {
   }
 
   injectHint(workspaceId: string, text: string): void {
-    const workers = this.workersByWorkspace.get(workspaceId);
+    const workers = this.workersByWorkspace.get(workspaceId)?.executor;
     if (!workers) return;
     for (const worker of workers.values()) {
       worker.loop.injectHint(text);
@@ -1605,7 +2673,7 @@ export class Orchestrator {
       task.nodes.find((node) => node.status === "pending");
     if (!targetNode) return false;
 
-    const workers = this.workersByWorkspace.get(task.workspaceId);
+    const workers = this.workersByWorkspace.get(task.workspaceId)?.executor;
     for (const worker of workers?.values() ?? []) {
       if (worker.nodeId !== targetNode.id) continue;
       worker.loop.stop();
@@ -1645,25 +2713,37 @@ export class Orchestrator {
   private stopWorkspace(workspaceId: string): void {
     const task = this.tasksByWorkspace.get(workspaceId);
     if (!task) return;
+    this.emitTraceEvent(task, "task_stop_requested", {
+      taskId: task.id,
+      workspaceId,
+    }, "system");
     task.status = "stopped";
+    const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
+    if (pendingEscalationId) {
+      this.pendingEscalationResolvers.delete(pendingEscalationId);
+      task.pendingEscalation = undefined;
+    }
     void this.persistTaskCheckpoint(task);
-    const workers = this.workersByWorkspace.get(workspaceId);
+    const pools = this.workersByWorkspace.get(workspaceId);
+    const workers = pools?.executor;
     for (const worker of workers?.values() || []) {
       worker.loop.stop();
       this.memoryBuffer.discardWorker(worker.workerId);
     }
     workers?.clear();
+    pools?.planner.clear();
+    pools?.verifier.clear();
   }
 
   private pauseWorkspace(workspaceId: string): void {
-    const workers = this.workersByWorkspace.get(workspaceId);
+    const workers = this.workersByWorkspace.get(workspaceId)?.executor;
     for (const worker of workers?.values() || []) {
       worker.loop.pause();
     }
   }
 
   private resumeWorkspace(workspaceId: string): void {
-    const workers = this.workersByWorkspace.get(workspaceId);
+    const workers = this.workersByWorkspace.get(workspaceId)?.executor;
     for (const worker of workers?.values() || []) {
       worker.loop.resume();
     }
@@ -1772,6 +2852,317 @@ export class Orchestrator {
       workspaceId,
       payload: { step, update: false },
     });
+  }
+
+  private emitCriticStep(
+    workspaceId: string,
+    nodeId: string,
+    detail: string,
+  ): void {
+    const step: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "info",
+      label: `Critic: reviewed verifier decision for ${nodeId.slice(0, 6)}`,
+      detail,
+      status: "done",
+      timestamp: Date.now(),
+    };
+    this.sendMessage({
+      type: "AGENT_STEP",
+      workspaceId,
+      payload: { step, update: false },
+    });
+  }
+
+  private async applyVerifierCriticReflection(params: {
+    task: OrchestratorTask;
+    node: TaskNode;
+    verifier: VerifierLike;
+    verification: NodeVerificationResult;
+    reflectionInput: Omit<VerificationReflectionInput, "priorDecision">;
+  }): Promise<NodeVerificationResult> {
+    const { task, node, verifier, reflectionInput } = params;
+    let current = params.verification;
+    if (current.decision === "accept" || !verifier.reflectDecision) return current;
+
+    for (let round = 1; round <= MAX_VERIFIER_REFLECTION_ROUNDS; round += 1) {
+      try {
+        const reflected = await this.runInLane(task, "verifier", async () =>
+          verifier.reflectDecision!({
+            ...reflectionInput,
+            priorDecision: current,
+          }),
+        );
+        const changed = isVerificationDecisionChanged(current, reflected);
+        const confidenceGain = reflected.confidence - current.confidence;
+        const adopt = changed || confidenceGain >= MIN_CRITIC_CONFIDENCE_DELTA;
+        logger.info("orchestrator", "Verifier critic reflection evaluated", {
+          taskId: task.id,
+          nodeId: node.id,
+          round,
+          changed,
+          confidenceGain,
+          adopted: adopt,
+          priorDecision: current.decision,
+          reflectedDecision: reflected.decision,
+        });
+        this.emitCriticStep(
+          task.workspaceId,
+          node.id,
+          adopt
+            ? `Adopted critic decision: ${reflected.decision}. ${reflected.reason}`
+            : `Kept verifier decision: ${current.decision}. Critic confidence delta=${confidenceGain.toFixed(2)}.`,
+        );
+        if (adopt) current = reflected;
+      } catch (error) {
+        if (isLaneIsolationError(error, "verifier")) {
+          throw error;
+        }
+        logger.warn("orchestrator", "Verifier critic reflection failed", {
+          taskId: task.id,
+          nodeId: node.id,
+          round,
+          error,
+        });
+      }
+    }
+
+    return current;
+  }
+
+  private classifyEscalationRisk(
+    verification: NodeVerificationResult,
+    node: TaskNode,
+  ): EscalationRisk {
+    if (verification.failureType === "blocked") return "critical";
+    if (verification.decision === "reroute") return "high";
+    if (node.retries >= 2) return "high";
+    return "medium";
+  }
+
+  private shouldEscalateForDecision(
+    task: OrchestratorTask,
+    node: TaskNode,
+    verification: NodeVerificationResult,
+  ): boolean {
+    const confidence = clampConfidence(verification.confidence);
+    const tokenRatio =
+      task.budget.maxTotalTokens > 0
+        ? task.sessionMetrics.totalTokens / task.budget.maxTotalTokens
+        : 0;
+    const costRatio =
+      task.budget.maxTotalCostUsd > 0
+        ? task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd
+        : 0;
+    if (verification.failureType === "blocked") return true;
+    if (verification.decision !== "accept" && confidence < 0.45) return true;
+    if (verification.decision !== "accept" && node.retries >= 2) return true;
+    if (verification.decision !== "accept" && (tokenRatio >= 0.85 || costRatio >= 0.85)) {
+      return true;
+    }
+    return false;
+  }
+
+  private buildEscalationPacket(input: {
+    task: OrchestratorTask;
+    node: TaskNode;
+    verification: NodeVerificationResult;
+    snapshot?: { title?: string; url?: string };
+  }): EscalationPacket {
+    const { task, node, verification, snapshot } = input;
+    const risk = this.classifyEscalationRisk(verification, node);
+    const reason = verification.reason.slice(0, ESCALATION_MAX_REASON_CHARS);
+    const options: EscalationOption[] = [
+      {
+        id: "approve_continue",
+        label: "Continue",
+        impact: "Proceed with orchestrator retry policy.",
+      },
+      {
+        id: "reroute_with_option",
+        label: "Reroute",
+        impact: "Retry with an alternate objective suggested by verifier.",
+        rerouteObjective:
+          verification.rerouteObjective ||
+          `Use an alternate path to complete: ${node.description}`,
+      },
+      {
+        id: "skip_node",
+        label: "Skip Node",
+        impact: "Mark this node as skipped and continue remaining graph.",
+      },
+      {
+        id: "stop_task",
+        label: "Stop Task",
+        impact: "Stop task execution immediately.",
+      },
+    ];
+    const recommendedOption: EscalationOptionId =
+      risk === "critical"
+        ? "stop_task"
+        : verification.decision === "reroute"
+          ? "reroute_with_option"
+          : "approve_continue";
+
+    const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
+    return {
+      escalationId: crypto.randomUUID(),
+      taskId: task.id,
+      workspaceId: task.workspaceId,
+      nodeId: node.id,
+      risk,
+      confidence: clampConfidence(verification.confidence),
+      reason,
+      options,
+      recommendedOption,
+      snapshotSummary:
+        `${snapshot?.title || "Unknown page"} | ${snapshot?.url || "unknown-url"}`.slice(
+          0,
+          240,
+        ),
+      lastActions: node.handoffArtifacts
+        .slice(-5)
+        .map((entry) => `${entry.role}/${entry.phase}: ${entry.note}`)
+        .map((entry) => entry.slice(0, 180)),
+      budgetState: {
+        elapsedMs,
+        maxSessionTimeMs: task.budget.maxSessionTimeMs,
+        totalTokens: task.sessionMetrics.totalTokens,
+        maxTotalTokens: task.budget.maxTotalTokens,
+        totalCostUsd: task.sessionMetrics.totalCost,
+        maxTotalCostUsd: task.budget.maxTotalCostUsd,
+      },
+      timeoutMs: ESCALATION_RESPONSE_TIMEOUT_MS,
+      timestamp: Date.now(),
+    };
+  }
+
+  private async requestEscalationDecision(
+    task: OrchestratorTask,
+    packet: EscalationPacket,
+  ): Promise<EscalationDecisionPayload> {
+    if (
+      task.pendingEscalation?.packet.escalationId === packet.escalationId &&
+      task.pendingEscalation.selectedOption
+    ) {
+      logger.info("orchestrator", "Using checkpointed escalation decision", {
+        taskId: task.id,
+        nodeId: packet.nodeId,
+        escalationId: packet.escalationId,
+        optionId: task.pendingEscalation.selectedOption.optionId,
+      });
+      return task.pendingEscalation.selectedOption;
+    }
+
+    task.pendingEscalation = { packet };
+    await this.persistTaskCheckpoint(task);
+
+    logger.warn("orchestrator", "Escalation packet created", {
+      taskId: task.id,
+      nodeId: packet.nodeId,
+      escalationId: packet.escalationId,
+      risk: packet.risk,
+      recommendedOption: packet.recommendedOption,
+      reason: packet.reason,
+    });
+    this.emitTraceEvent(
+      task,
+      "escalation_requested",
+      {
+        taskId: task.id,
+        nodeId: packet.nodeId,
+        escalationId: packet.escalationId,
+        risk: packet.risk,
+        recommendedOption: packet.recommendedOption,
+        reason: packet.reason,
+        timeoutMs: packet.timeoutMs,
+      },
+      "system",
+    );
+    this.sendMessage({
+      type: "ESCALATION_REQUEST",
+      workspaceId: task.workspaceId,
+      payload: packet,
+    });
+    this.sendMessage({
+      type: "AGENT_STEP",
+      workspaceId: task.workspaceId,
+      payload: {
+        step: {
+          id: crypto.randomUUID(),
+          type: "info",
+          label: `Escalation: operator decision requested for ${packet.nodeId.slice(0, 6)}`,
+          detail: packet.reason,
+          status: "done",
+          timestamp: Date.now(),
+        },
+        update: false,
+      },
+    });
+
+    return await new Promise<EscalationDecisionPayload>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingEscalationResolvers.delete(packet.escalationId);
+        const fallback: EscalationDecisionPayload = {
+          escalationId: packet.escalationId,
+          optionId: "stop_task",
+        };
+        logger.warn("orchestrator", "Escalation decision timed out", {
+          taskId: task.id,
+          nodeId: packet.nodeId,
+          escalationId: packet.escalationId,
+          timeoutMs: packet.timeoutMs,
+        });
+        this.emitTraceEvent(
+          task,
+          "escalation_timeout",
+          {
+            taskId: task.id,
+            nodeId: packet.nodeId,
+            escalationId: packet.escalationId,
+            timeoutMs: packet.timeoutMs,
+          },
+          "system",
+        );
+        resolve(fallback);
+      }, packet.timeoutMs);
+
+      this.pendingEscalationResolvers.set(packet.escalationId, (decision) => {
+        clearTimeout(timeout);
+        this.pendingEscalationResolvers.delete(packet.escalationId);
+        this.emitTraceEvent(
+          task,
+          "escalation_decision_received",
+          {
+            taskId: task.id,
+            nodeId: packet.nodeId,
+            escalationId: packet.escalationId,
+            optionId: decision.optionId,
+          },
+          "system",
+        );
+        resolve(decision);
+      });
+    });
+  }
+
+  private async clearPendingEscalation(task: OrchestratorTask): Promise<void> {
+    if (!task.pendingEscalation) return;
+    task.pendingEscalation = undefined;
+    await this.persistTaskCheckpoint(task);
+  }
+
+  public resolveEscalationDecision(payload: EscalationDecisionPayload): boolean {
+    const optionId = normalizeEscalationOptionId(payload.optionId);
+    if (!optionId) return false;
+    const resolver = this.pendingEscalationResolvers.get(payload.escalationId);
+    if (!resolver) return false;
+    resolver({
+      escalationId: payload.escalationId,
+      optionId,
+      rerouteObjective: payload.rerouteObjective,
+    });
+    return true;
   }
 
   private sendStatus(

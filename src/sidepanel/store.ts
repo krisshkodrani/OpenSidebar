@@ -8,7 +8,9 @@ import {
   SessionMetrics,
   SidePanelState,
   StuckState,
+  LaneTelemetrySnapshot,
   PendingApproval,
+  PendingEscalation,
   TaskRecoveryState,
   TaskCompletionMessage,
   TaskProgressMessage,
@@ -47,10 +49,14 @@ interface Actions {
   clearTurnProgress: () => void;
   setPendingApproval: (approval: PendingApproval) => void;
   clearPendingApproval: () => void;
+  setPendingEscalation: (packet: PendingEscalation) => void;
+  clearPendingEscalation: () => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
+  setLaneTelemetry: (telemetry: LaneTelemetrySnapshot | null) => void;
+  clearLaneTelemetry: () => void;
   setReady: () => void;
   // Saved prompts
   loadSavedPrompts: () => Promise<void>;
@@ -120,8 +126,10 @@ export const useStore = create<Store>()(
     stuckState: null,
     turnProgress: null,
     pendingApproval: null,
+    pendingEscalation: null,
     taskRecovery: null,
     sessionMetrics: null,
+    laneTelemetry: null,
     savedPrompts: [],
 
     // Actions
@@ -335,6 +343,16 @@ export const useStore = create<Store>()(
         state.pendingApproval = null;
       }),
 
+    setPendingEscalation: (packet) =>
+      set((state) => {
+        state.pendingEscalation = packet;
+      }),
+
+    clearPendingEscalation: () =>
+      set((state) => {
+        state.pendingEscalation = null;
+      }),
+
     setTaskRecovery: (recovery) =>
       set((state) => {
         state.taskRecovery = recovery;
@@ -353,6 +371,16 @@ export const useStore = create<Store>()(
     clearSessionMetrics: () =>
       set((state) => {
         state.sessionMetrics = null;
+      }),
+
+    setLaneTelemetry: (telemetry) =>
+      set((state) => {
+        state.laneTelemetry = telemetry;
+      }),
+
+    clearLaneTelemetry: () =>
+      set((state) => {
+        state.laneTelemetry = null;
       }),
 
     // --- Saved prompts actions ---
@@ -414,7 +442,9 @@ export const useStore = create<Store>()(
         state.stuckState = null;
         state.turnProgress = null;
         state.pendingApproval = null;
+        state.pendingEscalation = null;
         state.taskRecovery = null;
+        state.laneTelemetry = null;
       });
       // Load messages for the new workspace
       get().loadMessagesFromStorage();

@@ -84,6 +84,11 @@ async function createThumbnail(dataUrl: string): Promise<string> {
   return `data:image/jpeg;base64,${btoa(binary)}`;
 }
 
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 // --- Tool Definitions ---
 
 const CLICK_DEF: ToolDefinition = {
@@ -1761,7 +1766,7 @@ export function registerTools() {
     logger.info("tools", "list_tabs", { count: tabs.length });
     if (tabs.length === 0) return "No open tabs.";
     const lines = tabs.map(
-      (t: any) =>
+      (t: chrome.tabs.Tab) =>
         `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.active ? " [active]" : ""}`,
     );
     return lines.join("\n");
@@ -1772,34 +1777,54 @@ export function registerTools() {
     EXECUTE_JS_DEF,
     async (args, tabId) => {
       const code = args.code as string;
-      logger.info("tools", "execute_js", { tabId, codeLen: code.length, codeSnippet: code.slice(0, 120) });
+      logger.info("tools", "execute_js", {
+        tabId,
+        codeLen: code.length,
+        codeSnippet: code.slice(0, 120),
+      });
       try {
         const results = await chrome.scripting.executeScript({
           target: { tabId },
           world: "MAIN" as any,
           func: (c: string) => {
-            try {
-              const result = eval(c);
-              if (result === null || result === undefined)
-                return String(result);
-              if (typeof result === "object") {
+            const serialize = (value: unknown): string => {
+              if (value === null || value === undefined) return String(value);
+              if (typeof value === "object") {
                 try {
-                  return JSON.stringify(result, null, 2);
+                  return JSON.stringify(value, null, 2);
                 } catch {
-                  return String(result);
+                  return String(value);
                 }
               }
-              return String(result);
-            } catch (e: any) {
-              return `Error: ${e.message}`;
+              return String(value);
+            };
+
+            const formatError = (error: unknown): string => {
+              if (error instanceof Error) return error.message;
+              return String(error);
+            };
+
+            try {
+              // Prefer expression mode, then fall back to statement mode.
+              try {
+                const expressionRunner = new Function(
+                  `"use strict"; return (${c});`,
+                );
+                return serialize(expressionRunner());
+              } catch {
+                const statementRunner = new Function(`"use strict"; ${c}`);
+                return serialize(statementRunner());
+              }
+            } catch (error: unknown) {
+              return `Error: ${formatError(error)}`;
             }
           },
           args: [code],
         });
         const value = results?.[0]?.result;
         return value !== undefined ? value : "undefined";
-      } catch (e: any) {
-        return `Error executing JS: ${e.message}`;
+      } catch (error: unknown) {
+        return `Error executing JS: ${formatUnknownError(error)}`;
       }
     },
   );

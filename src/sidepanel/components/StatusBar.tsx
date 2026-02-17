@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 export function StatusBar() {
   const status = useStore((s) => s.agentStatus);
   const detail = useStore((s) => s.statusDetail);
+  const laneTelemetry = useStore((s) => s.laneTelemetry);
 
   const getStatusColor = (status: AgentStatus) => {
     switch (status) {
@@ -22,6 +23,9 @@ export function StatusBar() {
 
   const isActive =
     status === AgentStatus.THINKING || status === AgentStatus.ACTING;
+  const laneSummary = laneTelemetry
+    ? `Q${laneTelemetry.lanes.executor.queueDepth} R${laneTelemetry.lanes.executor.restartCount}`
+    : null;
 
   return (
     <div className="flex items-center gap-2 text-xs">
@@ -60,6 +64,14 @@ export function StatusBar() {
             title={detail}
           >
             {detail}
+          </span>
+        )}
+        {laneSummary && (
+          <span
+            className="text-[10px] text-warm-400 dark:text-warm-500 max-w-[120px] truncate transition-colors duration-300"
+            title="Executor lane queue/restarts"
+          >
+            {laneSummary}
           </span>
         )}
       </div>

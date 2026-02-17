@@ -1,5 +1,6 @@
 import { LLMClient } from "../llm";
 import { logger } from "../../utils";
+import { renderPrompt } from "../../prompts";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -24,23 +25,19 @@ export interface NodeVerificationResult {
   rerouteObjective?: string;
 }
 
-const VERIFY_SYSTEM = `You are a strict verifier for browser automation subtasks.
+export interface VerificationReflectionInput {
+  taskQuery: string;
+  objective: string;
+  successCriteria: string;
+  output: string;
+  handoffContext?: string;
+  priorDecision: NodeVerificationResult;
+  driftDetected?: boolean;
+  staleSignalCount?: number;
+}
 
-Decide if the executor output satisfies the objective and success criteria.
-Return JSON only:
-{"decision":"accept","reason":"...","confidence":0.0}
-{"decision":"retry","reason":"...","confidence":0.0,"failureType":"insufficient_evidence"}
-{"decision":"reroute","reason":"...","confidence":0.0,"failureType":"blocked","rerouteObjective":"..."}
-
-Rules:
-- accept only when criteria are clearly satisfied.
-- retry when likely fixable by one more attempt on the same objective.
-- reroute when current approach is blocked and objective should be reframed.
-- rerouteObjective must be concrete and action-oriented.
-- confidence must be a number between 0 and 1.
-- failureType must be one of: blocked, state_mismatch, insufficient_evidence, transient, unknown.
-- for accept, omit failureType.
-- for retry/reroute, always include failureType.`;
+const VERIFY_SYSTEM = renderPrompt("orchestrator.verifier.system");
+const REFLECT_SYSTEM = renderPrompt("orchestrator.verifier.critic.system");
 
 const BLOCKED_MARKERS = [
   "captcha",
@@ -217,6 +214,72 @@ export class OrchestratorVerifier {
         error,
       });
       return deriveVerifierFallbackDecision(input);
+    }
+  }
+
+  async reflectDecision(
+    input: VerificationReflectionInput,
+    signal?: AbortSignal,
+  ): Promise<NodeVerificationResult> {
+    try {
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: REFLECT_SYSTEM },
+          {
+            role: "user",
+            content:
+              `Task: ${input.taskQuery}\n` +
+              `Objective: ${input.objective}\n` +
+              `Success criteria: ${input.successCriteria}\n` +
+              `Executor output: ${input.output}\n` +
+              `\nPrior verifier decision:\n${JSON.stringify(input.priorDecision)}\n` +
+              `\nContext flags:\n` +
+              `driftDetected=${Boolean(input.driftDetected)}\n` +
+              `staleSignalCount=${Math.max(0, input.staleSignalCount || 0)}\n` +
+              `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
+          },
+        ],
+        max_tokens: 220,
+        temperature: 0,
+        signal,
+      });
+
+      const parsed = parseJsonObject(response.content || "");
+      const decision = normalizeDecision(parsed?.decision);
+      const reason =
+        typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
+          ? parsed.reason.trim()
+          : "No reason provided by verifier critic.";
+      const confidence = normalizeConfidence(parsed?.confidence) ?? input.priorDecision.confidence;
+
+      if (!decision) {
+        throw new Error("Verifier critic returned invalid decision.");
+      }
+
+      if (decision === "reroute") {
+        const failureType = normalizeFailureType(parsed?.failureType) ?? "blocked";
+        const rerouteObjective =
+          typeof parsed?.rerouteObjective === "string" &&
+          parsed.rerouteObjective.trim().length > 0
+            ? parsed.rerouteObjective.trim()
+            : input.priorDecision.rerouteObjective ||
+              `Use an alternate approach for: ${input.objective}`;
+        return { decision, reason, confidence, failureType, rerouteObjective };
+      }
+
+      const failureType =
+        decision === "accept"
+          ? undefined
+          : normalizeFailureType(parsed?.failureType) ??
+            input.priorDecision.failureType ??
+            "insufficient_evidence";
+      return { decision, reason, confidence, failureType };
+    } catch (error) {
+      logger.warn("orchestrator", "Verifier critic failed, keeping prior decision", {
+        error,
+        priorDecision: input.priorDecision,
+      });
+      return input.priorDecision;
     }
   }
 }

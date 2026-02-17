@@ -1,5 +1,12 @@
 import { AgentLoop } from "../agent";
-import { AgentRole, SessionMetrics, ToolName, UserSettings } from "../../types";
+import {
+  AgentRole,
+  EscalationDecisionMessage,
+  EscalationPacket,
+  SessionMetrics,
+  ToolName,
+  UserSettings,
+} from "../../types";
 
 export interface PlannerAssignment {
   role: Extract<AgentRole, "executor">;
@@ -42,6 +49,7 @@ export interface TaskNode {
 }
 
 export interface OrchestratorTask {
+  runId?: string;
   id: string;
   workspaceId: string;
   rootTabId: number;
@@ -62,6 +70,10 @@ export interface OrchestratorTask {
     maxTotalCostUsd: number;
   };
   terminationReason?: string;
+  pendingEscalation?: {
+    packet: EscalationPacket;
+    selectedOption?: EscalationDecisionMessage["payload"];
+  };
 }
 
 export interface OrchestratorCheckpoint {

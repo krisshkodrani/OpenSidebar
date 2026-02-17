@@ -16,14 +16,46 @@ let plannerExpandNodeImpl: (...args: unknown[]) => Promise<TaskNode[] | null>;
 let verifierDecisionImpl: (...args: unknown[]) => Promise<{
   decision: "accept" | "retry" | "reroute";
   reason: string;
+  confidence?: number;
+  failureType?:
+    | "blocked"
+    | "state_mismatch"
+    | "insufficient_evidence"
+    | "transient"
+    | "unknown";
   rerouteObjective?: string;
 }>;
+let verifierCriticImpl:
+  | ((...args: unknown[]) => Promise<{
+      decision: "accept" | "retry" | "reroute";
+      reason: string;
+      confidence?: number;
+      failureType?:
+        | "blocked"
+        | "state_mismatch"
+        | "insufficient_evidence"
+        | "transient"
+        | "unknown";
+      rerouteObjective?: string;
+    }>)
+  | undefined;
 let loopStartImpl: (
   nodeId: string | undefined,
   instruction: string,
 ) => Promise<{ outcome: "completed" | "failed"; summary: string; metrics?: SessionMetrics }>;
 let loopEmitStaleSignal = false;
 let orchestratorDeps: OrchestratorDeps;
+let activeOrchestrator: Orchestrator | null = null;
+let autoEscalationDecision:
+  | {
+      optionId:
+        | "approve_continue"
+        | "reroute_with_option"
+        | "skip_node"
+        | "stop_task";
+      rerouteObjective?: string;
+    }
+  | null = null;
 
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-openrouter",
@@ -83,6 +115,7 @@ describe("Orchestrator integration join tests", () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    verifierCriticImpl = undefined;
     loopEmitStaleSignal = false;
     loopStartImpl = async (nodeId) => ({
       outcome: "completed",
@@ -104,8 +137,17 @@ describe("Orchestrator integration join tests", () => {
 
     (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
-    (chrome.runtime as any).sendMessage = mock(async (msg: unknown) => {
+    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
       runtimeMessages.push(msg);
+      if (msg?.type === "ESCALATION_REQUEST" && autoEscalationDecision && activeOrchestrator) {
+        setTimeout(() => {
+          activeOrchestrator?.resolveEscalationDecision({
+            escalationId: msg.payload.escalationId,
+            optionId: autoEscalationDecision!.optionId,
+            rerouteObjective: autoEscalationDecision!.rerouteObjective,
+          });
+        }, 0);
+      }
       return { ok: true };
     });
     (globalThis as any).__runtimeMessages = runtimeMessages;
@@ -163,6 +205,9 @@ describe("Orchestrator integration join tests", () => {
       }),
       createVerifier: () => ({
         verifyNode: async (...args: unknown[]) => verifierDecisionImpl(...args),
+        reflectDecision: verifierCriticImpl
+          ? async (...args: unknown[]) => verifierCriticImpl!(...args)
+          : undefined,
       }),
       createAgentLoop: (input) => {
         const cfg = (input.options as MockLoopConfig) || {};
@@ -211,6 +256,8 @@ describe("Orchestrator integration join tests", () => {
       },
       waitForContentScriptReady: async (_tabId: number, _timeoutMs: number) => true,
     };
+    autoEscalationDecision = null;
+    activeOrchestrator = null;
   });
 
   test("executes dependency graph in correct order", async () => {
@@ -220,6 +267,7 @@ describe("Orchestrator integration join tests", () => {
     ];
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("collect then summarize"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
@@ -243,6 +291,7 @@ describe("Orchestrator integration join tests", () => {
     };
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("reroute flow"));
 
     expect(createdLoopNodeIds.length).toBe(2);
@@ -284,6 +333,7 @@ describe("Orchestrator integration join tests", () => {
     };
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.restoreFromCheckpoints();
     await new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -303,6 +353,7 @@ describe("Orchestrator integration join tests", () => {
     ];
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("blocked dependency task"));
 
     expect(createdLoopNodeIds.length).toBe(0);
@@ -334,6 +385,7 @@ describe("Orchestrator integration join tests", () => {
     };
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("drift recovery flow"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "rp1", "rp2"]);
@@ -355,6 +407,7 @@ describe("Orchestrator integration join tests", () => {
     };
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("stale recovery flow"));
 
     expect(createdLoopNodeIds).toEqual(["n1", "sx1", "sx2"]);
@@ -379,6 +432,7 @@ describe("Orchestrator integration join tests", () => {
     });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("replan budget task"));
 
     const messages = (globalThis as any).__runtimeMessages as Array<{
@@ -404,6 +458,7 @@ describe("Orchestrator integration join tests", () => {
     });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("blocked retry flow"));
 
     expect(createdLoopNodeIds).toEqual(["n1"]);
@@ -449,6 +504,7 @@ describe("Orchestrator integration join tests", () => {
     });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("token budget overflow task"));
 
     expect(createdLoopNodeIds).toEqual(["n1"]);
@@ -471,6 +527,7 @@ describe("Orchestrator integration join tests", () => {
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("preflight budget fit task"));
 
     expect(createdLoopNodeIds).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
@@ -485,6 +542,266 @@ describe("Orchestrator integration join tests", () => {
     expect(
       subtaskResults.some((item: any) =>
         String(item.result || "").includes("Deferred by budget preflight"),
+      ),
+    ).toBe(true);
+  });
+
+  test("isolates planner lane at runtime and fails node explicitly", async () => {
+    loopEmitStaleSignal = true;
+    plannerBuildNodesImpl = async () => [makeNode("n1", "planner isolate node")];
+    plannerExpandNodeImpl = async () => {
+      throw new Error("planner upstream unavailable");
+    };
+    verifierDecisionImpl = async () => ({
+      decision: "retry",
+      reason: "Execution loop made no progress",
+    });
+    orchestratorDeps.lanePolicies = {
+      planner: { maxFailuresBeforeIsolation: 1, isolationCooldownMs: 60_000 },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("planner lane isolation"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes("planner lane isolated"),
+      ),
+    ).toBe(true);
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("failed");
+    expect(
+      String(completion?.payload?.subtaskResults?.[0]?.result || ""),
+    ).toContain("Planner lane isolated during replan");
+  });
+
+  test("applies bounded verifier-critic reflection and can upgrade retry to accept", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "critic correction node")];
+    verifierDecisionImpl = async () => ({
+      decision: "retry",
+      reason: "Not enough proof in summary",
+      confidence: 0.35,
+      failureType: "insufficient_evidence",
+    });
+    verifierCriticImpl = async () => ({
+      decision: "accept",
+      reason: "Evidence is sufficient for success criteria",
+      confidence: 0.86,
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("critic reflection upgrade"));
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes(
+            "Critic: reviewed verifier decision",
+          ),
+      ),
+    ).toBe(true);
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("completed");
+  });
+
+  test("isolates verifier lane and stops cross-node contamination", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "verify lane node one"),
+      makeNode("n2", "verify lane node two"),
+    ];
+    verifierDecisionImpl = async () => {
+      throw new Error("verifier provider unavailable");
+    };
+    orchestratorDeps.lanePolicies = {
+      verifier: { maxFailuresBeforeIsolation: 1, isolationCooldownMs: 60_000 },
+      executor: { maxConcurrent: 1 },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("verifier lane isolation"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes("verifier lane isolated"),
+      ),
+    ).toBe(true);
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("failed");
+    const subtaskResults = completion?.payload?.subtaskResults || [];
+    expect(subtaskResults.length).toBeGreaterThan(0);
+    expect(
+      subtaskResults.some((item: any) =>
+        String(item.result || "").includes("Critical lane isolation while executing node"),
+      ),
+    ).toBe(true);
+  });
+
+  test("enforces executor lane maxConcurrent override in scheduler", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "executor concurrency one"),
+      makeNode("n2", "executor concurrency two"),
+      makeNode("n3", "executor concurrency three"),
+    ];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    let activeExecutors = 0;
+    let maxActiveExecutors = 0;
+    loopStartImpl = async (nodeId) => {
+      activeExecutors += 1;
+      maxActiveExecutors = Math.max(maxActiveExecutors, activeExecutors);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      activeExecutors -= 1;
+      return {
+        outcome: "completed",
+        summary: `completed ${nodeId || "unknown"}`,
+        metrics: undefined,
+      };
+    };
+
+    orchestratorDeps.lanePolicies = {
+      executor: { maxConcurrent: 1 },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    await orchestrator.startTask(makeInput("executor lane concurrency gate"));
+
+    expect(maxActiveExecutors).toBe(1);
+  });
+
+  test("queues planner lane calls under supervisor instead of concurrency rejection", async () => {
+    const orchestrator = new Orchestrator({
+      ...orchestratorDeps,
+      lanePolicies: {
+        planner: { maxConcurrent: 1, maxCallMs: 2_000 },
+      },
+    });
+
+    const laneTask = { id: "lane-queue-task", workspaceId: "ws-lane-queue" } as any;
+    const order: string[] = [];
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const first = (orchestrator as any).runInLane(
+      laneTask,
+      "planner",
+      async () => {
+        order.push("start-1");
+        await delay(25);
+        order.push("end-1");
+        return "one";
+      },
+      { label: "planner-first" },
+    );
+
+    const second = (orchestrator as any).runInLane(
+      laneTask,
+      "planner",
+      async () => {
+        order.push("start-2");
+        await delay(5);
+        order.push("end-2");
+        return "two";
+      },
+      { label: "planner-second" },
+    );
+
+    const [one, two] = await Promise.all([first, second]);
+    expect(one).toBe("one");
+    expect(two).toBe("two");
+    expect(order).toEqual(["start-1", "end-1", "start-2", "end-2"]);
+  });
+
+  test("tracks active workers in isolated executor lane pool", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "executor pool lane tracking")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    let releaseLoop: (() => void) | null = null;
+    loopStartImpl = async (nodeId) => {
+      await new Promise<void>((resolve) => {
+        releaseLoop = resolve;
+      });
+      return {
+        outcome: "completed",
+        summary: `completed ${nodeId || "unknown"}`,
+        metrics: undefined,
+      };
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const runPromise = orchestrator.startTask(makeInput("executor lane pool tracking"));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const lanePools = (orchestrator as any).workersByWorkspace.get("ws-1");
+    expect(lanePools).toBeDefined();
+    expect(lanePools.executor.size).toBe(1);
+    expect(lanePools.planner.size).toBe(0);
+    expect(lanePools.verifier.size).toBe(0);
+
+    releaseLoop?.();
+    await runPromise;
+  });
+
+  test("isolates executor lane and fails runnable nodes with containment", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "executor isolate one"),
+      makeNode("n2", "executor isolate two"),
+    ];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => {
+      throw new Error("executor transport unavailable");
+    };
+    orchestratorDeps.lanePolicies = {
+      executor: { maxFailuresBeforeIsolation: 1, isolationCooldownMs: 60_000 },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("executor lane isolation"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes("executor lane isolated"),
+      ),
+    ).toBe(true);
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("failed");
+    const subtaskResults = completion?.payload?.subtaskResults || [];
+    expect(subtaskResults.length).toBeGreaterThan(0);
+    expect(
+      subtaskResults.some((item: any) =>
+        String(item.result || "").includes("Critical lane isolation while executing node"),
       ),
     ).toBe(true);
   });
@@ -504,6 +821,7 @@ describe("Orchestrator integration join tests", () => {
       });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
     const runPromise = orchestrator.startTask(makeInput("skip running node"));
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -536,5 +854,29 @@ describe("Orchestrator integration join tests", () => {
         String(m.payload?.step?.label || "").includes("skipped subtask"),
     );
     expect(skippedStep).toBeDefined();
+  });
+
+  test("pauses on escalation and resumes with operator continue decision", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "needs operator review")];
+    verifierDecisionImpl = async () => ({
+      decision: "retry",
+      reason: "High uncertainty, evidence incomplete",
+      confidence: 0.2,
+      failureType: "insufficient_evidence",
+    });
+    autoEscalationDecision = { optionId: "approve_continue" };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("escalation continue path"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(messages.some((m) => m.type === "ESCALATION_REQUEST")).toBe(true);
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("failed");
   });
 });

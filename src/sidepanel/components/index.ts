@@ -7,6 +7,7 @@ export * from "./StepTimeline";
 export * from "./StuckBanner";
 export * from "./RecoveryBanner";
 export * from "./ApprovalBanner";
+export * from "./EscalationBanner";
 export * from "./OrchestratorConsole";
 export * from "./PlanBoard";
 export * from "./TaskProgressPanel";

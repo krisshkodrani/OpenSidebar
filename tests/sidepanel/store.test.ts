@@ -34,7 +34,9 @@ describe("SidePanel Store", () => {
             stuckState: null,
             turnProgress: null,
             pendingApproval: null,
+            pendingEscalation: null,
             taskRecovery: null,
+            laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
                 groqApiKey: "",
@@ -513,6 +515,36 @@ describe("SidePanel Store", () => {
             pendingSubtasks: 1,
             recoveredAt: Date.now(),
         });
+        useStore.getState().setPendingEscalation({
+            escalationId: "esc-1",
+            taskId: "task-1",
+            workspaceId: "ws-1",
+            nodeId: "n1",
+            risk: "high",
+            confidence: 0.3,
+            reason: "Need operator decision",
+            options: [
+                {
+                    id: "approve_continue",
+                    label: "Continue",
+                    impact: "Retry policy applies",
+                },
+            ],
+            recommendedOption: "approve_continue",
+            snapshotSummary: "Example summary",
+            lastActions: [],
+            budgetState: {
+                elapsedMs: 1000,
+                maxSessionTimeMs: 10000,
+                totalTokens: 100,
+                maxTotalTokens: 1000,
+                totalCostUsd: 0.01,
+                maxTotalCostUsd: 1,
+            },
+            timeoutMs: 60000,
+            timestamp: Date.now(),
+            requestedAt: Date.now(),
+        });
 
         useStore.getState().setActiveWorkspaceId("ws-2");
         const state = useStore.getState();
@@ -521,6 +553,7 @@ describe("SidePanel Store", () => {
         expect(state.stuckState).toBeNull();
         expect(state.turnProgress).toBeNull();
         expect(state.pendingApproval).toBeNull();
+        expect(state.pendingEscalation).toBeNull();
         expect(state.taskRecovery).toBeNull();
     });
 });

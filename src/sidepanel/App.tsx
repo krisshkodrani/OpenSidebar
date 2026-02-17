@@ -21,6 +21,7 @@ import {
   StuckBanner,
   RecoveryBanner,
   ApprovalBanner,
+  EscalationBanner,
   OrchestratorConsole,
   PlanBoard,
   MetricsBar,
@@ -380,6 +381,7 @@ export default function App() {
       <StuckBanner />
       <RecoveryBanner />
       <ApprovalBanner />
+      <EscalationBanner />
       <OrchestratorConsole />
       <PlanBoard />
 

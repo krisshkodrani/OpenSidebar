@@ -257,7 +257,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   const workspace = await workspaceManager.getWorkspaceForTab(tabId);
 
   if (workspace) {
-    // Tab IS in a workspace -> Enable and Open Side Panel
+    // Tab IS in a workspace -> Enable side panel, but do not auto-open.
+    // Per-tab sidebar policy: user must click extension icon to open.
     try {
       await chrome.sidePanel.setOptions({
         tabId,
@@ -265,14 +266,12 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
         enabled: true,
       });
 
-      await chrome.sidePanel.open({ tabId });
-
-      logger.debug("sidebar", "Panel opened for workspace tab", {
+      logger.debug("sidebar", "Panel enabled for workspace tab (manual open)", {
         tabId,
         workspace: workspace.name,
       });
     } catch (e) {
-      logger.debug("sidebar", "Failed to open panel for workspace tab", {
+      logger.debug("sidebar", "Failed to enable panel for workspace tab", {
         tabId,
         error: e,
       });
@@ -444,6 +443,20 @@ chrome.runtime.onMessage.addListener(
         message.payload.approvalId,
         message.payload.approved,
       );
+      return false;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "ESCALATION_DECISION"
+    ) {
+      const accepted = orchestrator.resolveEscalationDecision(message.payload);
+      if (!accepted) {
+        logger.warn("orchestrator", "Unknown escalation decision ignored", {
+          escalationId: message.payload.escalationId,
+          optionId: message.payload.optionId,
+        });
+      }
       return false;
     }
 
