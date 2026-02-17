@@ -8,6 +8,7 @@ export * from "./StuckBanner";
 export * from "./RecoveryBanner";
 export * from "./ApprovalBanner";
 export * from "./EscalationBanner";
+export * from "./LearnedSkillsPanel";
 export * from "./OrchestratorConsole";
 export * from "./PlanBoard";
 export * from "./TaskProgressPanel";

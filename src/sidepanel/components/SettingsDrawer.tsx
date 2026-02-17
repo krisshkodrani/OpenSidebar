@@ -3,6 +3,7 @@ import { X, Save, Moon, Sun, Monitor, Trash2, Download } from "lucide-react";
 import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { storageLogger } from "../../utils/storage-logger";
+import { LearnedSkillsPanel } from "./LearnedSkillsPanel";
 
 interface Props {
   isOpen: boolean;
@@ -253,7 +254,52 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
               />
             </div>
 
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium dark:text-warm-300">
+                  Teach Mode
+                </label>
+                <p className="text-xs text-warm-400 dark:text-warm-500">
+                  Learn reusable skills from successful runs
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(formState.teachModeEnabled)}
+                onChange={(e) =>
+                  handleChange("teachModeEnabled", e.target.checked)
+                }
+                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium dark:text-warm-300">
+                  Auto Skill Replay
+                </label>
+                <p className="text-xs text-warm-400 dark:text-warm-500">
+                  Reuse matching learned skills before planning
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(formState.autoSkillReplayEnabled)}
+                onChange={(e) =>
+                  handleChange("autoSkillReplayEnabled", e.target.checked)
+                }
+                className="w-4 h-4 text-primary-600 rounded bg-warm-100 border-warm-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-warm-800 focus:ring-2 dark:bg-warm-700 dark:border-warm-600"
+              />
+            </div>
+
           </section>
+
+          <LearnedSkillsPanel
+            replayPinnedOnly={Boolean(formState.skillReplayPinnedOnly)}
+            onReplayPinnedOnlyChange={(value) =>
+              handleChange("skillReplayPinnedOnly", value)
+            }
+          />
 
           {/* Usage & Cost */}
           <section className="space-y-3">
