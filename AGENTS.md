@@ -1,4 +1,4 @@
-# OpenSidebar - Agent Guidelines
+﻿# OpenSidebar - Agent Guidelines
 
 AI-powered Chrome extension with agentic browsing capabilities. Uses React + TypeScript + Zustand for UI, service worker for background tasks, and content scripts for DOM interaction.
 
@@ -6,8 +6,7 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 
 **Current Implementation: 90%+ Complete**
 
-✅ **Core Systems (All Working):**
-
+**Core Systems (All Working):**
 - Side Panel UI - Fully wired to background agent with real-time streaming
 - Agent Loop - Complete with 52 tools, sliding window context, progress tracking
 - Content Script - DOM distillation, element tagging, action execution, shadow DOM support
@@ -17,12 +16,11 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 - Vision Model - Screenshot description via configurable vision LLM
 - Evals Framework - Offline evaluation with golden datasets
 
-✅ **Infrastructure:**
-
+**Infrastructure:**
 - SSE streaming parser with tool call accumulation
 - Service worker keepalive (alarms)
 - Web Worker for embeddings (Transformers.js)
-- Comprehensive test suite (71+ tests, ~85% coverage)
+- Comprehensive test suite (500+ tests)
 - Storage Logger with JSONL rotation and auto-redaction
 - Progress Tracker with stuck detection and graduated intervention
 
@@ -31,8 +29,8 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 Chrome Manifest V3 extension with four isolated execution contexts communicating via `chrome.runtime.onMessage`:
 
 ```
-Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM)
-                                        ↕
+Side Panel (React/Zustand) <-> Service Worker (Agent Loop) <-> Content Script (DOM)
+                                        |
                                 Offscreen Document
                            (Memory: SQLite + Voy + Transformers.js)
 ```
@@ -41,60 +39,60 @@ Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Scr
 
 The orchestrator. Receives user messages from the side panel, runs the agent loop, dispatches tool calls to the content script, and streams responses back.
 
-- `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Creates/destroys `AgentLoop` instances.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, hint injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, nudge→escalate→give-up for text-only responses. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, viewport text). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY).
-- `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
-- `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
-- `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (gpt-oss-120b via Cerebras/Groq/OpenRouter) and `MODEL_SMART` (x-ai/grok-4.1-fast:nitro). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 52 tools and bridges to content script / memory.
-- `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
-- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
-- `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
-- `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
-- `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
-- `navigation.ts` — Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
-- `security.ts` — `classifyRisk()` maps each `ToolName` to a `RiskLevel` (low/medium/high) via tool metadata. `sanitizeUrl()` blocks non-http(s) protocols. `sanitizeUserInput()` strips null bytes and truncates.
-- `streaming.ts` — `parseSSEStream()`. Parses OpenAI-compatible SSE streams, accumulating text deltas and tool calls across chunks. Returns final content and assembled `ToolCall[]`.
+- `background.ts` â€” Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Creates/destroys `AgentLoop` instances.
+- `agent/loop.ts` â€” `AgentLoop` class. Runs the LLMâ†’toolâ†’LLM cycle with abort support, pause/resume, hint injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, nudgeâ†’escalateâ†’give-up for text-only responses. Barrel-exported via `agent/index.ts`.
+- `agent/context.ts` â€” `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, viewport text). Manages sliding-window conversation history with dynamic compression (NONEâ†’LIGHTâ†’MEDIUMâ†’HEAVY).
+- `agent/progress.ts` â€” `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
+- `agent/step-labels.ts` â€” Human-readable step label generation for `AgentStep` timeline entries.
+- `agent/tool-recovery.ts` â€” `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
+- `llm/client.ts` â€” `LLMClient`. Calls OpenRouter chat completions API with tool definitions. Two model tiers: `MODEL_FAST` (gpt-oss-120b via Cerebras/Groq/OpenRouter) and `MODEL_SMART` (x-ai/grok-4.1-fast:nitro). `switchModel()` for escalation. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse`. Barrel-exported via `llm/index.ts`.
+- `tools/registry.ts` â€” `ToolRegistry` singleton. Maps `ToolName` â†’ executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 52 tools and bridges to content script / memory.
+- `tools/metadata.ts` â€” `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
+- `vision.ts` â€” `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
+- `memory/bridge.ts` â€” Creates the offscreen document and relays memory commands to it.
+- `workspaces/manager.ts` â€” `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
+- `keepalive.ts` â€” Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
+- `navigation.ts` â€” Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
+- `security.ts` â€” `classifyRisk()` maps each `ToolName` to a `RiskLevel` (low/medium/high) via tool metadata. `sanitizeUrl()` blocks non-http(s) protocols. `sanitizeUserInput()` strips null bytes and truncates.
+- `streaming.ts` â€” `parseSSEStream()`. Parses OpenAI-compatible SSE streams, accumulating text deltas and tool calls across chunks. Returns final content and assembled `ToolCall[]`.
 
 ### Content Script (`src/content/`)
 
 Injected into every page at `document_idle`. Handles DOM snapshot generation and action execution.
 
-- `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` to clear cookie banners and overlay modals on load.
-- `tagging.ts` — Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`. Tags `canvas` and `[draggable='true']` elements. Extracts label associations (explicit `<label for>`, implicit wrapper, aria-labelledby).
-- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, viewport text, scroll position.
-- `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID.
+- `content.ts` â€” Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` to clear cookie banners and overlay modals on load.
+- `tagging.ts` â€” Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`. Tags `canvas` and `[draggable='true']` elements. Extracts label associations (explicit `<label for>`, implicit wrapper, aria-labelledby).
+- `snapshot.ts` â€” `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, viewport text, scroll position.
+- `actions.ts` â€” `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID.
 
 ### Side Panel (`src/sidepanel/`)
 
 React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 
-- `App.tsx` — Root component. Composes Header, StuckBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
-- `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stuckState, turnProgress).
-- `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
-- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
+- `App.tsx` â€” Root component. Composes Header, StuckBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
+- `store.ts` â€” Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stuckState, turnProgress).
+- `bridge.ts` â€” `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
+- `components/` â€” `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
 ### Offscreen Document (`src/offscreen/`)
 
 Runs heavy memory operations outside the service worker.
 
-- `offscreen.ts` — Entry point. Initializes the offscreen document.
-- `memory/main.ts` — Message handler wrapping `VectorStore`.
-- `memory/storage.ts` — `VectorStore`. Hybrid search: Transformers.js embeddings (all-MiniLM-L6-v2) + Voy vector search + SQLite FTS5 keyword search, fused with Reciprocal Rank Fusion.
-- `memory/utils.ts` — `reciprocalRankFusion()`. RRF scoring algorithm (K=60) combining semantic and keyword result rankings.
-- `memory/worker.ts` — Web Worker for Transformers.js embedding pipeline. Loads `Xenova/all-MiniLM-L6-v2` model (fp32/wasm), handles `embed` requests via `postMessage`.
+- `offscreen.ts` â€” Entry point. Initializes the offscreen document.
+- `memory/main.ts` â€” Message handler wrapping `VectorStore`.
+- `memory/storage.ts` â€” `VectorStore`. Hybrid search: Transformers.js embeddings (all-MiniLM-L6-v2) + Voy vector search + SQLite FTS5 keyword search, fused with Reciprocal Rank Fusion.
+- `memory/utils.ts` â€” `reciprocalRankFusion()`. RRF scoring algorithm (K=60) combining semantic and keyword result rankings.
+- `memory/worker.ts` â€” Web Worker for Transformers.js embedding pipeline. Loads `Xenova/all-MiniLM-L6-v2` model (fp32/wasm), handles `embed` requests via `postMessage`.
 
 ### Utilities (`src/utils/`)
 
 Shared utilities used across all execution contexts. Barrel-exported via `index.ts`.
 
-- `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
-- `storage-logger.ts` — `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `bun run logs` is running.
-- `context.ts` — `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`, `isOffscreen()`.
+- `logger.ts` â€” Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
+- `storage-logger.ts` â€” `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `bun run logs` is running.
+- `context.ts` â€” `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`, `isOffscreen()`.
 
-⚠️ **Minor Items (Nice-to-Have):**
+âš ï¸ **Minor Items (Nice-to-Have):**
 
 - Swarm retry logic on 429/500 errors
 - Response truncation (8000 char limit)
@@ -124,24 +122,24 @@ Workspaces are now **completely automatic and invisible** to users:
 
 ```
 User clicks extension icon on google.com
-    ↓
+    â†“
 Sidebar opens on google.com
 Workspace auto-created (visible as blue tab group: "Workspace 1")
 google.com tab automatically added to group
-    ↓
+    â†“
 User asks: "Search flights to Paris"
-    ↓
+    â†“
 Agent creates tabs: Kayak, Expedia, Google Flights
 All 3 tabs auto-added to blue "Workspace 1" group
 Sidebar stays on google.com (conversation context)
-    ↓
+    â†“
 User switches to github.com (unrelated tab)
-    ↓
+    â†“
 Sidebar automatically closes
 Blue tab group still visible but inactive
-    ↓
+    â†“
 User clicks extension icon on github.com
-    ↓
+    â†“
 Sidebar opens on github.com
 NEW workspace auto-created (red group: "Workspace 2")
 github.com added to red group
@@ -173,7 +171,7 @@ bun test --grep "AgentLoop"
 bun run fmt
 ```
 
-**Note:** On Windows, bun may not be in PATH if installed via `npm install -g bun`. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
+**Note:** On Windows, bun may not be in PATH if installed via `npm install -g bun`. The `tsconfig.json` only includes `src/` â€” test files under `tests/` are not type-checked by `tsc`.
 
 ## Code Style Guidelines
 
@@ -270,13 +268,13 @@ const handleSend = useCallback(
 - Message passing with discriminated union types
 - Use `chrome.*` APIs (not `browser.*`)
 
-**Important:** Side panel now handles messages directly in App.tsx, not through bridge.ts
+**Important:** Side panel message handling is implemented via `initializeBridge()` in `src/sidepanel/bridge.ts`, initialized from `App.tsx`.
 
 ### Side Panel Architecture
 
 **Communication Flow:**
 
-1. User sends message via InputArea → triggers `handleSend` in App.tsx
+1. User sends message via InputArea â†’ triggers `handleSend` in App.tsx
 2. `handleSend` adds user message + assistant placeholder to store
 3. `handleSend` queries active tab and sends `USER_CHAT` message to background
 4. Background's agent loop processes request
@@ -392,84 +390,84 @@ logger.error("system", "Failed to initialize", { error: err.message });
 
 ```
 src/
-├── background/           # Service worker code
-│   ├── background.ts     # Entry point
-│   ├── agent/
-│   │   ├── loop.ts       # AgentLoop orchestration
-│   │   ├── context.ts    # ContextManager with sliding window
-│   │   ├── progress.ts   # ProgressTracker with stuck detection
-│   │   ├── step-labels.ts # Human-readable step labels
-│   │   └── tool-recovery.ts # Extract tool calls from LLM text
-│   ├── llm/
-│   │   ├── client.ts     # OpenRouter API client
-│   │   └── types.ts      # LLM types
-│   ├── tools/
-│   │   ├── index.ts      # 22 tool definitions
-│   │   ├── registry.ts   # ToolRegistry
-│   │   └── metadata.ts   # Tool metadata and risk classification
-│   ├── memory/
-│   │   └── bridge.ts     # Offscreen document communication
-│   ├── workspaces/
-│   │   └── manager.ts    # Auto-managed workspace system
-│   ├── vision.ts         # Screenshot description via vision model
-│   ├── navigation.ts     # Navigation Bridge (state persistence)
-│   ├── keepalive.ts      # SW keepalive alarm (prevents termination)
-│   ├── streaming.ts      # SSE parser for LLM streaming
-│   └── security.ts       # Risk classification + sanitization
-├── content/              # Content script (runs in every tab)
-│   ├── content.ts        # Main entry + message listener
-│   ├── snapshot.ts       # DOM distillation
-│   ├── tagging.ts        # Element tagging [1], [2], [3]...
-│   ├── actions.ts        # Tool execution (click, type, scroll, etc.)
-│   └── janitor.ts        # Cookie banner auto-dismiss
-├── sidepanel/            # React UI (side panel)
-│   ├── App.tsx           # Main component with message handling
-│   ├── store.ts          # Zustand state management
-│   ├── bridge.ts         # Message router (routes RuntimeMessages)
-│   └── components/       # UI components
-│       ├── Header.tsx
-│       ├── InputArea.tsx
-│       ├── MessageBubble.tsx
-│       ├── ControlBar.tsx
-│       ├── SettingsDrawer.tsx
-│       ├── StatusBar.tsx
-│       ├── ToolCallBadge.tsx
-│       ├── StuckBanner.tsx
-│       ├── TaskProgressPanel.tsx
-│       └── CompletionSummary.tsx
-├── offscreen/            # Offscreen document (separate DOM context)
-│   ├── offscreen.ts      # Entry point
-│   └── memory/
-│       ├── main.ts       # SQLite + Voy + RRF coordination
-│       ├── storage.ts    # VectorStore hybrid search
-│       ├── worker.ts     # Transformers.js embedding worker
-│       ├── utils.ts      # RRF fusion algorithm
-│       └── index.html
-├── types/                # TypeScript types
-│   └── index.ts          # Single source of truth
-├── utils/                # Shared utilities
-│   ├── logger.ts         # Structured logging
-│   ├── storage-logger.ts # StorageLogger with auto-redaction
-│   └── context.ts        # Execution context detection
-├── evals/                # Offline evaluation framework
-│   ├── cli.ts            # CLI entry point (supports --stats and --analyze --suggest flags)
-│   ├── core/             # Eval runner, metrics, reporter
-│   │   ├── loader.ts     # YAML case loader
-│   │   ├── runner.ts     # Eval executor
-│   │   ├── metrics.ts    # Scoring
-│   │   ├── reporter.ts   # Output formatting
-│   │   └── types.ts
-│   ├── golden/cases/     # YAML test cases (login forms, search, memory operations)
-│   └── optimizer/        # Analyzer, tracker, suggester for identifying improvements
-└── scripts/              # Build/dev scripts
-    ├── log-server.ts     # Bun HTTP server for log draining
-    └── log-query.ts      # CLI for querying JSONL logs
+â”œâ”€â”€ background/           # Service worker code
+â”‚   â”œâ”€â”€ background.ts     # Entry point
+â”‚   â”œâ”€â”€ agent/
+â”‚   â”‚   â”œâ”€â”€ loop.ts       # AgentLoop orchestration
+â”‚   â”‚   â”œâ”€â”€ context.ts    # ContextManager with sliding window
+â”‚   â”‚   â”œâ”€â”€ progress.ts   # ProgressTracker with stuck detection
+â”‚   â”‚   â”œâ”€â”€ step-labels.ts # Human-readable step labels
+â”‚   â”‚   â””â”€â”€ tool-recovery.ts # Extract tool calls from LLM text
+â”‚   â”œâ”€â”€ llm/
+â”‚   â”‚   â”œâ”€â”€ client.ts     # OpenRouter API client
+â”‚   â”‚   â””â”€â”€ types.ts      # LLM types
+â”‚   â”œâ”€â”€ tools/
+â”‚   â”‚   â”œâ”€â”€ index.ts      # 22 tool definitions
+â”‚   â”‚   â”œâ”€â”€ registry.ts   # ToolRegistry
+â”‚   â”‚   â””â”€â”€ metadata.ts   # Tool metadata and risk classification
+â”‚   â”œâ”€â”€ memory/
+â”‚   â”‚   â””â”€â”€ bridge.ts     # Offscreen document communication
+â”‚   â”œâ”€â”€ workspaces/
+â”‚   â”‚   â””â”€â”€ manager.ts    # Auto-managed workspace system
+â”‚   â”œâ”€â”€ vision.ts         # Screenshot description via vision model
+â”‚   â”œâ”€â”€ navigation.ts     # Navigation Bridge (state persistence)
+â”‚   â”œâ”€â”€ keepalive.ts      # SW keepalive alarm (prevents termination)
+â”‚   â”œâ”€â”€ streaming.ts      # SSE parser for LLM streaming
+â”‚   â””â”€â”€ security.ts       # Risk classification + sanitization
+â”œâ”€â”€ content/              # Content script (runs in every tab)
+â”‚   â”œâ”€â”€ content.ts        # Main entry + message listener
+â”‚   â”œâ”€â”€ snapshot.ts       # DOM distillation
+â”‚   â”œâ”€â”€ tagging.ts        # Element tagging [1], [2], [3]...
+â”‚   â”œâ”€â”€ actions.ts        # Tool execution (click, type, scroll, etc.)
+â”‚   â””â”€â”€ janitor.ts        # Cookie banner auto-dismiss
+â”œâ”€â”€ sidepanel/            # React UI (side panel)
+â”‚   â”œâ”€â”€ App.tsx           # Main component with message handling
+â”‚   â”œâ”€â”€ store.ts          # Zustand state management
+â”‚   â”œâ”€â”€ bridge.ts         # Message router (routes RuntimeMessages)
+â”‚   â””â”€â”€ components/       # UI components
+â”‚       â”œâ”€â”€ Header.tsx
+â”‚       â”œâ”€â”€ InputArea.tsx
+â”‚       â”œâ”€â”€ MessageBubble.tsx
+â”‚       â”œâ”€â”€ ControlBar.tsx
+â”‚       â”œâ”€â”€ SettingsDrawer.tsx
+â”‚       â”œâ”€â”€ StatusBar.tsx
+â”‚       â”œâ”€â”€ ToolCallBadge.tsx
+â”‚       â”œâ”€â”€ StuckBanner.tsx
+â”‚       â”œâ”€â”€ TaskProgressPanel.tsx
+â”‚       â””â”€â”€ CompletionSummary.tsx
+â”œâ”€â”€ offscreen/            # Offscreen document (separate DOM context)
+â”‚   â”œâ”€â”€ offscreen.ts      # Entry point
+â”‚   â””â”€â”€ memory/
+â”‚       â”œâ”€â”€ main.ts       # SQLite + Voy + RRF coordination
+â”‚       â”œâ”€â”€ storage.ts    # VectorStore hybrid search
+â”‚       â”œâ”€â”€ worker.ts     # Transformers.js embedding worker
+â”‚       â”œâ”€â”€ utils.ts      # RRF fusion algorithm
+â”‚       â””â”€â”€ index.html
+â”œâ”€â”€ types/                # TypeScript types
+â”‚   â””â”€â”€ index.ts          # Single source of truth
+â”œâ”€â”€ utils/                # Shared utilities
+â”‚   â”œâ”€â”€ logger.ts         # Structured logging
+â”‚   â”œâ”€â”€ storage-logger.ts # StorageLogger with auto-redaction
+â”‚   â””â”€â”€ context.ts        # Execution context detection
+â”œâ”€â”€ evals/                # Offline evaluation framework
+â”‚   â”œâ”€â”€ cli.ts            # CLI entry point (supports --stats and --analyze --suggest flags)
+â”‚   â”œâ”€â”€ core/             # Eval runner, metrics, reporter
+â”‚   â”‚   â”œâ”€â”€ loader.ts     # YAML case loader
+â”‚   â”‚   â”œâ”€â”€ runner.ts     # Eval executor
+â”‚   â”‚   â”œâ”€â”€ metrics.ts    # Scoring
+â”‚   â”‚   â”œâ”€â”€ reporter.ts   # Output formatting
+â”‚   â”‚   â””â”€â”€ types.ts
+â”‚   â”œâ”€â”€ cases/            # JSONL eval cases generated from traces
+â”‚   â””â”€â”€ optimizer/        # Analyzer, tracker, suggester for identifying improvements
+â””â”€â”€ scripts/              # Build/dev scripts
+    â”œâ”€â”€ log-server.ts     # Bun HTTP server for log draining
+    â””â”€â”€ log-query.ts      # CLI for querying JSONL logs
 
 tests/                    # Test files mirror src structure
 docs/                     # Documentation
-    ├── architecture/     # Technical architecture docs
-    ├── guides/           # User guides (future)
-    └── *.md              # RFC documents
+    â”œâ”€â”€ architecture/     # Technical architecture docs
+    â”œâ”€â”€ guides/           # User guides (future)
+    â””â”€â”€ *.md              # RFC documents
 ```
 
 ### Key Types
@@ -478,13 +476,13 @@ docs/                     # Documentation
 
 ```typescript
 type RuntimeMessage =
-    | UserChatMessage         // Side panel → Background
-    | AgentStatusMessage      // Background → Side panel
-    | StreamChunkMessage      // Background → Side panel (real-time)
-    | AgentResponseMessage    // Background → Side panel (final)
-    | ToolExecuteMessage      // Background → Content script
-    | DomSnapshotRequest      // Background → Content script
-    | MemoryWorkerMessage     // Background → Offscreen
+    | UserChatMessage         // Side panel â†’ Background
+    | AgentStatusMessage      // Background â†’ Side panel
+    | StreamChunkMessage      // Background â†’ Side panel (real-time)
+    | AgentResponseMessage    // Background â†’ Side panel (final)
+    | ToolExecuteMessage      // Background â†’ Content script
+    | DomSnapshotRequest      // Background â†’ Content script
+    | MemoryWorkerMessage     // Background â†’ Offscreen
     | STREAM_CHUNK            // Real-time LLM response
     | NAVIGATION_RESUME       // Continue after page load
     | SETTINGS_UPDATE        // User settings changed
@@ -591,10 +589,10 @@ interface UserSettings {
 
 All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID) and `source` (enum: sidepanel, background, content, offscreen).
 
-- Background→content tool execution: `TOOL_EXECUTE` / `TOOL_RESULT`
-- Background→content modal cleanup: `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`
-- Background→offscreen memory: `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`
-- Background→sidepanel streaming: `STREAM_CHUNK`
+- Backgroundâ†’content tool execution: `TOOL_EXECUTE` / `TOOL_RESULT`
+- Backgroundâ†’content modal cleanup: `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`
+- Backgroundâ†’offscreen memory: `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`
+- Backgroundâ†’sidepanel streaming: `STREAM_CHUNK`
 - Navigation resumption: `NAVIGATION_RESUME`
 - Agent feedback: `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`
 - User control: `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`
@@ -640,18 +638,18 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 Real-time LLM response streaming:
 
 ```
-LLM API → SSE chunks
-    ↓
+LLM API â†’ SSE chunks
+    â†“
 background/streaming.ts: parseSSEStream()
-    ↓
+    â†“
 Background sends STREAM_CHUNK { delta: "..." }
-    ↓
+    â†“
 sidepanel/App.tsx receives chunk
-    ↓
+    â†“
 store.appendStreamDelta(delta) - appends to last assistant message
-    ↓
+    â†“
 React re-renders MessageBubble with updated content
-    ↓
+    â†“
 User sees text appear character-by-character
 ```
 
@@ -670,11 +668,11 @@ See `src/background/navigation.ts` for implementation.
 
 Hybrid RAG (Retrieval-Augmented Generation):
 
-1. **User query** → embedding generated via Transformers.js (Web Worker)
-2. **Semantic search** → Voy vector search (WASM)
-3. **Keyword search** → SQLite FTS5 (WASM)
-4. **Fusion** → RRF (Reciprocal Rank Fusion) combines results
-5. **Context injection** → Top memories added to LLM prompt
+1. **User query** â†’ embedding generated via Transformers.js (Web Worker)
+2. **Semantic search** â†’ Voy vector search (WASM)
+3. **Keyword search** â†’ SQLite FTS5 (WASM)
+4. **Fusion** â†’ RRF (Reciprocal Rank Fusion) combines results
+5. **Context injection** â†’ Top memories added to LLM prompt
 
 All data stays client-side in IndexedDB.
 
@@ -733,7 +731,7 @@ See `src/background/vision.ts` for implementation.
 
 Offline evaluation system for testing agent behavior:
 
-- **Golden Datasets:** YAML test cases in `evals/golden/cases/`
+- **Golden Datasets:** JSONL cases in `evals/cases/` and optional seed templates in `evals/golden/`
 - **Metrics:** Success rate, tool efficiency, error handling
 - **CLI Commands:**
   - `bun run evals` - Run evaluation suite
@@ -768,8 +766,8 @@ All agent infrastructure (planning, progress tracking, completion judgment, stuc
 
 - **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong in the agent loop.
 - **The agent adapts through prompting and memory, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses `memory_add` / `memory_search` to learn and recall strategies across sessions.
-- **Tools are generic primitives.** Click, type, scroll, navigate — not "solve step 5 of the challenge." Higher-level behavior emerges from the LLM's reasoning over these primitives.
-- **Plans are dynamic.** The guardian decomposes any user query into subtasks based on context — it doesn't have a list of known task templates.
+- **Tools are generic primitives.** Click, type, scroll, navigate â€” not "solve step 5 of the challenge." Higher-level behavior emerges from the LLM's reasoning over these primitives.
+- **Plans are dynamic.** The guardian decomposes any user query into subtasks based on context â€” it doesn't have a list of known task templates.
 
 #### When in doubt, ask: "Would this work on a site I've never seen?"
 
@@ -783,14 +781,14 @@ Before committing changes, ensure:
 
 - [ ] `bun run lint` passes (or warnings only)
 - [ ] `bun run build` succeeds
-- [ ] `bun test` passes (all 71+ tests)
+- [ ] `bun test` passes
 - [ ] New tests added for changed functionality
 - [ ] Manual testing in Chrome extension
 - [ ] Documentation updated if architecture changed
 
 ### Debugging
 
-When investigating errors (build failures, runtime exceptions, unexpected behavior), **check the logs first** — they are the best source of truth for what actually happened at runtime.
+When investigating errors (build failures, runtime exceptions, unexpected behavior), **check the logs first** â€” they are the best source of truth for what actually happened at runtime.
 
 1. **Start the log drain** (if not already running): `bun run logs`
 2. **Query recent errors**: `bun run logs:errors`
@@ -800,7 +798,7 @@ When investigating errors (build failures, runtime exceptions, unexpected behavi
 
 The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `bun run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
 
-For build errors, also check `bun run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
+For build errors, also check `bun run build` output directly â€” Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
 
 ### Common Issues
 
@@ -832,7 +830,7 @@ For build errors, also check `bun run build` output directly — Vite/Rollup sur
 1. Install dependencies: `bun install`
 2. Copy env file: `cp .env.example .env` (add API keys)
 3. Start dev server: `bun run dev`
-4. Load extension: Chrome → Extensions → Load unpacked → Select `dist/`
+4. Load extension: Chrome â†’ Extensions â†’ Load unpacked â†’ Select `dist/`
 5. Open side panel: Click extension icon
 6. Send test message: "Go to google.com"
 7. Watch agent browse and respond in real-time
@@ -840,3 +838,5 @@ For build errors, also check `bun run build` output directly — Vite/Rollup sur
 ## Path Aliases
 
 `@/*` maps to `./src/*` (configured in both `tsconfig.json` and `vite.config.ts`).
+
+

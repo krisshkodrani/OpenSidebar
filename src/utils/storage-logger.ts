@@ -1,5 +1,5 @@
-/**
- * Storage Logger — persists structured logs to chrome.storage.local
+﻿/**
+ * Storage Logger - persists structured logs to chrome.storage.local
  *
  * Uses a ring buffer with a fixed cap (MAX_ENTRIES). Old entries roll off
  * automatically. Writes are batched to avoid hammering storage on every call.
@@ -139,7 +139,7 @@ class StorageLogger {
 
       await chrome.storage.local.set({ [STORAGE_KEY]: trimmed });
     } catch {
-      // Storage write failed — drop entries rather than retrying forever
+      // Storage write failed - drop entries rather than retrying forever
     } finally {
       this.isFlushing = false;
 
@@ -166,7 +166,7 @@ class StorageLogger {
         signal: AbortSignal.timeout(2000),
       }).catch(() => {});
     } catch {
-      // fetch itself may throw in some contexts — ignore
+      // fetch itself may throw in some contexts - ignore
     }
   }
 
@@ -209,3 +209,4 @@ class StorageLogger {
 }
 
 export const storageLogger = new StorageLogger();
+

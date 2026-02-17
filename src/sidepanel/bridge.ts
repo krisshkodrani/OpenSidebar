@@ -1,4 +1,4 @@
-import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
+﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
 
@@ -65,7 +65,7 @@ export function initializeBridge(
             message.payload.status === AgentStatus.THINKING &&
             !state.sessionMetrics
           ) {
-            // No-op — metrics will arrive via SESSION_METRICS
+            // No-op - metrics will arrive via SESSION_METRICS
           }
         }
         break;
@@ -163,7 +163,7 @@ export function initializeBridge(
         state.setLaneTelemetry(message.payload.laneTelemetry ?? null);
         break;
 
-      // Messages from other sources (sidepanel→background, background→content, etc.)
+      // Messages from other sources (sidepanel->background, background->content, etc.)
       // These are filtered by the source check above, but listed for exhaustiveness.
       case "USER_CHAT":
       case "STOP_AGENT":
@@ -201,3 +201,4 @@ export function initializeBridge(
   chrome.runtime.onMessage.addListener(listener);
   return () => chrome.runtime.onMessage.removeListener(listener);
 }
+

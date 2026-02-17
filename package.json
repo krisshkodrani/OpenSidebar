@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "opensidebar",
   "version": "0.1.0",
   "type": "module",
@@ -26,6 +26,7 @@
     "evals:run": "bun run evals/cli.ts run",
     "evals:stats": "bun run evals/cli.ts stats",
     "evals:analyze": "bun run evals/cli.ts analyze",
+    "evals:critique": "bun run evals/cli.ts critique",
     "challenge:discover": "bun run scripts/challenge-discover.ts"
   },
   "dependencies": {
@@ -71,3 +72,4 @@
     "vite-plugin-static-copy": "^3.2.0"
   }
 }
+

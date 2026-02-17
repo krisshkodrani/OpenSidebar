@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Structured Logger for OpenSidebar
  *
  * - Auto-detects execution context (background/content/sidepanel/offscreen)
@@ -132,10 +132,10 @@ class Logger {
     };
 
     const levelIcon: Record<LogLevel, string> = {
-      DEBUG: "🐛",
-      INFO: "ℹ️",
-      WARN: "⚠️",
-      ERROR: "🚨",
+      DEBUG: "DBG",
+      INFO: "INF",
+      WARN: "WRN",
+      ERROR: "ERR",
     };
 
     const prefix = `%c${this.source}%c ${levelIcon[level]} [${category}] ${message}`;
@@ -248,3 +248,4 @@ export class ScopedLogger {
 }
 
 export const logger = new Logger();
+
