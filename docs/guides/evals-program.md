@@ -30,6 +30,15 @@ Legacy cases continue to run because the section is optional.
 
 ## CLI Workflow
 
+Manual-first recommended order:
+
+1. `bun run logs`
+2. Run manual task in extension
+3. `bun run traces:list`
+4. `bun run evals convert <session-id> --strategy all`
+5. `bun run evals run --all --prompt-id orchestrator.verifier.system`
+6. `bun run evals critique`
+
 1. Convert traces to cases:
 
 ```bash
@@ -72,6 +81,15 @@ bun run evals ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/c
 bun run evals analyze
 ```
 
+6. Generate AI-readable critique artifacts:
+
+```bash
+bun run evals critique
+```
+
+See the strict operator checklist in:
+- `docs/guides/manual-evals-runbook.md`
+
 ## Scoring
 
 The runner emits:
@@ -85,6 +103,19 @@ A/B winner logic prioritizes:
 
 1. status (`pass` > `fail` > `error`)
 2. composite score
+
+## Run-Trace Signals To Watch
+
+Use run traces (`traces/runs/<run-id>.jsonl`) to track behavior changes, especially for skill replay:
+
+- `task_completed`
+- `skill_replay_attempted`
+- `skill_replay_selected`
+- `skill_replay_miss`
+- `skill_replay_dry_run_match`
+- `skill_replay_outcome`
+
+These are summarized in critique output so prompt changes can be tied to replay hit-rate, replay success/failure, and deltas in duration/tokens.
 
 ## Operating Cadence
 

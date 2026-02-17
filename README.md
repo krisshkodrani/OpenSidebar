@@ -126,8 +126,11 @@ bun run dev
 | `bun run evals run --all --prompt-id orchestrator.verifier.system` | Run evals with shared production prompt id |
 | `bun run evals:stats` | Show eval statistics |
 | `bun run evals:analyze` | Analyze eval results and suggestions |
+| `bun run evals critique` | Generate AI-readable critique artifacts |
 | `bun run logs` | Start log drain server |
 | `bun run logs:errors` | Query error logs |
+| `bun run traces:list` | List captured trace sessions |
+| `bun run traces:stats` | Show aggregate trace stats |
 | `bun run fmt` | Format source files |
 
 When `bun run logs` is active, execution traces are persisted under:

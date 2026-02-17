@@ -91,6 +91,17 @@ This writes:
 
 The JSON is structured for direct LLM ingestion.
 
+## Run-Trace Metrics Included In Critique
+
+Critique includes run-trace aggregates for:
+
+- replay attempts/hits/misses
+- dry-run matches
+- replay success/failure outcomes
+- learned-skill events
+- average replay duration delta (ms)
+- average replay token delta
+
 ## Golden Dataset Program
 
 Use the `promptQuality.track` field in eval cases to keep coverage balanced:
