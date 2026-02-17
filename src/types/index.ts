@@ -1186,6 +1186,8 @@ export interface DomSnapshot {
   capturedTexts?: string[];
   /** Front-end framework detected on the page (null if none) */
   framework?: FrameworkInfo | null;
+  /** Overflow info when element cap was hit or near-identical elements collapsed */
+  overflow?: { shown: number; total: number; collapsedGroups?: string[] };
 }
 
 /** A single interactive DOM element with a numeric tag */
@@ -1569,6 +1571,8 @@ export interface UserSettings {
   speechProvider: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
   orchestratorMaxWorkers?: number;
+  /** Global token budget for one orchestrator task (planner + executor + verifier) */
+  orchestratorMaxTotalTokens?: number;
   /** Learn reusable skills from successful task executions */
   teachModeEnabled?: boolean;
   /** Attempt learned-skill replay before planner decomposition */

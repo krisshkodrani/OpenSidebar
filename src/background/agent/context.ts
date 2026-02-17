@@ -473,10 +473,15 @@ Do NOT call done() until every planned step is complete.
         this.snapshot.elements,
         level,
       );
-      content = content.replace(
-        "{{elements}}",
-        elementsList || "No interactive elements found.",
-      );
+      if (this.snapshot.overflow && this.snapshot.overflow.total > this.snapshot.overflow.shown) {
+        const note = `Note: Showing ${this.snapshot.overflow.shown}/${this.snapshot.overflow.total} elements (${this.snapshot.overflow.collapsedGroups?.join(", ") || "similar elements collapsed"}).`;
+        content = content.replace("{{elements}}", (elementsList || "No interactive elements found.") + "\n" + note);
+      } else {
+        content = content.replace(
+          "{{elements}}",
+          elementsList || "No interactive elements found.",
+        );
+      }
 
       // Surviving overlay warnings (overlays that auto-dismissal couldn't remove)
       if (

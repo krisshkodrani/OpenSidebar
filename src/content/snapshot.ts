@@ -12,7 +12,7 @@
  */
 
 import { DomSnapshot } from "../types";
-import { tagElements, getCachedElements } from "./tagging";
+import { tagElements, getCachedElements, getOverflowMetadata } from "./tagging";
 
 const MAX_VIEWPORT_TEXT_LENGTH = 15000;
 
@@ -28,7 +28,9 @@ export function buildSnapshot(
     viewportText = extractViewportText();
   }
 
-  return {
+  const overflow = getOverflowMetadata();
+
+  const snapshot: DomSnapshot = {
     title: document.title,
     url: window.location.href,
     elements,
@@ -43,6 +45,12 @@ export function buildSnapshot(
       maxY: document.documentElement.scrollHeight - window.innerHeight,
     },
   };
+
+  if (overflow) {
+    snapshot.overflow = overflow;
+  }
+
+  return snapshot;
 }
 
 /** Tags that get structure markers in viewport text */

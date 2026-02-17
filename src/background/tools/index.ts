@@ -1122,6 +1122,28 @@ const SEND_NOTIFICATION_DEF: ToolDefinition = {
 
 // --- Execution Bridge ---
 
+/** Detect Chrome bridge disconnect errors that indicate the content script is gone */
+function isBridgeDisconnect(errorMsg: string): boolean {
+  return errorMsg.includes("Receiving end does not exist")
+    || errorMsg.includes("Could not establish connection")
+    || errorMsg.includes("The message port closed");
+}
+
+/** Re-inject the content script into a tab after a bridge disconnect */
+async function reinjectContentScript(tabId: number): Promise<boolean> {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const files = manifest.content_scripts?.[0]?.js;
+    if (!files?.length) return false;
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+    await waitForContentScriptReady(tabId, 3000);
+    return true;
+  } catch (e: any) {
+    logger.error("tools", "Content script reinjection failed", { tabId, error: e.message });
+    return false;
+  }
+}
+
 async function executeContentTool(
   startName: ToolName,
   args: any,
@@ -1132,23 +1154,49 @@ async function executeContentTool(
   }
 
   logger.debug("tools", `bridge → ${startName}`, { tabId, args });
-  try {
-    const response = await chrome.tabs.sendMessage(tabId, {
-      type: "TOOL_EXECUTE",
-      requestId: crypto.randomUUID(),
-      source: MessageSource.BACKGROUND,
-      payload: {
-        toolName: startName,
-        args,
-        toolCallId: "internal", // We don't need this for the bridge here
-      },
-    });
 
-    // Response payload from content script: { result: string, success: boolean }
+  const sendMessage = () => chrome.tabs.sendMessage(tabId, {
+    type: "TOOL_EXECUTE",
+    requestId: crypto.randomUUID(),
+    source: MessageSource.BACKGROUND,
+    payload: {
+      toolName: startName,
+      args,
+      toolCallId: "internal",
+    },
+  });
+
+  try {
+    const response = await sendMessage();
     return response.payload.result;
   } catch (e: any) {
-    logger.error("tools", "Bridge execution failed", { error: e.message });
-    return `Error: Could not communicate with content script. Is the tab active? (${e.message})`;
+    if (!isBridgeDisconnect(e.message)) {
+      logger.error("tools", "Bridge execution failed", { error: e.message });
+      return `Error: Could not communicate with content script. Is the tab active? (${e.message})`;
+    }
+
+    // Bridge disconnected — check if tab is still alive
+    logger.warn("tools", "Bridge disconnect detected, attempting reinject", { tabId, error: e.message });
+    try {
+      await chrome.tabs.get(tabId);
+    } catch {
+      return "Error: Tab has been closed.";
+    }
+
+    // Tab alive — reinject content script and retry once
+    const reinjected = await reinjectContentScript(tabId);
+    if (!reinjected) {
+      return `Error: Content script disconnected and reinjection failed. Try refreshing the page.`;
+    }
+
+    try {
+      const retryResponse = await sendMessage();
+      logger.info("tools", "Bridge reconnect successful after reinject", { tabId, tool: startName });
+      return retryResponse.payload.result;
+    } catch (retryErr: any) {
+      logger.error("tools", "Bridge retry failed after reinject", { tabId, error: retryErr.message });
+      return `Error: Content script reconnect failed after reinjection. (${retryErr.message})`;
+    }
   }
 }
 

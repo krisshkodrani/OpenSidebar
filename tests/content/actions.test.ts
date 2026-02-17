@@ -328,8 +328,8 @@ describe("Content Actions", () => {
 
             const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
             expect(result.success).toBe(false);
-            expect(result.result).toContain("does not appear to be an overlay");
-            expect(result.result).toContain("scroll_page");
+            expect(result.result).toContain("not an overlay");
+            expect(result.result).toContain("press_key");
             expect(el.style.display).not.toBe("none");
         });
 
@@ -346,7 +346,7 @@ describe("Content Actions", () => {
 
             const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
             expect(result.success).toBe(false);
-            expect(result.result).toContain("does not appear to be an overlay");
+            expect(result.result).toContain("not an overlay");
         });
 
         test("rejects normal input element", async () => {
@@ -362,7 +362,130 @@ describe("Content Actions", () => {
 
             const result = await executeAction(ToolName.HIDE_ELEMENT, { id: inpTag });
             expect(result.success).toBe(false);
-            expect(result.result).toContain("does not appear to be an overlay");
+            expect(result.result).toContain("not an overlay");
+        });
+
+        test("walks up to overlay ancestor when targeting a child button (WI-2)", async () => {
+            document.body.innerHTML = `
+                <div id="modal" role="dialog" style="position: fixed; z-index: 9999;">
+                    <h3>Modal Title</h3>
+                    <button id="close-btn">Close</button>
+                </div>
+            `;
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "close-btn") { btnTag = tag; break; }
+            }
+            expect(btnTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("overlay ancestor");
+            expect(result.result).toContain("parent of");
+
+            // The modal ancestor should be hidden, not just the button
+            const modal = document.getElementById("modal")!;
+            expect(modal.style.display).toBe("none");
+        });
+
+        test("returns failure with helpful message for non-overlay child (WI-2)", async () => {
+            document.body.innerHTML = `
+                <div id="content">
+                    <button id="btn">Click</button>
+                </div>
+            `;
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "btn") { btnTag = tag; break; }
+            }
+            expect(btnTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
+            expect(result.success).toBe(false);
+            expect(result.result).toContain("not an overlay");
+            expect(result.result).toContain("no overlay ancestor");
+            expect(result.result).toContain("press_key");
+        });
+
+        test("sticky banner passes isLikelyOverlay (WI-2)", () => {
+            document.body.innerHTML = '<div id="banner" style="position: sticky; z-index: 200;">Banner</div>';
+            const el = document.getElementById("banner") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+
+        test("class*=modal selector matches (WI-2)", () => {
+            document.body.innerHTML = '<div id="test" class="my-modal-wrapper">Modal</div>';
+            const el = document.getElementById("test") as HTMLElement;
+            expect(isLikelyOverlay(el)).toBe(true);
+        });
+    });
+
+    describe("executeType (type_text) — WI-5 SPA robustness", () => {
+        test("fires InputEvent with data and inputType properties", async () => {
+            document.body.innerHTML = '<input id="inp" type="text" />';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let inpTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "inp") { inpTag = tag; break; }
+            }
+            expect(inpTag).toBeGreaterThan(0);
+
+            const events: { type: string; data?: string | null; inputType?: string }[] = [];
+            const inp = document.getElementById("inp")!;
+            inp.addEventListener("input", (e: Event) => {
+                const ie = e as InputEvent;
+                events.push({ type: "input", data: ie.data, inputType: ie.inputType });
+            });
+
+            const result = await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "ab" });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain('Typed "ab"');
+
+            // First event is the clear (deleteContentBackward), then 2 chars
+            expect(events.length).toBe(3);
+            expect(events[0].inputType).toBe("deleteContentBackward");
+            expect(events[1].data).toBe("a");
+            expect(events[1].inputType).toBe("insertText");
+            expect(events[2].data).toBe("b");
+            expect(events[2].inputType).toBe("insertText");
+        });
+
+        test("final value is correct after typing", async () => {
+            document.body.innerHTML = '<input id="inp" type="text" />';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let inpTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "inp") { inpTag = tag; break; }
+            }
+
+            await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "hello" });
+            expect((document.getElementById("inp") as HTMLInputElement).value).toBe("hello");
+        });
+
+        test("contenteditable uses textContent approach", async () => {
+            document.body.innerHTML = '<div id="editable" contenteditable="true"></div>';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let editTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "editable") { editTag = tag; break; }
+            }
+            expect(editTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.TYPE_TEXT, { id: editTag, text: "hi" });
+            expect(result.success).toBe(true);
+            expect(document.getElementById("editable")!.textContent).toBe("hi");
         });
     });
 });

@@ -7,6 +7,7 @@ import {
   resetStableIds,
   getTagMap,
   addDynamicTag,
+  getOverflowMetadata,
   MAX_TAGGED_ELEMENTS,
 } from "../../src/content/tagging";
 import "../../tests/setup";
@@ -436,6 +437,116 @@ describe("truncateText", () => {
 
   test("returns empty string for empty input", () => {
     expect(truncateText("", 80)).toBe("");
+  });
+});
+
+describe("collapseNearIdentical (WI-1 dedup)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  test("collapses 30 identical buttons to 2 representatives + tracks overflow", () => {
+    for (let i = 1; i <= 30; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Click me ${i}`;
+      document.body.appendChild(btn);
+    }
+
+    const tagged = tagElements();
+    // Only 2 kept from the group (first + last), overflow should show 30 total
+    expect(tagged.length).toBeLessThanOrEqual(4); // 2 reps + potential extras
+    expect(tagged.length).toBeGreaterThanOrEqual(2);
+
+    // Import overflow metadata
+    const overflow = getOverflowMetadata();
+    expect(overflow).not.toBeNull();
+    expect(overflow!.total).toBe(30);
+    expect(overflow!.shown).toBeLessThan(30);
+    expect(overflow!.collapsedGroups.length).toBeGreaterThan(0);
+    expect(overflow!.collapsedGroups[0]).toContain("click me");
+  });
+
+  test("protects draggable + dropzone elements among many identical buttons", () => {
+    // 50 identical buttons
+    for (let i = 1; i <= 50; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Bait ${i}`;
+      document.body.appendChild(btn);
+    }
+    // 5 draggable items
+    for (let i = 1; i <= 5; i++) {
+      const div = document.createElement("div");
+      div.setAttribute("draggable", "true");
+      div.textContent = `Drag item ${i}`;
+      div.setAttribute("tabindex", "0");
+      document.body.appendChild(div);
+    }
+    // 5 drop zones (with dropzone attribute)
+    for (let i = 1; i <= 5; i++) {
+      const span = document.createElement("span");
+      span.setAttribute("dropzone", "move");
+      span.textContent = `Drop zone ${i}`;
+      span.setAttribute("tabindex", "0");
+      document.body.appendChild(span);
+    }
+
+    const tagged = tagElements();
+    const dragItems = tagged.filter(t => t.attributes["draggable"] === "true");
+    const dropItems = tagged.filter(t => t.attributes["dropzone"] === "true");
+
+    // All draggable + dropzone elements should be tagged (protected)
+    expect(dragItems.length).toBe(5);
+    expect(dropItems.length).toBe(5);
+  });
+
+  test("diverse elements under cap are not collapsed", () => {
+    // Create diverse elements with completely unique text (no trailing digits)
+    const uniqueLabels = [
+      "Home", "About", "Contact", "Settings", "Dashboard",
+      "Profile", "Logout", "Search", "Help", "Subscribe",
+      "Download", "Upload", "Archive", "Favorites", "History",
+    ];
+    for (let i = 0; i < 5; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.setAttribute("name", uniqueLabels[i].toLowerCase());
+      input.placeholder = uniqueLabels[i];
+      document.body.appendChild(input);
+    }
+    for (let i = 0; i < 5; i++) {
+      const link = document.createElement("a");
+      link.href = `https://example.com/${uniqueLabels[i + 5].toLowerCase()}`;
+      link.textContent = uniqueLabels[i + 5];
+      document.body.appendChild(link);
+    }
+    for (let i = 0; i < 5; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = uniqueLabels[i + 10];
+      document.body.appendChild(btn);
+    }
+
+    const tagged = tagElements();
+    // All 15 diverse elements should be tagged (under cap, each group is unique)
+    expect(tagged.length).toBe(15);
+
+    const overflow = getOverflowMetadata();
+    // No overflow because all fit under cap
+    expect(overflow).toBeNull();
+  });
+
+  test("elements with name attribute are protected from collapse", () => {
+    for (let i = 1; i <= 10; i++) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.setAttribute("name", `field_${i}`);
+      input.placeholder = "Enter value";
+      document.body.appendChild(input);
+    }
+
+    const tagged = tagElements();
+    // All 10 should be kept because they have name attributes
+    expect(tagged.length).toBe(10);
   });
 });
 

@@ -10,8 +10,8 @@ import {
 
 describe("Shadow DOM Support - AFTER State", () => {
   beforeEach(() => {
-    // Clean up any tags from previous tests
-    document.querySelectorAll(".qsidebar-tag").forEach((el) => el.remove());
+    // Clean up any tags and leftover DOM from previous tests
+    document.body.innerHTML = "";
     resetStableIds();
   });
 
@@ -181,9 +181,9 @@ describe("Shadow DOM Support - AFTER State", () => {
 
     const shadow = host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
-            <button id="btn1">Button 1</button>
-            <button id="btn2">Button 2</button>
-            <button id="btn3">Button 3</button>
+            <button id="btn1">Submit</button>
+            <button id="btn2">Cancel</button>
+            <button id="btn3">Delete</button>
         `;
 
     const tagged = tagElements();

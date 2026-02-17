@@ -180,6 +180,49 @@ describe("ProviderPool", () => {
     });
   });
 
+  describe("disableForSession (WI-4)", () => {
+    test("disableForSession makes getActive skip that provider", () => {
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
+      pool.disableForSession("cerebras");
+      const slot = pool.getActive();
+      expect(slot.provider.providerId).toBe("groq");
+    });
+
+    test("isDisabled returns true for disabled provider", () => {
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
+      expect(pool.isDisabled("cerebras")).toBe(false);
+      pool.disableForSession("cerebras");
+      expect(pool.isDisabled("cerebras")).toBe(true);
+    });
+
+    test("allDisabled returns true when all slots are disabled", () => {
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
+      expect(pool.allDisabled()).toBe(false);
+      pool.disableForSession("cerebras");
+      pool.disableForSession("groq");
+      pool.disableForSession("openrouter");
+      expect(pool.allDisabled()).toBe(true);
+    });
+
+    test("getNextFallback skips disabled providers", () => {
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
+      pool.disableForSession("groq");
+      const fallback = pool.getNextFallback("cerebras");
+      // Groq disabled, should return OpenRouter (absolute fallback)
+      expect(fallback).not.toBeNull();
+      expect(fallback!.provider.providerId).toBe("openrouter");
+    });
+
+    test("disable cascades: Cerebras + Groq disabled → OpenRouter active", () => {
+      const pool = new ProviderPool("or-key", FAST_CONFIG, "groq-key", "cerebras-key");
+      pool.disableForSession("cerebras");
+      pool.disableForSession("groq");
+      const slot = pool.getActive();
+      expect(slot.provider.providerId).toBe("openrouter");
+      expect(pool.allDisabled()).toBe(false);
+    });
+  });
+
   describe("single provider pool", () => {
     test("works with only OpenRouter", () => {
       const pool = new ProviderPool("or-key", FAST_CONFIG);

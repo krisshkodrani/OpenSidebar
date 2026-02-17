@@ -366,6 +366,94 @@ function shortHint(el: Element): string {
   return role.slice(0, 4);
 }
 
+// --- Overflow metadata ---
+
+/** Overflow info from the last tagElements run */
+let lastOverflow: { shown: number; total: number; collapsedGroups: string[] } | null = null;
+
+/** Get overflow metadata from the most recent tagElements call */
+export function getOverflowMetadata(): typeof lastOverflow {
+  return lastOverflow;
+}
+
+/**
+ * Collapse near-identical elements to free tag slots for diverse ones.
+ * Groups by `tagName|role|normalizedText` and keeps max 2 representatives per group.
+ * Never collapses elements with special attributes (draggable, dropzone, submit, file, dialog, name).
+ */
+function collapseNearIdentical(elements: Element[]): {
+  survivors: Element[];
+  collapsedCount: number;
+  collapsedGroups: string[];
+} {
+  /** Strip trailing digits/numbers to normalize text for grouping */
+  function normalizeText(text: string): string {
+    return text.replace(/\s*\d+\s*$/, "").trim().toLowerCase();
+  }
+
+  /** Elements that should never be collapsed */
+  function isProtected(el: Element): boolean {
+    if (el.getAttribute("draggable") === "true") return true;
+    if (el.hasAttribute("dropzone")) return true;
+    if ((el as HTMLElement).dataset?.droptarget) return true;
+    if ((el as HTMLElement).dataset?.dropzone) return true;
+    if (typeof (el as any).ondrop === "function") return true;
+    if (typeof (el as any).ondragover === "function") return true;
+    const type = el.getAttribute("type");
+    if (type === "submit" || type === "file") return true;
+    const role = el.getAttribute("role");
+    if (role === "dialog" || role === "alertdialog") return true;
+    if (el.hasAttribute("name")) return true;
+    return false;
+  }
+
+  const MAX_PER_GROUP = 2;
+
+  // Group elements by key
+  const groups = new Map<string, Element[]>();
+  const protectedElements: Element[] = [];
+
+  for (const el of elements) {
+    if (isProtected(el)) {
+      protectedElements.push(el);
+      continue;
+    }
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute("role") || "";
+    const text = normalizeText(el.textContent?.trim().slice(0, 40) || "");
+    const key = `${tag}|${role}|${text}`;
+
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+    }
+    group.push(el);
+  }
+
+  const survivors: Element[] = [...protectedElements];
+  let collapsedCount = 0;
+  const collapsedGroups: string[] = [];
+
+  for (const [key, group] of groups) {
+    if (group.length <= MAX_PER_GROUP) {
+      // Small group — keep all
+      survivors.push(...group);
+    } else {
+      // Keep first + last for position context
+      survivors.push(group[0], group[group.length - 1]);
+      const dropped = group.length - MAX_PER_GROUP;
+      collapsedCount += dropped;
+      // Extract readable group name from key
+      const parts = key.split("|");
+      const label = parts[2] || parts[0];
+      collapsedGroups.push(`${dropped}× "${label}"`);
+    }
+  }
+
+  return { survivors, collapsedCount, collapsedGroups };
+}
+
 export function tagElements(showTags: boolean = false): TaggedElement[] {
   // 1. Remove old visual labels and MAIN-world bridge attributes
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
@@ -386,27 +474,35 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
 
   // 5. Deduplicate
   const seen = new Set<Element>();
-  const allCandidates: Element[] = [];
+  const rawCandidates: Element[] = [];
   for (const el of candidates) {
     if (!seen.has(el)) {
       seen.add(el);
-      allCandidates.push(el);
+      rawCandidates.push(el);
     }
   }
   for (const el of clickableExtras) {
     if (!seen.has(el)) {
       seen.add(el);
-      allCandidates.push(el);
+      rawCandidates.push(el);
     }
   }
+
+  // 5b. Filter visible candidates first for accurate total count
+  const visibleCandidates = rawCandidates.filter(el =>
+    isElementVisible(el) && !el.closest('[aria-hidden="true"]'),
+  );
+  const totalCandidates = visibleCandidates.length;
+
+  // 5c. Collapse near-identical elements before the cap loop
+  const { survivors: allCandidates, collapsedCount, collapsedGroups } = collapseNearIdentical(visibleCandidates);
 
   const results: TaggedElement[] = [];
   const activeHashes = new Set<string>();
 
   for (const el of allCandidates) {
     if (results.length >= MAX_TAGGED_ELEMENTS) break;
-    if (!isElementVisible(el)) continue;
-    if (el.closest('[aria-hidden="true"]')) continue;
+    // Visibility already pre-filtered by collapseNearIdentical pipeline
 
     // Compute stable hash and get/allocate a stable ID
     const hash = computeStableHash(el);
@@ -502,7 +598,14 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
     });
   }
 
-  // 9. Clean up hashes for elements gone for 2+ refreshes
+  // 9. Set overflow metadata
+  if (totalCandidates > results.length || collapsedCount > 0) {
+    lastOverflow = { shown: results.length, total: totalCandidates, collapsedGroups };
+  } else {
+    lastOverflow = null;
+  }
+
+  // 10. Clean up hashes for elements gone for 2+ refreshes
   // previousIds now contains IDs that existed before but weren't seen this refresh.
   // They get one grace cycle. On the NEXT refresh, they'll be cleared from previousIds
   // at the top, and if still not seen, they won't be in previousIds → eligible for cleanup.

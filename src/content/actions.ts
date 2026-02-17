@@ -66,6 +66,12 @@ const OVERLAY_SELECTORS = [
   ".banner",
   ".cookie",
   ".consent",
+  "[class*='modal']",
+  "[class*='overlay']",
+  "[class*='popup']",
+  "[class*='dialog']",
+  "[id*='modal']",
+  "[id*='overlay']",
 ];
 
 /**
@@ -76,7 +82,7 @@ const OVERLAY_SELECTORS = [
 export function isLikelyOverlay(el: HTMLElement): boolean {
   const style = window.getComputedStyle(el);
   const position = style.position;
-  const isPositioned = position === "fixed" || position === "absolute";
+  const isPositioned = position === "fixed" || position === "absolute" || position === "sticky";
   const zIndex = parseInt(style.zIndex, 10) || 0;
 
   // Condition 1: fixed/absolute + high z-index
@@ -284,6 +290,23 @@ function executeClick(args: ClickElementArgs): {
   };
 }
 
+/**
+ * Use the native prototype value setter to bypass React/Vue controlled input interception.
+ * Frameworks override the `value` property on instances; calling the prototype setter
+ * triggers the internal [[Set]] without the framework's getter/setter interference.
+ */
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const proto = el instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) {
+    setter.call(el, value);
+  } else {
+    el.value = value;
+  }
+}
+
 function executeType(args: TypeTextArgs): {
   success: boolean;
   result: string;
@@ -312,10 +335,10 @@ function executeType(args: TypeTextArgs): {
   // Focus the element
   if (el instanceof HTMLElement) el.focus();
 
-  // Clear existing value
+  // Clear existing value using native setter
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    el.value = "";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    setNativeValue(el, "");
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
   }
 
   // Type character by character for SPA frameworks that listen to input events
@@ -324,11 +347,12 @@ function executeType(args: TypeTextArgs): {
       new KeyboardEvent("keydown", { key: char, bubbles: true }),
     );
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      el.value += char;
-    } else if ((el as HTMLElement).textContent !== null) {
-      (el as HTMLElement).textContent += char;
+      setNativeValue(el, el.value + char);
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }));
+    } else if ((el as HTMLElement).isContentEditable) {
+      (el as HTMLElement).textContent = ((el as HTMLElement).textContent || "") + char;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }));
     }
-    el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
   }
 
@@ -891,6 +915,21 @@ function executeDrawStroke(args: DrawStrokeArgs): {
   };
 }
 
+/**
+ * Walk up from an element to find the nearest overlay ancestor.
+ * Used by executeHideElement to support hiding modals via their child elements.
+ */
+function findOverlayAncestor(el: HTMLElement, maxDepth = 8): HTMLElement | null {
+  let current = el.parentElement;
+  let depth = 0;
+  while (current && current !== document.body && current !== document.documentElement && depth < maxDepth) {
+    if (isLikelyOverlay(current)) return current;
+    current = current.parentElement;
+    depth++;
+  }
+  return null;
+}
+
 function executeHideElement(args: HideElementArgs): {
   success: boolean;
   result: string;
@@ -909,21 +948,37 @@ function executeHideElement(args: HideElementArgs): {
     };
   }
 
+  let target = el;
+  let ancestorUsed = false;
+
   if (!isLikelyOverlay(el)) {
-    return {
-      success: false,
-      result: `Element [${args.id}] <${el.tagName.toLowerCase()}> does not appear to be an overlay or modal. hide_element only works on overlays (fixed/absolute positioned, high z-index, dialog roles). Try: scroll_page, find_element, or press_key("Escape").`,
-      navigated: false,
-    };
+    // Walk up to find overlay ancestor
+    const ancestor = findOverlayAncestor(el);
+    if (!ancestor) {
+      return {
+        success: false,
+        result: `Element [${args.id}] <${el.tagName.toLowerCase()}> is not an overlay and has no overlay ancestor. Try press_key("Escape") or click a close button.`,
+        navigated: false,
+      };
+    }
+    target = ancestor;
+    ancestorUsed = true;
   }
 
-  el.style.display = "none";
+  target.style.display = "none";
 
-  return {
-    success: true,
-    result: `Hidden element [${args.id}] <${el.tagName.toLowerCase()}>`,
-    navigated: false,
-  };
+  // Restore body overflow if modal set it
+  const bodyStyle = window.getComputedStyle(document.body);
+  if (bodyStyle.overflow === "hidden") {
+    document.body.style.overflow = "";
+  }
+
+  const targetTag = ancestorUsed ? addDynamicTag(target) : args.id;
+  const msg = ancestorUsed
+    ? `Hidden overlay ancestor [${targetTag}] <${target.tagName.toLowerCase()}> (parent of [${args.id}])`
+    : `Hidden element [${args.id}] <${target.tagName.toLowerCase()}>`;
+
+  return { success: true, result: msg, navigated: false };
 }
 
 function executeReadElement(args: ReadElementArgs): {

@@ -138,6 +138,42 @@ function createThinkFilter(emit: (text: string) => void) {
   };
 }
 
+function hasImageUrlContent(messages: LLMMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === "image_url"),
+  );
+}
+
+function toTextOnlyMessages(messages: LLMMessage[]): LLMMessage[] {
+  return messages.map((message) => {
+    if (!Array.isArray(message.content)) return message;
+    const text = message.content
+      .map((part) =>
+        part.type === "text"
+          ? part.text
+          : "[image omitted: model does not support image_url]",
+      )
+      .join("\n");
+    return {
+      ...message,
+      content: text,
+    };
+  });
+}
+
+function isImageUrlUnsupported(status: number, errorText: string): boolean {
+  if (status !== 422) return false;
+  const normalized = errorText.toLowerCase();
+  return (
+    normalized.includes("image_url") &&
+    (normalized.includes("not supported") ||
+      normalized.includes("only 'text' content type") ||
+      normalized.includes("wrong_api_format"))
+  );
+}
+
 // --- Provider Pool (priority-based failover) ---
 
 const COOLDOWN_MS = 60_000;
@@ -220,6 +256,23 @@ export class ProviderPool {
     }
     // All downstream are on cooldown — return OpenRouter as absolute fallback
     return this.slots[this.slots.length - 1];
+  }
+
+  /** Permanently disable a provider for the rest of this session (e.g. 402 credit exhaustion) */
+  disableForSession(providerId: string): void {
+    const slot = this.slots.find(s => s.provider.providerId === providerId);
+    if (slot) slot.cooldownUntil = Number.MAX_SAFE_INTEGER;
+  }
+
+  /** Check if a provider has been permanently disabled this session */
+  isDisabled(providerId: string): boolean {
+    const slot = this.slots.find(s => s.provider.providerId === providerId);
+    return slot ? slot.cooldownUntil === Number.MAX_SAFE_INTEGER : false;
+  }
+
+  /** True when every provider slot is on cooldown or permanently disabled */
+  allDisabled(): boolean {
+    return this.slots.every(s => Date.now() < s.cooldownUntil);
   }
 
   /** Get all slots (for testing) */
@@ -432,6 +485,32 @@ export class LLMClient {
             // Fallback also failed — continue normal retry loop
           }
         }
+
+        // Permanent provider disable on 402 (credit exhaustion)
+        if (response.status === 402 && providerId) {
+          const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+          pool.disableForSession(providerId);
+          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId });
+          const fallback = pool.getNextFallback(providerId);
+          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
+            this.onProviderFailover?.(providerId, fallback.provider.providerId);
+            const fb = this.rebuildForProvider(init, fallback);
+            try {
+              const fbResp = await fetch(fb.url, { ...fb.init, signal });
+              if (fbResp.ok || !RETRYABLE.has(fbResp.status))
+                return {
+                  response: fbResp,
+                  actualProviderId: fallback.provider.providerId,
+                  actualModel: fallback.model,
+                };
+            } catch (e: any) {
+              if (e.name === "AbortError") throw e;
+              // Fallback failed — fall through to throw
+            }
+          }
+          // No viable fallback — throw immediately (don't retry)
+          throw lastError!;
+        }
       } catch (e: any) {
         if (e.name === "AbortError") throw e; // Never retry aborts
         lastError = e; // Network error — retryable
@@ -453,9 +532,9 @@ export class LLMClient {
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
     const pool = this._isSmartTier ? this.smartPool : this.fastPool;
-    const slot = pool.getActive();
-    const provider = slot.provider;
-    const activeModel = slot.model;
+    const activeSlot = pool.getActive();
+    let provider = activeSlot.provider;
+    let activeModel = activeSlot.model;
 
     if (!provider.apiKey) {
       const name =
@@ -487,26 +566,82 @@ export class LLMClient {
     });
 
     try {
-      const { response, actualModel } = await this.fetchWithRetry(
-        provider.baseUrl,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${provider.apiKey}`,
-            ...provider.headers,
-          },
-          body: JSON.stringify(payload),
+      let requestInitBase: RequestInit = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${provider.apiKey}`,
+          ...provider.headers,
         },
-        3,
-        request.signal,
-        provider.providerId,
-        activeModel,
-      );
+      };
 
-      if (!response.ok) {
+      let response: Response;
+      let actualModel: string;
+      let activePayload = payload;
+      let imageFallbackRetried = false;
+
+      for (;;) {
+        const fetchResult = await this.fetchWithRetry(
+          provider.baseUrl,
+          {
+            ...requestInitBase,
+            body: JSON.stringify(activePayload),
+          },
+          3,
+          request.signal,
+          provider.providerId,
+          activeModel,
+        );
+        response = fetchResult.response;
+        actualModel = fetchResult.actualModel;
+
+        if (response.ok) break;
         const errorText = await response.text();
+        if (
+          !imageFallbackRetried &&
+          hasImageUrlContent(request.messages) &&
+          isImageUrlUnsupported(response.status, errorText)
+        ) {
+          imageFallbackRetried = true;
+          activePayload = {
+            ...activePayload,
+            messages: toTextOnlyMessages(request.messages),
+          };
+          logger.warn(
+            "agent",
+            "Provider rejected image_url content; retrying with text-only messages",
+            {
+              provider: provider.providerId,
+              model: activePayload.model,
+            },
+          );
+          continue;
+        }
+
         if (response.status === 402) {
+          // Disable this provider permanently for the session
+          pool.disableForSession(provider.providerId);
+          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId: provider.providerId });
+
+          // Try failover to next provider
+          const fallback = pool.getNextFallback(provider.providerId);
+          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
+            this.onProviderFailover?.(provider.providerId, fallback.provider.providerId);
+            provider = fallback.provider;
+            activeModel = fallback.model;
+            activePayload = { ...activePayload, model: activeModel };
+            requestInitBase = {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${provider.apiKey}`,
+                ...provider.headers,
+              },
+            };
+            continue; // Re-enter the while(true) loop with new provider
+          }
+
+          // No viable fallback — throw the credit error
           const providerName =
             provider.providerId === "groq"
               ? "Groq"
@@ -522,9 +657,11 @@ export class LLMClient {
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
-            affordable > 0
-              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
-              : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
+            pool.allDisabled()
+              ? `All providers exhausted (credit limits). Add credits to continue.`
+              : affordable > 0
+                ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
+                : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
@@ -606,9 +743,9 @@ export class LLMClient {
   ): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
     const pool = this._isSmartTier ? this.smartPool : this.fastPool;
-    const slot = pool.getActive();
-    const provider = slot.provider;
-    const activeModel = slot.model;
+    const activeSlot = pool.getActive();
+    let provider = activeSlot.provider;
+    let activeModel = activeSlot.model;
 
     if (!provider.apiKey) {
       const name =
@@ -642,26 +779,82 @@ export class LLMClient {
     });
 
     try {
-      const { response, actualModel } = await this.fetchWithRetry(
-        provider.baseUrl,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${provider.apiKey}`,
-            ...provider.headers,
-          },
-          body: JSON.stringify(payload),
+      let requestInitBase: RequestInit = {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${provider.apiKey}`,
+          ...provider.headers,
         },
-        3,
-        request.signal,
-        provider.providerId,
-        activeModel,
-      );
+      };
 
-      if (!response.ok) {
+      let response: Response;
+      let actualModel: string;
+      let activePayload = payload;
+      let imageFallbackRetried = false;
+
+      for (;;) {
+        const fetchResult = await this.fetchWithRetry(
+          provider.baseUrl,
+          {
+            ...requestInitBase,
+            body: JSON.stringify(activePayload),
+          },
+          3,
+          request.signal,
+          provider.providerId,
+          activeModel,
+        );
+        response = fetchResult.response;
+        actualModel = fetchResult.actualModel;
+
+        if (response.ok) break;
         const errorText = await response.text();
+        if (
+          !imageFallbackRetried &&
+          hasImageUrlContent(request.messages) &&
+          isImageUrlUnsupported(response.status, errorText)
+        ) {
+          imageFallbackRetried = true;
+          activePayload = {
+            ...activePayload,
+            messages: toTextOnlyMessages(request.messages),
+          };
+          logger.warn(
+            "agent",
+            "Provider rejected image_url content on stream; retrying with text-only messages",
+            {
+              provider: provider.providerId,
+              model: activePayload.model,
+            },
+          );
+          continue;
+        }
+
         if (response.status === 402) {
+          // Disable this provider permanently for the session
+          pool.disableForSession(provider.providerId);
+          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId: provider.providerId });
+
+          // Try failover to next provider
+          const fallback = pool.getNextFallback(provider.providerId);
+          if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
+            this.onProviderFailover?.(provider.providerId, fallback.provider.providerId);
+            provider = fallback.provider;
+            activeModel = fallback.model;
+            activePayload = { ...activePayload, model: activeModel };
+            requestInitBase = {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${provider.apiKey}`,
+                ...provider.headers,
+              },
+            };
+            continue; // Re-enter the while(true) loop with new provider
+          }
+
+          // No viable fallback — throw the credit error
           const providerName =
             provider.providerId === "groq"
               ? "Groq"
@@ -677,9 +870,11 @@ export class LLMClient {
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
-            affordable > 0
-              ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
-              : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
+            pool.allDisabled()
+              ? `All providers exhausted (credit limits). Add credits to continue.`
+              : affordable > 0
+                ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
+                : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
