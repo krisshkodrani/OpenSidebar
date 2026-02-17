@@ -1,0 +1,29 @@
+{
+  "id": "golden-core-task-success-001",
+  "sourceSessionId": "golden",
+  "sourceTurn": 0,
+  "strategy": "verifier-decision",
+  "input": {
+    "systemPrompt": "",
+    "conversationHistory": [],
+    "tools": [],
+    "model": "orchestrator"
+  },
+  "expected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "metadata": {
+    "url": "",
+    "query": "Verify core task completes with verifier acceptance",
+    "sessionOutcome": "golden",
+    "difficulty": "medium",
+    "tags": ["core-task", "success", "golden"]
+  },
+  "promptQuality": {
+    "promptVersion": "baseline",
+    "track": "core_task_success",
+    "expectedVerifierDecision": "accept",
+    "mustNot": ["unnecessary_escalation", "verifier_accept_with_low_confidence"]
+  }
+}

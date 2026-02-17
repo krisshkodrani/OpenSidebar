@@ -1,0 +1,29 @@
+{
+  "id": "golden-checkpoint-resume-001",
+  "sourceSessionId": "golden",
+  "sourceTurn": 0,
+  "strategy": "lane-isolation",
+  "input": {
+    "systemPrompt": "",
+    "conversationHistory": [],
+    "tools": [],
+    "model": "orchestrator"
+  },
+  "expected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "metadata": {
+    "url": "",
+    "query": "Verify checkpoint persistence and resume integrity",
+    "sessionOutcome": "golden",
+    "difficulty": "hard",
+    "tags": ["checkpoint", "resume", "golden"]
+  },
+  "promptQuality": {
+    "promptVersion": "baseline",
+    "track": "checkpoint_resume",
+    "expectedLaneEvents": ["task_resumed_from_checkpoint"],
+    "mustNot": ["duplicate_node_execution", "lost_reflexion_on_resume"]
+  }
+}

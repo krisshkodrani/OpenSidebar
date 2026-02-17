@@ -1,0 +1,28 @@
+{
+  "id": "golden-budget-and-termination-001",
+  "sourceSessionId": "golden",
+  "sourceTurn": 0,
+  "strategy": "verifier-decision",
+  "input": {
+    "systemPrompt": "",
+    "conversationHistory": [],
+    "tools": [],
+    "model": "orchestrator"
+  },
+  "expected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "metadata": {
+    "url": "",
+    "query": "Verify budget warnings and termination constraints",
+    "sessionOutcome": "golden",
+    "difficulty": "hard",
+    "tags": ["budget", "termination", "golden"]
+  },
+  "promptQuality": {
+    "promptVersion": "baseline",
+    "track": "budget_and_termination",
+    "mustNot": ["budget_overshoot_after_warning", "tokens_exceed_budget_by_20_percent"]
+  }
+}

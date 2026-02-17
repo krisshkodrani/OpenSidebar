@@ -871,6 +871,7 @@ export class Orchestrator {
     const promptSet = listPromptDescriptors([
       "orchestrator.verifier.system",
       "orchestrator.verifier.critic.system",
+      "orchestrator.advisory.system",
     ]);
     return {
       runId: task.runId || task.id,
@@ -1866,6 +1867,10 @@ export class Orchestrator {
           tab.url || "",
         ),
       );
+      this.emitTraceEvent(task, "plan_decomposed", {
+        nodeCount: nodes.length,
+        structured: true,
+      }, "planner");
       this.sendMessage({
         type: "AGENT_STEP",
         workspaceId: input.workspaceId,
@@ -1907,6 +1912,11 @@ export class Orchestrator {
           retries: 0,
         },
       ];
+      this.emitTraceEvent(task, "plan_decomposed", {
+        nodeCount: 1,
+        structured: false,
+        fallback: true,
+      }, "planner");
       this.sendMessage({
         type: "AGENT_STEP",
         workspaceId: input.workspaceId,
@@ -1961,6 +1971,7 @@ export class Orchestrator {
   ): Promise<void> {
     const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
+    const budgetWarningsEmitted = new Set<string>();
     const verifierContract = buildRoleExecutionContract("verifier", input.settings);
     logger.debug("policy", "Role execution contract resolved", {
       role: verifierContract.role,
@@ -2035,6 +2046,13 @@ export class Orchestrator {
       const nodeStartMs = Date.now();
 
       node.status = "running";
+      this.emitTraceEvent(task, "node_started", {
+        nodeId: node.id,
+        retries: node.retries,
+        handoffDepth: node.handoffDepth,
+        hasReflexion: node.reflexionLog.length > 0,
+        dependencyCount: node.dependencies.length,
+      }, "executor");
       this.appendHandoffArtifact(node, {
         role: "executor",
         phase: "executor_started",
@@ -2190,6 +2208,12 @@ export class Orchestrator {
                 nodeId: node.id,
                 advisoryChars: advisory.length,
               });
+              this.emitTraceEvent(task, "advisory_issued", {
+                nodeId: node.id,
+                advisoryChars: advisory.length,
+                retries: node.retries,
+                hasHandoff: Boolean(node.handoffFromNodeId),
+              }, "verifier");
             }
           } catch (error) {
             if (isLaneIsolationError(error, "verifier")) {
@@ -2284,6 +2308,14 @@ export class Orchestrator {
             handoffContextChars: verifierHandoffContext.length,
           });
           this.emitVerifierStep(task.workspaceId, node.id, verification.reason);
+          this.emitTraceEvent(task, "node_verified", {
+            nodeId: node.id,
+            decision: verification.decision,
+            confidence: verificationConfidence,
+            failureType: verificationFailureType,
+            rerouteObjective: verification.rerouteObjective,
+            reason: (verification.reason || "").slice(0, 300),
+          }, "verifier");
 
           if (task.status === "running" && this.shouldEscalateForDecision(task, node, verification)) {
             const escalationPacket =
@@ -2530,6 +2562,14 @@ export class Orchestrator {
                   suggestedApproach: deriveSuggestedApproach(verification),
                   timestamp: Date.now(),
                 });
+                this.emitTraceEvent(task, "reflexion_recorded", {
+                  nodeId: node.id,
+                  attempt: node.retries + 1,
+                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
+                  failureType: verification.failureType,
+                  confidence: verification.confidence,
+                  reflexionCount: node.reflexionLog.length,
+                }, "verifier");
                 node.status = "pending";
                 node.retries += 1;
                 node.error = verification.reason;
@@ -2618,6 +2658,13 @@ export class Orchestrator {
           this.memoryBuffer.discardWorker(workerId);
         }
       } finally {
+        this.emitTraceEvent(task, "node_completed", {
+          nodeId: node.id,
+          outcome: node.status,
+          summary: (node.result || node.error || "").slice(0, 300),
+          retries: node.retries,
+          durationMs: Date.now() - nodeStartMs,
+        }, "executor");
         const wsPools = this.getWorkspaceLanePools(task.workspaceId);
         wsPools.executor.delete(workerId);
         logger.debug("orchestrator", "Executor worker released from lane pool", {
@@ -2653,6 +2700,42 @@ export class Orchestrator {
         runnable: runnable.length,
         schedulerConcurrency,
       });
+
+      // Emit budget_warning at 80% thresholds (at most once per metric)
+      const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
+      const timeRatio = elapsedMs / task.budget.maxSessionTimeMs;
+      const tokenRatio = task.sessionMetrics.totalTokens / task.budget.maxTotalTokens;
+      const costRatio = task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd;
+      if (timeRatio >= 0.8 && !budgetWarningsEmitted.has("time")) {
+        budgetWarningsEmitted.add("time");
+        this.emitTraceEvent(task, "budget_warning", {
+          metric: "time",
+          ratio: timeRatio,
+          totalTokens: task.sessionMetrics.totalTokens,
+          totalCost: task.sessionMetrics.totalCost,
+          elapsedMs,
+        }, "system");
+      }
+      if (tokenRatio >= 0.8 && !budgetWarningsEmitted.has("tokens")) {
+        budgetWarningsEmitted.add("tokens");
+        this.emitTraceEvent(task, "budget_warning", {
+          metric: "tokens",
+          ratio: tokenRatio,
+          totalTokens: task.sessionMetrics.totalTokens,
+          totalCost: task.sessionMetrics.totalCost,
+          elapsedMs,
+        }, "system");
+      }
+      if (costRatio >= 0.8 && !budgetWarningsEmitted.has("cost")) {
+        budgetWarningsEmitted.add("cost");
+        this.emitTraceEvent(task, "budget_warning", {
+          metric: "cost",
+          ratio: costRatio,
+          totalTokens: task.sessionMetrics.totalTokens,
+          totalCost: task.sessionMetrics.totalCost,
+          elapsedMs,
+        }, "system");
+      }
 
       const budgetReason = getBudgetExhaustionReason();
       if (budgetReason) {
@@ -3249,6 +3332,13 @@ export class Orchestrator {
           converged: dialogueResult.converged,
           finalDecision: dialogueResult.finalDecision.decision,
         });
+        this.emitTraceEvent(task, "dialogue_completed", {
+          nodeId: node.id,
+          totalRounds: dialogueResult.totalRounds,
+          converged: dialogueResult.converged,
+          finalDecision: dialogueResult.finalDecision.decision,
+          finalConfidence: dialogueResult.finalDecision.confidence,
+        }, "verifier");
         return dialogueResult.finalDecision;
       } catch (error) {
         if (isLaneIsolationError(error, "verifier")) {

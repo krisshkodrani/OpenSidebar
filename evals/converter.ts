@@ -8,7 +8,7 @@ import { appendFile } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import type { EvalCase } from "./types";
-import { readTrace, readSessionIndex, CASES_DIR, resolveSessionId } from "./utils";
+import { readTrace, readSessionIndex, readRunTraceManifests, readRunTraceEvents, CASES_DIR, resolveSessionId } from "./utils";
 
 type Strategy = "first-turn" | "any-turn" | "recovery" | "escalation" | "all";
 
@@ -101,6 +101,122 @@ function hasToolFailureBefore(turnNumber: number, allTurns: any[]): boolean {
   const prevTurn = allTurns.find((t: any) => t.turnNumber === turnNumber - 1);
   if (!prevTurn) return false;
   return prevTurn.toolExecutions?.some((te: any) => !te.success) ?? false;
+}
+
+type RunStrategy = "verifier-decision" | "lane-isolation" | "escalation-flow" | "all";
+
+/**
+ * Convert an orchestrator run trace into eval cases.
+ * Returns the number of cases generated.
+ */
+export async function convertRun(
+  runIdPrefix: string,
+  strategy: RunStrategy = "all",
+  maxCases = 50,
+): Promise<number> {
+  const manifests = readRunTraceManifests();
+  const manifest = manifests.find(
+    (m: any) => m.runId === runIdPrefix || String(m.runId || "").startsWith(runIdPrefix),
+  ) as any;
+  if (!manifest || typeof manifest.runId !== "string") {
+    throw new Error(`No run trace found matching: ${runIdPrefix}`);
+  }
+  const runId = manifest.runId as string;
+  const events = readRunTraceEvents(runId);
+
+  if (!existsSync(CASES_DIR)) {
+    mkdirSync(CASES_DIR, { recursive: true });
+  }
+
+  const cases: EvalCase[] = [];
+
+  const shouldInclude = (s: RunStrategy): boolean =>
+    strategy === "all" || strategy === s;
+
+  // verifier-decision: node_verified events
+  if (shouldInclude("verifier-decision")) {
+    for (const event of events as any[]) {
+      if (cases.length >= maxCases) break;
+      if (event.type !== "node_verified") continue;
+      cases.push(buildRunCase("verifier-decision", event, runId, "verifier_critic", {
+        expectedVerifierDecision: event.data?.decision,
+        mustNot: ["infinite_retry_loop", "same_node_retried_without_reflexion_change"],
+      }));
+    }
+  }
+
+  // lane-isolation: lane_isolated events
+  if (shouldInclude("lane-isolation")) {
+    for (const event of events as any[]) {
+      if (cases.length >= maxCases) break;
+      if (event.type !== "lane_isolated") continue;
+      cases.push(buildRunCase("lane-isolation", event, runId, "orchestrator_lane_isolation", {
+        expectedLaneEvents: ["lane_isolated"],
+        mustNot: ["cross_lane_contamination", "verifier_in_executor_lane"],
+      }));
+    }
+  }
+
+  // escalation-flow: escalation_requested + escalation_decision_received pairs
+  if (shouldInclude("escalation-flow")) {
+    const escalationRequests = (events as any[]).filter((e) => e.type === "escalation_requested");
+    const escalationDecisions = (events as any[]).filter((e) => e.type === "escalation_decision_received");
+    for (const req of escalationRequests) {
+      if (cases.length >= maxCases) break;
+      const decision = escalationDecisions.find(
+        (d: any) => d.data?.nodeId === req.data?.nodeId,
+      );
+      cases.push(buildRunCase("escalation-flow", req, runId, "human_escalation", {
+        expectedEscalation: decision ? "decision" : "requested",
+        mustNot: ["escalation_without_options", "timeout_without_trace"],
+      }));
+    }
+  }
+
+  if (cases.length > 0) {
+    const outputFile = join(CASES_DIR, `run-${runId}.jsonl`);
+    const lines = cases.map((c) => JSON.stringify(c)).join("\n") + "\n";
+    await appendFile(outputFile, lines);
+  }
+
+  return cases.length;
+}
+
+function buildRunCase(
+  strategy: "verifier-decision" | "lane-isolation" | "escalation-flow",
+  event: any,
+  runId: string,
+  track: NonNullable<EvalCase["promptQuality"]>["track"],
+  quality: Partial<NonNullable<EvalCase["promptQuality"]>>,
+): EvalCase {
+  return {
+    id: randomUUID(),
+    sourceSessionId: runId,
+    sourceTurn: 0,
+    strategy,
+    input: {
+      systemPrompt: "",
+      conversationHistory: [],
+      tools: [],
+      model: "orchestrator",
+    },
+    expected: {
+      toolCalls: [],
+      text: null,
+    },
+    metadata: {
+      url: "",
+      query: "",
+      sessionOutcome: "unknown",
+      difficulty: "hard",
+      tags: [strategy, event.type],
+    },
+    promptQuality: {
+      promptVersion: "baseline",
+      track,
+      ...quality,
+    },
+  };
 }
 
 function buildCase(

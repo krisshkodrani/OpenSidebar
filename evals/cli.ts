@@ -14,7 +14,7 @@
  *   help                                   Show usage
  */
 
-import { convertSession } from "./converter";
+import { convertSession, convertRun } from "./converter";
 import { runEvals } from "./runner";
 import {
   readEvalResults,
@@ -24,9 +24,9 @@ import {
   readRunTraceEvents,
   readRunTraceManifests,
 } from "./utils";
-import { analyzeSessionsContractCompliance } from "./contract-compliance";
-import type { EvalResult } from "./types";
-import { mkdirSync, writeFileSync } from "fs";
+import { analyzeSessionsContractCompliance, analyzeRunTraceCompliance } from "./contract-compliance";
+import type { EvalCase, EvalResult } from "./types";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
   PromptId,
@@ -47,6 +47,7 @@ const c = {
 const PROMPT_IDS: PromptId[] = [
   "orchestrator.verifier.system",
   "orchestrator.verifier.critic.system",
+  "orchestrator.advisory.system",
 ];
 
 function normalizePromptId(value?: string): PromptId | undefined {
@@ -61,6 +62,12 @@ async function main() {
   switch (command) {
     case "convert":
       await cmdConvert(args.slice(1));
+      break;
+    case "convert-run":
+      await cmdConvertRun(args.slice(1));
+      break;
+    case "convert-golden":
+      await cmdConvertGolden();
       break;
     case "run":
       await cmdRun(args.slice(1));
@@ -105,6 +112,57 @@ async function cmdConvert(args: string[]) {
   console.log(`Converting session ${sessionId} with strategy: ${strategy}`);
   const count = await convertSession(sessionId, strategy as any);
   console.log(`${c.green}Generated ${count} eval case(s)${c.reset}`);
+}
+
+async function cmdConvertRun(args: string[]) {
+  const runId = args[0];
+  if (!runId) {
+    console.error("Usage: evals convert-run <run-id> [--strategy verifier-decision|lane-isolation|escalation-flow|all]");
+    process.exit(1);
+  }
+
+  const stratIdx = args.indexOf("--strategy");
+  const strategy = (stratIdx !== -1 && args[stratIdx + 1]) ? args[stratIdx + 1] : "all";
+  const validStrategies = ["verifier-decision", "lane-isolation", "escalation-flow", "all"];
+  if (!validStrategies.includes(strategy)) {
+    console.error(`Invalid strategy: ${strategy}. Valid: ${validStrategies.join(", ")}`);
+    process.exit(1);
+  }
+
+  console.log(`Converting run trace ${runId} with strategy: ${strategy}`);
+  const count = await convertRun(runId, strategy as any);
+  console.log(`${c.green}Generated ${count} eval case(s) from run trace${c.reset}`);
+}
+
+async function cmdConvertGolden() {
+  const goldenDir = join("evals", "golden");
+  if (!existsSync(goldenDir)) {
+    console.error(`Golden directory not found: ${goldenDir}`);
+    process.exit(1);
+  }
+
+  const files = readdirSync(goldenDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) {
+    console.error("No golden JSON files found in evals/golden/");
+    process.exit(1);
+  }
+
+  const casesDir = join("evals", "cases");
+  if (!existsSync(casesDir)) {
+    mkdirSync(casesDir, { recursive: true });
+  }
+
+  const cases: EvalCase[] = [];
+  for (const file of files) {
+    const content = readFileSync(join(goldenDir, file), "utf-8");
+    const parsed = JSON.parse(content) as EvalCase;
+    cases.push(parsed);
+  }
+
+  const outputFile = join(casesDir, "golden.jsonl");
+  const lines = cases.map((cs) => JSON.stringify(cs)).join("\n") + "\n";
+  writeFileSync(outputFile, lines, "utf-8");
+  console.log(`${c.green}Wrote ${cases.length} golden case(s) to ${outputFile}${c.reset}`);
 }
 
 async function cmdRun(args: string[]) {
@@ -434,6 +492,11 @@ Commands:
   convert <session-id> [--strategy <s>]   Convert trace to eval cases
     Strategies: first-turn, any-turn, recovery, escalation, all (default)
 
+  convert-run <run-id> [--strategy <s>]  Convert orchestrator run trace to eval cases
+    Strategies: verifier-decision, lane-isolation, escalation-flow, all (default)
+
+  convert-golden                         Convert golden fixtures to eval cases
+
   run [options]                           Run eval cases against LLM
     --case <id>    Run a specific case
     --all          Run all cases
@@ -562,6 +625,7 @@ function cmdCritique(args: string[]) {
     goldenCoverage,
   });
   const runTraceSignals = summarizeRunTraceSignals(runFilter);
+  const runTraceCompliance = summarizeRunTraceCompliance(runFilter);
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -586,6 +650,7 @@ function cmdCritique(args: string[]) {
     lowCompositeCases: lowComposite,
     goldenCoverage,
     runTraceSignals,
+    runTraceCompliance,
     suggestions,
     llmPromptTemplate:
       "You are evaluating prompt quality for an agentic browser system. " +
@@ -655,6 +720,31 @@ function summarizeRunTraceSignals(runFilter?: string) {
     skillLearnedEvents: counts["skill_learned"] || 0,
     avgReplayDurationDeltaMs: durationDeltas.length ? avg(durationDeltas) : 0,
     avgReplayTokenDelta: tokenDeltas.length ? avg(tokenDeltas) : 0,
+  };
+}
+
+function summarizeRunTraceCompliance(runFilter?: string) {
+  const manifests = readRunTraceManifests();
+  if (manifests.length === 0) return null;
+
+  const selected = runFilter
+    ? manifests.find((m: any) => m.runId === runFilter || String(m.runId || "").startsWith(runFilter))
+    : manifests[manifests.length - 1];
+  if (!selected || typeof selected.runId !== "string") return null;
+
+  const events = readRunTraceEvents(selected.runId);
+  const violations = analyzeRunTraceCompliance(selected.runId, events as any[]);
+
+  const byType: Record<string, number> = {};
+  for (const v of violations) {
+    byType[v.type] = (byType[v.type] || 0) + 1;
+  }
+
+  return {
+    runId: selected.runId,
+    totalViolations: violations.length,
+    byType,
+    violations: violations.slice(0, 20),
   };
 }
 
@@ -788,6 +878,9 @@ function renderCritiqueMarkdown(report: any): string {
   const runTraceSection = report.runTraceSignals
     ? `## Run Trace Signals\n\n- runId: ${report.runTraceSignals.runId}\n- totalEvents: ${report.runTraceSignals.totalEvents}\n- laneIsolated: ${report.runTraceSignals.laneIsolated}\n- escalationsRequested: ${report.runTraceSignals.escalationsRequested}\n- checkpointResumes: ${report.runTraceSignals.checkpointResumes}\n- completions: ${report.runTraceSignals.completions}\n- skillReplayAttempts: ${report.runTraceSignals.skillReplayAttempts}\n- skillReplayHits: ${report.runTraceSignals.skillReplayHits}\n- skillReplayMisses: ${report.runTraceSignals.skillReplayMisses}\n- skillReplayDryRunMatches: ${report.runTraceSignals.skillReplayDryRunMatches}\n- skillReplaySuccesses: ${report.runTraceSignals.skillReplaySuccesses}\n- skillReplayFailures: ${report.runTraceSignals.skillReplayFailures}\n- skillLearnedEvents: ${report.runTraceSignals.skillLearnedEvents}\n- avgReplayDurationDeltaMs: ${Number(report.runTraceSignals.avgReplayDurationDeltaMs || 0).toFixed(2)}\n- avgReplayTokenDelta: ${Number(report.runTraceSignals.avgReplayTokenDelta || 0).toFixed(2)}\n`
     : "## Run Trace Signals\n\n- none\n";
+  const complianceSection = report.runTraceCompliance
+    ? `## Run Trace Compliance\n\n- runId: ${report.runTraceCompliance.runId}\n- totalViolations: ${report.runTraceCompliance.totalViolations}\n- byType: ${JSON.stringify(report.runTraceCompliance.byType)}\n${report.runTraceCompliance.violations.map((v: any) => `- [${v.type}] ${v.message}`).join("\n")}\n`
+    : "";
 
   return `# Evals Critique Report
 
@@ -816,6 +909,7 @@ ${toolLines}
 
 ${runTraceSection}
 
+${complianceSection}
 ## Suggested Prompt Improvements
 
 ${suggestions}
