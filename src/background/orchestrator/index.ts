@@ -65,7 +65,7 @@ import { LearnedSkill, SkillStore } from "../skills/store";
 const DEFAULT_MAX_WORKERS = 3;
 const DEFAULT_MAX_REPLANS = 3;
 const DEFAULT_MAX_SESSION_TIME_MS = 12 * 60 * 1000;
-const DEFAULT_MAX_TOTAL_TOKENS = 75_000;
+const DEFAULT_MAX_TOTAL_TOKENS = 1_000_000;
 const DEFAULT_MAX_TOTAL_COST_USD = 1.5;
 const MAX_VERIFIER_REFLECTION_ROUNDS = 2;
 const MIN_CRITIC_CONFIDENCE_DELTA = 0.15;
@@ -161,6 +161,18 @@ class LaneIsolationError extends Error {
     this.lane = lane;
     this.remainingMs = remainingMs;
     this.lastError = lastError;
+  }
+}
+
+class LaneTimeoutError extends Error {
+  readonly lane: RuntimeLane;
+  readonly timeoutMs: number;
+
+  constructor(lane: RuntimeLane, timeoutMs: number) {
+    super(`${lane} lane timeout (${timeoutMs}ms)`);
+    this.name = "LaneTimeoutError";
+    this.lane = lane;
+    this.timeoutMs = timeoutMs;
   }
 }
 
@@ -477,6 +489,9 @@ function emptySessionMetrics(): SessionMetrics {
     totalCompletionTokens: 0,
     totalTokens: 0,
     totalCost: 0,
+    totalCostActual: 0,
+    totalCostEstimated: 0,
+    costMode: "none",
     totalLlmTimeMs: 0,
     totalSessionTimeMs: 0,
     llmCallCount: 0,
@@ -508,6 +523,9 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
       const completionTokens = entry.completionTokens;
       const cost = entry.cost;
       const calls = entry.calls;
+      const actualCost = entry.actualCost;
+      const estimatedCost = entry.estimatedCost;
+      const costMode = entry.costMode;
       if (
         typeof promptTokens !== "number" ||
         typeof completionTokens !== "number" ||
@@ -516,15 +534,86 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
       ) {
         return null;
       }
-      modelBreakdown[model] = { promptTokens, completionTokens, cost, calls };
+      if (
+        actualCost !== undefined &&
+        (typeof actualCost !== "number" || Number.isNaN(actualCost) || actualCost < 0)
+      ) {
+        return null;
+      }
+      if (
+        estimatedCost !== undefined &&
+        (typeof estimatedCost !== "number" ||
+          Number.isNaN(estimatedCost) ||
+          estimatedCost < 0)
+      ) {
+        return null;
+      }
+      if (
+        costMode !== undefined &&
+        costMode !== "none" &&
+        costMode !== "actual" &&
+        costMode !== "estimated" &&
+        costMode !== "mixed"
+      ) {
+        return null;
+      }
+      const normalizedActualCost = (actualCost as number | undefined) ?? 0;
+      const normalizedEstimatedCost = (estimatedCost as number | undefined) ?? 0;
+      const normalizedCostMode =
+        (costMode as "none" | "actual" | "estimated" | "mixed" | undefined) ??
+        (normalizedActualCost > 0 && normalizedEstimatedCost > 0
+          ? "mixed"
+          : normalizedActualCost > 0
+            ? "actual"
+            : normalizedEstimatedCost > 0
+              ? "estimated"
+              : "none");
+      modelBreakdown[model] = {
+        promptTokens,
+        completionTokens,
+        cost,
+        actualCost: normalizedActualCost,
+        estimatedCost: normalizedEstimatedCost,
+        costMode: normalizedCostMode,
+        calls,
+      };
     }
   }
+
+  const totalCostActual =
+    typeof raw.totalCostActual === "number" &&
+    !Number.isNaN(raw.totalCostActual) &&
+    raw.totalCostActual >= 0
+      ? raw.totalCostActual
+      : (raw.totalCost as number);
+  const totalCostEstimated =
+    typeof raw.totalCostEstimated === "number" &&
+    !Number.isNaN(raw.totalCostEstimated) &&
+    raw.totalCostEstimated >= 0
+      ? raw.totalCostEstimated
+      : 0;
+  const costMode =
+    raw.costMode === "none" ||
+    raw.costMode === "actual" ||
+    raw.costMode === "estimated" ||
+    raw.costMode === "mixed"
+      ? raw.costMode
+      : totalCostActual > 0 && totalCostEstimated > 0
+        ? "mixed"
+        : totalCostActual > 0
+          ? "actual"
+          : totalCostEstimated > 0
+            ? "estimated"
+            : "none";
 
   return {
     totalPromptTokens: raw.totalPromptTokens as number,
     totalCompletionTokens: raw.totalCompletionTokens as number,
     totalTokens: raw.totalTokens as number,
     totalCost: raw.totalCost as number,
+    totalCostActual,
+    totalCostEstimated,
+    costMode,
     totalLlmTimeMs: raw.totalLlmTimeMs as number,
     totalSessionTimeMs: raw.totalSessionTimeMs as number,
     llmCallCount: raw.llmCallCount as number,
@@ -564,6 +653,18 @@ function mergeSessionMetrics(
   target.totalCompletionTokens += incoming.totalCompletionTokens;
   target.totalTokens += incoming.totalTokens;
   target.totalCost += incoming.totalCost;
+  target.totalCostActual =
+    (target.totalCostActual ?? 0) + (incoming.totalCostActual ?? 0);
+  target.totalCostEstimated =
+    (target.totalCostEstimated ?? 0) + (incoming.totalCostEstimated ?? 0);
+  target.costMode =
+    (target.totalCostActual ?? 0) > 0 && (target.totalCostEstimated ?? 0) > 0
+      ? "mixed"
+      : (target.totalCostActual ?? 0) > 0
+        ? "actual"
+        : (target.totalCostEstimated ?? 0) > 0
+          ? "estimated"
+          : "none";
   target.totalLlmTimeMs += incoming.totalLlmTimeMs;
   target.totalSessionTimeMs += incoming.totalSessionTimeMs;
   target.llmCallCount += incoming.llmCallCount;
@@ -573,11 +674,25 @@ function mergeSessionMetrics(
       promptTokens: 0,
       completionTokens: 0,
       cost: 0,
+      actualCost: 0,
+      estimatedCost: 0,
+      costMode: "none",
       calls: 0,
     };
     existing.promptTokens += metrics.promptTokens;
     existing.completionTokens += metrics.completionTokens;
     existing.cost += metrics.cost;
+    existing.actualCost = (existing.actualCost ?? 0) + (metrics.actualCost ?? 0);
+    existing.estimatedCost =
+      (existing.estimatedCost ?? 0) + (metrics.estimatedCost ?? 0);
+    existing.costMode =
+      (existing.actualCost ?? 0) > 0 && (existing.estimatedCost ?? 0) > 0
+        ? "mixed"
+        : (existing.actualCost ?? 0) > 0
+          ? "actual"
+          : (existing.estimatedCost ?? 0) > 0
+            ? "estimated"
+            : "none";
     existing.calls += metrics.calls;
     target.modelBreakdown[model] = existing;
   }
@@ -1174,8 +1289,9 @@ export class Orchestrator {
         (timeoutId = setTimeout(
           () =>
             reject(
-              new Error(
-                `${lane} lane timeout (${state.policy.maxCallMs}ms)`,
+              new LaneTimeoutError(
+                lane,
+                state.policy.maxCallMs,
               ),
             ),
           state.policy.maxCallMs,
@@ -1190,6 +1306,13 @@ export class Orchestrator {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof LaneTimeoutError && lane === "executor" && queued.nodeId) {
+        this.stopExecutorWorkerForNode(
+          task.workspaceId,
+          queued.nodeId,
+          `Lane timeout after ${state.policy.maxCallMs}ms`,
+        );
+      }
       state.failures += 1;
       state.lastError = message;
       state.totalDurationMs += Date.now() - startedAt;
@@ -1382,6 +1505,31 @@ export class Orchestrator {
       this.emitLaneSupervisorActivity(task.workspaceId);
       void this.drainLaneQueue(task.workspaceId, lane);
     });
+  }
+
+  private stopExecutorWorkerForNode(
+    workspaceId: string,
+    nodeId: string,
+    reason: string,
+  ): boolean {
+    const workers = this.workersByWorkspace.get(workspaceId)?.executor;
+    if (!workers) return false;
+
+    let stopped = false;
+    for (const worker of workers.values()) {
+      if (worker.nodeId !== nodeId) continue;
+      worker.loop.stop();
+      this.memoryBuffer.discardWorker(worker.workerId);
+      workers.delete(worker.workerId);
+      stopped = true;
+      logger.warn("orchestrator", "Executor worker stopped", {
+        workspaceId,
+        nodeId,
+        workerId: worker.workerId,
+        reason,
+      });
+    }
+    return stopped;
   }
 
   private appendHandoffArtifact(
@@ -1751,7 +1899,10 @@ export class Orchestrator {
       sessionMetrics: emptySessionMetrics(),
       budget: {
         maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
-        maxTotalTokens: DEFAULT_MAX_TOTAL_TOKENS,
+        maxTotalTokens: clampInteger(
+          input.settings.orchestratorMaxTotalTokens ?? DEFAULT_MAX_TOTAL_TOKENS,
+          1,
+        ),
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
       },
     };
@@ -2303,10 +2454,17 @@ export class Orchestrator {
           handoffArtifactCount: node.handoffArtifacts.length,
           instructionChars: executorInstruction.length,
         });
-        const result = await this.runInLane(task, "executor", async () =>
-          loop.start(executorInstruction, tabId, snapshot, {
-            clearHistory: true,
-          }),
+        const result = await this.runInLane(
+          task,
+          "executor",
+          async () =>
+            loop.start(executorInstruction, tabId, snapshot, {
+              clearHistory: true,
+            }),
+          {
+            label: `executor node ${node.id.slice(0, 8)}`,
+            nodeId: node.id,
+          },
         );
         task.sessionMetrics = mergeSessionMetrics(task.sessionMetrics, result.metrics);
         budgetEstimator.recordObservation({

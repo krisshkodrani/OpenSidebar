@@ -10,6 +10,7 @@ type MockLoopConfig = {
 
 const createdLoopNodeIds: string[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
+const stoppedLoopNodeIds: string[] = [];
 
 let plannerBuildNodesImpl: (...args: unknown[]) => Promise<TaskNode[]>;
 let plannerExpandNodeImpl: (...args: unknown[]) => Promise<TaskNode[] | null>;
@@ -115,6 +116,7 @@ describe("Orchestrator integration join tests", () => {
   beforeEach(() => {
     createdLoopNodeIds.length = 0;
     capturedInstructions.length = 0;
+    stoppedLoopNodeIds.length = 0;
 
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
@@ -245,7 +247,9 @@ describe("Orchestrator integration join tests", () => {
             }
             return loopStartImpl(cfg.nodeId, instruction);
           },
-          stop() {},
+          stop() {
+            if (cfg.nodeId) stoppedLoopNodeIds.push(cfg.nodeId);
+          },
           pause() {},
           resume() {},
           isPaused() {
@@ -496,9 +500,9 @@ describe("Orchestrator integration join tests", () => {
       outcome: "completed",
       summary: `completed ${nodeId || "unknown"}`,
       metrics: {
-        totalPromptTokens: 80000,
-        totalCompletionTokens: 1000,
-        totalTokens: 81000,
+        totalPromptTokens: 1_090_000,
+        totalCompletionTokens: 10_000,
+        totalTokens: 1_100_000,
         totalCost: 0.4,
         totalLlmTimeMs: 1000,
         totalSessionTimeMs: 3000,
@@ -506,8 +510,8 @@ describe("Orchestrator integration join tests", () => {
         totalCachedTokens: 200,
         modelBreakdown: {
           "test/model": {
-            promptTokens: 80000,
-            completionTokens: 1000,
+            promptTokens: 1_090_000,
+            completionTokens: 10_000,
             cost: 0.4,
             calls: 3,
           },
@@ -530,19 +534,19 @@ describe("Orchestrator integration join tests", () => {
     expect(String(completion?.payload?.terminationReason || "")).toContain(
       "Global token budget exceeded",
     );
-    expect(completion?.payload?.metrics?.totalTokens).toBe(81000);
+    expect(completion?.payload?.metrics?.totalTokens).toBe(1100000);
   });
 
   test("preflight defers excess nodes when plan exceeds budget envelope", async () => {
     plannerBuildNodesImpl = async () =>
-      Array.from({ length: 8 }, (_, i) => makeNode(`p${i + 1}`, `plan step ${i + 1}`));
+      Array.from({ length: 10 }, (_, i) => makeNode(`p${i + 1}`, `plan step ${i + 1}`));
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("preflight budget fit task"));
 
-    expect(createdLoopNodeIds).toEqual(["p1", "p2", "p3", "p4", "p5", "p6"]);
+    expect(createdLoopNodeIds).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]);
     const messages = (globalThis as any).__runtimeMessages as Array<{
       type?: string;
       payload?: any;
@@ -593,6 +597,38 @@ describe("Orchestrator integration join tests", () => {
     expect(
       String(completion?.payload?.subtaskResults?.[0]?.result || ""),
     ).toContain("Planner lane isolated during replan");
+  });
+
+  test("stops timed-out executor worker to prevent lane contamination", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "timeout cleanup node")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () =>
+      await new Promise<{ outcome: "completed" | "failed"; summary: string }>(
+        () => {
+          // Intentionally never resolve to force executor lane timeout.
+        },
+      );
+    orchestratorDeps.lanePolicies = {
+      executor: {
+        maxCallMs: 30,
+        maxFailuresBeforeIsolation: 1,
+        isolationCooldownMs: 60_000,
+      },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("executor timeout cleanup"));
+
+    expect(stoppedLoopNodeIds).toContain("n1");
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("failed");
   });
 
   test("applies bounded verifier-critic reflection and can upgrade retry to accept", async () => {

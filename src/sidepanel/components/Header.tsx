@@ -1,7 +1,5 @@
 import React from "react";
 import { Settings, Bookmark } from "lucide-react";
-import { StatusBar } from "./StatusBar";
-import { ArchitectureStrip } from "./ArchitectureStrip";
 
 interface Props {
   onOpenSettings: () => void;
@@ -16,17 +14,15 @@ export function Header({
 }: Props) {
   return (
     <header className="flex items-center justify-between p-4 border-b border-warm-200 dark:border-warm-800 glass-surface sticky top-0 z-10 transition-colors">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          {/* Logo removed as per user request */}
-          {showApprovalBypassBadge && (
-            <span className="inline-flex items-center rounded-full border border-amber-300 dark:border-amber-700 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-              Approval bypass ON
-            </span>
-          )}
-        </div>
-        <StatusBar />
-        <ArchitectureStrip />
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className="text-sm font-semibold text-warm-800 dark:text-warm-100 truncate">
+          OpenSidebar
+        </h1>
+        {showApprovalBypassBadge && (
+          <span className="inline-flex items-center rounded-full border border-amber-300 dark:border-amber-700 bg-amber-100/80 dark:bg-amber-900/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+            Approval bypass ON
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-1">

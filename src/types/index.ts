@@ -163,6 +163,8 @@ export type RuntimeMessage =
   | PauseAgentMessage
   | ResumeAgentMessage
   | SessionMetricsMessage
+  | DataControlRequestMessage
+  | DataControlResultMessage
   | ContentScriptReadyMessage
   | DomReadyProbeMessage
   | DomReadyAckMessage;
@@ -551,6 +553,30 @@ export interface SessionMetricsMessage extends BaseMessage {
   payload: SessionMetrics;
 }
 
+/** Side panel requests a scoped privacy/data cleanup action. */
+export interface DataControlRequestMessage extends BaseMessage {
+  type: "DATA_CONTROL_REQUEST";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    action:
+      | "clear_memory"
+      | "clear_logs"
+      | "clear_chat_history"
+      | "clear_local_data";
+  };
+}
+
+/** Background reports result of a data cleanup action. */
+export interface DataControlResultMessage extends BaseMessage {
+  type: "DATA_CONTROL_RESULT";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    action: DataControlRequestMessage["payload"]["action"];
+    ok: boolean;
+    detail: string;
+  };
+}
+
 /** Accumulated token usage, cost, and timing for an agent session */
 export interface SessionMetrics {
   /** Total prompt tokens across all LLM calls this session */
@@ -561,6 +587,12 @@ export interface SessionMetrics {
   totalTokens: number;
   /** Cumulative cost in USD from OpenRouter */
   totalCost: number;
+  /** Cost returned directly by provider responses (`usage.cost`) */
+  totalCostActual?: number;
+  /** Cost estimated locally from token counts + pricing table when provider cost is missing */
+  totalCostEstimated?: number;
+  /** Provenance of `totalCost` */
+  costMode?: "none" | "actual" | "estimated" | "mixed";
   /** Total LLM call time in ms (wall clock, not including tool execution) */
   totalLlmTimeMs: number;
   /** Total session wall clock time in ms */
@@ -576,6 +608,9 @@ export interface SessionMetrics {
       promptTokens: number;
       completionTokens: number;
       cost: number;
+      actualCost?: number;
+      estimatedCost?: number;
+      costMode?: "none" | "actual" | "estimated" | "mixed";
       calls: number;
     }
   >;
@@ -1561,6 +1596,12 @@ export interface UserSettings {
   visionModel: string;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
+  /** Expand step timeline + tool logs by default in each assistant message */
+  showMessageDetailsByDefault?: boolean;
+  /** Site access policy for agent execution */
+  siteAccessMode?: "allow_all" | "blocklist";
+  /** Blocked domains when `siteAccessMode` is `blocklist` */
+  siteAccessBlocklist?: string[];
   /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
   disableScreenshot: boolean;
   /** Hide navigate from tools */

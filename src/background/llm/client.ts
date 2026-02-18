@@ -576,6 +576,7 @@ export class LLMClient {
       };
 
       let response: Response;
+      let actualProviderId: "openrouter" | "groq" | "cerebras";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -593,6 +594,10 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
+        actualProviderId = fetchResult.actualProviderId as
+          | "openrouter"
+          | "groq"
+          | "cerebras";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -721,6 +726,7 @@ export class LLMClient {
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
         usage,
+        actualProviderId,
         actualModel,
       };
     } catch (error: any) {
@@ -789,6 +795,7 @@ export class LLMClient {
       };
 
       let response: Response;
+      let actualProviderId: "openrouter" | "groq" | "cerebras";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -806,6 +813,10 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
+        actualProviderId = fetchResult.actualProviderId as
+          | "openrouter"
+          | "groq"
+          | "cerebras";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -911,6 +922,7 @@ export class LLMClient {
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
         usage: result.usage,
+        actualProviderId,
         actualModel,
       };
     } catch (error: any) {

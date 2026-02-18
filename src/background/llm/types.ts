@@ -63,6 +63,8 @@ export interface CompletionResponse {
   tool_calls?: ToolCall[];
   finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | "error";
   usage?: TokenUsage;
+  /** Provider that actually served this request (may differ from requested after failover) */
+  actualProviderId?: ProviderConfig["providerId"];
   /** Model that actually served this request (may differ from requested after failover) */
   actualModel?: string;
 }

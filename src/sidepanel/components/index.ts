@@ -3,6 +3,7 @@ export * from "./ArchitectureStrip";
 export * from "./MessageBubble";
 export * from "./InputArea";
 export * from "./ControlBar";
+export * from "./RunStatusHeader";
 export * from "./StepTimeline";
 export * from "./StuckBanner";
 export * from "./RecoveryBanner";

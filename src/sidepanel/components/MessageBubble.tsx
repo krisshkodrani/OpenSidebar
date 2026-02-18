@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import {
   AgentStep,
@@ -8,6 +8,7 @@ import {
   ToolName,
 } from "../../types";
 import { clsx } from "clsx";
+import { useStore } from "../store";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
 import { ScreenshotLightbox } from "./ScreenshotLightbox";
@@ -42,9 +43,22 @@ function formatTimeCompact(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
+function resolveCostMode(
+  metrics: SessionMetrics,
+): "none" | "actual" | "estimated" | "mixed" {
+  if (metrics.costMode) return metrics.costMode;
+  const actual = metrics.totalCostActual ?? 0;
+  const estimated = metrics.totalCostEstimated ?? 0;
+  if (actual <= 0 && estimated <= 0) return "none";
+  if (actual > 0 && estimated > 0) return "mixed";
+  if (actual > 0) return "actual";
+  return "estimated";
+}
+
 function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
   const models = Object.entries(metrics.modelBreakdown);
   const showBreakdown = models.length > 1;
+  const costMode = resolveCostMode(metrics);
 
   return (
     <div className="text-xs text-warm-500 dark:text-warm-400 tabular-nums space-y-0.5">
@@ -52,7 +66,9 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>
-          {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "—"}
+          {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "--"}
+          {metrics.totalCost > 0 && costMode === "estimated" ? " (est.)" : ""}
+          {metrics.totalCost > 0 && costMode === "mixed" ? " (mixed)" : ""}
         </span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
@@ -153,19 +169,31 @@ export const MessageBubble = React.memo(function MessageBubble({
 }: {
   message: ChatEntry;
 }) {
+  const showDetailsByDefault = useStore(
+    (s) => s.settings.showMessageDetailsByDefault ?? false,
+  );
   const isUser = message.role === "user";
   const isHint = isUser && message.isHint;
+  const hasDetails =
+    !isUser &&
+    ((message.steps?.length ?? 0) > 0 || message.toolCalls.length > 0);
+  const [showDetails, setShowDetails] = useState(
+    message.isStreaming || showDetailsByDefault,
+  );
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (message.isStreaming) setShowDetails(true);
+  }, [message.isStreaming]);
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
-    // Strip markdown Think/Observe/Verify reasoning sections before rendering
     const cleaned = message.content
       .replace(
         /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
         "",
       )
-      .replace(/\*\*Act\*\*:?\s*/gi, "")
+      .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
       .trim();
     if (!cleaned) return "";
     return marked.parse(cleaned) as string;
@@ -186,7 +214,6 @@ export const MessageBubble = React.memo(function MessageBubble({
         isUser ? "items-end" : "items-start",
       )}
     >
-      {/* Inline Screenshot Thumbnails */}
       {!isUser && screenshotSteps.length > 0 && (
         <div className="flex flex-col gap-2 max-w-[85%]">
           {screenshotSteps.map((step, idx) => (
@@ -206,12 +233,7 @@ export const MessageBubble = React.memo(function MessageBubble({
           onClose={() => setLightboxSrc(null)}
         />
       )}
-      {!isUser && message.steps && message.steps.length > 0 && (
-        <StepTimeline
-          steps={message.steps}
-          defaultCollapsed={!message.isStreaming}
-        />
-      )}
+
       <div
         className={clsx(
           "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
@@ -245,8 +267,31 @@ export const MessageBubble = React.memo(function MessageBubble({
         )}
       </div>
 
-      {/* Tool Calls */}
-      {message.toolCalls.length > 0 && (
+      {hasDetails && (
+        <div className="w-full max-w-[85%] mt-1">
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="text-[11px] text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200 transition-colors"
+          >
+            {showDetails ? "Hide details" : "Show details"}
+            {message.steps && message.steps.length > 0
+              ? ` · ${message.steps.length} steps`
+              : ""}
+            {message.toolCalls.length > 0
+              ? ` · ${message.toolCalls.length} tools`
+              : ""}
+          </button>
+        </div>
+      )}
+
+      {showDetails && !isUser && message.steps && message.steps.length > 0 && (
+        <StepTimeline
+          steps={message.steps}
+          defaultCollapsed={!message.isStreaming}
+        />
+      )}
+
+      {showDetails && message.toolCalls.length > 0 && (
         <div className="flex flex-col gap-2 w-full max-w-[85%] mt-1">
           {message.toolCalls.map((tool, idx) => (
             <ToolCallBadge key={idx} tool={tool} />

@@ -46,7 +46,7 @@ export function ControlBar() {
   const isActive = !isError && !isPaused;
 
   return (
-    <div className="px-4 py-1.5 bg-primary-50 dark:bg-primary-900/20 border-t border-primary-100 dark:border-primary-900/50 flex items-center gap-2 text-xs">
+    <div className="px-4 py-1.5 bg-primary-50 dark:bg-primary-900/20 border-b border-primary-100 dark:border-primary-900/50 flex items-center gap-2 text-xs">
       {isError ? (
         <div className="w-2 h-2 bg-red-500 rounded-full shrink-0" />
       ) : isPaused ? (

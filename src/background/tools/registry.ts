@@ -1,5 +1,6 @@
-import { ToolName, ToolCall, ToolDefinition } from "../../types";
+import { ToolName, ToolCall, ToolDefinition, UserSettings } from "../../types";
 import { logger } from "../../utils";
+import { getBlockedRuleForUrl } from "../../utils/site-access";
 
 type ToolExecutor = (
   args: Record<string, unknown>,
@@ -57,6 +58,19 @@ export class ToolRegistry {
     }
 
     try {
+      try {
+        const [stored, tab] = await Promise.all([
+          chrome.storage.sync.get("userSettings"),
+          chrome.tabs.get(tabId),
+        ]);
+        const settings = (stored.userSettings ?? {}) as UserSettings;
+        const blocked = getBlockedRuleForUrl(tab.url ?? "", settings);
+        if (blocked) {
+          return `Error: Tool execution blocked on ${blocked.host} by site access rule "${blocked.rule}".`;
+        }
+      } catch {
+        // Non-fatal: if checks fail, continue and let tool execute.
+      }
       const result = await executor(args, tabId, signal);
       return result;
     } catch (error: any) {

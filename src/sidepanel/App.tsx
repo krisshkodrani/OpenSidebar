@@ -17,18 +17,18 @@ import {
   Header,
   MessageBubble,
   InputArea,
-  ControlBar,
+  RunStatusHeader,
   StuckBanner,
   RecoveryBanner,
   ApprovalBanner,
   EscalationBanner,
   OrchestratorConsole,
   PlanBoard,
-  MetricsBar,
 } from "./components";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
+import { getBlockedRuleForUrl } from "../utils/site-access";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -49,7 +49,6 @@ export default function App() {
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
   const setReady = useStore((s) => s.setReady);
-  const sessionMetrics = useStore((s) => s.sessionMetrics);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
   const inputText = useStore((s) => s.inputText);
   // Sidebar UI State
@@ -63,6 +62,10 @@ export default function App() {
     context: string;
     timestamp: number;
   } | null>(null);
+  const [showSystemPanels, setShowSystemPanels] = useState(false);
+  const [blockedSiteWarning, setBlockedSiteWarning] = useState<string | null>(
+    null,
+  );
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,6 +150,31 @@ export default function App() {
 
   // Tab activation listener — detect workspace switches
   useEffect(() => {
+    const refreshBlockedWarning = async (tabId?: number) => {
+      try {
+        const tab =
+          tabId != null
+            ? await chrome.tabs.get(tabId)
+            : (
+                await chrome.tabs.query({
+                  active: true,
+                  currentWindow: true,
+                })
+              )[0];
+        const url = tab?.url ?? "";
+        const blocked = getBlockedRuleForUrl(url, settings);
+        setBlockedSiteWarning(
+          blocked
+            ? `Agent is blocked on ${blocked.host} by site access rule "${blocked.rule}".`
+            : null,
+        );
+      } catch {
+        setBlockedSiteWarning(null);
+      }
+    };
+
+    void refreshBlockedWarning();
+
     const listener = async (activeInfo: chrome.tabs.TabActiveInfo) => {
       try {
         const stored = await chrome.storage.local.get("opensidebar:workspaces");
@@ -157,6 +185,7 @@ export default function App() {
         if (newWsId !== currentWsId && newWsId != null) {
           useStore.getState().setActiveWorkspaceId(newWsId);
         }
+        await refreshBlockedWarning(activeInfo.tabId);
       } catch (e) {
         logger.warn("ui", "Failed to resolve workspace on tab switch", {
           error: e,
@@ -166,7 +195,7 @@ export default function App() {
 
     chrome.tabs.onActivated.addListener(listener);
     return () => chrome.tabs.onActivated.removeListener(listener);
-  }, []);
+  }, [settings]);
 
   // Message Bridge — centralized message routing from background to store
   useEffect(() => {
@@ -378,14 +407,32 @@ export default function App() {
         prefillContent={savedPromptsPrefill}
       />
 
+      <RunStatusHeader />
       <StuckBanner />
       <RecoveryBanner />
       <ApprovalBanner />
       <EscalationBanner />
-      <OrchestratorConsole />
-      <PlanBoard />
+      <div className="px-4 py-1 border-b border-warm-200/60 dark:border-warm-800/60">
+        <button
+          onClick={() => setShowSystemPanels((v) => !v)}
+          className="text-[11px] text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200 transition-colors"
+        >
+          {showSystemPanels ? "Hide system panels" : "Show system panels"}
+        </button>
+      </div>
+      {showSystemPanels && (
+        <>
+          <OrchestratorConsole />
+          <PlanBoard />
+        </>
+      )}
 
       <main className="flex-1 overflow-hidden relative flex flex-col">
+        {blockedSiteWarning && (
+          <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+            {blockedSiteWarning}
+          </div>
+        )}
         {error && (
           <div
             role="alert"
@@ -436,10 +483,6 @@ export default function App() {
       </main>
 
       <div className="flex flex-col shrink-0 glass-surface z-20 border-t border-warm-200 dark:border-warm-800 shadow-glass">
-        <ControlBar />
-        {settings.showSessionMetrics && sessionMetrics && (
-          <MetricsBar metrics={sessionMetrics} />
-        )}
         <InputArea
           onSend={handleSend}
           onSendHint={handleSendHint}

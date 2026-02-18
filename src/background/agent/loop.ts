@@ -28,6 +28,7 @@ import { ProgressTracker } from "./progress";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
+import { estimateCostUsd } from "../llm/pricing";
 import { formatStepLabel } from "./step-labels";
 import { PlanGuardian } from "./guardian";
 import { TraceRecorder } from "./trace";
@@ -449,6 +450,9 @@ export class AgentLoop {
       totalCompletionTokens: 0,
       totalTokens: 0,
       totalCost: 0,
+      totalCostActual: 0,
+      totalCostEstimated: 0,
+      costMode: "none",
       totalLlmTimeMs: 0,
       totalSessionTimeMs: 0,
       llmCallCount: 0,
@@ -457,15 +461,45 @@ export class AgentLoop {
     };
   }
 
+  private static deriveCostMode(
+    actualCost: number,
+    estimatedCost: number,
+  ): "none" | "actual" | "estimated" | "mixed" {
+    if (actualCost <= 0 && estimatedCost <= 0) return "none";
+    if (actualCost > 0 && estimatedCost > 0) return "mixed";
+    if (actualCost > 0) return "actual";
+    return "estimated";
+  }
+
+  private resolveCost(
+    usage: TokenUsage,
+    providerId: "openrouter" | "groq" | "cerebras",
+    model: string,
+  ): { total: number; actual: number; estimated: number } {
+    if (usage.cost != null) {
+      return { total: usage.cost, actual: usage.cost, estimated: 0 };
+    }
+    const estimated = estimateCostUsd(providerId, model, usage) ?? 0;
+    return { total: estimated, actual: 0, estimated };
+  }
+
   /** Accumulate usage from an LLM response */
   private recordUsage(response: CompletionResponse, llmMs: number): void {
     if (response.usage) {
       this.metrics.totalPromptTokens += response.usage.prompt_tokens;
       this.metrics.totalCompletionTokens += response.usage.completion_tokens;
       this.metrics.totalTokens += response.usage.total_tokens;
-      if (response.usage.cost != null) {
-        this.metrics.totalCost += response.usage.cost;
-      }
+      const providerId = response.actualProviderId ?? this.llm.getCurrentProvider();
+      const model = response.actualModel ?? this.llm.getCurrentModel();
+      const cost = this.resolveCost(response.usage, providerId, model);
+      this.metrics.totalCost += cost.total;
+      this.metrics.totalCostActual = (this.metrics.totalCostActual ?? 0) + cost.actual;
+      this.metrics.totalCostEstimated =
+        (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
+      this.metrics.costMode = AgentLoop.deriveCostMode(
+        this.metrics.totalCostActual ?? 0,
+        this.metrics.totalCostEstimated ?? 0,
+      );
       if (response.usage.cached_tokens) {
         this.metrics.totalCachedTokens += response.usage.cached_tokens;
         logger.debug("agent", "Cache hit", {
@@ -486,6 +520,9 @@ export class AgentLoop {
         promptTokens: 0,
         completionTokens: 0,
         cost: 0,
+        actualCost: 0,
+        estimatedCost: 0,
+        costMode: "none",
         calls: 0,
       };
     }
@@ -494,9 +531,15 @@ export class AgentLoop {
     if (response.usage) {
       entry.promptTokens += response.usage.prompt_tokens;
       entry.completionTokens += response.usage.completion_tokens;
-      if (response.usage.cost != null) {
-        entry.cost += response.usage.cost;
-      }
+      const providerId = response.actualProviderId ?? this.llm.getCurrentProvider();
+      const cost = this.resolveCost(response.usage, providerId, model);
+      entry.cost += cost.total;
+      entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
+      entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
+      entry.costMode = AgentLoop.deriveCostMode(
+        entry.actualCost ?? 0,
+        entry.estimatedCost ?? 0,
+      );
     }
   }
 
@@ -509,9 +552,15 @@ export class AgentLoop {
     this.metrics.totalPromptTokens += usage.prompt_tokens;
     this.metrics.totalCompletionTokens += usage.completion_tokens;
     this.metrics.totalTokens += usage.total_tokens;
-    if (usage.cost != null) {
-      this.metrics.totalCost += usage.cost;
-    }
+    const cost = this.resolveCost(usage, "openrouter", model);
+    this.metrics.totalCost += cost.total;
+    this.metrics.totalCostActual = (this.metrics.totalCostActual ?? 0) + cost.actual;
+    this.metrics.totalCostEstimated =
+      (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
+    this.metrics.costMode = AgentLoop.deriveCostMode(
+      this.metrics.totalCostActual ?? 0,
+      this.metrics.totalCostEstimated ?? 0,
+    );
     this.metrics.totalLlmTimeMs += llmMs;
     this.metrics.llmCallCount += 1;
 
@@ -520,6 +569,9 @@ export class AgentLoop {
         promptTokens: 0,
         completionTokens: 0,
         cost: 0,
+        actualCost: 0,
+        estimatedCost: 0,
+        costMode: "none",
         calls: 0,
       };
     }
@@ -527,9 +579,13 @@ export class AgentLoop {
     entry.calls += 1;
     entry.promptTokens += usage.prompt_tokens;
     entry.completionTokens += usage.completion_tokens;
-    if (usage.cost != null) {
-      entry.cost += usage.cost;
-    }
+    entry.cost += cost.total;
+    entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
+    entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
+    entry.costMode = AgentLoop.deriveCostMode(
+      entry.actualCost ?? 0,
+      entry.estimatedCost ?? 0,
+    );
   }
 
   /** Get the current accumulated metrics snapshot */

@@ -6,6 +6,10 @@ import {
   AgentStatus,
   UserSettings,
 } from "../types";
+import { sendMessageToMemory } from "./memory/bridge";
+import { storageLogger } from "../utils/storage-logger";
+import { SKILLS_STORAGE_KEY } from "../skills/types";
+import { getBlockedRuleForUrl } from "../utils/site-access";
 import { AgentLoop } from "./agent";
 import { workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
@@ -365,7 +369,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: RuntimeMessage, _sender, _sendResponse) => {
+  (message: RuntimeMessage, _sender, sendResponse) => {
     // 1. Chat (or hint injection)
     if (
       message.source === MessageSource.SIDEPANEL &&
@@ -469,6 +473,69 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "DATA_CONTROL_REQUEST"
+    ) {
+      (async () => {
+        try {
+          const action = message.payload.action;
+          if (action === "clear_memory") {
+            await sendMessageToMemory({ action: "clear" });
+            sendResponse({
+              ok: true,
+              detail: "Long-term memory cleared.",
+            });
+            return;
+          }
+          if (action === "clear_logs") {
+            await storageLogger.clear();
+            sendResponse({
+              ok: true,
+              detail: "Local extension logs cleared.",
+            });
+            return;
+          }
+          if (action === "clear_chat_history") {
+            const sessionData = await chrome.storage.session.get(null);
+            const keys = Object.keys(sessionData).filter(
+              (k) => k === "chatMessages" || k.startsWith("chatMessages:"),
+            );
+            if (keys.length > 0) await chrome.storage.session.remove(keys);
+            sendResponse({
+              ok: true,
+              detail: "Chat history cleared for all workspaces.",
+            });
+            return;
+          }
+          if (action === "clear_local_data") {
+            await chrome.storage.local.remove([
+              "opensidebar:savedPrompts",
+              "opensidebar:savedPromptsSeeded",
+              "opensidebar:savedPromptsVersion",
+              SKILLS_STORAGE_KEY,
+              "opensidebar_logs",
+              "opensidebar:workspaces",
+              "opensidebar:workspaceCounter",
+              "opensidebar:checkpoints:v1",
+            ]);
+            sendResponse({
+              ok: true,
+              detail: "Local extension data cleared.",
+            });
+            return;
+          }
+          sendResponse({ ok: false, detail: "Unknown data control action." });
+        } catch (error: any) {
+          sendResponse({
+            ok: false,
+            detail: `Failed: ${error?.message ?? String(error)}`,
+          });
+        }
+      })();
+      return true;
+    }
+
     return false;
   },
 );
@@ -502,6 +569,28 @@ async function handleUserChat(
     });
     return;
   }
+
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const tabUrl = tab.url ?? "";
+    const blocked = getBlockedRuleForUrl(tabUrl, settings);
+    if (blocked) {
+      chrome.runtime.sendMessage({
+        type: "AGENT_STATUS",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId,
+        payload: {
+          status: AgentStatus.ERROR,
+          detail: `Blocked on ${blocked.host} by site access rule "${blocked.rule}".`,
+        },
+      });
+      return;
+    }
+  } catch {
+    // Ignore tab lookup failures and proceed with normal flow.
+  }
+
   // Notify content script that agent is active
   sendAgentActivity(tabId, true);
 

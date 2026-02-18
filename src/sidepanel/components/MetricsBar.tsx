@@ -25,6 +25,16 @@ function formatTime(ms: number): string {
 
 export function MetricsBar({ metrics }: { metrics: SessionMetrics }) {
   const hasCost = metrics.totalCost > 0;
+  const costMode =
+    metrics.costMode ??
+    (metrics.totalCost > 0
+      ? (metrics.totalCostEstimated ?? 0) > 0 &&
+        (metrics.totalCostActual ?? 0) > 0
+        ? "mixed"
+        : (metrics.totalCostEstimated ?? 0) > 0
+          ? "estimated"
+          : "actual"
+      : "none");
   const cacheRate =
     metrics.totalCachedTokens > 0 && metrics.totalPromptTokens > 0
       ? Math.round(
@@ -42,7 +52,15 @@ export function MetricsBar({ metrics }: { metrics: SessionMetrics }) {
     <div className="px-4 py-1 text-xs text-warm-500 dark:text-warm-400 tabular-nums flex items-center gap-2 flex-wrap">
       <span>{formatTokens(metrics.totalTokens)} tokens</span>
       <span className="text-warm-300 dark:text-warm-600">·</span>
-      {hasCost ? <span>{formatCost(metrics.totalCost)}</span> : <span>—</span>}
+      {hasCost ? (
+        <span>
+          {formatCost(metrics.totalCost)}
+          {costMode === "estimated" ? " (est.)" : ""}
+          {costMode === "mixed" ? " (mixed)" : ""}
+        </span>
+      ) : (
+        <span>--</span>
+      )}
       <span className="text-warm-300 dark:text-warm-600">·</span>
       <span>{formatTime(metrics.totalLlmTimeMs)} LLM</span>
       {tokPerSec > 0 && (
@@ -62,3 +80,4 @@ export function MetricsBar({ metrics }: { metrics: SessionMetrics }) {
     </div>
   );
 }
+
