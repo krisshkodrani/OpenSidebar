@@ -16,7 +16,7 @@ export const AGENT_LIMITS = {
 /** Stuck detection thresholds */
 export const STUCK_THRESHOLDS = {
   /** Turns of no progress before escalating to next tier */
-  ESCALATE: 3,
+  ESCALATE: 5,
   /** Maximum turns before giving up entirely */
   GIVE_UP: 10,
   /** Tighter give-up when already on the smart model (saves wasted turns) */
@@ -25,12 +25,12 @@ export const STUCK_THRESHOLDS = {
 
 /** Escalation/de-escalation cycle limits */
 export const ESCALATION_LIMITS = {
-  /** Max escalation→de-escalation cycles before staying on smart permanently */
-  MAX_CYCLES: 3,
+  /** Max escalation→de-escalation cycles before cooldown becomes effectively permanent */
+  MAX_CYCLES: 5,
   /** Turns of cooldown after de-escalation before re-escalation is allowed */
   COOLDOWN_TURNS: 3,
   /** Minimum turns the smart model must run before de-escalation is allowed */
-  MIN_SMART_TENURE: 5,
+  MIN_SMART_TENURE: 2,
   /** Consecutive progress signals required before de-escalation */
   PROGRESS_GATE: 2,
 } as const;

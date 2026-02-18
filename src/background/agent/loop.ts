@@ -1389,7 +1389,6 @@ export class AgentLoop {
     // BRAINS→HANDS: start at tier 1 (smart) for orientation, then hand off to tier 0 (fast)
     let escalationTier = 1;
     this.escalateModel(); // Start with BRAINS (smart model)
-    let voluntaryEscalation = false; // escalate tool → permanent, no de-escalation
     let orientationPhase = true; // true during initial smart model orientation
     let escalationCycles = 0;
     let cooldownRemaining = 0;
@@ -2234,13 +2233,13 @@ export class AgentLoop {
               break;
             }
 
-            // ESCALATE tool — voluntary model upgrade (permanent, no de-escalation)
+            // ESCALATE tool — voluntary model upgrade (de-escalates after progress)
             if (toolName === ToolName.ESCALATE) {
               const reason = (args.reason as string) || "";
               if (escalationTier < 1) {
                 this.escalateModel();
                 escalationTier = 1;
-                voluntaryEscalation = true;
+                smartModelStartTurn = this.turnCount;
                 orientationPhase = false; // Cancel BRAINS→HANDS handoff
                 this.disabledTools.delete(ToolName.TAKE_SCREENSHOT); // Unlock screenshots
                 prevElementCount = await this.refreshSnapshotWithRetry(
@@ -3218,10 +3217,6 @@ export class AgentLoop {
                 },
                 false,
               );
-              // Permanent escalation after MAX_CYCLES — stop thrashing
-              if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
-                voluntaryEscalation = true;
-              }
             } else if (this.turnsOnCurrentStep === STEP_WATCHDOG.WARN_TURNS) {
               logger.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
@@ -3477,14 +3472,6 @@ export class AgentLoop {
                     },
                     false,
                   );
-                  // Permanent escalation after MAX_CYCLES — stop thrashing
-                  if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
-                    voluntaryEscalation = true;
-                    logger.info("agent", "Permanent escalation after max cycles", {
-                      turn: this.turnCount,
-                      cycles: escalationCycles,
-                    });
-                  }
                 }
               } else if (wasStuck) {
                 // Agent recovered — increment progress gate
@@ -3504,12 +3491,11 @@ export class AgentLoop {
                   wasStuck = false;
                   consecutiveProgressSignals = 0;
 
-                  // De-escalate if on smart model (automatic, not voluntary), under cycle limit,
+                  // De-escalate if on smart model, under cycle limit,
                   // and the smart model has had enough turns to actually work
                   const smartTenure = this.turnCount - smartModelStartTurn;
                   if (
                     escalationTier > 0 &&
-                    !voluntaryEscalation &&
                     escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
                     smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
                   ) {
@@ -3520,8 +3506,8 @@ export class AgentLoop {
                     });
                     escalationTier = 0;
                     this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
+                    cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS * Math.pow(2, escalationCycles);
                     escalationCycles++;
-                    cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
                     this.progress.resetEscalation();
 
                     this.stepHandler(
@@ -3618,10 +3604,6 @@ export class AgentLoop {
             },
             false,
           );
-          // Permanent escalation after MAX_CYCLES — stop thrashing
-          if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
-            voluntaryEscalation = true;
-          }
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
           this.broadcast({
             type: "STREAM_CHUNK",

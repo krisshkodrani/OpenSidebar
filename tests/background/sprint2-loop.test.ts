@@ -267,16 +267,16 @@ describe("Tab Tool Taboo", () => {
 // ─── Escalation Constants ───────────────────────────────────────────────
 
 describe("Escalation Constants", () => {
-  test("MIN_SMART_TENURE is 5", () => {
-    expect(ESCALATION_LIMITS.MIN_SMART_TENURE).toBe(5);
+  test("MIN_SMART_TENURE is 2", () => {
+    expect(ESCALATION_LIMITS.MIN_SMART_TENURE).toBe(2);
   });
 
   test("PROGRESS_GATE is 2", () => {
     expect(ESCALATION_LIMITS.PROGRESS_GATE).toBe(2);
   });
 
-  test("MAX_CYCLES is 3", () => {
-    expect(ESCALATION_LIMITS.MAX_CYCLES).toBe(3);
+  test("MAX_CYCLES is 5", () => {
+    expect(ESCALATION_LIMITS.MAX_CYCLES).toBe(5);
   });
 });
 

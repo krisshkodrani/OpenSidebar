@@ -44,6 +44,15 @@ function makeManyElementSnap(
   return makeSnap({ elements, url });
 }
 
+/** Helper: feed N stale snapshots and return the last signal */
+function feedStale(tracker: ProgressTracker, snap: DomSnapshot, count: number) {
+  let signal = null;
+  for (let i = 0; i < count; i++) {
+    signal = tracker.onSnapshotRefresh(snap);
+  }
+  return signal;
+}
+
 describe("ProgressTracker", () => {
   let tracker: ProgressTracker;
 
@@ -64,48 +73,48 @@ describe("ProgressTracker", () => {
     expect(tracker.onSnapshotRefresh(changed)).toBeNull();
   });
 
-  it("returns escalate at 3 stale turns", () => {
+  it("returns escalate at 5 stale turns", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    tracker.onSnapshotRefresh(snap); // stale 1
-    tracker.onSnapshotRefresh(snap); // stale 2
-    const signal = tracker.onSnapshotRefresh(snap); // stale 3
+    feedStale(tracker, snap, 4); // stale 1-4: null
+    const signal = tracker.onSnapshotRefresh(snap); // stale 5
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(3);
+    expect(signal!.staleTurns).toBe(5);
   });
 
-  it("returns null between thresholds (stale 1-2)", () => {
+  it("returns null between thresholds (stale 1-4)", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 1
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 2
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 3
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 4
   });
 
   it("fires escalation only once", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    tracker.onSnapshotRefresh(snap); // stale 1
-    tracker.onSnapshotRefresh(snap); // stale 2
-    const first = tracker.onSnapshotRefresh(snap); // stale 3 → escalate
+    feedStale(tracker, snap, 4); // stale 1-4
+    const first = tracker.onSnapshotRefresh(snap); // stale 5 → escalate
     expect(first!.type).toBe("escalate");
 
     // Further stale turns return null (one-shot)
-    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 4
-    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 5
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 6
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 7
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 8
   });
 
   it("no further signals after escalation fires", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
 
-    // Drive to stale 10
-    for (let i = 0; i < 9; i++) {
+    // Drive to stale 12
+    for (let i = 0; i < 11; i++) {
       tracker.onSnapshotRefresh(snap);
     }
-    const signal = tracker.onSnapshotRefresh(snap); // stale 10
-    // Only the first escalate at 3 fired, everything after is null
+    const signal = tracker.onSnapshotRefresh(snap); // stale 12
+    // Only the first escalate at 5 fired, everything after is null
     expect(signal).toBeNull();
   });
 
@@ -118,16 +127,15 @@ describe("ProgressTracker", () => {
       elements: [makeElement({ text: "New label" })],
     });
 
-    // Build up 2 stale on snap1
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    // Build up 4 stale on snap1
+    feedStale(tracker, snap1, 4); // stale 1-4
     // snap2 resets stale counter (content changed)
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
 
-    // 2 more stale won't trigger escalation (counter was reset, need 3)
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    // 3 more stale won't trigger escalation (counter was reset, need 5)
+    feedStale(tracker, snap2, 3);
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull(); // stale 4, still below threshold
   });
 
   it("treats attribute change as progress (e.g. disabled→enabled)", () => {
@@ -143,9 +151,8 @@ describe("ProgressTracker", () => {
       elements: [makeElement({ text: "Submit" })],
     });
 
-    // Build 2 stale on snap1
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    // Build 4 stale on snap1
+    feedStale(tracker, snap1, 4); // stale 1-4
     // snap2 has different attributes → resets stale counter
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
   });
@@ -153,10 +160,10 @@ describe("ProgressTracker", () => {
   it("reset() clears all state", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 4; i++) {
       tracker.onSnapshotRefresh(snap);
     }
-    // stale 3 would escalate
+    // stale 5 would escalate
     tracker.reset();
 
     // After reset, baseline again
@@ -168,50 +175,47 @@ describe("ProgressTracker", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
 
-    // Drive to escalate at 3
-    tracker.onSnapshotRefresh(snap); // stale 1
-    tracker.onSnapshotRefresh(snap); // stale 2
-    const esc = tracker.onSnapshotRefresh(snap); // stale 3 → escalate
+    // Drive to escalate at 5
+    feedStale(tracker, snap, 4); // stale 1-4
+    const esc = tracker.onSnapshotRefresh(snap); // stale 5 → escalate
     expect(esc!.type).toBe("escalate");
 
     // Reset escalation state (as the loop does after handling)
     tracker.resetEscalation();
     // staleTurns is now 0, but lastSignatures still match snap.
 
-    // 2 more stale turns — no signal yet
-    tracker.onSnapshotRefresh(snap); // stale 1
-    tracker.onSnapshotRefresh(snap); // stale 2
-    // stale 3 → escalate fires again (because flag was cleared)
+    // 4 more stale turns — no signal yet
+    feedStale(tracker, snap, 4); // stale 1-4
+    // stale 5 → escalate fires again (because flag was cleared)
     const esc2 = tracker.onSnapshotRefresh(snap);
     expect(esc2).not.toBeNull();
     expect(esc2!.type).toBe("escalate");
-    expect(esc2!.staleTurns).toBe(3);
+    expect(esc2!.staleTurns).toBe(5);
   });
 
   it("URL-only change halves stale count instead of resetting", () => {
     const snap1 = makeSnap();
     tracker.onSnapshotRefresh(snap1); // baseline
 
-    // Build up 4 stale turns on same URL + same content
-    for (let i = 0; i < 4; i++) {
+    // Build up 6 stale turns on same URL + same content
+    for (let i = 0; i < 6; i++) {
       tracker.onSnapshotRefresh(snap1);
     }
-    // staleTurns = 4 (escalation already fired at 3)
+    // staleTurns = 6 (escalation already fired at 5)
 
-    // Navigate to different URL with same content → halve to 2
+    // Navigate to different URL with same content → halve to 3
     const snap2 = makeSnap({ url: "https://other.com" });
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
-    // staleTurns = 2 after halving
+    // staleTurns = 3 after halving
   });
 
   it("content change still fully resets stale count to 0", () => {
     const snap1 = makeSnap();
     tracker.onSnapshotRefresh(snap1); // baseline
 
-    // Build up 2 stale turns
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    // Build up 4 stale turns
+    feedStale(tracker, snap1, 4); // stale 1-4
 
     // Content change on different URL → full reset
     const snap2 = makeSnap({
@@ -222,9 +226,9 @@ describe("ProgressTracker", () => {
     });
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
 
-    // 2 more stale turns should NOT trigger escalation (counter was reset to 0, need 3)
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    // 3 more stale turns should NOT trigger escalation (counter was reset to 0, need 5)
+    feedStale(tracker, snap2, 3);
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull(); // stale 4, still below threshold
   });
 
   it("URL change does not prevent eventual escalation if content stays stale", () => {
@@ -240,9 +244,8 @@ describe("ProgressTracker", () => {
     // staleTurns = 1, navigate back → halve to 0
     tracker.onSnapshotRefresh(snap1);
     // staleTurns = 0, keep going stale on same URL
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
-    const signal = tracker.onSnapshotRefresh(snap1); // stale 3 → escalate
+    feedStale(tracker, snap1, 4); // stale 1-4
+    const signal = tracker.onSnapshotRefresh(snap1); // stale 5 → escalate
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
   });
@@ -254,13 +257,14 @@ describe("ProgressTracker", () => {
     // Same content, different URL — should NOT fully reset stale count
     const snap2 = makeSnap({ url: "https://different.com" });
 
-    // Build 4 stale turns
-    for (let i = 0; i < 4; i++) {
+    // Build 6 stale turns
+    for (let i = 0; i < 6; i++) {
       tracker.onSnapshotRefresh(snap1);
     }
-    // staleTurns = 4, URL change halves to 2
+    // staleTurns = 6, URL change halves to 3
     tracker.onSnapshotRefresh(snap2);
-    // 1 more stale → staleTurns = 3 → escalation would fire but already fired at 3
+    // 1 more stale → staleTurns = 4
+    // 2 more stale → staleTurns = 5 → escalation would fire but already fired at 5
     // Since escalationFired is true, no signal
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
@@ -285,14 +289,13 @@ describe("ProgressTracker — delta threshold", () => {
     );
     const snap2 = makeSnap({ elements });
 
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    feedStale(tracker, snap1, 4); // stale 1-4
 
-    // Noise change — below 10% threshold → should NOT reset, stale becomes 3 → escalate
+    // Noise change — below 10% threshold → should NOT reset, stale becomes 5 → escalate
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(3);
+    expect(signal!.staleTurns).toBe(5);
   });
 
   it("small DOM change below threshold keeps stale count incrementing", () => {
@@ -305,15 +308,14 @@ describe("ProgressTracker — delta threshold", () => {
     );
     const snapNoise = makeSnap({ elements });
 
-    // 2 stale turns on original snap
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    // 4 stale turns on original snap
+    feedStale(tracker, snap1, 4); // stale 1-4
 
-    // Noise change — below 10% threshold → should NOT reset, stale becomes 3
+    // Noise change — below 10% threshold → should NOT reset, stale becomes 5
     const signal = tracker.onSnapshotRefresh(snapNoise);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(3);
+    expect(signal!.staleTurns).toBe(5);
   });
 
   it("large DOM change (>= 10%) resets stale count", () => {
@@ -321,9 +323,8 @@ describe("ProgressTracker — delta threshold", () => {
     const snap1 = makeManyElementSnap(20);
     tracker.onSnapshotRefresh(snap1); // baseline
 
-    // Build up 2 stale turns
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    // Build up 4 stale turns
+    feedStale(tracker, snap1, 4); // stale 1-4
 
     // Change 3 of 20 elements (meaningful page update)
     const elements = snap1.elements.map((e, i) =>
@@ -334,9 +335,9 @@ describe("ProgressTracker — delta threshold", () => {
     const signal = tracker.onSnapshotRefresh(snap2); // delta = 30% → progress
     expect(signal).toBeNull(); // stale count reset
 
-    // 2 more stale turns should NOT trigger escalation (counter was reset, need 3)
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
-    expect(tracker.onSnapshotRefresh(snap2)).toBeNull();
+    // 3 more stale turns should NOT trigger escalation (counter was reset, need 5)
+    feedStale(tracker, snap2, 3);
+    expect(tracker.onSnapshotRefresh(snap2)).toBeNull(); // stale 4, still below threshold
   });
 
   it("full page swap always counts as progress", () => {
@@ -373,8 +374,7 @@ describe("ProgressTracker — delta threshold", () => {
     const snap1 = makeManyElementSnap(50);
     tracker.onSnapshotRefresh(snap1); // baseline
 
-    tracker.onSnapshotRefresh(snap1); // stale 1
-    tracker.onSnapshotRefresh(snap1); // stale 2
+    feedStale(tracker, snap1, 4); // stale 1-4
 
     // 3 new elements appended (lazy load noise)
     const extras = [
@@ -384,10 +384,10 @@ describe("ProgressTracker — delta threshold", () => {
     ];
     const snapLazy = makeManyElementSnap(50, extras);
 
-    // delta = 3 new / 53 max = 5.7% → below threshold → stale 3 → escalate
+    // delta = 3 new / 53 max = 5.7% → below threshold → stale 5 → escalate
     const signal = tracker.onSnapshotRefresh(snapLazy);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(3);
+    expect(signal!.staleTurns).toBe(5);
   });
 });
