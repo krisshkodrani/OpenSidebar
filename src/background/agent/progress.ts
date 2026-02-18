@@ -108,4 +108,14 @@ export class ProgressTracker {
     this.escalationFired = false;
     this.staleTurns = 0;
   }
+
+  /**
+   * Returns true if the tracker is in a stale state (staleTurns > 0) but no
+   * signal was emitted — either because escalation already fired or because
+   * staleTurns hasn't reached the threshold yet.  The loop uses this to
+   * distinguish "null because page actually changed" from "null but still stuck."
+   */
+  isStillStuck(): boolean {
+    return this.staleTurns > 0;
+  }
 }

@@ -271,6 +271,76 @@ describe("ProgressTracker", () => {
   });
 });
 
+describe("ProgressTracker — isStillStuck", () => {
+  let tracker: ProgressTracker;
+
+  beforeEach(() => {
+    tracker = new ProgressTracker();
+  });
+
+  it("returns false before any snapshots", () => {
+    expect(tracker.isStillStuck()).toBe(false);
+  });
+
+  it("returns false after baseline snapshot", () => {
+    tracker.onSnapshotRefresh(makeSnap());
+    expect(tracker.isStillStuck()).toBe(false);
+  });
+
+  it("returns true when stale but below escalation threshold", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap); // baseline
+    tracker.onSnapshotRefresh(snap); // stale 1
+    expect(tracker.isStillStuck()).toBe(true);
+  });
+
+  it("returns true after escalation fires (stale continues)", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap); // baseline
+    feedStale(tracker, snap, 5); // stale 1-5, escalation fires at 5
+    expect(tracker.isStillStuck()).toBe(true);
+  });
+
+  it("returns false after real content change resets staleTurns", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+    feedStale(tracker, snap1, 5); // escalation fires
+
+    // Real content change
+    const snap2 = makeSnap({ elements: [makeElement({ text: "New content" })] });
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.isStillStuck()).toBe(false);
+  });
+
+  it("returns true after resetEscalation followed by new stale turns", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap); // baseline
+    feedStale(tracker, snap, 5); // escalation fires
+
+    tracker.resetEscalation(); // staleTurns = 0
+    expect(tracker.isStillStuck()).toBe(false);
+
+    // New stale turn — still stuck but below threshold, no signal emitted
+    tracker.onSnapshotRefresh(snap); // stale 1
+    expect(tracker.isStillStuck()).toBe(true);
+  });
+
+  it("prevents false recovery: stale after resetEscalation is not progress", () => {
+    // This is the exact bug scenario: escalation fires, resetEscalation() called,
+    // then stale turns return null — loop must NOT treat these as recovery.
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap); // baseline
+    feedStale(tracker, snap, 5); // escalation fires at stale 5
+
+    tracker.resetEscalation();
+    // 2 more stale turns — both return null but isStillStuck() is true
+    tracker.onSnapshotRefresh(snap); // stale 1 → null
+    expect(tracker.isStillStuck()).toBe(true);
+    tracker.onSnapshotRefresh(snap); // stale 2 → null
+    expect(tracker.isStillStuck()).toBe(true);
+  });
+});
+
 describe("ProgressTracker — delta threshold", () => {
   let tracker: ProgressTracker;
 

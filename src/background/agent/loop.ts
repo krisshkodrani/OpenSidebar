@@ -3474,8 +3474,14 @@ export class AgentLoop {
                   );
                 }
               } else if (wasStuck) {
-                // Agent recovered — increment progress gate
-                consecutiveProgressSignals++;
+                // Only count as recovery if the page actually changed (staleTurns reset to 0).
+                // When staleTurns > 0, tracker returned null only because it's below threshold
+                // or escalation already fired — the agent is still stuck.
+                if (this.progress.isStillStuck()) {
+                  consecutiveProgressSignals = 0;
+                } else {
+                  consecutiveProgressSignals++;
+                }
 
                 // Require PROGRESS_GATE consecutive progress signals before de-escalating
                 if (consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE) {
