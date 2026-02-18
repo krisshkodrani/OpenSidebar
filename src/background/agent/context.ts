@@ -1,6 +1,7 @@
 import { LLMMessage } from "../llm/types";
 import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
+import { COMPRESSION_TRIGGERS } from "./constants";
 
 const FAST_PERSONA = `You are a sharp, resourceful web automation expert who thrives on solving problems efficiently. You move fast, think clearly, and always know which tool to reach for next.`;
 
@@ -255,6 +256,19 @@ export class ContextManager {
     // Compress old tool results to save context budget
     if (message.role === "tool") {
       this.compressOldToolResults(2);
+    }
+
+    // Turn-count compression triggers
+    const len = this.history.length;
+    if (
+      len === COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT ||
+      len === COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT ||
+      len === COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT ||
+      (len > COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT &&
+       (len - COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) % COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL === 0)
+    ) {
+      const level = this.getCompressionLevel();
+      this.compressHistoryByLevel(level);
     }
 
     if (this.history.length > 1000) {
@@ -523,6 +537,13 @@ Do NOT call done() until every planned step is complete.
         );
       }
 
+      // Valid element IDs — helps LLM avoid hallucinating non-existent IDs
+      if (this.snapshot.elements.length > 0) {
+        const idList = this.snapshot.elements.map(e => e.tag).join(",");
+        content = content.replace("## Viewport Text",
+          `Valid element IDs: [${idList}]\n\n## Viewport Text`);
+      }
+
       // Viewport text — dynamic with compression level
       let viewportText = this.snapshot.viewportText || "No text content.";
       if (level === CompressionLevel.HEAVY) {
@@ -585,6 +606,12 @@ Do NOT call done() until every planned step is complete.
    */
   public getCompressionLevel(): CompressionLevel {
     if (!this.snapshot) return CompressionLevel.NONE;
+
+    // Turn-count override: guarantees compression regardless of context window size
+    const historyLen = this.history.length;
+    if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) return CompressionLevel.HEAVY;
+    if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT) return CompressionLevel.MEDIUM;
+    if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT) return CompressionLevel.LIGHT;
 
     // Estimate tokens from elements + viewport text without building the full message
     const elemTokens = this.snapshot.elements.reduce((sum, el) => {
@@ -838,6 +865,145 @@ Do NOT call done() until every planned step is complete.
           msg.content = firstLine + " [truncated]";
         }
       }
+    }
+  }
+
+  /**
+   * Apply aggressive compression to history based on compression level.
+   * Called when crossing turn-count thresholds (30, 60, 100, and every 20 in HEAVY).
+   */
+  private compressHistoryByLevel(level: CompressionLevel): void {
+    if (level === CompressionLevel.NONE) return;
+
+    if (level === CompressionLevel.HEAVY) {
+      // Distill everything except last HEAVY_KEEP_RECENT messages
+      const keepRecent = COMPRESSION_TRIGGERS.HEAVY_KEEP_RECENT;
+      if (this.history.length <= keepRecent + 2) return; // nothing to compress
+
+      // Preserve first user message
+      const firstUserIdx = this.history.findIndex(m => m.role === "user");
+      const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
+
+      // Summarize old messages
+      const oldMessages = this.history.slice(0, -keepRecent);
+      const timeline = summarizeHistory(oldMessages, 30);
+      const recentMessages = this.history.slice(-keepRecent);
+
+      // Rebuild history
+      this.history = [];
+      if (firstUserMsg) {
+        this.history.push(firstUserMsg);
+      }
+      if (timeline.length > 0) {
+        this.history.push({
+          role: "user",
+          content: `[COMPRESSED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
+        });
+      }
+      this.history.push(...recentMessages);
+
+      logger.info("agent", "HEAVY compression applied", {
+        timelineEntries: timeline.length,
+        newHistoryLength: this.history.length,
+      });
+      return;
+    }
+
+    // LIGHT and MEDIUM: truncate old tool results
+    const limit = level === CompressionLevel.MEDIUM
+      ? COMPRESSION_TRIGGERS.MEDIUM_TOOL_RESULT_LIMIT
+      : COMPRESSION_TRIGGERS.LIGHT_TOOL_RESULT_LIMIT;
+    const preserveRecent = 4; // keep last 4 tool results verbatim
+
+    let toolResultCount = 0;
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      if (this.history[i].role === "tool") toolResultCount++;
+      if (toolResultCount > preserveRecent) {
+        // Truncate all tool results from index 0..i
+        for (let j = 0; j <= i; j++) {
+          const msg = this.history[j];
+          if (msg.role === "tool" && typeof msg.content === "string") {
+            if (msg.content.length > limit) {
+              msg.content = msg.content.slice(0, limit) + " [compressed]";
+            }
+          }
+        }
+        break;
+      }
+    }
+
+    // MEDIUM: also collapse runs of 3+ identical tool names into a summary
+    if (level === CompressionLevel.MEDIUM) {
+      this.collapseRepeatedToolRuns(3);
+    }
+
+    logger.info("agent", `${level.toUpperCase()} compression applied`, {
+      historyLength: this.history.length,
+      toolResultLimit: limit,
+    });
+  }
+
+  /**
+   * Collapse runs of N+ identical tool names in history into a single summary message.
+   * Preserves the first and last in each run, replaces middle entries.
+   */
+  private collapseRepeatedToolRuns(minRunLength: number): void {
+    // Find runs of assistant tool_calls with the same tool name
+    let i = 0;
+    while (i < this.history.length) {
+      const msg = this.history[i];
+      if (msg.role !== "assistant" || !msg.tool_calls || msg.tool_calls.length !== 1) {
+        i++;
+        continue;
+      }
+
+      const toolName = msg.tool_calls[0].function.name;
+      let runEnd = i;
+
+      // Find consecutive assistant messages calling the same tool
+      for (let j = i + 1; j < this.history.length; j++) {
+        // Skip tool result messages (they pair with the assistant)
+        if (this.history[j].role === "tool") continue;
+        const next = this.history[j];
+        if (
+          next.role === "assistant" &&
+          next.tool_calls?.length === 1 &&
+          next.tool_calls[0].function.name === toolName
+        ) {
+          runEnd = j;
+        } else {
+          break;
+        }
+      }
+
+      // Count distinct assistant messages in this run
+      const runMessages: number[] = [];
+      for (let j = i; j <= runEnd; j++) {
+        if (this.history[j].role === "assistant" && this.history[j].tool_calls) {
+          runMessages.push(j);
+        }
+      }
+
+      if (runMessages.length >= minRunLength) {
+        // Keep first and last, collapse middle
+        const middleStart = runMessages[1];
+        const middleEnd = runMessages[runMessages.length - 2];
+        // Find the range including tool results
+        const removeStart = middleStart;
+        let removeEnd = middleEnd;
+        // Extend removeEnd to include the tool result after the last collapsed assistant
+        if (removeEnd + 1 < this.history.length && this.history[removeEnd + 1].role === "tool") {
+          removeEnd += 1;
+        }
+        const collapsedCount = runMessages.length - 2;
+        const summaryMsg: LLMMessage = {
+          role: "user",
+          content: `[${collapsedCount} repeated ${toolName} calls collapsed]`,
+        };
+        this.history.splice(removeStart, removeEnd - removeStart + 1, summaryMsg);
+      }
+
+      i = runEnd + 1;
     }
   }
 

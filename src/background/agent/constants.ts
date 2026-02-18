@@ -30,7 +30,9 @@ export const ESCALATION_LIMITS = {
   /** Turns of cooldown after de-escalation before re-escalation is allowed */
   COOLDOWN_TURNS: 3,
   /** Minimum turns the smart model must run before de-escalation is allowed */
-  MIN_SMART_TENURE: 3,
+  MIN_SMART_TENURE: 5,
+  /** Consecutive progress signals required before de-escalation */
+  PROGRESS_GATE: 2,
 } as const;
 
 /** BRAINS→HANDS: smart model orients, then fast model executes */
@@ -53,6 +55,8 @@ export const REDUNDANT_ACTION = {
   WINDOW: 8,
   /** Number of exact (tool+args) repetitions before injecting a corrective message */
   THRESHOLD: 2,
+  /** Block the next exact repeat once this many successful identical DOM actions would occur */
+  HARD_BLOCK_THRESHOLD: 3,
   /** Number of same tool name (any args) repetitions before injecting a warning */
   TOOL_NAME_ONLY_THRESHOLD: 4,
 } as const;
@@ -103,6 +107,32 @@ export const STRING_LIMITS = {
   ESCALATION_REASON: 60,
   /** Tool call snippet in logs */
   TOOL_CALL_SNIPPET: 80,
+} as const;
+
+/** Turn-count-based compression triggers (overrides utilization-based) */
+export const COMPRESSION_TRIGGERS = {
+  /** History length at which LIGHT compression activates */
+  LIGHT_TURN_COUNT: 30,
+  /** History length at which MEDIUM compression activates */
+  MEDIUM_TURN_COUNT: 60,
+  /** History length at which HEAVY compression activates */
+  HEAVY_TURN_COUNT: 100,
+  /** Messages to keep verbatim in HEAVY compression */
+  HEAVY_KEEP_RECENT: 10,
+  /** Tool result truncation limit for LIGHT compression */
+  LIGHT_TOOL_RESULT_LIMIT: 300,
+  /** Tool result truncation limit for MEDIUM compression */
+  MEDIUM_TOOL_RESULT_LIMIT: 100,
+  /** Re-compress every N messages once in HEAVY mode */
+  HEAVY_RECOMPRESS_INTERVAL: 20,
+} as const;
+
+/** Failed action memory: blocks exact repeats of failed tool calls */
+export const FAILED_ACTION_MEMORY = {
+  /** Maximum failed actions to remember */
+  BUFFER_SIZE: 10,
+  /** Turns after step-watchdog escalation before forcing a strategy pivot */
+  POST_ESCALATION_PIVOT_TURNS: 5,
 } as const;
 
 /** Batch execution limits */

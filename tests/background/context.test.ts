@@ -464,4 +464,163 @@ describe("ContextManager", () => {
       expect(systemContent).toContain("countdown");
     });
   });
+
+  describe("Turn-Count Compression Triggers", () => {
+    test("LIGHT triggers at 30 messages", () => {
+      // Use a large context window so utilization-based compression won't trigger
+      const bigContext = new ContextManager(500000);
+      bigContext.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "text",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      // Add 30 messages to reach the LIGHT threshold
+      for (let i = 0; i < 30; i++) {
+        bigContext.addMessage(userMsg(`msg ${i}`));
+      }
+
+      const level = bigContext.getCompressionLevel();
+      expect(level).toBe("light");
+    });
+
+    test("MEDIUM triggers at 60 messages", () => {
+      const bigContext = new ContextManager(500000);
+      bigContext.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "text",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      for (let i = 0; i < 60; i++) {
+        bigContext.addMessage(userMsg(`msg ${i}`));
+      }
+
+      const level = bigContext.getCompressionLevel();
+      expect(level).toBe("medium");
+    });
+
+    test("HEAVY triggers at 100 messages and reduces history", () => {
+      const bigContext = new ContextManager(500000);
+      bigContext.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "text",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      // Add first user message
+      bigContext.addMessage(userMsg("ORIGINAL GOAL"));
+
+      // Add enough messages to guarantee HEAVY triggers
+      // Need to keep adding until we actually hit HEAVY (prior compressions reduce count)
+      for (let i = 1; i < 200; i++) {
+        bigContext.addMessage(userMsg(`msg ${i}`));
+      }
+
+      // After all the compressions, history should be heavily compacted
+      const messages = bigContext.getMessages();
+      expect(messages.length).toBeLessThan(100);
+
+      // First user message should be preserved
+      const firstUser = messages.find(m => m.role === "user" && m.content === "ORIGINAL GOAL");
+      expect(firstUser).toBeDefined();
+    });
+
+    test("turn-count overrides utilization when context window is large", () => {
+      // Even with a massive context window (low utilization), 60 messages should trigger MEDIUM
+      const hugeContext = new ContextManager(1000000);
+      hugeContext.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "text",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      for (let i = 0; i < 60; i++) {
+        hugeContext.addMessage(userMsg(`short msg ${i}`));
+      }
+
+      // Utilization would be ~0.01 (well below 0.5), but turn count forces MEDIUM
+      const level = hugeContext.getCompressionLevel();
+      expect(level).toBe("medium");
+    });
+
+    test("MEDIUM truncates old tool results", () => {
+      const bigContext = new ContextManager(500000);
+      bigContext.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "text",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      // Add an early tool call/result pair with a long result
+      bigContext.addMessage(toolCallMsg("early_call", "click_element"));
+      const longResult = "Success: " + "x".repeat(400);
+      bigContext.addMessage(toolResultMsg("early_call", longResult));
+
+      // Add 5 more tool call/result pairs so 'early_call' falls outside preserveRecent=4
+      for (let i = 1; i <= 5; i++) {
+        bigContext.addMessage(toolCallMsg(`filler_call_${i}`, "scroll_page"));
+        bigContext.addMessage(toolResultMsg(`filler_call_${i}`, `Scrolled ${i}`));
+      }
+
+      // Fill to 60 to trigger MEDIUM (LIGHT at 30 will have run first with limit=300)
+      for (let i = 12; i < 60; i++) {
+        bigContext.addMessage(userMsg(`filler ${i}`));
+      }
+
+      // After both LIGHT (300 limit) and MEDIUM (100 limit), early tool result should be compressed
+      const messages = bigContext.getMessages();
+      const earlyResult = messages.find(
+        m => m.role === "tool" && m.tool_call_id === "early_call",
+      );
+      if (earlyResult && typeof earlyResult.content === "string") {
+        // Should have been compressed (original was 409 chars)
+        expect(earlyResult.content.length).toBeLessThan(400);
+        expect(earlyResult.content).toMatch(/\[(truncated|compressed)\]/);
+      }
+    });
+  });
+
+  describe("Valid Element IDs", () => {
+    test("valid IDs line appears in system prompt when elements exist", () => {
+      context.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [
+          { tagName: "button", tag: 5, text: "Submit", isVisible: true, attributes: {} },
+          { tagName: "input", tag: 12, text: "", isVisible: true, attributes: { type: "text" } },
+        ],
+        viewportText: "content",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).toContain("Valid element IDs: [5,12]");
+    });
+
+    test("valid IDs line absent when no elements", () => {
+      context.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "content",
+        viewport: { width: 1280, height: 800 },
+      });
+
+      const prompt = context.getPrompt();
+      const systemContent = prompt[0].content as string;
+      expect(systemContent).not.toContain("Valid element IDs:");
+    });
+  });
 });

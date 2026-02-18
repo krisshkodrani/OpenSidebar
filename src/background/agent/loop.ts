@@ -44,10 +44,60 @@ import {
   REDUNDANT_ACTION,
   STEP_WATCHDOG,
   STUCK_THRESHOLDS,
+  FAILED_ACTION_MEMORY,
 } from "./constants";
 
 const APPROVAL_TIMEOUT_MS = 30000;
 const MAX_SESSION_MS = 20 * 60 * 1000;
+
+/** Tools that require a valid element `id` param — validated before dispatch. */
+const ELEMENT_ID_TOOLS = new Set<string>([
+  ToolName.CLICK_ELEMENT, ToolName.TYPE_TEXT, ToolName.HOVER_ELEMENT,
+  ToolName.SELECT_OPTION, ToolName.DRAW_STROKE, ToolName.HIDE_ELEMENT,
+  ToolName.READ_ELEMENT, ToolName.UPLOAD_FILE, ToolName.RIGHT_CLICK,
+  ToolName.SET_CHECKBOX, ToolName.INSPECT_REACT, ToolName.REACT_SET_INPUT,
+]);
+/** Tools with dual element ID params (sourceId + targetId). */
+const ELEMENT_DUAL_ID_TOOLS = new Set<string>([ToolName.DRAG_AND_DROP]);
+
+/**
+ * Validate element IDs before dispatching to content script.
+ * Returns null if valid, or an error string with sample valid IDs if invalid.
+ */
+function validateElementIds(
+  toolName: string,
+  args: Record<string, unknown>,
+  snapshot: DomSnapshot | null,
+): string | null {
+  if (!snapshot || snapshot.elements.length === 0) return null;
+
+  const validIds = new Set(snapshot.elements.map(e => e.tag));
+
+  const checkId = (id: unknown, paramName: string): string | null => {
+    if (id == null) return null; // param not present — let executor handle
+    const numId = typeof id === "number" ? id : Number(id);
+    if (isNaN(numId)) return null; // non-numeric — let executor handle
+    if (validIds.has(numId)) return null;
+
+    const sampleElements = snapshot.elements.slice(0, 15).map(
+      e => `[${e.tag}] ${e.tagName} "${e.text.slice(0, 30)}"`,
+    );
+    return (
+      `Error: Element ${paramName}=${numId} does not exist on the current page. ` +
+      `Valid element IDs: ${[...validIds].slice(0, 20).join(", ")}. ` +
+      `Sample elements:\n${sampleElements.join("\n")}\n` +
+      `Use read_page to see all available elements.`
+    );
+  };
+
+  if (ELEMENT_ID_TOOLS.has(toolName)) {
+    return checkId(args.id, "id");
+  }
+  if (ELEMENT_DUAL_ID_TOOLS.has(toolName)) {
+    return checkId(args.sourceId, "sourceId") ?? checkId(args.targetId, "targetId");
+  }
+  return null;
+}
 
 /** Tools that cannot appear inside a batch_execute step. */
 const BATCH_BLOCKED_TOOLS = new Set<string>([
@@ -101,6 +151,39 @@ interface RecentAction {
   tool: string;
   args: string; // First 100 chars of JSON args
   result: string; // First 60 chars of result
+}
+
+/** Tracks a failed tool call to prevent exact repeats */
+interface FailedAction {
+  tool: string;
+  argsKey: string; // First 100 chars of JSON args for matching
+  error: string;   // First 80 chars of error
+  turn: number;
+}
+
+/** Check if the same tool+args already failed. Returns the prior failure or null. */
+function findPriorFailure(
+  failedActions: FailedAction[],
+  tool: string,
+  argsKey: string,
+): FailedAction | null {
+  return failedActions.find(f => f.tool === tool && f.argsKey === argsKey) ?? null;
+}
+
+/** DOM actions that should be blocked when the same successful action repeats too many times. */
+const REDUNDANT_HARD_BLOCK_TOOLS = new Set<string>([
+  ToolName.CLICK_ELEMENT,
+  ToolName.TYPE_TEXT,
+]);
+
+function countRecentExactActionMatches(
+  recentSuccesses: RecentAction[],
+  tool: string,
+  args: string,
+): number {
+  return recentSuccesses.filter(
+    (entry) => entry.tool === tool && entry.args === args,
+  ).length;
 }
 
 /** Filler prefix patterns — text-only responses that start with these are low-information */
@@ -213,6 +296,17 @@ function extractAttemptSummary(messages: LLMMessage[]): string {
     return "No specific actions recorded.";
   }
   return sections.join("\n\n").slice(0, 800);
+}
+
+function userExplicitlyRequestedTabManagement(query: string): boolean {
+  const normalized = query.toLowerCase();
+  return (
+    /\b(new tab|another tab|open tab|create tab)\b/.test(normalized) ||
+    /\b(switch tab|switch to tab|go to tab)\b/.test(normalized) ||
+    /\bswitch to \d+\b/.test(normalized) ||
+    /\b(close tab|close this tab|close current tab)\b/.test(normalized) ||
+    /\b(multiple tabs|multi-tab|compare tabs)\b/.test(normalized)
+  );
 }
 
 /** Result of a completed agent loop run */
@@ -1075,14 +1169,25 @@ export class AgentLoop {
     return ws?.tabIds ?? null;
   }
 
+  private shouldBlockTabManagementTools(): boolean {
+    return !userExplicitlyRequestedTabManagement(this.originalQuery);
+  }
+
   /** De-escalate back to fast model when progress resumes after automatic escalation. */
-  private deescalateModel(): void {
+  private async deescalateModel(tabId?: number, prevElementCount?: number): Promise<number> {
     this.llm.switchToFast();
     this.context.setModelTier("fast");
+    let newCount = prevElementCount ?? -1;
+    // Refresh snapshot so fast model gets fresh element IDs
+    if (tabId != null) {
+      newCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount ?? -1);
+    }
     logger.info("agent", "De-escalating to fast model", {
       model: this.llm.getCurrentModel(),
       provider: this.llm.getCurrentProvider(),
+      snapshotRefreshed: tabId != null,
     });
+    return newCount;
   }
 
   /**
@@ -1168,24 +1273,6 @@ export class AgentLoop {
     count = await this.refreshSnapshot(tabId);
     if (count >= 0) return count;
     return prevCount; // Keep existing count if both attempts fail
-  }
-
-  /**
-   * Capture a screenshot for escalation context.
-   * Returns a data URL on success, null on failure (non-critical).
-   */
-  private async captureEscalationScreenshot(
-    tabId: number,
-  ): Promise<string | null> {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      return await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality: 50, // Lower quality is fine for context
-      });
-    } catch {
-      return null;
-    }
   }
 
   /** Execute a tool call with optional orchestration hooks (e.g. buffered memory). */
@@ -1293,6 +1380,7 @@ export class AgentLoop {
     let escalationCycles = 0;
     let cooldownRemaining = 0;
     let smartModelStartTurn = 0; // turn when auto-escalation fired
+    let consecutiveProgressSignals = 0; // progress gate for de-escalation
 
     // Circuit breaker: consecutive all-fail turns
     let consecutiveAllFailTurns = 0;
@@ -1302,6 +1390,10 @@ export class AgentLoop {
 
     // Redundant action detection: sliding window of recent successful tool calls
     const recentSuccesses: RecentAction[] = [];
+
+    // Failed action memory: prevents exact repeats of failed tool calls
+    const failedActions: FailedAction[] = [];
+    let turnsSinceStepEscalation = -1; // -1 = no step escalation active
 
     // React toolkit: enable on first snapshot that detects React
     let reactToolsEnabled = false;
@@ -1350,7 +1442,7 @@ export class AgentLoop {
         escalationTier === 1
       ) {
         orientationPhase = false;
-        this.deescalateModel();
+        prevElementCount = await this.deescalateModel(tabId, prevElementCount);
         escalationTier = 0;
         cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
         this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
@@ -1639,11 +1731,65 @@ export class AgentLoop {
           const results = await Promise.all(
             response.tool_calls.map(async (toolCall) => {
               const toolName = toolCall.function.name as ToolName;
+              const argsKey = toolCall.function.arguments.slice(0, 100);
               let args: Record<string, unknown> = {};
               try {
                 args = JSON.parse(toolCall.function.arguments);
               } catch {
                 // Registry will handle parse error on execute
+              }
+
+              // Failed-action memory: block exact repeat of a previously failed tool call
+              const priorFail = findPriorFailure(failedActions, toolName, argsKey);
+              if (priorFail) {
+                const failMsg =
+                  `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
+                  `Choose a different approach — try a different element ID, different tool, or use read_page to reassess.`;
+                logger.warn("agent", "Failed-action repeat blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  priorTurn: priorFail.turn,
+                  mode: "parallel",
+                });
+                return { toolCall, result: null, error: failMsg };
+              }
+
+              // Pre-dispatch element ID validation
+              const idError = validateElementIds(toolName, args, this.context.getSnapshot());
+              if (idError) {
+                logger.warn("agent", "Invalid element ID pre-dispatch", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  args: JSON.stringify(args).slice(0, 100),
+                  mode: "parallel",
+                });
+                return { toolCall, result: null, error: idError };
+              }
+
+              const exactRepeatCount = countRecentExactActionMatches(
+                recentSuccesses,
+                toolName,
+                argsKey,
+              );
+              if (
+                REDUNDANT_HARD_BLOCK_TOOLS.has(toolName) &&
+                exactRepeatCount >= REDUNDANT_ACTION.HARD_BLOCK_THRESHOLD - 1
+              ) {
+                const blockedMessage =
+                  `Error: Redundant action blocked. ${toolName} with the same arguments has already succeeded ` +
+                  `${exactRepeatCount} times. Do not repeat it again; choose a different action.`;
+                logger.warn("agent", "Redundant DOM action blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  count: exactRepeatCount + 1,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent("redundant_action_blocked", {
+                  tool: toolName,
+                  count: exactRepeatCount + 1,
+                  mode: "parallel",
+                });
+                return { toolCall, result: null, error: blockedMessage };
               }
 
               const preDecision = this.middleware.evaluatePreTool(
@@ -1789,11 +1935,80 @@ export class AgentLoop {
 
             // Parse args for risk classification and done detection
             const toolName = toolCall.function.name as ToolName;
+            const argsKey = toolCall.function.arguments.slice(0, 100);
             let args: Record<string, unknown> = {};
             try {
               args = JSON.parse(toolCall.function.arguments);
             } catch {
               // Registry will handle parse error on execute
+            }
+
+            // Failed-action memory: block exact repeat of a previously failed tool call
+            const priorFail = findPriorFailure(failedActions, toolName, argsKey);
+            if (priorFail) {
+              const failMsg =
+                `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
+                `Choose a different approach — try a different element ID, different tool, or use read_page to reassess.`;
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: failMsg,
+              });
+              logger.warn("agent", "Failed-action repeat blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                priorTurn: priorFail.turn,
+                mode: "sequential",
+              });
+              continue;
+            }
+
+            // Pre-dispatch element ID validation
+            const idError = validateElementIds(toolName, args, this.context.getSnapshot());
+            if (idError) {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: idError,
+              });
+              logger.warn("agent", "Invalid element ID pre-dispatch", {
+                turn: this.turnCount,
+                tool: toolName,
+                args: JSON.stringify(args).slice(0, 100),
+                mode: "sequential",
+              });
+              continue;
+            }
+
+            const exactRepeatCount = countRecentExactActionMatches(
+              recentSuccesses,
+              toolName,
+              argsKey,
+            );
+            if (
+              REDUNDANT_HARD_BLOCK_TOOLS.has(toolName) &&
+              exactRepeatCount >= REDUNDANT_ACTION.HARD_BLOCK_THRESHOLD - 1
+            ) {
+              const blockedMessage =
+                `Error: Redundant action blocked. ${toolName} with the same arguments has already succeeded ` +
+                `${exactRepeatCount} times. Do not repeat it again; choose a different action.`;
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: blockedMessage,
+              });
+              logger.warn("agent", "Redundant DOM action blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                count: exactRepeatCount + 1,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent("redundant_action_blocked", {
+                tool: toolName,
+                count: exactRepeatCount + 1,
+                mode: "sequential",
+              });
+              continue;
             }
 
             const preDecision = this.middleware.evaluatePreTool(
@@ -2324,6 +2539,27 @@ export class AgentLoop {
 
             // SWITCH_TAB — workspace-scoped, updates loop tabId
             if (toolName === ToolName.SWITCH_TAB) {
+              if (this.shouldBlockTabManagementTools()) {
+                const blockedMessage =
+                  "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
+                  "Stay on the current tab unless the user asks for tab switching. " +
+                  "Tab management tools disabled for this session.";
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockedMessage,
+                });
+                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
+                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                  this.disabledTools.add(tabTool);
+                }
+                logger.warn("agent", "switch_tab blocked - not explicitly requested, tab tools disabled", {
+                  turn: this.turnCount,
+                  originalQuery: this.originalQuery,
+                });
+                continue;
+              }
+
               const targetTabId = args.tabId as number;
               const wsTabIds = await this.getWorkspaceTabIds();
 
@@ -2382,6 +2618,26 @@ export class AgentLoop {
 
             // CLOSE_TAB — workspace-scoped, prevents closing current tab
             if (toolName === ToolName.CLOSE_TAB) {
+              if (this.shouldBlockTabManagementTools()) {
+                const blockedMessage =
+                  "Blocked: close_tab requires explicit user instruction to manage tabs. " +
+                  "Tab management tools disabled for this session.";
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockedMessage,
+                });
+                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
+                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                  this.disabledTools.add(tabTool);
+                }
+                logger.warn("agent", "close_tab blocked - not explicitly requested, tab tools disabled", {
+                  turn: this.turnCount,
+                  originalQuery: this.originalQuery,
+                });
+                continue;
+              }
+
               const targetTabId = (args.tabId as number) || tabId;
 
               if (targetTabId === tabId) {
@@ -2431,6 +2687,26 @@ export class AgentLoop {
 
             // CREATE_TAB — workspace-scoped, auto-adds to workspace
             if (toolName === ToolName.CREATE_TAB) {
+              if (this.shouldBlockTabManagementTools()) {
+                const blockedMessage =
+                  "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
+                  "Tab management tools disabled for this session.";
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockedMessage,
+                });
+                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
+                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                  this.disabledTools.add(tabTool);
+                }
+                logger.warn("agent", "create_tab blocked - not explicitly requested, tab tools disabled", {
+                  turn: this.turnCount,
+                  originalQuery: this.originalQuery,
+                });
+                continue;
+              }
+
               const url = args.url as string;
               const urlResult = sanitizeUrl(url);
               if (!urlResult.ok) {
@@ -2682,6 +2958,17 @@ export class AgentLoop {
               resultContent.includes("Click intercepted");
 
             if (isFail) {
+              // Record to failed-action memory ring buffer
+              failedActions.push({
+                tool: toolName,
+                argsKey,
+                error: resultContent.split("\n")[0].slice(0, 80),
+                turn: this.turnCount,
+              });
+              if (failedActions.length > FAILED_ACTION_MEMORY.BUFFER_SIZE) {
+                failedActions.shift();
+              }
+
               const count = (toolFailCounts.get(failKey) || 0) + 1;
               toolFailCounts.set(failKey, count);
 
@@ -2809,6 +3096,21 @@ export class AgentLoop {
             }
           }
 
+          // E-pre. Post-escalation forced pivot: if N turns passed since step watchdog escalation
+          // without step advancement, force a strategy pivot and clear failed-action memory.
+          if (turnsSinceStepEscalation >= 0) {
+            turnsSinceStepEscalation++;
+            if (turnsSinceStepEscalation >= FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS) {
+              logger.info("agent", "Post-escalation forced pivot", {
+                turn: this.turnCount,
+                turnsSinceStepEscalation,
+              });
+              await this.strategyPivot(tabId);
+              failedActions.length = 0;
+              turnsSinceStepEscalation = -1; // Reset — only trigger once per escalation
+            }
+          }
+
           // E. Step duration watchdog
           if (
             this.taskId &&
@@ -2835,6 +3137,7 @@ export class AgentLoop {
               orientationPhase = false;
               this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
               smartModelStartTurn = this.turnCount;
+              turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
               await this.strategyPivot(tabId);
               this.progress.resetEscalation();
               this.context.addMessage({
@@ -2851,6 +3154,10 @@ export class AgentLoop {
                 },
                 false,
               );
+              // Permanent escalation after MAX_CYCLES — stop thrashing
+              if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
+                voluntaryEscalation = true;
+              }
             } else if (this.turnsOnCurrentStep === STEP_WATCHDOG.WARN_TURNS) {
               logger.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
@@ -3055,23 +3362,37 @@ export class AgentLoop {
                   orientationPhase = false;
                   this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
                   smartModelStartTurn = this.turnCount;
-                  const escalationScreenshot =
-                    await this.captureEscalationScreenshot(tabId);
-                  await this.strategyPivot(tabId);
-                  this.progress.resetEscalation();
-                  if (escalationScreenshot) {
-                    this.context.addMessage({
-                      role: "user",
-                      content: [
-                        { type: "text", text: ESCALATION_NUDGE },
+                  let escalationScreenshotContext: string | null = null;
+                  if (!this.disabledTools.has(ToolName.TAKE_SCREENSHOT)) {
+                    try {
+                      escalationScreenshotContext = await toolRegistry.execute(
                         {
-                          type: "image_url",
-                          image_url: {
-                            url: escalationScreenshot,
-                            detail: "low",
+                          id: `escalation_screenshot_${this.turnCount}`,
+                          type: "function",
+                          function: {
+                            name: ToolName.TAKE_SCREENSHOT,
+                            arguments: "{}",
                           },
                         },
-                      ],
+                        tabId,
+                        this.abortController!.signal,
+                      );
+                    } catch (error: any) {
+                      logger.warn(
+                        "agent",
+                        "Escalation screenshot failed (non-critical)",
+                        { error: error?.message },
+                      );
+                    }
+                  }
+                  await this.strategyPivot(tabId);
+                  this.progress.resetEscalation();
+                  if (escalationScreenshotContext) {
+                    this.context.addMessage({
+                      role: "user",
+                      content:
+                        `${ESCALATION_NUDGE}\n\n` +
+                        `[Escalation screenshot context]\n${escalationScreenshotContext}`,
                     });
                   } else {
                     this.context.addMessage({
@@ -3081,6 +3402,7 @@ export class AgentLoop {
                   }
                   consecutiveTextOnly = 0;
                   recentSuccesses.length = 0;
+                  consecutiveProgressSignals = 0;
                   this.stepHandler(
                     {
                       id: crypto.randomUUID(),
@@ -3091,51 +3413,68 @@ export class AgentLoop {
                     },
                     false,
                   );
+                  // Permanent escalation after MAX_CYCLES — stop thrashing
+                  if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
+                    voluntaryEscalation = true;
+                    logger.info("agent", "Permanent escalation after max cycles", {
+                      turn: this.turnCount,
+                      cycles: escalationCycles,
+                    });
+                  }
                 }
               } else if (wasStuck) {
-                // Agent recovered — broadcast resolved signal
-                this.broadcast({
-                  type: "AGENT_STUCK",
-                  payload: {
-                    signal: "resolved",
-                    staleTurns: 0,
-                    url: snap.url,
-                    message: "Agent is making progress again.",
-                  },
-                });
-                wasStuck = false;
+                // Agent recovered — increment progress gate
+                consecutiveProgressSignals++;
 
-                // De-escalate if on smart model (automatic, not voluntary), under cycle limit,
-                // and the smart model has had enough turns to actually work
-                const smartTenure = this.turnCount - smartModelStartTurn;
-                if (
-                  escalationTier > 0 &&
-                  !voluntaryEscalation &&
-                  escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
-                  smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
-                ) {
-                  this.deescalateModel();
-                  this.context.addMessage({
-                    role: "user",
-                    content: DEESCALATION_NUDGE,
-                  });
-                  escalationTier = 0;
-                  this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
-                  escalationCycles++;
-                  cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
-                  this.progress.resetEscalation();
-
-                  this.stepHandler(
-                    {
-                      id: crypto.randomUUID(),
-                      type: "info",
-                      label: "Progress made — switching back to fast model",
-                      status: "done",
-                      timestamp: Date.now(),
+                // Require PROGRESS_GATE consecutive progress signals before de-escalating
+                if (consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE) {
+                  this.broadcast({
+                    type: "AGENT_STUCK",
+                    payload: {
+                      signal: "resolved",
+                      staleTurns: 0,
+                      url: snap.url,
+                      message: "Agent is making progress again.",
                     },
-                    false,
-                  );
+                  });
+                  wasStuck = false;
+                  consecutiveProgressSignals = 0;
+
+                  // De-escalate if on smart model (automatic, not voluntary), under cycle limit,
+                  // and the smart model has had enough turns to actually work
+                  const smartTenure = this.turnCount - smartModelStartTurn;
+                  if (
+                    escalationTier > 0 &&
+                    !voluntaryEscalation &&
+                    escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
+                    smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
+                  ) {
+                    prevElementCount = await this.deescalateModel(tabId, prevElementCount);
+                    this.context.addMessage({
+                      role: "user",
+                      content: DEESCALATION_NUDGE,
+                    });
+                    escalationTier = 0;
+                    this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
+                    escalationCycles++;
+                    cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
+                    this.progress.resetEscalation();
+
+                    this.stepHandler(
+                      {
+                        id: crypto.randomUUID(),
+                        type: "info",
+                        label: "Progress made — switching back to fast model",
+                        status: "done",
+                        timestamp: Date.now(),
+                      },
+                      false,
+                    );
+                  }
                 }
+              } else {
+                // Not stuck — reset progress gate
+                consecutiveProgressSignals = 0;
               }
             }
           } catch {
@@ -3215,6 +3554,10 @@ export class AgentLoop {
             },
             false,
           );
+          // Permanent escalation after MAX_CYCLES — stop thrashing
+          if (escalationCycles >= ESCALATION_LIMITS.MAX_CYCLES) {
+            voluntaryEscalation = true;
+          }
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
           this.broadcast({
             type: "STREAM_CHUNK",
