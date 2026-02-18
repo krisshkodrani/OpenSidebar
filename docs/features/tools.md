@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **50 tools** organized into categories:
+OpenSidebar provides **52 tools** organized into categories:
 
 - **DOM Interaction** (17 tools)
 - **Navigation** (8 tools)

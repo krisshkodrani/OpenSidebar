@@ -45,3 +45,11 @@ Original postmortem: 2026-02-17. All 10 issues identified from trace analysis of
 ## Archived Files
 
 Original issue reports, literature review, and implementation plan are in [archived/](./archived/).
+
+## Next Phase
+
+Issue remediation is complete; next workstream is model-routing optimization with handoff safety.
+
+- RFC: `docs/rfc/rfc-three-level-model-routing.md`
+- Plan: `docs/issues/implementation-plan-v2.md`
+- Focus: `L0/L1/L2` routing, bounded smart-token spend, and switch-quality gates.

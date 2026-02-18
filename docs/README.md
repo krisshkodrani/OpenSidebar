@@ -1,86 +1,67 @@
 # OpenSidebar Documentation
 
+## Quick Links
+
+- [Developer Guide](./developer-guide.md) - Comprehensive developer reference (architecture, code style, file structure)
+- [Architecture Overview](./architecture/overview.md) - High-level system architecture
+- [Project Setup](./architecture/project-setup.md) - Build system and dev environment
+- [Agent Capabilities](./features/agent-capabilities.md) - LLM tiers, orchestrator, skills, vision
+- [Manual Evals Runbook](./guides/manual-evals-runbook.md) - How to run baseline + coached evals
+
 ## Directory Structure
 
 ```
 docs/
 ├── README.md                    # This file
-├── architecture/                # Architecture documentation
-│   ├── overview.md             # High-level system overview
-│   ├── agent-loop.md           # Agent execution loop
-│   ├── content-script.md       # Content script architecture
-│   ├── sidepanel-ui.md         # Side panel React UI
-│   ├── memory-system.md        # Second Brain / memory
-│   ├── navigation-bridge.md    # Navigation persistence
-│   ├── message-protocol.md     # Cross-context messaging
-│   ├── types-reference.md      # TypeScript type reference
-│   └── ...
-├── features/                   # Feature documentation
-│   ├── memory-system.md
-│   ├── workspace-management.md
-│   └── ...
-├── guides/                     # User guides
-│   └── ...
-├── rfc/                        # Request for Comments
-│   ├── README.md               # RFC process overview
-│   ├── rfc-*.md               # RFC proposals
-│   └── archived/               # Deprecated/archived RFCs
-├── bugs/                       # Bug reports
-│   └── *.md
-├── research/                   # Research notes
-│   └── *.md
-└── screenshots/                # Screenshot assets
+├── developer-guide.md           # Comprehensive developer reference
+├── business-plan.md             # Business model and strategy
+├── architecture/                # Technical architecture
+│   ├── overview.md              # High-level system overview
+│   ├── agent-loop.md            # Agent execution loop
+│   ├── content-script.md        # Content script architecture
+│   ├── sidepanel-ui.md          # Side panel React UI
+│   ├── memory-system.md         # Second Brain / memory
+│   ├── navigation-bridge.md     # Navigation persistence
+│   ├── message-protocol.md      # Cross-context messaging
+│   ├── types-reference.md       # TypeScript type reference
+│   ├── tools.md                 # Tool system architecture
+│   ├── project-setup.md         # Build configuration
+│   └── fast-smart-collaboration.md # Two-tier LLM system
+├── features/                    # Feature documentation
+│   ├── agent-capabilities.md    # LLM tiers, orchestrator, skills
+│   ├── browser-automation.md    # Browser automation features
+│   ├── memory-system.md         # Memory system user guide
+│   ├── security.md              # Security model
+│   ├── streaming-ui.md          # Streaming UI
+│   ├── tools.md                 # 52-tool reference
+│   └── workspace-management.md  # Workspace management
+├── guides/                      # User guides and runbooks
+│   ├── manual-evals-runbook.md  # Baseline + coached eval workflow
+│   ├── evals-program.md         # Eval program for prompt quality
+│   ├── prompt-tips.md           # Prompt writing tips
+│   ├── agent-strategy-letter.md # Agent strategy guide
+│   └── browser-navigation-challenge.md
+├── research/                    # Research and analysis
+│   ├── evaluation-against-DMAS-book.md
+│   ├── dmas-gap-closure-plan.md
+│   └── dom-context-opts.md
+└── rfc/                         # Request for Comments
+    ├── README.md                # RFC process overview
+    ├── orchestrator/            # Orchestrator RFCs
+    ├── upgrades/                # Upgrade proposals
+    ├── rfc-*.md                 # Active RFC proposals
+    └── archived/                # Implemented/deprecated RFCs
 ```
 
 ## File Naming Conventions
 
-### General Rules
-
 1. **Use kebab-case** for all file names (lowercase with hyphens)
 2. **Use descriptive names** that convey the file's purpose
-3. **Use prefixes** to group related files:
 
-| Directory       | Prefix        | Example                             |
-| --------------- | ------------- | ----------------------------------- |
-| `rfc/`          | `rfc-`        | `rfc-task-decomposition.md`         |
-| `bugs/`         | Number prefix | `001-workspace-not-created.md`      |
-| `architecture/` | Feature name  | `agent-loop.md`, `memory-system.md` |
-| `features/`     | Feature name  | `workspace-management.md`           |
-
-### RFC Naming
-
-RFC files should follow the pattern: `rfc-<topic>.md`
-
-- ✅ `rfc-task-decomposition.md`
-- ✅ `rfc-progress-tracker.md`
-- ❌ `RFC_Task_Decomposition.md`
-- ❌ `task-decomposition.md` (missing `rfc-` prefix)
-
-### Architecture Docs
-
-Architecture files should be named after the system/component they document:
-
-- ✅ `agent-loop.md`
-- ✅ `memory-system.md`
-- ❌ `Architecture_Agent_Loop.md`
-
-### Bug Reports
-
-Bug files should use a numeric prefix for ordering:
-
-- ✅ `001-workspace-not-created-on-click.md`
-- ✅ `002-element-tag-collision.md`
-
-## Creating New Documentation
-
-1. Choose the appropriate directory based on content type
-2. Use kebab-case for the file name
-3. Add a brief description at the top using a heading:
-
-```markdown
-# Feature Name
-
-Brief description of what this document covers.
-```
-
-4. For RFCs, follow the template in `rfc/README.md`
+| Directory       | Convention    | Example                              |
+| --------------- | ------------- | ------------------------------------ |
+| `architecture/` | Feature name  | `agent-loop.md`, `memory-system.md`  |
+| `features/`     | Feature name  | `workspace-management.md`            |
+| `guides/`       | Action/topic  | `manual-evals-runbook.md`            |
+| `rfc/`          | `rfc-` prefix | `rfc-task-decomposition.md`          |
+| `research/`     | Topic name    | `evaluation-against-DMAS-book.md`    |

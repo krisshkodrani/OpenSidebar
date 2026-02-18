@@ -8,64 +8,75 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 ┌─────────────────────────────────────────────────────────────┐
 │                        Side Panel                           │
 │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  Chat UI    │  │   Settings   │  │  Saved Prompts  │  │
-│  │  (React)    │  │   Drawer     │  │     Drawer      │  │
+│  │  Chat UI    │  │   Settings   │  │  Orchestrator    │  │
+│  │  (React)    │  │   Drawer     │  │     Console      │  │
 │  └──────┬──────┘  └──────────────┘  └──────────────────┘  │
 │         │                                                   │
 │         ▼                                                   │
-│  ┌────────────────────────────────────────────────────┐   │
-│  │              Zustand Store + Immer                 │   │
-│  └────────────────────────────────────────────────────┘   │
-│  ┌────────────────────────────────────────────────────┐   │
-│  │     Metrics Bar (token usage, cost tracking)        │   │
-│  └────────────────────────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │              Zustand Store + Immer                  │    │
+│  └────────────────────────────────────────────────────┘    │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │     Metrics Bar (token usage, cost tracking)        │    │
+│  └────────────────────────────────────────────────────┘    │
 └───────────────────────────┬─────────────────────────────────┘
                             │ Chrome Extension Messaging
 ┌───────────────────────────▼─────────────────────────────────┐
-│                    Service Worker                           │
-│  ┌────────────────────────────────────────────────────┐   │
-│  │                  Agent Loop                        │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │   │
-│  │  │  LLM     │  │ Context  │  │   Tool Registry   │  │   │
-│  │  │ Client   │  │ Manager  │  │   (52 tools)     │  │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘  │   │
-│  │                                                      │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │   │
-│  │  │ Progress │  │  Plan    │  │   Trace          │  │   │
-│  │  │ Tracker  │  │ Guardian │  │   Recorder       │  │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘  │   │
-│  └────────────────────────────────────────────────────┘   │
-│                         │                                   │
-│         ┌───────────────┼───────────────┐                   │
-│         ▼               ▼               ▼                   │
-│  ┌────────────┐            ┌────────────┐            ┌────────────┐
-│  │ Navigation │            │   Memory   │            │  Workspace │
-│  │  Bridge    │            │   Bridge   │            │  Manager   │
-│  └────────────┘            └────────────┘            └────────────┘
-│                                              │              │
-│  ┌───────────────────────────────────────────┼──────────────┐
-│  │          Storage Logger (JSONL rotation)   │              │
-│  └───────────────────────────────────────────┼──────────────┘
-└──────────────────────────────────────────────┼──────────────┘
-                                               │
-┌──────────────────────────────────────────────▼──────────────┐
-│              Offscreen Document (Memory)                    │
+│                    Service Worker                            │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                  Orchestrator                         │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
+│  │  │ Planner  │  │ Executor │  │    Verifier       │   │   │
+│  │  │ (smart)  │  │  (fast)  │  │  (smart+critic)  │   │   │
+│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
+│  │  │ Retry    │  │ Handoff  │  │   Skills Store    │   │   │
+│  │  │ Policy   │  │ Context  │  │   (learn+replay)  │   │   │
+│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                  Agent Loop                           │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
+│  │  │  LLM     │  │ Context  │  │   Tool Registry   │   │   │
+│  │  │ Client   │  │ Manager  │  │   (52 tools)      │   │   │
+│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
+│  │  │ Progress │  │  Prompt  │  │   Trace           │   │   │
+│  │  │ Tracker  │  │ Registry │  │   Recorder        │   │   │
+│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐            │
+│  │ Navigation │  │   Memory   │  │  Workspace │            │
+│  │  Bridge    │  │   Bridge   │  │  Manager   │            │
+│  └────────────┘  └────────────┘  └────────────┘            │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │          Storage Logger (JSONL rotation)              │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│              Offscreen Document (Memory)                     │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
-│  │  SQLite     │  │    Voy      │  │ Transformers.js  │   │
-│  │  FTS5       │  │  (Vector)   │  │   (Embeddings)  │   │
+│  │  SQLite     │  │    Voy      │  │ Transformers.js   │   │
+│  │  FTS5       │  │  (Vector)   │  │   (Embeddings)    │   │
 │  └─────────────┘  └─────────────┘  └──────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                                ▲
                                │ Chrome Tabs API
 ┌──────────────────────────────┴──────────────────────────────┐
-│                  Content Script (per tab)                   │
+│                  Content Script (per tab)                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
 │  │  Element    │  │   DOM       │  │   Action          │   │
-│  │  Tagging    │  │  Snapshot   │  │   Execution      │   │
+│  │  Tagging    │  │  Snapshot   │  │   Execution       │   │
 │  └─────────────┘  └─────────────┘  └──────────────────┘   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Janitor (cookie banner auto-dismiss)              │   │
-│  └─────────────────────────────────────────────────────┘   │
+│  ┌─────────────┐  ┌──────────────────────────────────┐     │
+│  │  Framework  │  │  Auto-dismiss (modals/banners)   │     │
+│  │  Detection  │  └──────────────────────────────────┘     │
+│  └─────────────┘                                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,6 +86,7 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 
 ```
 Side Panel → Background: USER_CHAT
+Background: Orchestrator decides → single-step (AgentLoop) or multi-step (Planner)
 Background → Content Script: DOM_SNAPSHOT_REQUEST
 Content Script → Background: DOM_SNAPSHOT_RESPONSE
 Background → LLM API: Streaming request
@@ -90,7 +102,19 @@ Content Script → Background: TOOL_RESULT
 Background → LLM: Include result in next prompt
 ```
 
-### 3. Memory Operations
+### 3. Orchestrator Pipeline
+
+```
+Planner (smart LLM) → TaskNode graph
+  [Pre-flight Review] ← Verifier validates plan (≥3 nodes)
+Executor (fast LLM via AgentLoop) → result + StructuredEvidence
+Verifier (smart LLM) → accept / retry / reroute
+  [Advocate] challenges retries (low confidence)
+  [Retrospective] planner learns from failures
+  [Skill Learning] on success with teach mode
+```
+
+### 4. Memory Operations
 
 ```
 Background → Offscreen: MEMORY_WORKER
@@ -99,307 +123,183 @@ Worker → Offscreen: embedding
 Offscreen → Background: MEMORY_WORKER_RESPONSE
 ```
 
-### 4. Navigation
+### 5. Navigation
 
 ```
 Background → Chrome Tabs: tabs.update (navigate)
 Background → Storage: Save state
 Chrome → Background: webNavigation.onCompleted
 Background → Content Script: DOM_SNAPSHOT_REQUEST (new page)
-Background → Side Panel: AGENT_RESPONSE (resumed)
+Background → Agent Loop: Resumed with new snapshot
 ```
 
-### 5. Session Metrics
+### 6. Session Metrics
 
 ```
-Background → Side Panel: SESSION_METRICS (real-time token/cost tracking)
+Background → Side Panel: SESSION_METRICS (every 3 turns + on completion)
 Background → Side Panel: TASK_COMPLETION (with metrics summary)
 ```
 
 ## Technology Stack
 
-| Layer               | Technology                                     |
-| ------------------- | ---------------------------------------------- |
-| **Platform**        | Chrome Extension Manifest V3                   |
-| **Build**           | Vite 5 + @crxjs/vite-plugin                    |
-| **Language**        | TypeScript 5.7 (strict mode)                   |
-| **Package Manager** | Bun                                            |
-| **UI**              | React 18 + Tailwind CSS 3.4                    |
-| **State**           | Zustand + Immer                                |
-| **Fast LLM**        | GPT-OSS-120B (Cerebras → Groq → OpenRouter)    |
+| Layer               | Technology                                      |
+| ------------------- | ----------------------------------------------- |
+| **Platform**        | Chrome Extension Manifest V3                    |
+| **Build**           | Vite 5 + @crxjs/vite-plugin                     |
+| **Language**        | TypeScript 5.7 (strict mode)                    |
+| **Package Manager** | Bun                                             |
+| **UI**              | React 18 + Tailwind CSS 3.4                     |
+| **State**           | Zustand + Immer                                 |
+| **Fast LLM**        | GPT-OSS-120B (Cerebras → Groq → OpenRouter)     |
 | **Smart LLM**       | GLM-4.7 (Cerebras → OpenRouter), native reasoning |
-| **Vision LLM**      | OpenRouter API (configurable, default Qwen VL) |
-| **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)             |
-| **Vector Search**   | Voy (WASM)                                     |
-| **Keyword Search**  | SQLite WASM (FTS5)                             |
-| **Tests**           | Bun test runner + Happy DOM                    |
-
-## Per-Tab Sidebar Behavior
-
-**Critical:** Sidebar is strictly per-tab and does not auto-open:
-
-- **Click to open:** Sidebar only opens when user clicks extension icon
-- **Auto-close on tab switch:** When user switches to a different tab, sidebar automatically closes
-- **No auto-reopen:** When switching back to a tab where sidebar was open, it stays closed (user must click icon again)
-- **Independent state:** Each tab maintains its own sidebar open/closed state
-
-## Auto-Managed Workspaces
-
-Workspaces are now **completely automatic and invisible** to users:
-
-- **Auto-create:** When user opens sidebar on a tab, a workspace is automatically created
-- **Auto-group:** When agent creates new tabs, they're automatically added to the current workspace's tab group
-- **Auto-delete:** When all tabs in a workspace are closed, the workspace automatically deletes
-- **Visual only:** Users see Chrome Tab Groups in the tab bar but no workspace UI in sidebar
-- **No manual management:** Users cannot create, delete, or switch workspaces manually
+| **Vision LLM**      | OpenRouter API (configurable, default Qwen VL)  |
+| **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)              |
+| **Vector Search**   | Voy (WASM)                                      |
+| **Keyword Search**  | SQLite WASM (FTS5)                               |
+| **Tests**           | Bun test runner + Happy DOM                      |
 
 ## Directory Structure
 
 ```
 src/
 ├── background/          # Service worker code
-│   ├── background.ts    # Entry point
-│   ├── agent/
-│   │   ├── loop.ts      # AgentLoop orchestration
-│   │   ├── context.ts   # ContextManager (sliding window)
+│   ├── background.ts    # Entry point, message router
+│   ├── agent/           # Agent loop (single-step execution)
+│   │   ├── loop.ts      # AgentLoop (LLM→tool→LLM cycle)
+│   │   ├── context.ts   # ContextManager (sliding window + distillation)
 │   │   ├── progress.ts  # ProgressTracker (stuck detection)
-│   │   ├── step-labels.ts # Step label generation
-│   │   ├── guardian.ts  # PlanGuardian (task decomposition)
-│   │   ├── executor.ts  # Tool execution orchestration
-│   │   └── tool-recovery.ts # Extract tool calls from plain text
+│   │   ├── step-labels.ts
+│   │   ├── tool-recovery.ts
+│   │   └── trace.ts     # TraceRecorder
+│   ├── orchestrator/    # Multi-step task pipeline
+│   │   ├── index.ts     # Main orchestrator (planner→executor→verifier)
+│   │   ├── types.ts     # OrchestratorTask, TaskNode, evidence types
+│   │   ├── planner.ts   # Task decomposition + retrospective
+│   │   ├── verifier.ts  # Validation + dialogue + advocate
+│   │   ├── handoff.ts   # Role transition context
+│   │   ├── retry-policy.ts
+│   │   ├── scheduling.ts
+│   │   ├── budget-estimator.ts
+│   │   ├── contracts.ts
+│   │   └── memory-buffer.ts
+│   ├── skills/
+│   │   └── store.ts     # SkillStore (learn + replay)
 │   ├── llm/
-│   │   ├── client.ts    # Multi-provider LLM client (OpenRouter, Groq, Cerebras)
-│   │   └── types.ts     # LLM types
+│   │   ├── client.ts    # Multi-provider client (Cerebras/Groq/OpenRouter)
+│   │   └── types.ts     # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
 │   │   ├── index.ts     # 52 tool definitions
 │   │   ├── registry.ts  # ToolRegistry
 │   │   ├── metadata.ts  # ToolMeta, pre-computed sets
-│   │   └── screenshot.ts # Screenshot with element tags
-│   ├── memory/
-│   │   └── bridge.ts    # Offscreen communication
-│   ├── workspaces/
-│   │   └── manager.ts   # Workspace/Tab Group management
-│   ├── vision.ts        # Vision LLM bridge (screenshot descriptions)
+│   │   └── react.ts     # React Toolkit (4 on-demand tools)
+│   ├── memory/          # Offscreen document bridge
+│   ├── workspaces/      # Workspace/Tab Group management
+│   ├── vision.ts        # Vision LLM bridge
 │   ├── navigation.ts    # Navigation Bridge
 │   ├── keepalive.ts     # SW keepalive alarm
-│   ├── streaming.ts     # SSE parser
-│   ├── security.ts      # Risk classification
-│   └── logger.ts        # Storage Logger with JSONL rotation
+│   ├── streaming.ts     # SSE parser with usage capture
+│   └── security.ts      # Risk classification
 ├── content/             # Content script (DOM access)
-│   ├── content.ts       # Message listener + autoDismissModals
+│   ├── content.ts       # Message listener + auto-dismiss
 │   ├── snapshot.ts      # DOM distillation
-│   ├── tagging.ts       # Element tagging
+│   ├── tagging.ts       # Element tagging (stable hash IDs)
 │   ├── actions.ts       # Tool execution (DOM actions)
-│   └── janitor.ts       # Cookie banner auto-dismiss
+│   └── framework-detect.ts # React detection
+├── prompts/             # Prompt registry
+│   ├── registry.ts      # Versioned prompt templates
+│   ├── types.ts         # PromptId union type
+│   └── render.ts        # Template rendering
 ├── sidepanel/           # React UI
-│   ├── App.tsx          # Main component with message handling
+│   ├── App.tsx          # Main component
 │   ├── store.ts         # Zustand state
 │   ├── bridge.ts        # Message routing
-│   └── components/     # UI components
-│       ├── Header.tsx
-│       ├── MessageBubble.tsx
-│       ├── InputArea.tsx
-│       ├── ControlBar.tsx
-│       ├── StuckBanner.tsx
-│       ├── TaskProgressPanel.tsx
-│       ├── MetricsBar.tsx
-│       ├── CompletionSummary.tsx
-│       ├── SettingsDrawer.tsx
-│       └── SavedPromptsDrawer.tsx
-├── offscreen/           # Offscreen document
-│   └── memory/
-│       ├── main.ts      # SQLite + Voy coordination
-│       ├── worker.ts    # Embedding worker
-│       ├── utils.ts     # RRF algorithm
-│       └── index.html
+│   ├── hooks/           # Custom hooks (speech-to-text)
+│   └── components/      # 20+ UI components
+├── offscreen/           # Offscreen document (memory)
+│   └── memory/          # SQLite + Voy + RRF
 ├── types/               # TypeScript types
 │   └── index.ts         # Single source of truth
 └── utils/               # Shared utilities
-    ├── logger.ts        # Structured logging
-    └── context.ts       # Execution context detection
 
-tests/                   # Test files mirror src structure
-docs/                   # Documentation
-evals/                  # Offline evaluation framework
+tests/                   # Test files mirror src structure (600+ tests)
+docs/                    # Documentation
+evals/                   # Offline evaluation framework
+scripts/                 # Build/dev scripts
+traces/                  # Recorded agent sessions
+logs/                    # Application logs
 ```
 
 ## Key Design Patterns
 
 ### 1. Message Passing
 
-All inter-context communication uses typed discriminated unions:
+All inter-context communication uses typed discriminated unions (`RuntimeMessage`, 27+ members). Every message has `type` (discriminant), `requestId` (UUID), `source` (origin context), and optional `workspaceId`.
 
-```typescript
-type RuntimeMessage =
-    | UserChatMessage        // Side panel → background
-    | AgentResponseMessage   // Background → side panel
-    | AgentStatusMessage     // Background → side panel
-    | StreamChunkMessage     // Background → side panel
-    | ToolExecuteMessage     // Background → content script
-    | AgentStuckMessage      // Background → side panel (stuck detection)
-    | AgentTurnMessage       // Background → side panel (turn progress)
-    | TaskProgressMessage    // Background → side panel (subtask progress)
-    | SessionMetricsMessage  // Background → side panel (token/cost tracking)
-    | PauseAgentMessage      // Side panel → background
-    | ResumeAgentMessage     // Side panel → background
-    | ...;                   // 27+ members total
-```
+### 2. Two-Tier LLM Architecture
 
-Every message has:
+Independent provider pools for fast (GPT-OSS-120B) and smart (GLM-4.7) tiers. Automatic failover across Cerebras → Groq → OpenRouter. Smart tier uses native reasoning (no reasoning parameter).
 
-- `type` - Discriminant
-- `requestId` - UUID for correlation
-- `source` - Origin context
-- `workspaceId` - Optional scope for workspace isolation
+### 3. Orchestrator Pipeline
 
-### 2. State Management
+Complex tasks decomposed via planner→executor→verifier with:
+- **Structured evidence** attached to every completion
+- **Cross-role reflexion** from verifier to planner on failures
+- **Pre-flight review** for plans with 3+ nodes
+- **Advocate triad** for balanced deliberation on low-confidence retries
+- **Retrospective** for planner learning after task completion
 
-**Side Panel:** Zustand with Immer for immutable updates
+### 4. Lane Isolation
 
-```typescript
-const useStore = create<Store>()(
-  immer((set) => ({
-    messages: [],
-    agentStatus: AgentStatus.IDLE,
-    sessionMetrics: null,
-    // ...actions
-  })),
-);
-```
+Each orchestrator role (planner, executor, verifier) runs in its own isolated lane via `runInLane()`, preventing context contamination.
 
-**Background:** Chrome storage (session for ephemeral, local for persistent)
+### 5. Skills System
 
-### 3. Tool System
+Successful orchestrator runs can be saved as learned skills (teach mode). Skills are auto-replayed on similar future queries, skipping re-planning.
 
-Tools are registered dynamically:
+### 6. Streaming Architecture
 
-```typescript
-toolRegistry.register(
-  ToolName.CLICK_ELEMENT,
-  CLICK_DEF, // JSON schema
-  (args, tabId) => executeClick(args, tabId), // Handler
-);
-```
+SSE from LLM → parseSSEStream → STREAM_CHUNK → Zustand → React. Real-time text streaming with token usage capture.
 
-### 4. Streaming Architecture
-
-SSE from LLM → parseSSEStream → STREAM_CHUNK → Zustand → React
-
-Real-time text streaming without waiting for full response.
-
-### 5. Navigation Persistence
+### 7. Navigation Persistence
 
 Agent state saved to `chrome.storage.local` before navigation, restored via `webNavigation.onCompleted` after page load.
 
-### 6. Session Tracing
+### 8. Session Tracing
 
-Full-fidelity recording of agent sessions for offline evaluation replay:
-
-```typescript
-interface TraceEntry {
-  sessionId: string;
-  turnNumber: number;
-  snapshot: {...};
-  llmRequest: {...};
-  llmResponse: {...};
-  toolExecutions: TraceToolExecution[];
-  events: TraceEvent[];
-}
-```
+Full-fidelity recording of agent sessions for offline evaluation replay. Traces drain to `traces/` via log server.
 
 ## Security
 
 ### Risk Classification
 
-Tools classified by risk level:
-
-- **LOW:** Read-only (read_page, scroll_page, memory_search, etc.)
-- **MEDIUM:** Mutates state (click_element, type_text, memory_add)
-- **HIGH:** Navigation/tabs (navigate, create_tab, close_tab, etc.)
-
-Risk displayed in UI but not blocking (autonomous agent model).
+Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the agent operates autonomously with the stop button as safety mechanism.
 
 ### Input Sanitization
 
-```typescript
-function sanitizeUserInput(text: string): string {
-  // Remove null bytes, truncate to 10k chars
-  return text.replace(/\0/g, "").slice(0, 10_000);
-}
-
-function sanitizeUrl(url: string): Result<string> {
-  const parsed = new URL(url);
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    return { ok: false, error: `Blocked: ${parsed.protocol}` };
-  }
-  return { ok: true, value: parsed.href };
-}
-```
-
-## Performance Considerations
-
-### 1. Sliding Window Context
-
-Keeps conversation within token limits while preserving critical context (system message, original query, recent messages).
-
-### 2. Web Worker Embeddings
-
-Transformers.js runs in web worker to avoid blocking offscreen document.
-
-### 3. IndexedDB Persistence
-
-SQLite and Voy state persisted for fast restarts.
-
-### 4. Service Worker Keepalive
-
-Alarm fires every ~24 seconds to prevent SW termination during long operations.
-
-### 5. JSONL Log Rotation
-
-Storage Logger writes to `logs/opensidebar.jsonl` with 50MB rotation and 5 file max.
-
-### 6. Session Metrics Tracking
-
-Real-time token usage and cost tracking with provider breakdown.
+- User input truncated to 10k chars, null bytes stripped
+- URLs validated (http/https only)
+- API keys auto-redacted from logs
 
 ## Testing Strategy
 
 | Test Type         | Location                     |
 | ----------------- | ---------------------------- |
 | Unit tests        | `tests/**/*.test.ts`         |
-| Component tests   | `tests/sidepanel/*.test.tsx` |
-| Integration tests | Manual E2E                   |
+| Component tests   | `tests/sidepanel/*.test.tsx`  |
+| Integration tests | `tests/background/orchestrator-*.test.ts` |
+| Eval replay       | `evals/`                      |
 
-**Coverage:** 71+ tests, ~85% coverage
-
-## Extension Lifecycle
-
-1. **Install:** Load unpacked from `dist/` folder
-2. **Startup:** SW initializes, registers listeners
-3. **Side Panel Open:** React mounts, connects to store
-4. **User Message:** Agent loop starts, streaming begins
-5. **Navigation:** State saved, resumed after load
-6. **Session End:** Trace written, metrics finalized
-7. **Shutdown:** State persisted to storage
-
-## Evals Framework
-
-OpenSidebar includes an offline evaluation framework for testing agent behavior:
-
-- **Golden Datasets:** YAML test cases in `evals/golden/cases/`
-- **Metrics:** Success rate, tool efficiency, error handling
-- **CLI Commands:**
-  - `bun run evals` - Run evaluation suite
-  - `bun run evals:stats` - Show statistics
-  - `bun run evals:analyze` - Analyze with suggestions
+**Coverage:** 600+ tests
 
 ## See Also
 
 - [Project Setup](./project-setup.md) - Build configuration
 - [Content Script](./content-script.md) - DOM interaction
-- [Agent Loop](./agent-loop.md) - Core orchestration
+- [Agent Loop](./agent-loop.md) - Core execution engine
 - [Navigation Bridge](./navigation-bridge.md) - State persistence
 - [Memory System](./memory-system.md) - RAG implementation
 - [Tools](./tools.md) - 52 tool definitions
 - [Types Reference](./types-reference.md) - TypeScript types
 - [Message Protocol](./message-protocol.md) - Message passing
+- [Side Panel UI](./sidepanel-ui.md) - React UI
+- [Fast-Smart Collaboration](./fast-smart-collaboration.md) - Two-tier LLM system

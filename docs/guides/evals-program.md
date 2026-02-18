@@ -12,6 +12,7 @@ Use six tracks that map directly to current architecture work:
 4. `budget_and_termination`
 5. `checkpoint_resume`
 6. `core_task_success`
+7. `conversation_collaboration` — structured evidence, cross-role reflexion, pre-flight review, advocate triad, retrospective
 
 ## Case Schema
 

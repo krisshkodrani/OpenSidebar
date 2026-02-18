@@ -4,7 +4,9 @@ This directory contains feature proposals, technical decisions, and implementati
 
 ## Active RFCs
 
-_No active RFCs._
+| RFC | Status | Summary |
+|-----|--------|---------|
+| [Three-Level Model Routing (Reopened)](./rfc-three-level-model-routing.md) | **Proposed** | Reintroduces `L0/L1/L2` routing with explicit handoff-safety gates and budget guardrails |
 
 ## Archived RFCs
 

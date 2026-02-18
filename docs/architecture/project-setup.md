@@ -29,45 +29,68 @@ opensidebar/
 │   ├── types/
 │   │   └── index.ts           # All shared TypeScript types (single source of truth)
 │   ├── background/           # Service worker
-│   │   ├── background.ts     # Entry point
-│   │   ├── agent/            # Agent loop
-│   │   │   ├── loop.ts       # Main orchestration
-│   │   │   ├── context.ts    # Context manager (sliding window)
-│   │   │   ├── progress.ts    # Stuck detection
-│   │   │   ├── executor.ts   # Tool execution
-│   │   │   ├── guardian.ts   # Plan guardian
-│   │   │   ├── step-labels.ts # Step labels
-│   │   │   ├── tool-recovery.ts # Tool call recovery
-│   │   │   └── trace.ts      # Session recording
-│   │   ├── llm/              # LLM clients (multi-provider)
-│   │   ├── tools/            # 52 tool definitions
-│   │   ├── memory/           # Memory bridge
-│   │   ├── workspaces/        # Workspace manager
-│   │   ├── vision.ts         # Vision LLM
-│   │   ├── navigation.ts      # Navigation bridge
-│   │   ├── keepalive.ts      # SW keepalive
-│   │   ├── streaming.ts       # SSE parser
+│   │   ├── background.ts     # Entry point, message router
+│   │   ├── agent/            # Agent loop (single-step execution)
+│   │   │   ├── loop.ts       # AgentLoop (LLM→tool→LLM cycle)
+│   │   │   ├── context.ts    # ContextManager (sliding window + distillation)
+│   │   │   ├── progress.ts   # ProgressTracker (stuck detection)
+│   │   │   ├── step-labels.ts
+│   │   │   ├── tool-recovery.ts
+│   │   │   └── trace.ts      # TraceRecorder (session recording)
+│   │   ├── orchestrator/     # Multi-step task pipeline
+│   │   │   ├── index.ts      # Orchestrator (planner→executor→verifier)
+│   │   │   ├── types.ts      # OrchestratorTask, TaskNode, evidence types
+│   │   │   ├── planner.ts    # Task decomposition + retrospective
+│   │   │   ├── verifier.ts   # Validation + dialogue + advocate
+│   │   │   ├── handoff.ts    # Role transition context
+│   │   │   ├── retry-policy.ts
+│   │   │   ├── scheduling.ts
+│   │   │   ├── budget-estimator.ts
+│   │   │   ├── contracts.ts
+│   │   │   └── memory-buffer.ts
+│   │   ├── skills/
+│   │   │   └── store.ts      # SkillStore (learn + replay)
+│   │   ├── llm/              # Multi-provider LLM client (Cerebras/Groq/OpenRouter)
+│   │   ├── tools/            # 52 tool definitions + React Toolkit
+│   │   ├── memory/           # Memory bridge to offscreen
+│   │   ├── workspaces/       # Workspace/Tab Group manager
+│   │   ├── vision.ts         # Vision LLM bridge
+│   │   ├── navigation.ts     # Navigation bridge
+│   │   ├── keepalive.ts      # SW keepalive alarm
+│   │   ├── streaming.ts      # SSE parser with usage capture
 │   │   └── security.ts       # Risk classification
 │   ├── content/              # Content script
-│   │   ├── content.ts        # Message listener + Janitor
+│   │   ├── content.ts        # Message listener + auto-dismiss
 │   │   ├── snapshot.ts       # DOM distillation
-│   │   ├── tagging.ts        # Element tagging
-│   │   └── actions.ts        # DOM actions
+│   │   ├── tagging.ts        # Element tagging (stable hash IDs)
+│   │   ├── actions.ts        # DOM actions
+│   │   └── framework-detect.ts # React detection
+│   ├── prompts/              # Prompt registry
+│   │   ├── registry.ts       # Versioned prompt templates
+│   │   ├── types.ts          # PromptId union type
+│   │   └── render.ts         # Template rendering
 │   ├── sidepanel/            # React UI
-│   │   ├── App.tsx          # Main component
-│   │   ├── store.ts         # Zustand state
-│   │   ├── bridge.ts        # Message routing
-│   │   └── components/      # UI components
+│   │   ├── App.tsx           # Main component
+│   │   ├── store.ts          # Zustand state
+│   │   ├── bridge.ts         # Message routing
+│   │   ├── hooks/            # Custom hooks (speech-to-text)
+│   │   └── components/       # 20+ UI components
 │   ├── offscreen/            # Offscreen document (memory)
 │   │   └── memory/
-│   │       ├── main.ts      # SQLite + Voy
-│   │       ├── worker.ts    # Embeddings
-│   │       └── utils.ts     # RRF
-│   └── utils/               # Shared utilities
-├── tests/                   # Test files (mirror src structure)
-├── docs/                    # Architecture docs
-│   └── architecture/
-└── evals/                   # Offline evaluation framework
+│   │       ├── main.ts       # SQLite + Voy coordination
+│   │       ├── worker.ts     # Embeddings worker
+│   │       └── utils.ts      # RRF algorithm
+│   └── utils/                # Shared utilities
+├── tests/                    # Test files mirror src structure (600+ tests)
+├── docs/                     # Documentation
+│   ├── architecture/         # Technical architecture
+│   ├── features/             # Feature documentation
+│   ├── guides/               # Runbooks and user guides
+│   └── rfc/                  # RFC documents (archived + active)
+├── evals/                    # Offline evaluation framework
+├── scripts/                  # Build/dev scripts
+├── traces/                   # Recorded agent sessions
+└── logs/                     # Application logs
 ```
 
 ## Configuration Files
@@ -102,7 +125,9 @@ Required permissions:
 
 Host permissions:
 
-- `https://openrouter.ai/*` - LLM API (all models)
+- `https://openrouter.ai/*` - LLM API (OpenRouter)
+- `https://api.cerebras.ai/*` - LLM API (Cerebras, fastest)
+- `https://api.groq.com/*` - LLM API (Groq, fallback)
 
 ### vite.config.ts
 
@@ -160,29 +185,29 @@ export default defineConfig({
 ## Build Commands
 
 ```bash
-# Development with HMR
-bun run dev
+# Development
+bun run dev            # Vite dev server with HMR
+bun run dev:stack      # Build + log server + dev server (all-in-one)
+bun run build          # Production build
 
-# Production build
-bun run build
+# Quality
+bun run lint           # ESLint (src/**/*.ts,tsx)
+bun run fmt            # Prettier format src/
+bun test               # Run all tests (600+)
 
-# Type checking
-bun run lint
+# Logging & Traces
+bun run logs           # Start log drain server (127.0.0.1:7589)
+bun run logs:tail      # Show last 50 entries
+bun run logs:errors    # Show error-level entries
+bun run traces:list    # List recorded sessions
+bun run traces:stats   # Aggregate trace statistics
 
-# Run tests
-bun test
-
-# Format code
-bun run fmt
-
-# Run evaluation suite
-bun run evals
-
-# Show eval statistics
-bun run evals:stats
-
-# Analyze evals with suggestions
-bun run evals:analyze
+# Evals
+bun run evals          # Eval pipeline CLI
+bun run evals:convert  # Convert traces to eval cases
+bun run evals:run      # Run eval cases against LLM
+bun run evals:stats    # Show eval statistics
+bun run evals:critique # Critique eval results
 ```
 
 ## Development Workflow

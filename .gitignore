@@ -22,10 +22,12 @@ Thumbs.db
 # Logs (keep .md docs, ignore data files)
 logs/*.jsonl
 logs/*.jsonl.*
+logs/archive/
 *.log
 
 # Traces (keep code, ignore data files)
 traces/*.jsonl
+traces/archive/
 
 # Eval data (generated, not checked in)
 evals/cases/*.jsonl
@@ -42,9 +44,6 @@ coverage/
 .vite/
 *.timestamp-*
 
-Designing-Multi-Agent-Systems.pdf
-Agentic-Design-Patterns.pdf
-Agentic_Design_Patterns.pdf
 challenge-runner/tasks-manifest.json
 challenge-runner/tasks-manifest.diagnostics.json
 
@@ -53,3 +52,4 @@ full-test-output.txt
 test-output.txt
 analyze-log.js
 
+/books

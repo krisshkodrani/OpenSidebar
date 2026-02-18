@@ -118,6 +118,7 @@ bun run dev
 | Command | Description |
 | --- | --- |
 | `bun run dev` | Start dev server with HMR |
+| `bun run dev:stack` | Build once, then start log drain + dev server together |
 | `bun run build` | Build extension for production |
 | `bun run lint` | Run ESLint |
 | `bun test` | Run all tests |
@@ -164,6 +165,8 @@ Yes, manual browser runs produce logs.
 
 If you forgot to start `bun run logs`, you can still export buffered logs from the side panel:
 - `Settings -> Export Logs` downloads `opensidebar-logs.jsonl`.
+
+Tip: use `bun run dev:stack` to run build + log capture + dev in one command.
 
 ---
 

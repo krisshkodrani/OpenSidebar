@@ -1,55 +1,215 @@
 # Manual Evals Runbook
 
-Use this checklist to collect clean manual traces and turn them into eval artifacts without losing data.
+Collect traces from two runs — baseline (agent alone) and coached (you guide via hints) — then convert to eval cases for comparison.
 
-## Pre-Flight (Do This First)
+## How Teaching Works
 
-1. Open terminal at repo root.
-2. Start log drain server:
-   - `bun run logs`
-3. In a second terminal, verify extension build is current:
-   - `bun run build`
-4. Reload extension in `chrome://extensions`.
+There is no "record my actions" button. The agent always executes; you **coach it with hints**.
 
-## Manual Capture Flow
+During an active run, the input area switches to hint mode:
+- Placeholder changes to **"Send a hint..."**
+- Send button turns **amber**
+- Your message is injected into the agent's conversation as a nudge
 
-1. Perform one representative task in the side panel.
-2. Wait for task completion (or explicit failure) before starting another run.
-3. Keep `bun run logs` running for the whole session.
+The agent reads your hint on its next turn and adjusts. If teach mode is ON and the task succeeds, the orchestrator extracts the plan as a **learned skill** for future replay.
 
-## Extract Artifacts
+**Why hints over demonstrations:** The agent still plans, reasons, and verifies. Hints build transferable reasoning; recorded demos just replay brittle click sequences.
 
-1. List recorded sessions:
-   - `bun run traces:list`
-2. Inspect session stats:
-   - `bun run traces:stats`
-3. Convert a session to eval cases:
-   - `bun run evals convert <session-id> --strategy all`
-4. Generate critique outputs:
-   - `bun run evals critique`
+---
 
-Outputs:
-- Logs: `logs/opensidebar.jsonl`
-- Agent traces: `traces/<session-id>.jsonl`
-- Orchestrator traces: `traces/runs/<run-id>.jsonl`
-- Critique: `evals/reports/critique-<timestamp>.json` and `.md`
+## Pre-Flight
 
-## Common Mistakes (And Fixes)
+### Option A: Single command
+```bash
+bun run dev:stack
+```
+Builds, starts the log server, and starts the dev server.
 
-- Forgot `bun run logs`:
-  - Use `Settings -> Export Logs` for buffered logs (`opensidebar-logs.jsonl`), then re-run with log server for full traces.
-- Multiple tasks in one unclear session:
-  - Re-run and keep one task per session for clean eval conversion.
-- Converted wrong session:
-  - Re-check with `bun run traces:list` and use the exact session id.
-- Build mismatch after code changes:
-  - Re-run `bun run build` and reload extension before capture.
+### Option B: Manual
+```bash
+# Terminal 1 — keep running the entire session
+bun run logs
 
-## Minimal Quality Gate
+# Terminal 2 — build once
+bun run build
+```
 
-Before sharing results, confirm:
+Then load/reload the extension:
+1. `chrome://extensions` → Developer mode ON
+2. **Load unpacked** → select the `dist/` folder
 
-1. `bun run lint` has no errors (warnings are acceptable if known).
-2. `bun test` passes.
-3. `bun run build` passes.
-4. At least one new `traces/<session-id>.jsonl` exists for the run.
+### Verify recording works
+1. Open side panel on any page
+2. Send a trivial message ("read this page"), let agent run 1-2 turns, stop it
+3. Check the log server terminal — you should see structured JSON entries flowing
+4. Check that a new file appeared in `traces/` with today's date
+
+If nothing appears, check the service worker console (DevTools → chrome-extension → service worker) for network errors to `127.0.0.1:7589`.
+
+---
+
+## Run A: Baseline (Agent Alone)
+
+**Goal:** See how far the agent gets on its own. No hints, no teaching.
+
+### Settings (side panel gear icon)
+| Setting | Value | Why |
+|---------|-------|-----|
+| Teach Mode | **OFF** | Don't learn from a potentially failed run |
+| Auto Skill Replay | **OFF** | No skills exist yet |
+| Max Turns | **25** | Enough to observe behavior |
+
+### Steps
+1. Navigate to the challenge page
+2. Open side panel, type the task, press Send
+3. **Watch, don't intervene** — observe:
+   - Does the planner decompose into multiple nodes?
+   - Does pre-flight review fire? (only for plans with 3+ nodes)
+   - Where does the agent get stuck?
+   - Do retries/reroutes happen? Does the advocate fire?
+   - Does escalation dialog appear?
+4. Let it finish or time out
+5. Note the outcome: completed / partial / failed
+
+### Capture session ID
+```bash
+# Agent-level trace
+tail -1 traces/index.jsonl
+
+# Orchestrator-level trace (if orchestrator mode ran)
+tail -1 traces/runs/index.jsonl
+```
+
+Write them down:
+- **Baseline session ID:** _______________
+- **Baseline run ID:** _______________
+
+---
+
+## Run B: Coached (You Guide via Hints)
+
+**Goal:** Guide the agent to success using hints. The successful plan gets saved as a learned skill.
+
+### Settings
+| Setting | Value | Why |
+|---------|-------|-----|
+| Teach Mode | **ON** | Learn from successful completion |
+| Auto Skill Replay | **OFF** | You're teaching fresh, not replaying |
+| Max Turns | **40** | Extra room for hint-guided retries |
+
+### Steps
+1. Navigate to the challenge page (same URL as baseline)
+2. Open side panel, type the **same task query** as baseline, press Send
+3. Watch the planner decompose the task
+4. For each node the executor runs:
+   - **If it's doing the right thing** → let it run
+   - **If it's stuck or wrong** → type a hint in the amber input area
+   - Keep hints **short and actionable**:
+     - Good: `"The login button is inside the nav bar at the top, try read_page first"`
+     - Good: `"You need to scroll down to see the form"`
+     - Bad: `"I think maybe you should try a different approach to this problem"`
+5. Let the verifier do its job — retries generate valuable reflexion data
+6. **Critical:** The task must complete with status **"completed"** for skill learning to fire
+
+### Verify skill was learned
+After successful completion, check:
+- A step appears in the timeline: **"Teach mode: updated skill [name]"**
+- Side panel → Settings → scroll to **Learned Skills** panel → new skill shows up
+- Note the skill name and step count
+
+### Capture session ID
+```bash
+tail -1 traces/index.jsonl
+tail -1 traces/runs/index.jsonl
+```
+
+Write them down:
+- **Teaching session ID:** _______________
+- **Teaching run ID:** _______________
+
+---
+
+## Post-Run: Convert and Analyze
+
+### Convert traces to eval cases
+
+```bash
+# Baseline
+bun run evals convert <BASELINE_SESSION_ID> --strategy all
+bun run evals convert-run <BASELINE_RUN_ID> --strategy all
+
+# Teaching
+bun run evals convert <TEACHING_SESSION_ID> --strategy all
+bun run evals convert-run <TEACHING_RUN_ID> --strategy all
+
+# Golden fixtures (reference expectations)
+bun run evals convert-golden
+```
+
+### Run evals
+```bash
+bun run evals run --all
+```
+
+### Analyze
+```bash
+bun run evals stats
+bun run evals analyze
+bun run evals critique
+```
+
+### Outputs
+| Artifact | Location |
+|----------|----------|
+| App logs | `logs/opensidebar.jsonl` |
+| Agent traces | `traces/<session-id>.jsonl` |
+| Orchestrator traces | `traces/runs/<run-id>.jsonl` |
+| Eval cases | `evals/cases/*.jsonl` |
+| Eval results | `evals/results/*.jsonl` |
+| Critique report | `evals/reports/critique-<timestamp>.json` and `.md` |
+
+---
+
+## What to Look For in Traces
+
+New conversation collaboration patterns — verify these appear in orchestrator traces:
+
+| Trace Event | When It Fires | Cost |
+|-------------|--------------|------|
+| `evidence_attached` | Every executor completion | Zero |
+| `cross_role_reflexion` | Verifier retry or reroute | Zero |
+| `plan_reviewed` | Plans with 3+ nodes | 1 LLM call |
+| `planner_retrospective` | Task end with failures | 1 LLM call |
+| `advocate_challenge` | Retry + low confidence + first attempt | 1 LLM call |
+| `dialogue_completed` | Verifier-critic dialogue | Already existed |
+| `skill_learned` | Successful task + teach mode ON | Zero |
+
+Search logs for specific events:
+```bash
+bun run logs:query search "evidence_attached"
+bun run logs:query search "advocate"
+bun run logs:query search "retrospective"
+bun run logs:query search "plan_reviewed"
+bun run logs:query search "cross_role_reflexion"
+```
+
+---
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Forgot `bun run logs` | Traces won't record. Use Settings → Export Logs for buffered data, then re-run with the server |
+| Teach mode OFF during coached run | Skill won't be learned. Re-run with it ON |
+| Task failed during coached run | Skill learning only fires on success. Guide more aggressively with hints |
+| Different query text between runs | Use the exact same task text for fair comparison |
+| Build stale after code changes | `bun run build` and reload extension before capture |
+| Multiple tasks in one session | Keep one task per session for clean eval conversion |
+
+## Quality Gate
+
+Before analyzing results, confirm:
+1. `bun run lint` — 0 errors
+2. `bun test` — all pass
+3. At least one `traces/<session-id>.jsonl` exists per run
+4. Coached run has a learned skill visible in the panel

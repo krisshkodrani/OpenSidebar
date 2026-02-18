@@ -20,21 +20,29 @@ App (Main container)
 ├── Header
 │   └── Settings button
 ├── SettingsDrawer (conditional overlay)
+│   └── LearnedSkillsPanel (skills management with pin/enable)
 ├── SavedPromptsDrawer (conditional overlay)
 ├── StuckBanner (visible when agent is stuck)
+├── EscalationBanner (visible during escalation dialog)
+├── ApprovalBanner (plan approval prompt)
+├── RecoveryBanner (recovery actions)
 ├── Main Chat Area
 │   ├── Welcome screen (empty state)
 │   └── MessageBubble[] (chat messages)
+│       ├── StepTimeline (tool call timeline per message)
 │       └── CompletionSummary (in final assistant message)
+├── OrchestratorConsole (orchestrator node progress)
+├── PlanBoard (visual plan graph)
 ├── ControlBar
 │   ├── Status indicators (incl. PAUSED)
 │   ├── Pause / Resume buttons
 │   └── Turn counter (turn / maxTurns)
+├── ArchitectureStrip (fast/smart tier indicator)
 ├── MetricsBar (token usage, cost tracking)
 ├── TaskProgressPanel (visible during decomposed tasks)
 └── Bottom Section
     └── InputArea
-        └── Send / Send Hint / Stop button
+        └── Send / Send Hint (amber) / Stop button
 ```
 
 ## State Management
