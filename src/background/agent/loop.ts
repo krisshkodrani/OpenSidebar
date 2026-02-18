@@ -45,6 +45,7 @@ import {
   STEP_WATCHDOG,
   STUCK_THRESHOLDS,
   FAILED_ACTION_MEMORY,
+  DEAD_END_DETECTION,
 } from "./constants";
 
 const APPROVAL_TIMEOUT_MS = 30000;
@@ -168,6 +169,19 @@ function findPriorFailure(
   argsKey: string,
 ): FailedAction | null {
   return failedActions.find(f => f.tool === tool && f.argsKey === argsKey) ?? null;
+}
+
+/**
+ * Normalize a tool result into a fingerprint for dead-end detection.
+ * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
+ */
+function normalizeOutcome(result: string): string {
+  return result
+    .replace(/\b\d+\b/g, "N")        // numbers → N
+    .replace(/\[N\]/g, "[N]")         // element refs
+    .replace(/tag N/g, "tag N")       // tag references
+    .slice(0, 120)
+    .trim();
 }
 
 /** DOM actions that should be blocked when the same successful action repeats too many times. */
@@ -1394,6 +1408,9 @@ export class AgentLoop {
     // Failed action memory: prevents exact repeats of failed tool calls
     const failedActions: FailedAction[] = [];
     let turnsSinceStepEscalation = -1; // -1 = no step escalation active
+
+    // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
+    const recentOutcomes: string[] = [];
 
     // React toolkit: enable on first snapshot that detects React
     let reactToolsEnabled = false;
@@ -3093,6 +3110,53 @@ export class AgentLoop {
                   recentSuccesses.length = 0;
                 }
               }
+            }
+          }
+
+          // D2. Outcome-based dead-end detection: fingerprint tool results and detect patterns
+          for (const toolCall of response.tool_calls!) {
+            const toolResult = recentMessages.find(
+              (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
+            );
+            const resultContent =
+              typeof toolResult?.content === "string" ? toolResult.content : "";
+            if (resultContent) {
+              const fingerprint = normalizeOutcome(resultContent);
+              recentOutcomes.push(fingerprint);
+              if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW) recentOutcomes.shift();
+            }
+          }
+          // Check for dead-end pattern (all recent outcomes identical)
+          {
+            const lastN = recentOutcomes.slice(-DEAD_END_DETECTION.PIVOT_THRESHOLD);
+            const allSame = lastN.length >= DEAD_END_DETECTION.NUDGE_THRESHOLD &&
+              lastN.every(o => o === lastN[0]);
+            if (allSame && lastN.length >= DEAD_END_DETECTION.PIVOT_THRESHOLD) {
+              logger.warn("agent", "Dead-end detected: forcing strategy pivot", {
+                turn: this.turnCount,
+                pattern: lastN[0].slice(0, 80),
+                count: lastN.length,
+              });
+              this.traceRecorder?.recordEvent("dead_end_pivot", {
+                pattern: lastN[0].slice(0, 80),
+                count: lastN.length,
+              });
+              await this.strategyPivot(tabId);
+              recentOutcomes.length = 0;
+            } else if (allSame) {
+              logger.info("agent", "Dead-end nudge: repeated outcome pattern", {
+                turn: this.turnCount,
+                pattern: lastN[0].slice(0, 80),
+                count: lastN.length,
+              });
+              this.traceRecorder?.recordEvent("dead_end_nudge", {
+                pattern: lastN[0].slice(0, 80),
+                count: lastN.length,
+              });
+              this.context.addMessage({
+                role: "user",
+                content: `⚠ Dead-end detected: last ${lastN.length} actions all produced the same outcome pattern: "${lastN[0].slice(0, 80)}". Try a fundamentally different approach — use read_page, scroll_page, or find_element to reassess the page.`,
+              });
             }
           }
 

@@ -17,8 +17,8 @@ import { logger } from "../utils";
 /** Maps tag number → DOM element (for action execution) */
 const tagMap = new Map<number, Element>();
 
-/** Elements tagged via addDynamicTag() — survives tagMap.clear() in tagElements() */
-const dynamicTagEntries = new Map<number, Element>();
+/** Elements tagged via addDynamicTag() — survives tagMap.clear() in tagElements(). Pinned for N cycles. */
+const dynamicTagEntries = new Map<number, { el: Element; cyclesRemaining: number }>();
 
 /** CSS class for the injected label overlay */
 const LABEL_CLASS = "qsidebar-tag";
@@ -26,8 +26,22 @@ const LABEL_CLASS = "qsidebar-tag";
 /** Pixels above/below viewport to include (peripheral vision) */
 const VIEWPORT_EXPANSION = 500;
 
-/** Hard cap on tagged elements per snapshot */
+/** Default hard cap on tagged elements per snapshot */
 export const MAX_TAGGED_ELEMENTS = 50;
+
+/** Elevated cap for pages with drag-and-drop elements */
+const MAX_TAGGED_ELEMENTS_DND = 75;
+
+/** Return effective cap: raised for DnD pages to ensure drop zones are tagged */
+function getEffectiveCap(candidates: Element[]): number {
+  const hasDraggable = candidates.some(el => el.getAttribute("draggable") === "true");
+  const hasDropzone = candidates.some(el =>
+    el.hasAttribute("dropzone") ||
+    (el as HTMLElement).dataset?.droptarget ||
+    (el as HTMLElement).dataset?.dropzone
+  );
+  return (hasDraggable || hasDropzone) ? MAX_TAGGED_ELEMENTS_DND : MAX_TAGGED_ELEMENTS;
+}
 
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
 const MAX_SHADOW_DEPTH = 3;
@@ -198,7 +212,7 @@ export function addDynamicTag(el: Element): number {
   const hash = computeStableHash(el);
   const id = getStableId(hash);
   tagMap.set(id, el);
-  dynamicTagEntries.set(id, el);
+  dynamicTagEntries.set(id, { el, cyclesRemaining: 3 });
   return id;
 }
 
@@ -454,6 +468,52 @@ function collapseNearIdentical(elements: Element[]): {
   return { survivors, collapsedCount, collapsedGroups };
 }
 
+/**
+ * Score an element by task-relevance. Higher scores = more likely to be useful.
+ * Form inputs, draggable/dropzone elements, and semantically-named elements rank highest.
+ */
+function scoreElement(el: Element): number {
+  let score = 0;
+  const tag = el.tagName.toLowerCase();
+  const type = el.getAttribute("type") || "";
+  const role = el.getAttribute("role") || "";
+
+  // Form inputs (text, email, password, search, tel, url, number, date)
+  if (tag === "input" && !["hidden", "submit", "button", "reset"].includes(type)) score += 10;
+  if (tag === "textarea") score += 10;
+  if (tag === "select") score += 10;
+
+  // Submit/file/action elements
+  if (type === "submit" || type === "file") score += 8;
+
+  // Draggable/dropzone (critical for DnD tasks)
+  if (el.getAttribute("draggable") === "true") score += 8;
+  if (el.hasAttribute("dropzone") ||
+      (el as HTMLElement).dataset?.droptarget ||
+      (el as HTMLElement).dataset?.dropzone ||
+      typeof (el as any).ondrop === "function" ||
+      typeof (el as any).ondragover === "function") score += 8;
+
+  // Named elements (semantic, likely unique)
+  if (el.hasAttribute("name") || el.hasAttribute("data-testid")) score += 5;
+
+  // Unique identifiers boost
+  if (el.id && !isRandomHash(el.id)) score += 3;
+
+  // Role-specific boosts
+  if (role === "combobox" || role === "listbox") score += 5;
+  if (role === "dialog" || role === "alertdialog") score += 4;
+  if (role === "tab" || role === "menuitem") score += 2;
+
+  // Links with href (navigational relevance)
+  if (tag === "a" && el.hasAttribute("href")) score += 2;
+
+  // Canvas elements (drawing tasks)
+  if (tag === "canvas") score += 6;
+
+  return score;
+}
+
 export function tagElements(showTags: boolean = false): TaggedElement[] {
   // 1. Remove old visual labels and MAIN-world bridge attributes
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
@@ -495,13 +555,16 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
   const totalCandidates = visibleCandidates.length;
 
   // 5c. Collapse near-identical elements before the cap loop
-  const { survivors: allCandidates, collapsedCount, collapsedGroups } = collapseNearIdentical(visibleCandidates);
+  const { survivors, collapsedCount, collapsedGroups } = collapseNearIdentical(visibleCandidates);
+  // 5d. Sort by task-relevance score (highest first); stable sort preserves DOM order for ties
+  const allCandidates = survivors.sort((a, b) => scoreElement(b) - scoreElement(a));
 
   const results: TaggedElement[] = [];
   const activeHashes = new Set<string>();
+  const effectiveCap = getEffectiveCap(allCandidates);
 
   for (const el of allCandidates) {
-    if (results.length >= MAX_TAGGED_ELEMENTS) break;
+    if (results.length >= effectiveCap) break;
     // Visibility already pre-filtered by collapseNearIdentical pipeline
 
     // Compute stable hash and get/allocate a stable ID
@@ -565,36 +628,43 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
     });
   }
 
-  // 8. Restore dynamic tags that survived DOM but weren't in interactive scan
-  for (const [id, el] of dynamicTagEntries) {
+  // 8. Restore dynamic tags — pinned entries survive cap + refresh for cyclesRemaining
+  for (const [id, entry] of dynamicTagEntries) {
     if (tagMap.has(id)) {
-      // Already re-tagged by interactive scan — no longer needs dynamic tracking
+      // Already re-tagged by interactive scan — decrement but keep tracking
+      entry.cyclesRemaining = Math.max(0, entry.cyclesRemaining - 1);
+      if (entry.cyclesRemaining <= 0) dynamicTagEntries.delete(id);
+      continue;
+    }
+    if (!document.body.contains(entry.el)) {
+      // Element removed from DOM — clean up immediately
       dynamicTagEntries.delete(id);
       continue;
     }
-    if (!document.body.contains(el)) {
-      // Element removed from DOM — clean up
+    entry.cyclesRemaining--;
+    if (entry.cyclesRemaining <= 0) {
       dynamicTagEntries.delete(id);
       continue;
     }
-    if (!isElementVisible(el)) continue; // Hidden but might reappear — keep entry
-    if (results.length >= MAX_TAGGED_ELEMENTS) break;
+    if (!isElementVisible(entry.el)) continue; // Hidden but might reappear — keep entry
+    // Allow up to 5 overflow slots beyond effective cap for pinned dynamic tags
+    if (results.length >= effectiveCap + 5) break;
 
     const hash = idToHash.get(id);
     if (hash) activeHashes.add(hash);
     previousIds.delete(id);
-    tagMap.set(id, el);
+    tagMap.set(id, entry.el);
 
-    const rect = el.getBoundingClientRect();
+    const rect = entry.el.getBoundingClientRect();
     results.push({
       tag: id,
-      tagName: el.tagName.toLowerCase(),
-      role: el.getAttribute("role") || inferRole(el),
-      text: truncateText(getVisibleText(el), 80),
-      attributes: extractAttributes(el),
+      tagName: entry.el.tagName.toLowerCase(),
+      role: entry.el.getAttribute("role") || inferRole(entry.el),
+      text: truncateText(getVisibleText(entry.el), 80),
+      attributes: extractAttributes(entry.el),
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
       isVisible: true,
-      isDisabled: isDisabled(el),
+      isDisabled: isDisabled(entry.el),
     });
   }
 

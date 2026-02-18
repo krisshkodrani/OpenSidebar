@@ -60,6 +60,8 @@ function staleIdError(id: number): {
 const OVERLAY_SELECTORS = [
   "[role='dialog']",
   "[role='alertdialog']",
+  "[aria-modal='true']",
+  "dialog[open]",
   ".modal",
   ".overlay",
   ".popup",
@@ -70,16 +72,32 @@ const OVERLAY_SELECTORS = [
   "[class*='overlay']",
   "[class*='popup']",
   "[class*='dialog']",
+  "[class*='lightbox']",
+  "[class*='backdrop']",
   "[id*='modal']",
   "[id*='overlay']",
+  "[id*='dialog']",
+  "[id*='lightbox']",
+  "[data-modal]",
+  "[data-overlay]",
+  "[data-dialog]",
+  ".lightbox",
+  ".notification",
+  ".toast",
+  ".modal-overlay",
+  ".modal-backdrop",
+  ".backdrop",
 ];
 
 /**
  * Check if an element is likely an overlay/modal/popup that can safely be hidden.
  * Returns true if the element matches overlay heuristics (fixed/absolute + high z-index,
- * semantic overlay selectors, backdrop-filter, semi-transparent background, or covers >30% viewport).
+ * semantic overlay selectors, backdrop-filter, semi-transparent background, or covers >15% viewport).
  */
 export function isLikelyOverlay(el: HTMLElement): boolean {
+  // Condition 0: Native HTML dialog element — always an overlay when open
+  if (el.tagName === "DIALOG" && el.hasAttribute("open")) return true;
+
   const style = window.getComputedStyle(el);
   const position = style.position;
   const isPositioned = position === "fixed" || position === "absolute" || position === "sticky";
@@ -105,7 +123,7 @@ export function isLikelyOverlay(el: HTMLElement): boolean {
     if (alpha > 0 && alpha <= 0.9) return true;
   }
 
-  // Condition 5: covers >30% of viewport with fixed/absolute positioning
+  // Condition 5: covers >15% of viewport with fixed/absolute positioning
   if (isPositioned) {
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
@@ -117,7 +135,7 @@ export function isLikelyOverlay(el: HTMLElement): boolean {
       const right = Math.min(vpW, rect.right);
       const bottom = Math.min(vpH, rect.bottom);
       const visibleArea = Math.max(0, right - left) * Math.max(0, bottom - top);
-      if (visibleArea / vpArea > 0.3) return true;
+      if (visibleArea / vpArea > 0.15) return true;
     }
   }
 

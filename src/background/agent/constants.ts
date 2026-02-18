@@ -135,6 +135,16 @@ export const FAILED_ACTION_MEMORY = {
   POST_ESCALATION_PIVOT_TURNS: 5,
 } as const;
 
+/** Outcome-based dead-end detection */
+export const DEAD_END_DETECTION = {
+  /** Size of the sliding window for recent outcomes */
+  WINDOW: 6,
+  /** Consecutive identical outcomes before injecting a nudge */
+  NUDGE_THRESHOLD: 3,
+  /** Consecutive identical outcomes before forcing a strategy pivot */
+  PIVOT_THRESHOLD: 5,
+} as const;
+
 /** Batch execution limits */
 export const BATCH_LIMITS = {
   /** Maximum steps in a single batch_execute call */

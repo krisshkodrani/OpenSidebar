@@ -110,7 +110,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
 const AGENT_BORDER_ID = "opensidebar-agent-border";
 
 /**
- * Detect elements that cover >30% of the viewport via fixed/absolute positioning.
+ * Detect elements that cover >15% of the viewport via fixed/absolute positioning.
  * Returns elements sorted by coverage descending.
  */
 export function detectViewportCoveringOverlays(): {
@@ -145,7 +145,7 @@ export function detectViewportCoveringOverlays(): {
     const visibleArea = visibleW * visibleH;
     const coverage = (visibleArea / vpArea) * 100;
 
-    if (coverage > 30) {
+    if (coverage > 15) {
       results.push({ el: raw, coverage, rect });
     }
   }
@@ -277,7 +277,7 @@ function autoDismissModals(): DismissResult {
 
   // Phase A: Selector-based dismissal (broad selectors for modals, banners, cookie/GDPR overlays)
   const containers = document.querySelectorAll(
-    "[role='dialog'], [role='alertdialog'], .modal, .overlay, .popup, .banner, .cookie, .consent, [class*='gdpr'], [class*='privacy'], [class*='cookie-notice'], [class*='consent-banner'], [id*='cookie'], [id*='consent']",
+    "[role='dialog'], [role='alertdialog'], [aria-modal='true'], dialog[open], [data-modal], [data-overlay], .modal, .overlay, .popup, .banner, .cookie, .consent, .lightbox, .notification, .toast, .backdrop, [class*='gdpr'], [class*='privacy'], [class*='cookie-notice'], [class*='consent-banner'], [class*='backdrop'], [id*='cookie'], [id*='consent']",
   );
 
   for (const el of containers) {

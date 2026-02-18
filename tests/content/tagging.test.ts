@@ -607,11 +607,12 @@ describe("dynamic tag preservation", () => {
     expect(matches.length).toBe(1);
   });
 
-  test("dynamic tag respects MAX_TAGGED_ELEMENTS cap", () => {
-    // Fill up to MAX with interactive buttons
+  test("dynamic tag gets overflow slots beyond cap", () => {
+    // Fill up to MAX with unique interactive buttons (unique names to avoid collapse)
     for (let i = 0; i < MAX_TAGGED_ELEMENTS; i++) {
       const btn = document.createElement("button");
-      btn.textContent = `Button ${i}`;
+      btn.textContent = `Unique action ${i}`;
+      btn.setAttribute("name", `btn-${i}`);
       document.body.appendChild(btn);
     }
 
@@ -619,9 +620,201 @@ describe("dynamic tag preservation", () => {
     const span = document.createElement("span");
     span.textContent = "Overflow Drop Zone";
     document.body.appendChild(span);
-    addDynamicTag(span);
+    const dynId = addDynamicTag(span);
 
     const results = tagElements();
-    expect(results.length).toBeLessThanOrEqual(MAX_TAGGED_ELEMENTS);
+    // Dynamic tags get up to 5 overflow slots — so this should be included
+    expect(results.length).toBeGreaterThan(MAX_TAGGED_ELEMENTS);
+    expect(results.length).toBeLessThanOrEqual(MAX_TAGGED_ELEMENTS + 5);
+    expect(results.find(r => r.tag === dynId)).toBeDefined();
+  });
+
+  test("dynamic tag with cyclesRemaining=3 survives 2 refreshes", () => {
+    const span = document.createElement("span");
+    span.textContent = "Pinned Element";
+    document.body.appendChild(span);
+
+    addDynamicTag(span);
+
+    // Refresh 1: cyclesRemaining decremented from 3 to 2
+    const results1 = tagElements();
+    const found1 = results1.find(r => r.text === "Pinned Element");
+    expect(found1).toBeDefined();
+
+    // Refresh 2: cyclesRemaining decremented from 2 to 1
+    const results2 = tagElements();
+    const found2 = results2.find(r => r.text === "Pinned Element");
+    expect(found2).toBeDefined();
+  });
+
+  test("dynamic tag removed after 3 refreshes (cycles expired)", () => {
+    const span = document.createElement("span");
+    span.textContent = "Expiring Element";
+    document.body.appendChild(span);
+
+    addDynamicTag(span);
+
+    // Refresh 1: 3→2
+    tagElements();
+    // Refresh 2: 2→1
+    tagElements();
+    // Refresh 3: 1→0, deleted
+    const results3 = tagElements();
+    const found = results3.find(r => r.text === "Expiring Element");
+    expect(found).toBeUndefined();
+  });
+
+  test("addDynamicTag returns existing tag for already-tagged element", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Already Tagged";
+    document.body.appendChild(btn);
+
+    const id1 = addDynamicTag(btn);
+    const id2 = addDynamicTag(btn);
+    expect(id2).toBe(id1);
+  });
+});
+
+describe("task-relevance element scoring (WI-3)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  test("form input scores higher than generic button", () => {
+    // Create many generic buttons to fill the cap
+    for (let i = 0; i < 55; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Action ${i}`;
+      btn.setAttribute("name", `btn-${i}`); // protect from collapse
+      document.body.appendChild(btn);
+    }
+    // Add a text input at the end (would be excluded by DOM order under old system)
+    const input = document.createElement("input");
+    input.type = "text";
+    input.setAttribute("name", "username");
+    document.body.appendChild(input);
+
+    const tagged = tagElements();
+    // The input should be included because it scores higher
+    const inputTag = tagged.find(t => t.tagName === "input" && t.role === "text");
+    expect(inputTag).toBeDefined();
+  });
+
+  test("draggable/dropzone elements score high", () => {
+    // 55 generic buttons
+    for (let i = 0; i < 55; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Filler ${i}`;
+      btn.setAttribute("name", `filler-${i}`);
+      document.body.appendChild(btn);
+    }
+    // Draggable element
+    const drag = document.createElement("div");
+    drag.setAttribute("draggable", "true");
+    drag.setAttribute("tabindex", "0");
+    drag.textContent = "Drag me";
+    document.body.appendChild(drag);
+
+    const tagged = tagElements();
+    const dragTag = tagged.find(t => t.attributes["draggable"] === "true");
+    expect(dragTag).toBeDefined();
+  });
+
+  test("sort is stable — DOM order preserved for equal scores", () => {
+    const btn1 = document.createElement("button");
+    btn1.textContent = "First";
+    const btn2 = document.createElement("button");
+    btn2.textContent = "Second";
+    document.body.appendChild(btn1);
+    document.body.appendChild(btn2);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(2);
+    // Both buttons have the same score — DOM order should be preserved
+    expect(tagged[0].text).toBe("First");
+    expect(tagged[1].text).toBe("Second");
+  });
+});
+
+describe("adaptive element cap for DnD pages (WI-4)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  test("default cap is 50 on normal pages", () => {
+    for (let i = 0; i < 60; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Button ${i}`;
+      btn.setAttribute("name", `btn-${i}`);
+      document.body.appendChild(btn);
+    }
+
+    const tagged = tagElements();
+    expect(tagged.length).toBeLessThanOrEqual(50);
+  });
+
+  test("cap raised to 75 when draggable elements present", () => {
+    // Create 70 unique buttons + some draggable items
+    for (let i = 0; i < 68; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Action ${i}`;
+      btn.setAttribute("name", `action-${i}`);
+      document.body.appendChild(btn);
+    }
+    for (let i = 0; i < 5; i++) {
+      const drag = document.createElement("div");
+      drag.setAttribute("draggable", "true");
+      drag.setAttribute("tabindex", "0");
+      drag.textContent = `Piece ${i}`;
+      document.body.appendChild(drag);
+    }
+
+    const tagged = tagElements();
+    // Should allow more than 50 because DnD detected
+    expect(tagged.length).toBeGreaterThan(50);
+    expect(tagged.length).toBeLessThanOrEqual(75);
+  });
+
+  test("cap raised to 75 when dropzone elements present", () => {
+    for (let i = 0; i < 68; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Nav ${i}`;
+      btn.setAttribute("name", `nav-${i}`);
+      document.body.appendChild(btn);
+    }
+    for (let i = 0; i < 5; i++) {
+      const zone = document.createElement("div");
+      zone.setAttribute("tabindex", "0");
+      zone.setAttribute("data-droptarget", "true");
+      zone.textContent = `Zone ${i}`;
+      document.body.appendChild(zone);
+    }
+
+    const tagged = tagElements();
+    expect(tagged.length).toBeGreaterThan(50);
+    expect(tagged.length).toBeLessThanOrEqual(75);
+  });
+
+  test("overflow metadata reflects effective cap", () => {
+    for (let i = 0; i < 80; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = `Item ${i}`;
+      btn.setAttribute("name", `item-${i}`);
+      document.body.appendChild(btn);
+    }
+    // Add draggable to trigger DnD cap
+    const drag = document.createElement("div");
+    drag.setAttribute("draggable", "true");
+    drag.setAttribute("tabindex", "0");
+    drag.textContent = "Piece";
+    document.body.appendChild(drag);
+
+    const tagged = tagElements();
+    const overflow = getOverflowMetadata();
+    // Should have overflow since 81 > 75
+    expect(overflow).not.toBeNull();
+    expect(overflow!.total).toBe(81);
   });
 });
