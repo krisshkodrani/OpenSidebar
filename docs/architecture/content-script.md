@@ -86,11 +86,22 @@ Elements are only tagged if they pass all visibility checks:
 1. Clear old tags from previous snapshot
 2. Query all matching elements
 3. Filter by visibility
-4. Assign incremental tags [1], [2], [3]...
-5. Inject visual labels (yellow badges)
-6. Build `TaggedElement` objects
+4. Score elements by task relevance (`scoreElement()` — form inputs +10, draggables +8, submit/file +8, canvas +6, named +5)
+5. Sort candidates by score (highest first, stable sort)
+6. Assign incremental tags [1], [2], [3]...
+7. Inject visual labels (yellow badges)
+8. Build `TaggedElement` objects
 
-**Maximum tags:** 200 elements (to keep context manageable)
+**Default cap:** 50 elements (75 on pages with draggable/dropzone elements)
+
+### Dynamic Tag Pinning
+
+Elements found via `find_element` are assigned dynamic tags through `addDynamicTag()`:
+
+- **TTL**: Pinned for 3 snapshot refresh cycles (`cyclesRemaining`)
+- **Overflow**: 5 extra slots beyond the effective element cap
+- **Cleanup**: Elements removed from the DOM are cleaned up immediately
+- **Near-identical collapse**: Groups similar elements (same tag + text), keeps max 2 per group
 
 ## Actions
 
@@ -222,6 +233,13 @@ The `runJanitor()` function in `content.ts` automatically dismisses common cooki
 - OneTrust: `#onetrust-accept-btn-handler`
 - Google Funding Choices: `.fc-cta-consent`
 - Generic: `.cookie-banner button.primary`, `button[aria-label='Accept all']`
+
+**Broadened overlay detection (Sprint 3):**
+
+- `[aria-modal='true']`, `dialog[open]`, `<dialog>` elements
+- `[data-modal]`, `[data-overlay]`, `[data-popup]` data attributes
+- `.lightbox`, `.notification`, `.toast`, `.backdrop` class patterns
+- Viewport coverage threshold lowered from 30% to 15%
 
 The background can also trigger dismissal via the `DISMISS_MODALS` message.
 
@@ -372,5 +390,7 @@ Elements loading after initial snapshot (lazy loading, infinite scroll) are capt
 **tests/content/tagging.test.ts** - Element discovery and visibility
 **tests/content/snapshot.test.ts** - Snapshot generation
 **tests/content/actions.test.ts** - Action execution
+**tests/content/overlay-detection.test.ts** - Overlay detection broadening
+**tests/background/sprint3-loop.test.ts** - Dead-end detection
 
 Tests use Happy DOM with mock HTML documents.

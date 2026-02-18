@@ -1,46 +1,179 @@
 # Agent Capabilities
 
-OpenSidebar features a powerful, unified agent system designed for reliability, performance, and transparency.
+OpenSidebar features a multi-tier agent system with orchestrated task decomposition, learned skills, and conversation-driven collaboration between planner, executor, and verifier roles.
 
 ## Unified Agent Mode
 
-OpenSidebar uses a single **Unified Mode** that combines the speed of parallel execution with the intelligence of adaptive planning. This replaces the previous separate "Speed" and "Normal" modes.
+OpenSidebar uses a single **Unified Mode** that combines the speed of parallel execution with the intelligence of adaptive planning.
 
 ### Key Features
 
-- **Parallel Tool Execution**: The agent can perform multiple non-conflicting actions (like reading several elements or checking multiple checkboxes) in a single turn, significantly speeding up tasks.
-- **Dynamic Context Compression**: To maintain performance and reduce costs, the agent automatically compresses conversation history, keeping essential context while discarding verbose details from past turns.
-- **Real-Time Streaming**: See the agent's thought process and actions character-by-character as they happen.
-- **Per-Turn Message Isolation**: Each agent turn is isolated to prevent context bleeding and ensure cleaner reasoning.
+- **Parallel Tool Execution**: Multiple non-conflicting actions in a single turn (e.g., reading several elements, checking multiple checkboxes).
+- **Dynamic Context Compression**: Automatic history compression (NONE→LIGHT→MEDIUM→HEAVY) to maintain performance within token budgets.
+- **Real-Time Streaming**: See the agent's thought process and actions character-by-character.
+- **Context Distillation**: On escalation, `distillForEscalation()` compresses full history into a structured timeline (~1K tokens).
+
+## Two-Tier LLM Architecture
+
+| Tier | Model | Providers | Purpose |
+|------|-------|-----------|---------|
+| **Fast** (tier 0) | GPT-OSS-120B | Cerebras → Groq → OpenRouter | Default execution |
+| **Smart** (tier 1) | GLM-4.7 | Cerebras → OpenRouter | Planning, verification, escalation |
+
+- GLM-4.7 has **native reasoning** (no reasoning parameter needed)
+- Automatic failover with 60s cooldown per provider on 429 errors
+- Token usage and cost tracked per model via `SessionMetrics`
+
+## Orchestrator (Multi-Step Tasks)
+
+For complex tasks, the orchestrator decomposes into a **planner→executor→verifier** pipeline:
+
+1. **Planner** (smart model) decomposes the user query into a `TaskNode` graph
+2. **Pre-flight Review** — verifier validates plans with 3+ nodes before execution
+3. **Executor** (fast model) runs each node via the agent loop
+4. **Verifier** (smart model) validates results against success criteria
+5. **Retry/Reroute** — failed nodes get retried or sent back to planner
+
+### Conversation Collaboration
+
+The orchestrator uses structured multi-role conversations:
+
+- **Structured Evidence**: Typed claims (tool_output/observation/inference) attached to every executor completion
+- **Cross-Role Reflexion**: Verifier retry/reroute decisions flow back to planner as reflexion entries
+- **Verifier-Critic Dialogue**: Multi-round debate for verification decisions
+- **Advocate Triad**: On low-confidence retries, an advocate argues for the executor's work
+- **Planner Retrospective**: After task completion with failures, planner extracts lessons learned
 
 ## Progress Tracking & Auto-Recovery
 
-The agent is equipped with a sophisticated **Stuck Detection System** that monitors progress and automatically intervenes when the agent is struggling.
+Sophisticated **Stuck Detection System** monitoring agent progress:
 
 ### Intervention Levels
 
-1.  **Nudge (6 Stale Turns)**: If the agent makes no meaningful progress for 6 turns, the system injects a "Nudge" — a hint suggesting alternative strategies (e.g., "Try scrolling," "Check if the element is in a shadow DOM").
-2.  **Escalate (12 Stale Turns)**: If stagnation continues, the system **Escalates** to a smarter, more capable model (MiniMax M2.5) with fresh context to tackle the difficult step.
-3.  **Fail (20+ Stale Turns)**: If the agent remains stuck, it will eventually stop and report the issue to you, preventing infinite loops.
+1. **Escalate (3 stale turns)**: Switches to the smart model (GLM-4.7) with distilled context and escalation screenshot.
+2. **Give Up — Smart (8 stale turns)**: Stops if already on smart tier with 3+ text-only responses.
+3. **Give Up — Fast (10 stale turns)**: Stops if on fast tier and no progress.
+
+Additional watchdogs:
+- **Step Watchdog**: Warns at 5 turns on a single plan step, force-escalates at 10.
+- **Dead-End Detection**: Nudges at 3 identical outcomes, forces strategy pivot at 5 (sliding window of 6).
 
 ### Stale Element Recovery
 
-Web pages change dynamically. If the agent tries to interact with an element ID that no longer exists (a "stale element"), the system automatically:
-1.  **Detects the error**: Catches the specific "stale element" exception.
-2.  **Refreshes the view**: Instantly captures a new DOM snapshot.
-3.  **Retries**: Re-attempts the action with the updated element ID.
+When element IDs become stale (page changed dynamically):
+1. Detects the "stale element" error
+2. Refreshes the DOM snapshot
+3. Retries the action with updated IDs
 
-All of this happens transparently in the background.
+Stable hash-based element IDs (FNV-1a) minimize ID churn across snapshot refreshes.
+
+## Loop Safety & Recovery
+
+Mechanisms to prevent wasted turns and break out of stuck states:
+
+### Failed-Action Memory
+
+Blocks exact tool+args repeats that previously failed. `FAILED_ACTION_MEMORY` buffer holds the last 10 entries. After escalation, forces a strategy pivot if still failing after 5 turns.
+
+### Redundant Action Detection
+
+Sliding window of 8 recent actions. Warns at 2 consecutive repeats of the same action, blocks at 3 to prevent grinding loops.
+
+### Dead-End Detection
+
+Outcome fingerprinting via `normalizeOutcome()` detects when the agent keeps getting the same result. Nudge injected at 3 identical consecutive outcomes, strategy pivot forced at 5. Sliding window of 6 outcomes.
+
+### Element ID Validation
+
+Pre-dispatch check blocks `id=0` (never valid) and IDs not present in the current snapshot. Injects a hint with valid nearby IDs so the agent can self-correct.
+
+### Tab Tool Taboo
+
+Remembers tools that were blocked (e.g., `create_tab` when tab creation is restricted) and prevents re-attempts, saving turns.
+
+### Tool Failure Circuit Breaker
+
+Tracks consecutive tool failures. Warns at 4 failures, exits the loop at 6 to prevent infinite error cycling.
+
+## Smart Element Tagging
+
+Intelligent element selection ensures the most relevant elements appear within the tag budget:
+
+### Task-Relevance Scoring
+
+`scoreElement()` prioritizes elements by interaction value:
+- Form inputs (`input`, `textarea`, `select`): +10
+- Draggable elements and drop zones: +8
+- Submit buttons and file inputs: +8
+- Canvas elements: +6
+- Elements with `name` or `id` attributes: +5
+
+### Adaptive Element Cap
+
+Default cap: 50 elements. Automatically raised to 75 on pages with `[draggable]` or dropzone elements (detected dynamically).
+
+### Dynamic Tag Pinning
+
+Elements found via `find_element` are assigned dynamic tags that survive 3 snapshot refresh cycles (`cyclesRemaining` TTL) with 5 overflow slots beyond the effective cap. Elements removed from the DOM are cleaned up immediately.
+
+### Near-Identical Collapse
+
+Groups similar elements (same tag name + text content) and keeps a maximum of 2 per group, reducing noise from repeated list items or table rows.
+
+## Overlay Detection
+
+Automatic and manual overlay/modal dismissal:
+
+### Auto-Dismiss on Load (Janitor)
+
+Runs on page load to clear cookie banners, consent dialogs, and notification popups using heuristic selectors for common frameworks (OneTrust, Google Funding Choices, generic patterns).
+
+### Broadened Detection (Sprint 3)
+
+Extended overlay selectors covering:
+- `[aria-modal='true']`, `dialog[open]`, `<dialog>` elements
+- `[data-modal]`, `[data-overlay]`, `[data-popup]` data attributes
+- `.lightbox`, `.notification`, `.toast`, `.backdrop` class patterns
+- Lowered viewport coverage threshold from 30% to 15% for earlier detection
+
+### Manual Dismissal
+
+The `dismiss_overlays` tool triggers on-demand modal cleanup via the `DISMISS_MODALS` message. Reports dismissed count, remaining overlays, and any captured text content.
+
+## Skills System
+
+Learned skills enable the agent to replay successful plans:
+
+- **Teach Mode**: When ON and a task succeeds, the orchestrator extracts the plan as a reusable skill
+- **Hint Coaching**: During active runs, input area switches to amber "Send a hint..." mode for real-time guidance
+- **Auto-Replay**: Matching skills are replayed on similar future queries
+- **Management**: Settings → Learned Skills panel with pin/enable controls
 
 ## Vision Capabilities
 
-OpenSidebar isn't blind. It can "see" the webpage using advanced Vision LLMs.
+The agent can "see" the webpage using Vision LLMs:
 
--   **`take_screenshot`**: When the agent needs to understand visual layout, charts, or non-text elements, it captures a screenshot.
--   **Vision Analysis**: This image is sent to a specialized Vision Model (configurable, defaults to `qwen/qwen3-vl-235b-a22b-instruct`) which provides a detailed text description back to the agent.
--   **Think Stripping**: Internal "thought processes" of the vision model are stripped out, keeping the context clean and focused on the visual data.
+- **`take_screenshot`**: Captures the viewport when visual understanding is needed
+- **Vision Analysis**: Image sent to a configurable Vision Model (default: `qwen/qwen3-vl-235b-a22b-instruct`)
+- **Think Stripping**: Internal reasoning of the vision model stripped for clean output
+- **Unlocked at tier 1**: Screenshots only available after escalation to smart model
 
-## Performance Improvements
+## React Toolkit
 
--   **Think Stripping**: The UI automatically hides the raw "chain-of-thought" tokens from models that output them, presenting a cleaner, more readable chat interface.
--   **Optimized Streaming**: Improved server-sent events (SSE) handling ensures smoother text generation and tool execution updates.
+On-demand tools for React applications, gated behind framework detection:
+
+- **`inspect_react`**: Read component state/props via fiber tree
+- **`react_set_input`**: Set controlled input values using native value setter
+- **`inspect_react_tree`**: Compact component hierarchy with state summaries
+- **`wait_for_react`**: Poll until fiber tree stabilizes
+
+Automatically enabled when React is detected on the page.
+
+## Session Metrics
+
+Real-time tracking of token usage and costs:
+
+- Per-model breakdown (which provider actually served after failover)
+- Compact display: `12.4K tokens · $0.0023 · 4.2s LLM · 850 tok/s`
+- Cost from OpenRouter's inline `usage.cost`; Cerebras/Groq report tokens only
+- Toggle via `showSessionMetrics` setting

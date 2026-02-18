@@ -4,13 +4,19 @@ This directory contains feature proposals, technical decisions, and implementati
 
 ## Active RFCs
 
-_No active RFCs. All proposals have been implemented or superseded._
+_No active RFCs._
 
 ## Archived RFCs
 
 Completed, superseded, and historical documents are stored in [archived/](./archived/).
 
-### Recently Archived (2026-02-14)
+### Recently Archived (2026-02-18)
+
+| RFC | Status | Summary |
+|-----|--------|---------|
+| [Three-Level Model Routing](./archived/rfc-three-level-model-routing.md) | **Superseded** | Replaced by two-tier system (fast/smart) with BRAINS→HANDS orientation + escalation gating |
+
+### Archived (2026-02-14)
 
 | RFC | Status | Summary |
 |-----|--------|---------|
