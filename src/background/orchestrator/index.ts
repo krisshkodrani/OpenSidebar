@@ -26,16 +26,13 @@ import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
 import {
-  AdvocateResponse,
   BufferedMemory,
   NodeHandoffArtifact,
   OrchestratorCheckpoint,
   OrchestratorStartInput,
   OrchestratorTask,
   PlannerReflexionEntry,
-  PlanReviewResult,
   ReflexionEntry,
-  RetrospectiveResult,
   StructuredEvidence,
   TaskNode,
   WorkerInstance,
