@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "opensidebar",
   "version": "0.1.0",
   "type": "module",
@@ -9,11 +9,13 @@
   },
   "license": "MIT",
   "scripts": {
-    "dev": "bun run --bun vite",
-    "build": "bun run --bun vite build",
+    "dev": "bun run scripts/vite-clean.ts",
+    "dev:stack": "bun run scripts/dev-stack.ts",
+    "build": "bun run scripts/vite-clean.ts build",
     "lint": "bun run --bun eslint src --ext .ts,.tsx",
     "test": "bun test",
     "fmt": "bun run --bun prettier --write src/",
+    "clean:vite-artifacts": "bun run scripts/vite-clean.ts --clean-only",
     "logs": "bun run scripts/log-server.ts",
     "logs:query": "bun run scripts/log-query.ts",
     "logs:tail": "bun run scripts/log-query.ts tail",
@@ -72,4 +74,3 @@
     "vite-plugin-static-copy": "^3.2.0"
   }
 }
-

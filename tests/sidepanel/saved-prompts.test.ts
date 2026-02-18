@@ -9,6 +9,7 @@ import {
 
 const STORAGE_KEY = "opensidebar:savedPrompts";
 const SEEDED_KEY = "opensidebar:savedPromptsSeeded";
+const VERSION_KEY = "opensidebar:savedPromptsVersion";
 
 describe("Saved Prompts CRUD", () => {
   let stored: Record<string, unknown>;
@@ -40,8 +41,10 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts.length).toBeGreaterThan(0);
     expect(prompts[0].title).toBe("Browser Navigation Challenge");
     expect(prompts[0].category).toBe("Challenges");
+    expect(prompts[0].content).toContain("Speed run objective");
     // Seeded flag should be set
     expect(stored[SEEDED_KEY]).toBe(true);
+    expect(stored[VERSION_KEY]).toBe(2);
   });
 
   test("loadSavedPrompts does not re-seed after first load", async () => {
@@ -57,9 +60,57 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts).toEqual([]);
   });
 
+  test("migrates legacy seeded challenge prompt to speed prompt", async () => {
+    stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 1;
+    stored[STORAGE_KEY] = [
+      {
+        id: "legacy-1",
+        title: "Browser Navigation Challenge",
+        content:
+          "You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:\n" +
+          "1. Track which step you're on and what needs to happen\n" +
+          "2. Dismiss any modals/popups blocking the page (click Close/Dismiss/Accept buttons)\n" +
+          '3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)\n' +
+          "4. Enter the code in the input field and click Submit Code\n" +
+          "5. Verify the URL changed to the next step before continuing\n" +
+          "If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden elements. Complete all 30 steps to win.",
+        category: "Challenges",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const prompts = await loadSavedPrompts();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].content).toContain("Speed run objective");
+    expect(stored[VERSION_KEY]).toBe(2);
+  });
+
+  test("does not overwrite customized challenge prompt during migration", async () => {
+    stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 1;
+    stored[STORAGE_KEY] = [
+      {
+        id: "custom-1",
+        title: "Browser Navigation Challenge",
+        content: "My custom challenge flow",
+        category: "Challenges",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const prompts = await loadSavedPrompts();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].content).toBe("My custom challenge flow");
+    expect(stored[VERSION_KEY]).toBe(2);
+  });
+
   test("addSavedPrompt creates a prompt and persists it", async () => {
     // Mark as seeded so defaults don't interfere
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
 
     const prompt = await addSavedPrompt("Test Title", "Test content", "Research");
 
@@ -78,6 +129,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("addSavedPrompt trims whitespace", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     const prompt = await addSavedPrompt("  Title  ", "  Content  ", "  Cat  ");
     expect(prompt.title).toBe("Title");
     expect(prompt.content).toBe("Content");
@@ -86,6 +138,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("addSavedPrompt appends to existing prompts", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     await addSavedPrompt("First", "Content 1", "");
     await addSavedPrompt("Second", "Content 2", "");
 
@@ -97,6 +150,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("updateSavedPrompt updates fields and updatedAt", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     const prompt = await addSavedPrompt("Original", "Original content", "Cat");
     const originalUpdatedAt = prompt.updatedAt;
 
@@ -117,6 +171,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("updateSavedPrompt returns unchanged list for unknown id", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     await addSavedPrompt("Test", "Content", "");
     const result = await updateSavedPrompt("nonexistent-id", { title: "New" });
     expect(result).toHaveLength(1);
@@ -125,6 +180,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("deleteSavedPrompt removes the prompt", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     const p1 = await addSavedPrompt("First", "C1", "");
     await addSavedPrompt("Second", "C2", "");
 
@@ -135,6 +191,7 @@ describe("Saved Prompts CRUD", () => {
 
   test("deleteSavedPrompt with unknown id returns unchanged list", async () => {
     stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 2;
     await addSavedPrompt("Test", "Content", "");
     const result = await deleteSavedPrompt("nonexistent-id");
     expect(result).toHaveLength(1);

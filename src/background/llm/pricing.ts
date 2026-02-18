@@ -1,0 +1,98 @@
+import { ProviderConfig, TokenUsage } from "./types";
+
+export interface ModelPricing {
+  providerId: ProviderConfig["providerId"];
+  model: string;
+  inputUsdPerMillion: number;
+  outputUsdPerMillion: number;
+  cachedInputUsdPerMillion?: number;
+  effectiveDate: string;
+  sourceUrl: string;
+  confidence: "official" | "best_effort";
+}
+
+const MODEL_PRICING: ModelPricing[] = [
+  {
+    providerId: "openrouter",
+    model: "openai/gpt-oss-120b",
+    inputUsdPerMillion: 0.039,
+    outputUsdPerMillion: 0.19,
+    effectiveDate: "2026-02-18",
+    sourceUrl: "https://openrouter.ai/openai/gpt-oss-120b",
+    confidence: "official",
+  },
+  {
+    providerId: "openrouter",
+    model: "z-ai/glm-4.7",
+    inputUsdPerMillion: 0.38,
+    outputUsdPerMillion: 1.7,
+    effectiveDate: "2026-02-18",
+    sourceUrl: "https://openrouter.ai/z-ai/glm-4.7",
+    confidence: "official",
+  },
+  {
+    providerId: "groq",
+    model: "openai/gpt-oss-120b",
+    inputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 0.6,
+    cachedInputUsdPerMillion: 0.075,
+    effectiveDate: "2026-02-18",
+    sourceUrl: "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    confidence: "official",
+  },
+  {
+    providerId: "cerebras",
+    model: "gpt-oss-120b",
+    inputUsdPerMillion: 0.25,
+    outputUsdPerMillion: 0.69,
+    effectiveDate: "2026-02-18",
+    sourceUrl:
+      "https://www.cerebras.ai/blog/cerebras-launches-openai-s-gpt-oss-120b-at-a-blistering-3-000-tokens-sec",
+    confidence: "best_effort",
+  },
+];
+
+function normalizeModel(model: string): string {
+  return model.trim().toLowerCase();
+}
+
+export function findModelPricing(
+  providerId: ProviderConfig["providerId"],
+  model: string,
+): ModelPricing | null {
+  const normalizedModel = normalizeModel(model);
+  return (
+    MODEL_PRICING.find(
+      (entry) =>
+        entry.providerId === providerId &&
+        normalizeModel(entry.model) === normalizedModel,
+    ) ?? null
+  );
+}
+
+export function estimateCostUsd(
+  providerId: ProviderConfig["providerId"],
+  model: string,
+  usage: TokenUsage,
+): number | null {
+  const pricing = findModelPricing(providerId, model);
+  if (!pricing) return null;
+
+  const promptTokens = Math.max(usage.prompt_tokens ?? 0, 0);
+  const completionTokens = Math.max(usage.completion_tokens ?? 0, 0);
+  const cachedTokens = Math.max(
+    Math.min(usage.cached_tokens ?? 0, promptTokens),
+    0,
+  );
+  const nonCachedPromptTokens = Math.max(promptTokens - cachedTokens, 0);
+  const cachedRate =
+    pricing.cachedInputUsdPerMillion ?? pricing.inputUsdPerMillion;
+
+  const cost =
+    (nonCachedPromptTokens / 1_000_000) * pricing.inputUsdPerMillion +
+    (cachedTokens / 1_000_000) * cachedRate +
+    (completionTokens / 1_000_000) * pricing.outputUsdPerMillion;
+
+  return Number.isFinite(cost) ? cost : null;
+}
+
