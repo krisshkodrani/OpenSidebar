@@ -149,7 +149,7 @@ describe("SidePanel Store", () => {
             },
         ];
 
-        (chrome.storage.session.get as any) = mock(async () => ({
+        (chrome.storage.local.get as any) = mock(async () => ({
             chatMessages: storedMessages,
         }));
 
@@ -174,7 +174,7 @@ describe("SidePanel Store", () => {
 
     test("clearHistory clears persisted messages", async () => {
         const setSpy = mock(async () => {});
-        (chrome.storage.session.set as any) = setSpy;
+        (chrome.storage.local.set as any) = setSpy;
 
         useStore.getState().addMessage({
             id: "1",

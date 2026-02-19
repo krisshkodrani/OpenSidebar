@@ -529,7 +529,12 @@ export interface TaskCompletionMessage extends BaseMessage {
 /** A claim-to-evidence citation surfaced in completion reports */
 export interface Citation {
   claim: string;
-  sourceType: "tool_output" | "observation" | "inference" | "user_input" | "memory";
+  sourceType:
+    | "tool_output"
+    | "observation"
+    | "inference"
+    | "user_input"
+    | "memory";
   sourceRef: string;
   confidence: number;
 }
@@ -1148,11 +1153,6 @@ export interface WaitForReactArgs {
   timeout?: number;
 }
 
-/** Maps tool names to their execution handlers */
-export type ToolRouter = {
-  [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
-};
-
 /** Maps each tool name to its argument type */
 export type ToolArgsMap = {
   [ToolName.CLICK_ELEMENT]: ClickElementArgs;
@@ -1526,7 +1526,13 @@ export interface MemoryWorkerMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload:
     | { action: "init" }
-    | { action: "add"; content: string; category: string; sourceUrl: string; type?: MemoryType }
+    | {
+        action: "add";
+        content: string;
+        category: string;
+        sourceUrl: string;
+        type?: MemoryType;
+      }
     | {
         action: "batch_add";
         items: { content: string; category: string; sourceUrl: string }[];
@@ -1972,7 +1978,12 @@ export interface TraceEventPayloadByType {
     summarySnippet: string;
   };
   multi_turn_pathology: {
-    pathology: "anchoring" | "premature_generation" | "verbosity" | "middle_turn_loss" | "compound_degradation";
+    pathology:
+      | "anchoring"
+      | "premature_generation"
+      | "verbosity"
+      | "middle_turn_loss"
+      | "compound_degradation";
     trigger: string;
     turn: number;
     details?: string;

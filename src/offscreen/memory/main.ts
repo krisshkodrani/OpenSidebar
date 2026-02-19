@@ -1,8 +1,9 @@
 import initSqlJs, { Database } from "sql.js";
 import { Voy } from "voy-search";
 import * as pdfjsLib from "pdfjs-dist";
-import { MemoryWorkerMessage, MemoryType } from "../../types";
+import { MemoryWorkerMessage } from "../../types";
 import { reciprocalRankFusion } from "./utils";
+import { classifyMemoryType } from "./classify";
 import { logger } from "../../utils";
 
 // --- Configuration ---
@@ -216,38 +217,6 @@ async function persist() {
 
 // --- Auto-classification ---
 
-const PROCEDURE_PATTERNS = [
-  /\b(step \d|first,? |then |next,? |finally )/i,
-  /\bhow to\b/i,
-  /\b(click|navigate|type|scroll|select|fill|submit)\b.*\bthen\b/i,
-  /\b\d+\.\s/,
-];
-
-const PREFERENCE_PATTERNS = [
-  /\b(always|never|prefer|avoid|don't|do not|should)\b/i,
-  /\buser (wants|prefers|likes|hates)\b/i,
-  /\bremember (to|that)\b/i,
-];
-
-/**
- * Heuristically classify memory content into a MemoryType.
- * Returns explicit type if provided, otherwise pattern-matches.
- */
-export function classifyMemoryType(
-  content: string,
-  explicit?: MemoryType,
-): { type: MemoryType; confidence: number } {
-  if (explicit) return { type: explicit, confidence: 1.0 };
-
-  if (PROCEDURE_PATTERNS.some((p) => p.test(content))) {
-    return { type: "procedure", confidence: 0.8 };
-  }
-  if (PREFERENCE_PATTERNS.some((p) => p.test(content))) {
-    return { type: "preference", confidence: 0.8 };
-  }
-  return { type: "fact", confidence: 0.8 };
-}
-
 // --- Message Handling ---
 
 chrome.runtime.onMessage.addListener(
@@ -268,7 +237,10 @@ chrome.runtime.onMessage.addListener(
           const id = crypto.randomUUID();
           const { content, category, sourceUrl } = payload;
           const explicitType = "type" in payload ? payload.type : undefined;
-          const { type: memType, confidence } = classifyMemoryType(content, explicitType);
+          const { type: memType, confidence } = classifyMemoryType(
+            content,
+            explicitType,
+          );
           const embedding = await getEmbedding(content);
 
           // Add to SQLite
@@ -349,11 +321,10 @@ chrome.runtime.onMessage.addListener(
               : (existing[0] as string);
           const sourceUrl = existing[1] as string;
 
-          db!.run("UPDATE memories SET content = ?, category = ? WHERE id = ?", [
-            content,
-            nextCategory,
-            id,
-          ]);
+          db!.run(
+            "UPDATE memories SET content = ?, category = ? WHERE id = ?",
+            [content, nextCategory, id],
+          );
 
           // Best-effort vector update; if Voy rejects duplicate IDs, keep FTS state authoritative.
           try {
