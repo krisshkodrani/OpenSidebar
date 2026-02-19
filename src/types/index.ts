@@ -167,7 +167,14 @@ export type RuntimeMessage =
   | DataControlResultMessage
   | ContentScriptReadyMessage
   | DomReadyProbeMessage
-  | DomReadyAckMessage;
+  | DomReadyAckMessage
+  | DemoRecordStartMessage
+  | DemoRecordStopMessage
+  | DemoActionCapturedMessage
+  | DemoRecordStatusMessage
+  | DemoSavedMessage
+  | GoldenActionMessage
+  | GoldenSavedMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -508,6 +515,12 @@ export interface TaskCompletionMessage extends BaseMessage {
     metrics?: SessionMetrics;
     /** Explicit termination reason for budget/guardrail stops */
     terminationReason?: string;
+    /** Normalized failure category for analytics */
+    failureCategory?: TraceFailureCategory;
+    /** Canonical normalized failure code */
+    failureCode?: TraceFailureCode;
+    /** Optional normalized failure detail */
+    failureDetail?: string;
   };
 }
 
@@ -746,6 +759,8 @@ export interface JsonSchemaProperty {
 export interface ClickElementArgs {
   /** The numeric tag ID from the DOM snapshot */
   id: number;
+  /** Number of times to click (for challenges requiring repeated clicks). Default 1, max 10. */
+  count?: number;
 }
 
 /** Arguments for type_text */
@@ -1450,9 +1465,20 @@ export interface SidePanelState {
   laneTelemetry: LaneTelemetrySnapshot | null;
   /** User-saved prompt templates */
   savedPrompts: SavedPrompt[];
+  /** Whether the PlanBoard panel is visible */
+  showPlanBoard: boolean;
+  /** Whether demo recording is active */
+  demoRecording: boolean;
+  /** Number of actions captured in current recording */
+  demoActionCount: number;
+  /** Whether golden mode is enabled for eval dataset recording */
+  goldenMode: boolean;
 }
 
 // --- Memory / Second Brain Types ---
+
+/** Classification of a memory entry for filtered retrieval */
+export type MemoryType = "fact" | "procedure" | "preference";
 
 /** A single entry stored in the Second Brain */
 export interface MemoryEntry {
@@ -1468,6 +1494,8 @@ export interface MemoryEntry {
   sourceUrl: string;
   /** Unix timestamp of creation */
   createdAt: number;
+  /** Semantic type classification */
+  type: MemoryType;
 }
 
 /** A single result from a memory search */
@@ -1488,12 +1516,12 @@ export interface MemoryWorkerMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload:
     | { action: "init" }
-    | { action: "add"; content: string; category: string; sourceUrl: string }
+    | { action: "add"; content: string; category: string; sourceUrl: string; type?: MemoryType }
     | {
         action: "batch_add";
         items: { content: string; category: string; sourceUrl: string }[];
       }
-    | { action: "search"; query: string; limit: number }
+    | { action: "search"; query: string; limit: number; types?: MemoryType[] }
     | { action: "update"; id: string; content: string; category?: string }
     | { action: "delete"; id: string }
     | { action: "list_categories" }
@@ -1608,6 +1636,10 @@ export interface UserSettings {
   disableNavigation: boolean;
   /** Skip all user approval prompts (including high-risk tool approvals) */
   bypassApprovals: boolean;
+  /** Enable deterministic content moderation (regex/keyword) */
+  moderationEnabled?: boolean;
+  /** Moderation strictness level */
+  moderationStrictness?: "standard" | "strict";
   /** Speech-to-text provider for voice input */
   speechProvider: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
@@ -1622,6 +1654,145 @@ export interface UserSettings {
   skillReplayPinnedOnly?: boolean;
   /** Evaluate skill matches without executing them (planner still runs) */
   skillReplayDryRun?: boolean;
+  /** Master toggle for demonstration recording/injection system (default: true) */
+  demoEnabled?: boolean;
+  /** Auto-inject matching demos into agent context (default: true) */
+  demosAutoInject?: boolean;
+}
+
+// --- Demonstration Types (Learning from Demonstration) ---
+
+/** A single recorded user action */
+export interface DemoAction {
+  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate";
+  timestamp: number;
+  url: string;
+  element?: ElementDescriptor;
+  /** Typed text, selected option value */
+  value?: string;
+  /** Key name for press_key actions */
+  key?: string;
+  /** Pixels scrolled (positive = down) */
+  scrollDelta?: number;
+}
+
+/** Robust element identifier that survives DOM changes */
+export interface ElementDescriptor {
+  tagName: string;
+  /** Visible text (truncated 80 chars) */
+  text: string;
+  role?: string;
+  /** Key attributes: id, name, type, placeholder, aria-label, href */
+  attributes: Record<string, string>;
+  /** DOM path e.g. "body>main>form>input:nth-of-type(2)" */
+  domPath: string;
+  /** Best-effort unique CSS selector */
+  selector: string;
+}
+
+/** A complete recorded demonstration */
+export interface Demonstration {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+  actions: DemoAction[];
+  /** Domain or URL prefix for matching */
+  urlPattern: string;
+  /** Tokenized name+description for semantic matching */
+  matchTokens: string[];
+  /** Times injected into agent context */
+  uses: number;
+  enabled: boolean;
+}
+
+/** Result of matching a demo against a query + URL */
+export interface DemoMatchResult {
+  demo: Demonstration;
+  score: number;
+}
+
+// --- Demo RuntimeMessage Types ---
+
+/** Side panel → Background: begin recording user actions */
+export interface DemoRecordStartMessage extends BaseMessage {
+  type: "DEMO_RECORD_START";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    /** When true, capture enriched golden data (snapshots + tag IDs) for eval pipeline */
+    golden?: boolean;
+  };
+}
+
+/** Side panel → Background: stop recording, return captured actions */
+export interface DemoRecordStopMessage extends BaseMessage {
+  type: "DEMO_RECORD_STOP";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    /** User-provided name for the demo */
+    name: string;
+  };
+}
+
+/** Content script → Background: individual action captured during recording */
+export interface DemoActionCapturedMessage extends BaseMessage {
+  type: "DEMO_ACTION_CAPTURED";
+  source: MessageSource.CONTENT;
+  payload: {
+    action: DemoAction;
+  };
+}
+
+/** Background → Side panel: recording state updates */
+export interface DemoRecordStatusMessage extends BaseMessage {
+  type: "DEMO_RECORD_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    active: boolean;
+    actionCount: number;
+  };
+}
+
+/** Background → Side panel: confirmation after demo persisted */
+export interface DemoSavedMessage extends BaseMessage {
+  type: "DEMO_SAVED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    demo: Demonstration;
+  };
+}
+
+// --- Golden Dataset Recording Types ---
+
+/** An enriched action captured during golden recording (includes snapshot + tag ID) */
+export interface GoldenAction {
+  action: DemoAction;
+  /** Tag ID of the interacted element (null for scroll/navigate) */
+  tagId: number | null;
+  /** DOM snapshot at the time of the action */
+  snapshot: DomSnapshot;
+}
+
+/** Content script → Background: enriched action during golden recording */
+export interface GoldenActionMessage extends BaseMessage {
+  type: "GOLDEN_ACTION";
+  source: MessageSource.CONTENT;
+  payload: {
+    goldenAction: GoldenAction;
+  };
+}
+
+/** Background → Side panel: golden dataset saved confirmation */
+export interface GoldenSavedMessage extends BaseMessage {
+  type: "GOLDEN_SAVED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    filename: string;
+    caseCount: number;
+  };
 }
 
 // --- Utility Types ---
@@ -1632,8 +1803,34 @@ export type Result<T, E = Error> =
 
 // --- Trace Types (for recording agent sessions) ---
 
+export type TraceSchemaVersion = "2026-02-19";
+
+export type TraceRecordKind =
+  | "agent.turn"
+  | "agent.session"
+  | "orchestrator.run.event"
+  | "orchestrator.run.manifest";
+
+export type TraceProducer =
+  | "background.agent.trace-recorder"
+  | "background.orchestrator.run-trace-writer";
+
 /** A single turn's full-fidelity recording for offline eval replay */
 export interface TraceEntry {
+  /** Trace schema version (optional for backward compatibility with older traces) */
+  schemaVersion?: TraceSchemaVersion;
+  /** Trace record kind (optional for backward compatibility with older traces) */
+  traceKind?: Extract<TraceRecordKind, "agent.turn">;
+  /** ISO timestamp when the record was emitted (optional for backward compatibility) */
+  recordedAt?: string;
+  /** Component that emitted this record (optional for backward compatibility) */
+  producer?: Extract<TraceProducer, "background.agent.trace-recorder">;
+  /** Orchestrator run ID when this agent session is launched by orchestrator */
+  runId?: string;
+  /** End-to-end correlation ID spanning orchestrator + agent trace streams */
+  correlationId?: string;
+  /** Parent run for nested/derived executions (future-proofing) */
+  parentRunId?: string;
   sessionId: string;
   turnNumber: number;
   timestamp: number;
@@ -1693,31 +1890,158 @@ export interface TraceToolExecution {
 }
 
 /** A notable event that occurred during a trace turn */
-export interface TraceEvent {
-  type:
-    | "escalation"
-    | "hint"
-    | "modal_dismiss"
-    | "done_rejected"
-    | "plan_update"
-    | "screenshot"
-    | "stuck_signal"
-    | "circuit_breaker"
-    | "navigate_blocked"
-    | "approval"
-    | "execution_contract";
+export interface TraceEventPayloadByType {
+  approval:
+    | {
+        stage: "requested";
+        approvalId: string;
+        turn: number;
+        toolName: ToolName;
+        context: string;
+        timeoutMs: number;
+        bypassApprovals?: boolean;
+      }
+    | {
+        stage: "settled";
+        approvalId: string;
+        turn: number;
+        toolName: ToolName;
+        outcome: "approved" | "rejected" | "timeout" | "dispatch_failed";
+        approved: boolean;
+      }
+    | {
+        stage: "bypassed";
+        turn: number;
+        toolName: ToolName;
+      };
+  safety_gate_blocked: {
+    tool: string;
+    reason: string;
+    phase: "input" | "output";
+  };
+  safety_gate_audit: {
+    tool: string;
+    flag: string;
+    phase: "input" | "output";
+  };
+  escalation: {
+    reason: string;
+    voluntary: boolean;
+  };
+  done_rejected: {
+    rejections: number;
+    reason: string;
+    advancedTo: number;
+  };
+  stuck_signal: {
+    type: "escalate";
+    staleTurns: number;
+  };
+  circuit_breaker:
+    | {
+        reason: "consecutive_all_fail";
+        consecutiveAllFailTurns: number;
+      }
+    | {
+        reason: "same_tool_repeat";
+        tool: string;
+        count: number;
+      };
+  moderation_preflight: {
+    allowed: boolean;
+    category?: string;
+    severity?: string;
+    reason?: string;
+    querySnippet: string;
+  };
+  moderation_postflight: {
+    allowed: boolean;
+    category?: string;
+    severity?: string;
+    reason?: string;
+    summarySnippet: string;
+  };
+}
+
+type KnownTraceEvent = {
+  [K in keyof TraceEventPayloadByType]: {
+    type: K;
+    timestamp: number;
+    data: TraceEventPayloadByType[K];
+  };
+}[keyof TraceEventPayloadByType];
+
+type GenericTraceEvent = {
+  type: string;
   timestamp: number;
   data: Record<string, unknown>;
+};
+
+export type TraceEvent = KnownTraceEvent | GenericTraceEvent;
+
+/** Normalized failure category for trace analytics and rollups. */
+export type TraceFailureCategory =
+  | "none"
+  | "user"
+  | "budget"
+  | "policy"
+  | "safety"
+  | "runtime"
+  | "quality"
+  | "unknown";
+
+/** Canonical failure code for session/run summaries. */
+export type TraceFailureCode =
+  | "none"
+  | "user_stopped"
+  | "stopped_by_operator"
+  | "turn_limit_reached"
+  | "content_policy_blocked"
+  | "budget_time_exceeded"
+  | "budget_tokens_exceeded"
+  | "budget_cost_exceeded"
+  | "lane_isolation"
+  | "executor_timeout"
+  | "verifier_rejected"
+  | "dependency_blocked"
+  | "runtime_error"
+  | "unknown_failure";
+
+/** Optional normalized failure payload attached to session/run summaries. */
+export interface TraceFailureInfo {
+  category: TraceFailureCategory;
+  code: TraceFailureCode;
+  detail?: string;
 }
 
 /** Session-level metadata written to traces/index.jsonl on session end */
 export interface TraceSession {
+  /** Trace schema version (optional for backward compatibility with older traces) */
+  schemaVersion?: TraceSchemaVersion;
+  /** Trace record kind (optional for backward compatibility with older traces) */
+  traceKind?: Extract<TraceRecordKind, "agent.session">;
+  /** ISO timestamp when the record was emitted (optional for backward compatibility) */
+  recordedAt?: string;
+  /** Component that emitted this record (optional for backward compatibility) */
+  producer?: Extract<TraceProducer, "background.agent.trace-recorder">;
+  /** Orchestrator run ID when this agent session is launched by orchestrator */
+  runId?: string;
+  /** End-to-end correlation ID spanning orchestrator + agent trace streams */
+  correlationId?: string;
+  /** Parent run for nested/derived executions (future-proofing) */
+  parentRunId?: string;
   sessionId: string;
   startTime: number;
   endTime: number;
   query: string;
   startUrl: string;
   outcome: "completed" | "stopped" | "max_turns" | "error";
+  /** Normalized failure category for aggregations; "none" for successful sessions */
+  failureCategory?: TraceFailureCategory;
+  /** Canonical failure code for root-cause rollups; "none" for successful sessions */
+  failureCode?: TraceFailureCode;
+  /** Optional normalized failure detail */
+  failureDetail?: string;
   turnCount: number;
   summary: string;
   metrics: SessionMetrics | null;

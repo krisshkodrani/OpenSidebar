@@ -266,6 +266,20 @@ export class OrchestratorVerifier {
         confidence,
         failureType,
       });
+
+      // Soft gate: low-confidence accepts without evidence get downgraded
+      if (decision === "accept" && confidence < 0.9) {
+        const evidence = Array.isArray(parsed?.evidence) ? parsed.evidence : [];
+        if (evidence.length === 0) {
+          return {
+            decision: "retry" as const,
+            reason: "Accept lacks evidence. Re-execute.",
+            confidence: Math.max(0.3, confidence - 0.2),
+            failureType: "insufficient_evidence",
+          };
+        }
+      }
+
       return { decision, reason, confidence, failureType };
     } catch (error) {
       logger.warn("orchestrator", "Verifier failed, using fallback decision", {

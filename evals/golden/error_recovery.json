@@ -1,0 +1,42 @@
+{
+  "id": "golden-error-recovery-001",
+  "sourceSessionId": "golden",
+  "sourceTurn": 0,
+  "strategy": "recovery",
+  "input": {
+    "systemPrompt": "",
+    "conversationHistory": [
+      {
+        "role": "assistant",
+        "tool_calls": [{ "id": "tc_1", "type": "function", "function": { "name": "click_element", "arguments": "{\"id\": 15}" } }]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "tc_1",
+        "content": "Error: Element [15] not found or no longer in DOM"
+      }
+    ],
+    "tools": [],
+    "model": "orchestrator"
+  },
+  "expected": {
+    "toolCalls": [
+      { "name": "read_page", "args": {} },
+      { "name": "click_element", "args": { "id": 22 } }
+    ],
+    "text": null
+  },
+  "metadata": {
+    "url": "https://example.com/checkout",
+    "query": "Complete the checkout process",
+    "sessionOutcome": "golden",
+    "difficulty": "hard",
+    "tags": ["error-recovery", "stale-element", "golden"]
+  },
+  "promptQuality": {
+    "promptVersion": "baseline",
+    "track": "error_recovery",
+    "expectedRecoveryStrategy": "re-read DOM then retry with fresh element ID",
+    "mustNot": ["repeat_same_stale_id", "give_up_immediately"]
+  }
+}

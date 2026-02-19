@@ -1,0 +1,34 @@
+{
+  "id": "golden-form-filling-001",
+  "sourceSessionId": "golden",
+  "sourceTurn": 0,
+  "strategy": "first-turn",
+  "input": {
+    "systemPrompt": "",
+    "conversationHistory": [],
+    "tools": [],
+    "model": "orchestrator"
+  },
+  "expected": {
+    "toolCalls": [
+      { "name": "type_text", "args": { "id": 3, "text": "Jane Doe" } },
+      { "name": "type_text", "args": { "id": 5, "text": "jane@example.com" } },
+      { "name": "select_option", "args": { "id": 8, "value": "US" } },
+      { "name": "click_element", "args": { "id": 12 } }
+    ],
+    "text": null
+  },
+  "metadata": {
+    "url": "https://example.com/contact",
+    "query": "Fill out the contact form with name Jane Doe, email jane@example.com, country US, then submit",
+    "sessionOutcome": "golden",
+    "difficulty": "medium",
+    "tags": ["form-filling", "multi-field", "golden"]
+  },
+  "promptQuality": {
+    "promptVersion": "baseline",
+    "track": "form_filling",
+    "expectedToolSequence": ["type_text", "type_text", "select_option", "click_element"],
+    "mustNot": ["unnecessary_navigation", "screenshot_before_action"]
+  }
+}

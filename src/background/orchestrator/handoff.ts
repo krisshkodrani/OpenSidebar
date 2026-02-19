@@ -149,6 +149,8 @@ export function formatEvidenceChain(evidence: StructuredEvidence[]): string {
     .map((e) => {
       const parts = [`- [${e.basis}] ${normalizeNote(e.claim)} (confidence=${e.confidence.toFixed(2)})`];
       if (e.sourceToolCall) parts.push(`  source: ${e.sourceToolCall}`);
+      if (e.sourceRef) parts.push(`  ref: ${e.sourceRef}`);
+      if (e.excerpt) parts.push(`  excerpt: "${e.excerpt.slice(0, 120)}"`);
       return parts.join("\n");
     })
     .join("\n");

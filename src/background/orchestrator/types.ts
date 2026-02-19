@@ -4,6 +4,8 @@ import {
   EscalationDecisionMessage,
   EscalationPacket,
   SessionMetrics,
+  TraceFailureCategory,
+  TraceFailureCode,
   ToolName,
   UserSettings,
 } from "../../types";
@@ -23,6 +25,10 @@ export interface StructuredEvidence {
   confidence: number;
   sourceToolCall?: string;
   turnNumber?: number;
+  /** Raw text snippet backing the claim */
+  excerpt?: string;
+  /** URL, memory ID, or element tag for traceability */
+  sourceRef?: string;
 }
 
 export interface NodeHandoffArtifact {
@@ -118,6 +124,9 @@ export interface OrchestratorTask {
     maxTotalCostUsd: number;
   };
   terminationReason?: string;
+  failureCategory?: TraceFailureCategory;
+  failureCode?: TraceFailureCode;
+  failureDetail?: string;
   pendingEscalation?: {
     packet: EscalationPacket;
     selectedOption?: EscalationDecisionMessage["payload"];

@@ -7,7 +7,7 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { sendMessageToMemory } from "../memory/bridge";
-import { sanitizeUrl } from "../security";
+import { sanitizeUrl, sanitizeForPrompt } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
 import { describeScreenshot } from "../vision";
@@ -95,13 +95,17 @@ const CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.CLICK_ELEMENT,
-    description: "Click an element. Auto-scrolls to it first.",
+    description: "Click an element. Auto-scrolls to it first. Use count for repeated clicks (e.g. 'click 3 times').",
     parameters: {
       type: "object",
       properties: {
         id: {
           type: "integer",
           description: "Tag ID.",
+        },
+        count: {
+          type: "integer",
+          description: "Number of times to click (for challenges requiring repeated clicks). Default 1, max 10.",
         },
       },
       required: ["id"],
@@ -187,6 +191,11 @@ const MEMORY_ADD_DEF: ToolDefinition = {
           type: "string",
           description: "Category tag.",
         },
+        type: {
+          type: "string",
+          enum: ["fact", "procedure", "preference"],
+          description: "Memory type: fact (information), procedure (how-to steps), preference (user preferences). Auto-classified if omitted.",
+        },
       },
       required: ["content"],
     },
@@ -202,6 +211,11 @@ const MEMORY_SEARCH_DEF: ToolDefinition = {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query." },
+        types: {
+          type: "array",
+          items: { type: "string", enum: ["fact", "procedure", "preference"] },
+          description: "Filter by memory types. Omit to search all types.",
+        },
       },
       required: ["query"],
     },
@@ -1301,13 +1315,16 @@ export function registerTools() {
         sourceUrl = "unknown";
       }
 
-      logger.info("tools", "memory_add", { category: (args.category as string) || "general", contentLen: (args.content as string).length, sourceUrl });
-      const res = await sendMessageToMemory({
+      const memType = args.type as string | undefined;
+      logger.info("tools", "memory_add", { category: (args.category as string) || "general", contentLen: (args.content as string).length, sourceUrl, type: memType });
+      const addPayload: any = {
         action: "add",
         content: args.content as string,
         category: (args.category as string) || "general",
         sourceUrl: sourceUrl,
-      });
+      };
+      if (memType) addPayload.type = memType;
+      const res = await sendMessageToMemory(addPayload);
 
       if (res.action === "add") {
         return res.success
@@ -1322,12 +1339,15 @@ export function registerTools() {
     ToolName.MEMORY_SEARCH,
     MEMORY_SEARCH_DEF,
     async (args) => {
-      logger.info("tools", "memory_search", { query: args.query });
-      const res = await sendMessageToMemory({
+      const typesArg = args.types as string[] | undefined;
+      logger.info("tools", "memory_search", { query: args.query, types: typesArg });
+      const searchPayload: any = {
         action: "search",
         query: args.query as string,
-        limit: 5, // Default limit
-      });
+        limit: 5,
+      };
+      if (typesArg && typesArg.length > 0) searchPayload.types = typesArg;
+      const res = await sendMessageToMemory(searchPayload);
 
       if (res.action === "search") {
         if (!res.results || res.results.length === 0)
@@ -1336,8 +1356,11 @@ export function registerTools() {
           "Found memories:\n" +
           res.results
             .map(
-              (r: any) =>
-                `- [${r.entry.category}] ${r.entry.content} (Score: ${r.score.toFixed(2)})`,
+              (r: any) => {
+                const typeLabel = r.entry.type ? `[${r.entry.type}]` : `[${r.entry.category}]`;
+                const sanitized = sanitizeForPrompt(r.entry.content);
+                return `- ${typeLabel} ${sanitized} (Score: ${r.score.toFixed(2)})`;
+              },
             )
             .join("\n")
         );
@@ -2000,12 +2023,27 @@ export function registerTools() {
     const color = args.color as string | undefined;
     logger.info("tools", "group_tabs", { tabIds, title, color });
     try {
+      // Bypass the locked-workspace listener so it doesn't fight the move
+      workspaceManager.bypassRegroup(tabIds);
+
       const groupId = await chrome.tabs.group({ tabIds });
-      const updateProps: any = { title };
-      if (color) updateProps.color = color;
+      const updateProps: chrome.tabGroups.UpdateProperties = { title };
+      if (color)
+        updateProps.color = color as chrome.tabGroups.ColorEnum;
       await chrome.tabGroups.update(groupId, updateProps);
+
+      // Reconcile: remove tabs from any workspace they no longer belong to
+      for (const tid of tabIds) {
+        const ws = await workspaceManager.getWorkspaceForTab(tid);
+        if (ws && ws.tabGroupId !== groupId) {
+          await workspaceManager.removeTabFromWorkspace(tid, ws.id);
+        }
+      }
+
+      workspaceManager.clearBypassRegroup(tabIds);
       return `Grouped ${tabIds.length} tab(s) into "${title}" (group ID: ${groupId})`;
     } catch (e: any) {
+      workspaceManager.clearBypassRegroup(tabIds);
       return `Error grouping tabs: ${e.message}`;
     }
   });
@@ -2017,9 +2055,20 @@ export function registerTools() {
       const tabIds = args.tabIds as number[];
       logger.info("tools", "ungroup_tabs", { tabIds });
       try {
+        // Bypass the locked-workspace listener so it doesn't re-add the tabs
+        workspaceManager.bypassRegroup(tabIds);
+
+        // Remove tabs from their workspaces first
+        for (const tid of tabIds) {
+          await workspaceManager.removeTabFromWorkspace(tid);
+        }
+
         await chrome.tabs.ungroup(tabIds);
+
+        workspaceManager.clearBypassRegroup(tabIds);
         return `Ungrouped ${tabIds.length} tab(s).`;
       } catch (e: any) {
+        workspaceManager.clearBypassRegroup(tabIds);
         return `Error ungrouping tabs: ${e.message}`;
       }
     },

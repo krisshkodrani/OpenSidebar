@@ -12,6 +12,8 @@ import {
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
+  TraceFailureCategory,
+  TraceFailureCode,
   ToolName,
   UserSettings,
 } from "../../types";
@@ -38,6 +40,7 @@ import {
   WorkerInstance,
 } from "./types";
 import { MemoryBuffer } from "./memory-buffer";
+import { moderateUserInput, moderateFinalOutput } from "./moderation";
 import {
   DialogueResult,
   NodeVerificationResult,
@@ -258,6 +261,105 @@ function isTaskStatus(value: unknown): value is OrchestratorTask["status"] {
   );
 }
 
+const TRACE_FAILURE_CATEGORIES: ReadonlyArray<TraceFailureCategory> = [
+  "none",
+  "user",
+  "budget",
+  "policy",
+  "safety",
+  "runtime",
+  "quality",
+  "unknown",
+];
+
+const TRACE_FAILURE_CODES: ReadonlyArray<TraceFailureCode> = [
+  "none",
+  "user_stopped",
+  "stopped_by_operator",
+  "turn_limit_reached",
+  "content_policy_blocked",
+  "budget_time_exceeded",
+  "budget_tokens_exceeded",
+  "budget_cost_exceeded",
+  "lane_isolation",
+  "executor_timeout",
+  "verifier_rejected",
+  "dependency_blocked",
+  "runtime_error",
+  "unknown_failure",
+];
+
+function isTraceFailureCategory(value: unknown): value is TraceFailureCategory {
+  return typeof value === "string" && TRACE_FAILURE_CATEGORIES.includes(value as TraceFailureCategory);
+}
+
+function isTraceFailureCode(value: unknown): value is TraceFailureCode {
+  return typeof value === "string" && TRACE_FAILURE_CODES.includes(value as TraceFailureCode);
+}
+
+function normalizeFailureReason(
+  reason: string | undefined,
+): { category: TraceFailureCategory; code: TraceFailureCode; detail?: string } | null {
+  if (!reason) return null;
+  if (reason.startsWith("Content policy:")) {
+    return { category: "policy", code: "content_policy_blocked", detail: reason };
+  }
+  if (reason.startsWith("Global time budget exceeded")) {
+    return { category: "budget", code: "budget_time_exceeded", detail: reason };
+  }
+  if (reason.startsWith("Global token budget exceeded")) {
+    return { category: "budget", code: "budget_tokens_exceeded", detail: reason };
+  }
+  if (reason.startsWith("Global cost budget exceeded")) {
+    return { category: "budget", code: "budget_cost_exceeded", detail: reason };
+  }
+  if (reason.includes("lane isolated") || reason.includes("lane isolation")) {
+    return { category: "runtime", code: "lane_isolation", detail: reason };
+  }
+  if (reason.includes("Stopped by operator")) {
+    return { category: "user", code: "stopped_by_operator", detail: reason };
+  }
+  if (reason.includes("Stopped by user")) {
+    return { category: "user", code: "user_stopped", detail: reason };
+  }
+  return null;
+}
+
+function deriveTaskFailure(
+  task: OrchestratorTask,
+  completionStatus: "completed" | "partial" | "failed",
+): { category: TraceFailureCategory; code: TraceFailureCode; detail?: string } {
+  if (completionStatus === "completed") {
+    return { category: "none", code: "none" };
+  }
+  if (task.failureCategory && task.failureCode) {
+    return {
+      category: task.failureCategory,
+      code: task.failureCode,
+      ...(task.failureDetail ? { detail: task.failureDetail } : {}),
+    };
+  }
+
+  const reasonBased = normalizeFailureReason(task.terminationReason);
+  if (reasonBased) return reasonBased;
+
+  const failedNodes = task.nodes.filter((n) => n.status === "failed");
+  if (failedNodes.some((n) => (n.error || "").includes("Blocked by failed dependencies") || (n.error || "").includes("Blocked by missing dependencies"))) {
+    return { category: "quality", code: "dependency_blocked", detail: task.terminationReason };
+  }
+  if (failedNodes.some((n) => (n.error || "").includes("Verifier "))) {
+    return { category: "quality", code: "verifier_rejected", detail: task.terminationReason };
+  }
+  if (failedNodes.some((n) => (n.error || "").toLowerCase().includes("timeout"))) {
+    return { category: "runtime", code: "executor_timeout", detail: task.terminationReason };
+  }
+  return {
+    category: completionStatus === "partial" ? "quality" : "unknown",
+    code: "unknown_failure",
+    detail: task.terminationReason,
+  };
+}
+
 function sanitizeTaskNode(raw: unknown): TaskNode | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || raw.id.length === 0) return null;
@@ -475,6 +577,18 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (raw.terminationReason !== undefined) {
     if (typeof raw.terminationReason !== "string") return null;
     task.terminationReason = raw.terminationReason;
+  }
+  if (raw.failureCategory !== undefined) {
+    if (!isTraceFailureCategory(raw.failureCategory)) return null;
+    task.failureCategory = raw.failureCategory;
+  }
+  if (raw.failureCode !== undefined) {
+    if (!isTraceFailureCode(raw.failureCode)) return null;
+    task.failureCode = raw.failureCode;
+  }
+  if (raw.failureDetail !== undefined) {
+    if (typeof raw.failureDetail !== "string") return null;
+    task.failureDetail = raw.failureDetail;
   }
 
   return task;
@@ -967,6 +1081,7 @@ export class Orchestrator {
     void this.traceWriter
       .emitEvent({
         runId: task.runId,
+        correlationId: task.runId,
         type,
         role,
         data,
@@ -979,6 +1094,7 @@ export class Orchestrator {
         });
         void this.traceFallbackWriter.emitEvent({
           runId: task.runId!,
+          correlationId: task.runId,
           type,
           role,
           data,
@@ -1000,6 +1116,7 @@ export class Orchestrator {
     ]);
     return {
       runId: task.runId || task.id,
+      correlationId: task.runId || task.id,
       environment: "production",
       startedAt: new Date().toISOString(),
       source: "background.orchestrator",
@@ -1915,6 +2032,39 @@ export class Orchestrator {
 
     this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
 
+    // --- Moderation pre-flight ---
+    if (input.settings.moderationEnabled !== false) {
+      const preflightResult = moderateUserInput(
+        input.query,
+        input.settings.moderationStrictness ?? "standard",
+      );
+      this.emitTraceEvent(task, "moderation_preflight", {
+        allowed: preflightResult.allowed,
+        category: preflightResult.category,
+        severity: preflightResult.severity,
+        reason: preflightResult.reason,
+        querySnippet: input.query.slice(0, 120),
+      }, "system");
+      if (!preflightResult.allowed) {
+        task.status = "failed";
+        task.terminationReason = `Content policy: ${preflightResult.category}`;
+        task.failureCategory = "policy";
+        task.failureCode = "content_policy_blocked";
+        task.failureDetail = task.terminationReason;
+        this.sendMessage({
+          type: "STREAM_CHUNK",
+          workspaceId: task.workspaceId,
+          payload: {
+            delta: `I can't process this request — it was flagged by content moderation (${preflightResult.category}).`,
+            done: true,
+          },
+        });
+        this.sendStatus(input.workspaceId, AgentStatus.IDLE);
+        this.tasksByWorkspace.delete(input.workspaceId);
+        return;
+      }
+    }
+
     let nodes: TaskNode[] = [];
     let replaySkillId: string | null = null;
     let replayMatchContext: ReplayMatchContext | null = null;
@@ -2211,30 +2361,44 @@ export class Orchestrator {
       // If the tab disappears between restore/start and execution, worker tabs still boot safely.
     }
 
-    const getBudgetExhaustionReason = (): string | null => {
+    const getBudgetExhaustionReason = (): { reason: string; code: TraceFailureCode } | null => {
       const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
       if (elapsedMs > task.budget.maxSessionTimeMs) {
-        return `Global time budget exceeded (${elapsedMs}ms > ${task.budget.maxSessionTimeMs}ms)`;
+        return {
+          reason: `Global time budget exceeded (${elapsedMs}ms > ${task.budget.maxSessionTimeMs}ms)`,
+          code: "budget_time_exceeded",
+        };
       }
       if (task.sessionMetrics.totalTokens > task.budget.maxTotalTokens) {
-        return `Global token budget exceeded (${task.sessionMetrics.totalTokens} > ${task.budget.maxTotalTokens})`;
+        return {
+          reason: `Global token budget exceeded (${task.sessionMetrics.totalTokens} > ${task.budget.maxTotalTokens})`,
+          code: "budget_tokens_exceeded",
+        };
       }
       if (task.sessionMetrics.totalCost > task.budget.maxTotalCostUsd) {
-        return `Global cost budget exceeded ($${task.sessionMetrics.totalCost.toFixed(4)} > $${task.budget.maxTotalCostUsd.toFixed(4)})`;
+        return {
+          reason: `Global cost budget exceeded ($${task.sessionMetrics.totalCost.toFixed(4)} > $${task.budget.maxTotalCostUsd.toFixed(4)})`,
+          code: "budget_cost_exceeded",
+        };
       }
       return null;
     };
 
-    const applyBudgetTermination = (reason: string): void => {
-      task.terminationReason = reason;
+    const applyBudgetTermination = (
+      failure: { reason: string; code: TraceFailureCode },
+    ): void => {
+      task.terminationReason = failure.reason;
+      task.failureCategory = "budget";
+      task.failureCode = failure.code;
+      task.failureDetail = failure.reason;
       for (const pendingNode of task.nodes) {
         if (pendingNode.status !== "pending") continue;
         pendingNode.status = "failed";
-        pendingNode.error = reason;
+        pendingNode.error = failure.reason;
       }
       logger.warn("orchestrator", "Global budget exhausted; terminating task", {
         taskId: task.id,
-        reason,
+        reason: failure.reason,
         totalTokens: task.sessionMetrics.totalTokens,
         totalCost: task.sessionMetrics.totalCost,
         elapsedMs: Date.now() - (task.startedAt || task.createdAt),
@@ -2247,7 +2411,7 @@ export class Orchestrator {
             id: crypto.randomUUID(),
             type: "warning",
             label: "Global execution budget exhausted",
-            detail: reason,
+            detail: failure.reason,
             status: "done",
             timestamp: Date.now(),
           },
@@ -2372,6 +2536,8 @@ export class Orchestrator {
           workerId,
           taskId: task.id,
           nodeId: node.id,
+          runId: task.runId || task.id,
+          correlationId: task.runId || task.id,
           suppressUiBroadcast: true,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: input.settings.bypassApprovals ?? false,
@@ -2581,6 +2747,10 @@ export class Orchestrator {
 
             if (escalationDecision.optionId === "stop_task") {
               task.status = "stopped";
+              task.terminationReason = "Stopped by operator escalation decision.";
+              task.failureCategory = "user";
+              task.failureCode = "stopped_by_operator";
+              task.failureDetail = task.terminationReason;
               node.status = "failed";
               node.error = "Stopped by operator escalation decision.";
               this.memoryBuffer.discardWorker(workerId);
@@ -3004,6 +3174,10 @@ export class Orchestrator {
         const reason =
           `Executor lane isolated until ${new Date(executorLaneState.isolatedUntilMs).toISOString()} ` +
           `(lastError=${executorLaneState.lastError || "unknown"})`;
+        task.terminationReason = reason;
+        task.failureCategory = "runtime";
+        task.failureCode = "lane_isolation";
+        task.failureDetail = reason;
         logger.warn("orchestrator", "Executor lane isolation blocked scheduler", {
           taskId: task.id,
           workspaceId: task.workspaceId,
@@ -3116,7 +3290,26 @@ export class Orchestrator {
       }
     }
 
-    const summary = await this.summarizeTask(task, input.openRouterApiKey);
+    let summary = await this.summarizeTask(task, input.openRouterApiKey);
+
+    // --- Moderation post-flight ---
+    if (input.settings.moderationEnabled !== false) {
+      const postflightResult = moderateFinalOutput(
+        summary,
+        input.settings.moderationStrictness ?? "standard",
+      );
+      this.emitTraceEvent(task, "moderation_postflight", {
+        allowed: postflightResult.allowed,
+        category: postflightResult.category,
+        severity: postflightResult.severity,
+        reason: postflightResult.reason,
+        summarySnippet: summary.slice(0, 120),
+      }, "system");
+      if (!postflightResult.allowed) {
+        summary = "The task completed, but the summary was filtered by content moderation.";
+      }
+    }
+
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
@@ -3148,6 +3341,10 @@ export class Orchestrator {
         : skipped > 0
           ? "partial"
           : "completed";
+    const failure = deriveTaskFailure(task, completionStatus);
+    task.failureCategory = failure.category;
+    task.failureCode = failure.code;
+    task.failureDetail = failure.detail;
 
     this.sendMessage({
       type: "TASK_COMPLETION",
@@ -3162,6 +3359,9 @@ export class Orchestrator {
         urlHistory: [],
         metrics: task.sessionMetrics,
         terminationReason: task.terminationReason,
+        failureCategory: failure.category,
+        failureCode: failure.code,
+        failureDetail: failure.detail,
       },
     });
     const totalDurationMs = task.finishedAt - (task.startedAt || task.createdAt);
@@ -3180,6 +3380,9 @@ export class Orchestrator {
         replayAttempted,
         replayHit: Boolean(replaySkillId),
         terminationReason: task.terminationReason ?? null,
+        failureCategory: failure.category,
+        failureCode: failure.code,
+        failureDetail: failure.detail ?? null,
       },
       "system",
     );
@@ -3416,6 +3619,10 @@ export class Orchestrator {
       workspaceId,
     }, "system");
     task.status = "stopped";
+    task.terminationReason = "Stopped by user request.";
+    task.failureCategory = "user";
+    task.failureCode = "user_stopped";
+    task.failureDetail = task.terminationReason;
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
     if (pendingEscalationId) {
       this.pendingEscalationResolvers.delete(pendingEscalationId);

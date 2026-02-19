@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { storageLogger } from "../../utils/storage-logger";
 import { LearnedSkillsPanel } from "./LearnedSkillsPanel";
+import { DemoLibrary } from "./DemoLibrary";
 
 interface Props {
   isOpen: boolean;
@@ -486,6 +487,40 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     </>
                   )}
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Content Moderation
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={formState.moderationEnabled !== false}
+                    onChange={(e) =>
+                      handleChange("moderationEnabled", e.target.checked)
+                    }
+                    className="h-4 w-4 rounded border-warm-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </div>
+                {formState.moderationEnabled !== false && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Strictness
+                    </label>
+                    <select
+                      value={formState.moderationStrictness ?? "standard"}
+                      onChange={(e) =>
+                        handleChange(
+                          "moderationStrictness",
+                          e.target.value as "standard" | "strict",
+                        )
+                      }
+                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="strict">Strict</option>
+                    </select>
+                  </div>
+                )}
               </section>
 
               <section className="space-y-3">
@@ -558,6 +593,28 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   handleChange("skillReplayPinnedOnly", value)
                 }
               />
+
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
+                  Demonstrations
+                </h3>
+
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Auto-inject Demos
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={formState.demosAutoInject !== false}
+                    onChange={(e) =>
+                      handleChange("demosAutoInject", e.target.checked)
+                    }
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
+
+                <DemoLibrary />
+              </section>
 
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">

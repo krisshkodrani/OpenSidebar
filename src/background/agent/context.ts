@@ -2,6 +2,42 @@ import { LLMMessage } from "../llm/types";
 import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 import { COMPRESSION_TRIGGERS } from "./constants";
+import { sanitizeForPrompt } from "../security";
+
+/**
+ * Format a single element in compact notation.
+ * [N] tagName#id key=val key="multi word" "text" (role)
+ */
+export function formatElementCompact(
+  el: TaggedElement,
+  text: string,
+  attrFilter: ((k: string) => boolean) | null,
+): string {
+  const idVal = el.attributes.id;
+  const head = idVal ? `${el.tagName}#${idVal}` : el.tagName;
+
+  const attrParts: string[] = [];
+  for (const [k, v] of Object.entries(el.attributes)) {
+    if (k === "id") continue;
+    if (attrFilter && !attrFilter(k)) continue;
+    attrParts.push(v.includes(" ") ? `${k}="${v}"` : `${k}=${v}`);
+  }
+
+  const role = el.role && el.role !== el.tagName ? ` (${el.role})` : "";
+  const disabled = el.isDisabled ? " [disabled]" : "";
+  const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
+
+  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}`;
+}
+
+/**
+ * Format all tagged elements from a snapshot into the compact text the agent sees.
+ */
+export function formatSnapshotElements(elements: TaggedElement[]): string {
+  return elements
+    .map((el) => formatElementCompact(el, el.text, null))
+    .join("\n");
+}
 
 const FAST_PERSONA = `You are a sharp, resourceful web automation expert who thrives on solving problems efficiently. You move fast, think clearly, and always know which tool to reach for next.`;
 
@@ -28,6 +64,7 @@ export enum CompressionLevel {
   LIGHT = "light",
   MEDIUM = "medium",
   HEAVY = "heavy",
+  EXTREME = "extreme",
 }
 
 export interface ContextMetrics {
@@ -41,7 +78,7 @@ export interface ContextMetrics {
 }
 
 export interface PlanStatus {
-  subtasks: { description: string; status: string; completedAtUrl?: string }[];
+  subtasks: { description: string; status: string; completedAtUrl?: string; result?: string }[];
   currentIndex: number;
 }
 
@@ -71,7 +108,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 ## Rules
 - Always include your Think reasoning WITH tool calls. Never call tools blindly.
 - After navigation or page change, re-read page state before acting.
-- If an action had no visible effect, do NOT repeat it. Try an alternative.
+- If an action had no visible effect, consider whether repeating it makes sense (e.g. the page says "click 3 more times") or whether you should try a different approach.
 - If find_element fails or returns unexpected results, call read_page to see all available elements.
 - If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
 - When a subtask is active, focus only on completing that subtask before moving on.
@@ -96,7 +133,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - select_option for <select> dropdowns — pass visible option text.
 - take_screenshot when the page doesn't match expectations.
 - Batch independent actions in one turn (e.g. fill all form fields).
-- Memory: memory_search to recall, memory_add to save, memory_update to correct, memory_delete to remove stale entries, memory_list_categories to inspect organization.
+- Memory: memory_search to recall, memory_add to save, memory_update to correct, memory_delete to remove stale entries, memory_list_categories to inspect organization. Types: fact (information), procedure (how-to steps), preference (user preferences). Use type filter in memory_search when you know what kind of knowledge you need.
 - escalate when stuck on riddles, puzzles, math, or multi-step logic.
 - Investigation: When stuck or content may be hidden/missing, use inspect_hidden, execute_js, or take_screenshot to gather evidence before retrying. Check get_cookies or execute_js for auth/session state.
 - xray_page toggles a CSS override that forces ALL hidden elements visible (display:none, opacity:0, visibility:hidden). Use when inspect_hidden finds content you need to interact with. Call again to disable. Triggers a snapshot refresh so new elements get tagged.
@@ -108,6 +145,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 {{persona}}
 {{planStatus}}
 {{planInstructions}}
+{{demonstrations}}
 ## Page Context
 Title: {{title}}
 URL: {{url}}
@@ -126,11 +164,17 @@ export class ContextManager {
   private maxHistory = 20;
   private maxContextTokens: number;
   private planStatus: PlanStatus | null = null;
+  private demonstrations: string | null = null;
   private storageKey: string;
   private modelTier: "fast" | "smart" = "fast";
 
   public setModelTier(tier: "fast" | "smart"): void {
     this.modelTier = tier;
+  }
+
+  /** Inject a formatted demonstration into the system prompt context. */
+  public setDemonstrations(demoText: string | null): void {
+    this.demonstrations = demoText;
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -163,6 +207,7 @@ export class ContextManager {
       description: string;
       status: string;
       completedAtUrl?: string;
+      result?: string;
     }[],
     currentIndex: number,
   ): void {
@@ -188,14 +233,15 @@ export class ContextManager {
       }
     };
 
+    const formatDoneItem = (s: PlanStatus["subtasks"][number], i: number): string => {
+      const url = s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : "";
+      const result = s.result ? ` → ${s.result.slice(0, 150)}` : "";
+      return `${i + 1}-${s.description}${url}${result}`;
+    };
+
     if (currentIndex >= total) {
       // All steps done — compact summary
-      const doneList = subtasks
-        .map(
-          (s, i) =>
-            `${i + 1}-${s.description}${s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : ""}`,
-        )
-        .join(", ");
+      const doneList = subtasks.map(formatDoneItem).join(", ");
       return `## Plan [${total}/${total}] ALL DONE\nDone: ${doneList}\nCall done() now with a summary.`;
     }
 
@@ -205,12 +251,7 @@ export class ContextManager {
     const doneSteps = subtasks.slice(0, currentIndex);
     const doneList =
       doneSteps.length > 0
-        ? doneSteps
-            .map(
-              (s, i) =>
-                `${i + 1}-${s.description}${s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : ""}`,
-            )
-            .join(", ")
+        ? doneSteps.map(formatDoneItem).join(", ")
         : "";
 
     const nextStep =
@@ -264,7 +305,11 @@ export class ContextManager {
       len === COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT ||
+      len === COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT ||
+      (len > COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT &&
+       (len - COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT) % COMPRESSION_TRIGGERS.EXTREME_RECOMPRESS_INTERVAL === 0) ||
       (len > COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT &&
+       len < COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT &&
        (len - COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) % COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL === 0)
     ) {
       const level = this.getCompressionLevel();
@@ -460,8 +505,11 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{planInstructions}}", "");
     }
 
+    // Inject demonstration context (if any)
+    content = content.replace("{{demonstrations}}", this.demonstrations || "");
+
     if (this.snapshot) {
-      content = content.replace("{{title}}", this.snapshot.title || "Unknown");
+      content = content.replace("{{title}}", sanitizeForPrompt(this.snapshot.title || "Unknown"));
       content = content.replace("{{url}}", this.snapshot.url || "Unknown");
 
       // Scroll position indicator
@@ -517,7 +565,7 @@ Do NOT call done() until every planned step is complete.
       // Archivist: surface text from persisted captured overlays
       if (this.capturedOverlays.length > 0) {
         const archived = this.capturedOverlays
-          .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${t}`)
+          .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
           "## Viewport Text",
@@ -529,7 +577,7 @@ Do NOT call done() until every planned step is complete.
         this.snapshot.capturedTexts.length > 0
       ) {
         const archived = this.snapshot.capturedTexts
-          .map((t, i) => `[Overlay ${i + 1}]: ${t}`)
+          .map((t, i) => `[Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
           "## Viewport Text",
@@ -553,7 +601,7 @@ Do NOT call done() until every planned step is complete.
       } else if (level === CompressionLevel.LIGHT) {
         viewportText = viewportText.slice(0, 3000);
       }
-      content = content.replace("{{viewportText}}", viewportText);
+      content = content.replace("{{viewportText}}", sanitizeForPrompt(viewportText));
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     } else {
       content = content.replace("{{title}}", "No page loaded");
@@ -609,6 +657,7 @@ Do NOT call done() until every planned step is complete.
 
     // Turn-count override: guarantees compression regardless of context window size
     const historyLen = this.history.length;
+    if (historyLen >= COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT) return CompressionLevel.EXTREME;
     if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) return CompressionLevel.HEAVY;
     if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT) return CompressionLevel.MEDIUM;
     if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT) return CompressionLevel.LIGHT;
@@ -641,7 +690,8 @@ Do NOT call done() until every planned step is complete.
     if (utilization < 0.5) return CompressionLevel.NONE;
     if (utilization < 0.7) return CompressionLevel.LIGHT;
     if (utilization < 0.85) return CompressionLevel.MEDIUM;
-    return CompressionLevel.HEAVY;
+    if (utilization < 0.92) return CompressionLevel.HEAVY;
+    return CompressionLevel.EXTREME;
   }
 
   /** Maximum items shown per group before collapsing the rest into a summary. */
@@ -691,9 +741,9 @@ Do NOT call done() until every planned step is complete.
       if (items.length === 0) continue;
 
       const formatted = items.map((el) => {
-        const text =
+        const rawText =
           textLimit === Infinity ? el.text : el.text.slice(0, textLimit);
-        return this.formatElementCompact(el, text, attrFilter);
+        return this.formatElementCompactLocal(el, sanitizeForPrompt(rawText), attrFilter);
       });
 
       // Collapse large groups: show first N items + summary of the rest
@@ -759,33 +809,14 @@ Do NOT call done() until every planned step is complete.
   }
 
   /**
-   * Format a single element in compact notation.
-   * [N] tagName#id key=val key="multi word" "text" (role)
+   * Format a single element in compact notation (delegates to module-level function).
    */
-  private formatElementCompact(
+  private formatElementCompactLocal(
     el: TaggedElement,
     text: string,
     attrFilter: ((k: string) => boolean) | null,
   ): string {
-    // Build tag + id shorthand
-    const idVal = el.attributes.id;
-    const head = idVal ? `${el.tagName}#${idVal}` : el.tagName;
-
-    // Build remaining attributes (skip 'id' since it's in the head)
-    const attrParts: string[] = [];
-    for (const [k, v] of Object.entries(el.attributes)) {
-      if (k === "id") continue;
-      if (attrFilter && !attrFilter(k)) continue;
-      // Quote only when value contains spaces
-      attrParts.push(v.includes(" ") ? `${k}="${v}"` : `${k}=${v}`);
-    }
-
-    // Role: only show when different from tagName
-    const role = el.role && el.role !== el.tagName ? ` (${el.role})` : "";
-    const disabled = el.isDisabled ? " [disabled]" : "";
-    const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
-
-    return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}`;
+    return formatElementCompact(el, text, attrFilter);
   }
 
   /**
@@ -874,6 +905,37 @@ Do NOT call done() until every planned step is complete.
    */
   private compressHistoryByLevel(level: CompressionLevel): void {
     if (level === CompressionLevel.NONE) return;
+
+    if (level === CompressionLevel.EXTREME) {
+      // Ultra-aggressive: keep only EXTREME_KEEP_RECENT messages, cap timeline to 15
+      const keepRecent = COMPRESSION_TRIGGERS.EXTREME_KEEP_RECENT;
+      if (this.history.length <= keepRecent + 2) return;
+
+      const firstUserIdx = this.history.findIndex(m => m.role === "user");
+      const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
+
+      const oldMessages = this.history.slice(0, -keepRecent);
+      const timeline = summarizeHistory(oldMessages, 15);
+      const recentMessages = this.history.slice(-keepRecent);
+
+      this.history = [];
+      if (firstUserMsg) {
+        this.history.push(firstUserMsg);
+      }
+      if (timeline.length > 0) {
+        this.history.push({
+          role: "user",
+          content: `[EXTREME COMPRESSION — ${timeline.length} actions]\n${timeline.join("\n")}`,
+        });
+      }
+      this.history.push(...recentMessages);
+
+      logger.info("agent", "EXTREME compression applied", {
+        timelineEntries: timeline.length,
+        newHistoryLength: this.history.length,
+      });
+      return;
+    }
 
     if (level === CompressionLevel.HEAVY) {
       // Distill everything except last HEAVY_KEEP_RECENT messages
@@ -996,9 +1058,35 @@ Do NOT call done() until every planned step is complete.
           removeEnd += 1;
         }
         const collapsedCount = runMessages.length - 2;
+
+        // Collect compact results from collapsed tool calls (50 chars each, 200 chars cap)
+        const resultSnippets: string[] = [];
+        let totalLen = 0;
+        for (let k = 1; k < runMessages.length - 1; k++) {
+          const assistIdx = runMessages[k];
+          const tcId = this.history[assistIdx]?.tool_calls?.[0]?.id;
+          if (!tcId) continue;
+          // Look for paired tool result right after
+          for (let r = assistIdx + 1; r < this.history.length && r <= assistIdx + 2; r++) {
+            if (this.history[r].role === "tool" && this.history[r].tool_call_id === tcId) {
+              const content = typeof this.history[r].content === "string"
+                ? (this.history[r].content ?? "").slice(0, 50)
+                : "[non-text]";
+              if (totalLen + content.length <= 200) {
+                resultSnippets.push(`"${content}"`);
+                totalLen += content.length;
+              }
+              break;
+            }
+          }
+        }
+
+        const resultSuffix = resultSnippets.length > 0
+          ? ` — results: ${resultSnippets.join(", ")}`
+          : "";
         const summaryMsg: LLMMessage = {
           role: "user",
-          content: `[${collapsedCount} repeated ${toolName} calls collapsed]`,
+          content: `[${collapsedCount} collapsed ${toolName} calls${resultSuffix}]`,
         };
         this.history.splice(removeStart, removeEnd - removeStart + 1, summaryMsg);
       }
@@ -1095,6 +1183,14 @@ Do NOT call done() until every planned step is complete.
     if (timeline.length > 0) {
       const report = `ATTEMPT LOG (${timeline.length} actions):\n${timeline.join("\n")}`;
       this.history.push({ role: "user", content: report });
+    }
+
+    // Carry plan state into the escalated context
+    if (this.planStatus) {
+      const planBlock = this.formatPlanStatus();
+      if (planBlock) {
+        this.history.push({ role: "user", content: planBlock });
+      }
     }
 
     this.saveState().catch(() => {});

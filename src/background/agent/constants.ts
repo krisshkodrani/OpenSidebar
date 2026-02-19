@@ -49,16 +49,14 @@ export const TOOL_FAILURE_THRESHOLDS = {
   EXIT: 6,
 } as const;
 
-/** Redundant action detection */
+/** Redundant action detection (informational — nudges, never blocks) */
 export const REDUNDANT_ACTION = {
   /** Size of the sliding window for recent successful tool calls */
-  WINDOW: 8,
-  /** Number of exact (tool+args) repetitions before injecting a corrective message */
-  THRESHOLD: 2,
-  /** Block the next exact repeat once this many successful identical DOM actions would occur */
-  HARD_BLOCK_THRESHOLD: 3,
-  /** Number of same tool name (any args) repetitions before injecting a warning */
-  TOOL_NAME_ONLY_THRESHOLD: 4,
+  WINDOW: 10,
+  /** Exact (tool+args+same page state) repetitions before injecting an informational nudge */
+  INFO_THRESHOLD: 4,
+  /** Same tool name (any args) repetitions before a soft note */
+  TOOL_NAME_INFO_THRESHOLD: 6,
 } as const;
 
 /** Step duration watchdog */
@@ -125,6 +123,12 @@ export const COMPRESSION_TRIGGERS = {
   MEDIUM_TOOL_RESULT_LIMIT: 100,
   /** Re-compress every N messages once in HEAVY mode */
   HEAVY_RECOMPRESS_INTERVAL: 20,
+  /** History length at which EXTREME compression activates */
+  EXTREME_TURN_COUNT: 150,
+  /** Messages to keep verbatim in EXTREME compression */
+  EXTREME_KEEP_RECENT: 5,
+  /** Re-compress every N messages once in EXTREME mode */
+  EXTREME_RECOMPRESS_INTERVAL: 30,
 } as const;
 
 /** Failed action memory: blocks exact repeats of failed tool calls */

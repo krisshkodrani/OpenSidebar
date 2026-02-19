@@ -1,7 +1,7 @@
 import initSqlJs, { Database } from "sql.js";
 import { Voy } from "voy-search";
 import * as pdfjsLib from "pdfjs-dist";
-import { MemoryWorkerMessage } from "../../types";
+import { MemoryWorkerMessage, MemoryType } from "../../types";
 import { reciprocalRankFusion } from "./utils";
 import { logger } from "../../utils";
 
@@ -59,6 +59,15 @@ async function initialize() {
                 source_url UNINDEXED,
                 created_at UNINDEXED,
                 tokenize='porter unicode61'
+            );
+        `);
+
+    // 3b. Side metadata table for typed memory
+    db.run(`
+            CREATE TABLE IF NOT EXISTS memory_meta (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL DEFAULT 'fact',
+                type_confidence REAL NOT NULL DEFAULT 1.0
             );
         `);
 
@@ -205,6 +214,40 @@ async function persist() {
   }
 }
 
+// --- Auto-classification ---
+
+const PROCEDURE_PATTERNS = [
+  /\b(step \d|first,? |then |next,? |finally )/i,
+  /\bhow to\b/i,
+  /\b(click|navigate|type|scroll|select|fill|submit)\b.*\bthen\b/i,
+  /\b\d+\.\s/,
+];
+
+const PREFERENCE_PATTERNS = [
+  /\b(always|never|prefer|avoid|don't|do not|should)\b/i,
+  /\buser (wants|prefers|likes|hates)\b/i,
+  /\bremember (to|that)\b/i,
+];
+
+/**
+ * Heuristically classify memory content into a MemoryType.
+ * Returns explicit type if provided, otherwise pattern-matches.
+ */
+export function classifyMemoryType(
+  content: string,
+  explicit?: MemoryType,
+): { type: MemoryType; confidence: number } {
+  if (explicit) return { type: explicit, confidence: 1.0 };
+
+  if (PROCEDURE_PATTERNS.some((p) => p.test(content))) {
+    return { type: "procedure", confidence: 0.8 };
+  }
+  if (PREFERENCE_PATTERNS.some((p) => p.test(content))) {
+    return { type: "preference", confidence: 0.8 };
+  }
+  return { type: "fact", confidence: 0.8 };
+}
+
 // --- Message Handling ---
 
 chrome.runtime.onMessage.addListener(
@@ -224,6 +267,8 @@ chrome.runtime.onMessage.addListener(
         if (payload.action === "add") {
           const id = crypto.randomUUID();
           const { content, category, sourceUrl } = payload;
+          const explicitType = "type" in payload ? payload.type : undefined;
+          const { type: memType, confidence } = classifyMemoryType(content, explicitType);
           const embedding = await getEmbedding(content);
 
           // Add to SQLite
@@ -232,14 +277,18 @@ chrome.runtime.onMessage.addListener(
             [id, content, category, sourceUrl || "", Date.now()],
           );
 
+          // Add to memory_meta
+          db!.run(
+            "INSERT INTO memory_meta (id, type, type_confidence) VALUES (?, ?, ?)",
+            [id, memType, confidence],
+          );
+
           // Add to Voy
-          // Voy resource: { id, title: any, url: any, embeddings: number[] }
           const resource = {
             id,
             title: category,
             url: sourceUrl || "",
-            embeddings: [embedding], // Fix: Voy expects array of embeddings for the document? Or just embedding?
-            // Docs say: embeddings: Number[][] (list of embeddings)
+            embeddings: [embedding],
           };
           voy!.add(resource);
 
@@ -253,6 +302,10 @@ chrome.runtime.onMessage.addListener(
           let count = 0;
           for (const item of items) {
             const id = crypto.randomUUID();
+            const { type: memType, confidence } = classifyMemoryType(
+              item.content,
+              item.type,
+            );
             const embedding = await getEmbedding(item.content);
             db!.run(
               "INSERT INTO memories (id, content, category, source_url, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -263,6 +316,10 @@ chrome.runtime.onMessage.addListener(
                 item.sourceUrl || "",
                 Date.now(),
               ],
+            );
+            db!.run(
+              "INSERT INTO memory_meta (id, type, type_confidence) VALUES (?, ?, ?)",
+              [id, memType, confidence],
             );
             voy!.add({
               id,
@@ -319,6 +376,7 @@ chrome.runtime.onMessage.addListener(
         } else if (payload.action === "delete") {
           const { id } = payload;
           db!.run("DELETE FROM memories WHERE id = ?", [id]);
+          db!.run("DELETE FROM memory_meta WHERE id = ?", [id]);
           await persist();
           responsePayload = { action: "delete", success: true };
         } else if (payload.action === "list_categories") {
@@ -343,31 +401,29 @@ chrome.runtime.onMessage.addListener(
           responsePayload = { action: "list_categories", categories };
         } else if (payload.action === "clear") {
           db!.run("DELETE FROM memories");
+          db!.run("DELETE FROM memory_meta");
           voy = new Voy();
           await persist();
           responsePayload = { action: "clear", success: true };
         } else if (payload.action === "search") {
           const { query, limit } = payload;
+          const typesFilter = "types" in payload ? payload.types : undefined;
           const embedding = await getEmbedding(query);
 
           // Voy Search
-          // voy.search(query: Float32Array, k: number)
           const queryVector = new Float32Array(embedding);
           const voyResultsRaw = voy!.search(queryVector, (limit || 5) * 2);
 
-          // voyResultsRaw.neighbors: Array<{ id: string, title: string, url: string }>
-          // Voy 0.6.3 might not return score directly in neighbors?
-          // We'll approximate or assume order implies score.
           const voyResults = voyResultsRaw.neighbors.map(
             (n: any, i: number) => ({
               id: n.id,
-              score: 0.9 - i * 0.05, // Fallback score
+              score: 0.9 - i * 0.05,
             }),
           );
 
           // FTS5 Search
           const ftsResults: Array<{ id: string; rank: number }> = [];
-          const stmt = db!.prepare(`
+          const ftsStmt = db!.prepare(`
                     SELECT id, rank
                     FROM memories
                     WHERE memories MATCH ?
@@ -375,26 +431,60 @@ chrome.runtime.onMessage.addListener(
                     LIMIT ?
                 `);
           try {
-            stmt.bind([query, (limit || 5) * 2]);
-            while (stmt.step()) {
-              const row = stmt.get();
+            ftsStmt.bind([query, (limit || 5) * 2]);
+            while (ftsStmt.step()) {
+              const row = ftsStmt.get();
               ftsResults.push({ id: row[0] as string, rank: row[1] as number });
             }
           } catch (e) {
             logger.warn("memory", "FTS search failed", { error: e });
           } finally {
-            stmt.free();
+            ftsStmt.free();
           }
 
-          // Hydration helper for RRF
-          const fetchEntry = (id: string) => {
-            const stmt = db!.prepare(
-              "SELECT content, category, source_url, created_at FROM memories WHERE id = ?",
+          // Build type lookup for filtering
+          const typeMap = new Map<string, string>();
+          if (typesFilter && typesFilter.length > 0) {
+            const placeholders = typesFilter.map(() => "?").join(",");
+            const metaStmt = db!.prepare(
+              `SELECT id, type FROM memory_meta WHERE type IN (${placeholders})`,
             );
-            stmt.bind([id]);
+            try {
+              metaStmt.bind(typesFilter);
+              while (metaStmt.step()) {
+                const row = metaStmt.get();
+                typeMap.set(row[0] as string, row[1] as string);
+              }
+            } finally {
+              metaStmt.free();
+            }
+          }
+
+          // Hydration helper for RRF (with type metadata)
+          const fetchEntry = (id: string) => {
+            // If type filter is active, skip entries not in allowed types
+            if (typesFilter && typesFilter.length > 0 && !typeMap.has(id)) {
+              return null;
+            }
+
+            const hydStmt = db!.prepare(
+              "SELECT m.content, m.category, m.source_url, m.created_at FROM memories m WHERE m.id = ?",
+            );
+            hydStmt.bind([id]);
             let entry: any = null;
-            if (stmt.step()) {
-              const row = stmt.get();
+            if (hydStmt.step()) {
+              const row = hydStmt.get();
+              // Look up type from memory_meta
+              let memType: string = "fact";
+              const metaStmt2 = db!.prepare(
+                "SELECT type FROM memory_meta WHERE id = ?",
+              );
+              metaStmt2.bind([id]);
+              if (metaStmt2.step()) {
+                memType = (metaStmt2.get()[0] as string) || "fact";
+              }
+              metaStmt2.free();
+
               entry = {
                 id,
                 content: row[0] as string,
@@ -402,9 +492,10 @@ chrome.runtime.onMessage.addListener(
                 sourceUrl: row[2] as string,
                 createdAt: row[3] as number,
                 embedding: new Float32Array(0),
+                type: memType,
               };
             }
-            stmt.free();
+            hydStmt.free();
             return entry;
           };
 

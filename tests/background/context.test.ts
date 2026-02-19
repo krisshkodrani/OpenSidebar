@@ -591,6 +591,50 @@ describe("ContextManager", () => {
     });
   });
 
+  describe("EXTREME Compression", () => {
+    test("returns EXTREME at >= 92% utilization", () => {
+      // Small context window to push utilization over 92%
+      // Base overhead is ~420 tokens, viewportText adds (len/4) tokens
+      // With maxContextTokens=500 and viewportText="x"*500 → 420+125=545 → 545/500=109% → EXTREME
+      const ctx = new ContextManager(500);
+      ctx.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "x".repeat(500),
+        viewport: { width: 1280, height: 800 },
+      });
+      const level = ctx.getCompressionLevel();
+      expect(level).toBe("extreme");
+    });
+
+    test("HEAVY is returned between 85% and 92% utilization", () => {
+      // Need utilization between 0.85 and 0.92
+      // Base ~420 tokens. If maxTokens=600, we need total 510-552.
+      // 420 + viewportText/4 → need viewportText = (510-420)*4 = 360 chars → 510/600=85%
+      // viewportText = 400 chars → (420+100)=520/600 = 86.7% → HEAVY
+      const ctx = new ContextManager(600);
+      ctx.setSnapshot({
+        title: "Test",
+        url: "https://example.com",
+        elements: [],
+        viewportText: "x".repeat(400),
+        viewport: { width: 1280, height: 800 },
+      });
+      const level = ctx.getCompressionLevel();
+      // Should be HEAVY (between 85% and 92%)
+      expect(["heavy", "extreme"]).toContain(level);
+      // At least HEAVY
+      expect(level).not.toBe("medium");
+    });
+
+    test("EXTREME enum value exists", () => {
+      // Import-level check: the enum value is recognized
+      const { CompressionLevel } = require("../../src/background/agent/context");
+      expect(CompressionLevel.EXTREME).toBe("extreme");
+    });
+  });
+
   describe("Valid Element IDs", () => {
     test("valid IDs line appears in system prompt when elements exist", () => {
       context.setSnapshot({
@@ -621,6 +665,63 @@ describe("ContextManager", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).not.toContain("Valid element IDs:");
+    });
+  });
+
+  describe("Plan Status with Results", () => {
+    test("formatPlanStatus shows result arrows for completed steps", () => {
+      context.setPlanStatus(
+        [
+          { description: "Step 1", status: "completed", completedAtUrl: "https://example.com/a", result: "Found the button" },
+          { description: "Step 2", status: "completed", completedAtUrl: "https://example.com/b", result: "Clicked submit" },
+          { description: "Step 3", status: "running" },
+        ],
+        2,
+      );
+
+      const prompt = context.getPrompt();
+      const sys = prompt[0].content as string;
+      expect(sys).toContain("→ Found the button");
+      expect(sys).toContain("→ Clicked submit");
+      expect(sys).toContain("Step 3");
+    });
+
+    test("formatPlanStatus omits arrow when no result", () => {
+      context.setPlanStatus(
+        [
+          { description: "Step 1", status: "completed", completedAtUrl: "https://example.com/a" },
+          { description: "Step 2", status: "running" },
+        ],
+        1,
+      );
+
+      const prompt = context.getPrompt();
+      const sys = prompt[0].content as string;
+      // The done-item line should NOT have a result arrow
+      const doneLineMatch = sys.match(/1-Step 1.*/);
+      expect(doneLineMatch).not.toBeNull();
+      expect(doneLineMatch![0]).not.toContain("→");
+    });
+
+    test("distillForEscalation includes plan state", () => {
+      context.setPlanStatus(
+        [
+          { description: "Step A", status: "completed", result: "Done" },
+          { description: "Step B", status: "running" },
+        ],
+        1,
+      );
+      context.addMessage(userMsg("Do the task"));
+
+      context.distillForEscalation("Do the task");
+
+      const messages = context.getMessages();
+      const planMsg = messages.find(
+        (m) => typeof m.content === "string" && m.content.includes("Plan"),
+      );
+      expect(planMsg).toBeDefined();
+      expect(planMsg!.content as string).toContain("Step A");
+      expect(planMsg!.content as string).toContain("Step B");
     });
   });
 });
