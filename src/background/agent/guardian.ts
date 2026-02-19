@@ -2,11 +2,14 @@ import { LLMClient } from "../llm";
 import { TokenUsage } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
+import type { Difficulty, RuntimeLimits } from "./constants";
 
 /** Result of task decomposition */
 export interface PlanDecomposition {
   subtasks: string[];
   steps?: PlanStep[];
+  difficulty: Difficulty;
+  limitOverrides?: Partial<RuntimeLimits> | null;
 }
 
 export interface PlanStep {
@@ -61,6 +64,14 @@ Response Rules:
     write "Click the 'Settings' link in the navigation menu."
   - If a subtask truly depends on a prior subtask's runtime output,
     note this explicitly as: [DEPENDS: step N output].
+
+DIFFICULTY ASSESSMENT (required):
+Always include a "difficulty" field in your response. Assess the task as one of:
+- "simple": 1-2 interactions, single page, obvious target element
+- "moderate": 3-5 steps, may navigate, clear success criteria
+- "complex": 6-10 steps, multi-page, needs verification
+- "extreme": 10+ steps, multi-site, or ambiguous success criteria
+This controls how patient the execution engine is with retries and failures.
 
 Respond with JSON only.`;
 
@@ -140,7 +151,43 @@ export class PlanGuardian {
         parsed = JSON.parse(match[0]);
       }
 
-      if (!parsed.isMultiStep) return null;
+      // Extract difficulty assessment (defaults to "moderate" if missing)
+      const VALID_DIFFICULTIES = new Set<Difficulty>([
+        "simple",
+        "moderate",
+        "complex",
+        "extreme",
+      ]);
+      const difficulty: Difficulty =
+        typeof parsed.difficulty === "string" &&
+        VALID_DIFFICULTIES.has(parsed.difficulty as Difficulty)
+          ? (parsed.difficulty as Difficulty)
+          : "moderate";
+
+      // Extract optional limit overrides
+      let limitOverrides: Partial<RuntimeLimits> | null = null;
+      if (
+        parsed.limit_overrides &&
+        typeof parsed.limit_overrides === "object" &&
+        !Array.isArray(parsed.limit_overrides)
+      ) {
+        const overrides: Partial<RuntimeLimits> = {};
+        for (const [key, val] of Object.entries(
+          parsed.limit_overrides as Record<string, unknown>,
+        )) {
+          if (typeof val === "number" && Number.isFinite(val)) {
+            (overrides as Record<string, number>)[key] = val;
+          }
+        }
+        if (Object.keys(overrides).length > 0) {
+          limitOverrides = overrides;
+        }
+      }
+
+      if (!parsed.isMultiStep) {
+        // Simple task — still return difficulty assessment
+        return { subtasks: [], difficulty, limitOverrides };
+      }
 
       const parseSteps = (value: unknown): PlanStep[] | null => {
         if (!Array.isArray(value) || value.length < 2) return null;
@@ -201,7 +248,10 @@ export class PlanGuardian {
       const subtasks =
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
-      if (subtasks.length < 2) return null;
+      if (subtasks.length < 2) {
+        // Simple task — return difficulty but no plan
+        return { subtasks: [], difficulty, limitOverrides };
+      }
 
       // Hard cap: truncate to 8 subtasks max
       if (subtasks.length > 8) {
@@ -221,29 +271,36 @@ export class PlanGuardian {
           }
           logger.info("agent", "Guardian produced structured plan", {
             subtaskCount: cappedSteps.length,
+            difficulty,
           });
           return {
             subtasks: cappedSteps.map((step) => step.objective),
             steps: cappedSteps,
+            difficulty,
+            limitOverrides,
           };
         }
-        return { subtasks: subtasks.slice(0, 8) };
+        return { subtasks: subtasks.slice(0, 8), difficulty, limitOverrides };
       }
 
       if (steps) {
         logger.info("agent", "Guardian produced structured plan", {
           subtaskCount: steps.length,
+          difficulty,
         });
         return {
           subtasks: steps.map((step) => step.objective),
           steps,
+          difficulty,
+          limitOverrides,
         };
       }
 
       logger.info("agent", "Guardian decomposed task", {
         subtaskCount: subtasks.length,
+        difficulty,
       });
-      return { subtasks };
+      return { subtasks, difficulty, limitOverrides };
     } catch (err: any) {
       logger.warn(
         "agent",

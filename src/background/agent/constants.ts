@@ -123,12 +123,6 @@ export const COMPRESSION_TRIGGERS = {
   MEDIUM_TOOL_RESULT_LIMIT: 100,
   /** Re-compress every N messages once in HEAVY mode */
   HEAVY_RECOMPRESS_INTERVAL: 20,
-  /** History length at which EXTREME compression activates */
-  EXTREME_TURN_COUNT: 150,
-  /** Messages to keep verbatim in EXTREME compression */
-  EXTREME_KEEP_RECENT: 5,
-  /** Re-compress every N messages once in EXTREME mode */
-  EXTREME_RECOMPRESS_INTERVAL: 30,
 } as const;
 
 /** Failed action memory: blocks exact repeats of failed tool calls */
@@ -155,30 +149,216 @@ export const BATCH_LIMITS = {
   MAX_STEPS: 10,
 } as const;
 
-/** Rolling distillation: periodically compress mid-conversation history */
-export const ROLLING_DISTILL = {
-  /** Every N turns, consider distilling older history */
-  INTERVAL: 8,
-  /** Minimum message count before distillation kicks in */
-  MIN_MESSAGES: 12,
-  /** Number of most-recent messages to keep verbatim */
-  KEEP_RECENT: 6,
-  /** Maximum summary entries in the distilled block */
-  MAX_SUMMARY_ENTRIES: 15,
-} as const;
-
-/** Fresh-start recovery: full context reset when escalation cycles exhaust */
-export const FRESH_START = {
-  /** Maximum fresh-start resets allowed per session */
-  MAX_PER_SESSION: 2,
-  /** Minimum turns before a fresh start is considered */
-  MIN_TURNS_BEFORE_RESET: 10,
-  /** Escalation cycles required to trigger a fresh start */
-  TRIGGER_ESCALATION_CYCLE: 2,
-} as const;
-
 /** Timing constants (milliseconds) */
 export const TIMING = {
   /** Delay before retrying snapshot refresh */
   SNAPSHOT_RETRY_DELAY: 300,
 } as const;
+
+/** Rolling distillation — periodic compression of older history */
+export const ROLLING_DISTILL = {
+  /** Compress every N turns */
+  INTERVAL: 8,
+  /** Minimum messages before distillation kicks in */
+  MIN_MESSAGES: 20,
+  /** Messages to keep verbatim (most recent) */
+  KEEP_RECENT: 6,
+  /** Maximum summary entries in the distilled output */
+  MAX_SUMMARY_ENTRIES: 15,
+} as const;
+
+/** Fresh-start recovery — full context reset when escalation cycles exhaust */
+export const FRESH_START = {
+  /** Escalation cycle count that triggers a fresh start */
+  TRIGGER_ESCALATION_CYCLE: 3,
+  /** Maximum fresh starts per session */
+  MAX_PER_SESSION: 2,
+  /** Minimum turns before a fresh start is allowed */
+  MIN_TURNS_BEFORE_RESET: 10,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Difficulty-Adaptive Runtime Limits (RFC: rfc-adaptive-runtime-limits.md)
+// ---------------------------------------------------------------------------
+
+/** Task difficulty level assessed by the guardian at plan time */
+export type Difficulty = "simple" | "moderate" | "complex" | "extreme";
+
+/** Adaptive limits that the guardian can override per-task */
+export interface RuntimeLimits {
+  stuckEscalate: number;
+  stuckGiveUp: number;
+  stuckGiveUpSmart: number;
+  maxEscalationCycles: number;
+  escalationCooldown: number;
+  toolFailureWarn: number;
+  toolFailureExit: number;
+  maxDoneRejections: number;
+  maxConsecutiveAllFail: number;
+  deadEndNudge: number;
+  deadEndPivot: number;
+  stepWarnTurns: number;
+  stepEscalateTurns: number;
+  maxFreshStarts: number;
+}
+
+/** Static defaults — equivalent to current hard-coded values (the "moderate" baseline) */
+export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
+  stuckEscalate: STUCK_THRESHOLDS.ESCALATE,
+  stuckGiveUp: STUCK_THRESHOLDS.GIVE_UP,
+  stuckGiveUpSmart: STUCK_THRESHOLDS.GIVE_UP_SMART,
+  maxEscalationCycles: ESCALATION_LIMITS.MAX_CYCLES,
+  escalationCooldown: ESCALATION_LIMITS.COOLDOWN_TURNS,
+  toolFailureWarn: TOOL_FAILURE_THRESHOLDS.WARN,
+  toolFailureExit: TOOL_FAILURE_THRESHOLDS.EXIT,
+  maxDoneRejections: AGENT_LIMITS.MAX_DONE_REJECTIONS,
+  maxConsecutiveAllFail: AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL,
+  deadEndNudge: DEAD_END_DETECTION.NUDGE_THRESHOLD,
+  deadEndPivot: DEAD_END_DETECTION.PIVOT_THRESHOLD,
+  stepWarnTurns: STEP_WATCHDOG.WARN_TURNS,
+  stepEscalateTurns: STEP_WATCHDOG.ESCALATE_TURNS,
+  maxFreshStarts: FRESH_START.MAX_PER_SESSION,
+};
+
+/** Hard floor — no profile or override can go below these */
+const MINIMUM_LIMITS: RuntimeLimits = {
+  stuckEscalate: 2,
+  stuckGiveUp: 4,
+  stuckGiveUpSmart: 3,
+  maxEscalationCycles: 1,
+  escalationCooldown: 1,
+  toolFailureWarn: 2,
+  toolFailureExit: 3,
+  maxDoneRejections: 1,
+  maxConsecutiveAllFail: 2,
+  deadEndNudge: 2,
+  deadEndPivot: 3,
+  stepWarnTurns: 2,
+  stepEscalateTurns: 4,
+  maxFreshStarts: 1,
+};
+
+/** Hard ceiling — no profile or override can exceed these */
+const MAXIMUM_LIMITS: RuntimeLimits = {
+  stuckEscalate: 12,
+  stuckGiveUp: 25,
+  stuckGiveUpSmart: 20,
+  maxEscalationCycles: 8,
+  escalationCooldown: 6,
+  toolFailureWarn: 10,
+  toolFailureExit: 15,
+  maxDoneRejections: 7,
+  maxConsecutiveAllFail: 10,
+  deadEndNudge: 6,
+  deadEndPivot: 10,
+  stepWarnTurns: 12,
+  stepEscalateTurns: 20,
+  maxFreshStarts: 4,
+};
+
+/** Per-difficulty preset overrides (merged on top of DEFAULT_RUNTIME_LIMITS) */
+export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
+  simple: {
+    stuckEscalate: 3,
+    stuckGiveUp: 6,
+    stuckGiveUpSmart: 5,
+    maxEscalationCycles: 2,
+    toolFailureWarn: 2,
+    toolFailureExit: 4,
+    maxDoneRejections: 1,
+    maxConsecutiveAllFail: 3,
+    deadEndNudge: 2,
+    deadEndPivot: 3,
+    stepWarnTurns: 3,
+    stepEscalateTurns: 6,
+    maxFreshStarts: 1,
+  },
+  moderate: {
+    // Mostly defaults — the static constants were tuned for this tier
+    stuckEscalate: 4,
+    maxDoneRejections: 2,
+  },
+  complex: {
+    stuckEscalate: 6,
+    stuckGiveUp: 14,
+    stuckGiveUpSmart: 10,
+    maxEscalationCycles: 4,
+    toolFailureWarn: 5,
+    toolFailureExit: 8,
+    maxDoneRejections: 4,
+    maxConsecutiveAllFail: 6,
+    deadEndNudge: 4,
+    deadEndPivot: 6,
+    stepWarnTurns: 7,
+    stepEscalateTurns: 14,
+    maxFreshStarts: 2,
+  },
+  extreme: {
+    stuckEscalate: 8,
+    stuckGiveUp: 18,
+    stuckGiveUpSmart: 14,
+    maxEscalationCycles: 5,
+    escalationCooldown: 2,
+    toolFailureWarn: 6,
+    toolFailureExit: 10,
+    maxDoneRejections: 5,
+    maxConsecutiveAllFail: 7,
+    deadEndNudge: 4,
+    deadEndPivot: 7,
+    stepWarnTurns: 8,
+    stepEscalateTurns: 16,
+    maxFreshStarts: 3,
+  },
+};
+
+/**
+ * Resolve runtime limits by merging: defaults → difficulty profile → guardian overrides.
+ * Every value is clamped to [MINIMUM, MAXIMUM].
+ */
+export function resolveRuntimeLimits(
+  difficulty: Difficulty,
+  guardianOverrides?: Partial<RuntimeLimits> | null,
+): RuntimeLimits {
+  const profile = DIFFICULTY_PROFILES[difficulty] ?? {};
+  const merged = { ...DEFAULT_RUNTIME_LIMITS, ...profile, ...guardianOverrides };
+  const result = { ...merged };
+  for (const key of Object.keys(result) as (keyof RuntimeLimits)[]) {
+    result[key] = Math.max(
+      MINIMUM_LIMITS[key],
+      Math.min(MAXIMUM_LIMITS[key], result[key]),
+    );
+  }
+  return result;
+}
+
+/**
+ * Apply a mid-session reassessment. Can only widen limits (increase thresholds),
+ * except maxDoneRejections which can be tightened.
+ * Returns the updated limits (clamped).
+ */
+export function reassessRuntimeLimits(
+  current: RuntimeLimits,
+  overrides: Partial<RuntimeLimits>,
+): RuntimeLimits {
+  const result = { ...current };
+  for (const [key, value] of Object.entries(overrides) as [
+    keyof RuntimeLimits,
+    number,
+  ][]) {
+    if (value == null || !(key in result)) continue;
+    if (key === "maxDoneRejections") {
+      // Can tighten — smart model may judge task is simpler
+      result[key] = Math.max(
+        MINIMUM_LIMITS[key],
+        Math.min(MAXIMUM_LIMITS[key], value),
+      );
+    } else {
+      // Can only widen (increase)
+      result[key] = Math.max(
+        result[key],
+        Math.min(MAXIMUM_LIMITS[key], value),
+      );
+    }
+  }
+  return result;
+}

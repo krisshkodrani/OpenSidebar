@@ -7,6 +7,8 @@ import {
   TraceEntry,
   TraceToolExecution,
   TraceEvent,
+  TraceEventPayloadByType,
+  TraceFailureInfo,
   TraceSession,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
@@ -14,6 +16,8 @@ import { logger } from "../../utils";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const FLUSH_TIMEOUT_MS = 2000;
+const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
+const TRACE_PRODUCER = "background.agent.trace-recorder" as const;
 
 /**
  * Records full-fidelity execution data for a single agent session.
@@ -25,6 +29,9 @@ export class TraceRecorder {
   private query = "";
   private startUrl = "";
   private workspaceId: string | null = null;
+  private runId: string | null = null;
+  private correlationId: string;
+  private parentRunId: string | null = null;
 
   // Current turn being recorded
   private currentTurn: Partial<TraceEntry> | null = null;
@@ -34,6 +41,7 @@ export class TraceRecorder {
   constructor(sessionId: string) {
     this.sessionId = sessionId;
     this.startTime = Date.now();
+    this.correlationId = sessionId;
   }
 
   /** Set session-level metadata (called once at start) */
@@ -45,6 +53,21 @@ export class TraceRecorder {
   /** Set workspace ID for trace correlation */
   setWorkspaceId(id: string | null): void {
     this.workspaceId = id;
+  }
+
+  /** Set orchestrator correlation context when running as part of a run */
+  setCorrelationContext(context: {
+    runId?: string | null;
+    correlationId?: string | null;
+    parentRunId?: string | null;
+  }): void {
+    this.runId = context.runId ?? null;
+    this.parentRunId = context.parentRunId ?? null;
+    if (context.correlationId && context.correlationId.length > 0) {
+      this.correlationId = context.correlationId;
+    } else if (this.runId) {
+      this.correlationId = this.runId;
+    }
   }
 
   /** Begin recording a new turn */
@@ -129,8 +152,20 @@ export class TraceRecorder {
   }
 
   /** Record a notable event (escalation, hint, done_rejected, etc.) */
-  recordEvent(type: TraceEvent["type"], data: Record<string, unknown>): void {
-    this.turnEvents.push({ type, timestamp: Date.now(), data });
+  recordEvent<T extends keyof TraceEventPayloadByType>(
+    type: T,
+    data: TraceEventPayloadByType[T],
+  ): void;
+  recordEvent<T extends string>(
+    type: T extends keyof TraceEventPayloadByType ? never : T,
+    data: Record<string, unknown>,
+  ): void;
+  recordEvent(type: string, data: Record<string, unknown>): void {
+    this.turnEvents.push({
+      type,
+      timestamp: Date.now(),
+      data,
+    } as TraceEvent);
   }
 
   /** Record progress tracker state */
@@ -144,6 +179,13 @@ export class TraceRecorder {
     if (!this.currentTurn) return;
 
     const entry: TraceEntry = {
+      schemaVersion: TRACE_SCHEMA_VERSION,
+      traceKind: "agent.turn",
+      recordedAt: new Date().toISOString(),
+      producer: TRACE_PRODUCER,
+      ...(this.runId ? { runId: this.runId } : {}),
+      correlationId: this.correlationId,
+      ...(this.parentRunId ? { parentRunId: this.parentRunId } : {}),
       sessionId: this.currentTurn.sessionId!,
       turnNumber: this.currentTurn.turnNumber!,
       timestamp: this.currentTurn.timestamp!,
@@ -170,11 +212,26 @@ export class TraceRecorder {
     await this.flush("/traces", entry);
   }
 
+  /** Set difficulty assessment and resolved runtime limits for session trace */
+  setDifficultyInfo(info: {
+    difficulty: string;
+    resolvedLimits: Record<string, number>;
+    guardianOverrides: Record<string, number> | null;
+  }): void {
+    this.difficultyInfo = info;
+  }
+  private difficultyInfo: {
+    difficulty: string;
+    resolvedLimits: Record<string, number>;
+    guardianOverrides: Record<string, number> | null;
+  } | null = null;
+
   /** Finalize the session and flush session metadata */
   async finalize(
     outcome: TraceSession["outcome"],
     summary: string,
     turnCount: number,
+    failure: TraceFailureInfo | null,
     metrics: SessionMetrics | null,
   ): Promise<void> {
     // Flush any pending turn
@@ -183,16 +240,35 @@ export class TraceRecorder {
     }
 
     const session: TraceSession = {
+      schemaVersion: TRACE_SCHEMA_VERSION,
+      traceKind: "agent.session",
+      recordedAt: new Date().toISOString(),
+      producer: TRACE_PRODUCER,
+      ...(this.runId ? { runId: this.runId } : {}),
+      correlationId: this.correlationId,
+      ...(this.parentRunId ? { parentRunId: this.parentRunId } : {}),
       sessionId: this.sessionId,
       startTime: this.startTime,
       endTime: Date.now(),
       query: this.query,
       startUrl: this.startUrl,
       outcome,
+      failureCategory:
+        failure?.category ?? (outcome === "completed" ? "none" : "unknown"),
+      failureCode:
+        failure?.code ?? (outcome === "completed" ? "none" : "unknown_failure"),
+      ...(failure?.detail ? { failureDetail: failure.detail } : {}),
       turnCount,
       summary,
       metrics,
       workspaceId: this.workspaceId,
+      ...(this.difficultyInfo
+        ? {
+            difficultyAssessment: this.difficultyInfo.difficulty,
+            resolvedLimits: this.difficultyInfo.resolvedLimits,
+            guardianLimitOverrides: this.difficultyInfo.guardianOverrides,
+          }
+        : {}),
     };
 
     await this.flush("/traces/session", session);

@@ -201,6 +201,8 @@ export interface AgentResponseMessage extends BaseMessage {
     isStreaming: boolean;
     /** Tool calls that were executed during this turn */
     toolCalls: ToolCallSummary[];
+    /** Source citations collected during the session */
+    citations?: Citation[];
   };
 }
 
@@ -248,6 +250,8 @@ export interface StreamChunkMessage extends BaseMessage {
     delta: string;
     /** True when this is the final chunk */
     done: boolean;
+    /** Source citations collected during the session (only present on done=true) */
+    citations?: Citation[];
   };
 }
 
@@ -515,28 +519,7 @@ export interface TaskCompletionMessage extends BaseMessage {
     metrics?: SessionMetrics;
     /** Explicit termination reason for budget/guardrail stops */
     terminationReason?: string;
-    /** Normalized failure category for analytics */
-    failureCategory?: TraceFailureCategory;
-    /** Canonical normalized failure code */
-    failureCode?: TraceFailureCode;
-    /** Optional normalized failure detail */
-    failureDetail?: string;
-    /** Claim-to-evidence citations extracted from verifier evidence */
-    citations?: Citation[];
   };
-}
-
-/** A claim-to-evidence citation surfaced in completion reports */
-export interface Citation {
-  claim: string;
-  sourceType:
-    | "tool_output"
-    | "observation"
-    | "inference"
-    | "user_input"
-    | "memory";
-  sourceRef: string;
-  confidence: number;
 }
 
 /** Outcome of a single subtask within a completion report */
@@ -716,6 +699,18 @@ export interface ToolCallSummary {
   result: string;
   riskLevel: RiskLevel;
   durationMs: number;
+}
+
+/** A source citation representing a URL the agent visited or read during the session */
+export interface Citation {
+  /** Page URL */
+  url: string;
+  /** Page title (from DOM snapshot or tab title) */
+  title: string;
+  /** Which tool produced this citation (e.g. navigate, read_page, create_tab) */
+  tool: ToolName;
+  /** Turn number when this citation was captured */
+  turn: number;
 }
 
 /** A tool call that triggered a page navigation — saved for resumption */
@@ -1153,6 +1148,11 @@ export interface WaitForReactArgs {
   timeout?: number;
 }
 
+/** Maps tool names to their execution handlers */
+export type ToolRouter = {
+  [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
+};
+
 /** Maps each tool name to its argument type */
 export type ToolArgsMap = {
   [ToolName.CLICK_ELEMENT]: ClickElementArgs;
@@ -1392,6 +1392,8 @@ export interface ChatEntry {
   isHint?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
   completionData?: TaskCompletionMessage["payload"];
+  /** Source citations from URLs visited during the agent session */
+  citations?: Citation[];
 }
 
 /** Stuck detection state for the side panel */
@@ -1526,13 +1528,7 @@ export interface MemoryWorkerMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload:
     | { action: "init" }
-    | {
-        action: "add";
-        content: string;
-        category: string;
-        sourceUrl: string;
-        type?: MemoryType;
-      }
+    | { action: "add"; content: string; category: string; sourceUrl: string; type?: MemoryType }
     | {
         action: "batch_add";
         items: { content: string; category: string; sourceUrl: string }[];
@@ -1652,10 +1648,6 @@ export interface UserSettings {
   disableNavigation: boolean;
   /** Skip all user approval prompts (including high-risk tool approvals) */
   bypassApprovals: boolean;
-  /** Enable deterministic content moderation (regex/keyword) */
-  moderationEnabled?: boolean;
-  /** Moderation strictness level */
-  moderationStrictness?: "standard" | "strict";
   /** Speech-to-text provider for voice input */
   speechProvider: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
@@ -1891,6 +1883,14 @@ export interface TraceEntry {
     staleTurns: number;
     signal: string | null;
   };
+  /** Mid-session runtime limit reassessment (only on reassessment turns) */
+  limitReassessment?: {
+    trigger: "escalation" | "manual";
+    previousDifficulty: string;
+    newDifficulty: string;
+    changedLimits: Record<string, number>;
+    reason: string;
+  };
 }
 
 /** A single tool execution within a trace turn */
@@ -1963,36 +1963,6 @@ export interface TraceEventPayloadByType {
         tool: string;
         count: number;
       };
-  moderation_preflight: {
-    allowed: boolean;
-    category?: string;
-    severity?: string;
-    reason?: string;
-    querySnippet: string;
-  };
-  moderation_postflight: {
-    allowed: boolean;
-    category?: string;
-    severity?: string;
-    reason?: string;
-    summarySnippet: string;
-  };
-  multi_turn_pathology: {
-    pathology:
-      | "anchoring"
-      | "premature_generation"
-      | "verbosity"
-      | "middle_turn_loss"
-      | "compound_degradation";
-    trigger: string;
-    turn: number;
-    details?: string;
-  };
-  fresh_start_recovery: {
-    freshStartNumber: number;
-    totalTurnsSoFar: number;
-    escalationCycles: number;
-  };
 }
 
 type KnownTraceEvent = {
@@ -2010,41 +1980,6 @@ type GenericTraceEvent = {
 };
 
 export type TraceEvent = KnownTraceEvent | GenericTraceEvent;
-
-/** Normalized failure category for trace analytics and rollups. */
-export type TraceFailureCategory =
-  | "none"
-  | "user"
-  | "budget"
-  | "policy"
-  | "safety"
-  | "runtime"
-  | "quality"
-  | "unknown";
-
-/** Canonical failure code for session/run summaries. */
-export type TraceFailureCode =
-  | "none"
-  | "user_stopped"
-  | "stopped_by_operator"
-  | "turn_limit_reached"
-  | "content_policy_blocked"
-  | "budget_time_exceeded"
-  | "budget_tokens_exceeded"
-  | "budget_cost_exceeded"
-  | "lane_isolation"
-  | "executor_timeout"
-  | "verifier_rejected"
-  | "dependency_blocked"
-  | "runtime_error"
-  | "unknown_failure";
-
-/** Optional normalized failure payload attached to session/run summaries. */
-export interface TraceFailureInfo {
-  category: TraceFailureCategory;
-  code: TraceFailureCode;
-  detail?: string;
-}
 
 /** Session-level metadata written to traces/index.jsonl on session end */
 export interface TraceSession {
@@ -2068,15 +2003,15 @@ export interface TraceSession {
   query: string;
   startUrl: string;
   outcome: "completed" | "stopped" | "max_turns" | "error";
-  /** Normalized failure category for aggregations; "none" for successful sessions */
-  failureCategory?: TraceFailureCategory;
-  /** Canonical failure code for root-cause rollups; "none" for successful sessions */
-  failureCode?: TraceFailureCode;
-  /** Optional normalized failure detail */
-  failureDetail?: string;
   turnCount: number;
   summary: string;
   metrics: SessionMetrics | null;
   /** Workspace ID for session isolation correlation */
   workspaceId?: string | null;
+  /** Guardian's difficulty assessment for this session */
+  difficultyAssessment?: string;
+  /** Resolved runtime limits after merging defaults + profile + overrides */
+  resolvedLimits?: Record<string, number>;
+  /** Guardian's per-field limit overrides (null if none) */
+  guardianLimitOverrides?: Record<string, number> | null;
 }

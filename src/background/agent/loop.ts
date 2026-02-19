@@ -2,6 +2,7 @@ import {
   AgentStatus,
   AgentLoopState,
   AgentStep,
+  Citation,
   MessageSource,
   RuntimeMessage,
   RiskLevel,
@@ -38,30 +39,39 @@ import { DemoStore, formatDemoForContext } from "../demos/store";
 import {
   AGENT_LIMITS,
   BATCH_LIMITS,
-  TOOL_FAILURE_THRESHOLDS,
   BROADCAST_INTERVALS,
   LLM_CONFIG,
   STRING_LIMITS,
   ESCALATION_LIMITS,
   ORIENTATION,
   REDUNDANT_ACTION,
-  STEP_WATCHDOG,
-  STUCK_THRESHOLDS,
   FAILED_ACTION_MEMORY,
   DEAD_END_DETECTION,
   ROLLING_DISTILL,
   FRESH_START,
+  DEFAULT_RUNTIME_LIMITS,
+  resolveRuntimeLimits,
 } from "./constants";
+import type { Difficulty, RuntimeLimits } from "./constants";
+// reassessRuntimeLimits is available from "./constants" for mid-session S5 reassessment
 
 const APPROVAL_TIMEOUT_MS = 30000;
 const MAX_SESSION_MS = 20 * 60 * 1000;
 
 /** Tools that require a valid element `id` param — validated before dispatch. */
 const ELEMENT_ID_TOOLS = new Set<string>([
-  ToolName.CLICK_ELEMENT, ToolName.TYPE_TEXT, ToolName.HOVER_ELEMENT,
-  ToolName.SELECT_OPTION, ToolName.DRAW_STROKE, ToolName.HIDE_ELEMENT,
-  ToolName.READ_ELEMENT, ToolName.UPLOAD_FILE, ToolName.RIGHT_CLICK,
-  ToolName.SET_CHECKBOX, ToolName.INSPECT_REACT, ToolName.REACT_SET_INPUT,
+  ToolName.CLICK_ELEMENT,
+  ToolName.TYPE_TEXT,
+  ToolName.HOVER_ELEMENT,
+  ToolName.SELECT_OPTION,
+  ToolName.DRAW_STROKE,
+  ToolName.HIDE_ELEMENT,
+  ToolName.READ_ELEMENT,
+  ToolName.UPLOAD_FILE,
+  ToolName.RIGHT_CLICK,
+  ToolName.SET_CHECKBOX,
+  ToolName.INSPECT_REACT,
+  ToolName.REACT_SET_INPUT,
 ]);
 /** Tools with dual element ID params (sourceId + targetId). */
 const ELEMENT_DUAL_ID_TOOLS = new Set<string>([ToolName.DRAG_AND_DROP]);
@@ -77,7 +87,7 @@ function validateElementIds(
 ): string | null {
   if (!snapshot || snapshot.elements.length === 0) return null;
 
-  const validIds = new Set(snapshot.elements.map(e => e.tag));
+  const validIds = new Set(snapshot.elements.map((e) => e.tag));
 
   const checkId = (id: unknown, paramName: string): string | null => {
     if (id == null) return null; // param not present — let executor handle
@@ -85,9 +95,9 @@ function validateElementIds(
     if (isNaN(numId)) return null; // non-numeric — let executor handle
     if (validIds.has(numId)) return null;
 
-    const sampleElements = snapshot.elements.slice(0, 15).map(
-      e => `[${e.tag}] ${e.tagName} "${e.text.slice(0, 30)}"`,
-    );
+    const sampleElements = snapshot.elements
+      .slice(0, 15)
+      .map((e) => `[${e.tag}] ${e.tagName} "${e.text.slice(0, 30)}"`);
     return (
       `Error: Element ${paramName}=${numId} does not exist on the current page. ` +
       `Valid element IDs: ${[...validIds].slice(0, 20).join(", ")}. ` +
@@ -100,18 +110,25 @@ function validateElementIds(
     return checkId(args.id, "id");
   }
   if (ELEMENT_DUAL_ID_TOOLS.has(toolName)) {
-    return checkId(args.sourceId, "sourceId") ?? checkId(args.targetId, "targetId");
+    return (
+      checkId(args.sourceId, "sourceId") ?? checkId(args.targetId, "targetId")
+    );
   }
   return null;
 }
 
 /** Tools that cannot appear inside a batch_execute step. */
 const BATCH_BLOCKED_TOOLS = new Set<string>([
-  ToolName.NAVIGATE, ToolName.DONE, ToolName.ESCALATE,
+  ToolName.NAVIGATE,
+  ToolName.DONE,
+  ToolName.ESCALATE,
   ToolName.BATCH_EXECUTE,
-  ToolName.TAKE_SCREENSHOT, ToolName.CREATE_TAB,
-  ToolName.CLOSE_TAB, ToolName.SWITCH_TAB,
-  ToolName.CREATE_WINDOW, ToolName.EXECUTE_JS,
+  ToolName.TAKE_SCREENSHOT,
+  ToolName.CREATE_TAB,
+  ToolName.CLOSE_TAB,
+  ToolName.SWITCH_TAB,
+  ToolName.CREATE_WINDOW,
+  ToolName.EXECUTE_JS,
 ]);
 
 /** Format correction when LLM emits text instead of tool calls. */
@@ -166,7 +183,7 @@ interface RecentAction {
 interface FailedAction {
   tool: string;
   argsKey: string; // First 100 chars of JSON args for matching
-  error: string;   // First 80 chars of error
+  error: string; // First 80 chars of error
   turn: number;
 }
 
@@ -176,7 +193,9 @@ function findPriorFailure(
   tool: string,
   argsKey: string,
 ): FailedAction | null {
-  return failedActions.find(f => f.tool === tool && f.argsKey === argsKey) ?? null;
+  return (
+    failedActions.find((f) => f.tool === tool && f.argsKey === argsKey) ?? null
+  );
 }
 
 /**
@@ -185,9 +204,9 @@ function findPriorFailure(
  */
 function normalizeOutcome(result: string): string {
   return result
-    .replace(/\[(\d+)\]/g, "«$1»")   // protect [N] element refs
-    .replace(/\b\d+\b/g, "N")        // normalize other numbers
-    .replace(/«(\d+)»/g, "[$1]")     // restore element refs
+    .replace(/\[(\d+)\]/g, "«$1»") // protect [N] element refs
+    .replace(/\b\d+\b/g, "N") // normalize other numbers
+    .replace(/«(\d+)»/g, "[$1]") // restore element refs
     .slice(0, 120)
     .trim();
 }
@@ -206,7 +225,13 @@ function djb2(str: string): number {
  * Includes a text hash so that text-only changes (e.g. counter "3 more" → "2 more")
  * register as a different page state even when URL and element count stay the same.
  */
-function getSnapshotFingerprint(snapshot: { url: string; elements: { length: number }; viewportText?: string } | null): string {
+function getSnapshotFingerprint(
+  snapshot: {
+    url: string;
+    elements: { length: number };
+    viewportText?: string;
+  } | null,
+): string {
   if (!snapshot) return "none|0|0";
   const textSample = (snapshot.viewportText ?? "").slice(0, 300);
   return `${snapshot.url}|${snapshot.elements.length}|${djb2(textSample)}`;
@@ -227,7 +252,11 @@ function buildHandoffBriefing(
   let reasoning = "";
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i];
-    if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.trim()) {
+    if (
+      msg.role === "assistant" &&
+      typeof msg.content === "string" &&
+      msg.content.trim()
+    ) {
       reasoning = stripThinkTags(msg.content).trim().slice(0, 500);
       break;
     }
@@ -238,12 +267,15 @@ function buildHandoffBriefing(
 
   // 2. Extract all element IDs referenced in the last few assistant tool calls
   if (snapshot && snapshot.elements.length > 0) {
-    const elementMap = new Map(snapshot.elements.map(el => [el.tag, el]));
+    const elementMap = new Map(snapshot.elements.map((el) => [el.tag, el]));
     const referencedIds = new Map<number, string>(); // id → action taken
 
     // Walk the last several messages to find tool calls from the smart model
     const recentAssistants = history
-      .filter(m => m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0)
+      .filter(
+        (m) =>
+          m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0,
+      )
       .slice(-4); // last 4 assistant turns with tool calls
 
     for (const msg of recentAssistants) {
@@ -260,7 +292,9 @@ function buildHandoffBriefing(
               referencedIds.set(id, tc.function.name);
             }
           }
-        } catch { /* skip unparseable args */ }
+        } catch {
+          /* skip unparseable args */
+        }
       }
     }
 
@@ -276,7 +310,9 @@ function buildHandoffBriefing(
           ? "." + el.attributes.class.split(/\s+/).slice(0, 3).join(".")
           : "";
         const text = el.text.slice(0, 50);
-        lines.push(`- [${id}] ${el.tagName}${idAttr}${classes} "${text}" — ${action}`);
+        lines.push(
+          `- [${id}] ${el.tagName}${idAttr}${classes} "${text}" — ${action}`,
+        );
       }
       if (lines.length > 0) {
         parts.push(`Elements identified:\n${lines.join("\n")}`);
@@ -376,8 +412,7 @@ function extractAttemptSummary(messages: LLMMessage[]): string {
       if (!existing) failures.push(`- ${key} — ${errorSnippet}`);
     } else {
       // Skip internal/noise tools for success tracking
-      if (["read_page", "wait", "escalate"].includes(toolName))
-        continue;
+      if (["read_page", "wait", "escalate"].includes(toolName)) continue;
       const resultSnippet = content.split("\n")[0].slice(0, 60);
       successes.push(`- ${key} → ${resultSnippet}`);
     }
@@ -439,9 +474,15 @@ export interface LoopResult {
  * - Model escalation on stuck
  */
 export class AgentLoop {
-  private static approvalWaiters = new Map<string, (approved: boolean) => void>();
+  private static approvalWaiters = new Map<
+    string,
+    (approved: boolean) => void
+  >();
 
-  public static resolveApproval(approvalId: string, approved: boolean): boolean {
+  public static resolveApproval(
+    approvalId: string,
+    approved: boolean,
+  ): boolean {
     const waiter = AgentLoop.approvalWaiters.get(approvalId);
     if (!waiter) return false;
     AgentLoop.approvalWaiters.delete(approvalId);
@@ -458,16 +499,18 @@ export class AgentLoop {
   private messageHandler: (text: string, toolCalls: ToolCall[]) => void;
   private stepHandler: (step: AgentStep, update: boolean) => void;
   private maxTurns: number;
+  /** Active runtime limits (resolved from difficulty + guardian overrides) */
+  private limits: RuntimeLimits = { ...DEFAULT_RUNTIME_LIMITS };
+  /** Guardian-assessed task difficulty */
+  private difficulty: Difficulty = "moderate";
   private showElementTags: boolean;
   private showSessionMetrics: boolean;
   private preferredModelTier: "fast" | "smart" | "default";
-  private executionContract:
-    | {
-        role: string;
-        modelTier: "fast" | "smart";
-        allowedTools: ToolName[];
-      }
-    | null;
+  private executionContract: {
+    role: string;
+    modelTier: "fast" | "smart";
+    allowedTools: ToolName[];
+  } | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
   private disableInternalPlanning: boolean;
@@ -530,6 +573,10 @@ export class AgentLoop {
   private startingOrigin: string | null = null;
   private offDomainWarned = false;
 
+  /** Collected source citations (deduplicated by URL) */
+  private citations: Citation[] = [];
+  private citationUrls = new Set<string>();
+
   /** Accumulated session metrics */
   private metrics: SessionMetrics = AgentLoop.emptyMetrics();
   private sessionStartTime = 0;
@@ -577,11 +624,13 @@ export class AgentLoop {
       this.metrics.totalPromptTokens += response.usage.prompt_tokens;
       this.metrics.totalCompletionTokens += response.usage.completion_tokens;
       this.metrics.totalTokens += response.usage.total_tokens;
-      const providerId = response.actualProviderId ?? this.llm.getCurrentProvider();
+      const providerId =
+        response.actualProviderId ?? this.llm.getCurrentProvider();
       const model = response.actualModel ?? this.llm.getCurrentModel();
       const cost = this.resolveCost(response.usage, providerId, model);
       this.metrics.totalCost += cost.total;
-      this.metrics.totalCostActual = (this.metrics.totalCostActual ?? 0) + cost.actual;
+      this.metrics.totalCostActual =
+        (this.metrics.totalCostActual ?? 0) + cost.actual;
       this.metrics.totalCostEstimated =
         (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
       this.metrics.costMode = AgentLoop.deriveCostMode(
@@ -619,7 +668,8 @@ export class AgentLoop {
     if (response.usage) {
       entry.promptTokens += response.usage.prompt_tokens;
       entry.completionTokens += response.usage.completion_tokens;
-      const providerId = response.actualProviderId ?? this.llm.getCurrentProvider();
+      const providerId =
+        response.actualProviderId ?? this.llm.getCurrentProvider();
       const cost = this.resolveCost(response.usage, providerId, model);
       entry.cost += cost.total;
       entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
@@ -642,7 +692,8 @@ export class AgentLoop {
     this.metrics.totalTokens += usage.total_tokens;
     const cost = this.resolveCost(usage, "openrouter", model);
     this.metrics.totalCost += cost.total;
-    this.metrics.totalCostActual = (this.metrics.totalCostActual ?? 0) + cost.actual;
+    this.metrics.totalCostActual =
+      (this.metrics.totalCostActual ?? 0) + cost.actual;
     this.metrics.totalCostEstimated =
       (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
     this.metrics.costMode = AgentLoop.deriveCostMode(
@@ -682,6 +733,23 @@ export class AgentLoop {
       ...this.metrics,
       totalSessionTimeMs: Date.now() - this.sessionStartTime,
     };
+  }
+
+  /** Record a citation for a URL the agent visited or read */
+  private recordCitation(url: string, title: string, tool: ToolName): void {
+    try {
+      const normalized = new URL(url).origin + new URL(url).pathname;
+      if (this.citationUrls.has(normalized)) return;
+      this.citationUrls.add(normalized);
+      this.citations.push({ url, title: title || url, tool, turn: this.turnCount });
+    } catch {
+      // Ignore malformed URLs
+    }
+  }
+
+  /** Get collected citations */
+  public getCitations(): Citation[] {
+    return this.citations;
   }
 
   /** Broadcast metrics to side panel (throttled) */
@@ -815,19 +883,31 @@ export class AgentLoop {
   /**
    * Send a message to the side panel, automatically injecting workspaceId,
    * requestId, and source. Fire-and-forget (errors are silenced).
+   * Automatically attaches collected citations to STREAM_CHUNK done=true messages.
    */
   private broadcast(
     msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">,
   ): void {
     if (this.suppressUiBroadcast) return;
+    // Attach citations to the final stream chunk
+    if (
+      msg.type === "STREAM_CHUNK" &&
+      msg.payload.done &&
+      this.citations.length > 0
+    ) {
+      msg = {
+        ...msg,
+        payload: { ...msg.payload, citations: [...this.citations] },
+      };
+    }
     chrome.runtime
       .sendMessage({
         ...msg,
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
         workspaceId: this.workspaceId,
-        } as RuntimeMessage)
-        .catch(() => {});
+      } as RuntimeMessage)
+      .catch(() => {});
   }
 
   private async requestApproval(
@@ -867,7 +947,10 @@ export class AgentLoop {
 
     const approvalPromise = new Promise<boolean>((resolve) => {
       let settled = false;
-      const settle = (approved: boolean, outcome: "approved" | "rejected" | "timeout" | "dispatch_failed") => {
+      const settle = (
+        approved: boolean,
+        outcome: "approved" | "rejected" | "timeout" | "dispatch_failed",
+      ) => {
         if (settled) return;
         settled = true;
         AgentLoop.approvalWaiters.delete(approvalId);
@@ -1051,7 +1134,9 @@ export class AgentLoop {
       ? [...this.executionContract.allowedTools]
       : Object.values(ToolName).filter((tool) => !this.disabledTools.has(tool));
     this.traceRecorder.recordEvent("execution_contract", {
-      role: this.executionContract?.role || (this.workerId ? "executor" : "single_agent"),
+      role:
+        this.executionContract?.role ||
+        (this.workerId ? "executor" : "single_agent"),
       modelTier:
         this.executionContract?.modelTier ||
         (this.preferredModelTier === "default"
@@ -1085,6 +1170,8 @@ export class AgentLoop {
         } catch {
           /* */
         }
+        // Record initial page as citation
+        this.recordCitation(initialSnapshot.url, initialSnapshot.title || "", ToolName.READ_PAGE);
       }
     }
 
@@ -1099,7 +1186,10 @@ export class AgentLoop {
     try {
       const demoStore = new DemoStore();
       const currentUrl = this.context.getSnapshot()?.url || "";
-      const matchedDemo = await demoStore.matchDemo(initialUserText, currentUrl);
+      const matchedDemo = await demoStore.matchDemo(
+        initialUserText,
+        currentUrl,
+      );
       if (matchedDemo) {
         await demoStore.recordDemoUsage(matchedDemo.demo.id);
         const demoText = formatDemoForContext(matchedDemo.demo);
@@ -1145,56 +1235,77 @@ export class AgentLoop {
         );
 
         if (decomposition) {
-          this.taskId = crypto.randomUUID();
-          this.taskStartTime = Date.now();
-          this.planSubtasks = decomposition.subtasks.map((desc, i) => ({
-            description: desc,
-            status: i === 0 ? ("running" as const) : ("pending" as const),
-            turnsUsed: 0,
-            turnBudget: 0,
-          }));
+          // Apply difficulty-adaptive runtime limits
+          this.difficulty = decomposition.difficulty;
+          this.limits = resolveRuntimeLimits(
+            decomposition.difficulty,
+            decomposition.limitOverrides,
+          );
+          logger.info("agent", "Difficulty assessment applied", {
+            difficulty: this.difficulty,
+            limits: this.limits,
+            overrides: decomposition.limitOverrides ?? null,
+          });
+          this.traceRecorder?.setDifficultyInfo({
+            difficulty: this.difficulty,
+            resolvedLimits: { ...this.limits },
+            guardianOverrides: decomposition.limitOverrides
+              ? { ...(decomposition.limitOverrides as Record<string, number>) }
+              : null,
+          });
 
-          // Inject plan status into system prompt (visible every turn)
-          this.context.setPlanStatus(
-            decomposition.subtasks.map((desc, i) => ({
+          if (decomposition.subtasks.length >= 2) {
+            this.taskId = crypto.randomUUID();
+            this.taskStartTime = Date.now();
+            this.planSubtasks = decomposition.subtasks.map((desc, i) => ({
               description: desc,
-              status: i === 0 ? "running" : "pending",
-            })),
-            0,
-          );
+              status: i === 0 ? ("running" as const) : ("pending" as const),
+              turnsUsed: 0,
+              turnBudget: 0,
+            }));
 
-          this.context.addMessage({
-            role: "user",
-            content:
-              `[Plan Guardian]: This is a multi-step task (${decomposition.subtasks.length} steps). Your plan:\n` +
-              decomposition.subtasks
-                .map((s, i) => `${i + 1}. ${s}`)
-                .join("\n") +
-              `\n\nExecute step 1 now. Complete each step in order and verify progress before continuing. ` +
-              `If the plan fails, revise your approach and continue from the best next step. ` +
-              `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
-          });
+            // Inject plan status into system prompt (visible every turn)
+            this.context.setPlanStatus(
+              decomposition.subtasks.map((desc, i) => ({
+                description: desc,
+                status: i === 0 ? "running" : "pending",
+              })),
+              0,
+            );
 
-          this.broadcast({
-            type: "TASK_PROGRESS",
-            payload: {
-              taskId: this.taskId,
-              subtasks: this.planSubtasks,
-              currentIndex: 0,
-              totalTurnsUsed: 0,
-            },
-          });
+            this.context.addMessage({
+              role: "user",
+              content:
+                `[Plan Guardian]: This is a multi-step task (${decomposition.subtasks.length} steps). Your plan:\n` +
+                decomposition.subtasks
+                  .map((s, i) => `${i + 1}. ${s}`)
+                  .join("\n") +
+                `\n\nExecute step 1 now. Complete each step in order and verify progress before continuing. ` +
+                `If the plan fails, revise your approach and continue from the best next step. ` +
+                `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
+            });
 
-          this.stepHandler(
-            {
-              id: crypto.randomUUID(),
-              type: "info",
-              label: `Plan: ${decomposition.subtasks.length} steps`,
-              status: "done",
-              timestamp: Date.now(),
-            },
-            false,
-          );
+            this.broadcast({
+              type: "TASK_PROGRESS",
+              payload: {
+                taskId: this.taskId,
+                subtasks: this.planSubtasks,
+                currentIndex: 0,
+                totalTurnsUsed: 0,
+              },
+            });
+
+            this.stepHandler(
+              {
+                id: crypto.randomUUID(),
+                type: "info",
+                label: `Plan: ${decomposition.subtasks.length} steps (${this.difficulty})`,
+                status: "done",
+                timestamp: Date.now(),
+              },
+              false,
+            );
+          }
         }
       } catch (err: any) {
         logger.warn("agent", "Guardian decompose error (non-fatal)", {
@@ -1384,13 +1495,19 @@ export class AgentLoop {
   }
 
   /** De-escalate back to fast model when progress resumes after automatic escalation. */
-  private async deescalateModel(tabId?: number, prevElementCount?: number): Promise<number> {
+  private async deescalateModel(
+    tabId?: number,
+    prevElementCount?: number,
+  ): Promise<number> {
     this.llm.switchToFast();
     this.context.setModelTier("fast");
     let newCount = prevElementCount ?? -1;
     // Refresh snapshot so fast model gets fresh element IDs
     if (tabId != null) {
-      newCount = await this.refreshSnapshotWithRetry(tabId, prevElementCount ?? -1);
+      newCount = await this.refreshSnapshotWithRetry(
+        tabId,
+        prevElementCount ?? -1,
+      );
     }
     logger.info("agent", "De-escalating to fast model", {
       model: this.llm.getCurrentModel(),
@@ -1513,7 +1630,11 @@ export class AgentLoop {
       return `Buffered memory entry in category "${category}".`;
     }
 
-    return await toolRegistry.execute(toolCall, tabId, this.abortController!.signal);
+    return await toolRegistry.execute(
+      toolCall,
+      tabId,
+      this.abortController!.signal,
+    );
   }
 
   /** Stream a message to side panel and break the loop (for circuit breaker exits) */
@@ -1571,7 +1692,11 @@ export class AgentLoop {
     const history = this.context.getMessages();
     for (let i = history.length - 1; i >= 0; i--) {
       const msg = history[i];
-      if (msg.role === "tool" && typeof msg.content === "string" && msg.content.length > 0) {
+      if (
+        msg.role === "tool" &&
+        typeof msg.content === "string" &&
+        msg.content.length > 0
+      ) {
         return msg.content.slice(0, 200);
       }
     }
@@ -1704,7 +1829,7 @@ export class AgentLoop {
         orientationPhase = false;
         prevElementCount = await this.deescalateModel(tabId, prevElementCount);
         escalationTier = 0;
-        cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
+        cooldownRemaining = this.limits.escalationCooldown;
         this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
         const briefing = buildHandoffBriefing(
           this.context.getMessages(),
@@ -2022,11 +2147,15 @@ export class AgentLoop {
               RiskLevel.HIGH
             );
           } catch {
-            return classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH;
+            return (
+              classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH
+            );
           }
         });
         const canParallelize =
-          !hasSequentialTool && !hasHighRiskTool && response.tool_calls.length > 1;
+          !hasSequentialTool &&
+          !hasHighRiskTool &&
+          response.tool_calls.length > 1;
 
         if (canParallelize) {
           // PARALLEL EXECUTION
@@ -2042,7 +2171,11 @@ export class AgentLoop {
               }
 
               // Failed-action memory: block exact repeat of a previously failed tool call
-              const priorFail = findPriorFailure(failedActions, toolName, argsKey);
+              const priorFail = findPriorFailure(
+                failedActions,
+                toolName,
+                argsKey,
+              );
               if (priorFail) {
                 const failMsg =
                   `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
@@ -2057,7 +2190,11 @@ export class AgentLoop {
               }
 
               // Pre-dispatch element ID validation
-              const idError = validateElementIds(toolName, args, this.context.getSnapshot());
+              const idError = validateElementIds(
+                toolName,
+                args,
+                this.context.getSnapshot(),
+              );
               if (idError) {
                 logger.warn("agent", "Invalid element ID pre-dispatch", {
                   turn: this.turnCount,
@@ -2087,7 +2224,8 @@ export class AgentLoop {
 
               if (!preDecision.allowed) {
                 const deniedReason =
-                  preDecision.denyReason || `Tool ${toolName} denied by middleware`;
+                  preDecision.denyReason ||
+                  `Tool ${toolName} denied by middleware`;
                 const toolMs = Date.now() - toolStep.timestamp;
                 this.stepHandler(
                   {
@@ -2220,7 +2358,11 @@ export class AgentLoop {
             }
 
             // Failed-action memory: block exact repeat of a previously failed tool call
-            const priorFail = findPriorFailure(failedActions, toolName, argsKey);
+            const priorFail = findPriorFailure(
+              failedActions,
+              toolName,
+              argsKey,
+            );
             if (priorFail) {
               const failMsg =
                 `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
@@ -2240,7 +2382,11 @@ export class AgentLoop {
             }
 
             // Pre-dispatch element ID validation
-            const idError = validateElementIds(toolName, args, this.context.getSnapshot());
+            const idError = validateElementIds(
+              toolName,
+              args,
+              this.context.getSnapshot(),
+            );
             if (idError) {
               this.context.addMessage({
                 role: "tool",
@@ -2387,7 +2533,7 @@ export class AgentLoop {
                     advancedTo: newIdx,
                   });
 
-                  if (this.doneRejections >= AGENT_LIMITS.MAX_DONE_REJECTIONS) {
+                  if (this.doneRejections >= this.limits.maxDoneRejections) {
                     logger.warn("agent", "DONE forced after max rejections", {
                       turn: this.turnCount,
                       rejections: this.doneRejections,
@@ -2403,7 +2549,7 @@ export class AgentLoop {
                       {
                         id: crypto.randomUUID(),
                         type: "info",
-                        label: `Not done yet (${this.doneRejections}/${AGENT_LIMITS.MAX_DONE_REJECTIONS})`,
+                        label: `Not done yet (${this.doneRejections}/${this.limits.maxDoneRejections})`,
                         status: "done",
                         timestamp: Date.now(),
                       },
@@ -2547,25 +2693,39 @@ export class AgentLoop {
 
             // BATCH_EXECUTE tool — execute pre-planned tool sequence without LLM roundtrips
             if (toolName === ToolName.BATCH_EXECUTE) {
-              const rawSteps = (args.steps as Array<{ tool: string; args: Record<string, unknown>; expect?: string }>) || [];
+              const rawSteps =
+                (args.steps as Array<{
+                  tool: string;
+                  args: Record<string, unknown>;
+                  expect?: string;
+                }>) || [];
               const verify = (args.verify as string) || "";
-              const maxSteps = Math.min(rawSteps.length, BATCH_LIMITS.MAX_STEPS);
+              const maxSteps = Math.min(
+                rawSteps.length,
+                BATCH_LIMITS.MAX_STEPS,
+              );
               const completedResults: string[] = [];
               let bailReason = "";
 
-              this.stepHandler({
-                id: crypto.randomUUID(),
-                type: "tool",
-                label: `Batch: ${maxSteps} steps`,
-                toolName: ToolName.BATCH_EXECUTE,
-                status: "running",
-                timestamp: Date.now(),
-              }, false);
+              this.stepHandler(
+                {
+                  id: crypto.randomUUID(),
+                  type: "tool",
+                  label: `Batch: ${maxSteps} steps`,
+                  toolName: ToolName.BATCH_EXECUTE,
+                  status: "running",
+                  timestamp: Date.now(),
+                },
+                false,
+              );
 
               const batchStartTime = Date.now();
 
               for (let i = 0; i < maxSteps; i++) {
-                if (!this.isRunning) { bailReason = "Agent stopped"; break; }
+                if (!this.isRunning) {
+                  bailReason = "Agent stopped";
+                  break;
+                }
                 const step = rawSteps[i];
 
                 // Validate tool name
@@ -2586,7 +2746,10 @@ export class AgentLoop {
                 const syntheticToolCall: ToolCall = {
                   id: `batch_${toolCall.id}_${i}`,
                   type: "function",
-                  function: { name: step.tool as ToolName, arguments: JSON.stringify(step.args) },
+                  function: {
+                    name: step.tool as ToolName,
+                    arguments: JSON.stringify(step.args),
+                  },
                 };
 
                 let result: string;
@@ -2605,7 +2768,10 @@ export class AgentLoop {
                 }
 
                 // Check expect condition
-                if (step.expect && !result.toLowerCase().includes(step.expect.toLowerCase())) {
+                if (
+                  step.expect &&
+                  !result.toLowerCase().includes(step.expect.toLowerCase())
+                ) {
                   bailReason = `Step ${i} ("${step.tool}"): expected "${step.expect}" not found in result`;
                   break;
                 }
@@ -2629,17 +2795,20 @@ export class AgentLoop {
               const batchDurationMs = Date.now() - batchStartTime;
 
               // Update step
-              this.stepHandler({
-                id: crypto.randomUUID(),
-                type: "tool",
-                label: bailReason
-                  ? `Batch: ${completedResults.length}/${maxSteps} (bailed)`
-                  : `Batch: ${maxSteps} steps OK`,
-                toolName: ToolName.BATCH_EXECUTE,
-                status: bailReason ? "error" : "done",
-                timestamp: Date.now(),
-                durationMs: batchDurationMs,
-              }, true);
+              this.stepHandler(
+                {
+                  id: crypto.randomUUID(),
+                  type: "tool",
+                  label: bailReason
+                    ? `Batch: ${completedResults.length}/${maxSteps} (bailed)`
+                    : `Batch: ${maxSteps} steps OK`,
+                  toolName: ToolName.BATCH_EXECUTE,
+                  status: bailReason ? "error" : "done",
+                  timestamp: Date.now(),
+                  durationMs: batchDurationMs,
+                },
+                true,
+              );
 
               // Log + trace
               logger.info("tools", "batch_execute", {
@@ -2651,8 +2820,12 @@ export class AgentLoop {
                 durationMs: batchDurationMs,
               });
               this.traceRecorder?.recordToolExecution(
-                toolCall.id, ToolName.BATCH_EXECUTE, args,
-                batchResult, !bailReason, batchDurationMs,
+                toolCall.id,
+                ToolName.BATCH_EXECUTE,
+                args,
+                batchResult,
+                !bailReason,
+                batchDurationMs,
                 classifyRisk(ToolName.BATCH_EXECUTE, args),
               );
 
@@ -2828,14 +3001,22 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: blockedMessage,
                 });
-                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
-                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                for (const tabTool of [
+                  ToolName.CREATE_TAB,
+                  ToolName.SWITCH_TAB,
+                  ToolName.CLOSE_TAB,
+                  ToolName.CREATE_WINDOW,
+                ]) {
                   this.disabledTools.add(tabTool);
                 }
-                logger.warn("agent", "switch_tab blocked - not explicitly requested, tab tools disabled", {
-                  turn: this.turnCount,
-                  originalQuery: this.originalQuery,
-                });
+                logger.warn(
+                  "agent",
+                  "switch_tab blocked - not explicitly requested, tab tools disabled",
+                  {
+                    turn: this.turnCount,
+                    originalQuery: this.originalQuery,
+                  },
+                );
                 continue;
               }
 
@@ -2906,14 +3087,22 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: blockedMessage,
                 });
-                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
-                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                for (const tabTool of [
+                  ToolName.CREATE_TAB,
+                  ToolName.SWITCH_TAB,
+                  ToolName.CLOSE_TAB,
+                  ToolName.CREATE_WINDOW,
+                ]) {
                   this.disabledTools.add(tabTool);
                 }
-                logger.warn("agent", "close_tab blocked - not explicitly requested, tab tools disabled", {
-                  turn: this.turnCount,
-                  originalQuery: this.originalQuery,
-                });
+                logger.warn(
+                  "agent",
+                  "close_tab blocked - not explicitly requested, tab tools disabled",
+                  {
+                    turn: this.turnCount,
+                    originalQuery: this.originalQuery,
+                  },
+                );
                 continue;
               }
 
@@ -2975,14 +3164,22 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: blockedMessage,
                 });
-                for (const tabTool of [ToolName.CREATE_TAB, ToolName.SWITCH_TAB,
-                                        ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW]) {
+                for (const tabTool of [
+                  ToolName.CREATE_TAB,
+                  ToolName.SWITCH_TAB,
+                  ToolName.CLOSE_TAB,
+                  ToolName.CREATE_WINDOW,
+                ]) {
                   this.disabledTools.add(tabTool);
                 }
-                logger.warn("agent", "create_tab blocked - not explicitly requested, tab tools disabled", {
-                  turn: this.turnCount,
-                  originalQuery: this.originalQuery,
-                });
+                logger.warn(
+                  "agent",
+                  "create_tab blocked - not explicitly requested, tab tools disabled",
+                  {
+                    turn: this.turnCount,
+                    originalQuery: this.originalQuery,
+                  },
+                );
                 continue;
               }
 
@@ -3193,7 +3390,7 @@ export class AgentLoop {
           }
 
           if (
-            consecutiveAllFailTurns >= AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL
+            consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail
           ) {
             logger.warn(
               "agent",
@@ -3251,7 +3448,7 @@ export class AgentLoop {
               const count = (toolFailCounts.get(failKey) || 0) + 1;
               toolFailCounts.set(failKey, count);
 
-              if (count >= TOOL_FAILURE_THRESHOLDS.EXIT) {
+              if (count >= this.limits.toolFailureExit) {
                 logger.warn(
                   "agent",
                   "Circuit breaker: same-tool repeat failure",
@@ -3277,7 +3474,7 @@ export class AgentLoop {
                 };
               }
 
-              if (count === TOOL_FAILURE_THRESHOLDS.WARN) {
+              if (count === this.limits.toolFailureWarn) {
                 logger.warn(
                   "agent",
                   "Circuit breaker warning: tool repeating failures",
@@ -3318,7 +3515,9 @@ export class AgentLoop {
 
             if (isSuccess) {
               // Push to ring buffer (capped at WINDOW size)
-              const actionFingerprint = getSnapshotFingerprint(this.context.getSnapshot());
+              const actionFingerprint = getSnapshotFingerprint(
+                this.context.getSnapshot(),
+              );
               recentSuccesses.push({
                 tool: toolName,
                 args: argsKey,
@@ -3331,7 +3530,10 @@ export class AgentLoop {
 
               // Count repetitions of this tool+args WITH same page state in the window
               const sameStateCount = recentSuccesses.filter(
-                (entry) => entry.tool === toolName && entry.args === argsKey && entry.snapshotFingerprint === actionFingerprint,
+                (entry) =>
+                  entry.tool === toolName &&
+                  entry.args === argsKey &&
+                  entry.snapshotFingerprint === actionFingerprint,
               ).length;
               // Also count total calls to this tool+args regardless of page state
               const totalRepeatCount = recentSuccesses.filter(
@@ -3368,7 +3570,9 @@ export class AgentLoop {
                 const toolNameCount = recentSuccesses.filter(
                   (entry) => entry.tool === toolName,
                 ).length;
-                if (toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD) {
+                if (
+                  toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD
+                ) {
                   logger.info("agent", "Tool-name pattern noted", {
                     turn: this.turnCount,
                     tool: toolName,
@@ -3390,31 +3594,50 @@ export class AgentLoop {
 
           // D2. Outcome-based dead-end detection: fingerprint tool results and detect patterns
           {
-            const currentSnapshotFp = getSnapshotFingerprint(this.context.getSnapshot());
+            const currentSnapshotFp = getSnapshotFingerprint(
+              this.context.getSnapshot(),
+            );
             for (const toolCall of response.tool_calls!) {
               const toolResult = recentMessages.find(
                 (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
               );
               const resultContent =
-                typeof toolResult?.content === "string" ? toolResult.content : "";
+                typeof toolResult?.content === "string"
+                  ? toolResult.content
+                  : "";
               if (resultContent) {
                 const fingerprint = normalizeOutcome(resultContent);
-                recentOutcomes.push({ fingerprint, snapshotFp: currentSnapshotFp });
-                if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW) recentOutcomes.shift();
+                recentOutcomes.push({
+                  fingerprint,
+                  snapshotFp: currentSnapshotFp,
+                });
+                if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW)
+                  recentOutcomes.shift();
               }
             }
           }
           // Check for dead-end pattern (all recent outcomes identical AND same page state)
           {
-            const lastN = recentOutcomes.slice(-DEAD_END_DETECTION.PIVOT_THRESHOLD);
-            const allSame = lastN.length >= DEAD_END_DETECTION.NUDGE_THRESHOLD &&
-              lastN.every(o => o.fingerprint === lastN[0].fingerprint && o.snapshotFp === lastN[0].snapshotFp);
-            if (allSame && lastN.length >= DEAD_END_DETECTION.PIVOT_THRESHOLD) {
-              logger.warn("agent", "Dead-end detected: forcing strategy pivot", {
-                turn: this.turnCount,
-                pattern: lastN[0].fingerprint.slice(0, 80),
-                count: lastN.length,
-              });
+            const lastN = recentOutcomes.slice(
+              -this.limits.deadEndPivot,
+            );
+            const allSame =
+              lastN.length >= this.limits.deadEndNudge &&
+              lastN.every(
+                (o) =>
+                  o.fingerprint === lastN[0].fingerprint &&
+                  o.snapshotFp === lastN[0].snapshotFp,
+              );
+            if (allSame && lastN.length >= this.limits.deadEndPivot) {
+              logger.warn(
+                "agent",
+                "Dead-end detected: forcing strategy pivot",
+                {
+                  turn: this.turnCount,
+                  pattern: lastN[0].fingerprint.slice(0, 80),
+                  count: lastN.length,
+                },
+              );
               this.traceRecorder?.recordEvent("dead_end_pivot", {
                 pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
@@ -3454,7 +3677,10 @@ export class AgentLoop {
           // without step advancement, force a strategy pivot and clear failed-action memory.
           if (turnsSinceStepEscalation >= 0) {
             turnsSinceStepEscalation++;
-            if (turnsSinceStepEscalation >= FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS) {
+            if (
+              turnsSinceStepEscalation >=
+              FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS
+            ) {
               logger.info("agent", "Post-escalation forced pivot", {
                 turn: this.turnCount,
                 turnsSinceStepEscalation,
@@ -3472,7 +3698,7 @@ export class AgentLoop {
             this.turnsOnCurrentStep > 0
           ) {
             if (
-              this.turnsOnCurrentStep >= STEP_WATCHDOG.ESCALATE_TURNS &&
+              this.turnsOnCurrentStep >= this.limits.stepEscalateTurns &&
               escalationTier < 1 &&
               cooldownRemaining <= 0
             ) {
@@ -3508,7 +3734,7 @@ export class AgentLoop {
                 },
                 false,
               );
-            } else if (this.turnsOnCurrentStep === STEP_WATCHDOG.WARN_TURNS) {
+            } else if (this.turnsOnCurrentStep === this.limits.stepWarnTurns) {
               logger.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
@@ -3579,12 +3805,19 @@ export class AgentLoop {
 
             // Retry once if elements dropped to 0 (SPA still rendering)
             if (snap && snap.elements.length === 0 && prevElementCount > 0) {
-              logger.info("agent", "Empty snapshot after action, waiting for elements", {
-                turn: this.turnCount,
-                prevElements: prevElementCount,
-              });
+              logger.info(
+                "agent",
+                "Empty snapshot after action, waiting for elements",
+                {
+                  turn: this.turnCount,
+                  prevElements: prevElementCount,
+                },
+              );
               // Use DOM probe with waitForElements — content script watches for element insertion
-              await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
+              await waitForDomReady(tabId, {
+                timeoutMs: 500,
+                waitForElements: true,
+              });
               snapResponse = await chrome.tabs.sendMessage(tabId, {
                 type: "DOM_SNAPSHOT_REQUEST",
                 requestId: crypto.randomUUID(),
@@ -3614,6 +3847,11 @@ export class AgentLoop {
               if (currentUrl && !this.urlHistory.includes(currentUrl)) {
                 this.urlHistory.push(currentUrl);
                 recentSuccesses.length = 0;
+              }
+
+              // Record citation for visited page
+              if (currentUrl) {
+                this.recordCitation(currentUrl, snap.title || "", ToolName.READ_PAGE);
               }
 
               // Off-domain navigation detection
@@ -3708,7 +3946,7 @@ export class AgentLoop {
                 // S3: Fresh-start recovery — full context reset when escalation cycles exhaust
                 if (
                   escalationCycles >= FRESH_START.TRIGGER_ESCALATION_CYCLE &&
-                  freshStartCount < FRESH_START.MAX_PER_SESSION &&
+                  freshStartCount < this.limits.maxFreshStarts &&
                   this.turnCount >= FRESH_START.MIN_TURNS_BEFORE_RESET
                 ) {
                   freshStartCount++;
@@ -3716,9 +3954,10 @@ export class AgentLoop {
                     this.context.getMessages(),
                     ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
                   );
-                  const planState = this.planSubtasks.length > 0
-                    ? `Plan: ${this.planSubtasks.map((s, i) => `${i + 1}.[${s.status}] ${s.description}`).join(", ")}`
-                    : "";
+                  const planState =
+                    this.planSubtasks.length > 0
+                      ? `Plan: ${this.planSubtasks.map((s, i) => `${i + 1}.[${s.status}] ${s.description}`).join(", ")}`
+                      : "";
                   const currentUrl = this.context.getCurrentUrl();
                   const brief = [
                     `FRESH START #${freshStartCount} — previous approach exhausted after ${this.turnCount} turns.`,
@@ -3727,7 +3966,9 @@ export class AgentLoop {
                     causalSummary ? `What was tried:\n${causalSummary}` : "",
                     currentUrl ? `Current page: ${currentUrl}` : "",
                     "Start with a completely different strategy. Do NOT repeat previous approaches.",
-                  ].filter(Boolean).join("\n\n");
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n");
 
                   // Record trace events
                   this.traceRecorder?.recordEvent("fresh_start_recovery", {
@@ -3770,15 +4011,20 @@ export class AgentLoop {
                     if (freshSnap) {
                       this.context.setSnapshot(freshSnap);
                     }
-                  } catch { /* non-critical */ }
+                  } catch {
+                    /* non-critical */
+                  }
 
-                  this.stepHandler({
-                    id: crypto.randomUUID(),
-                    type: "info",
-                    label: `Fresh start #${freshStartCount} — resetting context`,
-                    status: "done",
-                    timestamp: Date.now(),
-                  }, false);
+                  this.stepHandler(
+                    {
+                      id: crypto.randomUUID(),
+                      type: "info",
+                      label: `Fresh start #${freshStartCount} — resetting context`,
+                      status: "done",
+                      timestamp: Date.now(),
+                    },
+                    false,
+                  );
 
                   logger.info("agent", "Fresh-start recovery", {
                     freshStartCount,
@@ -3859,7 +4105,9 @@ export class AgentLoop {
                 }
 
                 // Require PROGRESS_GATE consecutive progress signals before de-escalating
-                if (consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE) {
+                if (
+                  consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE
+                ) {
                   this.broadcast({
                     type: "AGENT_STUCK",
                     payload: {
@@ -3877,17 +4125,22 @@ export class AgentLoop {
                   const smartTenure = this.turnCount - smartModelStartTurn;
                   if (
                     escalationTier > 0 &&
-                    escalationCycles < ESCALATION_LIMITS.MAX_CYCLES &&
+                    escalationCycles < this.limits.maxEscalationCycles &&
                     smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
                   ) {
-                    prevElementCount = await this.deescalateModel(tabId, prevElementCount);
+                    prevElementCount = await this.deescalateModel(
+                      tabId,
+                      prevElementCount,
+                    );
                     this.context.addMessage({
                       role: "user",
                       content: DEESCALATION_NUDGE,
                     });
                     escalationTier = 0;
                     this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
-                    cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS * Math.pow(2, escalationCycles);
+                    cooldownRemaining =
+                      this.limits.escalationCooldown *
+                      Math.pow(2, escalationCycles);
                     escalationCycles++;
                     this.progress.resetEscalation();
 
@@ -3983,7 +4236,11 @@ export class AgentLoop {
         }
 
         // Escalate to next tier on 2nd consecutive text-only
-        if (consecutiveTextOnly >= 2 && escalationTier < 1 && cooldownRemaining <= 0) {
+        if (
+          consecutiveTextOnly >= 2 &&
+          escalationTier < 1 &&
+          cooldownRemaining <= 0
+        ) {
           this.escalateModel();
           escalationTier = 1;
           orientationPhase = false;
@@ -4042,12 +4299,11 @@ export class AgentLoop {
         }
 
         // Smart model turn-based give-up
-        const smartTurns = escalationTier > 0
-          ? this.turnCount - smartModelStartTurn
-          : 0;
+        const smartTurns =
+          escalationTier > 0 ? this.turnCount - smartModelStartTurn : 0;
         if (
           escalationTier > 0 &&
-          smartTurns >= STUCK_THRESHOLDS.GIVE_UP_SMART &&
+          smartTurns >= this.limits.stuckGiveUpSmart &&
           totalTextOnly >= 3
         ) {
           logger.warn("agent", "Loop ended: smart model turn limit", {
@@ -4077,7 +4333,10 @@ export class AgentLoop {
         // Regular nudge: refresh snapshot + inject message
         const count = await this.refreshSnapshot(tabId);
         if (count >= 0) prevElementCount = count;
-        this.context.addMessage({ role: "user", content: TEXT_ONLY_CORRECTION });
+        this.context.addMessage({
+          role: "user",
+          content: TEXT_ONLY_CORRECTION,
+        });
 
         // Trace: flush turn
         await this.traceRecorder?.endTurn();
