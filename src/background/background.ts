@@ -24,6 +24,10 @@ import {
 } from "./keepalive";
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { orchestrator } from "./orchestrator";
+import { DemoStore } from "./demos/store";
+import { buildGoldenCases } from "./golden/builder";
+import type { GoldenAction } from "../types";
+import { toolRegistry } from "./tools/registry";
 
 logger.info("system", "Service Worker Initialized");
 
@@ -64,6 +68,12 @@ chrome.sidePanel.setPanelBehavior({
 // 5. State — per-workspace agent loops
 let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSidePanelOpens = new Set<number>();
+let demoActionCounter = 0;
+
+// Golden recording state
+let goldenActive = false;
+let goldenActions: GoldenAction[] = [];
+let goldenScreenshot: string | null = null;
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(
@@ -464,6 +474,170 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    // --- Demo Recording ---
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "DEMO_RECORD_START"
+    ) {
+      const tabId = message.payload.tabId;
+      const isGolden = message.payload.golden === true;
+      demoActionCounter = 0;
+
+      if (isGolden) {
+        goldenActive = true;
+        goldenActions = [];
+        goldenScreenshot = null;
+        // Capture initial screenshot
+        chrome.tabs.captureVisibleTab({ format: "jpeg", quality: 70 })
+          .then((dataUrl) => { goldenScreenshot = dataUrl; })
+          .catch(() => {});
+      }
+
+      chrome.tabs.sendMessage(tabId, {
+        type: "DEMO_RECORD_START",
+        requestId: message.requestId,
+        source: MessageSource.BACKGROUND,
+        payload: { golden: isGolden },
+      }).then(() => {
+        // Notify side panel that recording is active
+        chrome.runtime.sendMessage({
+          type: "DEMO_RECORD_STATUS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: { active: true, actionCount: 0 },
+        }).catch(() => {});
+      }).catch((err) => {
+        logger.warn("demos", "Failed to start recording", { error: err?.message });
+      });
+      return false;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "DEMO_RECORD_STOP"
+    ) {
+      const tabId = message.payload.tabId;
+      const demoName = message.payload.name;
+      const wasGolden = goldenActive;
+
+      chrome.tabs.sendMessage(tabId, {
+        type: "DEMO_RECORD_STOP",
+        requestId: message.requestId,
+        source: MessageSource.BACKGROUND,
+        payload: { golden: wasGolden },
+      }, async (response: any) => {
+        try {
+          const actions = response?.actions || [];
+          // Get current tab URL for the demo
+          const tab = await chrome.tabs.get(tabId);
+          const demoStore = new DemoStore();
+          const demo = await demoStore.saveDemonstration({
+            name: demoName,
+            actions,
+            url: tab.url || "",
+          });
+          // Notify side panel
+          chrome.runtime.sendMessage({
+            type: "DEMO_RECORD_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { active: false, actionCount: actions.length },
+          }).catch(() => {});
+          chrome.runtime.sendMessage({
+            type: "DEMO_SAVED",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { demo },
+          }).catch(() => {});
+
+          // Golden mode: build eval cases and POST to log server
+          if (wasGolden && goldenActions.length > 0) {
+            const tools = toolRegistry.getDefinitions();
+            const evalCases = buildGoldenCases(
+              goldenActions,
+              demoName,
+              goldenScreenshot,
+              tools,
+            );
+            // Fire-and-forget POST to log server
+            fetch("http://127.0.0.1:7589/golden", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: demoName, cases: evalCases }),
+            })
+              .then((res) => res.json())
+              .then((result: any) => {
+                logger.info("golden", "Golden dataset saved", {
+                  filename: result.filename,
+                  caseCount: result.caseCount,
+                });
+                chrome.runtime.sendMessage({
+                  type: "GOLDEN_SAVED",
+                  requestId: crypto.randomUUID(),
+                  source: MessageSource.BACKGROUND,
+                  payload: {
+                    filename: result.filename,
+                    caseCount: result.caseCount,
+                  },
+                }).catch(() => {});
+              })
+              .catch((err) => {
+                logger.warn("golden", "Failed to save golden dataset (log server down?)", {
+                  error: err?.message,
+                });
+              });
+          }
+        } catch (err: any) {
+          logger.error("demos", "Failed to save demo", { error: err?.message });
+          chrome.runtime.sendMessage({
+            type: "DEMO_RECORD_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { active: false, actionCount: 0 },
+          }).catch(() => {});
+        } finally {
+          // Reset golden state
+          goldenActive = false;
+          goldenActions = [];
+          goldenScreenshot = null;
+        }
+      });
+      return true; // async response via callback
+    }
+
+    if (
+      message.source === MessageSource.CONTENT &&
+      message.type === "DEMO_ACTION_CAPTURED"
+    ) {
+      // Forward action count to side panel
+      demoActionCounter++;
+      chrome.runtime.sendMessage({
+        type: "DEMO_RECORD_STATUS",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        payload: { active: true, actionCount: demoActionCounter },
+      }).catch(() => {});
+      return false;
+    }
+
+    // Golden action from content script (enriched with snapshot + tag ID)
+    if (
+      message.source === MessageSource.CONTENT &&
+      message.type === "GOLDEN_ACTION"
+    ) {
+      if (goldenActive) {
+        goldenActions.push(message.payload.goldenAction);
+      }
+      demoActionCounter++;
+      chrome.runtime.sendMessage({
+        type: "DEMO_RECORD_STATUS",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        payload: { active: true, actionCount: demoActionCounter },
+      }).catch(() => {});
+      return false;
+    }
+
     // 4. Side Panel Opened (Mount)
     if (
       message.source === MessageSource.SIDEPANEL &&
@@ -497,11 +671,11 @@ chrome.runtime.onMessage.addListener(
             return;
           }
           if (action === "clear_chat_history") {
-            const sessionData = await chrome.storage.session.get(null);
-            const keys = Object.keys(sessionData).filter(
+            const localData = await chrome.storage.local.get(null);
+            const keys = Object.keys(localData).filter(
               (k) => k === "chatMessages" || k.startsWith("chatMessages:"),
             );
-            if (keys.length > 0) await chrome.storage.session.remove(keys);
+            if (keys.length > 0) await chrome.storage.local.remove(keys);
             sendResponse({
               ok: true,
               detail: "Chat history cleared for all workspaces.",
@@ -514,6 +688,7 @@ chrome.runtime.onMessage.addListener(
               "opensidebar:savedPromptsSeeded",
               "opensidebar:savedPromptsVersion",
               SKILLS_STORAGE_KEY,
+              "opensidebar:demos:v1",
               "opensidebar_logs",
               "opensidebar:workspaces",
               "opensidebar:workspaceCounter",
