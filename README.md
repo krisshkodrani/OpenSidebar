@@ -2,7 +2,7 @@
 
 An open-source Chrome extension that turns your browser into an AI-powered agent workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: a fast model (`gpt-oss-120b`) for quick observe -> act cycles, with escalation to a smart model (`x-ai/grok-4.1-fast:nitro`) when tasks get harder. A local "Second Brain" provides persistent memory across sessions.
+OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: a fast model (`gpt-oss-120b`) for quick observe → act cycles, with escalation to a smart model (`z-ai/glm-4.7`, GLM-4.7 with native reasoning) when tasks get harder. Tri-provider failover (Cerebras → Groq → OpenRouter) keeps inference fast and resilient. A local "Second Brain" provides persistent memory across sessions.
 
 ---
 
@@ -32,8 +32,8 @@ Side Panel (React) <-> Service Worker (Agent Loop / Orchestrator) <-> Content Sc
 
 | Component | Technology |
 | --- | --- |
-| Fast LLM | `gpt-oss-120b` via OpenRouter providers |
-| Smart LLM | `x-ai/grok-4.1-fast:nitro` via OpenRouter |
+| Fast LLM | `gpt-oss-120b` via Cerebras → Groq → OpenRouter failover |
+| Smart LLM | `z-ai/glm-4.7` (GLM-4.7) via Cerebras → OpenRouter failover |
 | Vision LLM | Configurable via OpenRouter (default `qwen/qwen3-vl-235b-a22b-instruct`) |
 | Embeddings | Transformers.js (`all-MiniLM-L6-v2`) |
 | Vector Search | Voy (WASM) |
@@ -54,24 +54,6 @@ Each lane tracks active calls, total calls, failures, cumulative runtime, and co
 Lane policy overrides are wired through `OrchestratorDeps.lanePolicies`; explicit overrides win, then runtime defaults derived from `maxWorkers`, then lane base defaults.
 
 Complete technical documentation: [docs/architecture/](./docs/architecture/)
-
----
-
-## Screenshots
-
-![Main Interface](docs/screenshots/main-interface.png)
-_The OpenSidebar side panel with chat interface and welcome screen._
-
-![Element Tagging](docs/screenshots/element-tagging.png)
-_Interactive elements tagged with numeric IDs for AI interaction._
-
-![Settings Panel](docs/screenshots/settings-panel.png)
-_API key configuration in the settings drawer._
-
-![Agent Demo](docs/screenshots/agent-demo.gif)
-_OpenSidebar automatically navigating and interacting with web pages._
-
-Contributing screenshots: [docs/screenshots/README.md](docs/screenshots/README.md)
 
 ---
 
@@ -130,6 +112,8 @@ bun run dev
 | `bun run evals critique` | Generate AI-readable critique artifacts |
 | `bun run logs` | Start log drain server |
 | `bun run logs:errors` | Query error logs |
+| `bun run logs:tail` | Tail recent logs |
+| `bun run viewer` | Start server and open trace viewer API/UI |
 | `bun run traces:list` | List captured trace sessions |
 | `bun run traces:stats` | Show aggregate trace stats |
 | `bun run fmt` | Format source files |
@@ -137,6 +121,32 @@ bun run dev
 When `bun run logs` is active, execution traces are persisted under:
 - `traces/<session-id>.jsonl` (agent turn traces)
 - `traces/runs/<run-id>.jsonl` (orchestrator run traces)
+- `traces/index.jsonl` (manual run session index)
+- `traces/runs/index.jsonl` (orchestrator run index)
+
+### Trace Viewer UI
+
+OpenSidebar includes a custom trace viewer UI in-repo (not a third-party library):
+- Viewer UI: `scripts/trace-viewer.html`
+- Server/API: `scripts/log-server.ts`
+- URL: `http://127.0.0.1:7589/viewer`
+
+Start it:
+1. Run `bun run logs` (or `bun run viewer`).
+2. Open `http://127.0.0.1:7589/viewer`.
+
+What you can inspect:
+- Session list with outcome, turns, model badges, cost, timestamps
+- Per-turn cards with:
+  - LLM text/tool calls
+  - tool execution results/errors
+  - snapshot URL/title/tagged elements
+  - events (`stuck_signal`, `escalation`, `done_rejected`, etc.)
+  - token usage, duration, compression level
+
+Useful API endpoints (served by the same process):
+- `GET /api/traces` -> list sessions
+- `GET /api/traces/:sessionId` -> list turn entries for one session
 
 ### Manual Runs: Where Logs Come From
 
@@ -197,7 +207,6 @@ Tip: use `bun run dev:stack` to run build + log capture + dev in one command.
 - [Manual Evals Runbook](./docs/guides/manual-evals-runbook.md)
 - [Evals Manual Workflow](./evals/README.md)
 - [Contributing Guide](./CONTRIBUTING.md)
-- [Agent Guidelines](./AGENTS.md)
 
 ---
 
