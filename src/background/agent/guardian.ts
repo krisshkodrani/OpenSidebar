@@ -54,6 +54,13 @@ Response Rules:
 - Group related actions into single steps.
 - Last subtask should verify the overall goal was achieved.
 - Dependencies must reference earlier step indexes only.
+- SUBTASK INDEPENDENCE: Each subtask description must be self-contained.
+  - A subtask should be completable using the DOM state and its own description.
+  - Do NOT write subtasks that reference "the result from step N" or "the value found above."
+  - Instead, inline the expected context: e.g., instead of "Click the link found in step 2",
+    write "Click the 'Settings' link in the navigation menu."
+  - If a subtask truly depends on a prior subtask's runtime output,
+    note this explicitly as: [DEPENDS: step N output].
 
 Respond with JSON only.`;
 

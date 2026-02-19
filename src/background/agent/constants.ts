@@ -155,6 +155,28 @@ export const BATCH_LIMITS = {
   MAX_STEPS: 10,
 } as const;
 
+/** Rolling distillation: periodically compress mid-conversation history */
+export const ROLLING_DISTILL = {
+  /** Every N turns, consider distilling older history */
+  INTERVAL: 8,
+  /** Minimum message count before distillation kicks in */
+  MIN_MESSAGES: 12,
+  /** Number of most-recent messages to keep verbatim */
+  KEEP_RECENT: 6,
+  /** Maximum summary entries in the distilled block */
+  MAX_SUMMARY_ENTRIES: 15,
+} as const;
+
+/** Fresh-start recovery: full context reset when escalation cycles exhaust */
+export const FRESH_START = {
+  /** Maximum fresh-start resets allowed per session */
+  MAX_PER_SESSION: 2,
+  /** Minimum turns before a fresh start is considered */
+  MIN_TURNS_BEFORE_RESET: 10,
+  /** Escalation cycles required to trigger a fresh start */
+  TRIGGER_ESCALATION_CYCLE: 2,
+} as const;
+
 /** Timing constants (milliseconds) */
 export const TIMING = {
   /** Delay before retrying snapshot refresh */

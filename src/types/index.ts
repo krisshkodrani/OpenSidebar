@@ -521,7 +521,17 @@ export interface TaskCompletionMessage extends BaseMessage {
     failureCode?: TraceFailureCode;
     /** Optional normalized failure detail */
     failureDetail?: string;
+    /** Claim-to-evidence citations extracted from verifier evidence */
+    citations?: Citation[];
   };
+}
+
+/** A claim-to-evidence citation surfaced in completion reports */
+export interface Citation {
+  claim: string;
+  sourceType: "tool_output" | "observation" | "inference" | "user_input" | "memory";
+  sourceRef: string;
+  confidence: number;
 }
 
 /** Outcome of a single subtask within a completion report */
@@ -1960,6 +1970,17 @@ export interface TraceEventPayloadByType {
     severity?: string;
     reason?: string;
     summarySnippet: string;
+  };
+  multi_turn_pathology: {
+    pathology: "anchoring" | "premature_generation" | "verbosity" | "middle_turn_loss" | "compound_degradation";
+    trigger: string;
+    turn: number;
+    details?: string;
+  };
+  fresh_start_recovery: {
+    freshStartNumber: number;
+    totalTurnsSoFar: number;
+    escalationCycles: number;
   };
 }
 

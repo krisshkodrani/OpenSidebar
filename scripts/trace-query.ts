@@ -9,8 +9,11 @@
  *   show <session-id>             Session summary + turn-by-turn overview
  *   turns <session-id>            Show each turn: tool calls, LLM response snippet
  *   turn <session-id> <N>         Full detail for turn N
+ *   days                          List days with session counts
+ *   search [filters]              Filter by day/domain/outcome/session/query
  *   filter --outcome <outcome>    Filter sessions by outcome
  *   stats                         Aggregate stats across all sessions
+ *   pathologies [session-id]      Show multi-turn pathology events
  *   help                          Show usage
  */
 
@@ -40,6 +43,9 @@ interface TraceSessionRecord {
   query: string;
   startUrl: string;
   outcome: string;
+  failureCategory?: string;
+  failureCode?: string;
+  failureDetail?: string;
   turnCount: number;
   summary: string;
   metrics: {
@@ -116,6 +122,23 @@ function truncate(s: string | null | undefined, len: number): string {
   return s.length > len ? s.slice(0, len) + "..." : s;
 }
 
+function localDayKey(ms: number): string {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function extractDomain(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+  try {
+    return new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 // --- Commands ---
 
 function cmdList() {
@@ -152,6 +175,9 @@ function cmdShow(sessionId: string) {
   console.log(`  Query:    ${session.query}`);
   console.log(`  URL:      ${session.startUrl}`);
   console.log(`  Outcome:  ${oc}${session.outcome}${c.reset}`);
+  if (session.failureCode && session.failureCode !== "none") {
+    console.log(`  Failure:  ${c.red}${session.failureCode}${c.reset} (${session.failureCategory || "unknown"})`);
+  }
   console.log(`  Turns:    ${session.turnCount}`);
   console.log(`  Duration: ${formatDuration(session.endTime - session.startTime)}`);
   console.log(`  Time:     ${formatTime(session.startTime)} → ${formatTime(session.endTime)}`);
@@ -292,6 +318,69 @@ function cmdFilter(args: string[]) {
   }
 }
 
+function cmdDays() {
+  const sessions = readIndex();
+  if (sessions.length === 0) {
+    console.log("No trace sessions found.");
+    return;
+  }
+  const byDay: Record<string, number> = {};
+  for (const s of sessions) {
+    byDay[localDayKey(s.startTime)] = (byDay[localDayKey(s.startTime)] || 0) + 1;
+  }
+  console.log(`${c.bold}Trace Days:${c.reset}\n`);
+  for (const [day, count] of Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]))) {
+    console.log(`  ${c.cyan}${day}${c.reset}  ${count}`);
+  }
+}
+
+function cmdSearch(args: string[]) {
+  const getArg = (name: string): string => {
+    const idx = args.indexOf(name);
+    return idx >= 0 && args[idx + 1] ? args[idx + 1] : "";
+  };
+  const day = getArg("--day");
+  const from = getArg("--from");
+  const to = getArg("--to");
+  const domain = getArg("--domain").toLowerCase();
+  const outcome = getArg("--outcome");
+  const sessionPrefix = getArg("--session");
+  const query = getArg("--q").toLowerCase();
+
+  let sessions = readIndex();
+  sessions = sessions.filter((s) => {
+    const dayKey = localDayKey(s.startTime);
+    if (day && dayKey !== day) return false;
+    if (from && dayKey < from) return false;
+    if (to && dayKey > to) return false;
+    if (domain) {
+      const d = extractDomain(s.startUrl);
+      if (!d || !d.includes(domain)) return false;
+    }
+    if (outcome && s.outcome !== outcome) return false;
+    if (sessionPrefix && !s.sessionId.startsWith(sessionPrefix)) return false;
+    if (query) {
+      const hay = `${s.query || ""} ${s.startUrl || ""} ${s.sessionId}`.toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  if (sessions.length === 0) {
+    console.log("No sessions match the provided filters.");
+    return;
+  }
+  console.log(`${c.bold}Search Results (${sessions.length}):${c.reset}\n`);
+  for (const s of sessions.sort((a, b) => b.startTime - a.startTime)) {
+    const d = extractDomain(s.startUrl) || "-";
+    console.log(
+      `  ${c.dim}${localDayKey(s.startTime)}${c.reset} ${outcomeColor(s.outcome)}${s.outcome.padEnd(10)}${c.reset} ` +
+      `${c.cyan}${d}${c.reset} ${truncate(s.query, 56)}`,
+    );
+    console.log(`  ${c.dim}${s.sessionId}${c.reset}\n`);
+  }
+}
+
 function cmdStats() {
   const sessions = readIndex();
   if (sessions.length === 0) {
@@ -300,6 +389,8 @@ function cmdStats() {
   }
 
   const outcomes: Record<string, number> = {};
+  const failureCodes: Record<string, number> = {};
+  const failureCategories: Record<string, number> = {};
   let totalTurns = 0;
   let totalCost = 0;
   let totalDuration = 0;
@@ -307,6 +398,12 @@ function cmdStats() {
 
   for (const s of sessions) {
     outcomes[s.outcome] = (outcomes[s.outcome] || 0) + 1;
+    if (s.failureCode && s.failureCode !== "none") {
+      failureCodes[s.failureCode] = (failureCodes[s.failureCode] || 0) + 1;
+    }
+    if (s.failureCategory && s.failureCategory !== "none") {
+      failureCategories[s.failureCategory] = (failureCategories[s.failureCategory] || 0) + 1;
+    }
     totalTurns += s.turnCount;
     totalDuration += s.endTime - s.startTime;
     if (s.metrics?.totalCost) totalCost += s.metrics.totalCost;
@@ -342,10 +439,108 @@ function cmdStats() {
   }
   console.log();
 
+  if (Object.keys(failureCodes).length > 0) {
+    console.log(`${c.bold}Failure Codes:${c.reset}`);
+    for (const [code, count] of Object.entries(failureCodes).sort((a, b) => b[1] - a[1])) {
+      const pct = ((count / sessions.length) * 100).toFixed(0);
+      console.log(`  ${c.red}${code.padEnd(24)}${c.reset} ${count} (${pct}%)`);
+    }
+    console.log();
+  }
+
+  if (Object.keys(failureCategories).length > 0) {
+    console.log(`${c.bold}Failure Categories:${c.reset}`);
+    for (const [category, count] of Object.entries(failureCategories).sort((a, b) => b[1] - a[1])) {
+      const pct = ((count / sessions.length) * 100).toFixed(0);
+      console.log(`  ${c.yellow}${category.padEnd(24)}${c.reset} ${count} (${pct}%)`);
+    }
+    console.log();
+  }
+
   console.log(`${c.bold}Top Tools:${c.reset}`);
   const sortedTools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]).slice(0, 15);
   for (const [name, count] of sortedTools) {
     console.log(`  ${c.green}${name.padEnd(20)}${c.reset} ${count}`);
+  }
+}
+
+function cmdPathologies(sessionId?: string) {
+  const pathologyCounts: Record<string, number> = {};
+  const pathologyDetails: { session: string; turn: number; pathology: string; trigger: string; details?: string }[] = [];
+
+  const processEntries = (entries: TraceEntryRecord[], sid: string) => {
+    for (const entry of entries) {
+      for (const ev of entry.events) {
+        if (ev.type === "multi_turn_pathology") {
+          const data = ev.data as { pathology?: string; trigger?: string; turn?: number; details?: string };
+          const p = data.pathology || "unknown";
+          pathologyCounts[p] = (pathologyCounts[p] || 0) + 1;
+          pathologyDetails.push({
+            session: sid.slice(0, 8),
+            turn: data.turn ?? entry.turnNumber,
+            pathology: p,
+            trigger: data.trigger || "",
+            details: data.details,
+          });
+        }
+        if (ev.type === "fresh_start_recovery") {
+          const data = ev.data as { freshStartNumber?: number; totalTurnsSoFar?: number; escalationCycles?: number };
+          pathologyDetails.push({
+            session: sid.slice(0, 8),
+            turn: entry.turnNumber,
+            pathology: "fresh_start",
+            trigger: `#${data.freshStartNumber ?? "?"}`,
+            details: `turns=${data.totalTurnsSoFar} cycles=${data.escalationCycles}`,
+          });
+        }
+      }
+    }
+  };
+
+  if (sessionId) {
+    const entries = findTrace(sessionId);
+    const sessions = readIndex();
+    const session = sessions.find(s => s.sessionId === sessionId || s.sessionId.startsWith(sessionId));
+    processEntries(entries, session?.sessionId || sessionId);
+  } else {
+    // Scan all trace files
+    if (!existsSync(TRACE_DIR)) {
+      console.log("No trace directory found.");
+      return;
+    }
+    const files = readdirSync(TRACE_DIR).filter(f => f.endsWith(".jsonl") && f !== "index.jsonl");
+    for (const file of files) {
+      try {
+        const sid = file.replace(".jsonl", "");
+        const lines = readFileSync(join(TRACE_DIR, file), "utf-8").trim().split("\n").filter(Boolean);
+        const entries: TraceEntryRecord[] = lines.map(l => JSON.parse(l));
+        processEntries(entries, sid);
+      } catch { /* skip corrupt */ }
+    }
+  }
+
+  if (pathologyDetails.length === 0) {
+    console.log("No multi-turn pathologies found.");
+    return;
+  }
+
+  console.log(`${c.bold}Multi-Turn Pathologies${sessionId ? ` (session ${sessionId.slice(0, 8)}...)` : ""}${c.reset}\n`);
+
+  // Summary
+  console.log(`${c.bold}By Type:${c.reset}`);
+  for (const [p, count] of Object.entries(pathologyCounts).sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${c.yellow}${p.padEnd(24)}${c.reset} ${count}`);
+  }
+  console.log();
+
+  // Detail list
+  console.log(`${c.bold}Events (${pathologyDetails.length}):${c.reset}`);
+  for (const d of pathologyDetails) {
+    console.log(
+      `  ${c.dim}${d.session}${c.reset} T${String(d.turn).padStart(2)} ` +
+      `${c.yellow}${d.pathology.padEnd(24)}${c.reset} ${c.dim}${d.trigger}${c.reset}` +
+      (d.details ? ` ${c.dim}${truncate(d.details, 60)}${c.reset}` : ""),
+    );
   }
 }
 
@@ -360,8 +555,11 @@ Commands:
   show <session-id>             Session summary + turn overview
   turns <session-id>            Show each turn with tool calls
   turn <session-id> <N>         Full detail for turn N
+  days                          List days with session counts
+  search [--day YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--domain host] [--outcome o] [--session prefix] [--q text]
   filter --outcome <outcome>    Filter sessions by outcome
   stats                         Aggregate statistics
+  pathologies [session-id]      Show multi-turn pathology events
   help                          Show this help
 
 Session IDs can be abbreviated (prefix match).
@@ -405,8 +603,17 @@ switch (command) {
   case "filter":
     cmdFilter(args.slice(1));
     break;
+  case "days":
+    cmdDays();
+    break;
+  case "search":
+    cmdSearch(args.slice(1));
+    break;
   case "stats":
     cmdStats();
+    break;
+  case "pathologies":
+    cmdPathologies(args[1]);
     break;
   case "help":
   default:

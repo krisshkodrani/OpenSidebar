@@ -8,6 +8,7 @@ import {
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
+  TraceFailureInfo,
   ToolCall,
   ToolName,
 } from "../../types";
@@ -20,10 +21,10 @@ import {
 } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS } from "../tools/metadata";
 import { REACT_TOOL_NAMES } from "../tools/react";
-import { classifyRisk, sanitizeUrl } from "../security";
+import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
 import { waitForDomReady } from "../tab-ready";
 import { workspaceManager } from "../workspaces/manager";
-import { ContextManager } from "./context";
+import { ContextManager, summarizeCausalChain } from "./context";
 import { ProgressTracker } from "./progress";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
@@ -33,6 +34,7 @@ import { formatStepLabel } from "./step-labels";
 import { PlanGuardian } from "./guardian";
 import { TraceRecorder } from "./trace";
 import { AgentMiddleware } from "./middleware";
+import { DemoStore, formatDemoForContext } from "../demos/store";
 import {
   AGENT_LIMITS,
   BATCH_LIMITS,
@@ -47,6 +49,8 @@ import {
   STUCK_THRESHOLDS,
   FAILED_ACTION_MEMORY,
   DEAD_END_DETECTION,
+  ROLLING_DISTILL,
+  FRESH_START,
 } from "./constants";
 
 const APPROVAL_TIMEOUT_MS = 30000;
@@ -130,9 +134,10 @@ Review the recent history to understand what was accomplished. Continue from whe
 Follow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?`;
 
 /** Nudge injected when BRAINS→HANDS handoff completes (orientation phase ends). */
-const HANDOFF_NUDGE = `Orientation complete — you are now executing the plan.
-The smarter model has analyzed the page and started the task. Your job: execute the remaining steps efficiently.
-Follow the plan. Complete the current subtask before moving to the next. If stuck, call escalate().`;
+const HANDOFF_NUDGE = (briefing: string) =>
+  `Orientation complete — you are now executing.
+${briefing}
+Execute remaining steps. If stuck, call escalate().`;
 
 /** Message injected during a strategy pivot — tells the agent what NOT to retry. */
 const PIVOT_MESSAGE = (attemptSummary: string) =>
@@ -153,6 +158,8 @@ interface RecentAction {
   tool: string;
   args: string; // First 100 chars of JSON args
   result: string; // First 60 chars of result
+  /** Snapshot fingerprint (url|elementCount) at time of action — for outcome-aware comparison */
+  snapshotFingerprint: string;
 }
 
 /** Tracks a failed tool call to prevent exact repeats */
@@ -178,27 +185,106 @@ function findPriorFailure(
  */
 function normalizeOutcome(result: string): string {
   return result
-    .replace(/\b\d+\b/g, "N")        // numbers → N
-    .replace(/\[N\]/g, "[N]")         // element refs
-    .replace(/tag N/g, "tag N")       // tag references
+    .replace(/\[(\d+)\]/g, "«$1»")   // protect [N] element refs
+    .replace(/\b\d+\b/g, "N")        // normalize other numbers
+    .replace(/«(\d+)»/g, "[$1]")     // restore element refs
     .slice(0, 120)
     .trim();
 }
 
-/** DOM actions that should be blocked when the same successful action repeats too many times. */
-const REDUNDANT_HARD_BLOCK_TOOLS = new Set<string>([
-  ToolName.CLICK_ELEMENT,
-  ToolName.TYPE_TEXT,
-]);
+/** Simple djb2 hash for short strings. */
+function djb2(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
 
-function countRecentExactActionMatches(
-  recentSuccesses: RecentAction[],
-  tool: string,
-  args: string,
-): number {
-  return recentSuccesses.filter(
-    (entry) => entry.tool === tool && entry.args === args,
-  ).length;
+/**
+ * Compute a fingerprint from the current snapshot for outcome-aware redundancy checks.
+ * Includes a text hash so that text-only changes (e.g. counter "3 more" → "2 more")
+ * register as a different page state even when URL and element count stay the same.
+ */
+function getSnapshotFingerprint(snapshot: { url: string; elements: { length: number }; viewportText?: string } | null): string {
+  if (!snapshot) return "none|0|0";
+  const textSample = (snapshot.viewportText ?? "").slice(0, 300);
+  return `${snapshot.url}|${snapshot.elements.length}|${djb2(textSample)}`;
+}
+
+/**
+ * Build a clear, selector-based briefing for the fast model at BRAINS→HANDS handoff.
+ * Extracts element references from the smart model's tool calls and resolves them
+ * to human-readable selectors so the fast model knows exactly which elements matter.
+ */
+function buildHandoffBriefing(
+  history: LLMMessage[],
+  snapshot: DomSnapshot | null,
+): string {
+  const parts: string[] = [];
+
+  // 1. Extract the smart model's reasoning text (last assistant text content)
+  let reasoning = "";
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.trim()) {
+      reasoning = stripThinkTags(msg.content).trim().slice(0, 500);
+      break;
+    }
+  }
+  if (reasoning) {
+    parts.push(`Smart model observations:\n${reasoning}`);
+  }
+
+  // 2. Extract all element IDs referenced in the last few assistant tool calls
+  if (snapshot && snapshot.elements.length > 0) {
+    const elementMap = new Map(snapshot.elements.map(el => [el.tag, el]));
+    const referencedIds = new Map<number, string>(); // id → action taken
+
+    // Walk the last several messages to find tool calls from the smart model
+    const recentAssistants = history
+      .filter(m => m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0)
+      .slice(-4); // last 4 assistant turns with tool calls
+
+    for (const msg of recentAssistants) {
+      for (const tc of msg.tool_calls!) {
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          const ids: number[] = [];
+          if (args.id != null) ids.push(Number(args.id));
+          if (args.sourceId != null) ids.push(Number(args.sourceId));
+          if (args.targetId != null) ids.push(Number(args.targetId));
+
+          for (const id of ids) {
+            if (!isNaN(id) && !referencedIds.has(id)) {
+              referencedIds.set(id, tc.function.name);
+            }
+          }
+        } catch { /* skip unparseable args */ }
+      }
+    }
+
+    // Build element descriptions
+    if (referencedIds.size > 0) {
+      const lines: string[] = [];
+      for (const [id, action] of referencedIds) {
+        const el = elementMap.get(id);
+        if (!el) continue;
+        // CSS-like selector: tagName#id.class "text"
+        const idAttr = el.attributes.id ? `#${el.attributes.id}` : "";
+        const classes = el.attributes.class
+          ? "." + el.attributes.class.split(/\s+/).slice(0, 3).join(".")
+          : "";
+        const text = el.text.slice(0, 50);
+        lines.push(`- [${id}] ${el.tagName}${idAttr}${classes} "${text}" — ${action}`);
+      }
+      if (lines.length > 0) {
+        parts.push(`Elements identified:\n${lines.join("\n")}`);
+      }
+    }
+  }
+
+  return parts.join("\n\n");
 }
 
 /** Filler prefix patterns — text-only responses that start with these are low-information */
@@ -330,6 +416,8 @@ export interface LoopResult {
   turnCount: number;
   /** Summary from done() tool, or error message */
   summary: string;
+  /** Normalized failure info for trace/session rollups */
+  failure?: TraceFailureInfo;
   /** Session token/cost/time metrics */
   metrics?: SessionMetrics;
 }
@@ -400,6 +488,8 @@ export class AgentLoop {
   public readonly workerId: string | null;
   public readonly taskIdRef: string | null;
   public readonly nodeId: string | null;
+  public readonly runId: string | null;
+  public readonly correlationId: string | null;
 
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
@@ -476,9 +566,7 @@ export class AgentLoop {
     providerId: "openrouter" | "groq" | "cerebras",
     model: string,
   ): { total: number; actual: number; estimated: number } {
-    if (usage.cost != null) {
-      return { total: usage.cost, actual: usage.cost, estimated: 0 };
-    }
+    // Always use static pricing table for consistent cost across all providers
     const estimated = estimateCostUsd(providerId, model, usage) ?? 0;
     return { total: estimated, actual: 0, estimated };
   }
@@ -638,6 +726,8 @@ export class AgentLoop {
       workerId?: string | null;
       taskId?: string | null;
       nodeId?: string | null;
+      runId?: string | null;
+      correlationId?: string | null;
       suppressUiBroadcast?: boolean;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
@@ -664,6 +754,8 @@ export class AgentLoop {
     this.workerId = options?.workerId ?? null;
     this.taskIdRef = options?.taskId ?? null;
     this.nodeId = options?.nodeId ?? null;
+    this.runId = options?.runId ?? null;
+    this.correlationId = options?.correlationId ?? this.runId ?? null;
     this.suppressUiBroadcast = options?.suppressUiBroadcast ?? false;
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
@@ -930,6 +1022,7 @@ export class AgentLoop {
     this.abortController = new AbortController();
     this.turnCount = 0;
     this.originalQuery = initialUserText;
+    this.context.setOriginalQuery(initialUserText);
     this.progress.reset();
     this.pendingHint = null;
     this.taskId = null;
@@ -949,6 +1042,11 @@ export class AgentLoop {
       initialSnapshot?.url || "",
     );
     this.traceRecorder.setWorkspaceId(this.workspaceId);
+    this.traceRecorder.setCorrelationContext({
+      runId: this.runId,
+      correlationId: this.correlationId,
+      parentRunId: this.runId,
+    });
     const allowedTools = this.executionContract?.allowedTools
       ? [...this.executionContract.allowedTools]
       : Object.values(ToolName).filter((tool) => !this.disabledTools.has(tool));
@@ -966,6 +1064,8 @@ export class AgentLoop {
       workspaceId: this.workspaceId,
       workerId: this.workerId,
       nodeId: this.nodeId,
+      runId: this.runId,
+      correlationId: this.correlationId,
     });
 
     // Clear or restore context
@@ -994,6 +1094,34 @@ export class AgentLoop {
       role: "user",
       content: userContent,
     });
+
+    // --- Demo matching: inject reference demonstration if available ---
+    try {
+      const demoStore = new DemoStore();
+      const currentUrl = this.context.getSnapshot()?.url || "";
+      const matchedDemo = await demoStore.matchDemo(initialUserText, currentUrl);
+      if (matchedDemo) {
+        await demoStore.recordDemoUsage(matchedDemo.demo.id);
+        const demoText = formatDemoForContext(matchedDemo.demo);
+        this.context.setDemonstrations(demoText);
+        logger.info("agent", "Demo matched and injected", {
+          demoId: matchedDemo.demo.id,
+          demoName: matchedDemo.demo.name,
+          score: matchedDemo.score,
+          actionCount: matchedDemo.demo.actions.length,
+        });
+        this.traceRecorder?.recordEvent("demo_matched" as any, {
+          demoId: matchedDemo.demo.id,
+          demoName: matchedDemo.demo.name,
+          score: matchedDemo.score,
+          actionCount: matchedDemo.demo.actions.length,
+        });
+      }
+    } catch (err: any) {
+      logger.warn("agent", "Demo matching error (non-fatal)", {
+        error: err?.message,
+      });
+    }
 
     // --- Guardian: decompose task into plan (task-agnostic) ---
     if (!this.disableInternalPlanning) {
@@ -1107,6 +1235,7 @@ export class AgentLoop {
       outcome: "completed",
       turnCount: 0,
       summary: "",
+      failure: { category: "none", code: "none" },
       metrics: undefined,
     };
     try {
@@ -1119,6 +1248,11 @@ export class AgentLoop {
           outcome: "stopped",
           turnCount: this.turnCount,
           summary: "Stopped by user",
+          failure: {
+            category: "user",
+            code: "user_stopped",
+            detail: "Stopped by user",
+          },
           metrics: this.getMetrics(),
         };
       } else {
@@ -1137,6 +1271,11 @@ export class AgentLoop {
           outcome: "error",
           turnCount: this.turnCount,
           summary: error.message,
+          failure: {
+            category: "runtime",
+            code: "runtime_error",
+            detail: error.message,
+          },
           metrics: this.getMetrics(),
         };
       }
@@ -1154,6 +1293,7 @@ export class AgentLoop {
           result.outcome,
           result.summary,
           result.turnCount,
+          result.failure ?? null,
           result.metrics ?? null,
         );
         this.traceRecorder = null;
@@ -1393,6 +1533,52 @@ export class AgentLoop {
   }
 
   /**
+   * Walk planSubtasks and mark early steps as completed based on
+   * guardian rejection (which implies the agent has progressed past them).
+   * Returns the new currentIndex (first non-completed step).
+   */
+  private advanceCompletedSubtasks(): number {
+    let advancedTo = 0;
+    for (let i = 0; i < this.planSubtasks.length; i++) {
+      const s = this.planSubtasks[i];
+      if (s.status === "completed") {
+        advancedTo = i + 1;
+        continue;
+      }
+      if (s.status === "running") {
+        // If guardian rejected done(), the current "running" step
+        // might be done. Mark it completed with a captured result.
+        s.status = "completed";
+        s.result = s.result || this.captureSubtaskResult();
+        s.completedAtUrl = this.context.getCurrentUrl() || undefined;
+        advancedTo = i + 1;
+        continue;
+      }
+      break;
+    }
+    // Mark the next step as running
+    if (advancedTo < this.planSubtasks.length) {
+      this.planSubtasks[advancedTo].status = "running";
+    }
+    return advancedTo;
+  }
+
+  /**
+   * Walk backward through history to capture the most recent tool result
+   * as a subtask result string.
+   */
+  private captureSubtaskResult(): string {
+    const history = this.context.getMessages();
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === "tool" && typeof msg.content === "string" && msg.content.length > 0) {
+        return msg.content.slice(0, 200);
+      }
+    }
+    return "Completed";
+  }
+
+  /**
    * Check whether a navigate() target URL matches a completed plan step's URL.
    * Compares origin + pathname only (ignores query params and hash).
    * Returns a block message if matched, or null to allow navigation.
@@ -1450,6 +1636,7 @@ export class AgentLoop {
     let cooldownRemaining = 0;
     let smartModelStartTurn = 0; // turn when auto-escalation fired
     let consecutiveProgressSignals = 0; // progress gate for de-escalation
+    let freshStartCount = 0; // S3: fresh-start recovery counter
 
     // Circuit breaker: consecutive all-fail turns
     let consecutiveAllFailTurns = 0;
@@ -1465,7 +1652,8 @@ export class AgentLoop {
     let turnsSinceStepEscalation = -1; // -1 = no step escalation active
 
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
-    const recentOutcomes: string[] = [];
+    // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
+    const recentOutcomes: { fingerprint: string; snapshotFp: string }[] = [];
 
     // React toolkit: enable on first snapshot that detects React
     let reactToolsEnabled = false;
@@ -1518,9 +1706,13 @@ export class AgentLoop {
         escalationTier = 0;
         cooldownRemaining = ESCALATION_LIMITS.COOLDOWN_TURNS;
         this.disabledTools.add(ToolName.TAKE_SCREENSHOT); // Re-lock screenshots at tier 0
+        const briefing = buildHandoffBriefing(
+          this.context.getMessages(),
+          this.context.getSnapshot(),
+        );
         this.context.addMessage({
           role: "user",
-          content: HANDOFF_NUDGE,
+          content: HANDOFF_NUDGE(briefing),
         });
         this.stepHandler(
           {
@@ -1563,18 +1755,24 @@ export class AgentLoop {
         });
       }
 
-      // React toolkit: enable tools when React is detected on the page
-      if (!reactToolsEnabled) {
-        const fw = this.context.getSnapshot()?.framework;
-        if (fw?.name === "react") {
-          reactToolsEnabled = true;
-          for (const tool of REACT_TOOL_NAMES) {
-            this.disabledTools.delete(tool);
-          }
-          logger.info("agent", "React detected — toolkit enabled", {
-            version: fw.version,
-          });
+      // React toolkit gating follows current page framework.
+      const fw = this.context.getSnapshot()?.framework;
+      if (!reactToolsEnabled && fw?.name === "react") {
+        reactToolsEnabled = true;
+        for (const tool of REACT_TOOL_NAMES) {
+          this.disabledTools.delete(tool);
         }
+        logger.info("agent", "React detected -> toolkit enabled", {
+          version: fw.version,
+        });
+      } else if (reactToolsEnabled && fw?.name !== "react") {
+        reactToolsEnabled = false;
+        for (const tool of REACT_TOOL_NAMES) {
+          this.disabledTools.add(tool);
+        }
+        logger.info("agent", "React not detected -> toolkit disabled", {
+          url: this.context.getCurrentUrl(),
+        });
       }
 
       // 1. LLM Inference (streamed)
@@ -1780,6 +1978,38 @@ export class AgentLoop {
         let doneSignaled = false;
         let domModified = false;
 
+        // --- Safety gate: validate tool calls before dispatch ---
+        const validated = validateToolCalls(response.tool_calls);
+        const blockedCalls = validated.filter((v) => v.blocked);
+        const auditedCalls = validated.filter((v) => v.auditFlag);
+        for (const b of blockedCalls) {
+          this.context.addMessage({
+            role: "tool",
+            tool_call_id: b.original.id,
+            content: `Blocked: ${b.reason}`,
+          });
+          this.traceRecorder?.recordEvent("safety_gate_blocked", {
+            tool: b.original.function.name,
+            reason: b.reason,
+            phase: "output",
+          });
+        }
+        for (const a of auditedCalls) {
+          this.traceRecorder?.recordEvent("safety_gate_audit", {
+            tool: a.original.function.name,
+            flag: a.auditFlag,
+            phase: "output",
+          });
+        }
+        const allowedToolCalls = validated
+          .filter((v) => !v.blocked)
+          .map((v) => v.original);
+        if (allowedToolCalls.length === 0 && blockedCalls.length > 0) {
+          continue; // All tool calls blocked — retry
+        }
+        // Use the filtered list for dispatch
+        response.tool_calls = allowedToolCalls;
+
         // Determine if we can parallelize: no sequential tools present
         const hasSequentialTool = response.tool_calls.some((tc) =>
           SEQUENTIAL_TOOLS.has(tc.function.name as ToolName),
@@ -1836,32 +2066,6 @@ export class AgentLoop {
                   mode: "parallel",
                 });
                 return { toolCall, result: null, error: idError };
-              }
-
-              const exactRepeatCount = countRecentExactActionMatches(
-                recentSuccesses,
-                toolName,
-                argsKey,
-              );
-              if (
-                REDUNDANT_HARD_BLOCK_TOOLS.has(toolName) &&
-                exactRepeatCount >= REDUNDANT_ACTION.HARD_BLOCK_THRESHOLD - 1
-              ) {
-                const blockedMessage =
-                  `Error: Redundant action blocked. ${toolName} with the same arguments has already succeeded ` +
-                  `${exactRepeatCount} times. Do not repeat it again; choose a different action.`;
-                logger.warn("agent", "Redundant DOM action blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  count: exactRepeatCount + 1,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                  tool: toolName,
-                  count: exactRepeatCount + 1,
-                  mode: "parallel",
-                });
-                return { toolCall, result: null, error: blockedMessage };
               }
 
               const preDecision = this.middleware.evaluatePreTool(
@@ -2052,37 +2256,6 @@ export class AgentLoop {
               continue;
             }
 
-            const exactRepeatCount = countRecentExactActionMatches(
-              recentSuccesses,
-              toolName,
-              argsKey,
-            );
-            if (
-              REDUNDANT_HARD_BLOCK_TOOLS.has(toolName) &&
-              exactRepeatCount >= REDUNDANT_ACTION.HARD_BLOCK_THRESHOLD - 1
-            ) {
-              const blockedMessage =
-                `Error: Redundant action blocked. ${toolName} with the same arguments has already succeeded ` +
-                `${exactRepeatCount} times. Do not repeat it again; choose a different action.`;
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: blockedMessage,
-              });
-              logger.warn("agent", "Redundant DOM action blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                count: exactRepeatCount + 1,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                tool: toolName,
-                count: exactRepeatCount + 1,
-                mode: "sequential",
-              });
-              continue;
-            }
-
             const preDecision = this.middleware.evaluatePreTool(
               toolName,
               args,
@@ -2175,9 +2348,34 @@ export class AgentLoop {
 
                 if (shouldReject) {
                   this.doneRejections++;
+
+                  // Advance completed subtasks and update plan state
+                  const newIdx = this.advanceCompletedSubtasks();
+                  if (newIdx > 0) {
+                    this.context.setPlanStatus(
+                      this.planSubtasks.map((s) => ({
+                        description: s.description,
+                        status: s.status,
+                        completedAtUrl: s.completedAtUrl,
+                        result: s.result,
+                      })),
+                      newIdx,
+                    );
+                    this.broadcast({
+                      type: "TASK_PROGRESS",
+                      payload: {
+                        taskId: this.taskId!,
+                        subtasks: this.planSubtasks,
+                        currentIndex: newIdx,
+                        totalTurnsUsed: this.turnCount,
+                      },
+                    });
+                  }
+
                   logger.warn("agent", "DONE rejected", {
                     turn: this.turnCount,
                     rejections: this.doneRejections,
+                    advancedTo: newIdx,
                     reason: rejectReason.slice(
                       0,
                       STRING_LIMITS.REJECTION_REASON,
@@ -2186,6 +2384,7 @@ export class AgentLoop {
                   this.traceRecorder?.recordEvent("done_rejected", {
                     rejections: this.doneRejections,
                     reason: rejectReason,
+                    advancedTo: newIdx,
                   });
 
                   if (this.doneRejections >= AGENT_LIMITS.MAX_DONE_REJECTIONS) {
@@ -2244,6 +2443,14 @@ export class AgentLoop {
 
               // Broadcast task completion if plan was active
               if (this.taskId && this.planSubtasks.length > 0) {
+                // Populate results for all subtasks before broadcasting
+                for (const sub of this.planSubtasks) {
+                  if (!sub.result) sub.result = "Completed";
+                }
+                // Last subtask gets the done() summary
+                this.planSubtasks[this.planSubtasks.length - 1].result =
+                  summary.slice(0, 200);
+
                 const subtaskResults: SubtaskResult[] = this.planSubtasks.map(
                   (st) => ({
                     description: st.description,
@@ -3111,56 +3318,69 @@ export class AgentLoop {
 
             if (isSuccess) {
               // Push to ring buffer (capped at WINDOW size)
+              const actionFingerprint = getSnapshotFingerprint(this.context.getSnapshot());
               recentSuccesses.push({
                 tool: toolName,
                 args: argsKey,
                 result: resultContent.slice(0, 60),
+                snapshotFingerprint: actionFingerprint,
               });
               if (recentSuccesses.length > REDUNDANT_ACTION.WINDOW) {
                 recentSuccesses.shift();
               }
 
-              // Count repetitions of this tool+args in the window
-              const matchCount = recentSuccesses.filter(
+              // Count repetitions of this tool+args WITH same page state in the window
+              const sameStateCount = recentSuccesses.filter(
+                (entry) => entry.tool === toolName && entry.args === argsKey && entry.snapshotFingerprint === actionFingerprint,
+              ).length;
+              // Also count total calls to this tool+args regardless of page state
+              const totalRepeatCount = recentSuccesses.filter(
                 (entry) => entry.tool === toolName && entry.args === argsKey,
               ).length;
 
-              if (matchCount >= REDUNDANT_ACTION.THRESHOLD) {
-                logger.warn("agent", "Redundant action detected", {
+              // If page state changed between calls, the action is making progress — no nudge
+              // Only nudge when same action + same page state (truly stuck)
+              if (sameStateCount >= REDUNDANT_ACTION.INFO_THRESHOLD) {
+                logger.info("agent", "Redundant action nudge", {
                   turn: this.turnCount,
                   tool: toolName,
-                  count: matchCount,
+                  sameStateCount,
+                  totalRepeats: totalRepeatCount,
                 });
-                this.traceRecorder?.recordEvent("redundant_action", {
+                this.traceRecorder?.recordEvent("redundant_action_nudge", {
                   tool: toolName,
-                  count: matchCount,
+                  count: sameStateCount,
+                });
+                this.traceRecorder?.recordEvent("multi_turn_pathology", {
+                  pathology: "anchoring",
+                  trigger: "redundant_action_nudge",
+                  turn: this.turnCount,
+                  details: `${toolName} x${sameStateCount} same state`,
                 });
                 this.context.addMessage({
                   role: "user",
-                  content: `REDUNDANT ACTION: You have called ${toolName} ${matchCount} times with similar arguments, getting the same result each time. This is not making progress. ACT on the information you already have — use click_element, type_text, or another tool to advance the task. Do NOT call ${toolName} with these arguments again.`,
+                  content: `Note: You have called ${toolName} ${sameStateCount} times with similar arguments and the page appears unchanged each time. Consider whether a different approach might be more effective.`,
                 });
-                // Clear the buffer so the warning doesn't fire every subsequent turn
+                // Clear the buffer so the nudge doesn't fire every subsequent turn
                 recentSuccesses.length = 0;
               } else {
-                // D. Tool-name-only redundancy: same tool name with varying args
+                // Tool-name-only pattern: same tool with varying args
                 const toolNameCount = recentSuccesses.filter(
                   (entry) => entry.tool === toolName,
                 ).length;
-                if (
-                  toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_ONLY_THRESHOLD
-                ) {
-                  logger.warn("agent", "Tool-name redundancy detected", {
+                if (toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD) {
+                  logger.info("agent", "Tool-name pattern noted", {
                     turn: this.turnCount,
                     tool: toolName,
                     count: toolNameCount,
                   });
-                  this.traceRecorder?.recordEvent("tool_name_redundancy", {
+                  this.traceRecorder?.recordEvent("tool_name_pattern", {
                     tool: toolName,
                     count: toolNameCount,
                   });
                   this.context.addMessage({
                     role: "user",
-                    content: `WARNING: You have called ${toolName} ${toolNameCount} times in recent turns (with different arguments each time). If the step is already done, advance to the next one. If your approach isn't working, try take_screenshot or a completely different strategy.`,
+                    content: `Note: You have used ${toolName} ${toolNameCount} times in recent turns. If your current approach isn't yielding results, take_screenshot or a different strategy might help.`,
                   });
                   recentSuccesses.length = 0;
                 }
@@ -3169,48 +3389,63 @@ export class AgentLoop {
           }
 
           // D2. Outcome-based dead-end detection: fingerprint tool results and detect patterns
-          for (const toolCall of response.tool_calls!) {
-            const toolResult = recentMessages.find(
-              (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
-            );
-            const resultContent =
-              typeof toolResult?.content === "string" ? toolResult.content : "";
-            if (resultContent) {
-              const fingerprint = normalizeOutcome(resultContent);
-              recentOutcomes.push(fingerprint);
-              if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW) recentOutcomes.shift();
+          {
+            const currentSnapshotFp = getSnapshotFingerprint(this.context.getSnapshot());
+            for (const toolCall of response.tool_calls!) {
+              const toolResult = recentMessages.find(
+                (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
+              );
+              const resultContent =
+                typeof toolResult?.content === "string" ? toolResult.content : "";
+              if (resultContent) {
+                const fingerprint = normalizeOutcome(resultContent);
+                recentOutcomes.push({ fingerprint, snapshotFp: currentSnapshotFp });
+                if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW) recentOutcomes.shift();
+              }
             }
           }
-          // Check for dead-end pattern (all recent outcomes identical)
+          // Check for dead-end pattern (all recent outcomes identical AND same page state)
           {
             const lastN = recentOutcomes.slice(-DEAD_END_DETECTION.PIVOT_THRESHOLD);
             const allSame = lastN.length >= DEAD_END_DETECTION.NUDGE_THRESHOLD &&
-              lastN.every(o => o === lastN[0]);
+              lastN.every(o => o.fingerprint === lastN[0].fingerprint && o.snapshotFp === lastN[0].snapshotFp);
             if (allSame && lastN.length >= DEAD_END_DETECTION.PIVOT_THRESHOLD) {
               logger.warn("agent", "Dead-end detected: forcing strategy pivot", {
                 turn: this.turnCount,
-                pattern: lastN[0].slice(0, 80),
+                pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
               });
               this.traceRecorder?.recordEvent("dead_end_pivot", {
-                pattern: lastN[0].slice(0, 80),
+                pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
+              });
+              this.traceRecorder?.recordEvent("multi_turn_pathology", {
+                pathology: "anchoring",
+                trigger: "dead_end_pivot",
+                turn: this.turnCount,
+                details: `pattern: ${lastN[0].fingerprint.slice(0, 60)}`,
               });
               await this.strategyPivot(tabId);
               recentOutcomes.length = 0;
             } else if (allSame) {
               logger.info("agent", "Dead-end nudge: repeated outcome pattern", {
                 turn: this.turnCount,
-                pattern: lastN[0].slice(0, 80),
+                pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
               });
               this.traceRecorder?.recordEvent("dead_end_nudge", {
-                pattern: lastN[0].slice(0, 80),
+                pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
+              });
+              this.traceRecorder?.recordEvent("multi_turn_pathology", {
+                pathology: "anchoring",
+                trigger: "dead_end_nudge",
+                turn: this.turnCount,
+                details: `pattern: ${lastN[0].fingerprint.slice(0, 60)}`,
               });
               this.context.addMessage({
                 role: "user",
-                content: `⚠ Dead-end detected: last ${lastN.length} actions all produced the same outcome pattern: "${lastN[0].slice(0, 80)}". Try a fundamentally different approach — use read_page, scroll_page, or find_element to reassess the page.`,
+                content: `⚠ Dead-end detected: last ${lastN.length} actions all produced the same outcome pattern: "${lastN[0].fingerprint.slice(0, 80)}". Try a fundamentally different approach — use read_page, scroll_page, or find_element to reassess the page.`,
               });
             }
           }
@@ -3470,8 +3705,92 @@ export class AgentLoop {
                 });
                 wasStuck = true;
 
+                // S3: Fresh-start recovery — full context reset when escalation cycles exhaust
+                if (
+                  escalationCycles >= FRESH_START.TRIGGER_ESCALATION_CYCLE &&
+                  freshStartCount < FRESH_START.MAX_PER_SESSION &&
+                  this.turnCount >= FRESH_START.MIN_TURNS_BEFORE_RESET
+                ) {
+                  freshStartCount++;
+                  const causalSummary = summarizeCausalChain(
+                    this.context.getMessages(),
+                    ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
+                  );
+                  const planState = this.planSubtasks.length > 0
+                    ? `Plan: ${this.planSubtasks.map((s, i) => `${i + 1}.[${s.status}] ${s.description}`).join(", ")}`
+                    : "";
+                  const currentUrl = this.context.getCurrentUrl();
+                  const brief = [
+                    `FRESH START #${freshStartCount} — previous approach exhausted after ${this.turnCount} turns.`,
+                    `Original task: "${this.originalQuery}"`,
+                    planState,
+                    causalSummary ? `What was tried:\n${causalSummary}` : "",
+                    currentUrl ? `Current page: ${currentUrl}` : "",
+                    "Start with a completely different strategy. Do NOT repeat previous approaches.",
+                  ].filter(Boolean).join("\n\n");
+
+                  // Record trace events
+                  this.traceRecorder?.recordEvent("fresh_start_recovery", {
+                    freshStartNumber: freshStartCount,
+                    totalTurnsSoFar: this.turnCount,
+                    escalationCycles,
+                  });
+                  this.traceRecorder?.recordEvent("multi_turn_pathology", {
+                    pathology: "compound_degradation",
+                    trigger: "fresh_start",
+                    turn: this.turnCount,
+                    details: `escalationCycles=${escalationCycles} freshStart=${freshStartCount}`,
+                  });
+
+                  // Reset context with the brief
+                  this.context.clearHistory();
+                  this.context.addMessage({ role: "user", content: brief });
+
+                  // Reset loop state
+                  this.progress.reset();
+                  failedActions.length = 0;
+                  consecutiveTextOnly = 0;
+                  recentOutcomes.length = 0;
+                  recentSuccesses.length = 0;
+                  consecutiveAllFailTurns = 0;
+                  escalationCycles = 0;
+                  cooldownRemaining = 0;
+
+                  // Ensure smart tier
+                  if (escalationTier === 0) {
+                    this.escalateModel();
+                    escalationTier = 1;
+                    this.disabledTools.delete(ToolName.TAKE_SCREENSHOT);
+                  }
+                  smartModelStartTurn = this.turnCount;
+
+                  // Refresh snapshot
+                  try {
+                    const freshSnap = await this.refreshSnapshot(tabId);
+                    if (freshSnap) {
+                      this.context.setSnapshot(freshSnap);
+                    }
+                  } catch { /* non-critical */ }
+
+                  this.stepHandler({
+                    id: crypto.randomUUID(),
+                    type: "info",
+                    label: `Fresh start #${freshStartCount} — resetting context`,
+                    status: "done",
+                    timestamp: Date.now(),
+                  }, false);
+
+                  logger.info("agent", "Fresh-start recovery", {
+                    freshStartCount,
+                    turn: this.turnCount,
+                    escalationCycles,
+                  });
+                  wasStuck = false;
+                  continue;
+                }
+
                 // Escalate: fast → smart (with screenshot context)
-                if (escalationTier === 0 && cooldownRemaining <= 0) {
+                else if (escalationTier === 0 && cooldownRemaining <= 0) {
                   this.escalateModel();
                   escalationTier = 1;
                   orientationPhase = false;
@@ -3594,6 +3913,18 @@ export class AgentLoop {
           }
         }
 
+        // S1: Rolling distillation — periodically compress older history
+        if (
+          this.turnCount > 0 &&
+          this.turnCount % ROLLING_DISTILL.INTERVAL === 0 &&
+          this.context.getMessages().length >= ROLLING_DISTILL.MIN_MESSAGES
+        ) {
+          this.context.rollingDistill(
+            ROLLING_DISTILL.KEEP_RECENT,
+            ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
+          );
+        }
+
         if (doneSignaled) {
           await this.traceRecorder?.endTurn();
           break;
@@ -3640,6 +3971,16 @@ export class AgentLoop {
           filler,
           text: cleanContent?.slice(0, 80),
         });
+
+        // S6: Record pathology for text-only responses
+        if (consecutiveTextOnly >= 2) {
+          this.traceRecorder?.recordEvent("multi_turn_pathology", {
+            pathology: filler ? "verbosity" : "premature_generation",
+            trigger: "text_only_response",
+            turn: this.turnCount,
+            details: `consecutiveTextOnly=${consecutiveTextOnly} filler=${filler}`,
+          });
+        }
 
         // Escalate to next tier on 2nd consecutive text-only
         if (consecutiveTextOnly >= 2 && escalationTier < 1 && cooldownRemaining <= 0) {
@@ -3773,6 +4114,11 @@ export class AgentLoop {
         outcome: "max_turns" as const,
         turnCount: this.turnCount,
         summary: limitMsg,
+        failure: {
+          category: "budget",
+          code: "turn_limit_reached",
+          detail: limitMsg,
+        },
         metrics: this.getMetrics(),
       };
     }
@@ -3781,6 +4127,7 @@ export class AgentLoop {
       outcome: "completed" as const,
       turnCount: this.turnCount,
       summary: doneSummary,
+      failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
     };
   }

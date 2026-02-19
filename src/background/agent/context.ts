@@ -1,7 +1,7 @@
 import { LLMMessage } from "../llm/types";
 import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
-import { COMPRESSION_TRIGGERS } from "./constants";
+import { COMPRESSION_TRIGGERS, ROLLING_DISTILL } from "./constants";
 import { sanitizeForPrompt } from "../security";
 
 /**
@@ -144,6 +144,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 
 {{persona}}
 {{planStatus}}
+{{pinnedGoal}}
 {{planInstructions}}
 {{demonstrations}}
 ## Page Context
@@ -167,9 +168,15 @@ export class ContextManager {
   private demonstrations: string | null = null;
   private storageKey: string;
   private modelTier: "fast" | "smart" = "fast";
+  private originalQuery = "";
 
   public setModelTier(tier: "fast" | "smart"): void {
     this.modelTier = tier;
+  }
+
+  /** Store the original user query so it can be pinned in every system prompt. */
+  public setOriginalQuery(query: string): void {
+    this.originalQuery = query;
   }
 
   /** Inject a formatted demonstration into the system prompt context. */
@@ -267,6 +274,11 @@ export class ContextManager {
     }
     block += `Execute now and mark this subtask complete when verified.`;
     return block;
+  }
+
+  private formatPinnedGoal(): string {
+    if (!this.originalQuery) return "";
+    return `## Current Task\nThe user asked: "${this.originalQuery}"\nStay focused on this goal.`;
   }
 
   public setSnapshot(snapshot: DomSnapshot) {
@@ -603,6 +615,7 @@ Do NOT call done() until every planned step is complete.
       }
       content = content.replace("{{viewportText}}", sanitizeForPrompt(viewportText));
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
+      content = content.replace("{{pinnedGoal}}", this.formatPinnedGoal());
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
@@ -610,6 +623,7 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{elements}}", "");
       content = content.replace("{{viewportText}}", "");
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
+      content = content.replace("{{pinnedGoal}}", this.formatPinnedGoal());
     }
 
     return {
@@ -1095,6 +1109,55 @@ Do NOT call done() until every planned step is complete.
     }
   }
 
+  /** Replace the entire conversation history (used by rolling distillation). */
+  public replaceHistory(messages: LLMMessage[]): void {
+    this.history = [...messages];
+    this.saveState().catch(() => {});
+  }
+
+  /**
+   * Rolling distillation: compress older history while keeping recent messages verbatim.
+   * Replaces [original_query, ...old, ...recent] with [original_query, summary, ...recent].
+   * Returns true if distillation was performed, false if skipped.
+   */
+  public rollingDistill(
+    keepRecent = ROLLING_DISTILL.KEEP_RECENT,
+    maxEntries = ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
+  ): boolean {
+    if (this.history.length < keepRecent + 2) return false;
+
+    // Preserve the first user message (original query)
+    const firstUserIdx = this.history.findIndex(m => m.role === "user");
+    const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
+
+    // Split: older messages to distill vs recent to keep verbatim
+    const recentMessages = this.history.slice(-keepRecent);
+    const olderMessages = this.history.slice(0, -keepRecent);
+
+    // Build a causal-chain summary of the older messages
+    const summary = summarizeCausalChain(olderMessages, maxEntries);
+    if (!summary) return false;
+
+    // Rebuild history: original query + summary + recent
+    const newHistory: LLMMessage[] = [];
+    if (firstUserMsg) {
+      newHistory.push(firstUserMsg);
+    }
+    newHistory.push({
+      role: "user",
+      content: `[DISTILLED HISTORY]\n${summary}`,
+    });
+    newHistory.push(...recentMessages);
+
+    this.history = newHistory;
+    this.saveState().catch(() => {});
+    logger.info("agent", "Rolling distillation applied", {
+      kept: keepRecent,
+      newHistoryLength: this.history.length,
+    });
+    return true;
+  }
+
   public async loadState() {
     try {
       const data = await chrome.storage.session.get(this.storageKey);
@@ -1260,4 +1323,71 @@ export function summarizeHistory(
   }
 
   return entries;
+}
+
+/**
+ * Build a compact causal-chain summary of message history.
+ * Groups action+observation pairs into single lines, resolves element refs,
+ * marks errors, and skips noise tools (wait).
+ *
+ * Key differences from summarizeHistory():
+ * - Returns a single string (joined), not string[]
+ * - Groups consecutive actions into range notation (T1-T2: ...)
+ * - Errors preserved with ERROR: prefix
+ */
+export function summarizeCausalChain(messages: LLMMessage[], maxEntries = 15): string {
+  const entries: string[] = [];
+  let turnNum = 0;
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role !== "assistant" || !msg.tool_calls) continue;
+
+    for (const tc of msg.tool_calls) {
+      const toolName = tc.function.name;
+      if (toolName === "wait") continue;
+
+      // Resolve args to readable format
+      let argSnippet = "";
+      try {
+        const args = JSON.parse(tc.function.arguments);
+        const parts: string[] = [];
+        if (args.id != null) parts.push(`[${args.id}]`);
+        if (args.text) parts.push(`"${String(args.text).slice(0, 40)}"`);
+        if (args.url) parts.push(String(args.url).slice(0, 50));
+        if (args.direction) parts.push(args.direction);
+        if (args.summary) parts.push(`"${String(args.summary).slice(0, 40)}"`);
+        if (args.reason) parts.push(`"${String(args.reason).slice(0, 40)}"`);
+        if (args.selector) parts.push(String(args.selector).slice(0, 40));
+        argSnippet = parts.join(" ");
+      } catch {
+        /* malformed args */
+      }
+
+      // Find paired tool result
+      let outcome = "no result";
+      let isError = false;
+      for (let j = i + 1; j < messages.length; j++) {
+        if (messages[j].role === "tool" && messages[j].tool_call_id === tc.id) {
+          const content =
+            typeof messages[j].content === "string" ? messages[j].content ?? "" : "";
+          const firstLine = content.split("\n")[0].slice(0, 100);
+          if (/^error|^fail|^exception/i.test(firstLine) || content.startsWith("Error:")) {
+            outcome = firstLine;
+            isError = true;
+          } else {
+            outcome = firstLine;
+          }
+          break;
+        }
+      }
+
+      turnNum++;
+      const prefix = isError ? "ERROR: " : "";
+      entries.push(`T${turnNum}: ${toolName} ${argSnippet} → ${prefix}${outcome}`);
+      if (entries.length >= maxEntries) return entries.join("\n");
+    }
+  }
+
+  return entries.join("\n");
 }
