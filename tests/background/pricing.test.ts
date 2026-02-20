@@ -3,7 +3,7 @@ import { estimateCostUsd, findModelPricing } from "../../src/background/llm/pric
 
 describe("pricing estimator", () => {
   test("returns null when pricing is unknown", () => {
-    const cost = estimateCostUsd("cerebras", "zai-glm-4.7", {
+    const cost = estimateCostUsd("cerebras", "unknown-model-xyz", {
       prompt_tokens: 1000,
       completion_tokens: 500,
       total_tokens: 1500,

@@ -43,12 +43,20 @@ const MODEL_PRICING: ModelPricing[] = [
   {
     providerId: "cerebras",
     model: "gpt-oss-120b",
-    inputUsdPerMillion: 0.25,
-    outputUsdPerMillion: 0.69,
+    inputUsdPerMillion: 0.35,
+    outputUsdPerMillion: 0.75,
     effectiveDate: "2026-02-18",
-    sourceUrl:
-      "https://www.cerebras.ai/blog/cerebras-launches-openai-s-gpt-oss-120b-at-a-blistering-3-000-tokens-sec",
-    confidence: "best_effort",
+    sourceUrl: "https://cerebras.ai/pricing",
+    confidence: "official",
+  },
+  {
+    providerId: "cerebras",
+    model: "zai-glm-4.7",
+    inputUsdPerMillion: 2.25,
+    outputUsdPerMillion: 2.75,
+    effectiveDate: "2026-02-18",
+    sourceUrl: "https://cerebras.ai/pricing",
+    confidence: "official",
   },
 ];
 
@@ -95,4 +103,3 @@ export function estimateCostUsd(
 
   return Number.isFinite(cost) ? cost : null;
 }
-
