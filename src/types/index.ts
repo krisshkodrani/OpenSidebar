@@ -1483,8 +1483,6 @@ export interface SidePanelState {
   demoRecording: boolean;
   /** Number of actions captured in current recording */
   demoActionCount: number;
-  /** Whether golden mode is enabled for eval dataset recording */
-  goldenMode: boolean;
 }
 
 // --- Memory / Second Brain Types ---
@@ -1672,7 +1670,7 @@ export interface UserSettings {
 
 /** A single recorded user action */
 export interface DemoAction {
-  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate";
+  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate" | "drag";
   timestamp: number;
   url: string;
   element?: ElementDescriptor;
@@ -1682,6 +1680,8 @@ export interface DemoAction {
   key?: string;
   /** Pixels scrolled (positive = down) */
   scrollDelta?: number;
+  /** Source element for drag actions (element = target) */
+  sourceElement?: ElementDescriptor;
 }
 
 /** Robust element identifier that survives DOM changes */
@@ -1703,12 +1703,18 @@ export interface Demonstration {
   id: string;
   name: string;
   description?: string;
+  /** Verb phrase — what the demo achieves (e.g. "Log into the account") */
+  goal?: string;
+  /** State assertions — when the demo applies (e.g. ["Must be logged out"]) */
+  preconditions?: string[];
+  /** Observable page state — how to verify success (e.g. "URL contains /dashboard") */
+  outcomeSignal?: string;
   createdAt: number;
   updatedAt: number;
   actions: DemoAction[];
   /** Domain or URL prefix for matching */
   urlPattern: string;
-  /** Tokenized name+description for semantic matching */
+  /** Tokenized name+description+goal for semantic matching */
   matchTokens: string[];
   /** Times injected into agent context */
   uses: number;
@@ -1742,6 +1748,12 @@ export interface DemoRecordStopMessage extends BaseMessage {
     tabId: number;
     /** User-provided name for the demo */
     name: string;
+    description?: string;
+    goal?: string;
+    preconditions?: string[];
+    outcomeSignal?: string;
+    /** When true, build golden eval cases from this recording */
+    golden?: boolean;
   };
 }
 

@@ -1,0 +1,53 @@
+import { logger } from "../../utils";
+import type { UiSlice, SliceCreator } from "./types";
+
+export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
+  ready: false,
+  showPlanBoard: false,
+  error: null,
+  activeWorkspaceId: null,
+  demoRecording: false,
+  demoActionCount: 0,
+
+  setReady: () =>
+    set((state) => {
+      state.ready = true;
+    }),
+
+  togglePlanBoard: () =>
+    set((state) => {
+      state.showPlanBoard = !state.showPlanBoard;
+    }),
+
+  setError: (error) =>
+    set((state) => {
+      state.error = error;
+      if (error) logger.error("ui", error);
+    }),
+
+  setActiveWorkspaceId: (id) => {
+    const currentId = get().activeWorkspaceId;
+    if (currentId === id) return;
+    set((state) => {
+      state.activeWorkspaceId = id;
+      // Cross-slice: clear chat messages and agent transient state
+      state.messages = [];
+      state.taskProgress = null;
+      state.taskCompletion = null;
+      state.stuckState = null;
+      state.turnProgress = null;
+      state.pendingApproval = null;
+      state.pendingEscalation = null;
+      state.taskRecovery = null;
+      state.laneTelemetry = null;
+    });
+    // Load messages for the new workspace
+    get().loadMessagesFromStorage();
+  },
+
+  setDemoRecording: (active, actionCount) =>
+    set((state) => {
+      state.demoRecording = active;
+      if (actionCount !== undefined) state.demoActionCount = actionCount;
+    }),
+});

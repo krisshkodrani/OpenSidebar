@@ -488,27 +488,37 @@ chrome.runtime.onMessage.addListener(
         goldenActions = [];
         goldenScreenshot = null;
         // Capture initial screenshot
-        chrome.tabs.captureVisibleTab({ format: "jpeg", quality: 70 })
-          .then((dataUrl) => { goldenScreenshot = dataUrl; })
+        chrome.tabs
+          .captureVisibleTab({ format: "jpeg", quality: 70 })
+          .then((dataUrl) => {
+            goldenScreenshot = dataUrl;
+          })
           .catch(() => {});
       }
 
-      chrome.tabs.sendMessage(tabId, {
-        type: "DEMO_RECORD_START",
-        requestId: message.requestId,
-        source: MessageSource.BACKGROUND,
-        payload: { golden: isGolden },
-      }).then(() => {
-        // Notify side panel that recording is active
-        chrome.runtime.sendMessage({
-          type: "DEMO_RECORD_STATUS",
-          requestId: crypto.randomUUID(),
+      chrome.tabs
+        .sendMessage(tabId, {
+          type: "DEMO_RECORD_START",
+          requestId: message.requestId,
           source: MessageSource.BACKGROUND,
-          payload: { active: true, actionCount: 0 },
-        }).catch(() => {});
-      }).catch((err) => {
-        logger.warn("demos", "Failed to start recording", { error: err?.message });
-      });
+          payload: { golden: isGolden },
+        })
+        .then(() => {
+          // Notify side panel that recording is active
+          chrome.runtime
+            .sendMessage({
+              type: "DEMO_RECORD_STATUS",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              payload: { active: true, actionCount: 0 },
+            })
+            .catch(() => {});
+        })
+        .catch((err) => {
+          logger.warn("demos", "Failed to start recording", {
+            error: err?.message,
+          });
+        });
       return false;
     }
 
@@ -518,90 +528,119 @@ chrome.runtime.onMessage.addListener(
     ) {
       const tabId = message.payload.tabId;
       const demoName = message.payload.name;
-      const wasGolden = goldenActive;
+      const {
+        description: demoDesc,
+        goal: demoGoal,
+        preconditions: demoPreconditions,
+        outcomeSignal: demoOutcome,
+        golden: demoGolden,
+      } = message.payload;
+      const wasGolden = demoGolden || goldenActive;
 
-      chrome.tabs.sendMessage(tabId, {
-        type: "DEMO_RECORD_STOP",
-        requestId: message.requestId,
-        source: MessageSource.BACKGROUND,
-        payload: { golden: wasGolden },
-      }, async (response: any) => {
-        try {
-          const actions = response?.actions || [];
-          // Get current tab URL for the demo
-          const tab = await chrome.tabs.get(tabId);
-          const demoStore = new DemoStore();
-          const demo = await demoStore.saveDemonstration({
-            name: demoName,
-            actions,
-            url: tab.url || "",
-          });
-          // Notify side panel
-          chrome.runtime.sendMessage({
-            type: "DEMO_RECORD_STATUS",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { active: false, actionCount: actions.length },
-          }).catch(() => {});
-          chrome.runtime.sendMessage({
-            type: "DEMO_SAVED",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { demo },
-          }).catch(() => {});
+      chrome.tabs.sendMessage(
+        tabId,
+        {
+          type: "DEMO_RECORD_STOP",
+          requestId: message.requestId,
+          source: MessageSource.BACKGROUND,
+          payload: { golden: wasGolden },
+        },
+        async (response: any) => {
+          try {
+            const actions = response?.actions || [];
+            // Get current tab URL for the demo
+            const tab = await chrome.tabs.get(tabId);
+            const demoStore = new DemoStore();
+            const demo = await demoStore.saveDemonstration({
+              name: demoName,
+              description: demoDesc,
+              goal: demoGoal,
+              preconditions: demoPreconditions,
+              outcomeSignal: demoOutcome,
+              actions,
+              url: tab.url || "",
+            });
+            // Notify side panel
+            chrome.runtime
+              .sendMessage({
+                type: "DEMO_RECORD_STATUS",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: { active: false, actionCount: actions.length },
+              })
+              .catch(() => {});
+            chrome.runtime
+              .sendMessage({
+                type: "DEMO_SAVED",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: { demo },
+              })
+              .catch(() => {});
 
-          // Golden mode: build eval cases and POST to log server
-          if (wasGolden && goldenActions.length > 0) {
-            const tools = toolRegistry.getDefinitions();
-            const evalCases = buildGoldenCases(
-              goldenActions,
-              demoName,
-              goldenScreenshot,
-              tools,
-            );
-            // Fire-and-forget POST to log server
-            fetch("http://127.0.0.1:7589/golden", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name: demoName, cases: evalCases }),
-            })
-              .then((res) => res.json())
-              .then((result: any) => {
-                logger.info("golden", "Golden dataset saved", {
-                  filename: result.filename,
-                  caseCount: result.caseCount,
-                });
-                chrome.runtime.sendMessage({
-                  type: "GOLDEN_SAVED",
-                  requestId: crypto.randomUUID(),
-                  source: MessageSource.BACKGROUND,
-                  payload: {
+            // Golden mode: build eval cases and POST to log server
+            if (wasGolden && goldenActions.length > 0) {
+              const tools = toolRegistry.getDefinitions();
+              const evalCases = buildGoldenCases(
+                goldenActions,
+                demoName,
+                goldenScreenshot,
+                tools,
+              );
+              // Fire-and-forget POST to log server
+              fetch("http://127.0.0.1:7589/golden", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: demoName, cases: evalCases }),
+              })
+                .then((res) => res.json())
+                .then((result: any) => {
+                  logger.info("golden", "Golden dataset saved", {
                     filename: result.filename,
                     caseCount: result.caseCount,
-                  },
-                }).catch(() => {});
-              })
-              .catch((err) => {
-                logger.warn("golden", "Failed to save golden dataset (log server down?)", {
-                  error: err?.message,
+                  });
+                  chrome.runtime
+                    .sendMessage({
+                      type: "GOLDEN_SAVED",
+                      requestId: crypto.randomUUID(),
+                      source: MessageSource.BACKGROUND,
+                      payload: {
+                        filename: result.filename,
+                        caseCount: result.caseCount,
+                      },
+                    })
+                    .catch(() => {});
+                })
+                .catch((err) => {
+                  logger.warn(
+                    "golden",
+                    "Failed to save golden dataset (log server down?)",
+                    {
+                      error: err?.message,
+                    },
+                  );
                 });
-              });
+            }
+          } catch (err: any) {
+            logger.error("demos", "Failed to save demo", {
+              error: err?.message,
+            });
+            chrome.runtime
+              .sendMessage({
+                type: "DEMO_RECORD_STATUS",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: { active: false, actionCount: 0 },
+              })
+              .catch(() => {});
+          } finally {
+            // Reset golden state
+            goldenActive = false;
+            goldenActions = [];
+            goldenScreenshot = null;
           }
-        } catch (err: any) {
-          logger.error("demos", "Failed to save demo", { error: err?.message });
-          chrome.runtime.sendMessage({
-            type: "DEMO_RECORD_STATUS",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.BACKGROUND,
-            payload: { active: false, actionCount: 0 },
-          }).catch(() => {});
-        } finally {
-          // Reset golden state
-          goldenActive = false;
-          goldenActions = [];
-          goldenScreenshot = null;
-        }
-      });
+        },
+      );
       return true; // async response via callback
     }
 
@@ -611,12 +650,14 @@ chrome.runtime.onMessage.addListener(
     ) {
       // Forward action count to side panel
       demoActionCounter++;
-      chrome.runtime.sendMessage({
-        type: "DEMO_RECORD_STATUS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { active: true, actionCount: demoActionCounter },
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({
+          type: "DEMO_RECORD_STATUS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: { active: true, actionCount: demoActionCounter },
+        })
+        .catch(() => {});
       return false;
     }
 
@@ -629,12 +670,14 @@ chrome.runtime.onMessage.addListener(
         goldenActions.push(message.payload.goldenAction);
       }
       demoActionCounter++;
-      chrome.runtime.sendMessage({
-        type: "DEMO_RECORD_STATUS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { active: true, actionCount: demoActionCounter },
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({
+          type: "DEMO_RECORD_STATUS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: { active: true, actionCount: demoActionCounter },
+        })
+        .catch(() => {});
       return false;
     }
 
@@ -691,7 +734,7 @@ chrome.runtime.onMessage.addListener(
               "opensidebar:demos:v1",
               "opensidebar_logs",
               "opensidebar:workspaces",
-              "opensidebar:workspaceCounter",
+              "opensidebar:nextWorkspaceNum",
               "opensidebar:checkpoints:v1",
             ]);
             sendResponse({
@@ -800,10 +843,16 @@ function sendAgentActivity(tabId: number, active: boolean) {
 }
 
 /**
- * Restore workspaces from existing OpenSidebar tab groups on browser restart
+ * Restore workspaces from existing OpenSidebar tab groups on browser restart.
+ * 1. Validate stored workspaces (remove stale ones, sync tabIds/name/color).
+ * 2. Restore any untracked groups that match the "OS N" / "OpenSidebar N" naming.
  */
 async function restoreWorkspacesFromExistingGroups() {
   try {
+    // First, validate stored workspaces against Chrome state
+    await workspaceManager.validateWorkspaces();
+
+    // Then, discover any orphaned groups with our naming convention
     const groups = await chrome.tabGroups.query({});
     const opensidebarGroups = groups.filter(
       (g) => g.title?.startsWith("OS ") || g.title?.startsWith("OpenSidebar "),
@@ -813,9 +862,7 @@ async function restoreWorkspacesFromExistingGroups() {
       logger.info(
         "workspace",
         "Restoring workspaces from existing tab groups",
-        {
-          count: opensidebarGroups.length,
-        },
+        { count: opensidebarGroups.length },
       );
 
       for (const group of opensidebarGroups) {
