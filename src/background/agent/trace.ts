@@ -10,8 +10,11 @@ import {
   TraceEventPayloadByType,
   TraceFailureInfo,
   TraceSession,
+  TraceLLMMessage,
+  TraceContextMetrics,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
+import { LLMMessage } from "../llm/types";
 import { logger } from "../../utils";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
@@ -70,6 +73,37 @@ export class TraceRecorder {
     }
   }
 
+  /**
+   * Convert LLMMessage[] to TraceLLMMessage[] for trace recording.
+   * Flattens ContentPart[] to string, replaces image_url parts with "[image]".
+   */
+  static toTraceMessages(messages: LLMMessage[]): TraceLLMMessage[] {
+    return messages.map((msg) => {
+      let content: string | null;
+      if (Array.isArray(msg.content)) {
+        const parts: string[] = [];
+        for (const part of msg.content) {
+          if (part.type === "text") parts.push(part.text);
+          else if (part.type === "image_url") parts.push("[image]");
+        }
+        content = parts.length > 0 ? parts.join("") : null;
+      } else {
+        content = msg.content;
+      }
+      const result: TraceLLMMessage = { role: msg.role, content };
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        result.tool_calls = msg.tool_calls.map((tc) => ({
+          id: tc.id,
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        }));
+      }
+      if (msg.tool_call_id) {
+        result.tool_call_id = msg.tool_call_id;
+      }
+      return result;
+    });
+  }
+
   /** Begin recording a new turn */
   startTurn(
     turnNumber: number,
@@ -85,6 +119,8 @@ export class TraceRecorder {
     toolCount: number,
     model: string,
     compressionLevel: string,
+    rawMessages?: TraceLLMMessage[],
+    contextMetrics?: TraceContextMetrics,
   ): void {
     this.turnToolExecutions = [];
     this.turnEvents = [];
@@ -99,6 +135,8 @@ export class TraceRecorder {
         messageCount,
         toolCount,
         compressionLevel,
+        ...(rawMessages ? { messages: rawMessages } : {}),
+        ...(contextMetrics ? { contextMetrics } : {}),
       },
     };
   }

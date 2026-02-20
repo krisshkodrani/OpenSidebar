@@ -1921,6 +1921,15 @@ export class AgentLoop {
       // Trace: start turn recording
       if (this.traceRecorder) {
         const snap = this.context.getSnapshot();
+
+        // Compute context metrics for trace
+        const systemContent = messages.length > 0 && messages[0].role === "system"
+          ? (typeof messages[0].content === "string" ? messages[0].content : "")
+          : "";
+        const cachedPrefixLength = systemContent.indexOf("## Page Context");
+        const droppedMessageCount = Math.max(0,
+          this.context.getHistoryLength() - (messages.length - 1));
+
         this.traceRecorder.startTurn(
           this.turnCount,
           {
@@ -1935,6 +1944,17 @@ export class AgentLoop {
           tools.length,
           this.llm.getCurrentModel(),
           metrics.compressionLevel,
+          TraceRecorder.toTraceMessages(messages),
+          {
+            systemTokens: metrics.systemTokens,
+            historyTokens: metrics.historyTokens,
+            totalTokens: metrics.totalTokens,
+            maxTokens: metrics.maxTokens,
+            utilization: metrics.utilization,
+            droppedMessageCount,
+            compressionLevel: metrics.compressionLevel,
+            cachedPrefixLength: cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
+          },
         );
       }
 

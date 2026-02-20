@@ -174,7 +174,8 @@ export type RuntimeMessage =
   | DemoRecordStatusMessage
   | DemoSavedMessage
   | GoldenActionMessage
-  | GoldenSavedMessage;
+  | GoldenSavedMessage
+  | GoldenAnnotationMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -1390,6 +1391,8 @@ export interface ChatEntry {
   steps?: AgentStep[];
   /** Whether this user message was sent as a hint during execution */
   isHint?: boolean;
+  /** Whether this user message is a golden recording annotation */
+  isAnnotation?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
   completionData?: TaskCompletionMessage["payload"];
   /** Source citations from URLs visited during the agent session */
@@ -1670,7 +1673,7 @@ export interface UserSettings {
 
 /** A single recorded user action */
 export interface DemoAction {
-  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate" | "drag";
+  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate" | "drag" | "annotate";
   timestamp: number;
   url: string;
   element?: ElementDescriptor;
@@ -1815,6 +1818,13 @@ export interface GoldenSavedMessage extends BaseMessage {
   };
 }
 
+/** Side panel → Background: text annotation during golden recording */
+export interface GoldenAnnotationMessage extends BaseMessage {
+  type: "GOLDEN_ANNOTATION";
+  source: MessageSource.SIDEPANEL;
+  payload: { text: string };
+}
+
 // --- Utility Types ---
 
 export type Result<T, E = Error> =
@@ -1834,6 +1844,26 @@ export type TraceRecordKind =
 export type TraceProducer =
   | "background.agent.trace-recorder"
   | "background.orchestrator.run-trace-writer";
+
+/** Slim message representation for traces — flattens ContentPart[] to string|null, replaces images with "[image]" */
+export interface TraceLLMMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls?: { id: string; function: { name: string; arguments: string } }[];
+  tool_call_id?: string;
+}
+
+/** Context budget metrics captured at time of LLM call */
+export interface TraceContextMetrics {
+  systemTokens: number;
+  historyTokens: number;
+  totalTokens: number;
+  maxTokens: number;
+  utilization: number;
+  droppedMessageCount: number;
+  compressionLevel: string;
+  cachedPrefixLength: number;
+}
 
 /** A single turn's full-fidelity recording for offline eval replay */
 export interface TraceEntry {
@@ -1872,6 +1902,10 @@ export interface TraceEntry {
     messageCount: number;
     toolCount: number;
     compressionLevel: string;
+    /** Full messages array sent to LLM (no tool defs) — optional for backward compat */
+    messages?: TraceLLMMessage[];
+    /** Context budget metrics — optional for backward compat */
+    contextMetrics?: TraceContextMetrics;
   };
   /** LLM response data */
   llmResponse: {

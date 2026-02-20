@@ -7,6 +7,20 @@ export interface RunPromptRef {
 }
 
 export interface RunManifest {
+  /** Trace schema version (optional for backward compatibility with older run traces) */
+  schemaVersion?: "2026-02-19";
+  /** Trace record kind (optional for backward compatibility with older run traces) */
+  traceKind?: "orchestrator.run.manifest";
+  /** ISO timestamp when this record was emitted (optional for backward compatibility) */
+  recordedAt?: string;
+  /** Component that emitted this record (optional for backward compatibility) */
+  producer?: "background.orchestrator.run-trace-writer";
+  /** End-to-end correlation ID spanning orchestrator + agent trace streams */
+  correlationId?: string;
+  /** Parent run for nested/derived executions (future-proofing) */
+  parentRunId?: string;
+  /** Linked agent session ID when applicable */
+  sessionId?: string;
   runId: string;
   environment: RunEnvironment;
   startedAt: string;
@@ -21,6 +35,20 @@ export interface RunManifest {
 }
 
 export interface RunTraceEvent {
+  /** Trace schema version (optional for backward compatibility with older run traces) */
+  schemaVersion?: "2026-02-19";
+  /** Trace record kind (optional for backward compatibility with older run traces) */
+  traceKind?: "orchestrator.run.event";
+  /** ISO timestamp when this record was emitted (optional for backward compatibility) */
+  recordedAt?: string;
+  /** Component that emitted this record (optional for backward compatibility) */
+  producer?: "background.orchestrator.run-trace-writer";
+  /** End-to-end correlation ID spanning orchestrator + agent trace streams */
+  correlationId?: string;
+  /** Parent run for nested/derived executions (future-proofing) */
+  parentRunId?: string;
+  /** Linked agent session ID when applicable */
+  sessionId?: string;
   runId: string;
   ts: string;
   type: string;
@@ -35,6 +63,9 @@ export type RunTraceRecord =
 
 type RunTraceWrite = (record: RunTraceRecord) => void | Promise<void>;
 
+const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
+const TRACE_PRODUCER = "background.orchestrator.run-trace-writer" as const;
+
 export class RunTraceWriter {
   private _write: RunTraceWrite;
 
@@ -43,13 +74,28 @@ export class RunTraceWriter {
   }
 
   async emitManifest(manifest: RunManifest): Promise<void> {
-    await this._write({ kind: "manifest", manifest });
+    await this._write({
+      kind: "manifest",
+      manifest: {
+        schemaVersion: TRACE_SCHEMA_VERSION,
+        traceKind: "orchestrator.run.manifest",
+        recordedAt: new Date().toISOString(),
+        producer: TRACE_PRODUCER,
+        correlationId: manifest.correlationId ?? manifest.runId,
+        ...manifest,
+      },
+    });
   }
 
   async emitEvent(event: Omit<RunTraceEvent, "ts">): Promise<void> {
     await this._write({
       kind: "event",
       event: {
+        schemaVersion: TRACE_SCHEMA_VERSION,
+        traceKind: "orchestrator.run.event",
+        recordedAt: new Date().toISOString(),
+        producer: TRACE_PRODUCER,
+        correlationId: event.correlationId ?? event.runId,
         ...event,
         ts: new Date().toISOString(),
       },
