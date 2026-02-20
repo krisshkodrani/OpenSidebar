@@ -21,6 +21,12 @@ import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import { isElementVisible, addDynamicTag, resetStableIds } from "./tagging";
 import { detectFramework } from "./framework-detect";
+import {
+  startRecording,
+  stopRecording,
+  startGoldenRecording,
+  stopGoldenRecording,
+} from "./recorder";
 
 logger.info("system", "Content Script Loaded");
 
@@ -97,12 +103,14 @@ window.addEventListener("pageshow", () => {
 
 // Announce readiness to background — eliminates all "wait for content script" sleeps
 if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-  chrome.runtime.sendMessage({
-    type: "CONTENT_SCRIPT_READY",
-    requestId: crypto.randomUUID(),
-    source: MessageSource.CONTENT,
-    payload: { tabId: -1 }, // Background resolves actual tabId from sender
-  }).catch(() => {}); // Ignore if background not ready yet
+  chrome.runtime
+    .sendMessage({
+      type: "CONTENT_SCRIPT_READY",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.CONTENT,
+      payload: { tabId: -1 }, // Background resolves actual tabId from sender
+    })
+    .catch(() => {}); // Ignore if background not ready yet
 }
 
 // --- Overlay Detection Helpers ---
@@ -481,6 +489,25 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         };
         requestAnimationFrame(checkIdle);
         return true; // async response
+      }
+
+      if (message.type === "DEMO_RECORD_START") {
+        if (message.payload?.golden) {
+          startGoldenRecording();
+        } else {
+          startRecording();
+        }
+        sendResponse({ ok: true });
+        return true;
+      }
+
+      if (message.type === "DEMO_RECORD_STOP") {
+        // Check if we were in golden mode (payload.golden forwarded from background)
+        const actions = message.payload?.golden
+          ? stopGoldenRecording()
+          : stopRecording();
+        sendResponse({ ok: true, actions });
+        return true;
       }
 
       if (message.type === "DOM_SNAPSHOT_REQUEST") {

@@ -100,7 +100,8 @@ export function isLikelyOverlay(el: HTMLElement): boolean {
 
   const style = window.getComputedStyle(el);
   const position = style.position;
-  const isPositioned = position === "fixed" || position === "absolute" || position === "sticky";
+  const isPositioned =
+    position === "fixed" || position === "absolute" || position === "sticky";
   const zIndex = parseInt(style.zIndex, 10) || 0;
 
   // Condition 1: fixed/absolute + high z-index
@@ -194,11 +195,12 @@ export async function executeAction(
   }
 }
 
-function executeClick(args: ClickElementArgs): {
+async function executeClick(args: ClickElementArgs): Promise<{
   success: boolean;
   result: string;
   navigated: boolean;
-} {
+}> {
+  const count = Math.min(Math.max((args.count as number) || 1, 1), 10);
   const tagMap = getTagMap();
   const el = tagMap.get(args.id);
   if (!el) {
@@ -285,25 +287,33 @@ function executeClick(args: ClickElementArgs): {
       !(el as HTMLAnchorElement).target) ||
     el.closest("form")?.querySelector("[type='submit']") === el;
 
-  // Dispatch real click events
-  el.dispatchEvent(
-    new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-  );
-  el.dispatchEvent(
-    new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
-  );
-  el.dispatchEvent(
-    new MouseEvent("click", { bubbles: true, cancelable: true }),
-  );
+  // Dispatch click events (possibly multiple times)
+  for (let i = 0; i < count; i++) {
+    el.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+    el.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
+    );
+    el.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
 
-  // Also call .click() for elements that handle it natively
-  if (el instanceof HTMLElement) {
-    el.click();
+    // Also call .click() for elements that handle it natively
+    if (el instanceof HTMLElement) {
+      el.click();
+    }
+
+    // Delay between clicks for multi-click (let event handlers process)
+    if (i < count - 1) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
   }
 
+  const countSuffix = count > 1 ? ` (${count} times)` : "";
   return {
     success: true,
-    result: `Clicked [${args.id}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}"`,
+    result: `Clicked [${args.id}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}"${countSuffix}`,
     navigated: willNavigate,
   };
 }
@@ -313,10 +323,14 @@ function executeClick(args: ClickElementArgs): {
  * Frameworks override the `value` property on instances; calling the prototype setter
  * triggers the internal [[Set]] without the framework's getter/setter interference.
  */
-function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  const proto = el instanceof HTMLTextAreaElement
-    ? HTMLTextAreaElement.prototype
-    : HTMLInputElement.prototype;
+function setNativeValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+): void {
+  const proto =
+    el instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (setter) {
     setter.call(el, value);
@@ -356,7 +370,12 @@ function executeType(args: TypeTextArgs): {
   // Clear existing value using native setter
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     setNativeValue(el, "");
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    el.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType: "deleteContentBackward",
+      }),
+    );
   }
 
   // Type character by character for SPA frameworks that listen to input events
@@ -366,10 +385,23 @@ function executeType(args: TypeTextArgs): {
     );
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
       setNativeValue(el, el.value + char);
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }));
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: char,
+          inputType: "insertText",
+        }),
+      );
     } else if ((el as HTMLElement).isContentEditable) {
-      (el as HTMLElement).textContent = ((el as HTMLElement).textContent || "") + char;
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }));
+      (el as HTMLElement).textContent =
+        ((el as HTMLElement).textContent || "") + char;
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: char,
+          inputType: "insertText",
+        }),
+      );
     }
     el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
   }
@@ -937,10 +969,18 @@ function executeDrawStroke(args: DrawStrokeArgs): {
  * Walk up from an element to find the nearest overlay ancestor.
  * Used by executeHideElement to support hiding modals via their child elements.
  */
-function findOverlayAncestor(el: HTMLElement, maxDepth = 8): HTMLElement | null {
+function findOverlayAncestor(
+  el: HTMLElement,
+  maxDepth = 8,
+): HTMLElement | null {
   let current = el.parentElement;
   let depth = 0;
-  while (current && current !== document.body && current !== document.documentElement && depth < maxDepth) {
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < maxDepth
+  ) {
     if (isLikelyOverlay(current)) return current;
     current = current.parentElement;
     depth++;

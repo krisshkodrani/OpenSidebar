@@ -426,6 +426,70 @@ describe("Content Actions", () => {
         });
     });
 
+    describe("executeClick with count (multi-click)", () => {
+        test("dispatches multiple click sequences when count > 1", async () => {
+            document.body.innerHTML = '<button id="btn">Click me 3 times</button>';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "btn") { btnTag = tag; break; }
+            }
+            expect(btnTag).toBeGreaterThan(0);
+
+            const clickEvents: string[] = [];
+            const btn = document.getElementById("btn")!;
+            btn.addEventListener("click", () => clickEvents.push("click"));
+
+            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 3 });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("(3 times)");
+            // Each iteration dispatches click event + el.click() = 2 per iteration
+            expect(clickEvents.length).toBe(6);
+        });
+
+        test("defaults to 1 click when count is omitted", async () => {
+            document.body.innerHTML = '<button id="btn">Click me</button>';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "btn") { btnTag = tag; break; }
+            }
+
+            const clickEvents: string[] = [];
+            const btn = document.getElementById("btn")!;
+            btn.addEventListener("click", () => clickEvents.push("click"));
+
+            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag });
+            expect(result.success).toBe(true);
+            expect(result.result).not.toContain("times");
+            expect(clickEvents.length).toBe(2); // click event + el.click()
+        });
+
+        test("clamps count to max 10", async () => {
+            document.body.innerHTML = '<button id="btn">Click</button>';
+            resetStableIds();
+            tagElements(false);
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "btn") { btnTag = tag; break; }
+            }
+
+            const clickEvents: string[] = [];
+            const btn = document.getElementById("btn")!;
+            btn.addEventListener("click", () => clickEvents.push("click"));
+
+            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 50 });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("(10 times)");
+            expect(clickEvents.length).toBe(20); // 10 * 2
+        });
+    });
+
     describe("executeType (type_text) — WI-5 SPA robustness", () => {
         test("fires InputEvent with data and inputType properties", async () => {
             document.body.innerHTML = '<input id="inp" type="text" />';
