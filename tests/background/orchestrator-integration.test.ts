@@ -26,20 +26,6 @@ let verifierDecisionImpl: (...args: unknown[]) => Promise<{
     | "unknown";
   rerouteObjective?: string;
 }>;
-let verifierCriticImpl:
-  | ((...args: unknown[]) => Promise<{
-      decision: "accept" | "retry" | "reroute";
-      reason: string;
-      confidence?: number;
-      failureType?:
-        | "blocked"
-        | "state_mismatch"
-        | "insufficient_evidence"
-        | "transient"
-        | "unknown";
-      rerouteObjective?: string;
-    }>)
-  | undefined;
 let loopStartImpl: (
   nodeId: string | undefined,
   instruction: string,
@@ -121,7 +107,6 @@ describe("Orchestrator integration join tests", () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
-    verifierCriticImpl = undefined;
     loopEmitStaleSignal = false;
     loopStartImpl = async (nodeId) => ({
       outcome: "completed",
@@ -193,8 +178,8 @@ describe("Orchestrator integration join tests", () => {
 
     (chrome.tabs as any).get = mock(async (tabId: number) => ({
       id: tabId,
-      url: "https://example.com/app",
-      title: "Example App",
+      url: "https://example.com/catalog",
+      title: "Catalog Page",
       groupId: 1,
     }));
     (chrome.tabs as any).create = mock(async () => ({ id: 202 }));
@@ -219,9 +204,6 @@ describe("Orchestrator integration join tests", () => {
       }),
       createVerifier: () => ({
         verifyNode: async (...args: unknown[]) => verifierDecisionImpl(...args),
-        reflectDecision: verifierCriticImpl
-          ? async (...args: unknown[]) => verifierCriticImpl!(...args)
-          : undefined,
       }),
       createAgentLoop: (input) => {
         const cfg = (input.options as MockLoopConfig) || {};
@@ -258,12 +240,6 @@ describe("Orchestrator integration join tests", () => {
           injectHint(_text: string) {},
         } as any;
       },
-      createLlm: () => ({
-        switchToSmart() {},
-        async complete() {
-          return { content: "Integration summary", usage: undefined };
-        },
-      }),
       workspaceManager: {
         async getWorkspaceById(_workspaceId: string) {
           return { id: "ws-1", tabIds: [101], tabGroupId: 1 };
@@ -629,43 +605,6 @@ describe("Orchestrator integration join tests", () => {
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("failed");
-  });
-
-  test("applies bounded verifier-critic reflection and can upgrade retry to accept", async () => {
-    plannerBuildNodesImpl = async () => [makeNode("n1", "critic correction node")];
-    verifierDecisionImpl = async () => ({
-      decision: "retry",
-      reason: "Not enough proof in summary",
-      confidence: 0.35,
-      failureType: "insufficient_evidence",
-    });
-    verifierCriticImpl = async () => ({
-      decision: "accept",
-      reason: "Evidence is sufficient for success criteria",
-      confidence: 0.86,
-    });
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("critic reflection upgrade"));
-
-    expect(createdLoopNodeIds).toEqual(["n1"]);
-    const messages = (globalThis as any).__runtimeMessages as Array<{
-      type?: string;
-      payload?: any;
-    }>;
-    expect(
-      messages.some(
-        (m) =>
-          m.type === "AGENT_STEP" &&
-          String(m.payload?.step?.label || "").includes(
-            "Critic: reviewed verifier decision",
-          ),
-      ),
-    ).toBe(true);
-    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
-    expect(completion).toBeDefined();
-    expect(completion?.payload?.status).toBe("completed");
   });
 
   test("isolates verifier lane and stops cross-node contamination", async () => {

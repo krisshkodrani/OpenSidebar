@@ -1,5 +1,4 @@
 import { AgentLoop } from "../agent";
-import { LLMClient } from "../llm";
 import {
   AgentStatus,
   AgentStep,
@@ -12,8 +11,6 @@ import {
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
-  TraceFailureCategory,
-  TraceFailureCode,
   ToolName,
   UserSettings,
 } from "../../types";
@@ -40,12 +37,10 @@ import {
   WorkerInstance,
 } from "./types";
 import { MemoryBuffer } from "./memory-buffer";
-import { moderateUserInput, moderateFinalOutput } from "./moderation";
 import {
-  DialogueResult,
   NodeVerificationResult,
   OrchestratorVerifier,
-  VerificationReflectionInput,
+  programmaticVerify,
 } from "./verifier";
 import {
   buildAssumptionDriftSignal,
@@ -67,8 +62,6 @@ const DEFAULT_MAX_REPLANS = 3;
 const DEFAULT_MAX_SESSION_TIME_MS = 12 * 60 * 1000;
 const DEFAULT_MAX_TOTAL_TOKENS = 1_000_000;
 const DEFAULT_MAX_TOTAL_COST_USD = 1.5;
-const MAX_VERIFIER_REFLECTION_ROUNDS = 2;
-const MIN_CRITIC_CONFIDENCE_DELTA = 0.15;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
 const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
@@ -176,11 +169,9 @@ class LaneTimeoutError extends Error {
   }
 }
 
-type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode"> &
-  Partial<Pick<OrchestratorPlanner, "retrospective">>;
+type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode">;
 type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
-  Partial<Pick<OrchestratorVerifier, "reflectDecision" | "runDialogue" | "advise" | "reviewPlan" | "advocateChallenge">>;
-type LlmLike = Pick<LLMClient, "switchToSmart" | "complete">;
+  Partial<Pick<OrchestratorVerifier, "advise">>;
 
 type CreateAgentLoopInput = {
   openRouterApiKey: string;
@@ -200,7 +191,6 @@ export type OrchestratorDeps = {
     cerebrasApiKey?: string,
   ) => VerifierLike;
   createAgentLoop?: (input: CreateAgentLoopInput) => AgentLoop;
-  createLlm?: (openRouterApiKey: string) => LlmLike;
   workspaceManager?: Pick<
     typeof workspaceManager,
     "getWorkspaceById" | "addTabToWorkspace"
@@ -259,105 +249,6 @@ function isTaskStatus(value: unknown): value is OrchestratorTask["status"] {
     value === "failed" ||
     value === "stopped"
   );
-}
-
-const TRACE_FAILURE_CATEGORIES: ReadonlyArray<TraceFailureCategory> = [
-  "none",
-  "user",
-  "budget",
-  "policy",
-  "safety",
-  "runtime",
-  "quality",
-  "unknown",
-];
-
-const TRACE_FAILURE_CODES: ReadonlyArray<TraceFailureCode> = [
-  "none",
-  "user_stopped",
-  "stopped_by_operator",
-  "turn_limit_reached",
-  "content_policy_blocked",
-  "budget_time_exceeded",
-  "budget_tokens_exceeded",
-  "budget_cost_exceeded",
-  "lane_isolation",
-  "executor_timeout",
-  "verifier_rejected",
-  "dependency_blocked",
-  "runtime_error",
-  "unknown_failure",
-];
-
-function isTraceFailureCategory(value: unknown): value is TraceFailureCategory {
-  return typeof value === "string" && TRACE_FAILURE_CATEGORIES.includes(value as TraceFailureCategory);
-}
-
-function isTraceFailureCode(value: unknown): value is TraceFailureCode {
-  return typeof value === "string" && TRACE_FAILURE_CODES.includes(value as TraceFailureCode);
-}
-
-function normalizeFailureReason(
-  reason: string | undefined,
-): { category: TraceFailureCategory; code: TraceFailureCode; detail?: string } | null {
-  if (!reason) return null;
-  if (reason.startsWith("Content policy:")) {
-    return { category: "policy", code: "content_policy_blocked", detail: reason };
-  }
-  if (reason.startsWith("Global time budget exceeded")) {
-    return { category: "budget", code: "budget_time_exceeded", detail: reason };
-  }
-  if (reason.startsWith("Global token budget exceeded")) {
-    return { category: "budget", code: "budget_tokens_exceeded", detail: reason };
-  }
-  if (reason.startsWith("Global cost budget exceeded")) {
-    return { category: "budget", code: "budget_cost_exceeded", detail: reason };
-  }
-  if (reason.includes("lane isolated") || reason.includes("lane isolation")) {
-    return { category: "runtime", code: "lane_isolation", detail: reason };
-  }
-  if (reason.includes("Stopped by operator")) {
-    return { category: "user", code: "stopped_by_operator", detail: reason };
-  }
-  if (reason.includes("Stopped by user")) {
-    return { category: "user", code: "user_stopped", detail: reason };
-  }
-  return null;
-}
-
-function deriveTaskFailure(
-  task: OrchestratorTask,
-  completionStatus: "completed" | "partial" | "failed",
-): { category: TraceFailureCategory; code: TraceFailureCode; detail?: string } {
-  if (completionStatus === "completed") {
-    return { category: "none", code: "none" };
-  }
-  if (task.failureCategory && task.failureCode) {
-    return {
-      category: task.failureCategory,
-      code: task.failureCode,
-      ...(task.failureDetail ? { detail: task.failureDetail } : {}),
-    };
-  }
-
-  const reasonBased = normalizeFailureReason(task.terminationReason);
-  if (reasonBased) return reasonBased;
-
-  const failedNodes = task.nodes.filter((n) => n.status === "failed");
-  if (failedNodes.some((n) => (n.error || "").includes("Blocked by failed dependencies") || (n.error || "").includes("Blocked by missing dependencies"))) {
-    return { category: "quality", code: "dependency_blocked", detail: task.terminationReason };
-  }
-  if (failedNodes.some((n) => (n.error || "").includes("Verifier "))) {
-    return { category: "quality", code: "verifier_rejected", detail: task.terminationReason };
-  }
-  if (failedNodes.some((n) => (n.error || "").toLowerCase().includes("timeout"))) {
-    return { category: "runtime", code: "executor_timeout", detail: task.terminationReason };
-  }
-  return {
-    category: completionStatus === "partial" ? "quality" : "unknown",
-    code: "unknown_failure",
-    detail: task.terminationReason,
-  };
 }
 
 function sanitizeTaskNode(raw: unknown): TaskNode | null {
@@ -577,18 +468,6 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (raw.terminationReason !== undefined) {
     if (typeof raw.terminationReason !== "string") return null;
     task.terminationReason = raw.terminationReason;
-  }
-  if (raw.failureCategory !== undefined) {
-    if (!isTraceFailureCategory(raw.failureCategory)) return null;
-    task.failureCategory = raw.failureCategory;
-  }
-  if (raw.failureCode !== undefined) {
-    if (!isTraceFailureCode(raw.failureCode)) return null;
-    task.failureCode = raw.failureCode;
-  }
-  if (raw.failureDetail !== undefined) {
-    if (typeof raw.failureDetail !== "string") return null;
-    task.failureDetail = raw.failureDetail;
   }
 
   return task;
@@ -872,18 +751,6 @@ function isLaneIsolationError(error: unknown, lane?: RuntimeLane): boolean {
   return lane ? error.lane === lane : true;
 }
 
-function isVerificationDecisionChanged(
-  previous: NodeVerificationResult,
-  next: NodeVerificationResult,
-): boolean {
-  return (
-    previous.decision !== next.decision ||
-    previous.reason !== next.reason ||
-    previous.failureType !== next.failureType ||
-    previous.rerouteObjective !== next.rerouteObjective
-  );
-}
-
 function deriveSuggestedApproach(
   verification: NodeVerificationResult,
 ): string | undefined {
@@ -1049,10 +916,6 @@ export class Orchestrator {
             input.callbacks,
             input.options,
           )),
-      createLlm:
-        deps.createLlm ??
-        ((openRouterApiKey: string) =>
-          new LLMClient(openRouterApiKey, undefined, undefined)),
       workspaceManager: deps.workspaceManager ?? workspaceManager,
       waitForContentScriptReady:
         deps.waitForContentScriptReady ?? waitForContentScriptReady,
@@ -1108,11 +971,7 @@ export class Orchestrator {
   ): RunManifest {
     const promptSet = listPromptDescriptors([
       "orchestrator.verifier.system",
-      "orchestrator.verifier.critic.system",
       "orchestrator.advisory.system",
-      "orchestrator.verifier.preflight.system",
-      "orchestrator.verifier.advocate.system",
-      "orchestrator.planner.retrospective.system",
     ]);
     return {
       runId: task.runId || task.id,
@@ -2032,39 +1891,6 @@ export class Orchestrator {
 
     this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
 
-    // --- Moderation pre-flight ---
-    if (input.settings.moderationEnabled !== false) {
-      const preflightResult = moderateUserInput(
-        input.query,
-        input.settings.moderationStrictness ?? "standard",
-      );
-      this.emitTraceEvent(task, "moderation_preflight", {
-        allowed: preflightResult.allowed,
-        category: preflightResult.category,
-        severity: preflightResult.severity,
-        reason: preflightResult.reason,
-        querySnippet: input.query.slice(0, 120),
-      }, "system");
-      if (!preflightResult.allowed) {
-        task.status = "failed";
-        task.terminationReason = `Content policy: ${preflightResult.category}`;
-        task.failureCategory = "policy";
-        task.failureCode = "content_policy_blocked";
-        task.failureDetail = task.terminationReason;
-        this.sendMessage({
-          type: "STREAM_CHUNK",
-          workspaceId: task.workspaceId,
-          payload: {
-            delta: `I can't process this request — it was flagged by content moderation (${preflightResult.category}).`,
-            done: true,
-          },
-        });
-        this.sendStatus(input.workspaceId, AgentStatus.IDLE);
-        this.tasksByWorkspace.delete(input.workspaceId);
-        return;
-      }
-    }
-
     let nodes: TaskNode[] = [];
     let replaySkillId: string | null = null;
     let replayMatchContext: ReplayMatchContext | null = null;
@@ -2264,60 +2090,6 @@ export class Orchestrator {
 
     task.nodes = nodes;
 
-    // WS3: Pre-flight plan review (only for non-trivial plans with ≥3 nodes)
-    if (nodes.length >= 3) {
-      try {
-        const verifier = this.deps.createVerifier(
-          input.openRouterApiKey,
-          input.cerebrasApiKey,
-        );
-        if (verifier.reviewPlan) {
-          const planReview = await this.runInLane(task, "verifier", async () =>
-            verifier.reviewPlan!(task, nodes),
-          );
-          this.emitTraceEvent(task, "plan_reviewed", {
-            nodeCount: nodes.length,
-            approved: planReview.approved,
-            concernCount: planReview.concerns.length,
-          }, "verifier");
-          if (!planReview.approved && planReview.suggestedChanges) {
-            logger.info("orchestrator", "Verifier rejected plan, requesting refinement", {
-              taskId: task.id,
-              concerns: planReview.concerns,
-              suggestedChanges: planReview.suggestedChanges,
-            });
-            try {
-              const replanner = this.deps.createPlanner(
-                input.openRouterApiKey,
-                input.cerebrasApiKey,
-              );
-              const tab = await chrome.tabs.get(input.tabId);
-              const refinedNodes = await this.runInLane(task, "planner", async () =>
-                replanner.expandNode(
-                  nodes[0],
-                  tab.title || "Untitled",
-                  tab.url || "",
-                  `Pre-flight review concerns: ${planReview.concerns.join("; ")}. ${planReview.suggestedChanges}`,
-                ),
-              );
-              if (refinedNodes && refinedNodes.length >= 2) {
-                nodes = refinedNodes;
-                task.nodes = nodes;
-                logger.info("orchestrator", "Plan refined after verifier review", {
-                  taskId: task.id,
-                  refinedCount: refinedNodes.length,
-                });
-              }
-            } catch (error) {
-              logger.warn("orchestrator", "Plan refinement failed, using original plan", { error });
-            }
-          }
-        }
-      } catch (error) {
-        logger.warn("orchestrator", "Pre-flight review failed, continuing with plan", { error });
-      }
-    }
-
     this.applyPreflightBudget(task);
     task.status = "running";
     task.startedAt = Date.now();
@@ -2361,44 +2133,30 @@ export class Orchestrator {
       // If the tab disappears between restore/start and execution, worker tabs still boot safely.
     }
 
-    const getBudgetExhaustionReason = (): { reason: string; code: TraceFailureCode } | null => {
+    const getBudgetExhaustionReason = (): string | null => {
       const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
       if (elapsedMs > task.budget.maxSessionTimeMs) {
-        return {
-          reason: `Global time budget exceeded (${elapsedMs}ms > ${task.budget.maxSessionTimeMs}ms)`,
-          code: "budget_time_exceeded",
-        };
+        return `Global time budget exceeded (${elapsedMs}ms > ${task.budget.maxSessionTimeMs}ms)`;
       }
       if (task.sessionMetrics.totalTokens > task.budget.maxTotalTokens) {
-        return {
-          reason: `Global token budget exceeded (${task.sessionMetrics.totalTokens} > ${task.budget.maxTotalTokens})`,
-          code: "budget_tokens_exceeded",
-        };
+        return `Global token budget exceeded (${task.sessionMetrics.totalTokens} > ${task.budget.maxTotalTokens})`;
       }
       if (task.sessionMetrics.totalCost > task.budget.maxTotalCostUsd) {
-        return {
-          reason: `Global cost budget exceeded ($${task.sessionMetrics.totalCost.toFixed(4)} > $${task.budget.maxTotalCostUsd.toFixed(4)})`,
-          code: "budget_cost_exceeded",
-        };
+        return `Global cost budget exceeded ($${task.sessionMetrics.totalCost.toFixed(4)} > $${task.budget.maxTotalCostUsd.toFixed(4)})`;
       }
       return null;
     };
 
-    const applyBudgetTermination = (
-      failure: { reason: string; code: TraceFailureCode },
-    ): void => {
-      task.terminationReason = failure.reason;
-      task.failureCategory = "budget";
-      task.failureCode = failure.code;
-      task.failureDetail = failure.reason;
+    const applyBudgetTermination = (reason: string): void => {
+      task.terminationReason = reason;
       for (const pendingNode of task.nodes) {
         if (pendingNode.status !== "pending") continue;
         pendingNode.status = "failed";
-        pendingNode.error = failure.reason;
+        pendingNode.error = reason;
       }
       logger.warn("orchestrator", "Global budget exhausted; terminating task", {
         taskId: task.id,
-        reason: failure.reason,
+        reason,
         totalTokens: task.sessionMetrics.totalTokens,
         totalCost: task.sessionMetrics.totalCost,
         elapsedMs: Date.now() - (task.startedAt || task.createdAt),
@@ -2411,7 +2169,7 @@ export class Orchestrator {
             id: crypto.randomUUID(),
             type: "warning",
             label: "Global execution budget exhausted",
-            detail: failure.reason,
+            detail: reason,
             status: "done",
             timestamp: Date.now(),
           },
@@ -2670,30 +2428,44 @@ export class Orchestrator {
         }, "executor");
         if (result.outcome === "completed") {
           const verifierHandoffContext = buildVerifierContext(node, taskStateBrief);
-          const initialVerification = await this.runInLane(task, "verifier", async () =>
-            verifier.verifyNode({
-              taskQuery: task.query,
-              objective: node.description,
-              successCriteria: node.successCriteria,
-              output: result.summary,
-              handoffContext: verifierHandoffContext,
-            }),
-          );
-          const verification = await this.applyVerifierCriticReflection({
-            task,
-            node,
-            verifier,
-            verification: initialVerification,
-            reflectionInput: {
-              taskQuery: task.query,
-              objective: node.description,
-              successCriteria: node.successCriteria,
-              output: result.summary,
-              handoffContext: verifierHandoffContext,
-              driftDetected,
-              staleSignalCount,
-            },
+          // Capture post-execution URL/title for programmatic verification
+          let currentUrl: string | undefined;
+          let currentTitle: string | undefined;
+          try {
+            const postTab = await chrome.tabs.get(tabId);
+            currentUrl = postTab.url;
+            currentTitle = postTab.title;
+          } catch {
+            // Tab may have closed; proceed without post-execution tab info
+          }
+          const programmaticResult = programmaticVerify({
+            output: result.summary,
+            successCriteria: node.successCriteria,
+            previousUrl: snapshot?.url,
+            currentUrl,
+            previousTitle: snapshot?.title,
+            currentTitle,
           });
+          let verification: NodeVerificationResult;
+          if (programmaticResult) {
+            verification = programmaticResult;
+            logger.debug("orchestrator", "Programmatic verification resolved", {
+              taskId: task.id,
+              nodeId: node.id,
+              decision: verification.decision,
+              confidence: verification.confidence,
+            });
+          } else {
+            verification = await this.runInLane(task, "verifier", async () =>
+              verifier.verifyNode({
+                taskQuery: task.query,
+                objective: node.description,
+                successCriteria: node.successCriteria,
+                output: result.summary,
+                handoffContext: verifierHandoffContext,
+              }),
+            );
+          }
           const verificationConfidence =
             typeof verification.confidence === "number"
               ? verification.confidence
@@ -2747,10 +2519,6 @@ export class Orchestrator {
 
             if (escalationDecision.optionId === "stop_task") {
               task.status = "stopped";
-              task.terminationReason = "Stopped by operator escalation decision.";
-              task.failureCategory = "user";
-              task.failureCode = "stopped_by_operator";
-              task.failureDetail = task.terminationReason;
               node.status = "failed";
               node.error = "Stopped by operator escalation decision.";
               this.memoryBuffer.discardWorker(workerId);
@@ -3174,10 +2942,6 @@ export class Orchestrator {
         const reason =
           `Executor lane isolated until ${new Date(executorLaneState.isolatedUntilMs).toISOString()} ` +
           `(lastError=${executorLaneState.lastError || "unknown"})`;
-        task.terminationReason = reason;
-        task.failureCategory = "runtime";
-        task.failureCode = "lane_isolation";
-        task.failureDetail = reason;
         logger.warn("orchestrator", "Executor lane isolation blocked scheduler", {
           taskId: task.id,
           workspaceId: task.workspaceId,
@@ -3259,57 +3023,35 @@ export class Orchestrator {
     task.sessionMetrics.totalSessionTimeMs = task.finishedAt - (task.startedAt || task.createdAt);
     task.status = failed > 0 ? "failed" : "completed";
 
-    // WS4: Planner retrospective — only when at least 1 node failed or was retried
+    // WS4: Write failure lessons to memory (replaces LLM retrospective)
     const hasFailures = task.plannerReflexionLog.length > 0 ||
       task.nodes.some((n) => n.status === "failed");
-    if (hasFailures) {
+    if (hasFailures && task.plannerReflexionLog.length > 0) {
       try {
-        const retrospectivePlanner = this.deps.createPlanner(
-          input.openRouterApiKey,
-          input.cerebrasApiKey,
-        );
-        if (retrospectivePlanner.retrospective) {
-          const retro = await this.runInLane(task, "planner", async () =>
-            retrospectivePlanner.retrospective!(
-              task,
-              task.nodes,
-              task.plannerReflexionLog,
-            ),
-          );
-          this.emitTraceEvent(task, "planner_retrospective", {
-            lessonCount: retro.lessons.length,
-            failedNodes: task.nodes.filter((n) => n.status === "failed").map((n) => n.id),
-          }, "planner");
-          logger.info("orchestrator", "Planner retrospective completed", {
-            taskId: task.id,
-            lessonCount: retro.lessons.length,
+        let domain = "unknown";
+        try {
+          const tab = await chrome.tabs.get(input.tabId);
+          domain = tab.url ? new URL(tab.url).hostname : "unknown";
+        } catch { /* tab may be closed */ }
+        const retroWorkerId = `retrospective-${task.id}`;
+        for (const entry of task.plannerReflexionLog) {
+          this.memoryBuffer.add(retroWorkerId, {
+            content: `[${domain}] ${entry.executorSummary.slice(0, 200)}. Failure: ${entry.failureType || "unknown"}. Verifier: ${entry.verifierDecision}.`,
+            category: "procedure",
+            sourceUrl: domain,
+            createdAt: Date.now(),
           });
         }
+        await this.memoryBuffer.commitWorker(retroWorkerId);
+        logger.info("orchestrator", "Wrote failure lessons to memory", {
+          taskId: task.id, count: task.plannerReflexionLog.length,
+        });
       } catch (error) {
-        logger.warn("orchestrator", "Planner retrospective failed", { error });
+        logger.warn("orchestrator", "Memory retrospective write failed", { error });
       }
     }
 
-    let summary = await this.summarizeTask(task, input.openRouterApiKey);
-
-    // --- Moderation post-flight ---
-    if (input.settings.moderationEnabled !== false) {
-      const postflightResult = moderateFinalOutput(
-        summary,
-        input.settings.moderationStrictness ?? "standard",
-      );
-      this.emitTraceEvent(task, "moderation_postflight", {
-        allowed: postflightResult.allowed,
-        category: postflightResult.category,
-        severity: postflightResult.severity,
-        reason: postflightResult.reason,
-        summarySnippet: summary.slice(0, 120),
-      }, "system");
-      if (!postflightResult.allowed) {
-        summary = "The task completed, but the summary was filtered by content moderation.";
-      }
-    }
-
+    const summary = this.buildProgrammaticSummary(task);
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
@@ -3341,10 +3083,6 @@ export class Orchestrator {
         : skipped > 0
           ? "partial"
           : "completed";
-    const failure = deriveTaskFailure(task, completionStatus);
-    task.failureCategory = failure.category;
-    task.failureCode = failure.code;
-    task.failureDetail = failure.detail;
 
     this.sendMessage({
       type: "TASK_COMPLETION",
@@ -3359,9 +3097,6 @@ export class Orchestrator {
         urlHistory: [],
         metrics: task.sessionMetrics,
         terminationReason: task.terminationReason,
-        failureCategory: failure.category,
-        failureCode: failure.code,
-        failureDetail: failure.detail,
       },
     });
     const totalDurationMs = task.finishedAt - (task.startedAt || task.createdAt);
@@ -3380,9 +3115,6 @@ export class Orchestrator {
         replayAttempted,
         replayHit: Boolean(replaySkillId),
         terminationReason: task.terminationReason ?? null,
-        failureCategory: failure.category,
-        failureCode: failure.code,
-        failureDetail: failure.detail ?? null,
       },
       "system",
     );
@@ -3619,10 +3351,6 @@ export class Orchestrator {
       workspaceId,
     }, "system");
     task.status = "stopped";
-    task.terminationReason = "Stopped by user request.";
-    task.failureCategory = "user";
-    task.failureCode = "user_stopped";
-    task.failureDetail = task.terminationReason;
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
     if (pendingEscalationId) {
       this.pendingEscalationResolvers.delete(pendingEscalationId);
@@ -3688,42 +3416,22 @@ export class Orchestrator {
     }
   }
 
-  private async summarizeTask(
-    task: OrchestratorTask,
-    openRouterApiKey: string,
-  ): Promise<string> {
-    const deterministic = task.nodes
-      .map((n, i) => {
-        const status = n.status === "completed" ? "done" : "failed";
-        const detail = n.result || n.error || "No detail";
-        return `${i + 1}. [${status}] ${n.description} - ${detail}`;
-      })
-      .join("\n");
-
-    try {
-      const llm = this.deps.createLlm(openRouterApiKey);
-      llm.switchToSmart();
-      const response = await llm.complete({
-        messages: [
-          {
-            role: "system",
-            content:
-              "Summarize task execution faithfully. Do not invent missing work. Mention failures explicitly.",
-          },
-          {
-            role: "user",
-            content: `Task: ${task.query}\n\nExecution log:\n${deterministic}\n\nWrite a concise completion summary.`,
-          },
-        ],
-        max_tokens: 300,
-        temperature: 0,
-      });
-      const content = (response.content || "").trim();
-      if (content.length > 0) return content;
-      return deterministic;
-    } catch {
-      return deterministic;
+  private buildProgrammaticSummary(task: OrchestratorTask): string {
+    const completed = task.nodes.filter(n => n.status === "completed").length;
+    const failed = task.nodes.filter(n => n.status === "failed").length;
+    const total = task.nodes.length;
+    const lastCompleted = [...task.nodes].reverse().find(n => n.status === "completed");
+    const parts: string[] = [
+      `Task: ${task.query}`,
+      `Result: ${completed}/${total} subtasks completed${failed > 0 ? `, ${failed} failed` : ""}.`,
+    ];
+    if (lastCompleted?.result) {
+      parts.push(`Final output: ${lastCompleted.result.slice(0, 200)}`);
     }
+    if (failed > 0) {
+      parts.push(`Failures: ${task.nodes.filter(n => n.status === "failed").map(n => n.description).join("; ")}`);
+    }
+    return parts.join("\n");
   }
 
   private sendProgress(task: OrchestratorTask): void {
@@ -3757,180 +3465,6 @@ export class Orchestrator {
       workspaceId,
       payload: { step, update: false },
     });
-  }
-
-  private emitCriticStep(
-    workspaceId: string,
-    nodeId: string,
-    detail: string,
-  ): void {
-    const step: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "info",
-      label: `Critic: reviewed verifier decision for ${nodeId.slice(0, 6)}`,
-      detail,
-      status: "done",
-      timestamp: Date.now(),
-    };
-    this.sendMessage({
-      type: "AGENT_STEP",
-      workspaceId,
-      payload: { step, update: false },
-    });
-  }
-
-  private async applyVerifierCriticReflection(params: {
-    task: OrchestratorTask;
-    node: TaskNode;
-    verifier: VerifierLike;
-    verification: NodeVerificationResult;
-    reflectionInput: Omit<VerificationReflectionInput, "priorDecision">;
-  }): Promise<NodeVerificationResult> {
-    const { task, node, verifier, reflectionInput } = params;
-    let current = params.verification;
-    if (current.decision === "accept") return current;
-
-    if (verifier.runDialogue) {
-      try {
-        const dialogueResult: DialogueResult = await this.runInLane(
-          task,
-          "verifier",
-          async () =>
-            verifier.runDialogue!(
-              {
-                taskQuery: reflectionInput.taskQuery,
-                objective: reflectionInput.objective,
-                successCriteria: reflectionInput.successCriteria,
-                output: reflectionInput.output,
-                handoffContext: reflectionInput.handoffContext,
-              },
-              MAX_VERIFIER_REFLECTION_ROUNDS,
-              MIN_CRITIC_CONFIDENCE_DELTA,
-            ),
-        );
-        for (const turn of dialogueResult.turns) {
-          this.emitCriticStep(
-            task.workspaceId,
-            node.id,
-            `[Round ${turn.round} ${turn.role}] ${turn.decision.decision}: ${turn.decision.reason}`,
-          );
-        }
-        logger.info("orchestrator", "Verifier dialogue completed", {
-          taskId: task.id,
-          nodeId: node.id,
-          totalRounds: dialogueResult.totalRounds,
-          converged: dialogueResult.converged,
-          finalDecision: dialogueResult.finalDecision.decision,
-        });
-        this.emitTraceEvent(task, "dialogue_completed", {
-          nodeId: node.id,
-          totalRounds: dialogueResult.totalRounds,
-          converged: dialogueResult.converged,
-          finalDecision: dialogueResult.finalDecision.decision,
-          finalConfidence: dialogueResult.finalDecision.confidence,
-        }, "verifier");
-
-        // WS5: Advocate-Critic Triad — advocate argues FOR executor when verifier
-        // leans toward rejection with low confidence on first attempt
-        const advocateDecision = dialogueResult.finalDecision;
-        if (
-          verifier.advocateChallenge &&
-          advocateDecision.decision === "retry" &&
-          advocateDecision.confidence < 0.7 &&
-          node.retries === 0
-        ) {
-          try {
-            const advocateResponse = await this.runInLane(
-              task,
-              "verifier",
-              async () =>
-                verifier.advocateChallenge!(task, node, advocateDecision),
-            );
-            this.emitTraceEvent(task, "advocate_challenge", {
-              nodeId: node.id,
-              advocateDecision: advocateResponse.suggestedDecision,
-              confidence: advocateResponse.confidence,
-            }, "verifier");
-            logger.info("orchestrator", "Advocate challenge completed", {
-              taskId: task.id,
-              nodeId: node.id,
-              advocateDecision: advocateResponse.suggestedDecision,
-              advocateConfidence: advocateResponse.confidence,
-            });
-            // If advocate recommends accept with higher confidence, override
-            if (
-              advocateResponse.suggestedDecision === "accept" &&
-              advocateResponse.confidence > advocateDecision.confidence
-            ) {
-              return {
-                decision: "accept",
-                reason: `Advocate override: ${advocateResponse.argument}`,
-                confidence: advocateResponse.confidence,
-              };
-            }
-          } catch (error) {
-            logger.warn("orchestrator", "Advocate challenge failed", { error });
-          }
-        }
-
-        return dialogueResult.finalDecision;
-      } catch (error) {
-        if (isLaneIsolationError(error, "verifier")) {
-          throw error;
-        }
-        logger.warn("orchestrator", "Verifier dialogue failed, falling back to single-round", {
-          taskId: task.id,
-          nodeId: node.id,
-          error,
-        });
-      }
-    }
-
-    if (!verifier.reflectDecision) return current;
-
-    for (let round = 1; round <= MAX_VERIFIER_REFLECTION_ROUNDS; round += 1) {
-      try {
-        const reflected = await this.runInLane(task, "verifier", async () =>
-          verifier.reflectDecision!({
-            ...reflectionInput,
-            priorDecision: current,
-          }),
-        );
-        const changed = isVerificationDecisionChanged(current, reflected);
-        const confidenceGain = reflected.confidence - current.confidence;
-        const adopt = changed || confidenceGain >= MIN_CRITIC_CONFIDENCE_DELTA;
-        logger.info("orchestrator", "Verifier critic reflection evaluated", {
-          taskId: task.id,
-          nodeId: node.id,
-          round,
-          changed,
-          confidenceGain,
-          adopted: adopt,
-          priorDecision: current.decision,
-          reflectedDecision: reflected.decision,
-        });
-        this.emitCriticStep(
-          task.workspaceId,
-          node.id,
-          adopt
-            ? `Adopted critic decision: ${reflected.decision}. ${reflected.reason}`
-            : `Kept verifier decision: ${current.decision}. Critic confidence delta=${confidenceGain.toFixed(2)}.`,
-        );
-        if (adopt) current = reflected;
-      } catch (error) {
-        if (isLaneIsolationError(error, "verifier")) {
-          throw error;
-        }
-        logger.warn("orchestrator", "Verifier critic reflection failed", {
-          taskId: task.id,
-          nodeId: node.id,
-          round,
-          error,
-        });
-      }
-    }
-
-    return current;
   }
 
   private classifyEscalationRisk(

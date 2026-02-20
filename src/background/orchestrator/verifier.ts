@@ -2,10 +2,7 @@ import { LLMClient } from "../llm";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import {
-  AdvocateResponse,
-  OrchestratorTask,
-  PlanReviewResult,
-  TaskNode,
+  StructuredEvidence,
 } from "./types";
 
 export interface NodeVerificationInput {
@@ -31,34 +28,17 @@ export interface NodeVerificationResult {
   rerouteObjective?: string;
 }
 
-export interface VerificationReflectionInput {
-  taskQuery: string;
-  objective: string;
-  successCriteria: string;
+export interface ProgrammaticVerificationInput {
   output: string;
-  handoffContext?: string;
-  priorDecision: NodeVerificationResult;
-  driftDetected?: boolean;
-  staleSignalCount?: number;
-}
-
-export interface VerifierDialogueTurn {
-  role: "verifier" | "critic";
-  decision: NodeVerificationResult;
-  round: number;
-}
-
-export interface DialogueResult {
-  finalDecision: NodeVerificationResult;
-  turns: VerifierDialogueTurn[];
-  converged: boolean;
-  totalRounds: number;
+  successCriteria: string;
+  evidence?: StructuredEvidence[];
+  previousUrl?: string;
+  currentUrl?: string;
+  previousTitle?: string;
+  currentTitle?: string;
 }
 
 const VERIFY_SYSTEM = renderPrompt("orchestrator.verifier.system");
-const REFLECT_SYSTEM = renderPrompt("orchestrator.verifier.critic.system");
-const PREFLIGHT_SYSTEM = renderPrompt("orchestrator.verifier.preflight.system");
-const ADVOCATE_SYSTEM = renderPrompt("orchestrator.verifier.advocate.system");
 
 const BLOCKED_MARKERS = [
   "captcha",
@@ -69,6 +49,97 @@ const BLOCKED_MARKERS = [
   "not found",
   "timeout",
 ];
+
+const SUCCESS_MARKERS = [
+  "completed",
+  "success",
+  "done",
+  "verified",
+];
+
+const ERROR_MARKERS = [
+  "error",
+  "failed",
+  "exception",
+  "unable to",
+  "could not",
+  "cannot",
+];
+
+/**
+ * Programmatic DOM-state verification that short-circuits the LLM verifier
+ * for clear-cut cases. Returns null when the case is ambiguous and needs
+ * LLM judgment.
+ */
+export function programmaticVerify(
+  input: ProgrammaticVerificationInput,
+): NodeVerificationResult | null {
+  const text = input.output.trim().toLowerCase();
+  if (!text) return null;
+
+  // Blocked markers → reroute
+  if (BLOCKED_MARKERS.some((m) => text.includes(m))) {
+    return {
+      decision: "reroute",
+      reason: "Execution appears blocked by page constraints.",
+      confidence: 0.9,
+      failureType: "blocked",
+      rerouteObjective: "Use an alternate approach to achieve the objective.",
+    };
+  }
+
+  const hasSuccessMarker = SUCCESS_MARKERS.some((m) => text.includes(m));
+  const hasErrorMarker = ERROR_MARKERS.some((m) => text.includes(m));
+
+  const urlChanged =
+    input.previousUrl != null &&
+    input.currentUrl != null &&
+    input.previousUrl !== input.currentUrl;
+
+  const titleChanged =
+    input.previousTitle != null &&
+    input.currentTitle != null &&
+    input.previousTitle !== input.currentTitle;
+
+  const domChanged = urlChanged || titleChanged;
+
+  const hasStructuredEvidence =
+    Array.isArray(input.evidence) &&
+    input.evidence.some(
+      (e) => e.basis === "tool_output" && e.confidence >= 0.8,
+    );
+
+  // Error keywords + no evidence of DOM change → retry
+  if (hasErrorMarker && !domChanged && !hasSuccessMarker) {
+    return {
+      decision: "retry",
+      reason: "Output indicates errors with no evidence of DOM change.",
+      confidence: 0.8,
+      failureType: "transient",
+    };
+  }
+
+  // Success keywords + DOM change evidence → accept
+  if (hasSuccessMarker && domChanged) {
+    return {
+      decision: "accept",
+      reason: "Output indicates success with corroborating DOM change.",
+      confidence: 0.85,
+    };
+  }
+
+  // Success keywords + structured evidence → accept
+  if (hasSuccessMarker && hasStructuredEvidence) {
+    return {
+      decision: "accept",
+      reason: "Output indicates success with structured evidence support.",
+      confidence: 0.85,
+    };
+  }
+
+  // Ambiguous → fall through to LLM
+  return null;
+}
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
@@ -266,20 +337,6 @@ export class OrchestratorVerifier {
         confidence,
         failureType,
       });
-
-      // Soft gate: low-confidence accepts without evidence get downgraded
-      if (decision === "accept" && confidence < 0.9) {
-        const evidence = Array.isArray(parsed?.evidence) ? parsed.evidence : [];
-        if (evidence.length === 0) {
-          return {
-            decision: "retry" as const,
-            reason: "Accept lacks evidence. Re-execute.",
-            confidence: Math.max(0.3, confidence - 0.2),
-            failureType: "insufficient_evidence",
-          };
-        }
-      }
-
       return { decision, reason, confidence, failureType };
     } catch (error) {
       logger.warn("orchestrator", "Verifier failed, using fallback decision", {
@@ -289,278 +346,4 @@ export class OrchestratorVerifier {
     }
   }
 
-  async runDialogue(
-    input: NodeVerificationInput,
-    maxRounds: number,
-    confidenceDelta: number,
-    signal?: AbortSignal,
-  ): Promise<DialogueResult> {
-    const turns: VerifierDialogueTurn[] = [];
-
-    const initial = await this.verifyNode(input, signal);
-    turns.push({ role: "verifier", decision: initial, round: 0 });
-
-    if (initial.decision === "accept") {
-      return { finalDecision: initial, turns, converged: true, totalRounds: 1 };
-    }
-
-    let current = initial;
-    for (let round = 1; round <= maxRounds; round += 1) {
-      const dialogueHistory = this.formatDialogueHistory(turns);
-      const challenge = await this.criticChallenge(input, current, dialogueHistory, signal);
-      turns.push({ role: "critic", decision: challenge, round });
-
-      if (challenge.decision === "accept") {
-        return { finalDecision: challenge, turns, converged: true, totalRounds: round + 1 };
-      }
-
-      if (
-        challenge.decision === current.decision &&
-        Math.abs(challenge.confidence - current.confidence) < confidenceDelta
-      ) {
-        return { finalDecision: challenge, turns, converged: true, totalRounds: round + 1 };
-      }
-
-      current = challenge;
-    }
-
-    return { finalDecision: current, turns, converged: false, totalRounds: turns.length };
-  }
-
-  private formatDialogueHistory(turns: VerifierDialogueTurn[]): string {
-    return turns
-      .map((turn) => {
-        const d = turn.decision;
-        return `[Round ${turn.round} - ${turn.role}]: decision=${d.decision}, confidence=${d.confidence.toFixed(2)}, reason="${d.reason}"`;
-      })
-      .join("\n");
-  }
-
-  private async criticChallenge(
-    input: NodeVerificationInput,
-    priorDecision: NodeVerificationResult,
-    dialogueHistory: string,
-    signal?: AbortSignal,
-  ): Promise<NodeVerificationResult> {
-    try {
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: REFLECT_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Task: ${input.taskQuery}\n` +
-              `Objective: ${input.objective}\n` +
-              `Success criteria: ${input.successCriteria}\n` +
-              `Executor output: ${input.output}\n` +
-              `\nPrior verifier decision:\n${JSON.stringify(priorDecision)}\n` +
-              `\nDialogue history:\n${dialogueHistory}\n` +
-              `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
-          },
-        ],
-        max_tokens: 220,
-        temperature: 0,
-        signal,
-      });
-
-      const parsed = parseJsonObject(response.content || "");
-      const decision = normalizeDecision(parsed?.decision);
-      const reason =
-        typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
-          ? parsed.reason.trim()
-          : "No reason provided by critic.";
-      const confidence = normalizeConfidence(parsed?.confidence) ?? priorDecision.confidence;
-
-      if (!decision) {
-        throw new Error("Critic returned invalid decision.");
-      }
-
-      if (decision === "reroute") {
-        const failureType = normalizeFailureType(parsed?.failureType) ?? "blocked";
-        const rerouteObjective =
-          typeof parsed?.rerouteObjective === "string" &&
-          parsed.rerouteObjective.trim().length > 0
-            ? parsed.rerouteObjective.trim()
-            : priorDecision.rerouteObjective ||
-              `Use an alternate approach for: ${input.objective}`;
-        return { decision, reason, confidence, failureType, rerouteObjective };
-      }
-
-      const failureType =
-        decision === "accept"
-          ? undefined
-          : normalizeFailureType(parsed?.failureType) ??
-            priorDecision.failureType ??
-            "insufficient_evidence";
-      return { decision, reason, confidence, failureType };
-    } catch (error) {
-      logger.warn("orchestrator", "Critic challenge failed, keeping prior decision", {
-        error,
-        priorDecision,
-      });
-      return priorDecision;
-    }
-  }
-
-  async reflectDecision(
-    input: VerificationReflectionInput,
-    signal?: AbortSignal,
-  ): Promise<NodeVerificationResult> {
-    try {
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: REFLECT_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Task: ${input.taskQuery}\n` +
-              `Objective: ${input.objective}\n` +
-              `Success criteria: ${input.successCriteria}\n` +
-              `Executor output: ${input.output}\n` +
-              `\nPrior verifier decision:\n${JSON.stringify(input.priorDecision)}\n` +
-              `\nContext flags:\n` +
-              `driftDetected=${Boolean(input.driftDetected)}\n` +
-              `staleSignalCount=${Math.max(0, input.staleSignalCount || 0)}\n` +
-              `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
-          },
-        ],
-        max_tokens: 220,
-        temperature: 0,
-        signal,
-      });
-
-      const parsed = parseJsonObject(response.content || "");
-      const decision = normalizeDecision(parsed?.decision);
-      const reason =
-        typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
-          ? parsed.reason.trim()
-          : "No reason provided by verifier critic.";
-      const confidence = normalizeConfidence(parsed?.confidence) ?? input.priorDecision.confidence;
-
-      if (!decision) {
-        throw new Error("Verifier critic returned invalid decision.");
-      }
-
-      if (decision === "reroute") {
-        const failureType = normalizeFailureType(parsed?.failureType) ?? "blocked";
-        const rerouteObjective =
-          typeof parsed?.rerouteObjective === "string" &&
-          parsed.rerouteObjective.trim().length > 0
-            ? parsed.rerouteObjective.trim()
-            : input.priorDecision.rerouteObjective ||
-              `Use an alternate approach for: ${input.objective}`;
-        return { decision, reason, confidence, failureType, rerouteObjective };
-      }
-
-      const failureType =
-        decision === "accept"
-          ? undefined
-          : normalizeFailureType(parsed?.failureType) ??
-            input.priorDecision.failureType ??
-            "insufficient_evidence";
-      return { decision, reason, confidence, failureType };
-    } catch (error) {
-      logger.warn("orchestrator", "Verifier critic failed, keeping prior decision", {
-        error,
-        priorDecision: input.priorDecision,
-      });
-      return input.priorDecision;
-    }
-  }
-
-  async reviewPlan(
-    task: OrchestratorTask,
-    nodes: TaskNode[],
-    opts?: { timeout?: number },
-    signal?: AbortSignal,
-  ): Promise<PlanReviewResult> {
-    try {
-      const nodeDescriptions = nodes
-        .map((n, i) => `${i + 1}. ${n.description} [criteria: ${n.successCriteria}] [deps: ${n.dependencies.length > 0 ? n.dependencies.join(", ") : "none"}]`)
-        .join("\n");
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: PREFLIGHT_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Task: ${task.query}\n\n` +
-              `Plan (${nodes.length} nodes):\n${nodeDescriptions}`,
-          },
-        ],
-        max_tokens: 300,
-        temperature: 0,
-        signal,
-      });
-
-      const parsed = parseJsonObject(response.content || "");
-      if (!parsed) {
-        return { approved: true, concerns: [] };
-      }
-      const approved = parsed.approved === true;
-      const concerns = Array.isArray(parsed.concerns)
-        ? parsed.concerns.filter((c): c is string => typeof c === "string")
-        : [];
-      const suggestedChanges =
-        typeof parsed.suggestedChanges === "string" && parsed.suggestedChanges.trim().length > 0
-          ? parsed.suggestedChanges.trim()
-          : undefined;
-      return { approved, concerns, suggestedChanges };
-    } catch (error) {
-      logger.warn("orchestrator", "Plan review failed, auto-approving", { error });
-      return { approved: true, concerns: [] };
-    }
-  }
-
-  async advocateChallenge(
-    task: OrchestratorTask,
-    node: TaskNode,
-    verifierDecision: NodeVerificationResult,
-    signal?: AbortSignal,
-  ): Promise<AdvocateResponse> {
-    try {
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: ADVOCATE_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Task: ${task.query}\n` +
-              `Objective: ${node.description}\n` +
-              `Success criteria: ${node.successCriteria}\n` +
-              `Executor result: ${node.result || "No result"}\n\n` +
-              `Verifier decision: ${JSON.stringify(verifierDecision)}`,
-          },
-        ],
-        max_tokens: 250,
-        temperature: 0,
-        signal,
-      });
-
-      const parsed = parseJsonObject(response.content || "");
-      if (!parsed) {
-        return {
-          argument: "Unable to parse advocate response.",
-          suggestedDecision: verifierDecision.decision,
-          confidence: verifierDecision.confidence,
-        };
-      }
-
-      const argument =
-        typeof parsed.argument === "string" && parsed.argument.trim().length > 0
-          ? parsed.argument.trim()
-          : "No argument provided.";
-      const suggestedDecision = normalizeDecision(parsed.suggestedDecision) ?? verifierDecision.decision;
-      const confidence = normalizeConfidence(parsed.confidence) ?? verifierDecision.confidence;
-
-      return { argument, suggestedDecision, confidence };
-    } catch (error) {
-      logger.warn("orchestrator", "Advocate challenge failed", { error });
-      return {
-        argument: "Advocate call failed.",
-        suggestedDecision: verifierDecision.decision,
-        confidence: verifierDecision.confidence,
-      };
-    }
-  }
 }

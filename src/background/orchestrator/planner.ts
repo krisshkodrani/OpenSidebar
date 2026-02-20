@@ -1,17 +1,10 @@
-import { PlanDecomposition, PlanGuardian } from "../agent/guardian";
-import { LLMClient } from "../llm";
+import { PlanGuardian } from "../agent/guardian";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
-import { renderPrompt } from "../../prompts";
 import {
-  OrchestratorTask,
   PlannerAssignment,
-  PlannerReflexionEntry,
-  RetrospectiveResult,
   TaskNode,
 } from "./types";
-
-const RETROSPECTIVE_SYSTEM = renderPrompt("orchestrator.planner.retrospective.system");
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_ELEMENT,
@@ -52,46 +45,22 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
 ];
 
 const TOOL_NAMES = new Set<string>(Object.values(ToolName));
-const DELIBERATION_MAX_TURNS = 2;
-
-export function planSignature(plan: PlanDecomposition): string {
-  if (plan.steps && plan.steps.length > 0) {
-    return JSON.stringify(
-      plan.steps.map((step) => ({
-        objective: step.objective,
-        successCriteria: step.successCriteria,
-        dependencies: [...step.dependencies].sort((a, b) => a - b),
-        assumptions: [...step.assumptions].sort(),
-      })),
-    );
-  }
-  return JSON.stringify(plan.subtasks);
-}
-
-export function shouldRunDeliberation(plan: PlanDecomposition | null): boolean {
-  if (!plan) return false;
-  if (plan.steps && plan.steps.length > 0) {
-    if (plan.steps.length >= 3) return true;
-    return plan.steps.some(
-      (step) => step.dependencies.length > 0 || step.assumptions.length > 0,
-    );
-  }
-  return plan.subtasks.length >= 4;
-}
 
 function sanitizePlannerAssignment(raw: unknown): PlannerAssignment | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
 
   if (obj.role !== "executor") return null;
-  if (typeof obj.objective !== "string" || obj.objective.trim().length === 0) return null;
+  if (typeof obj.objective !== "string" || obj.objective.trim().length === 0)
+    return null;
   if (
     typeof obj.successCriteria !== "string" ||
     obj.successCriteria.trim().length === 0
   ) {
     return null;
   }
-  if (!Array.isArray(obj.allowedTools) || obj.allowedTools.length === 0) return null;
+  if (!Array.isArray(obj.allowedTools) || obj.allowedTools.length === 0)
+    return null;
 
   const tools: ToolName[] = [];
   for (const tool of obj.allowedTools) {
@@ -146,74 +115,9 @@ export function validatePlannerAssignments(raw: unknown): PlannerAssignment[] {
 
 export class OrchestratorPlanner {
   private guardian: PlanGuardian;
-  private llm: LLMClient;
 
   constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
     this.guardian = new PlanGuardian(openRouterApiKey, cerebrasApiKey);
-    this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
-    this.llm.switchToSmart();
-  }
-
-  private async runPlanDeliberation(
-    query: string,
-    pageTitle: string,
-    pageUrl: string,
-    initial: PlanDecomposition,
-    signal?: AbortSignal,
-  ): Promise<PlanDecomposition> {
-    let current = initial;
-    const initialSignature = planSignature(initial);
-    logger.info("orchestrator", "Planner deliberation started", {
-      initialSubtaskCount: initial.subtasks.length,
-      hasStructuredSteps: !!initial.steps?.length,
-      maxTurns: DELIBERATION_MAX_TURNS,
-    });
-
-    for (let turn = 1; turn <= DELIBERATION_MAX_TURNS; turn++) {
-      const critiquePrompt =
-        `Critique and refine this browser-automation plan for clarity, dependency correctness, and minimal steps.\n` +
-        `Keep it generic and site-agnostic. Keep 2-8 steps. Return multi-step JSON plan only.\n\n` +
-        `Original Task: ${query}\n` +
-        `Current Plan JSON:\n${JSON.stringify(current)}`;
-
-      const candidate = await this.guardian.decompose(
-        critiquePrompt,
-        pageTitle,
-        pageUrl,
-        signal,
-      );
-      if (!candidate || candidate.subtasks.length < 2) {
-        logger.warn("orchestrator", "Planner deliberation produced unusable candidate", {
-          turn,
-        });
-        break;
-      }
-
-      const prevSig = planSignature(current);
-      const nextSig = planSignature(candidate);
-      if (prevSig === nextSig) {
-        logger.info("orchestrator", "Planner deliberation converged", {
-          turn,
-          subtaskCount: current.subtasks.length,
-        });
-        break;
-      }
-
-      current = candidate;
-      logger.info("orchestrator", "Planner deliberation accepted refinement", {
-        turn,
-        subtaskCount: current.subtasks.length,
-        hasStructuredSteps: !!current.steps?.length,
-      });
-    }
-
-    const changed = planSignature(current) !== initialSignature;
-    logger.info("orchestrator", "Planner deliberation finished", {
-      changed,
-      finalSubtaskCount: current.subtasks.length,
-      hasStructuredSteps: !!current.steps?.length,
-    });
-    return current;
   }
 
   async buildNodes(
@@ -222,22 +126,12 @@ export class OrchestratorPlanner {
     pageUrl: string,
     signal?: AbortSignal,
   ): Promise<TaskNode[]> {
-    const initialDecomposition = await this.guardian.decompose(
+    const decomposition = await this.guardian.decompose(
       query,
       pageTitle,
       pageUrl,
       signal,
     );
-    const decomposition =
-      shouldRunDeliberation(initialDecomposition)
-        ? await this.runPlanDeliberation(
-            query,
-            pageTitle,
-            pageUrl,
-            initialDecomposition!,
-            signal,
-          )
-        : initialDecomposition;
 
     let rawAssignments: PlannerAssignment[] = [];
     let nodeIds: string[] = [];
@@ -258,9 +152,13 @@ export class OrchestratorPlanner {
           .map((depIndex) => nodeIds[depIndex]),
         assumptions: step.assumptions || [],
       }));
-      logger.info("orchestrator", "Planner produced structured graph assignments", {
-        count: rawAssignments.length,
-      });
+      logger.info(
+        "orchestrator",
+        "Planner produced structured graph assignments",
+        {
+          count: rawAssignments.length,
+        },
+      );
     } else {
       const subtasks = decomposition?.subtasks?.length
         ? decomposition.subtasks
@@ -288,7 +186,9 @@ export class OrchestratorPlanner {
       description: assignment.objective,
       successCriteria: assignment.successCriteria,
       allowedTools: assignment.allowedTools,
-      dependencies: (assignment.dependencies || []).filter((dep) => dep.length > 0),
+      dependencies: (assignment.dependencies || []).filter(
+        (dep) => dep.length > 0,
+      ),
       assumptions: assignment.assumptions || [],
       handoffArtifacts: [
         {
@@ -374,62 +274,4 @@ export class OrchestratorPlanner {
     return expanded;
   }
 
-  async retrospective(
-    task: OrchestratorTask,
-    nodes: TaskNode[],
-    reflexionLog: PlannerReflexionEntry[],
-    signal?: AbortSignal,
-  ): Promise<RetrospectiveResult> {
-    try {
-      const nodeStatus = nodes
-        .map((n) => `- ${n.description}: ${n.status}${n.error ? ` (error: ${n.error.slice(0, 100)})` : ""}`)
-        .join("\n");
-      const reflexionSummary = reflexionLog
-        .map((e) => `- Node ${e.nodeId.slice(0, 8)}: ${e.verifierDecision}${e.failureType ? ` (${e.failureType})` : ""} — ${e.executorSummary.slice(0, 100)}`)
-        .join("\n");
-
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: RETROSPECTIVE_SYSTEM },
-          {
-            role: "user",
-            content:
-              `Task: ${task.query}\n\n` +
-              `Node results:\n${nodeStatus}\n\n` +
-              `Failure log:\n${reflexionSummary || "No failures recorded."}`,
-          },
-        ],
-        max_tokens: 300,
-        temperature: 0,
-        signal,
-      });
-
-      const parsed = JSON.parse(
-        (response.content || "{}").replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim(),
-      );
-      const lessons = Array.isArray(parsed?.lessons)
-        ? parsed.lessons.filter((l: unknown): l is string => typeof l === "string")
-        : [];
-
-      // Back-fill plannerLesson on matching entries
-      for (const lesson of lessons) {
-        for (const entry of reflexionLog) {
-          if (!entry.plannerLesson && lesson.toLowerCase().includes(entry.nodeId.slice(0, 8).toLowerCase())) {
-            entry.plannerLesson = lesson;
-          }
-        }
-      }
-      // Fill remaining empty lessons with first available
-      for (const entry of reflexionLog) {
-        if (!entry.plannerLesson && lessons.length > 0) {
-          entry.plannerLesson = lessons[0];
-        }
-      }
-
-      return { lessons };
-    } catch (error) {
-      logger.warn("orchestrator", "Planner retrospective failed", { error });
-      return { lessons: [] };
-    }
-  }
 }

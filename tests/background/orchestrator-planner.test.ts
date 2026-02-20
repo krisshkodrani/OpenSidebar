@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test";
 import "../setup";
 import { ToolName } from "../../src/types";
 import {
-  planSignature,
-  shouldRunDeliberation,
   validatePlannerAssignments,
 } from "../../src/background/orchestrator/planner";
 
@@ -53,79 +51,5 @@ describe("Orchestrator planner assignment validation", () => {
     ]);
 
     expect(assignments[0].allowedTools.includes(ToolName.DONE)).toBe(true);
-  });
-
-  test("shouldRunDeliberation returns true for complex structured plans", () => {
-    expect(
-      shouldRunDeliberation({
-        subtasks: ["a", "b", "c"],
-        steps: [
-          {
-            objective: "a",
-            successCriteria: "a ok",
-            dependencies: [],
-            assumptions: [],
-          },
-          {
-            objective: "b",
-            successCriteria: "b ok",
-            dependencies: [0],
-            assumptions: [],
-          },
-          {
-            objective: "c",
-            successCriteria: "c ok",
-            dependencies: [1],
-            assumptions: ["state remains stable"],
-          },
-        ],
-      }),
-    ).toBe(true);
-  });
-
-  test("shouldRunDeliberation returns false for simple short plan", () => {
-    expect(
-      shouldRunDeliberation({
-        subtasks: ["single step"],
-      }),
-    ).toBe(false);
-  });
-
-  test("planSignature is stable for equivalent dependency ordering", () => {
-    const a = planSignature({
-      subtasks: ["x", "y"],
-      steps: [
-        {
-          objective: "x",
-          successCriteria: "done",
-          dependencies: [],
-          assumptions: ["alpha", "beta"],
-        },
-        {
-          objective: "y",
-          successCriteria: "done",
-          dependencies: [0],
-          assumptions: ["gamma"],
-        },
-      ],
-    });
-    const b = planSignature({
-      subtasks: ["x", "y"],
-      steps: [
-        {
-          objective: "x",
-          successCriteria: "done",
-          dependencies: [],
-          assumptions: ["beta", "alpha"],
-        },
-        {
-          objective: "y",
-          successCriteria: "done",
-          dependencies: [0],
-          assumptions: ["gamma"],
-        },
-      ],
-    });
-    expect(a).toBe(b);
   });
 });

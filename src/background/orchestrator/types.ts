@@ -4,8 +4,6 @@ import {
   EscalationDecisionMessage,
   EscalationPacket,
   SessionMetrics,
-  TraceFailureCategory,
-  TraceFailureCode,
   ToolName,
   UserSettings,
 } from "../../types";
@@ -25,10 +23,6 @@ export interface StructuredEvidence {
   confidence: number;
   sourceToolCall?: string;
   turnNumber?: number;
-  /** Raw text snippet backing the claim */
-  excerpt?: string;
-  /** URL, memory ID, or element tag for traceability */
-  sourceRef?: string;
 }
 
 export interface NodeHandoffArtifact {
@@ -54,22 +48,6 @@ export interface PlannerReflexionEntry {
   executorSummary: string;
   plannerLesson: string;
   timestamp: number;
-}
-
-export interface PlanReviewResult {
-  approved: boolean;
-  concerns: string[];
-  suggestedChanges?: string;
-}
-
-export interface RetrospectiveResult {
-  lessons: string[];
-}
-
-export interface AdvocateResponse {
-  argument: string;
-  suggestedDecision: "accept" | "retry" | "reroute";
-  confidence: number;
 }
 
 export interface ReflexionEntry {
@@ -124,9 +102,6 @@ export interface OrchestratorTask {
     maxTotalCostUsd: number;
   };
   terminationReason?: string;
-  failureCategory?: TraceFailureCategory;
-  failureCode?: TraceFailureCode;
-  failureDetail?: string;
   pendingEscalation?: {
     packet: EscalationPacket;
     selectedOption?: EscalationDecisionMessage["payload"];
