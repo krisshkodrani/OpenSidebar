@@ -83,9 +83,15 @@ bun run build
 
 ### Development
 
+Use `dev:stack` — it builds the extension, starts the log/trace server, and launches Vite with HMR, all in one process:
+
 ```bash
-bun run dev
+bun run dev:stack     # or: make dev
 ```
+
+> **Why not just `bun run dev`?** Plain `bun run dev` only starts Vite. Without the log server running, execution traces are silently dropped and you lose all session data. `dev:stack` ensures traces are always captured.
+
+A `Makefile` is included for convenience — run `make help` to see all targets.
 
 ### Configure
 
@@ -97,28 +103,40 @@ bun run dev
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `bun run dev` | Start dev server with HMR |
-| `bun run dev:stack` | Build once, then start log drain + dev server together |
-| `bun run build` | Build extension for production |
-| `bun run lint` | Run ESLint |
-| `bun test` | Run all tests |
-| `bun test tests/background/orchestrator-integration.test.ts` | Run orchestrator integration tests |
-| `bun run evals` | Run evaluation suite |
-| `bun run evals run --all --prompt-id orchestrator.verifier.system` | Run evals with shared production prompt id |
-| `bun run evals:stats` | Show eval statistics |
-| `bun run evals:analyze` | Analyze eval results and suggestions |
-| `bun run evals critique` | Generate AI-readable critique artifacts |
-| `bun run logs` | Start log drain server |
-| `bun run logs:errors` | Query error logs |
-| `bun run logs:tail` | Tail recent logs |
-| `bun run viewer` | Start server and open trace viewer API/UI |
-| `bun run traces:list` | List captured trace sessions |
-| `bun run traces:stats` | Show aggregate trace stats |
-| `bun run fmt` | Format source files |
+All commands are available via `bun run <script>` or `make <target>`. Run `make help` for a quick reference.
 
-When `bun run logs` is active, execution traces are persisted under:
+### Day-to-day
+
+| Make | Bun | Description |
+| --- | --- | --- |
+| `make dev` | `bun run dev:stack` | **Recommended.** Build + log server + Vite HMR. Traces captured automatically. |
+| `make build` | `bun run build` | Production build only |
+| `make test` | `bun test` | Run all tests |
+| `make lint` | `bun run lint` | Run ESLint |
+| `make fmt` | `bun run fmt` | Format source files |
+
+### Logs & Traces
+
+| Make | Bun | Description |
+| --- | --- | --- |
+| `make logs` | `bun run logs` | Start log drain server (port 7589) — required for trace capture |
+| `make viewer` | `bun run viewer` | Start server + open trace viewer UI |
+| `make traces` | `bun run traces:list` | List captured trace sessions |
+| `make traces-stats` | `bun run traces:stats` | Aggregate trace statistics |
+| `make traces-clean` | — | Delete all traces and start fresh |
+| `make logs-tail` | `bun run logs:tail` | Tail recent log entries |
+| `make logs-errors` | `bun run logs:errors` | Show error-level logs |
+
+### Evals
+
+| Make | Bun | Description |
+| --- | --- | --- |
+| `make evals-convert` | `bun run evals:convert` | Convert traces to eval cases |
+| `make evals-run` | `bun run evals:run` | Run eval cases against LLM |
+| `make evals-stats` | `bun run evals:stats` | Show eval statistics |
+| `make evals-analyze` | `bun run evals:analyze` | Pattern analysis across results |
+
+When `bun run logs` (or `make dev`) is active, execution traces are persisted under:
 - `traces/<session-id>.jsonl` (agent turn traces)
 - `traces/runs/<run-id>.jsonl` (orchestrator run traces)
 - `traces/index.jsonl` (manual run session index)
@@ -175,8 +193,6 @@ Yes, manual browser runs produce logs.
 
 If you forgot to start `bun run logs`, you can still export buffered logs from the side panel:
 - `Settings -> Export Logs` downloads `opensidebar-logs.jsonl`.
-
-Tip: use `bun run dev:stack` to run build + log capture + dev in one command.
 
 ---
 
