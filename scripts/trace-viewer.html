@@ -1,0 +1,2529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenSidebar DevTools</title>
+<style>
+  /* ── Reset & Base ────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    overflow: hidden;
+  }
+
+  /* ── Top-level Layout ──────────────────────────────────────────── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── Tab Bar ───────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    background: #12122a;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+    padding: 0 12px;
+    gap: 2px;
+  }
+  .tab-btn {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #7a7a9e;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    letter-spacing: 0.3px;
+  }
+  .tab-btn:hover { color: #b0b0d0; }
+  .tab-btn.active {
+    color: #5dade2;
+    border-bottom-color: #3a7bd5;
+  }
+  .tab-bar-title {
+    display: flex;
+    align-items: center;
+    padding: 0 12px 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #e0e0e0;
+    letter-spacing: 0.3px;
+    margin-right: auto;
+  }
+
+  /* ── Tab Content ───────────────────────────────────────────────── */
+  .tab-content {
+    flex: 1;
+    display: none;
+    overflow: hidden;
+  }
+  .tab-content.active {
+    display: flex;
+  }
+
+  /* ── Shared Two-Panel Layout ───────────────────────────────────── */
+  .panel-left {
+    width: 340px;
+    min-width: 280px;
+    border-right: 1px solid #0f3460;
+    display: flex;
+    flex-direction: column;
+    background: #16213e;
+  }
+  .panel-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #1a1a2e;
+  }
+
+  /* ── Panel Headers ─────────────────────────────────────────────── */
+  .panel-header {
+    padding: 16px;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+  }
+  .panel-header h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #e0e0e0;
+    margin-bottom: 4px;
+  }
+  .panel-header .subtitle {
+    font-size: 11px;
+    color: #7a7a9e;
+    margin-bottom: 12px;
+  }
+
+  /* ── Form Fields (labels above) ────────────────────────────────── */
+  .field {
+    margin-bottom: 10px;
+  }
+  .field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #7a7a9e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .field-row {
+    display: flex;
+    gap: 8px;
+  }
+  .field-row .field { flex: 1; }
+
+  .filter-select, .filter-input {
+    width: 100%;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .filter-select:focus, .filter-input:focus { border-color: #3a7bd5; }
+  .filter-input::placeholder { color: #4a4a6e; }
+
+  .preset-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .preset-btn {
+    background: #1a1a2e;
+    color: #c0c0d8;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .preset-btn:hover { border-color: #3a7bd5; color: #e0e0e0; }
+
+  /* ── Filter Chips ──────────────────────────────────────────────── */
+  .filters-active-row {
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .filter-chip {
+    background: rgba(58, 123, 213, 0.15);
+    color: #9fc5ff;
+    border: 1px solid rgba(58, 123, 213, 0.45);
+    border-radius: 999px;
+    font-size: 11px;
+    padding: 3px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .filter-chip button {
+    border: none;
+    background: transparent;
+    color: #9fc5ff;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0;
+  }
+  .clear-filters-btn {
+    margin-left: auto;
+    background: transparent;
+    color: #7a7a9e;
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .clear-filters-btn:hover { color: #e0e0e0; border-color: #3a7bd5; }
+
+  /* ── Scrollable Lists ──────────────────────────────────────────── */
+  .item-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .item-list::-webkit-scrollbar { width: 6px; }
+  .item-list::-webkit-scrollbar-track { background: transparent; }
+  .item-list::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+  .item-empty, .item-loading {
+    padding: 40px 16px;
+    text-align: center;
+    color: #7a7a9e;
+    font-size: 13px;
+  }
+  .item-loading .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #0f3460;
+    border-top-color: #3a7bd5;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── List Items ────────────────────────────────────────────────── */
+  .list-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(15, 52, 96, 0.4);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .list-item:hover { background: rgba(15, 52, 96, 0.5); }
+  .list-item.active { background: #0f3460; }
+
+  .list-item-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .list-item-time {
+    font-size: 11px;
+    color: #7a7a9e;
+    flex-shrink: 0;
+  }
+  .list-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .list-item-title {
+    font-size: 13px;
+    color: #c0c0d8;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list-item-subtitle {
+    font-size: 11px;
+    color: #7a7a9e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .list-item-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Badges ────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+  .badge-completed, .badge-success {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+  }
+  .badge-stopped {
+    background: rgba(241, 196, 15, 0.15);
+    color: #f1c40f;
+    border: 1px solid rgba(241, 196, 15, 0.3);
+  }
+  .badge-failure, .badge-error {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+  }
+  .badge-max_turns {
+    background: rgba(230, 126, 34, 0.15);
+    color: #e67e22;
+    border: 1px solid rgba(230, 126, 34, 0.3);
+  }
+  .badge-model {
+    background: rgba(52, 152, 219, 0.12);
+    color: #5dade2;
+    border: 1px solid rgba(52, 152, 219, 0.25);
+    font-size: 9px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    text-transform: none;
+    font-weight: 500;
+  }
+  .badge-tool {
+    background: rgba(155, 89, 182, 0.15);
+    color: #bb8fce;
+    border: 1px solid rgba(155, 89, 182, 0.3);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    text-transform: none;
+    font-weight: 500;
+    font-size: 11px;
+  }
+  .badge-enabled {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+  }
+  .badge-disabled {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+  }
+  .badge-pinned {
+    background: rgba(241, 196, 15, 0.15);
+    color: #f1c40f;
+    border: 1px solid rgba(241, 196, 15, 0.3);
+  }
+  .badge-type {
+    background: rgba(52, 152, 219, 0.12);
+    color: #5dade2;
+    border: 1px solid rgba(52, 152, 219, 0.25);
+    text-transform: none;
+  }
+  .badge-category {
+    background: rgba(155, 89, 182, 0.12);
+    color: #bb8fce;
+    border: 1px solid rgba(155, 89, 182, 0.25);
+    text-transform: none;
+  }
+  .badge-event-escalation {
+    background: rgba(230, 126, 34, 0.15);
+    color: #e67e22;
+    border: 1px solid rgba(230, 126, 34, 0.3);
+  }
+  .badge-event-stuck, .badge-event-stuck_signal, .badge-event-circuit_breaker {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+  }
+  .badge-event-hint {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+    border: 1px solid rgba(52, 152, 219, 0.3);
+  }
+  .badge-event-screenshot {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+  }
+  .badge-event-plan_update {
+    background: rgba(155, 89, 182, 0.15);
+    color: #bb8fce;
+    border: 1px solid rgba(155, 89, 182, 0.3);
+  }
+  .badge-event-modal_dismiss, .badge-event-done_rejected, .badge-event-navigate_blocked,
+  .badge-event-approval, .badge-event-execution_contract {
+    background: rgba(127, 140, 141, 0.15);
+    color: #95a5a6;
+    border: 1px solid rgba(127, 140, 141, 0.3);
+  }
+
+  /* ── Detail Header ─────────────────────────────────────────────── */
+  .detail-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+    background: #16213e;
+  }
+  .detail-header-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .detail-header-id {
+    font-size: 12px;
+    color: #7a7a9e;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  .detail-header-title {
+    font-size: 14px;
+    color: #e0e0e0;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-header-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: #7a7a9e;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .detail-header-stats span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ── Search Row ────────────────────────────────────────────────── */
+  .search-row {
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(15, 52, 96, 0.4);
+    flex-shrink: 0;
+    background: #1a1a2e;
+  }
+  .search-input {
+    width: 100%;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .search-input:focus { border-color: #3a7bd5; }
+  .search-input::placeholder { color: #4a4a6e; }
+
+  /* ── Detail Body (scrollable) ──────────────────────────────────── */
+  .detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .detail-body::-webkit-scrollbar { width: 6px; }
+  .detail-body::-webkit-scrollbar-track { background: transparent; }
+  .detail-body::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 3px; }
+
+  .detail-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #4a4a6e;
+    font-size: 14px;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .detail-empty .icon {
+    font-size: 36px;
+    opacity: 0.3;
+  }
+
+  /* ── Turn Card ─────────────────────────────────────────────────── */
+  .turn-card {
+    background: #16213e;
+    border: 1px solid rgba(15, 52, 96, 0.6);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+  }
+  .turn-card:hover { border-color: #0f3460; }
+  .turn-card.highlight { border-color: #3a7bd5; }
+
+  .turn-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(15, 52, 96, 0.3);
+    border-bottom: 1px solid rgba(15, 52, 96, 0.4);
+    flex-wrap: wrap;
+  }
+  .turn-number {
+    font-size: 13px;
+    font-weight: 700;
+    color: #5dade2;
+    flex-shrink: 0;
+  }
+  .turn-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    font-size: 11px;
+    color: #7a7a9e;
+    flex-shrink: 0;
+  }
+  .turn-card-meta .token-count {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  .turn-card-body {
+    padding: 12px 14px;
+  }
+
+  /* ── Reasoning Section ─────────────────────────────────────────── */
+  .reasoning-section { margin-bottom: 10px; }
+  .reasoning-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(26, 26, 46, 0.5);
+    border: none;
+    color: #a0a0c0;
+    font-size: 12px;
+    width: 100%;
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+  .reasoning-toggle:hover { background: rgba(26, 26, 46, 0.8); }
+  .reasoning-toggle .arrow {
+    transition: transform 0.2s ease;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .reasoning-toggle .arrow.open { transform: rotate(90deg); }
+  .reasoning-toggle .preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .reasoning-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .reasoning-content.open { max-height: 2000px; }
+  .reasoning-text {
+    padding: 10px;
+    margin-top: 6px;
+    background: rgba(26, 26, 46, 0.6);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #b0b0d0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .reasoning-text::-webkit-scrollbar { width: 5px; }
+  .reasoning-text::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+
+  /* ── Tool Calls Section ────────────────────────────────────────── */
+  .tool-section { margin-bottom: 10px; }
+  .tool-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #7a7a9e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .tool-call-item {
+    background: rgba(26, 26, 46, 0.4);
+    border: 1px solid rgba(15, 52, 96, 0.3);
+    border-radius: 5px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+  }
+  .tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+  .tool-success-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tool-success-indicator.ok { background: #2ecc71; box-shadow: 0 0 4px rgba(46, 204, 113, 0.4); }
+  .tool-success-indicator.fail { background: #e74c3c; box-shadow: 0 0 4px rgba(231, 76, 60, 0.4); }
+  .tool-duration {
+    font-size: 10px;
+    color: #7a7a9e;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    margin-left: auto;
+  }
+  .tool-args {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    color: #a0a0c0;
+    background: rgba(26, 26, 46, 0.5);
+    padding: 6px 8px;
+    border-radius: 3px;
+    margin: 4px 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+  .tool-result {
+    font-size: 11px;
+    color: #8a8ab0;
+    margin-top: 4px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .tool-result::-webkit-scrollbar { width: 4px; }
+  .tool-result::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+  .tool-result-label {
+    font-size: 10px;
+    color: #5a5a7e;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-top: 6px;
+    margin-bottom: 2px;
+  }
+  .tool-error {
+    font-size: 11px;
+    color: #e74c3c;
+    margin-top: 4px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  /* ── Events Section ────────────────────────────────────────────── */
+  .events-section { margin-bottom: 10px; }
+  .event-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .event-data {
+    font-size: 11px;
+    color: #7a7a9e;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    word-break: break-all;
+  }
+
+  /* ── Snapshot Section ──────────────────────────────────────────── */
+  .snapshot-section { margin-top: 6px; }
+  .snapshot-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: rgba(26, 26, 46, 0.3);
+    border: none;
+    color: #6a6a8e;
+    font-size: 11px;
+    transition: background 0.15s ease;
+  }
+  .snapshot-toggle:hover { background: rgba(26, 26, 46, 0.6); }
+  .snapshot-toggle .arrow {
+    transition: transform 0.2s ease;
+    font-size: 9px;
+    flex-shrink: 0;
+  }
+  .snapshot-toggle .arrow.open { transform: rotate(90deg); }
+  .snapshot-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .snapshot-content.open { max-height: 1200px; }
+  .snapshot-url {
+    font-size: 11px;
+    color: #5dade2;
+    padding: 6px 8px;
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .snapshot-elements {
+    padding: 6px 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .snapshot-elements::-webkit-scrollbar { width: 4px; }
+  .snapshot-elements::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+  .snapshot-element {
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    color: #8a8ab0;
+    padding: 1px 0;
+    line-height: 1.5;
+  }
+  .snapshot-element .tag-id { color: #5dade2; font-weight: 600; }
+  .snapshot-element .tag-name { color: #bb8fce; }
+  .snapshot-element .tag-text { color: #a0a0c0; }
+
+  /* ── Progress State ────────────────────────────────────────────── */
+  .progress-state {
+    font-size: 10px;
+    color: #5a5a7e;
+    padding-top: 6px;
+    border-top: 1px solid rgba(15, 52, 96, 0.3);
+    margin-top: 8px;
+    display: flex;
+    gap: 12px;
+  }
+  .progress-state .stale-warn { color: #e67e22; }
+
+  /* ── Error Banner ──────────────────────────────────────────────── */
+  .error-banner {
+    padding: 12px 16px;
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: 5px;
+    color: #e74c3c;
+    font-size: 13px;
+    margin: 16px 20px;
+  }
+  .no-results {
+    text-align: center;
+    color: #4a4a6e;
+    font-size: 13px;
+    padding: 30px 0;
+  }
+
+  /* ── Skill Detail Card ─────────────────────────────────────────── */
+  .skill-detail {
+    background: #16213e;
+    border: 1px solid rgba(15, 52, 96, 0.6);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .skill-detail h3 {
+    font-size: 14px;
+    color: #e0e0e0;
+    margin-bottom: 12px;
+  }
+  .skill-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat-box {
+    background: rgba(26, 26, 46, 0.5);
+    border-radius: 5px;
+    padding: 10px;
+  }
+  .stat-box .stat-label {
+    font-size: 10px;
+    color: #7a7a9e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .stat-box .stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  .stat-box .stat-value.success { color: #2ecc71; }
+  .stat-box .stat-value.warning { color: #f1c40f; }
+  .stat-box .stat-value.danger { color: #e74c3c; }
+
+  .skill-steps {
+    margin-top: 12px;
+  }
+  .skill-step-item {
+    background: rgba(26, 26, 46, 0.4);
+    border: 1px solid rgba(15, 52, 96, 0.3);
+    border-radius: 5px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .skill-step-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: #5dade2;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .skill-step-obj {
+    font-size: 12px;
+    color: #c0c0d8;
+    line-height: 1.5;
+    margin-bottom: 4px;
+  }
+  .skill-step-criteria {
+    font-size: 11px;
+    color: #7a7a9e;
+    font-style: italic;
+    margin-bottom: 4px;
+  }
+  .skill-step-tools {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Action Buttons ────────────────────────────────────────────── */
+  .action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 6px 14px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-primary {
+    background: #3a7bd5;
+    color: #fff;
+    border-color: #3a7bd5;
+  }
+  .btn-primary:hover { background: #2b6cc4; }
+  .btn-danger {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    border-color: rgba(231, 76, 60, 0.3);
+  }
+  .btn-danger:hover { background: rgba(231, 76, 60, 0.25); }
+  .btn-outline {
+    background: transparent;
+    color: #c0c0d8;
+    border-color: #0f3460;
+  }
+  .btn-outline:hover { border-color: #3a7bd5; color: #e0e0e0; }
+  .btn-success {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border-color: rgba(46, 204, 113, 0.3);
+  }
+  .btn-success:hover { background: rgba(46, 204, 113, 0.25); }
+  .btn-warning {
+    background: rgba(241, 196, 15, 0.15);
+    color: #f1c40f;
+    border-color: rgba(241, 196, 15, 0.3);
+  }
+  .btn-warning:hover { background: rgba(241, 196, 15, 0.25); }
+
+  /* ── Memory Detail ─────────────────────────────────────────────── */
+  .memory-detail {
+    background: #16213e;
+    border: 1px solid rgba(15, 52, 96, 0.6);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .memory-content {
+    font-size: 13px;
+    color: #c0c0d8;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: rgba(26, 26, 46, 0.5);
+    padding: 12px;
+    border-radius: 5px;
+    margin-top: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+  }
+  .memory-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .memory-meta-item {
+    background: rgba(26, 26, 46, 0.5);
+    border-radius: 5px;
+    padding: 8px 10px;
+  }
+  .memory-meta-label {
+    font-size: 10px;
+    color: #7a7a9e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .memory-meta-value {
+    font-size: 12px;
+    color: #c0c0d8;
+    word-break: break-all;
+  }
+
+  /* ── Inline Toggle ─────────────────────────────────────────────── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+  }
+  .toggle-label {
+    font-size: 12px;
+    color: #c0c0d8;
+    min-width: 70px;
+  }
+  .toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #0f3460;
+    border-radius: 20px;
+    transition: background 0.2s;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    bottom: 2px;
+    background: #c0c0d8;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background: #3a7bd5;
+  }
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+  }
+
+  /* ── Session count ─────────────────────────────────────────────── */
+  .session-turns { font-size: 11px; color: #a0a0c0; }
+  .session-cost {
+    font-size: 11px;
+    color: #a0a0c0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  /* ── Editable name input ───────────────────────────────────────── */
+  .editable-name {
+    background: rgba(26, 26, 46, 0.5);
+    border: 1px solid #0f3460;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 6px 10px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .editable-name:focus { border-color: #3a7bd5; }
+
+  /* ── LLM Input Section ──────────────────────────────────────────── */
+  .llm-input-section { margin-bottom: 10px; }
+  .llm-input-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(26, 26, 46, 0.5);
+    border: none;
+    color: #a0a0c0;
+    font-size: 12px;
+    width: 100%;
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+  .llm-input-toggle:hover { background: rgba(26, 26, 46, 0.8); }
+  .llm-input-toggle .arrow {
+    transition: transform 0.2s ease;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .llm-input-toggle .arrow.open { transform: rotate(90deg); }
+  .llm-input-toggle .preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .llm-input-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .llm-input-content.open { max-height: 8000px; }
+
+  .llm-metrics-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 10px;
+    margin-top: 6px;
+    background: rgba(26, 26, 46, 0.6);
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    color: #a0a0c0;
+  }
+  .llm-metrics-bar .metric-label { color: #7a7a9e; }
+  .llm-util-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .llm-util-track {
+    width: 80px;
+    height: 6px;
+    background: rgba(15, 52, 96, 0.6);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .llm-util-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.2s ease;
+  }
+  .llm-util-fill.green { background: #2ecc71; }
+  .llm-util-fill.yellow { background: #f1c40f; }
+  .llm-util-fill.red { background: #e74c3c; }
+
+  .llm-messages-list {
+    margin-top: 6px;
+  }
+  .llm-message-item {
+    border: 1px solid rgba(15, 52, 96, 0.3);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    overflow: hidden;
+  }
+  .llm-message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 11px;
+    color: #a0a0c0;
+    transition: background 0.15s ease;
+  }
+  .llm-message-header:hover { background: rgba(15, 52, 96, 0.3); }
+  .llm-message-header .arrow {
+    transition: transform 0.2s ease;
+    font-size: 9px;
+    flex-shrink: 0;
+  }
+  .llm-message-header .arrow.open { transform: rotate(90deg); }
+  .llm-message-header .msg-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #8a8ab0;
+  }
+  .llm-message-header .msg-tokens {
+    flex-shrink: 0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    color: #5a5a7e;
+    font-size: 10px;
+  }
+
+  .llm-msg-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .llm-msg-body.open { max-height: 4000px; }
+  .llm-msg-body-inner {
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    color: #b0b0d0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+    max-height: 500px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #0f3460 transparent;
+    background: rgba(26, 26, 46, 0.4);
+  }
+  .llm-msg-body-inner::-webkit-scrollbar { width: 4px; }
+  .llm-msg-body-inner::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+
+  /* Role badges */
+  .badge-role-system {
+    background: rgba(155, 89, 182, 0.15);
+    color: #bb8fce;
+    border: 1px solid rgba(155, 89, 182, 0.3);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-role-user {
+    background: rgba(52, 152, 219, 0.15);
+    color: #5dade2;
+    border: 1px solid rgba(52, 152, 219, 0.3);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-role-assistant {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-role-tool {
+    background: rgba(230, 126, 34, 0.15);
+    color: #e67e22;
+    border: 1px solid rgba(230, 126, 34, 0.3);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-original-query {
+    background: rgba(241, 196, 15, 0.15);
+    color: #f1c40f;
+    border: 1px solid rgba(241, 196, 15, 0.3);
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+  .badge-cached {
+    background: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.2);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .badge-dynamic {
+    background: rgba(230, 126, 34, 0.1);
+    color: #e67e22;
+    border: 1px solid rgba(230, 126, 34, 0.2);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .llm-cached-marker {
+    border-top: 2px dashed rgba(230, 126, 34, 0.5);
+    margin: 4px 0;
+    padding-top: 4px;
+    font-size: 10px;
+    color: #e67e22;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <span class="tab-bar-title">OpenSidebar DevTools</span>
+    <button class="tab-btn active" data-tab="traces">Traces</button>
+    <button class="tab-btn" data-tab="skills">Skills</button>
+    <button class="tab-btn" data-tab="memory">Memory</button>
+  </div>
+
+  <!-- ════════════ TRACES TAB ════════════ -->
+  <div id="tab-traces" class="tab-content active">
+    <div class="panel-left">
+      <div class="panel-header">
+        <h2>Trace Sessions</h2>
+        <div class="subtitle">Agent execution traces</div>
+        <div class="field">
+          <label for="trace-outcome-filter">Outcome</label>
+          <select id="trace-outcome-filter" class="filter-select">
+            <option value="all">All</option>
+            <option value="completed">Completed</option>
+            <option value="stopped">Stopped</option>
+            <option value="max_turns">Max Turns</option>
+            <option value="error">Error</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="trace-day-filter">Day</label>
+          <select id="trace-day-filter" class="filter-select">
+            <option value="all">All Days</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="trace-domain-filter">Website</label>
+            <input id="trace-domain-filter" class="filter-input" type="text" placeholder="e.g. github.com" />
+          </div>
+          <div class="field">
+            <label for="trace-session-filter">Session</label>
+            <input id="trace-session-filter" class="filter-input" type="text" placeholder="prefix" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="trace-from-filter">From</label>
+            <input id="trace-from-filter" class="filter-input" type="date" />
+          </div>
+          <div class="field">
+            <label for="trace-to-filter">To</label>
+            <input id="trace-to-filter" class="filter-input" type="date" />
+          </div>
+        </div>
+        <div class="preset-row">
+          <button id="trace-preset-today" class="preset-btn" type="button">Today</button>
+          <button id="trace-preset-7d" class="preset-btn" type="button">7d</button>
+          <button id="trace-preset-30d" class="preset-btn" type="button">30d</button>
+        </div>
+        <div id="trace-filters-active" class="filters-active-row"></div>
+      </div>
+      <div id="trace-session-list" class="item-list">
+        <div class="item-loading"><div class="spinner"></div><div>Loading sessions...</div></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div id="trace-detail-header" class="detail-header" style="display:none;">
+        <div class="detail-header-top">
+          <span id="trace-detail-session-id" class="detail-header-id"></span>
+          <span id="trace-detail-outcome" class="badge"></span>
+        </div>
+        <div id="trace-detail-query" class="detail-header-title"></div>
+        <div id="trace-detail-stats" class="detail-header-stats"></div>
+      </div>
+      <div id="trace-search-row" class="search-row" style="display:none;">
+        <input id="trace-turn-search" type="text" class="search-input" placeholder="Filter turns by tool name, text, event type..." />
+      </div>
+      <div id="trace-turn-list" class="detail-body">
+        <div class="detail-empty"><div class="icon">&#9776;</div><div>Select a session to view turns</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ SKILLS TAB ════════════ -->
+  <div id="tab-skills" class="tab-content">
+    <div class="panel-left">
+      <div class="panel-header">
+        <h2>Learned Skills</h2>
+        <div class="subtitle">Skills learned from completed tasks</div>
+        <div class="field">
+          <label for="skill-search">Search</label>
+          <input id="skill-search" class="filter-input" type="text" placeholder="Filter skills..." />
+        </div>
+        <div class="field">
+          <label for="skill-status-filter">Status</label>
+          <select id="skill-status-filter" class="filter-select">
+            <option value="all">All</option>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+            <option value="pinned">Pinned</option>
+          </select>
+        </div>
+      </div>
+      <div id="skill-list" class="item-list">
+        <div class="item-loading"><div class="spinner"></div><div>Loading skills...</div></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div id="skill-detail" class="detail-body">
+        <div class="detail-empty"><div class="icon">&#9881;</div><div>Select a skill to view details</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ MEMORY TAB ════════════ -->
+  <div id="tab-memory" class="tab-content">
+    <div class="panel-left">
+      <div class="panel-header">
+        <h2>Memory Entries</h2>
+        <div class="subtitle">Stored knowledge from agent sessions</div>
+        <div class="field">
+          <label for="memory-search">Search</label>
+          <input id="memory-search" class="filter-input" type="text" placeholder="Search content..." />
+        </div>
+        <div class="field">
+          <label for="memory-category-filter">Category</label>
+          <select id="memory-category-filter" class="filter-select">
+            <option value="all">All Categories</option>
+          </select>
+        </div>
+      </div>
+      <div id="memory-list" class="item-list">
+        <div class="item-loading"><div class="spinner"></div><div>Loading memory...</div></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div id="memory-detail" class="detail-body">
+        <div class="detail-empty"><div class="icon">&#128218;</div><div>Select a memory entry to view details</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ═══════════════════════════════════════════════════════════════
+  //  SHARED HELPERS
+  // ═══════════════════════════════════════════════════════════════
+
+  function formatTime(ms) {
+    if (!ms) return '---';
+    var d = new Date(ms);
+    var month = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    var hours = String(d.getHours()).padStart(2, '0');
+    var mins = String(d.getMinutes()).padStart(2, '0');
+    var secs = String(d.getSeconds()).padStart(2, '0');
+    return month + '/' + day + ' ' + hours + ':' + mins + ':' + secs;
+  }
+
+  function formatDate(ms) {
+    if (!ms) return '---';
+    var d = new Date(ms);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+
+  function formatDuration(ms) {
+    if (ms == null) return '---';
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    return (ms / 60000).toFixed(1) + 'm';
+  }
+
+  function formatCost(cost) {
+    if (cost == null || cost === 0) return '';
+    if (cost < 0.001) return '$' + cost.toFixed(6);
+    if (cost < 0.01) return '$' + cost.toFixed(4);
+    return '$' + cost.toFixed(3);
+  }
+
+  function formatTokens(n) {
+    if (n == null) return '---';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function truncate(s, len) {
+    if (!s) return '';
+    return s.length > len ? s.slice(0, len) + '...' : s;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function outcomeClass(outcome) {
+    switch (outcome) {
+      case 'completed': return 'badge-completed';
+      case 'success': return 'badge-success';
+      case 'stopped': return 'badge-stopped';
+      case 'failure': return 'badge-failure';
+      case 'error': return 'badge-error';
+      case 'max_turns': return 'badge-max_turns';
+      default: return 'badge-error';
+    }
+  }
+
+  function shortModel(model) {
+    if (!model) return '?';
+    return model.replace('openai/', '').replace('z-ai/', '').replace('-instruct', '');
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TAB SWITCHING
+  // ═══════════════════════════════════════════════════════════════
+
+  var tabBtns = document.querySelectorAll('.tab-btn');
+  var tabContents = document.querySelectorAll('.tab-content');
+  var tabInitMap = { traces: false, skills: false, memory: false };
+
+  function switchTab(tabName) {
+    for (var i = 0; i < tabBtns.length; i++) {
+      tabBtns[i].classList.toggle('active', tabBtns[i].getAttribute('data-tab') === tabName);
+    }
+    for (var j = 0; j < tabContents.length; j++) {
+      tabContents[j].classList.toggle('active', tabContents[j].id === 'tab-' + tabName);
+    }
+    // Lazy-load tabs on first switch
+    if (!tabInitMap[tabName]) {
+      tabInitMap[tabName] = true;
+      if (tabName === 'traces') initTraces();
+      else if (tabName === 'skills') initSkills();
+      else if (tabName === 'memory') initMemory();
+    }
+  }
+
+  for (var ti = 0; ti < tabBtns.length; ti++) {
+    tabBtns[ti].addEventListener('click', function() {
+      switchTab(this.getAttribute('data-tab'));
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TRACES TAB
+  // ═══════════════════════════════════════════════════════════════
+
+  var traceState = {
+    allSessions: [],
+    availableDays: [],
+    currentSessionId: null,
+    currentEntries: [],
+    searchQuery: '',
+  };
+
+  var traceEls = {
+    sessionList: document.getElementById('trace-session-list'),
+    detailHeader: document.getElementById('trace-detail-header'),
+    searchRow: document.getElementById('trace-search-row'),
+    turnSearch: document.getElementById('trace-turn-search'),
+    turnList: document.getElementById('trace-turn-list'),
+    outcomeFilter: document.getElementById('trace-outcome-filter'),
+    dayFilter: document.getElementById('trace-day-filter'),
+    domainFilter: document.getElementById('trace-domain-filter'),
+    sessionFilter: document.getElementById('trace-session-filter'),
+    fromFilter: document.getElementById('trace-from-filter'),
+    toFilter: document.getElementById('trace-to-filter'),
+    filtersActive: document.getElementById('trace-filters-active'),
+    detailSessionId: document.getElementById('trace-detail-session-id'),
+    detailOutcome: document.getElementById('trace-detail-outcome'),
+    detailQuery: document.getElementById('trace-detail-query'),
+    detailStats: document.getElementById('trace-detail-stats'),
+  };
+
+  function traceFilterState() {
+    return {
+      outcome: traceEls.outcomeFilter.value || 'all',
+      day: traceEls.dayFilter.value || 'all',
+      from: (traceEls.fromFilter.value || '').trim(),
+      to: (traceEls.toFilter.value || '').trim(),
+      domain: (traceEls.domainFilter.value || '').trim().toLowerCase(),
+      sessionPrefix: (traceEls.sessionFilter.value || '').trim(),
+    };
+  }
+
+  function isoDayOffset(daysBack) {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - daysBack);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function fetchTraceSessions(filters) {
+    var params = new URLSearchParams();
+    if (filters.outcome && filters.outcome !== 'all') params.set('outcome', filters.outcome);
+    if (filters.day && filters.day !== 'all') params.set('day', filters.day);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    if (filters.domain) params.set('domain', filters.domain);
+    if (filters.sessionPrefix) params.set('sessionIdPrefix', filters.sessionPrefix);
+    params.set('limit', '1000');
+    return fetch('/api/traces/search?' + params.toString()).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function fetchTraceDays() {
+    return fetch('/api/traces/days').then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function fetchTraceEntries(sessionId) {
+    return fetch('/api/traces/' + encodeURIComponent(sessionId)).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function renderTraceDayFilter() {
+    var html = '<option value="all">All Days</option>';
+    for (var i = 0; i < traceState.availableDays.length; i++) {
+      var d = traceState.availableDays[i];
+      html += '<option value="' + escapeHtml(d.day) + '">' + escapeHtml(d.day) + ' (' + d.count + ')</option>';
+    }
+    traceEls.dayFilter.innerHTML = html;
+  }
+
+  function renderTraceActiveFilters() {
+    var f = traceFilterState();
+    var chips = [];
+    if (f.outcome && f.outcome !== 'all') chips.push({ key: 'outcome', label: 'Outcome: ' + f.outcome });
+    if (f.day && f.day !== 'all') chips.push({ key: 'day', label: 'Day: ' + f.day });
+    if (f.from) chips.push({ key: 'from', label: 'From: ' + f.from });
+    if (f.to) chips.push({ key: 'to', label: 'To: ' + f.to });
+    if (f.domain) chips.push({ key: 'domain', label: 'Website: ' + f.domain });
+    if (f.sessionPrefix) chips.push({ key: 'session', label: 'Session: ' + f.sessionPrefix });
+
+    var html = '';
+    for (var i = 0; i < chips.length; i++) {
+      html += '<span class="filter-chip" data-chip-key="' + chips[i].key + '">' +
+        escapeHtml(chips[i].label) +
+        ' <button type="button" data-chip-key="' + chips[i].key + '">&#10005;</button></span>';
+    }
+    if (chips.length) {
+      html += '<button class="clear-filters-btn trace-clear-all" type="button">Clear all</button>';
+    }
+    traceEls.filtersActive.innerHTML = html;
+
+    traceEls.filtersActive.querySelectorAll('button[data-chip-key]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var key = this.getAttribute('data-chip-key');
+        if (key === 'outcome') traceEls.outcomeFilter.value = 'all';
+        if (key === 'day') traceEls.dayFilter.value = 'all';
+        if (key === 'from') traceEls.fromFilter.value = '';
+        if (key === 'to') traceEls.toFilter.value = '';
+        if (key === 'domain') traceEls.domainFilter.value = '';
+        if (key === 'session') traceEls.sessionFilter.value = '';
+        refreshTraceSessions();
+      });
+    });
+    var clearAll = traceEls.filtersActive.querySelector('.trace-clear-all');
+    if (clearAll) {
+      clearAll.addEventListener('click', function() {
+        traceEls.outcomeFilter.value = 'all';
+        traceEls.dayFilter.value = 'all';
+        traceEls.fromFilter.value = '';
+        traceEls.toFilter.value = '';
+        traceEls.domainFilter.value = '';
+        traceEls.sessionFilter.value = '';
+        refreshTraceSessions();
+      });
+    }
+  }
+
+  function renderTraceSessionList() {
+    var sessions = traceState.allSessions;
+    if (sessions.length === 0) {
+      traceEls.sessionList.innerHTML = '<div class="item-empty">No trace sessions found.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i];
+      var isActive = s.sessionId === traceState.currentSessionId;
+      var cost = '';
+      if (s.metrics && s.metrics.totalCost) cost = formatCost(s.metrics.totalCost);
+      else if (s.totalCost) cost = formatCost(s.totalCost);
+      var models = [];
+      if (s.models && Array.isArray(s.models)) models = s.models;
+      else if (s.metrics && s.metrics.modelBreakdown) models = Object.keys(s.metrics.modelBreakdown);
+
+      html += '<div class="list-item' + (isActive ? ' active' : '') + '" data-session-id="' + escapeHtml(s.sessionId) + '">';
+      html += '<div class="list-item-top">';
+      html += '<span class="list-item-time">' + formatTime(s.startTime) + '</span>';
+      html += '<span class="badge ' + outcomeClass(s.outcome) + '">' + escapeHtml(s.outcome) + '</span>';
+      html += '<div class="list-item-meta">';
+      html += '<span class="session-turns">' + (s.turnCount || 0) + ' turns</span>';
+      if (cost) html += '<span class="session-cost">' + cost + '</span>';
+      html += '</div></div>';
+      html += '<div class="list-item-title">' + escapeHtml(truncate(s.query, 60)) + '</div>';
+      if (models.length > 0) {
+        html += '<div class="list-item-tags">';
+        for (var j = 0; j < models.length; j++) {
+          html += '<span class="badge badge-model">' + escapeHtml(shortModel(models[j])) + '</span>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    traceEls.sessionList.innerHTML = html;
+    traceEls.sessionList.querySelectorAll('.list-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        selectTraceSession(this.getAttribute('data-session-id'));
+      });
+    });
+  }
+
+  function renderTraceTurnHeader(session) {
+    traceEls.detailHeader.style.display = '';
+    traceEls.searchRow.style.display = '';
+    traceEls.detailSessionId.textContent = session.sessionId;
+    traceEls.detailOutcome.className = 'badge ' + outcomeClass(session.outcome);
+    traceEls.detailOutcome.textContent = session.outcome;
+    traceEls.detailQuery.textContent = session.query || '(no query)';
+
+    var duration = formatDuration((session.endTime || 0) - (session.startTime || 0));
+    var cost = '', tokens = '';
+    if (session.metrics) {
+      if (session.metrics.totalCost) cost = formatCost(session.metrics.totalCost);
+      if (session.metrics.totalTokens) tokens = formatTokens(session.metrics.totalTokens) + ' tokens';
+    } else {
+      if (session.totalCost) cost = formatCost(session.totalCost);
+      if (session.totalTokens) tokens = formatTokens(session.totalTokens) + ' tokens';
+    }
+    var statsHtml = '<span>' + (session.turnCount || 0) + ' turns</span><span>' + duration + '</span>';
+    if (tokens) statsHtml += '<span>' + tokens + '</span>';
+    if (cost) statsHtml += '<span>' + cost + '</span>';
+    if (session.startUrl) statsHtml += '<span>' + escapeHtml(truncate(session.startUrl, 50)) + '</span>';
+    traceEls.detailStats.innerHTML = statsHtml;
+  }
+
+  function renderTraceTurnList() {
+    var entries = traceState.currentEntries;
+    var q = traceState.searchQuery.toLowerCase().trim();
+    if (q) {
+      entries = entries.filter(function(e) {
+        if (e.llmResponse && e.llmResponse.content && e.llmResponse.content.toLowerCase().indexOf(q) !== -1) return true;
+        if (e.toolExecutions) {
+          for (var i = 0; i < e.toolExecutions.length; i++) {
+            if (e.toolExecutions[i].toolName && e.toolExecutions[i].toolName.toLowerCase().indexOf(q) !== -1) return true;
+            if (e.toolExecutions[i].result && e.toolExecutions[i].result.toLowerCase().indexOf(q) !== -1) return true;
+          }
+        }
+        if (e.llmResponse && e.llmResponse.toolCalls) {
+          for (var j = 0; j < e.llmResponse.toolCalls.length; j++) {
+            var tc = e.llmResponse.toolCalls[j];
+            if (tc.function && tc.function.name && tc.function.name.toLowerCase().indexOf(q) !== -1) return true;
+          }
+        }
+        if (e.events) {
+          for (var k = 0; k < e.events.length; k++) {
+            if (e.events[k].type && e.events[k].type.toLowerCase().indexOf(q) !== -1) return true;
+          }
+        }
+        if (e.snapshot) {
+          if (e.snapshot.url && e.snapshot.url.toLowerCase().indexOf(q) !== -1) return true;
+          if (e.snapshot.title && e.snapshot.title.toLowerCase().indexOf(q) !== -1) return true;
+        }
+        return false;
+      });
+    }
+    if (entries.length === 0) {
+      traceEls.turnList.innerHTML = q
+        ? '<div class="no-results">No turns match "' + escapeHtml(q) + '"</div>'
+        : '<div class="no-results">No turn data available.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < entries.length; i++) {
+      html += renderTurnCard(entries[i], i);
+    }
+    traceEls.turnList.innerHTML = html;
+    attachCollapsibleHandlers(traceEls.turnList);
+  }
+
+  function renderLLMInputSection(entry, index) {
+    var msgs = entry.llmRequest && entry.llmRequest.messages;
+    if (!msgs || msgs.length === 0) return '';
+    var cm = entry.llmRequest.contextMetrics;
+    var sectionId = 'llm-input-' + index;
+    var msgCount = msgs.length;
+    var utilPct = cm ? Math.round(cm.utilization * 100) : 0;
+
+    var html = '<div class="llm-input-section">';
+    html += '<button class="llm-input-toggle" data-target="' + sectionId + '">';
+    html += '<span class="arrow">&#9654;</span>';
+    html += '<span class="preview">LLM Input (' + msgCount + ' messages';
+    if (cm) html += ' &middot; ' + utilPct + '% context';
+    html += ')</span></button>';
+    html += '<div class="llm-input-content" id="' + sectionId + '">';
+
+    // Metrics bar
+    if (cm) {
+      var utilColor = utilPct < 60 ? 'green' : utilPct < 85 ? 'yellow' : 'red';
+      html += '<div class="llm-metrics-bar">';
+      html += '<span><span class="metric-label">System:</span> ' + formatTokens(cm.systemTokens) + '</span>';
+      html += '<span><span class="metric-label">History:</span> ' + formatTokens(cm.historyTokens) + '</span>';
+      html += '<span><span class="metric-label">Total:</span> ' + formatTokens(cm.totalTokens) + '/' + formatTokens(cm.maxTokens) + '</span>';
+      html += '<span class="llm-util-bar"><span class="llm-util-track"><span class="llm-util-fill ' + utilColor + '" style="width:' + Math.min(utilPct, 100) + '%"></span></span> ' + utilPct + '%</span>';
+      if (cm.droppedMessageCount > 0) html += '<span style="color:#e67e22;">Dropped: ' + cm.droppedMessageCount + '</span>';
+      if (cm.compressionLevel && cm.compressionLevel !== 'none') html += '<span><span class="metric-label">Compress:</span> ' + escapeHtml(cm.compressionLevel) + '</span>';
+      html += '</div>';
+    }
+
+    // Per-message list
+    html += '<div class="llm-messages-list">';
+    var firstUserSeen = false;
+    for (var m = 0; m < msgs.length; m++) {
+      var msg = msgs[m];
+      var role = msg.role || 'unknown';
+      var bodyId = 'llm-msg-' + index + '-' + m;
+      var contentText = msg.content || '';
+      var tokEst = Math.ceil(contentText.length / 4);
+      if (msg.tool_calls) tokEst += Math.ceil(JSON.stringify(msg.tool_calls).length / 4);
+
+      // Preview text
+      var preview = '';
+      if (role === 'system') {
+        preview = 'System prompt';
+      } else if (role === 'assistant') {
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          preview = msg.tool_calls.length + ' tool call' + (msg.tool_calls.length > 1 ? 's' : '');
+          var names = [];
+          for (var tc = 0; tc < msg.tool_calls.length && tc < 3; tc++) {
+            names.push(msg.tool_calls[tc].function ? msg.tool_calls[tc].function.name : '?');
+          }
+          preview += ': ' + names.join(', ');
+        } else {
+          preview = truncate(contentText, 80);
+        }
+      } else if (role === 'tool') {
+        preview = 'call: ' + (msg.tool_call_id ? msg.tool_call_id.slice(0, 12) : '?');
+        if (contentText) preview += ' — ' + truncate(contentText, 60);
+      } else {
+        preview = truncate(contentText, 80);
+      }
+
+      html += '<div class="llm-message-item">';
+      html += '<div class="llm-message-header" data-target="' + bodyId + '">';
+      html += '<span class="arrow">&#9654;</span>';
+      html += '<span class="badge-role-' + role + '">' + role + '</span>';
+      // Original query badge
+      if (role === 'user' && !firstUserSeen) {
+        html += '<span class="badge-original-query">Original Query</span>';
+        firstUserSeen = true;
+      }
+      // Cached/dynamic badges for system message
+      if (role === 'system' && cm && cm.cachedPrefixLength > 0) {
+        html += '<span class="badge-cached">cached: ' + cm.cachedPrefixLength + '</span>';
+        html += '<span class="badge-dynamic">dynamic: ' + Math.max(0, contentText.length - cm.cachedPrefixLength) + '</span>';
+      }
+      html += '<span class="msg-preview">' + escapeHtml(preview) + '</span>';
+      html += '<span class="msg-tokens">~' + formatTokens(tokEst) + '</span>';
+      html += '</div>';
+
+      // Expandable body
+      html += '<div class="llm-msg-body" id="' + bodyId + '">';
+      if (role === 'system' && cm && cm.cachedPrefixLength > 0 && contentText.length > cm.cachedPrefixLength) {
+        // Split at cached prefix boundary
+        var cachedPart = contentText.slice(0, cm.cachedPrefixLength);
+        var dynamicPart = contentText.slice(cm.cachedPrefixLength);
+        html += '<div class="llm-msg-body-inner">';
+        html += escapeHtml(cachedPart);
+        html += '<div class="llm-cached-marker">── Dynamic Context (changes per turn) ──</div>';
+        html += escapeHtml(dynamicPart);
+        html += '</div>';
+      } else {
+        var bodyContent = contentText;
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          bodyContent += '\n\n[Tool Calls]\n' + JSON.stringify(msg.tool_calls, null, 2);
+        }
+        html += '<div class="llm-msg-body-inner">' + escapeHtml(bodyContent) + '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function renderTurnCard(entry, index) {
+    var turnNum = entry.turnNumber != null ? entry.turnNumber : (entry.turn != null ? entry.turn : index + 1);
+    var model = '';
+    if (entry.llmRequest && entry.llmRequest.model) model = entry.llmRequest.model;
+    else if (entry.model) model = entry.model;
+    var duration = entry.llmResponse ? entry.llmResponse.durationMs : (entry.durationMs || null);
+    var usage = entry.llmResponse ? entry.llmResponse.usage : (entry.usage || null);
+    var content = entry.llmResponse ? entry.llmResponse.content : (entry.response ? entry.response.content : null);
+    var toolCalls = [];
+    if (entry.llmResponse && entry.llmResponse.toolCalls) toolCalls = entry.llmResponse.toolCalls;
+    else if (entry.response && entry.response.tool_calls) toolCalls = entry.response.tool_calls;
+    var toolExecutions = entry.toolExecutions || [];
+    var events = entry.events || [];
+    var snapshot = entry.snapshot || null;
+    var elements = entry.elements || [];
+    var progressState = entry.progressState || null;
+
+    var html = '<div class="turn-card" id="turn-card-' + index + '">';
+    html += '<div class="turn-card-header">';
+    html += '<span class="turn-number">Turn ' + turnNum + '</span>';
+    if (model) html += '<span class="badge badge-model">' + escapeHtml(shortModel(model)) + '</span>';
+    if (entry.llmRequest && entry.llmRequest.compressionLevel && entry.llmRequest.compressionLevel !== 'NONE') {
+      html += '<span style="font-size:10px;color:#7a7a9e;">compress: ' + escapeHtml(entry.llmRequest.compressionLevel) + '</span>';
+    }
+    html += '<div class="turn-card-meta">';
+    if (duration != null) html += '<span>' + formatDuration(duration) + '</span>';
+    if (usage && usage.total_tokens) html += '<span class="token-count">' + formatTokens(usage.total_tokens) + ' tok</span>';
+    if (usage && usage.cost) html += '<span class="token-count">' + formatCost(usage.cost) + '</span>';
+    html += '</div></div>';
+
+    html += '<div class="turn-card-body">';
+
+    // Events
+    if (events.length > 0) {
+      html += '<div class="events-section"><div class="tool-section-title">Events</div>';
+      for (var e = 0; e < events.length; e++) {
+        var ev = events[e];
+        html += '<div class="event-item"><span class="badge badge-event-' + escapeHtml(ev.type) + '">' + escapeHtml(ev.type) + '</span>';
+        if (ev.data && Object.keys(ev.data).length > 0) {
+          html += '<span class="event-data">' + escapeHtml(summarizeEventData(ev)) + '</span>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // LLM Input (full messages array)
+    html += renderLLMInputSection(entry, index);
+
+    // Reasoning / LLM content
+    if (content) {
+      var isLong = content.length > 150;
+      var cardId = 'reasoning-' + index;
+      html += '<div class="reasoning-section">';
+      if (isLong) {
+        html += '<button class="reasoning-toggle" data-target="' + cardId + '">';
+        html += '<span class="arrow">&#9654;</span><span class="preview">' + escapeHtml(truncate(content, 120)) + '</span></button>';
+        html += '<div class="reasoning-content" id="' + cardId + '"><div class="reasoning-text">' + escapeHtml(content) + '</div></div>';
+      } else {
+        html += '<div class="reasoning-text" style="margin-top:0;">' + escapeHtml(content) + '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Tool calls
+    if (toolCalls.length > 0 || toolExecutions.length > 0) {
+      html += '<div class="tool-section"><div class="tool-section-title">Tool Calls (' + Math.max(toolCalls.length, toolExecutions.length) + ')</div>';
+      var maxLen = Math.max(toolCalls.length, toolExecutions.length);
+      for (var t = 0; t < maxLen; t++) {
+        var tc = t < toolCalls.length ? toolCalls[t] : null;
+        var te = t < toolExecutions.length ? toolExecutions[t] : null;
+        var toolName = '', argsStr = '';
+        if (tc && tc.function) {
+          toolName = tc.function.name || '';
+          try { argsStr = JSON.stringify(JSON.parse(tc.function.arguments), null, 2); } catch(ex) { argsStr = tc.function.arguments || ''; }
+        } else if (te) {
+          toolName = te.toolName || '';
+          argsStr = JSON.stringify(te.args || {}, null, 2);
+        }
+        var success = te ? te.success : null;
+        var result = te ? te.result : null;
+        var error = te ? te.error : null;
+        var toolDur = te ? te.durationMs : null;
+
+        html += '<div class="tool-call-item"><div class="tool-call-header">';
+        if (success != null) html += '<span class="tool-success-indicator ' + (success ? 'ok' : 'fail') + '"></span>';
+        html += '<span class="badge badge-tool">' + escapeHtml(toolName) + '</span>';
+        if (toolDur != null) html += '<span class="tool-duration">' + formatDuration(toolDur) + '</span>';
+        html += '</div>';
+        if (argsStr && argsStr !== '{}') html += '<div class="tool-args">' + escapeHtml(argsStr) + '</div>';
+        if (result) { html += '<div class="tool-result-label">Result</div><div class="tool-result">' + escapeHtml(result) + '</div>'; }
+        if (error) html += '<div class="tool-error">Error: ' + escapeHtml(error) + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Snapshot
+    if (snapshot || elements.length > 0) {
+      var snapId = 'snapshot-' + index;
+      var elemCount = snapshot ? (snapshot.elementCount || elements.length) : elements.length;
+      html += '<div class="snapshot-section"><button class="snapshot-toggle" data-target="' + snapId + '">';
+      html += '<span class="arrow">&#9654;</span>Snapshot';
+      if (snapshot && snapshot.url) html += ' &mdash; ' + escapeHtml(truncate(snapshot.url, 50));
+      if (elemCount) html += ' (' + elemCount + ' elements)';
+      html += '</button><div class="snapshot-content" id="' + snapId + '">';
+      if (snapshot) {
+        html += '<div class="snapshot-url">';
+        if (snapshot.title) html += escapeHtml(snapshot.title) + ' &mdash; ';
+        html += escapeHtml(snapshot.url || '');
+        if (snapshot.scrollY) html += ' (scroll: ' + snapshot.scrollY + 'px)';
+        html += '</div>';
+      }
+      if (elements.length > 0) {
+        html += '<div class="snapshot-elements">';
+        var displayElements = elements.slice(0, 50);
+        for (var ei = 0; ei < displayElements.length; ei++) {
+          var el = displayElements[ei];
+          html += '<div class="snapshot-element"><span class="tag-id">[' + (el.tag != null ? el.tag : el.id || '?') + ']</span> ';
+          html += '<span class="tag-name">' + escapeHtml(el.tagName || el.role || '') + '</span>';
+          if (el.text) html += ' <span class="tag-text">"' + escapeHtml(truncate(el.text, 40)) + '"</span>';
+          html += '</div>';
+        }
+        if (elements.length > 50) html += '<div style="color:#5a5a7e;font-size:10px;padding:4px 0;">... and ' + (elements.length - 50) + ' more</div>';
+        html += '</div>';
+      }
+      html += '</div></div>';
+    }
+
+    // Progress state
+    if (progressState) {
+      var staleClass = progressState.staleTurns > 4 ? ' stale-warn' : '';
+      html += '<div class="progress-state"><span class="' + staleClass + '">Stale turns: ' + (progressState.staleTurns || 0) + '</span>';
+      if (progressState.signal) html += '<span style="color:#e67e22;">Signal: ' + escapeHtml(progressState.signal) + '</span>';
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+    return html;
+  }
+
+  function summarizeEventData(ev) {
+    if (!ev.data || Object.keys(ev.data).length === 0) return '';
+    var parts = [];
+    var keys = Object.keys(ev.data);
+    for (var i = 0; i < keys.length && i < 4; i++) {
+      var val = ev.data[keys[i]];
+      if (typeof val === 'string') parts.push(keys[i] + ': ' + truncate(val, 40));
+      else if (typeof val === 'number' || typeof val === 'boolean') parts.push(keys[i] + ': ' + val);
+      else if (val != null) parts.push(keys[i] + ': ' + truncate(JSON.stringify(val), 40));
+    }
+    if (keys.length > 4) parts.push('...');
+    return parts.join(', ');
+  }
+
+  function attachCollapsibleHandlers(container) {
+    container.querySelectorAll('.reasoning-toggle, .snapshot-toggle, .llm-input-toggle, .llm-message-header').forEach(function(toggle) {
+      toggle.addEventListener('click', function() {
+        var targetId = this.getAttribute('data-target');
+        var target = document.getElementById(targetId);
+        var arrow = this.querySelector('.arrow');
+        if (target) { target.classList.toggle('open'); }
+        if (arrow) { arrow.classList.toggle('open'); }
+      });
+    });
+  }
+
+  function selectTraceSession(sessionId) {
+    if (traceState.currentSessionId === sessionId) return;
+    traceState.currentSessionId = sessionId;
+    traceState.currentEntries = [];
+    traceState.searchQuery = '';
+    traceEls.turnSearch.value = '';
+    renderTraceSessionList();
+
+    var session = null;
+    for (var i = 0; i < traceState.allSessions.length; i++) {
+      if (traceState.allSessions[i].sessionId === sessionId) { session = traceState.allSessions[i]; break; }
+    }
+    if (session) renderTraceTurnHeader(session);
+    traceEls.turnList.innerHTML = '<div class="item-loading"><div class="spinner"></div><div>Loading turns...</div></div>';
+
+    fetchTraceEntries(sessionId).then(function(entries) {
+      traceState.currentEntries = entries;
+      renderTraceTurnList();
+    }).catch(function(err) {
+      traceEls.turnList.innerHTML = '<div class="error-banner">Failed to load turns: ' + escapeHtml(String(err)) + '</div>';
+    });
+  }
+
+  function refreshTraceSessions() {
+    var prev = traceState.currentSessionId;
+    traceEls.sessionList.innerHTML = '<div class="item-loading"><div class="spinner"></div><div>Loading sessions...</div></div>';
+    return fetchTraceSessions(traceFilterState()).then(function(sessions) {
+      traceState.allSessions = sessions || [];
+      renderTraceActiveFilters();
+      renderTraceSessionList();
+      var stillExists = traceState.allSessions.some(function(s) { return s.sessionId === prev; });
+      if (!stillExists) {
+        traceState.currentSessionId = null;
+        traceState.currentEntries = [];
+        traceEls.detailHeader.style.display = 'none';
+        traceEls.searchRow.style.display = 'none';
+        traceEls.turnList.innerHTML = '<div class="detail-empty"><div class="icon">&#9776;</div><div>Select a session to view turns</div></div>';
+      }
+    }).catch(function(err) {
+      renderTraceActiveFilters();
+      traceEls.sessionList.innerHTML = '<div class="error-banner">Failed to load sessions: ' + escapeHtml(String(err)) +
+        '<br><br>Make sure the log server is running: <code style="color:#5dade2;">bun run logs</code></div>';
+    });
+  }
+
+  function initTraces() {
+    // Event listeners
+    traceEls.outcomeFilter.addEventListener('change', refreshTraceSessions);
+    traceEls.dayFilter.addEventListener('change', function() {
+      if (this.value !== 'all') { traceEls.fromFilter.value = ''; traceEls.toFilter.value = ''; }
+      refreshTraceSessions();
+    });
+    var debounce = null;
+    traceEls.domainFilter.addEventListener('input', function() { clearTimeout(debounce); debounce = setTimeout(refreshTraceSessions, 250); });
+    traceEls.sessionFilter.addEventListener('input', function() { clearTimeout(debounce); debounce = setTimeout(refreshTraceSessions, 250); });
+    traceEls.fromFilter.addEventListener('change', function() {
+      if (this.value || traceEls.toFilter.value) traceEls.dayFilter.value = 'all';
+      refreshTraceSessions();
+    });
+    traceEls.toFilter.addEventListener('change', function() {
+      if (this.value || traceEls.fromFilter.value) traceEls.dayFilter.value = 'all';
+      refreshTraceSessions();
+    });
+    document.getElementById('trace-preset-today').addEventListener('click', function() {
+      traceEls.dayFilter.value = 'all'; traceEls.toFilter.value = isoDayOffset(0); traceEls.fromFilter.value = isoDayOffset(0); refreshTraceSessions();
+    });
+    document.getElementById('trace-preset-7d').addEventListener('click', function() {
+      traceEls.dayFilter.value = 'all'; traceEls.toFilter.value = isoDayOffset(0); traceEls.fromFilter.value = isoDayOffset(6); refreshTraceSessions();
+    });
+    document.getElementById('trace-preset-30d').addEventListener('click', function() {
+      traceEls.dayFilter.value = 'all'; traceEls.toFilter.value = isoDayOffset(0); traceEls.fromFilter.value = isoDayOffset(29); refreshTraceSessions();
+    });
+    var searchDebounce = null;
+    traceEls.turnSearch.addEventListener('input', function() {
+      clearTimeout(searchDebounce);
+      var val = this.value;
+      searchDebounce = setTimeout(function() { traceState.searchQuery = val; renderTraceTurnList(); }, 200);
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && document.activeElement === traceEls.turnSearch) {
+        traceEls.turnSearch.value = ''; traceState.searchQuery = ''; renderTraceTurnList();
+      }
+    });
+
+    fetchTraceDays().then(function(days) {
+      traceState.availableDays = days || [];
+      renderTraceDayFilter();
+      return refreshTraceSessions();
+    }).catch(function(err) {
+      traceEls.sessionList.innerHTML = '<div class="error-banner">Failed to load: ' + escapeHtml(String(err)) +
+        '<br><br>Make sure the log server is running: <code style="color:#5dade2;">bun run logs</code></div>';
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  SKILLS TAB
+  // ═══════════════════════════════════════════════════════════════
+
+  var skillState = {
+    allSkills: [],
+    currentSkillId: null,
+  };
+
+  var skillEls = {
+    list: document.getElementById('skill-list'),
+    detail: document.getElementById('skill-detail'),
+    search: document.getElementById('skill-search'),
+    statusFilter: document.getElementById('skill-status-filter'),
+  };
+
+  function fetchSkills() {
+    return fetch('/api/skills').then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function updateSkill(id, updates) {
+    return fetch('/api/skills/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function deleteSkill(id) {
+    return fetch('/api/skills/' + encodeURIComponent(id), { method: 'DELETE' }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    });
+  }
+
+  function getFilteredSkills() {
+    var skills = skillState.allSkills;
+    var q = (skillEls.search.value || '').toLowerCase().trim();
+    var status = skillEls.statusFilter.value;
+
+    if (q) {
+      skills = skills.filter(function(s) {
+        return (s.name || '').toLowerCase().indexOf(q) !== -1 ||
+               (s.sourceQuery || '').toLowerCase().indexOf(q) !== -1 ||
+               (s.matchTokens || []).join(' ').indexOf(q) !== -1;
+      });
+    }
+    if (status === 'enabled') skills = skills.filter(function(s) { return s.enabled; });
+    else if (status === 'disabled') skills = skills.filter(function(s) { return !s.enabled; });
+    else if (status === 'pinned') skills = skills.filter(function(s) { return s.pinned; });
+
+    return skills;
+  }
+
+  function renderSkillList() {
+    var skills = getFilteredSkills();
+    if (skills.length === 0) {
+      skillEls.list.innerHTML = '<div class="item-empty">' +
+        (skillState.allSkills.length === 0
+          ? 'No skills found.<br><br><span style="font-size:11px;color:#5a5a7e;">Skills are synced from the extension via POST /api/skills/sync</span>'
+          : 'No skills match the current filters.')
+        + '</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < skills.length; i++) {
+      var s = skills[i];
+      var isActive = s.id === skillState.currentSkillId;
+      var successRate = (s.successfulRuns + s.failedRuns) > 0
+        ? Math.round(s.successfulRuns / (s.successfulRuns + s.failedRuns) * 100) + '%'
+        : '---';
+
+      html += '<div class="list-item' + (isActive ? ' active' : '') + '" data-skill-id="' + escapeHtml(s.id) + '">';
+      html += '<div class="list-item-top">';
+      html += '<span class="list-item-time">' + formatTime(s.updatedAt) + '</span>';
+      html += '<div class="list-item-meta">';
+      if (s.pinned) html += '<span class="badge badge-pinned">pinned</span>';
+      html += '<span class="badge ' + (s.enabled ? 'badge-enabled' : 'badge-disabled') + '">' + (s.enabled ? 'enabled' : 'disabled') + '</span>';
+      html += '</div></div>';
+      html += '<div class="list-item-title">' + escapeHtml(truncate(s.name, 50)) + '</div>';
+      html += '<div class="list-item-subtitle">' + (s.steps ? s.steps.length : 0) + ' steps &middot; ' + s.uses + ' uses &middot; ' + successRate + ' success</div>';
+      html += '</div>';
+    }
+    skillEls.list.innerHTML = html;
+    skillEls.list.querySelectorAll('.list-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        selectSkill(this.getAttribute('data-skill-id'));
+      });
+    });
+  }
+
+  function selectSkill(skillId) {
+    skillState.currentSkillId = skillId;
+    renderSkillList();
+
+    var skill = null;
+    for (var i = 0; i < skillState.allSkills.length; i++) {
+      if (skillState.allSkills[i].id === skillId) { skill = skillState.allSkills[i]; break; }
+    }
+    if (!skill) {
+      skillEls.detail.innerHTML = '<div class="detail-empty"><div class="icon">&#9881;</div><div>Skill not found</div></div>';
+      return;
+    }
+    renderSkillDetail(skill);
+  }
+
+  function renderSkillDetail(skill) {
+    var totalRuns = skill.successfulRuns + skill.failedRuns;
+    var successRate = totalRuns > 0 ? Math.round(skill.successfulRuns / totalRuns * 100) : 0;
+    var successClass = successRate >= 80 ? 'success' : (successRate >= 50 ? 'warning' : 'danger');
+
+    var html = '<div class="skill-detail">';
+    html += '<div class="field"><label>Skill Name</label>';
+    html += '<input class="editable-name" id="skill-name-input" type="text" value="' + escapeHtml(skill.name) + '" /></div>';
+
+    html += '<div class="field" style="margin-top:8px;"><label>Source Query</label>';
+    html += '<div style="font-size:12px;color:#8a8ab0;padding:4px 0;">' + escapeHtml(skill.sourceQuery) + '</div></div>';
+
+    html += '<div class="toggle-row">';
+    html += '<span class="toggle-label">Enabled</span>';
+    html += '<label class="toggle-switch"><input type="checkbox" id="skill-enabled-toggle"' + (skill.enabled ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+    html += '</div>';
+    html += '<div class="toggle-row">';
+    html += '<span class="toggle-label">Pinned</span>';
+    html += '<label class="toggle-switch"><input type="checkbox" id="skill-pinned-toggle"' + (skill.pinned ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+    html += '</div>';
+
+    // Stats grid
+    html += '<div class="skill-stats">';
+    html += '<div class="stat-box"><div class="stat-label">Uses</div><div class="stat-value">' + skill.uses + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Success Rate</div><div class="stat-value ' + successClass + '">' + (totalRuns > 0 ? successRate + '%' : '---') + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Successful</div><div class="stat-value success">' + skill.successfulRuns + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Failed</div><div class="stat-value' + (skill.failedRuns > 0 ? ' danger' : '') + '">' + skill.failedRuns + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Avg Duration</div><div class="stat-value">' + formatDuration(skill.avgDurationMs) + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Avg Tokens</div><div class="stat-value">' + formatTokens(skill.avgTokens) + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Consecutive Failures</div><div class="stat-value' + (skill.consecutiveReplayFailures >= 3 ? ' danger' : '') + '">' + skill.consecutiveReplayFailures + '</div></div>';
+    html += '<div class="stat-box"><div class="stat-label">Created</div><div class="stat-value" style="font-size:11px;">' + formatDate(skill.createdAt) + '</div></div>';
+    html += '</div>';
+
+    // Match tokens
+    if (skill.matchTokens && skill.matchTokens.length > 0) {
+      html += '<div class="field" style="margin-top:12px;"><label>Match Tokens</label>';
+      html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">';
+      for (var mt = 0; mt < skill.matchTokens.length; mt++) {
+        html += '<span class="badge badge-model">' + escapeHtml(skill.matchTokens[mt]) + '</span>';
+      }
+      html += '</div></div>';
+    }
+
+    // Steps
+    if (skill.steps && skill.steps.length > 0) {
+      html += '<div class="skill-steps"><div class="tool-section-title">Steps (' + skill.steps.length + ')</div>';
+      for (var si = 0; si < skill.steps.length; si++) {
+        var step = skill.steps[si];
+        html += '<div class="skill-step-item">';
+        html += '<div class="skill-step-num">Step ' + (si + 1) + '</div>';
+        html += '<div class="skill-step-obj">' + escapeHtml(step.objective) + '</div>';
+        html += '<div class="skill-step-criteria">' + escapeHtml(step.successCriteria) + '</div>';
+        if (step.allowedTools && step.allowedTools.length > 0) {
+          html += '<div class="skill-step-tools">';
+          for (var sti = 0; sti < step.allowedTools.length; sti++) {
+            html += '<span class="badge badge-tool">' + escapeHtml(step.allowedTools[sti]) + '</span>';
+          }
+          html += '</div>';
+        }
+        if (step.assumptions && step.assumptions.length > 0) {
+          html += '<div style="font-size:10px;color:#5a5a7e;margin-top:4px;">Assumptions: ' + escapeHtml(step.assumptions.join(', ')) + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Action buttons
+    html += '<div class="action-row">';
+    html += '<button class="btn btn-primary" id="skill-save-btn">Save Changes</button>';
+    html += '<button class="btn btn-danger" id="skill-delete-btn">Delete Skill</button>';
+    html += '</div>';
+    html += '</div>';
+
+    // ID
+    html += '<div style="font-size:10px;color:#4a4a6e;margin-top:8px;font-family:monospace;">ID: ' + escapeHtml(skill.id) + '</div>';
+
+    skillEls.detail.innerHTML = html;
+
+    // Attach action handlers
+    document.getElementById('skill-save-btn').addEventListener('click', function() {
+      var nameInput = document.getElementById('skill-name-input');
+      var enabledToggle = document.getElementById('skill-enabled-toggle');
+      var pinnedToggle = document.getElementById('skill-pinned-toggle');
+      updateSkill(skill.id, {
+        name: nameInput.value.trim(),
+        enabled: enabledToggle.checked,
+        pinned: pinnedToggle.checked,
+      }).then(function(updated) {
+        // Update local state
+        for (var i = 0; i < skillState.allSkills.length; i++) {
+          if (skillState.allSkills[i].id === skill.id) {
+            Object.assign(skillState.allSkills[i], updated);
+            break;
+          }
+        }
+        renderSkillList();
+        selectSkill(skill.id);
+      }).catch(function(err) {
+        alert('Failed to save: ' + err);
+      });
+    });
+
+    document.getElementById('skill-delete-btn').addEventListener('click', function() {
+      if (!confirm('Delete this skill? This cannot be undone.')) return;
+      deleteSkill(skill.id).then(function() {
+        skillState.allSkills = skillState.allSkills.filter(function(s) { return s.id !== skill.id; });
+        skillState.currentSkillId = null;
+        renderSkillList();
+        skillEls.detail.innerHTML = '<div class="detail-empty"><div class="icon">&#9881;</div><div>Skill deleted</div></div>';
+      }).catch(function(err) {
+        alert('Failed to delete: ' + err);
+      });
+    });
+
+    document.getElementById('skill-enabled-toggle').addEventListener('change', function() {
+      updateSkill(skill.id, { enabled: this.checked }).then(function(updated) {
+        for (var i = 0; i < skillState.allSkills.length; i++) {
+          if (skillState.allSkills[i].id === skill.id) { Object.assign(skillState.allSkills[i], updated); break; }
+        }
+        renderSkillList();
+      });
+    });
+
+    document.getElementById('skill-pinned-toggle').addEventListener('change', function() {
+      updateSkill(skill.id, { pinned: this.checked }).then(function(updated) {
+        for (var i = 0; i < skillState.allSkills.length; i++) {
+          if (skillState.allSkills[i].id === skill.id) { Object.assign(skillState.allSkills[i], updated); break; }
+        }
+        renderSkillList();
+      });
+    });
+  }
+
+  function refreshSkills() {
+    skillEls.list.innerHTML = '<div class="item-loading"><div class="spinner"></div><div>Loading skills...</div></div>';
+    return fetchSkills().then(function(skills) {
+      skillState.allSkills = skills || [];
+      renderSkillList();
+    }).catch(function(err) {
+      skillEls.list.innerHTML = '<div class="error-banner">Failed to load skills: ' + escapeHtml(String(err)) +
+        '<br><br>Make sure the log server is running: <code style="color:#5dade2;">bun run logs</code></div>';
+    });
+  }
+
+  function initSkills() {
+    var debounce = null;
+    skillEls.search.addEventListener('input', function() {
+      clearTimeout(debounce);
+      debounce = setTimeout(renderSkillList, 200);
+    });
+    skillEls.statusFilter.addEventListener('change', renderSkillList);
+    refreshSkills();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  MEMORY TAB
+  // ═══════════════════════════════════════════════════════════════
+
+  var memState = {
+    allEntries: [],
+    categories: [],
+    currentEntryId: null,
+  };
+
+  var memEls = {
+    list: document.getElementById('memory-list'),
+    detail: document.getElementById('memory-detail'),
+    search: document.getElementById('memory-search'),
+    categoryFilter: document.getElementById('memory-category-filter'),
+  };
+
+  function fetchMemory(params) {
+    var qs = new URLSearchParams();
+    if (params && params.category) qs.set('category', params.category);
+    if (params && params.q) qs.set('q', params.q);
+    var query = qs.toString();
+    return fetch('/api/memory' + (query ? '?' + query : '')).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function fetchMemoryCategories() {
+    return fetch('/api/memory/categories').then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function deleteMemoryEntry(id) {
+    return fetch('/api/memory/' + encodeURIComponent(id), { method: 'DELETE' }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    });
+  }
+
+  function getFilteredMemory() {
+    var entries = memState.allEntries;
+    var q = (memEls.search.value || '').toLowerCase().trim();
+    var cat = memEls.categoryFilter.value;
+    if (q) {
+      entries = entries.filter(function(e) {
+        return (e.content || '').toLowerCase().indexOf(q) !== -1 ||
+               (e.category || '').toLowerCase().indexOf(q) !== -1 ||
+               (e.sourceUrl || '').toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    if (cat && cat !== 'all') {
+      entries = entries.filter(function(e) { return (e.category || 'uncategorized') === cat; });
+    }
+    return entries;
+  }
+
+  function renderMemoryCategories() {
+    var html = '<option value="all">All Categories</option>';
+    for (var i = 0; i < memState.categories.length; i++) {
+      var c = memState.categories[i];
+      html += '<option value="' + escapeHtml(c.name) + '">' + escapeHtml(c.name) + ' (' + c.count + ')</option>';
+    }
+    memEls.categoryFilter.innerHTML = html;
+  }
+
+  function renderMemoryList() {
+    var entries = getFilteredMemory();
+    if (entries.length === 0) {
+      memEls.list.innerHTML = '<div class="item-empty">' +
+        (memState.allEntries.length === 0
+          ? 'No memory entries found.<br><br><span style="font-size:11px;color:#5a5a7e;">Memory is synced from the extension via POST /api/memory/sync</span>'
+          : 'No entries match the current filters.')
+        + '</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var isActive = e.id === memState.currentEntryId;
+
+      html += '<div class="list-item' + (isActive ? ' active' : '') + '" data-memory-id="' + escapeHtml(e.id) + '">';
+      html += '<div class="list-item-top">';
+      html += '<span class="list-item-time">' + formatTime(e.createdAt) + '</span>';
+      html += '<div class="list-item-meta">';
+      if (e.type) html += '<span class="badge badge-type">' + escapeHtml(e.type) + '</span>';
+      if (e.category) html += '<span class="badge badge-category">' + escapeHtml(e.category) + '</span>';
+      html += '</div></div>';
+      html += '<div class="list-item-title">' + escapeHtml(truncate(e.content, 60)) + '</div>';
+      if (e.sourceUrl) html += '<div class="list-item-subtitle">' + escapeHtml(truncate(e.sourceUrl, 50)) + '</div>';
+      html += '</div>';
+    }
+    memEls.list.innerHTML = html;
+    memEls.list.querySelectorAll('.list-item').forEach(function(el) {
+      el.addEventListener('click', function() {
+        selectMemoryEntry(this.getAttribute('data-memory-id'));
+      });
+    });
+  }
+
+  function selectMemoryEntry(entryId) {
+    memState.currentEntryId = entryId;
+    renderMemoryList();
+
+    var entry = null;
+    for (var i = 0; i < memState.allEntries.length; i++) {
+      if (memState.allEntries[i].id === entryId) { entry = memState.allEntries[i]; break; }
+    }
+    if (!entry) {
+      memEls.detail.innerHTML = '<div class="detail-empty"><div class="icon">&#128218;</div><div>Entry not found</div></div>';
+      return;
+    }
+    renderMemoryDetail(entry);
+  }
+
+  function renderMemoryDetail(entry) {
+    var html = '<div class="memory-detail">';
+    html += '<div class="memory-meta-grid">';
+    if (entry.type) {
+      html += '<div class="memory-meta-item"><div class="memory-meta-label">Type</div><div class="memory-meta-value">' + escapeHtml(entry.type) + '</div></div>';
+    }
+    if (entry.category) {
+      html += '<div class="memory-meta-item"><div class="memory-meta-label">Category</div><div class="memory-meta-value">' + escapeHtml(entry.category) + '</div></div>';
+    }
+    if (entry.sourceUrl) {
+      html += '<div class="memory-meta-item"><div class="memory-meta-label">Source URL</div><div class="memory-meta-value" style="color:#5dade2;">' + escapeHtml(entry.sourceUrl) + '</div></div>';
+    }
+    if (entry.createdAt) {
+      html += '<div class="memory-meta-item"><div class="memory-meta-label">Created</div><div class="memory-meta-value">' + formatDate(entry.createdAt) + '</div></div>';
+    }
+    html += '</div>';
+
+    html += '<div class="field" style="margin-top:12px;"><label>Content</label>';
+    html += '<div class="memory-content">' + escapeHtml(entry.content) + '</div></div>';
+
+    html += '<div class="action-row">';
+    html += '<button class="btn btn-danger" id="memory-delete-btn">Delete Entry</button>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div style="font-size:10px;color:#4a4a6e;margin-top:8px;font-family:monospace;">ID: ' + escapeHtml(entry.id) + '</div>';
+
+    memEls.detail.innerHTML = html;
+
+    document.getElementById('memory-delete-btn').addEventListener('click', function() {
+      if (!confirm('Delete this memory entry? This cannot be undone.')) return;
+      deleteMemoryEntry(entry.id).then(function() {
+        memState.allEntries = memState.allEntries.filter(function(e) { return e.id !== entry.id; });
+        memState.currentEntryId = null;
+        renderMemoryList();
+        memEls.detail.innerHTML = '<div class="detail-empty"><div class="icon">&#128218;</div><div>Entry deleted</div></div>';
+      }).catch(function(err) {
+        alert('Failed to delete: ' + err);
+      });
+    });
+  }
+
+  function refreshMemory() {
+    memEls.list.innerHTML = '<div class="item-loading"><div class="spinner"></div><div>Loading memory...</div></div>';
+    return Promise.all([fetchMemory(), fetchMemoryCategories()]).then(function(results) {
+      memState.allEntries = results[0] || [];
+      memState.categories = results[1] || [];
+      renderMemoryCategories();
+      renderMemoryList();
+    }).catch(function(err) {
+      memEls.list.innerHTML = '<div class="error-banner">Failed to load memory: ' + escapeHtml(String(err)) +
+        '<br><br>Make sure the log server is running: <code style="color:#5dade2;">bun run logs</code></div>';
+    });
+  }
+
+  function initMemory() {
+    var debounce = null;
+    memEls.search.addEventListener('input', function() {
+      clearTimeout(debounce);
+      debounce = setTimeout(renderMemoryList, 200);
+    });
+    memEls.categoryFilter.addEventListener('change', renderMemoryList);
+    refreshMemory();
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  BOOT
+  // ═══════════════════════════════════════════════════════════════
+
+  // Initialize first tab (traces)
+  tabInitMap.traces = true;
+  initTraces();
+})();
+</script>
+</body>
+</html>

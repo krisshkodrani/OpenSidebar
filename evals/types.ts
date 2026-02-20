@@ -11,7 +11,7 @@ export interface EvalCase {
   id: string;
   sourceSessionId: string;
   sourceTurn: number;
-  strategy: "first-turn" | "any-turn" | "recovery" | "escalation" | "verifier-decision" | "lane-isolation" | "escalation-flow";
+  strategy: "first-turn" | "any-turn" | "recovery" | "escalation" | "verifier-decision" | "lane-isolation" | "escalation-flow" | "golden";
   /** Input to LLM (reconstructed from trace) */
   input: {
     systemPrompt: string;

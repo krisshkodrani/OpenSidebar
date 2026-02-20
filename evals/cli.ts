@@ -26,6 +26,7 @@ import {
 } from "./utils";
 import { analyzeSessionsContractCompliance, analyzeRunTraceCompliance } from "./contract-compliance";
 import type { EvalCase, EvalResult } from "./types";
+import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
@@ -87,6 +88,9 @@ async function main() {
     case "analyze":
       cmdAnalyze();
       break;
+    case "regression":
+      await cmdRegression(args.slice(1));
+      break;
     case "help":
     default:
       cmdHelp();
@@ -141,9 +145,10 @@ async function cmdConvertGolden() {
     process.exit(1);
   }
 
-  const files = readdirSync(goldenDir).filter((f) => f.endsWith(".json"));
-  if (files.length === 0) {
-    console.error("No golden JSON files found in evals/golden/");
+  const jsonFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".json"));
+  const jsonlFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".jsonl"));
+  if (jsonFiles.length === 0 && jsonlFiles.length === 0) {
+    console.error("No golden JSON or JSONL files found in evals/golden/");
     process.exit(1);
   }
 
@@ -153,16 +158,32 @@ async function cmdConvertGolden() {
   }
 
   const cases: EvalCase[] = [];
-  for (const file of files) {
+
+  // Parse .json files (single EvalCase per file)
+  for (const file of jsonFiles) {
     const content = readFileSync(join(goldenDir, file), "utf-8");
     const parsed = JSON.parse(content) as EvalCase;
     cases.push(parsed);
   }
 
+  // Parse .jsonl files (one EvalCase per line, from golden recorder)
+  for (const file of jsonlFiles) {
+    const content = readFileSync(join(goldenDir, file), "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as EvalCase;
+        cases.push(parsed);
+      } catch {
+        console.warn(`${c.yellow}Skipping invalid JSONL line in ${file}${c.reset}`);
+      }
+    }
+  }
+
   const outputFile = join(casesDir, "golden.jsonl");
   const lines = cases.map((cs) => JSON.stringify(cs)).join("\n") + "\n";
   writeFileSync(outputFile, lines, "utf-8");
-  console.log(`${c.green}Wrote ${cases.length} golden case(s) to ${outputFile}${c.reset}`);
+  console.log(`${c.green}Wrote ${cases.length} golden case(s) to ${outputFile} (from ${jsonFiles.length} .json + ${jsonlFiles.length} .jsonl files)${c.reset}`);
 }
 
 async function cmdRun(args: string[]) {
@@ -482,6 +503,133 @@ function cmdAnalyze() {
   }
 }
 
+async function cmdRegression(args: string[]) {
+  const thresholdArg = args.find((a) => a.startsWith("--threshold="));
+  const threshold = thresholdArg
+    ? parseFloat(thresholdArg.split("=")[1])
+    : 0.8;
+  const offline = args.includes("--offline");
+
+  const goldenDir = join("evals", "golden");
+  if (!existsSync(goldenDir)) {
+    console.log(`${c.yellow}No golden directory found — nothing to validate${c.reset}`);
+    process.exit(0);
+  }
+
+  const jsonFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".json"));
+  const jsonlFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".jsonl"));
+  if (jsonFiles.length === 0 && jsonlFiles.length === 0) {
+    console.log(`${c.yellow}No golden files found — nothing to validate${c.reset}`);
+    process.exit(0);
+  }
+
+  // Parse all golden cases
+  const cases: EvalCase[] = [];
+  let parseErrors = 0;
+
+  for (const file of jsonFiles) {
+    try {
+      const content = readFileSync(join(goldenDir, file), "utf-8");
+      cases.push(JSON.parse(content) as EvalCase);
+    } catch (e) {
+      console.error(`${c.red}Parse error in ${file}: ${(e as Error).message}${c.reset}`);
+      parseErrors++;
+    }
+  }
+  for (const file of jsonlFiles) {
+    const content = readFileSync(join(goldenDir, file), "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        cases.push(JSON.parse(line) as EvalCase);
+      } catch {
+        parseErrors++;
+      }
+    }
+  }
+
+  if (offline) {
+    // Structural validation only
+    console.log(`${c.bold}Structural validation of ${cases.length} golden case(s)${c.reset}`);
+    let errors = 0;
+
+    const validToolNames = new Set(Object.values(ToolName));
+    const seenIds = new Set<string>();
+
+    for (const cs of cases) {
+      if (!cs.id) { console.error(`${c.red}  Missing id${c.reset}`); errors++; }
+      if (seenIds.has(cs.id)) { console.error(`${c.red}  Duplicate id: ${cs.id}${c.reset}`); errors++; }
+      seenIds.add(cs.id);
+
+      if (!cs.input?.systemPrompt) { console.error(`${c.red}  ${cs.id}: missing input.systemPrompt${c.reset}`); errors++; }
+      if (!cs.expected) { console.error(`${c.red}  ${cs.id}: missing expected${c.reset}`); errors++; }
+
+      for (const tc of cs.expected?.toolCalls || []) {
+        if (!validToolNames.has(tc.toolName as ToolName)) {
+          console.error(`${c.red}  ${cs.id}: unknown tool ${tc.toolName}${c.reset}`);
+          errors++;
+        }
+      }
+    }
+
+    errors += parseErrors;
+    if (errors > 0) {
+      console.error(`\n${c.red}${errors} structural error(s) found${c.reset}`);
+      process.exit(1);
+    }
+    console.log(`${c.green}All ${cases.length} golden case(s) valid${c.reset}`);
+    process.exit(0);
+  }
+
+  // Online mode: convert golden → run → report
+  console.log(`${c.bold}Running regression suite (${cases.length} cases, threshold=${threshold})${c.reset}`);
+  await cmdConvertGolden();
+
+  const results = await runEvals({
+    all: true,
+  });
+
+  if (results.length === 0) {
+    console.log(`${c.yellow}No eval results produced${c.reset}`);
+    process.exit(1);
+  }
+
+  // Per-track thresholds
+  const TRACK_THRESHOLDS: Record<string, number> = {
+    core_task_success: 0.9,
+    budget_and_termination: 0.9,
+    verifier_critic: 0.85,
+  };
+
+  const trackResults: Record<string, EvalResult[]> = {};
+  const caseById = new Map(cases.map((cs) => [cs.id, cs]));
+  for (const r of results) {
+    const track = caseById.get(r.caseId)?.promptQuality?.track ?? "default";
+    if (!trackResults[track]) trackResults[track] = [];
+    trackResults[track].push(r);
+  }
+
+  let failed = false;
+  for (const [track, trackRes] of Object.entries(trackResults)) {
+    const passCount = trackRes.filter((r) => r.status === "pass").length;
+    const rate = passCount / trackRes.length;
+    const minRate = TRACK_THRESHOLDS[track] ?? threshold;
+    const statusIcon = rate >= minRate ? c.green + "PASS" : c.red + "FAIL";
+    console.log(
+      `  ${statusIcon}${c.reset} ${track}: ${passCount}/${trackRes.length} (${(rate * 100).toFixed(1)}%, need ${(minRate * 100).toFixed(0)}%)`,
+    );
+    if (rate < minRate) failed = true;
+  }
+
+  const totalPass = results.filter((r) => r.status === "pass").length;
+  const totalRate = totalPass / results.length;
+  console.log(
+    `\n  ${c.bold}Overall: ${totalPass}/${results.length} (${(totalRate * 100).toFixed(1)}%)${c.reset}`,
+  );
+
+  process.exit(failed ? 1 : 0);
+}
+
 function cmdHelp() {
   console.log(`
 ${c.bold}Eval Pipeline CLI${c.reset}
@@ -520,6 +668,11 @@ Commands:
   results [--session <id>]                Show eval results
   stats                                   Aggregate statistics
   analyze                                 Pattern analysis
+
+  regression [options]                    CI regression gate
+    --offline          Structural validation only (no LLM calls)
+    --threshold=0.8    Pass rate threshold (default 0.8)
+
   help                                    Show this help
 
 Workflow:
