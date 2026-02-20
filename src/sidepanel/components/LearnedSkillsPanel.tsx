@@ -32,12 +32,17 @@ function parseSkills(raw: unknown): LearnedSkill[] {
         Array.isArray((entry as Partial<LearnedSkill>).steps)
       );
     })
-    .map((entry) => ({
-      ...entry,
-      enabled: entry.enabled !== false,
-      pinned: entry.pinned === true,
-      consecutiveReplayFailures: Number(entry.consecutiveReplayFailures || 0),
-    }) as LearnedSkill)
+    .map(
+      (entry) =>
+        ({
+          ...entry,
+          enabled: entry.enabled !== false,
+          pinned: entry.pinned === true,
+          consecutiveReplayFailures: Number(
+            entry.consecutiveReplayFailures || 0,
+          ),
+        }) as LearnedSkill,
+    )
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -66,7 +71,9 @@ export function LearnedSkillsPanel({
     async (id: string) => {
       const now = Date.now();
       const next = skills.map((skill) =>
-        skill.id === id ? { ...skill, pinned: !skill.pinned, updatedAt: now } : skill,
+        skill.id === id
+          ? { ...skill, pinned: !skill.pinned, updatedAt: now }
+          : skill,
       );
       await persistSkills(next);
     },
@@ -119,7 +126,9 @@ export function LearnedSkillsPanel({
         </div>
         <div className="rounded-md border border-warm-200 dark:border-warm-700 p-2">
           <div className="text-warm-500 dark:text-warm-400">Enabled</div>
-          <div className="font-semibold dark:text-warm-100">{stats.enabled}</div>
+          <div className="font-semibold dark:text-warm-100">
+            {stats.enabled}
+          </div>
         </div>
         <div className="rounded-md border border-warm-200 dark:border-warm-700 p-2">
           <div className="text-warm-500 dark:text-warm-400">Pinned</div>
@@ -158,7 +167,9 @@ export function LearnedSkillsPanel({
           >
             <button
               className="w-full text-left"
-              onClick={() => setExpanded(expanded === skill.id ? null : skill.id)}
+              onClick={() =>
+                setExpanded(expanded === skill.id ? null : skill.id)
+              }
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">

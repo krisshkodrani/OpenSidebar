@@ -1,7 +1,18 @@
 import React, { useMemo } from "react";
-import { CheckCircle2, Circle, Loader2, SkipForward, XCircle, RotateCcw } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  Loader2,
+  SkipForward,
+  XCircle,
+  RotateCcw,
+} from "lucide-react";
 import { useStore } from "../store";
-import { buildRecoveryHint, derivePlanRows, PlanRowStatus } from "../plan-board-view";
+import {
+  buildRecoveryHint,
+  derivePlanRows,
+  PlanRowStatus,
+} from "../plan-board-view";
 import { MessageSource } from "../../types";
 import { logger } from "../../utils";
 
@@ -18,7 +29,9 @@ function StatusIcon({ status }: { status: PlanRowStatus }) {
   if (status === "skipped") {
     return <SkipForward size={12} className="text-warm-400 shrink-0" />;
   }
-  return <Circle size={12} className="text-warm-300 dark:text-warm-600 shrink-0" />;
+  return (
+    <Circle size={12} className="text-warm-300 dark:text-warm-600 shrink-0" />
+  );
 }
 
 export function PlanBoard() {
@@ -35,7 +48,8 @@ export function PlanBoard() {
 
   if (rows.length === 0 && !taskRecovery) return null;
 
-  const canSkipCurrent = !!taskProgress && rows.some((row) => row.status === "running");
+  const canSkipCurrent =
+    !!taskProgress && rows.some((row) => row.status === "running");
 
   const skipCurrentSubtask = async () => {
     if (!taskProgress) return;
@@ -84,13 +98,14 @@ export function PlanBoard() {
 
       {taskRecovery && (
         <div className="mt-2 rounded border border-violet-200 bg-violet-50/70 px-2 py-1.5 text-[11px] text-violet-700 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300">
-          Recovered from checkpoint: {taskRecovery.completedSubtasks}/{taskRecovery.totalSubtasks} completed,{" "}
-          {taskRecovery.pendingSubtasks} pending.
+          Recovered from checkpoint: {taskRecovery.completedSubtasks}/
+          {taskRecovery.totalSubtasks} completed, {taskRecovery.pendingSubtasks}{" "}
+          pending.
         </div>
       )}
 
       {rows.length > 0 && (
-        <div className="mt-2 space-y-1.5 max-h-40 overflow-y-auto">
+        <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
           {rows.map((row) => (
             <div
               key={row.id}
@@ -98,7 +113,7 @@ export function PlanBoard() {
             >
               <div className="flex items-center gap-1.5 text-xs">
                 <StatusIcon status={row.status} />
-                <span className="truncate text-warm-800 dark:text-warm-100">
+                <span className="text-warm-800 dark:text-warm-100">
                   {row.description}
                 </span>
                 <span className="ml-auto shrink-0 text-[10px] tabular-nums text-warm-500 dark:text-warm-400">

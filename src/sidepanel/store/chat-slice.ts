@@ -1,4 +1,4 @@
-import type { ChatEntry } from "../../types";
+import type { ChatEntry, Citation } from "../../types";
 import { logger } from "../../utils";
 import type { ChatSlice, SliceCreator } from "./types";
 
@@ -56,11 +56,14 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       persistMessages(get().messages, get().activeWorkspaceId);
     }),
 
-  finalizeStream: () =>
+  finalizeStream: (citations?: Citation[]) =>
     set((state) => {
       const last = state.messages[state.messages.length - 1];
       if (last?.role === "assistant" && last.isStreaming) {
         last.isStreaming = false;
+        if (citations && citations.length > 0) {
+          last.citations = citations;
+        }
       }
       persistMessages(get().messages, get().activeWorkspaceId);
     }),
@@ -124,11 +127,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
     try {
       const key = chatStorageKey(get().activeWorkspaceId);
       const result = await chrome.storage.local.get(key);
-      if (
-        result[key] &&
-        Array.isArray(result[key]) &&
-        result[key].length > 0
-      ) {
+      if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
         const messages = (result[key] as ChatEntry[]).map((msg) =>
           msg.isStreaming ? { ...msg, isStreaming: false } : msg,
         );

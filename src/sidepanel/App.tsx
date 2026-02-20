@@ -13,18 +13,8 @@ import { X, Sparkles } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
-import {
-  Header,
-  MessageBubble,
-  InputArea,
-  RunStatusHeader,
-  StuckBanner,
-  RecoveryBanner,
-  ApprovalBanner,
-  EscalationBanner,
-  OrchestratorConsole,
-  PlanBoard,
-} from "./components";
+import { Header, MessageBubble, InputArea } from "./components";
+import { PlanSheet } from "./components/PlanSheet";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
@@ -50,7 +40,6 @@ export default function App() {
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
   const setReady = useStore((s) => s.setReady);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
-  const inputText = useStore((s) => s.inputText);
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
@@ -62,7 +51,6 @@ export default function App() {
     context: string;
     timestamp: number;
   } | null>(null);
-  const [showSystemPanels, setShowSystemPanels] = useState(false);
   const [blockedSiteWarning, setBlockedSiteWarning] = useState<string | null>(
     null,
   );
@@ -343,6 +331,36 @@ export default function App() {
     [addMessage, setError],
   );
 
+  // Send annotation during golden recording
+  const handleSendAnnotation = useCallback(
+    (text: string) => {
+      const trimmedText = text.trim();
+      if (!trimmedText) return;
+
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmedText,
+        timestamp: Date.now(),
+        toolCalls: [],
+        isStreaming: false,
+        isAnnotation: true,
+      });
+
+      chrome.runtime
+        .sendMessage({
+          type: "GOLDEN_ANNOTATION",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.SIDEPANEL,
+          payload: { text: trimmedText },
+        })
+        .catch((e) => {
+          logger.error("ui", "Failed to send annotation", { error: e });
+        });
+    },
+    [addMessage],
+  );
+
   const handleStop = useCallback(async () => {
     try {
       await chrome.runtime.sendMessage({
@@ -407,26 +425,6 @@ export default function App() {
         prefillContent={savedPromptsPrefill}
       />
 
-      <RunStatusHeader />
-      <StuckBanner />
-      <RecoveryBanner />
-      <ApprovalBanner />
-      <EscalationBanner />
-      <div className="px-4 py-1 border-b border-warm-200/60 dark:border-warm-800/60">
-        <button
-          onClick={() => setShowSystemPanels((v) => !v)}
-          className="text-[11px] text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200 transition-colors"
-        >
-          {showSystemPanels ? "Hide system panels" : "Show system panels"}
-        </button>
-      </div>
-      {showSystemPanels && (
-        <>
-          <OrchestratorConsole />
-          <PlanBoard />
-        </>
-      )}
-
       <main className="flex-1 overflow-hidden relative flex flex-col">
         {blockedSiteWarning && (
           <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
@@ -453,17 +451,14 @@ export default function App() {
         >
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
-              <div className="rounded-2xl bg-warm-100/50 dark:bg-warm-800/30 border border-warm-200/60 dark:border-warm-700/40 shadow-soft p-6 max-w-[280px]">
-                <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg mb-3 flex items-center justify-center mx-auto">
+              <div className="max-w-[260px]">
+                <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg mb-4 flex items-center justify-center mx-auto">
                   <Sparkles size={20} className="text-primary-500" />
                 </div>
                 <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
-                  Welcome to OpenSidebar
+                  What can I help with?
                 </h2>
-                <p className="text-sm text-warm-500 dark:text-warm-400 mb-4">
-                  Ask me to browse, research, or automate tasks.
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center">
+                <div className="flex flex-wrap gap-2 justify-center mt-4">
                   {SUGGESTED_ACTIONS.map((action) => (
                     <button
                       key={action}
@@ -480,21 +475,17 @@ export default function App() {
             messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
           )}
         </div>
+
+        {/* Plan sheet overlay — anchored to bottom of main content area */}
+        <PlanSheet />
       </main>
 
-      <div className="flex flex-col shrink-0 glass-surface z-20 border-t border-warm-200 dark:border-warm-800 shadow-glass">
+      <div className="flex flex-col shrink-0 z-20 border-t border-warm-200 dark:border-warm-800">
         <InputArea
           onSend={handleSend}
           onSendHint={handleSendHint}
+          onSendAnnotation={handleSendAnnotation}
           onStop={handleStop}
-          onOpenSavedPrompts={() => {
-            setSavedPromptsPrefill(undefined);
-            setIsSavedPromptsOpen(true);
-          }}
-          onSaveCurrent={() => {
-            setSavedPromptsPrefill(inputText);
-            setIsSavedPromptsOpen(true);
-          }}
         />
       </div>
 

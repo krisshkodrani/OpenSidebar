@@ -3,6 +3,7 @@ import { marked } from "marked";
 import {
   AgentStep,
   ChatEntry,
+  Citation,
   SessionMetrics,
   TaskCompletionMessage,
   ToolName,
@@ -17,6 +18,8 @@ import {
   XCircle,
   AlertTriangle,
   MessageCircle,
+  ExternalLink,
+  StickyNote,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -29,7 +32,6 @@ function formatTokensCompact(n: number): string {
 
 function formatCostCompact(cost: number): string {
   if (cost === 0) return "$0";
-  if (cost >= 1) return `$${cost.toFixed(2)}`;
   if (cost >= 0.01) return `$${cost.toFixed(2)}`;
   return `$${cost.toFixed(4)}`;
 }
@@ -164,6 +166,41 @@ function CompletionSummary({
   );
 }
 
+function CitationList({ citations }: { citations: Citation[] }) {
+  // Truncate display name from URL
+  const displayName = (c: Citation) => {
+    if (c.title && c.title !== c.url) {
+      return c.title.length > 50 ? c.title.slice(0, 47) + "..." : c.title;
+    }
+    try {
+      const u = new URL(c.url);
+      const path = u.pathname === "/" ? "" : u.pathname;
+      const short = u.hostname + path;
+      return short.length > 50 ? short.slice(0, 47) + "..." : short;
+    } catch {
+      return c.url.slice(0, 50);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1.5 max-w-[85%] mt-1">
+      {citations.map((c, i) => (
+        <a
+          key={i}
+          href={c.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full bg-warm-100 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:border-primary-300 dark:hover:bg-primary-900/30 dark:hover:border-primary-600 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+          title={c.url}
+        >
+          <ExternalLink size={9} className="shrink-0" />
+          <span className="truncate">{displayName(c)}</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 export const MessageBubble = React.memo(function MessageBubble({
   message,
 }: {
@@ -174,6 +211,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   );
   const isUser = message.role === "user";
   const isHint = isUser && message.isHint;
+  const isAnnotation = isUser && message.isAnnotation;
   const hasDetails =
     !isUser &&
     ((message.steps?.length ?? 0) > 0 || message.toolCalls.length > 0);
@@ -207,10 +245,12 @@ export const MessageBubble = React.memo(function MessageBubble({
     );
   }, [message.steps]);
 
+  const stepCount = message.steps?.length ?? 0;
+
   return (
     <div
       className={clsx(
-        "flex flex-col gap-1 mb-5 message-enter",
+        "group flex flex-col gap-1 mb-5 message-enter",
         isUser ? "items-end" : "items-start",
       )}
     >
@@ -238,17 +278,25 @@ export const MessageBubble = React.memo(function MessageBubble({
         className={clsx(
           "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
           isUser
-            ? isHint
-              ? "bg-gradient-to-br from-amber-400 to-amber-500 text-white whitespace-pre-wrap"
-              : "bg-gradient-to-br from-primary-500 to-primary-600 text-white whitespace-pre-wrap"
-            : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60 border-l-2 border-l-primary-400/70 dark:border-l-primary-500/70",
+            ? isAnnotation
+              ? "bg-violet-500 text-white italic whitespace-pre-wrap"
+              : isHint
+                ? "bg-amber-500 text-white whitespace-pre-wrap"
+                : "bg-primary-600 text-white whitespace-pre-wrap"
+            : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60",
           !isUser && message.isStreaming && "streaming-cursor",
         )}
       >
-        {isHint && (
+        {isAnnotation && (
+          <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
+            <StickyNote size={10} />
+            <span>annotation</span>
+          </div>
+        )}
+        {isHint && !isAnnotation && (
           <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
             <MessageCircle size={10} />
-            <span>Hint</span>
+            <span>hint</span>
           </div>
         )}
         {isUser ? (
@@ -268,18 +316,14 @@ export const MessageBubble = React.memo(function MessageBubble({
       </div>
 
       {hasDetails && (
-        <div className="w-full max-w-[85%] mt-1">
+        <div className="w-full max-w-[85%] mt-0.5">
           <button
             onClick={() => setShowDetails((v) => !v)}
-            className="text-[11px] text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200 transition-colors"
+            className="text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
           >
-            {showDetails ? "Hide details" : "Show details"}
-            {message.steps && message.steps.length > 0
-              ? ` · ${message.steps.length} steps`
-              : ""}
-            {message.toolCalls.length > 0
-              ? ` · ${message.toolCalls.length} tools`
-              : ""}
+            {showDetails
+              ? "Hide"
+              : `${stepCount > 0 ? `${stepCount} steps` : `${message.toolCalls.length} tools`}`}
           </button>
         </div>
       )}
@@ -299,9 +343,14 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
+      {!isUser && !message.isStreaming && message.citations && message.citations.length > 0 && (
+        <CitationList citations={message.citations} />
+      )}
+
+      {/* Timestamp: hidden by default, visible on hover */}
       <span
         className={clsx(
-          "text-[10px] text-warm-400 px-1 opacity-70",
+          "message-ts text-[10px] text-warm-400 px-1",
           isUser ? "text-right" : "text-left",
         )}
       >

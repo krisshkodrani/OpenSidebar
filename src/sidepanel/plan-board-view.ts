@@ -1,6 +1,15 @@
-import { TaskCompletionMessage, TaskProgressMessage, TaskRecoveryState } from "../types";
+import {
+  TaskCompletionMessage,
+  TaskProgressMessage,
+  TaskRecoveryState,
+} from "../types";
 
-export type PlanRowStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+export type PlanRowStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
 
 export interface PlanRow {
   id: string;

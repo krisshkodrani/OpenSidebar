@@ -93,9 +93,9 @@ export function initializeBridge(
         break;
 
       case "STREAM_CHUNK": {
-        const { delta, done } = message.payload;
+        const { delta, done, citations } = message.payload;
         if (done) {
-          state.finalizeStream();
+          state.finalizeStream(citations);
         } else if (delta) {
           state.appendStreamDelta(delta);
         }
@@ -148,6 +148,10 @@ export function initializeBridge(
         break;
 
       case "TASK_PROGRESS":
+        // Auto-open PlanBoard on first plan arrival
+        if (!state.taskProgress && message.payload && !state.showPlanBoard) {
+          state.togglePlanBoard();
+        }
         state.setTaskProgress(message.payload);
         break;
 
@@ -161,6 +165,28 @@ export function initializeBridge(
 
       case "AGENT_ACTIVITY":
         state.setLaneTelemetry(message.payload.laneTelemetry ?? null);
+        break;
+
+      case "DEMO_RECORD_STATUS":
+        state.setDemoRecording(
+          message.payload.active,
+          message.payload.actionCount,
+        );
+        break;
+
+      case "DEMO_SAVED":
+        // Demo saved successfully — recording already stopped via DEMO_RECORD_STATUS
+        logger.info("ui", "Demo saved", {
+          name: message.payload.demo.name,
+          actionCount: message.payload.demo.actions.length,
+        });
+        break;
+
+      case "GOLDEN_SAVED":
+        logger.info("ui", "Golden dataset saved", {
+          filename: message.payload.filename,
+          caseCount: message.payload.caseCount,
+        });
         break;
 
       // Messages from other sources (sidepanel->background, background->content, etc.)
@@ -186,6 +212,13 @@ export function initializeBridge(
       case "CONTENT_SCRIPT_READY":
       case "DOM_READY_PROBE":
       case "DOM_READY_ACK":
+      case "DATA_CONTROL_REQUEST":
+      case "DATA_CONTROL_RESULT":
+      case "DEMO_RECORD_START":
+      case "DEMO_RECORD_STOP":
+      case "DEMO_ACTION_CAPTURED":
+      case "GOLDEN_ACTION":
+      case "GOLDEN_ANNOTATION":
         break;
 
       default: {
@@ -201,4 +234,3 @@ export function initializeBridge(
   chrome.runtime.onMessage.addListener(listener);
   return () => chrome.runtime.onMessage.removeListener(listener);
 }
-

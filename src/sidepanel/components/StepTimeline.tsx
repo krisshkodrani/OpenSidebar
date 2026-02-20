@@ -3,9 +3,6 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
-  Brain,
-  Wrench,
-  Info,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -15,24 +12,13 @@ import { clsx } from "clsx";
 function StepIcon({ step }: { step: AgentStep }) {
   if (step.status === "running") {
     return (
-      <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
+      <Loader2 size={12} className="animate-spin text-amber-500 shrink-0" />
     );
   }
   if (step.status === "error") {
-    return <XCircle size={14} className="text-red-500 shrink-0" />;
+    return <XCircle size={12} className="text-red-500 shrink-0" />;
   }
-  return <CheckCircle size={14} className="text-green-500 shrink-0" />;
-}
-
-function TypeIcon({ type }: { type: AgentStep["type"] }) {
-  switch (type) {
-    case "thinking":
-      return <Brain size={12} className="text-purple-400 shrink-0" />;
-    case "tool":
-      return <Wrench size={12} className="text-blue-400 shrink-0" />;
-    case "info":
-      return <Info size={12} className="text-warm-400 shrink-0" />;
-  }
+  return <CheckCircle size={12} className="text-green-500 shrink-0" />;
 }
 
 function formatDuration(ms: number): string {
@@ -40,14 +26,11 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function StepRow({ step, index }: { step: AgentStep; index: number }) {
+function StepRow({ step }: { step: AgentStep }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div
-      className="message-enter"
-      style={{ animationDelay: `${index * 50}ms` }}
-    >
+    <div>
       <button
         onClick={() => step.detail && setExpanded(!expanded)}
         className={clsx(
@@ -58,7 +41,6 @@ function StepRow({ step, index }: { step: AgentStep; index: number }) {
         )}
       >
         <StepIcon step={step} />
-        <TypeIcon type={step.type} />
         <span
           className={clsx(
             "truncate flex-1",
@@ -76,12 +58,12 @@ function StepRow({ step, index }: { step: AgentStep; index: number }) {
         )}
       </button>
       {expanded && step.detail && (
-        <pre className="ml-8 text-[10px] text-warm-400 dark:text-warm-500 bg-warm-100 dark:bg-warm-800 rounded px-2 py-1 mt-0.5 mb-1 overflow-x-auto max-h-20">
+        <pre className="ml-6 text-[10px] text-warm-400 dark:text-warm-500 bg-warm-100 dark:bg-warm-800 rounded px-2 py-1 mt-0.5 mb-1 overflow-x-auto max-h-20">
           {step.detail}
         </pre>
       )}
       {step.errorMessage && (
-        <div className="ml-8 text-[10px] text-red-500 mt-0.5">
+        <div className="ml-6 text-[10px] text-red-500 mt-0.5">
           {step.errorMessage}
         </div>
       )}
@@ -105,10 +87,10 @@ export function StepTimeline({
   const hasError = steps.some((s) => s.status === "error");
 
   const headerLabel = hasRunning
-    ? `Working... (${doneCount}/${steps.length} steps)`
+    ? `Working... (${doneCount}/${steps.length})`
     : hasError
-      ? `Finished with errors (${steps.length} steps)`
-      : `Completed (${steps.length} steps)`;
+      ? `Done with errors (${steps.length})`
+      : `Done (${steps.length})`;
 
   return (
     <div className="max-w-[85%] mb-1">
@@ -123,9 +105,9 @@ export function StepTimeline({
         <span>{headerLabel}</span>
       </button>
       {!collapsed && (
-        <div className="ml-1 border-l-2 border-warm-200 dark:border-warm-700 pl-2 mt-0.5">
-          {steps.map((step, i) => (
-            <StepRow key={step.id} step={step} index={i} />
+        <div className="ml-1 border-l border-warm-200 dark:border-warm-700 pl-2 mt-0.5">
+          {steps.map((step) => (
+            <StepRow key={step.id} step={step} />
           ))}
         </div>
       )}

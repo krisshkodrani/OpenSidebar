@@ -256,6 +256,28 @@ button:active:not(:disabled) {
   transform: scale(0.96);
 }
 
+/* --- Plan sheet slide-up --- */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.plan-sheet-enter {
+  animation: slide-up 0.25s ease-out;
+}
+
+/* --- Timestamp hover-reveal --- */
+.message-ts {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.group:hover .message-ts {
+  opacity: 0.7;
+}
+
 /* --- Mic recording pulse --- */
 @keyframes mic-pulse {
   0%,
@@ -299,6 +321,15 @@ button:active:not(:disabled) {
 
   .mic-recording {
     animation: none;
+  }
+
+  .plan-sheet-enter {
+    animation: none;
+  }
+
+  .message-ts {
+    opacity: 0.7;
+    transition: none;
   }
 
   .animate-pulse,

@@ -6,7 +6,12 @@ import {
   SubtaskSummary,
 } from "../types";
 
-export type ConsoleRole = "planner" | "executor" | "verifier" | "policy" | "idle";
+export type ConsoleRole =
+  | "planner"
+  | "executor"
+  | "verifier"
+  | "policy"
+  | "idle";
 
 export interface OrchestratorDecision {
   id: string;
@@ -38,10 +43,18 @@ export function getLatestAssistantSteps(messages: ChatEntry[]): AgentStep[] {
   return latestAssistantMessage(messages)?.steps ?? [];
 }
 
-export function inferConsoleRole(state: Pick<SidePanelState, "agentStatus" | "statusDetail" | "pendingApproval" | "messages">): ConsoleRole {
+export function inferConsoleRole(
+  state: Pick<
+    SidePanelState,
+    "agentStatus" | "statusDetail" | "pendingApproval" | "messages"
+  >,
+): ConsoleRole {
   if (state.pendingApproval) return "policy";
   if (state.agentStatus === AgentStatus.ACTING) return "executor";
-  if (state.agentStatus === AgentStatus.IDLE || state.agentStatus === AgentStatus.ERROR) {
+  if (
+    state.agentStatus === AgentStatus.IDLE ||
+    state.agentStatus === AgentStatus.ERROR
+  ) {
     return "idle";
   }
 
@@ -52,7 +65,10 @@ export function inferConsoleRole(state: Pick<SidePanelState, "agentStatus" | "st
   const runningThinking = latestSteps.find(
     (s) => s.type === "thinking" && s.status === "running",
   );
-  if (runningThinking && runningThinking.label.toLowerCase().includes("verif")) {
+  if (
+    runningThinking &&
+    runningThinking.label.toLowerCase().includes("verif")
+  ) {
     return "verifier";
   }
 
