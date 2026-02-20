@@ -33,7 +33,10 @@ export function getDependencyState(
   }
 
   return {
-    ready: waitingOn.length === 0 && failedDeps.length === 0 && missingDeps.length === 0,
+    ready:
+      waitingOn.length === 0 &&
+      failedDeps.length === 0 &&
+      missingDeps.length === 0,
     waitingOn,
     failedDeps,
     missingDeps,
@@ -41,10 +44,11 @@ export function getDependencyState(
 }
 
 export function getRunnablePendingNodes(nodes: TaskNode[]): TaskNode[] {
-  const nodesById = new Map<string, TaskNode>(nodes.map((node) => [node.id, node]));
+  const nodesById = new Map<string, TaskNode>(
+    nodes.map((node) => [node.id, node]),
+  );
   return nodes.filter((node) => {
     if (node.status !== "pending") return false;
     return getDependencyState(node, nodesById).ready;
   });
 }
-

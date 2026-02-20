@@ -18,7 +18,10 @@ import { logger } from "../utils";
 const tagMap = new Map<number, Element>();
 
 /** Elements tagged via addDynamicTag() — survives tagMap.clear() in tagElements(). Pinned for N cycles. */
-const dynamicTagEntries = new Map<number, { el: Element; cyclesRemaining: number }>();
+const dynamicTagEntries = new Map<
+  number,
+  { el: Element; cyclesRemaining: number }
+>();
 
 /** CSS class for the injected label overlay */
 const LABEL_CLASS = "qsidebar-tag";
@@ -34,13 +37,18 @@ const MAX_TAGGED_ELEMENTS_DND = 75;
 
 /** Return effective cap: raised for DnD pages to ensure drop zones are tagged */
 function getEffectiveCap(candidates: Element[]): number {
-  const hasDraggable = candidates.some(el => el.getAttribute("draggable") === "true");
-  const hasDropzone = candidates.some(el =>
-    el.hasAttribute("dropzone") ||
-    (el as HTMLElement).dataset?.droptarget ||
-    (el as HTMLElement).dataset?.dropzone
+  const hasDraggable = candidates.some(
+    (el) => el.getAttribute("draggable") === "true",
   );
-  return (hasDraggable || hasDropzone) ? MAX_TAGGED_ELEMENTS_DND : MAX_TAGGED_ELEMENTS;
+  const hasDropzone = candidates.some(
+    (el) =>
+      el.hasAttribute("dropzone") ||
+      (el as HTMLElement).dataset?.droptarget ||
+      (el as HTMLElement).dataset?.dropzone,
+  );
+  return hasDraggable || hasDropzone
+    ? MAX_TAGGED_ELEMENTS_DND
+    : MAX_TAGGED_ELEMENTS;
 }
 
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
@@ -383,7 +391,11 @@ function shortHint(el: Element): string {
 // --- Overflow metadata ---
 
 /** Overflow info from the last tagElements run */
-let lastOverflow: { shown: number; total: number; collapsedGroups: string[] } | null = null;
+let lastOverflow: {
+  shown: number;
+  total: number;
+  collapsedGroups: string[];
+} | null = null;
 
 /** Get overflow metadata from the most recent tagElements call */
 export function getOverflowMetadata(): typeof lastOverflow {
@@ -402,7 +414,10 @@ function collapseNearIdentical(elements: Element[]): {
 } {
   /** Strip trailing digits/numbers to normalize text for grouping */
   function normalizeText(text: string): string {
-    return text.replace(/\s*\d+\s*$/, "").trim().toLowerCase();
+    return text
+      .replace(/\s*\d+\s*$/, "")
+      .trim()
+      .toLowerCase();
   }
 
   /** Elements that should never be collapsed */
@@ -479,7 +494,11 @@ function scoreElement(el: Element): number {
   const role = el.getAttribute("role") || "";
 
   // Form inputs (text, email, password, search, tel, url, number, date)
-  if (tag === "input" && !["hidden", "submit", "button", "reset"].includes(type)) score += 10;
+  if (
+    tag === "input" &&
+    !["hidden", "submit", "button", "reset"].includes(type)
+  )
+    score += 10;
   if (tag === "textarea") score += 10;
   if (tag === "select") score += 10;
 
@@ -488,11 +507,14 @@ function scoreElement(el: Element): number {
 
   // Draggable/dropzone (critical for DnD tasks)
   if (el.getAttribute("draggable") === "true") score += 8;
-  if (el.hasAttribute("dropzone") ||
-      (el as HTMLElement).dataset?.droptarget ||
-      (el as HTMLElement).dataset?.dropzone ||
-      typeof (el as any).ondrop === "function" ||
-      typeof (el as any).ondragover === "function") score += 8;
+  if (
+    el.hasAttribute("dropzone") ||
+    (el as HTMLElement).dataset?.droptarget ||
+    (el as HTMLElement).dataset?.dropzone ||
+    typeof (el as any).ondrop === "function" ||
+    typeof (el as any).ondragover === "function"
+  )
+    score += 8;
 
   // Named elements (semantic, likely unique)
   if (el.hasAttribute("name") || el.hasAttribute("data-testid")) score += 5;
@@ -517,7 +539,9 @@ function scoreElement(el: Element): number {
 export function tagElements(showTags: boolean = false): TaggedElement[] {
   // 1. Remove old visual labels and MAIN-world bridge attributes
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
-  document.querySelectorAll("[data-os-tag]").forEach((el) => el.removeAttribute("data-os-tag"));
+  document
+    .querySelectorAll("[data-os-tag]")
+    .forEach((el) => el.removeAttribute("data-os-tag"));
 
   // 2. Move current IDs into grace period; clear tagMap for fresh population
   previousIds.clear();
@@ -549,15 +573,18 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
   }
 
   // 5b. Filter visible candidates first for accurate total count
-  const visibleCandidates = rawCandidates.filter(el =>
-    isElementVisible(el) && !el.closest('[aria-hidden="true"]'),
+  const visibleCandidates = rawCandidates.filter(
+    (el) => isElementVisible(el) && !el.closest('[aria-hidden="true"]'),
   );
   const totalCandidates = visibleCandidates.length;
 
   // 5c. Collapse near-identical elements before the cap loop
-  const { survivors, collapsedCount, collapsedGroups } = collapseNearIdentical(visibleCandidates);
+  const { survivors, collapsedCount, collapsedGroups } =
+    collapseNearIdentical(visibleCandidates);
   // 5d. Sort by task-relevance score (highest first); stable sort preserves DOM order for ties
-  const allCandidates = survivors.sort((a, b) => scoreElement(b) - scoreElement(a));
+  const allCandidates = survivors.sort(
+    (a, b) => scoreElement(b) - scoreElement(a),
+  );
 
   const results: TaggedElement[] = [];
   const activeHashes = new Set<string>();
@@ -670,7 +697,11 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
 
   // 9. Set overflow metadata
   if (totalCandidates > results.length || collapsedCount > 0) {
-    lastOverflow = { shown: results.length, total: totalCandidates, collapsedGroups };
+    lastOverflow = {
+      shown: results.length,
+      total: totalCandidates,
+      collapsedGroups,
+    };
   } else {
     lastOverflow = null;
   }

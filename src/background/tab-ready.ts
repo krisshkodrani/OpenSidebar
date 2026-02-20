@@ -22,23 +22,21 @@ const waiters = new Map<number, Array<() => void>>();
  * Call once from background.ts during initialization.
  */
 export function registerContentScriptReadyListener(): void {
-  chrome.runtime.onMessage.addListener(
-    (message: RuntimeMessage, sender) => {
-      if (message.type === "CONTENT_SCRIPT_READY" && sender.tab?.id) {
-        const tabId = sender.tab.id;
-        readyTabs.add(tabId);
-        logger.debug("system", "Content script ready", { tabId });
+  chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender) => {
+    if (message.type === "CONTENT_SCRIPT_READY" && sender.tab?.id) {
+      const tabId = sender.tab.id;
+      readyTabs.add(tabId);
+      logger.debug("system", "Content script ready", { tabId });
 
-        // Resolve any pending waiters
-        const pending = waiters.get(tabId);
-        if (pending) {
-          for (const resolve of pending) resolve();
-          waiters.delete(tabId);
-        }
+      // Resolve any pending waiters
+      const pending = waiters.get(tabId);
+      if (pending) {
+        for (const resolve of pending) resolve();
+        waiters.delete(tabId);
       }
-      // Don't return true — this is fire-and-forget
-    },
-  );
+    }
+    // Don't return true — this is fire-and-forget
+  });
 
   // Clean up when tabs are removed
   chrome.tabs.onRemoved.addListener((tabId) => {
@@ -90,28 +88,34 @@ export function waitForContentScriptReady(
 
     // Timeout: resolve anyway (best-effort)
     const timer = setTimeout(() => {
-      logger.debug("system", "Content script ready timeout, proceeding", { tabId, timeoutMs });
+      logger.debug("system", "Content script ready timeout, proceeding", {
+        tabId,
+        timeoutMs,
+      });
       done();
     }, timeoutMs);
 
     // Ping: at half-timeout, try messaging the content script
     // (handles case where content script loaded before we started listening)
-    const pingTimer = setTimeout(async () => {
-      if (resolved) return;
-      try {
-        await chrome.tabs.sendMessage(tabId, {
-          type: "DOM_READY_PROBE",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          payload: { timeoutMs: 50 },
-        });
-        // If we got a response, the content script is alive
-        readyTabs.add(tabId);
-        done();
-      } catch {
-        // Content script not ready yet — keep waiting
-      }
-    }, Math.min(timeoutMs / 2, 500));
+    const pingTimer = setTimeout(
+      async () => {
+        if (resolved) return;
+        try {
+          await chrome.tabs.sendMessage(tabId, {
+            type: "DOM_READY_PROBE",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { timeoutMs: 50 },
+          });
+          // If we got a response, the content script is alive
+          readyTabs.add(tabId);
+          done();
+        } catch {
+          // Content script not ready yet — keep waiting
+        }
+      },
+      Math.min(timeoutMs / 2, 500),
+    );
   });
 }
 

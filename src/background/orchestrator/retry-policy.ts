@@ -121,7 +121,9 @@ export function decideRetryPolicy(
   const rationale =
     `class=${retryClass}; retriesUsed=${retriesUsed}; maxRetries=${maxRetries}; source=${input.source}` +
     (input.failureType ? `; failureType=${input.failureType}` : "") +
-    (typeof confidence === "number" ? `; confidence=${confidence.toFixed(2)}` : "");
+    (typeof confidence === "number"
+      ? `; confidence=${confidence.toFixed(2)}`
+      : "");
 
   logger.debug("orchestrator", "Retry policy decision", {
     retryClass,

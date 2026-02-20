@@ -101,7 +101,9 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
   }
 
   const currentVersion =
-    typeof result[VERSION_KEY] === "number" ? (result[VERSION_KEY] as number) : 1;
+    typeof result[VERSION_KEY] === "number"
+      ? (result[VERSION_KEY] as number)
+      : 1;
 
   if (result[SEEDED_KEY] && currentVersion < CURRENT_PROMPTS_VERSION) {
     const now = Date.now();

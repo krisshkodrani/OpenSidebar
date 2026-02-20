@@ -67,9 +67,15 @@ export class BudgetEstimator {
     maxNodesOverall: number;
   } {
     const e = this.estimate;
-    const maxNodesByTokens = Math.floor(envelope.maxTotalTokens / e.tokensPerNode);
-    const maxNodesByTime = Math.floor(envelope.maxSessionTimeMs / e.timeMsPerNode);
-    const maxNodesByCost = Math.floor(envelope.maxTotalCostUsd / e.costUsdPerNode);
+    const maxNodesByTokens = Math.floor(
+      envelope.maxTotalTokens / e.tokensPerNode,
+    );
+    const maxNodesByTime = Math.floor(
+      envelope.maxSessionTimeMs / e.timeMsPerNode,
+    );
+    const maxNodesByCost = Math.floor(
+      envelope.maxTotalCostUsd / e.costUsdPerNode,
+    );
     return {
       maxNodesByTokens,
       maxNodesByTime,

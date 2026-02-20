@@ -248,4 +248,3 @@ export class ScopedLogger {
 }
 
 export const logger = new Logger();
-

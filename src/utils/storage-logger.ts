@@ -209,4 +209,3 @@ class StorageLogger {
 }
 
 export const storageLogger = new StorageLogger();
-

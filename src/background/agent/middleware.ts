@@ -1,10 +1,7 @@
 import { RiskLevel, ToolName } from "../../types";
 import { logger } from "../../utils";
 import { classifyRisk } from "../security";
-import {
-  ApprovalPolicyMode,
-  resolveApprovalPolicy,
-} from "./approval-policy";
+import { ApprovalPolicyMode, resolveApprovalPolicy } from "./approval-policy";
 
 export interface PreToolDecision {
   toolName: ToolName;
@@ -135,11 +132,17 @@ export class AgentMiddleware {
       toolName,
       ok: false,
       retryable,
-      reason: retryable ? "Transient tool failure." : "Non-retryable tool failure.",
+      reason: retryable
+        ? "Transient tool failure."
+        : "Non-retryable tool failure.",
     };
   }
 
-  shouldHaltTurn(turn: number, maxTurns: number, sessionStartTs: number): boolean {
+  shouldHaltTurn(
+    turn: number,
+    maxTurns: number,
+    sessionStartTs: number,
+  ): boolean {
     if (turn >= maxTurns) return true;
     const sessionMs = Date.now() - sessionStartTs;
     if (sessionMs > this.options.maxSessionMs) {

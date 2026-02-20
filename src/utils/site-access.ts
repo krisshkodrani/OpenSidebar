@@ -19,7 +19,10 @@ function extractHostFromRule(rule: string): string {
     return normalizeHost(new URL(withScheme).hostname);
   } catch {
     return normalizeHost(
-      trimmed.replace(/^https?:\/\//, "").split("/")[0].replace(/^\*\./, ""),
+      trimmed
+        .replace(/^https?:\/\//, "")
+        .split("/")[0]
+        .replace(/^\*\./, ""),
     );
   }
 }
@@ -30,7 +33,10 @@ export function getSiteAccessRules(settings: UserSettings): string[] {
     .filter(Boolean);
 }
 
-export function matchBlockedRule(hostname: string, rules: string[]): string | null {
+export function matchBlockedRule(
+  hostname: string,
+  rules: string[],
+): string | null {
   const host = normalizeHost(hostname);
   for (const rule of rules) {
     if (host === rule || host.endsWith(`.${rule}`)) return rule;

@@ -260,19 +260,19 @@ export class ProviderPool {
 
   /** Permanently disable a provider for the rest of this session (e.g. 402 credit exhaustion) */
   disableForSession(providerId: string): void {
-    const slot = this.slots.find(s => s.provider.providerId === providerId);
+    const slot = this.slots.find((s) => s.provider.providerId === providerId);
     if (slot) slot.cooldownUntil = Number.MAX_SAFE_INTEGER;
   }
 
   /** Check if a provider has been permanently disabled this session */
   isDisabled(providerId: string): boolean {
-    const slot = this.slots.find(s => s.provider.providerId === providerId);
+    const slot = this.slots.find((s) => s.provider.providerId === providerId);
     return slot ? slot.cooldownUntil === Number.MAX_SAFE_INTEGER : false;
   }
 
   /** True when every provider slot is on cooldown or permanently disabled */
   allDisabled(): boolean {
-    return this.slots.every(s => Date.now() < s.cooldownUntil);
+    return this.slots.every((s) => Date.now() < s.cooldownUntil);
   }
 
   /** Get all slots (for testing) */
@@ -490,7 +490,11 @@ export class LLMClient {
         if (response.status === 402 && providerId) {
           const pool = this._isSmartTier ? this.smartPool : this.fastPool;
           pool.disableForSession(providerId);
-          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId });
+          logger.warn(
+            "agent",
+            "Provider permanently disabled for session (credit exhaustion)",
+            { providerId },
+          );
           const fallback = pool.getNextFallback(providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
             this.onProviderFailover?.(providerId, fallback.provider.providerId);
@@ -626,12 +630,19 @@ export class LLMClient {
         if (response.status === 402) {
           // Disable this provider permanently for the session
           pool.disableForSession(provider.providerId);
-          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId: provider.providerId });
+          logger.warn(
+            "agent",
+            "Provider permanently disabled for session (credit exhaustion)",
+            { providerId: provider.providerId },
+          );
 
           // Try failover to next provider
           const fallback = pool.getNextFallback(provider.providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
-            this.onProviderFailover?.(provider.providerId, fallback.provider.providerId);
+            this.onProviderFailover?.(
+              provider.providerId,
+              fallback.provider.providerId,
+            );
             provider = fallback.provider;
             activeModel = fallback.model;
             activePayload = { ...activePayload, model: activeModel };
@@ -845,12 +856,19 @@ export class LLMClient {
         if (response.status === 402) {
           // Disable this provider permanently for the session
           pool.disableForSession(provider.providerId);
-          logger.warn("agent", "Provider permanently disabled for session (credit exhaustion)", { providerId: provider.providerId });
+          logger.warn(
+            "agent",
+            "Provider permanently disabled for session (credit exhaustion)",
+            { providerId: provider.providerId },
+          );
 
           // Try failover to next provider
           const fallback = pool.getNextFallback(provider.providerId);
           if (fallback && !pool.isDisabled(fallback.provider.providerId)) {
-            this.onProviderFailover?.(provider.providerId, fallback.provider.providerId);
+            this.onProviderFailover?.(
+              provider.providerId,
+              fallback.provider.providerId,
+            );
             provider = fallback.provider;
             activeModel = fallback.model;
             activePayload = { ...activePayload, model: activeModel };

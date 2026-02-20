@@ -72,7 +72,10 @@ function findFiberKey(el: Element): string | null {
   try {
     const keys = Object.keys(el);
     for (const k of keys) {
-      if (k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")) {
+      if (
+        k.startsWith("__reactFiber$") ||
+        k.startsWith("__reactInternalInstance$")
+      ) {
         return k;
       }
     }

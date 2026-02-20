@@ -1,7 +1,10 @@
 import { getPromptTemplate } from "./registry";
 import { PromptId } from "./types";
 
-type PromptRenderValues = Record<string, string | number | boolean | null | undefined>;
+type PromptRenderValues = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
 
 export function renderPrompt(
   id: PromptId,
@@ -9,8 +12,11 @@ export function renderPrompt(
 ): string {
   const template = getPromptTemplate(id);
   if (!values) return template;
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
-    const value = values[key];
-    return value === undefined || value === null ? "" : String(value);
-  });
+  return template.replace(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (_match, key: string) => {
+      const value = values[key];
+      return value === undefined || value === null ? "" : String(value);
+    },
+  );
 }

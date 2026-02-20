@@ -1,7 +1,11 @@
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { TaskNode } from "../orchestrator/types";
-import { LearnedSkill, SkillStep, SKILLS_STORAGE_KEY } from "../../skills/types";
+import {
+  LearnedSkill,
+  SkillStep,
+  SKILLS_STORAGE_KEY,
+} from "../../skills/types";
 const MAX_SKILLS = 200;
 const MAX_SKILL_STEPS = 24;
 const AUTO_DISABLE_REPLAY_FAILURES = 3;
@@ -79,7 +83,8 @@ function parseSkillStep(raw: unknown): SkillStep | null {
   if (!Array.isArray(raw.allowedTools)) return null;
   const allowedTools = raw.allowedTools.filter(
     (tool): tool is ToolName =>
-      typeof tool === "string" && Object.values(ToolName).includes(tool as ToolName),
+      typeof tool === "string" &&
+      Object.values(ToolName).includes(tool as ToolName),
   );
   if (allowedTools.length === 0) return null;
   const assumptions = Array.isArray(raw.assumptions)
@@ -89,7 +94,10 @@ function parseSkillStep(raw: unknown): SkillStep | null {
     objective: raw.objective.trim(),
     successCriteria: raw.successCriteria.trim(),
     allowedTools: unique(allowedTools),
-    assumptions: unique(assumptions.map((a) => a.trim()).filter(Boolean)).slice(0, 8),
+    assumptions: unique(assumptions.map((a) => a.trim()).filter(Boolean)).slice(
+      0,
+      8,
+    ),
   };
 }
 
@@ -97,15 +105,21 @@ function parseSkill(raw: unknown): LearnedSkill | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || raw.id.length === 0) return null;
   if (typeof raw.name !== "string" || raw.name.length === 0) return null;
-  if (typeof raw.sourceQuery !== "string" || raw.sourceQuery.length === 0) return null;
-  if (typeof raw.createdAt !== "number" || typeof raw.updatedAt !== "number") return null;
+  if (typeof raw.sourceQuery !== "string" || raw.sourceQuery.length === 0)
+    return null;
+  if (typeof raw.createdAt !== "number" || typeof raw.updatedAt !== "number")
+    return null;
   if (!Array.isArray(raw.matchTokens)) return null;
   if (!Array.isArray(raw.steps)) return null;
 
-  const steps = raw.steps.map(parseSkillStep).filter((s): s is SkillStep => s !== null);
+  const steps = raw.steps
+    .map(parseSkillStep)
+    .filter((s): s is SkillStep => s !== null);
   if (steps.length === 0) return null;
   const matchTokens = unique(
-    raw.matchTokens.filter((t): t is string => typeof t === "string").map(normalizeText),
+    raw.matchTokens
+      .filter((t): t is string => typeof t === "string")
+      .map(normalizeText),
   );
   if (matchTokens.length === 0) return null;
 
@@ -118,15 +132,21 @@ function parseSkill(raw: unknown): LearnedSkill | null {
     lastUsedAt: typeof raw.lastUsedAt === "number" ? raw.lastUsedAt : undefined,
     uses: typeof raw.uses === "number" ? Math.max(0, raw.uses) : 0,
     successfulRuns:
-      typeof raw.successfulRuns === "number" ? Math.max(0, raw.successfulRuns) : 0,
-    failedRuns: typeof raw.failedRuns === "number" ? Math.max(0, raw.failedRuns) : 0,
+      typeof raw.successfulRuns === "number"
+        ? Math.max(0, raw.successfulRuns)
+        : 0,
+    failedRuns:
+      typeof raw.failedRuns === "number" ? Math.max(0, raw.failedRuns) : 0,
     consecutiveReplayFailures:
       typeof raw.consecutiveReplayFailures === "number"
         ? Math.max(0, raw.consecutiveReplayFailures)
         : 0,
     avgDurationMs:
-      typeof raw.avgDurationMs === "number" ? Math.max(0, raw.avgDurationMs) : 0,
-    avgTokens: typeof raw.avgTokens === "number" ? Math.max(0, raw.avgTokens) : 0,
+      typeof raw.avgDurationMs === "number"
+        ? Math.max(0, raw.avgDurationMs)
+        : 0,
+    avgTokens:
+      typeof raw.avgTokens === "number" ? Math.max(0, raw.avgTokens) : 0,
     matchTokens,
     steps: steps.slice(0, MAX_SKILL_STEPS),
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
@@ -146,7 +166,11 @@ function toSkillSteps(nodes: TaskNode[]): SkillStep[] {
   }));
 }
 
-function rollingAverage(prev: number, prevCount: number, nextValue: number): number {
+function rollingAverage(
+  prev: number,
+  prevCount: number,
+  nextValue: number,
+): number {
   if (prevCount <= 0) return Math.max(0, nextValue);
   return (prev * prevCount + Math.max(0, nextValue)) / (prevCount + 1);
 }
@@ -165,7 +189,9 @@ export class SkillStore {
   }
 
   private async writeAll(skills: LearnedSkill[]): Promise<void> {
-    await chrome.storage.local.set({ [SKILLS_STORAGE_KEY]: skills.slice(0, MAX_SKILLS) });
+    await chrome.storage.local.set({
+      [SKILLS_STORAGE_KEY]: skills.slice(0, MAX_SKILLS),
+    });
   }
 
   async listSkills(): Promise<LearnedSkill[]> {
@@ -230,10 +256,15 @@ export class SkillStore {
         failedRuns: skill.failedRuns + (success ? 0 : 1),
         consecutiveReplayFailures: nextConsecutiveReplayFailures,
         enabled:
-          !success && nextConsecutiveReplayFailures >= AUTO_DISABLE_REPLAY_FAILURES
+          !success &&
+          nextConsecutiveReplayFailures >= AUTO_DISABLE_REPLAY_FAILURES
             ? false
             : skill.enabled,
-        avgDurationMs: rollingAverage(skill.avgDurationMs, outcomeCount, durationMs),
+        avgDurationMs: rollingAverage(
+          skill.avgDurationMs,
+          outcomeCount,
+          durationMs,
+        ),
         avgTokens: rollingAverage(skill.avgTokens, outcomeCount, totalTokens),
         updatedAt: Date.now(),
       };
@@ -252,8 +283,11 @@ export class SkillStore {
       updatedSkill = {
         ...skill,
         enabled:
-          typeof updates.enabled === "boolean" ? updates.enabled : skill.enabled,
-        pinned: typeof updates.pinned === "boolean" ? updates.pinned : skill.pinned,
+          typeof updates.enabled === "boolean"
+            ? updates.enabled
+            : skill.enabled,
+        pinned:
+          typeof updates.pinned === "boolean" ? updates.pinned : skill.pinned,
         updatedAt: Date.now(),
       };
       return updatedSkill;
@@ -306,10 +340,16 @@ export class SkillStore {
           outcomeCount,
           params.totalDurationMs,
         ),
-        avgTokens: rollingAverage(existing.avgTokens, outcomeCount, params.totalTokens),
+        avgTokens: rollingAverage(
+          existing.avgTokens,
+          outcomeCount,
+          params.totalTokens,
+        ),
       };
       await this.writeAll(
-        skills.map((skill) => (skill.id === existing.id ? updatedSkill : skill)),
+        skills.map((skill) =>
+          skill.id === existing.id ? updatedSkill : skill,
+        ),
       );
       return updatedSkill;
     }

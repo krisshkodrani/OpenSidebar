@@ -21,7 +21,10 @@ const STORAGE_KEY_PREFIX = "qsidebar:agentState";
 const NAVIGATION_TIMEOUT_MS = 30_000; // 30 seconds
 
 /** Get workspace-scoped storage key */
-function storageKey(workspaceId?: string | null, workerId?: string | null): string {
+function storageKey(
+  workspaceId?: string | null,
+  workerId?: string | null,
+): string {
   return workspaceId
     ? workerId
       ? `${STORAGE_KEY_PREFIX}:${workspaceId}:${workerId}`
