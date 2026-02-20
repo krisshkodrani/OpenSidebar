@@ -13,6 +13,9 @@ import { ToolName, ToolDefinition } from "../../types";
 import { ToolRegistry } from "./registry";
 import { logger } from "../../utils";
 
+const REACT_ROOT_IDS = ["root", "__next", "app", "__nuxt"] as const;
+const MAX_IFRAME_DEPTH = 2;
+
 // ---------------------------------------------------------------------------
 // Tool Names (must match ToolName enum values)
 // ---------------------------------------------------------------------------
@@ -145,6 +148,106 @@ function findFiberKey(el: Element): string | null {
   );
 }
 
+/**
+ * Resolve an element by `data-os-tag` across the main document and same-origin iframes.
+ * Returns null when not found or inaccessible due to cross-origin restrictions.
+ */
+function queryByTagDeep(
+  tag: number,
+  doc: Document = document,
+  depth = 0,
+): Element | null {
+  const inDoc = doc.querySelector(`[data-os-tag="${tag}"]`);
+  if (inDoc) return inDoc;
+  if (depth >= MAX_IFRAME_DEPTH) return null;
+
+  const iframes = Array.from(doc.querySelectorAll("iframe"));
+  for (const frame of iframes) {
+    try {
+      const childDoc = frame.contentDocument;
+      if (!childDoc) continue;
+      const inFrame = queryByTagDeep(tag, childDoc, depth + 1);
+      if (inFrame) return inFrame;
+    } catch {
+      // Cross-origin iframe
+    }
+  }
+  return null;
+}
+
+/**
+ * Find nearest React fiber from an element by probing itself and walking ancestors.
+ */
+function findNearestFiber(el: Element): any | null {
+  let current: Element | null = el;
+  let safety = 0;
+  while (current && safety < 20) {
+    safety++;
+    const key = findFiberKey(current);
+    if (key) {
+      const fiber = (current as any)[key];
+      if (fiber) return fiber;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Get all currently reachable React root fibers via DevTools hook and DOM fallbacks.
+ */
+function getRootFibers(): any[] {
+  const roots: any[] = [];
+  const seen = new Set<any>();
+
+  const pushRoot = (fiberLike: any) => {
+    const root = fiberLike?.current ?? fiberLike;
+    if (!root || seen.has(root)) return;
+    seen.add(root);
+    roots.push(root);
+  };
+
+  // 1) DevTools hook roots (most robust for non-standard mounts).
+  const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (hook?.getFiberRoots && hook?.renderers) {
+    try {
+      for (const rendererId of hook.renderers.keys()) {
+        const rendererRoots = hook.getFiberRoots(rendererId);
+        if (!rendererRoots || !(Symbol.iterator in Object(rendererRoots))) {
+          continue;
+        }
+        for (const root of rendererRoots as Iterable<any>) {
+          pushRoot(root);
+        }
+      }
+    } catch {
+      // Hook unavailable or shape mismatch on some React builds.
+    }
+  }
+
+  // 2) Known root IDs fallback.
+  for (const id of REACT_ROOT_IDS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const key = findFiberKey(el);
+    if (!key) continue;
+    pushRoot((el as any)[key]);
+  }
+
+  // 3) Last resort: first few body children.
+  const bodyChildren = document.body?.children;
+  if (bodyChildren) {
+    const limit = Math.min(bodyChildren.length, 5);
+    for (let i = 0; i < limit; i++) {
+      const key = findFiberKey(bodyChildren[i]);
+      if (!key) continue;
+      pushRoot((bodyChildren[i] as any)[key]);
+    }
+  }
+
+  return roots;
+}
+
 // ---------------------------------------------------------------------------
 // MAIN-world executor functions
 // ---------------------------------------------------------------------------
@@ -154,14 +257,11 @@ function findFiberKey(el: Element): string | null {
  * Walks up the fiber tree from the element, collecting named components.
  */
 function inspectReactMainWorld(id: number, maxDepth: number): string {
-  const el = document.querySelector(`[data-os-tag="${id}"]`);
+  const el = queryByTagDeep(id);
   if (!el) return `Error: No element with tag [${id}]`;
 
-  const fiberKey = findFiberKey(el);
-  if (!fiberKey) return "No React fiber found on this element.";
-
-  let fiber = (el as any)[fiberKey];
-  if (!fiber) return "React fiber key exists but fiber is null.";
+  let fiber = findNearestFiber(el);
+  if (!fiber) return "No React fiber found on this element or its ancestors.";
 
   const components: { component: string; props: any; state: any[] }[] = [];
   let walked = 0;
@@ -245,7 +345,8 @@ function sanitizeProps(props: any): Record<string, any> {
     if (typeof v === "object" && v !== null) {
       try {
         const serialized = JSON.stringify(v);
-        clean[k] = serialized.length > 200 ? "[object]" : JSON.parse(serialized);
+        clean[k] =
+          serialized.length > 200 ? "[object]" : JSON.parse(serialized);
       } catch {
         clean[k] = "[object]";
       }
@@ -265,7 +366,7 @@ function reactSetInputMainWorld(
   value: string,
   submit: boolean,
 ): string {
-  const el = document.querySelector(`[data-os-tag="${id}"]`);
+  const el = queryByTagDeep(id);
   if (!el) return `Error: No element with tag [${id}]`;
 
   if (
@@ -324,44 +425,14 @@ function inspectReactTreeMainWorld(
   maxDepth: number,
   filter: string | null,
 ): string {
-  // 1. Locate the React root fiber
-  let rootFiber: any = null;
-
-  // Try DevTools hook first
-  const hook = (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
-  if (hook?.getFiberRoots) {
-    try {
-      for (const [, roots] of hook.getFiberRoots) {
-        for (const root of roots) {
-          rootFiber = root.current;
-          break;
-        }
-        if (rootFiber) break;
-      }
-    } catch {
-      // getFiberRoots may not be iterable on all React versions
-    }
-  }
-
-  // Fallback: find fiber from a known root element
-  if (!rootFiber) {
-    const rootIds = ["root", "__next", "app", "__nuxt"];
-    for (const id of rootIds) {
-      const el = document.getElementById(id);
-      if (el) {
-        const key = findFiberKey(el);
-        if (key) {
-          rootFiber = (el as any)[key];
-          break;
-        }
-      }
-    }
-  }
-
-  if (!rootFiber) return "No React root found.";
+  const roots = getRootFibers();
+  if (roots.length === 0) return "No React root found.";
 
   const lines: string[] = [];
-  walkFiber(rootFiber, 0, maxDepth, filter, lines);
+  for (const root of roots) {
+    if (lines.length >= MAX_TREE_LINES) break;
+    walkFiber(root, 0, maxDepth, filter, lines);
+  }
 
   if (lines.length === 0 && filter) {
     return `No components matching "${filter}" found.`;
@@ -468,9 +539,15 @@ async function waitForReactMainWorld(timeout: number): Promise<string> {
   const start = Date.now();
   let lastFingerprint = "";
   let stableCount = 0;
+  let sawReactRoot = false;
 
   while (Date.now() - start < timeout) {
     const fp = snapshotFiberFingerprint();
+    if (fp === null) {
+      await new Promise((r) => setTimeout(r, 100));
+      continue;
+    }
+    sawReactRoot = true;
 
     if (fp === lastFingerprint) {
       stableCount++;
@@ -485,6 +562,10 @@ async function waitForReactMainWorld(timeout: number): Promise<string> {
     await new Promise((r) => setTimeout(r, 100));
   }
 
+  if (!sawReactRoot) {
+    return `No React root found while waiting (${timeout}ms)`;
+  }
+
   return `React may still be updating (timed out after ${timeout}ms)`;
 }
 
@@ -492,24 +573,12 @@ async function waitForReactMainWorld(timeout: number): Promise<string> {
  * Quick fingerprint of the React fiber tree: count named components + hash their state.
  * Used by `waitForReactMainWorld` to detect when rendering settles.
  */
-function snapshotFiberFingerprint(): string {
-  const rootIds = ["root", "__next", "app", "__nuxt"];
-  let rootFiber: any = null;
-
-  for (const id of rootIds) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    const key = findFiberKey(el);
-    if (key) {
-      rootFiber = (el as any)[key];
-      break;
-    }
-  }
-
-  if (!rootFiber) return "";
+function snapshotFiberFingerprint(): string | null {
+  const roots = getRootFibers();
+  if (roots.length === 0) return null;
 
   const parts: string[] = [];
-  const stack = [rootFiber];
+  const stack = [...roots];
   let visited = 0;
 
   while (stack.length > 0 && visited < 200) {
@@ -530,6 +599,14 @@ function snapshotFiberFingerprint(): string {
 
   return parts.join("|");
 }
+
+// Test hooks for regression coverage of React root/fingerprint behavior.
+export const __reactToolkitTestHooks = {
+  queryByTagDeep,
+  findNearestFiber,
+  getRootFibers,
+  snapshotFiberFingerprint,
+};
 
 // ---------------------------------------------------------------------------
 // Registration
