@@ -681,6 +681,47 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    // Golden annotation from side panel
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "GOLDEN_ANNOTATION"
+    ) {
+      if (goldenActive) {
+        const lastUrl =
+          goldenActions.length > 0
+            ? goldenActions[goldenActions.length - 1].action.url
+            : "";
+        const stubSnapshot = {
+          title: "",
+          url: lastUrl,
+          elements: [],
+          viewportText: "",
+          viewport: { width: 0, height: 0 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        };
+        goldenActions.push({
+          action: {
+            type: "annotate",
+            timestamp: Date.now(),
+            url: lastUrl,
+            value: message.payload.text,
+          },
+          tagId: null,
+          snapshot: stubSnapshot,
+        });
+        demoActionCounter++;
+        chrome.runtime
+          .sendMessage({
+            type: "DEMO_RECORD_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            payload: { active: true, actionCount: demoActionCounter },
+          })
+          .catch(() => {});
+      }
+      return false;
+    }
+
     // 4. Side Panel Opened (Mount)
     if (
       message.source === MessageSource.SIDEPANEL &&

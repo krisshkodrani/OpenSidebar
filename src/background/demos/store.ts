@@ -419,6 +419,9 @@ export function formatDemoForContext(demo: Demonstration): string {
       case "drag":
         step = `${i + 1}. Drag "${a.sourceElement?.text || "element"}" (${a.sourceElement?.tagName || "element"}) onto "${a.element?.text || "element"}" (${a.element?.tagName || "element"})`;
         break;
+      case "annotate":
+        step = `${i + 1}. [Note] ${a.value || ""}`;
+        break;
       default:
         continue;
     }
