@@ -7,7 +7,7 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { sendMessageToMemory } from "../memory/bridge";
-import { sanitizeUrl, sanitizeForPrompt } from "../security";
+import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
 import { describeScreenshot } from "../vision";
@@ -1358,8 +1358,7 @@ export function registerTools() {
             .map(
               (r: any) => {
                 const typeLabel = r.entry.type ? `[${r.entry.type}]` : `[${r.entry.category}]`;
-                const sanitized = sanitizeForPrompt(r.entry.content);
-                return `- ${typeLabel} ${sanitized} (Score: ${r.score.toFixed(2)})`;
+                return `- ${typeLabel} ${r.entry.content} (Score: ${r.score.toFixed(2)})`;
               },
             )
             .join("\n")
