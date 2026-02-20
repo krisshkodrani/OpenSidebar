@@ -591,50 +591,6 @@ describe("ContextManager", () => {
     });
   });
 
-  describe("EXTREME Compression", () => {
-    test("returns EXTREME at >= 92% utilization", () => {
-      // Small context window to push utilization over 92%
-      // Base overhead is ~420 tokens, viewportText adds (len/4) tokens
-      // With maxContextTokens=500 and viewportText="x"*500 → 420+125=545 → 545/500=109% → EXTREME
-      const ctx = new ContextManager(500);
-      ctx.setSnapshot({
-        title: "Test",
-        url: "https://example.com",
-        elements: [],
-        viewportText: "x".repeat(500),
-        viewport: { width: 1280, height: 800 },
-      });
-      const level = ctx.getCompressionLevel();
-      expect(level).toBe("extreme");
-    });
-
-    test("HEAVY is returned between 85% and 92% utilization", () => {
-      // Need utilization between 0.85 and 0.92
-      // Base ~420 tokens. If maxTokens=600, we need total 510-552.
-      // 420 + viewportText/4 → need viewportText = (510-420)*4 = 360 chars → 510/600=85%
-      // viewportText = 400 chars → (420+100)=520/600 = 86.7% → HEAVY
-      const ctx = new ContextManager(600);
-      ctx.setSnapshot({
-        title: "Test",
-        url: "https://example.com",
-        elements: [],
-        viewportText: "x".repeat(400),
-        viewport: { width: 1280, height: 800 },
-      });
-      const level = ctx.getCompressionLevel();
-      // Should be HEAVY (between 85% and 92%)
-      expect(["heavy", "extreme"]).toContain(level);
-      // At least HEAVY
-      expect(level).not.toBe("medium");
-    });
-
-    test("EXTREME enum value exists", () => {
-      // Import-level check: the enum value is recognized
-      const { CompressionLevel } = require("../../src/background/agent/context");
-      expect(CompressionLevel.EXTREME).toBe("extreme");
-    });
-  });
-
   describe("Valid Element IDs", () => {
     test("valid IDs line appears in system prompt when elements exist", () => {
       context.setSnapshot({

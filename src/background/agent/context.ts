@@ -1,7 +1,7 @@
 import { LLMMessage } from "../llm/types";
 import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
-import { COMPRESSION_TRIGGERS, ROLLING_DISTILL } from "./constants";
+import { COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
 
 /**
@@ -64,7 +64,6 @@ export enum CompressionLevel {
   LIGHT = "light",
   MEDIUM = "medium",
   HEAVY = "heavy",
-  EXTREME = "extreme",
 }
 
 export interface ContextMetrics {
@@ -144,7 +143,6 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 
 {{persona}}
 {{planStatus}}
-{{pinnedGoal}}
 {{planInstructions}}
 {{demonstrations}}
 ## Page Context
@@ -168,13 +166,13 @@ export class ContextManager {
   private demonstrations: string | null = null;
   private storageKey: string;
   private modelTier: "fast" | "smart" = "fast";
-  private originalQuery = "";
+  private originalQuery: string | null = null;
 
   public setModelTier(tier: "fast" | "smart"): void {
     this.modelTier = tier;
   }
 
-  /** Store the original user query so it can be pinned in every system prompt. */
+  /** Pin the user's original query so it appears in every system prompt. */
   public setOriginalQuery(query: string): void {
     this.originalQuery = query;
   }
@@ -192,6 +190,11 @@ export class ContextManager {
   /** Get the current max context token budget. */
   public getMaxContextTokens(): number {
     return this.maxContextTokens;
+  }
+
+  /** Get the total number of messages currently in conversation history. */
+  public getHistoryLength(): number {
+    return this.history.length;
   }
 
   constructor(
@@ -276,11 +279,6 @@ export class ContextManager {
     return block;
   }
 
-  private formatPinnedGoal(): string {
-    if (!this.originalQuery) return "";
-    return `## Current Task\nThe user asked: "${this.originalQuery}"\nStay focused on this goal.`;
-  }
-
   public setSnapshot(snapshot: DomSnapshot) {
     this.snapshot = snapshot;
     if (snapshot.capturedTexts && snapshot.capturedTexts.length > 0) {
@@ -317,11 +315,7 @@ export class ContextManager {
       len === COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT ||
-      len === COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT ||
-      (len > COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT &&
-       (len - COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT) % COMPRESSION_TRIGGERS.EXTREME_RECOMPRESS_INTERVAL === 0) ||
       (len > COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT &&
-       len < COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT &&
        (len - COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) % COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL === 0)
     ) {
       const level = this.getCompressionLevel();
@@ -520,6 +514,14 @@ Do NOT call done() until every planned step is complete.
     // Inject demonstration context (if any)
     content = content.replace("{{demonstrations}}", this.demonstrations || "");
 
+    // Pinned goal: keeps original query visible in every system prompt
+    if (this.originalQuery) {
+      content = content.replace(
+        "## Page Context",
+        `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n\n## Page Context`,
+      );
+    }
+
     if (this.snapshot) {
       content = content.replace("{{title}}", sanitizeForPrompt(this.snapshot.title || "Unknown"));
       content = content.replace("{{url}}", this.snapshot.url || "Unknown");
@@ -615,7 +617,6 @@ Do NOT call done() until every planned step is complete.
       }
       content = content.replace("{{viewportText}}", sanitizeForPrompt(viewportText));
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
-      content = content.replace("{{pinnedGoal}}", this.formatPinnedGoal());
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
@@ -623,7 +624,6 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{elements}}", "");
       content = content.replace("{{viewportText}}", "");
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
-      content = content.replace("{{pinnedGoal}}", this.formatPinnedGoal());
     }
 
     return {
@@ -671,7 +671,6 @@ Do NOT call done() until every planned step is complete.
 
     // Turn-count override: guarantees compression regardless of context window size
     const historyLen = this.history.length;
-    if (historyLen >= COMPRESSION_TRIGGERS.EXTREME_TURN_COUNT) return CompressionLevel.EXTREME;
     if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) return CompressionLevel.HEAVY;
     if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT) return CompressionLevel.MEDIUM;
     if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT) return CompressionLevel.LIGHT;
@@ -704,8 +703,7 @@ Do NOT call done() until every planned step is complete.
     if (utilization < 0.5) return CompressionLevel.NONE;
     if (utilization < 0.7) return CompressionLevel.LIGHT;
     if (utilization < 0.85) return CompressionLevel.MEDIUM;
-    if (utilization < 0.92) return CompressionLevel.HEAVY;
-    return CompressionLevel.EXTREME;
+    return CompressionLevel.HEAVY;
   }
 
   /** Maximum items shown per group before collapsing the rest into a summary. */
@@ -920,37 +918,6 @@ Do NOT call done() until every planned step is complete.
   private compressHistoryByLevel(level: CompressionLevel): void {
     if (level === CompressionLevel.NONE) return;
 
-    if (level === CompressionLevel.EXTREME) {
-      // Ultra-aggressive: keep only EXTREME_KEEP_RECENT messages, cap timeline to 15
-      const keepRecent = COMPRESSION_TRIGGERS.EXTREME_KEEP_RECENT;
-      if (this.history.length <= keepRecent + 2) return;
-
-      const firstUserIdx = this.history.findIndex(m => m.role === "user");
-      const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
-
-      const oldMessages = this.history.slice(0, -keepRecent);
-      const timeline = summarizeHistory(oldMessages, 15);
-      const recentMessages = this.history.slice(-keepRecent);
-
-      this.history = [];
-      if (firstUserMsg) {
-        this.history.push(firstUserMsg);
-      }
-      if (timeline.length > 0) {
-        this.history.push({
-          role: "user",
-          content: `[EXTREME COMPRESSION — ${timeline.length} actions]\n${timeline.join("\n")}`,
-        });
-      }
-      this.history.push(...recentMessages);
-
-      logger.info("agent", "EXTREME compression applied", {
-        timelineEntries: timeline.length,
-        newHistoryLength: this.history.length,
-      });
-      return;
-    }
-
     if (level === CompressionLevel.HEAVY) {
       // Distill everything except last HEAVY_KEEP_RECENT messages
       const keepRecent = COMPRESSION_TRIGGERS.HEAVY_KEEP_RECENT;
@@ -1109,55 +1076,6 @@ Do NOT call done() until every planned step is complete.
     }
   }
 
-  /** Replace the entire conversation history (used by rolling distillation). */
-  public replaceHistory(messages: LLMMessage[]): void {
-    this.history = [...messages];
-    this.saveState().catch(() => {});
-  }
-
-  /**
-   * Rolling distillation: compress older history while keeping recent messages verbatim.
-   * Replaces [original_query, ...old, ...recent] with [original_query, summary, ...recent].
-   * Returns true if distillation was performed, false if skipped.
-   */
-  public rollingDistill(
-    keepRecent = ROLLING_DISTILL.KEEP_RECENT,
-    maxEntries = ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
-  ): boolean {
-    if (this.history.length < keepRecent + 2) return false;
-
-    // Preserve the first user message (original query)
-    const firstUserIdx = this.history.findIndex(m => m.role === "user");
-    const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
-
-    // Split: older messages to distill vs recent to keep verbatim
-    const recentMessages = this.history.slice(-keepRecent);
-    const olderMessages = this.history.slice(0, -keepRecent);
-
-    // Build a causal-chain summary of the older messages
-    const summary = summarizeCausalChain(olderMessages, maxEntries);
-    if (!summary) return false;
-
-    // Rebuild history: original query + summary + recent
-    const newHistory: LLMMessage[] = [];
-    if (firstUserMsg) {
-      newHistory.push(firstUserMsg);
-    }
-    newHistory.push({
-      role: "user",
-      content: `[DISTILLED HISTORY]\n${summary}`,
-    });
-    newHistory.push(...recentMessages);
-
-    this.history = newHistory;
-    this.saveState().catch(() => {});
-    logger.info("agent", "Rolling distillation applied", {
-      kept: keepRecent,
-      newHistoryLength: this.history.length,
-    });
-    return true;
-  }
-
   public async loadState() {
     try {
       const data = await chrome.storage.session.get(this.storageKey);
@@ -1262,6 +1180,43 @@ Do NOT call done() until every planned step is complete.
       historyLength: this.history.length,
     });
   }
+
+  /**
+   * Rolling distillation: compress old history while keeping recent messages verbatim.
+   * Returns true if distillation was applied, false if history is too short.
+   */
+  public rollingDistill(keepRecent: number, maxSummaryEntries: number): boolean {
+    if (this.history.length <= keepRecent + 2) return false;
+
+    // Preserve first user message
+    const firstUserIdx = this.history.findIndex((m) => m.role === "user");
+    const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
+
+    // Summarize old messages (everything except the recent tail)
+    const oldMessages = this.history.slice(0, -keepRecent);
+    const timeline = summarizeHistory(oldMessages, maxSummaryEntries);
+    const recentMessages = this.history.slice(-keepRecent);
+
+    // Rebuild history
+    this.history = [];
+    if (firstUserMsg) {
+      this.history.push(firstUserMsg);
+    }
+    if (timeline.length > 0) {
+      this.history.push({
+        role: "user",
+        content: `[DISTILLED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
+      });
+    }
+    this.history.push(...recentMessages);
+
+    this.saveState().catch(() => {});
+    logger.info("agent", "Rolling distillation applied", {
+      timelineEntries: timeline.length,
+      newHistoryLength: this.history.length,
+    });
+    return true;
+  }
 }
 
 /**
@@ -1325,69 +1280,5 @@ export function summarizeHistory(
   return entries;
 }
 
-/**
- * Build a compact causal-chain summary of message history.
- * Groups action+observation pairs into single lines, resolves element refs,
- * marks errors, and skips noise tools (wait).
- *
- * Key differences from summarizeHistory():
- * - Returns a single string (joined), not string[]
- * - Groups consecutive actions into range notation (T1-T2: ...)
- * - Errors preserved with ERROR: prefix
- */
-export function summarizeCausalChain(messages: LLMMessage[], maxEntries = 15): string {
-  const entries: string[] = [];
-  let turnNum = 0;
-
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.role !== "assistant" || !msg.tool_calls) continue;
-
-    for (const tc of msg.tool_calls) {
-      const toolName = tc.function.name;
-      if (toolName === "wait") continue;
-
-      // Resolve args to readable format
-      let argSnippet = "";
-      try {
-        const args = JSON.parse(tc.function.arguments);
-        const parts: string[] = [];
-        if (args.id != null) parts.push(`[${args.id}]`);
-        if (args.text) parts.push(`"${String(args.text).slice(0, 40)}"`);
-        if (args.url) parts.push(String(args.url).slice(0, 50));
-        if (args.direction) parts.push(args.direction);
-        if (args.summary) parts.push(`"${String(args.summary).slice(0, 40)}"`);
-        if (args.reason) parts.push(`"${String(args.reason).slice(0, 40)}"`);
-        if (args.selector) parts.push(String(args.selector).slice(0, 40));
-        argSnippet = parts.join(" ");
-      } catch {
-        /* malformed args */
-      }
-
-      // Find paired tool result
-      let outcome = "no result";
-      let isError = false;
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j].role === "tool" && messages[j].tool_call_id === tc.id) {
-          const content =
-            typeof messages[j].content === "string" ? messages[j].content ?? "" : "";
-          const firstLine = content.split("\n")[0].slice(0, 100);
-          if (/^error|^fail|^exception/i.test(firstLine) || content.startsWith("Error:")) {
-            outcome = firstLine;
-            isError = true;
-          } else {
-            outcome = firstLine;
-          }
-          break;
-        }
-      }
-
-      turnNum++;
-      const prefix = isError ? "ERROR: " : "";
-      entries.push(`T${turnNum}: ${toolName} ${argSnippet} → ${prefix}${outcome}`);
-      if (entries.length >= maxEntries) return entries.join("\n");
-    }
-  }
-
-  return entries.join("\n");
-}
+/** Alias for backward compatibility */
+export const summarizeCausalChain = summarizeHistory;
