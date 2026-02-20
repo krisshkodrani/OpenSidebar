@@ -34,16 +34,16 @@ const toolResultMsg = (toolId: string, content: string): LLMMessage => ({
 });
 
 describe("summarizeCausalChain", () => {
-  test("returns empty string for empty messages", () => {
-    expect(summarizeCausalChain([])).toBe("");
+  test("returns empty array for empty messages", () => {
+    expect(summarizeCausalChain([])).toEqual([]);
   });
 
-  test("returns empty string for messages with no tool calls", () => {
+  test("returns empty array for messages with no tool calls", () => {
     const msgs: LLMMessage[] = [
       userMsg("hello"),
       asstMsg("hi there"),
     ];
-    expect(summarizeCausalChain(msgs)).toBe("");
+    expect(summarizeCausalChain(msgs)).toEqual([]);
   });
 
   test("groups action+result into single lines", () => {
@@ -54,20 +54,22 @@ describe("summarizeCausalChain", () => {
       toolResultMsg("tc2", "Typed text into element [3]"),
     ];
     const result = summarizeCausalChain(msgs);
-    expect(result).toContain("T1: click_element [5]");
-    expect(result).toContain("Clicked element [5]");
-    expect(result).toContain("T2: type_text [3]");
-    expect(result).toContain('"hello world"');
+    const joined = result.join("\n");
+    expect(joined).toContain("T1: click_element [5]");
+    expect(joined).toContain("Clicked element [5]");
+    expect(joined).toContain("T2: type_text [3]");
+    expect(joined).toContain('"hello world"');
   });
 
-  test("marks errors with ERROR: prefix", () => {
+  test("marks errors in result text", () => {
     const msgs: LLMMessage[] = [
       toolCallMsg("tc1", "click_element", '{"id": 99}'),
       toolResultMsg("tc1", "Error: Element not found"),
     ];
     const result = summarizeCausalChain(msgs);
-    expect(result).toContain("ERROR:");
-    expect(result).toContain("Element not found");
+    const joined = result.join("\n");
+    expect(joined).toContain("Error:");
+    expect(joined).toContain("Element not found");
   });
 
   test("skips wait tool", () => {
@@ -78,8 +80,9 @@ describe("summarizeCausalChain", () => {
       toolResultMsg("tc2", "Clicked"),
     ];
     const result = summarizeCausalChain(msgs);
-    expect(result).not.toContain("wait");
-    expect(result).toContain("T1: click_element");
+    const joined = result.join("\n");
+    expect(joined).not.toContain("wait");
+    expect(joined).toContain("T1: click_element");
   });
 
   test("respects maxEntries cap", () => {
@@ -89,10 +92,9 @@ describe("summarizeCausalChain", () => {
       msgs.push(toolResultMsg(`tc${i}`, `Clicked element [${i}]`));
     }
     const result = summarizeCausalChain(msgs, 5);
-    const lines = result.split("\n");
-    expect(lines.length).toBe(5);
-    expect(lines[0]).toContain("T1:");
-    expect(lines[4]).toContain("T5:");
+    expect(result.length).toBe(5);
+    expect(result[0]).toContain("T1:");
+    expect(result[4]).toContain("T5:");
   });
 
   test("resolves url arguments", () => {
@@ -101,7 +103,8 @@ describe("summarizeCausalChain", () => {
       toolResultMsg("tc1", "Navigated to https://example.com/page"),
     ];
     const result = summarizeCausalChain(msgs);
-    expect(result).toContain("https://example.com/page");
+    const joined = result.join("\n");
+    expect(joined).toContain("https://example.com/page");
   });
 
   test("handles malformed JSON args gracefully", () => {
@@ -110,8 +113,9 @@ describe("summarizeCausalChain", () => {
       toolResultMsg("tc1", "Clicked"),
     ];
     const result = summarizeCausalChain(msgs);
-    expect(result).toContain("T1: click_element");
-    expect(result).toContain("Clicked");
+    const joined = result.join("\n");
+    expect(joined).toContain("T1: click_element");
+    expect(joined).toContain("Clicked");
   });
 });
 
@@ -181,7 +185,7 @@ describe("ContextManager.rollingDistill", () => {
     const summaryMsg = messages[1];
     expect(summaryMsg.role).toBe("user");
     expect(typeof summaryMsg.content).toBe("string");
-    expect(summaryMsg.content).toContain("[DISTILLED HISTORY]");
+    expect(summaryMsg.content).toContain("[DISTILLED HISTORY");
     expect(summaryMsg.content).toContain("click_element");
   });
 });
