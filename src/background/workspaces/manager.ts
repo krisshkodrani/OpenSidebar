@@ -27,7 +27,15 @@ export class WorkspaceManager {
   private workspaces: Workspace[] = [];
   private nextWorkspaceNum = 1;
   private initialized = false;
+  private listenersSetup = false;
   private deps: Required<WorkspaceManagerDeps>;
+
+  /**
+   * Tab IDs currently being ungrouped by the agent (via ungroup_tabs tool).
+   * The handleTabGroupChanged listener skips re-adding these tabs so the
+   * tool doesn't fight with the "locked workspace" behavior.
+   */
+  private _bypassRegroup = new Set<number>();
 
   constructor(deps: WorkspaceManagerDeps = {}) {
     const defaultStorageLocal: Pick<chrome.storage.StorageArea, "get" | "set"> =
@@ -64,7 +72,6 @@ export class WorkspaceManager {
       this.nextWorkspaceNum = stored[STORAGE_KEY_NEXT_NUM] || 1;
       this.initialized = true;
 
-      // Re-sync listeners
       this.setupListeners();
       logger.info("workspace", "WorkspaceManager initialized", {
         count: this.workspaces.length,
@@ -83,13 +90,13 @@ export class WorkspaceManager {
   }
 
   private setupListeners() {
-    // Skip in content scripts - APIs not available
+    if (this.listenersSetup) return;
+
     if (this.deps.isContentScript()) {
       logger.debug("workspace", "Skipping listener setup in content script");
       return;
     }
 
-    // Defensive: skip if chrome APIs not available (e.g., in test environment)
     if (typeof chrome === "undefined" || !chrome.tabs?.onRemoved) {
       logger.debug(
         "workspace",
@@ -98,65 +105,83 @@ export class WorkspaceManager {
       return;
     }
 
-    // Listen for tab removal to update workspace tab lists and auto-delete empty workspaces
-    chrome.tabs.onRemoved.addListener(this.handleTabRemoved.bind(this));
+    // Bind once and store references to avoid duplicate registrations
+    const boundTabRemoved = this.handleTabRemoved.bind(this);
+    const boundGroupChanged = this.handleTabGroupChanged.bind(this);
 
-    // Listen for tab group removal to clean up workspaces
+    chrome.tabs.onRemoved.addListener(boundTabRemoved);
+
     if (chrome.tabGroups?.onRemoved) {
       chrome.tabGroups.onRemoved.addListener(
         this.handleGroupRemoved.bind(this),
       );
     }
 
-    // Listen for tabs being ungrouped (manual drag out) - RE-ADD them to lock workspace
     if (chrome.tabs?.onUpdated) {
-      chrome.tabs.onUpdated.addListener(this.handleTabUngrouped.bind(this));
+      chrome.tabs.onUpdated.addListener(boundGroupChanged);
     }
+
+    this.listenersSetup = true;
   }
 
   /**
-   * Handle tabs being manually ungrouped - re-add them to preserve workspace integrity
-   * This enforces the "locked workspace" behavior
+   * Handle tabs whose Chrome group changed (ungrouped OR moved to a different group).
+   * Enforces "locked workspace" behavior: if a workspace tab is moved out of its
+   * group, re-add it. On failure, clean up the stale reference.
    */
-  private async handleTabUngrouped(
+  private async handleTabGroupChanged(
     tabId: number,
     changeInfo: chrome.tabs.TabChangeInfo,
     _tab: chrome.tabs.Tab,
   ) {
-    // Check if tab was ungrouped (groupId changed to -1)
-    if (changeInfo.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE) {
-      // Find if this tab should be in a workspace
-      const workspace = this.getWorkspaceByTabId(tabId);
-      if (workspace && workspace.tabGroupId !== null) {
-        logger.debug(
-          "workspace",
-          "Tab manually ungrouped, re-adding to workspace",
-          {
-            tabId,
-            workspace: workspace.name,
-          },
-        );
+    // Only care about group changes
+    if (changeInfo.groupId === undefined) return;
 
-        try {
-          // Re-add tab to the workspace group
-          await chrome.tabs.group({
-            tabIds: [tabId],
-            groupId: workspace.tabGroupId,
-          });
-        } catch (e) {
-          logger.warn("workspace", "Failed to re-add tab to workspace", {
-            tabId,
-            workspace: workspace.name,
-            error: e,
-          });
+    // Skip agent-initiated ungroups (from ungroup_tabs / group_tabs tools)
+    if (this._bypassRegroup.has(tabId)) return;
+
+    const workspace = this.getWorkspaceByTabId(tabId);
+    if (!workspace || workspace.tabGroupId === null) return;
+
+    const isUngrouped =
+      changeInfo.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE;
+    const isMovedToOtherGroup =
+      !isUngrouped && changeInfo.groupId !== workspace.tabGroupId;
+
+    if (!isUngrouped && !isMovedToOtherGroup) return;
+
+    logger.debug(
+      "workspace",
+      isUngrouped
+        ? "Tab manually ungrouped, re-adding to workspace"
+        : "Tab moved to different group, re-adding to workspace",
+      { tabId, workspace: workspace.name, newGroupId: changeInfo.groupId },
+    );
+
+    try {
+      await chrome.tabs.group({
+        tabIds: [tabId],
+        groupId: workspace.tabGroupId,
+      });
+    } catch (e) {
+      // Re-group failed (group might be gone). Remove stale tab reference.
+      logger.warn("workspace", "Failed to re-add tab to workspace, removing", {
+        tabId,
+        workspace: workspace.name,
+        error: e,
+      });
+      const idx = workspace.tabIds.indexOf(tabId);
+      if (idx !== -1) {
+        workspace.tabIds.splice(idx, 1);
+        if (workspace.tabIds.length === 0) {
+          await this.deleteWorkspace(workspace.id);
+        } else {
+          await this.save();
         }
       }
     }
   }
 
-  /**
-   * Get workspace by tab ID (synchronous lookup)
-   */
   private getWorkspaceByTabId(tabId: number): Workspace | null {
     return this.workspaces.find((ws) => ws.tabIds.includes(tabId)) || null;
   }
@@ -170,13 +195,12 @@ export class WorkspaceManager {
         ws.tabIds.splice(idx, 1);
         changed = true;
 
-        // Auto-delete workspace if empty
         if (ws.tabIds.length === 0) {
           logger.info("workspace", "Auto-deleting empty workspace", {
             name: ws.name,
           });
           await this.deleteWorkspace(ws.id);
-          return; // Workspace deleted, no need to save
+          return;
         }
       }
     }
@@ -192,12 +216,29 @@ export class WorkspaceManager {
       logger.info("workspace", "Tab Group removed externally", {
         name: ws.name,
       });
-      ws.tabGroupId = null;
-      ws.tabIds = [];
-      // Auto-delete workspace when group is removed
+      // deleteWorkspace handles ungrouping and cleanup
       await this.deleteWorkspace(ws.id);
     }
   }
+
+  // --- Bypass API for agent-initiated group changes ---
+
+  /**
+   * Mark tab IDs as being intentionally ungrouped/moved by the agent.
+   * The locked-workspace listener will skip these tabs.
+   */
+  public bypassRegroup(tabIds: number[]) {
+    for (const id of tabIds) this._bypassRegroup.add(id);
+  }
+
+  /**
+   * Clear the bypass flag after the agent operation completes.
+   */
+  public clearBypassRegroup(tabIds: number[]) {
+    for (const id of tabIds) this._bypassRegroup.delete(id);
+  }
+
+  // --- CRUD ---
 
   public async createWorkspace(
     name: string,
@@ -212,14 +253,11 @@ export class WorkspaceManager {
 
     let groupId: number | null = null;
     const tabIds: number[] = [];
-
-    // Use provided tabId or fall back to querying active tab
     const tabId = initialTabId;
 
     if (tabId) {
       logger.info("workspace", "Attempting to group tab", { tabId });
       try {
-        // First check if tab exists and get its info
         const tabInfo = await chrome.tabs.get(tabId);
         logger.info("workspace", "Tab info retrieved", {
           tabId,
@@ -275,30 +313,74 @@ export class WorkspaceManager {
   }
 
   /**
-   * Get the next sequential workspace name ("OS 1", "OS 2", etc.)
+   * Update workspace name and/or color, syncing to the Chrome tab group.
    */
+  public async updateWorkspace(
+    id: string,
+    updates: { name?: string; color?: chrome.tabGroups.ColorEnum },
+  ): Promise<void> {
+    await this.init();
+    const ws = this.workspaces.find((w) => w.id === id);
+    if (!ws) return;
+
+    if (updates.name !== undefined) ws.name = updates.name;
+    if (updates.color !== undefined) ws.color = updates.color;
+
+    // Sync to Chrome tab group
+    if (ws.tabGroupId !== null) {
+      try {
+        const groupUpdates: chrome.tabGroups.UpdateProperties = {};
+        if (updates.name !== undefined) groupUpdates.title = updates.name;
+        if (updates.color !== undefined) groupUpdates.color = updates.color;
+        await chrome.tabGroups.update(ws.tabGroupId, groupUpdates);
+      } catch (e) {
+        logger.warn("workspace", "Failed to sync group update to Chrome", {
+          id,
+          error: e,
+        });
+      }
+    }
+
+    await this.save();
+  }
+
+  /**
+   * Remove a tab from its workspace. Auto-deletes the workspace if it becomes empty.
+   */
+  public async removeTabFromWorkspace(
+    tabId: number,
+    workspaceId?: string,
+  ): Promise<void> {
+    await this.init();
+    const ws = workspaceId
+      ? this.workspaces.find((w) => w.id === workspaceId)
+      : this.getWorkspaceByTabId(tabId);
+    if (!ws) return;
+
+    const idx = ws.tabIds.indexOf(tabId);
+    if (idx === -1) return;
+
+    ws.tabIds.splice(idx, 1);
+    if (ws.tabIds.length === 0) {
+      await this.deleteWorkspace(ws.id);
+    } else {
+      await this.save();
+    }
+  }
+
   public getNextWorkspaceName(): string {
     return `OS ${this.nextWorkspaceNum}`;
   }
 
-  /**
-   * Get the next color in the rotation
-   */
   public getNextColor(): chrome.tabGroups.ColorEnum {
     return WORKSPACE_COLORS[this.workspaces.length % WORKSPACE_COLORS.length];
   }
 
-  /**
-   * Get workspace that contains a specific tab
-   */
   public async getWorkspaceForTab(tabId: number): Promise<Workspace | null> {
     await this.init();
     return this.workspaces.find((ws) => ws.tabIds.includes(tabId)) || null;
   }
 
-  /**
-   * Get workspace that owns a specific tab group
-   */
   public async getWorkspaceByGroupId(
     groupId: number,
   ): Promise<Workspace | null> {
@@ -317,6 +399,10 @@ export class WorkspaceManager {
     // Check if workspace already exists for this group
     const existing = await this.getWorkspaceByGroupId(group.id);
     if (existing) {
+      // Sync tabIds from Chrome (they may have changed during restart)
+      const tabs = await chrome.tabs.query({ groupId: group.id });
+      existing.tabIds = tabs.map((t) => t.id!).filter(Boolean);
+      await this.save();
       return existing;
     }
 
@@ -324,7 +410,7 @@ export class WorkspaceManager {
     const tabs = await chrome.tabs.query({ groupId: group.id });
     const tabIds = tabs.map((t) => t.id!).filter(Boolean);
 
-    // Parse workspace number from title if possible (supports legacy "OpenSidebar N" and new "OS N")
+    // Parse workspace number from title if possible
     const match = group.title?.match(/(?:OpenSidebar|OS) (\d+)/);
     const num = match ? parseInt(match[1]) : this.nextWorkspaceNum;
 
@@ -349,8 +435,60 @@ export class WorkspaceManager {
   }
 
   /**
-   * Add a tab to a workspace
+   * Validate stored workspaces against actual Chrome state.
+   * Removes stale workspaces whose groups no longer exist and
+   * reconciles tabIds with what Chrome reports.
    */
+  public async validateWorkspaces(): Promise<void> {
+    await this.init();
+    let changed = false;
+    const toDelete: string[] = [];
+
+    for (const ws of this.workspaces) {
+      if (ws.tabGroupId === null) continue;
+
+      try {
+        // Check if the Chrome group still exists
+        const group = await chrome.tabGroups.get(ws.tabGroupId);
+        // Group exists — reconcile tabIds
+        const tabs = await chrome.tabs.query({ groupId: group.id });
+        const liveTabIds = tabs.map((t) => t.id!).filter(Boolean);
+        if (
+          liveTabIds.length !== ws.tabIds.length ||
+          !liveTabIds.every((id) => ws.tabIds.includes(id))
+        ) {
+          ws.tabIds = liveTabIds;
+          changed = true;
+        }
+        // Sync title/color from Chrome → workspace (user may have renamed)
+        if (group.title && group.title !== ws.name) {
+          ws.name = group.title;
+          changed = true;
+        }
+        if (group.color && group.color !== ws.color) {
+          ws.color = group.color;
+          changed = true;
+        }
+      } catch {
+        // Group no longer exists — mark for deletion
+        toDelete.push(ws.id);
+      }
+    }
+
+    for (const id of toDelete) {
+      this.workspaces = this.workspaces.filter((w) => w.id !== id);
+      changed = true;
+    }
+
+    if (changed) {
+      await this.save();
+      logger.info("workspace", "Workspace validation complete", {
+        deleted: toDelete.length,
+        remaining: this.workspaces.length,
+      });
+    }
+  }
+
   public async addTabToWorkspace(
     tabId: number,
     workspaceId: string,
@@ -362,15 +500,11 @@ export class WorkspaceManager {
       logger.warn(
         "workspace",
         "Attempted to add tab to non-existent workspace",
-        {
-          workspaceId,
-          tabId,
-        },
+        { workspaceId, tabId },
       );
       return;
     }
 
-    // Add tab to Chrome group
     if (ws.tabGroupId !== null) {
       try {
         await chrome.tabs.group({
@@ -382,16 +516,12 @@ export class WorkspaceManager {
       }
     }
 
-    // Track in workspace
     if (!ws.tabIds.includes(tabId)) {
       ws.tabIds.push(tabId);
       await this.save();
     }
   }
 
-  /**
-   * Look up a workspace by its ID
-   */
   public async getWorkspaceById(id: string): Promise<Workspace | null> {
     await this.init();
     return this.workspaces.find((ws) => ws.id === id) || null;
@@ -407,7 +537,9 @@ export class WorkspaceManager {
     const ws = this.workspaces.find((w) => w.id === id);
     if (!ws) return;
 
-    // Ungroup tabs if group exists
+    // Bypass the locked-workspace listener for tabs we're about to ungroup
+    this.bypassRegroup(ws.tabIds);
+
     if (ws.tabGroupId !== null) {
       try {
         const tabs = await chrome.tabs.query({ groupId: ws.tabGroupId });
@@ -419,6 +551,7 @@ export class WorkspaceManager {
       }
     }
 
+    this.clearBypassRegroup(ws.tabIds);
     this.workspaces = this.workspaces.filter((w) => w.id !== id);
     await this.save();
 
@@ -432,10 +565,6 @@ export class WorkspaceManager {
     });
   }
 
-  /**
-   * Get the active workspace for sidebar interactions
-   * Returns the workspace associated with the currently active tab
-   */
   public async getActiveWorkspace(): Promise<Workspace | null> {
     await this.init();
 
@@ -449,9 +578,6 @@ export class WorkspaceManager {
     return this.getWorkspaceForTab(activeTab.id);
   }
 
-  /**
-   * Check if a tab is in the currently active workspace
-   */
   public async isTabInActiveWorkspace(tabId: number): Promise<boolean> {
     await this.init();
     const activeWorkspace = await this.getActiveWorkspace();
