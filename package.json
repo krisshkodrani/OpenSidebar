@@ -9,9 +9,11 @@
   },
   "license": "MIT",
   "scripts": {
+    "prompts:build": "bun run scripts/build-prompts.ts",
+    "prompts:check": "bun run scripts/check-inline-prompts.ts",
     "dev": "bun run scripts/vite-clean.ts",
     "dev:stack": "bun run scripts/dev-stack.ts",
-    "build": "bun run scripts/vite-clean.ts build",
+    "build": "bun run prompts:build && bun run prompts:check && bun run scripts/vite-clean.ts build",
     "lint": "bun run --bun eslint src --ext .ts,.tsx",
     "test": "bun test",
     "fmt": "bun run --bun prettier --write src/",
@@ -30,7 +32,6 @@
     "evals:analyze": "bun run evals/cli.ts analyze",
     "evals:regression": "bun run evals/cli.ts regression",
     "evals:critique": "bun run evals/cli.ts critique",
-    "challenge:discover": "bun run scripts/challenge-discover.ts",
     "viewer": "bun run scripts/log-server.ts"
   },
   "dependencies": {
