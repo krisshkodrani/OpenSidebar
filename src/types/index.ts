@@ -1892,12 +1892,19 @@ export interface TraceEntry {
   timestamp: number;
   /** Workspace ID for session isolation correlation */
   workspaceId?: string | null;
-  /** DOM state at turn start */
+  /** DOM state at turn start (what the LLM saw when deciding) */
   snapshot: {
     url: string;
     title: string;
     elementCount: number;
     visibleContentLength: number;
+    scrollY: number;
+  };
+  /** DOM state after tool execution — matches what perception was based on */
+  postToolSnapshot?: {
+    url: string;
+    title: string;
+    elementCount: number;
     scrollY: number;
   };
   /** Full elements array (for eval replay — reconstruct system prompt) */
@@ -1942,6 +1949,8 @@ export interface TraceEntry {
     providerId?: string;
     durationMs: number;
     screenshotPath?: string;
+    /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
+    screenshotDataUrl?: string;
     cached: boolean;
   };
   /** Mid-session runtime limit reassessment (only on reassessment turns) */

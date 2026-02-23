@@ -2128,7 +2128,11 @@
       var p = entry.perception;
       var turnNum = entry.turnNumber != null ? entry.turnNumber : i;
       var sessionId = entry.sessionId || traceState.currentSessionId;
-      var screenshotUrl = '/api/traces/' + encodeURIComponent(sessionId) + '/screenshots/' + turnNum;
+      // Prefer inline dataUrl, fall back to file-based path
+      var screenshotSrc = p.screenshotDataUrl
+        ? p.screenshotDataUrl
+        : '/api/traces/' + encodeURIComponent(sessionId) + '/screenshots/' + turnNum;
+      var hasInlineScreenshot = !!p.screenshotDataUrl;
 
       html += '<div class="perception-card">';
       html += '<div class="perception-card-header">';
@@ -2141,7 +2145,7 @@
 
       // Left: screenshot + elements
       html += '<div class="perception-left">';
-      html += '<img class="perception-screenshot" src="' + escapeHtml(screenshotUrl) + '" alt="Turn ' + turnNum + ' screenshot" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';" />';
+      html += '<img class="perception-screenshot" src="' + screenshotSrc + '" alt="Turn ' + turnNum + ' screenshot" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';" />';
       html += '<div class="perception-screenshot-placeholder" style="display:none;">Screenshot not available</div>';
 
       // Compact element list

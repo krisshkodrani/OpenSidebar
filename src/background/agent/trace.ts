@@ -19,6 +19,7 @@ import { logger } from "../../utils";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const FLUSH_TIMEOUT_MS = 2000;
+const MAX_PENDING = 50;
 const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
 const TRACE_PRODUCER = "background.agent.trace-recorder" as const;
 
@@ -40,6 +41,9 @@ export class TraceRecorder {
   private currentTurn: Partial<TraceEntry> | null = null;
   private turnToolExecutions: TraceToolExecution[] = [];
   private turnEvents: TraceEvent[] = [];
+
+  // Retry queue for failed flushes
+  private pendingQueue: Array<{ path: string; data: string }> = [];
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -207,7 +211,7 @@ export class TraceRecorder {
   }
 
   /** Record perception data (vision model interpretation) for the current turn */
-  recordPerception(
+  async recordPerception(
     perception: {
       interpretation: string;
       model: string;
@@ -216,7 +220,7 @@ export class TraceRecorder {
       cached: boolean;
     },
     screenshotDataUrl?: string,
-  ): void {
+  ): Promise<void> {
     if (!this.currentTurn) return;
     const turnNumber = this.currentTurn.turnNumber;
     this.currentTurn.perception = {
@@ -225,19 +229,21 @@ export class TraceRecorder {
       providerId: perception.providerId,
       durationMs: perception.durationMs,
       cached: perception.cached,
-      // Set path synchronously — deterministic format, regardless of POST success
-      ...(screenshotDataUrl && turnNumber != null
-        ? { screenshotPath: `screenshots/${this.sessionId}-T${turnNumber}.jpg` }
+      ...(screenshotDataUrl
+        ? { screenshotDataUrl }
         : {}),
     };
-    // Fire-and-forget screenshot save to trace server
-    if (screenshotDataUrl && turnNumber != null) {
-      this.flush("/traces/screenshot", {
-        sessionId: this.sessionId,
-        turnNumber,
-        dataUrl: screenshotDataUrl,
-      });
-    }
+  }
+
+  /** Record DOM state after tool execution (what perception was based on) */
+  recordPostToolSnapshot(snapshot: {
+    url: string;
+    title: string;
+    elementCount: number;
+    scrollY: number;
+  }): void {
+    if (!this.currentTurn) return;
+    this.currentTurn.postToolSnapshot = snapshot;
   }
 
   /** Record progress tracker state */
@@ -263,6 +269,9 @@ export class TraceRecorder {
       timestamp: this.currentTurn.timestamp!,
       workspaceId: this.workspaceId,
       snapshot: this.currentTurn.snapshot!,
+      ...(this.currentTurn.postToolSnapshot
+        ? { postToolSnapshot: this.currentTurn.postToolSnapshot }
+        : {}),
       elements: this.currentTurn.elements!,
       llmRequest: this.currentTurn.llmRequest!,
       llmResponse: this.currentTurn.llmResponse ?? {
@@ -349,22 +358,56 @@ export class TraceRecorder {
     await this.flush("/traces/session", session);
   }
 
-  /** Fire-and-forget POST to trace server */
+  /** Drain pending queue items (best-effort, stop on first failure) */
+  private async drainPending(): Promise<void> {
+    while (this.pendingQueue.length > 0) {
+      const item = this.pendingQueue[0];
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
+        const response = await fetch(`${TRACE_SERVER_URL}${item.path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: item.data,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        this.pendingQueue.shift(); // Success — remove from queue
+      } catch {
+        break; // Server still down — stop draining, items stay queued
+      }
+    }
+  }
+
+  /** POST to trace server with retry queue for resilience */
   private async flush(path: string, data: unknown): Promise<void> {
+    // Drain any previously queued items first
+    await this.drainPending();
+
+    const serialized = JSON.stringify(data);
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
-      await fetch(`${TRACE_SERVER_URL}${path}`, {
+      const response = await fetch(`${TRACE_SERVER_URL}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: serialized,
         signal: controller.signal,
       });
       clearTimeout(timeout);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
     } catch {
-      // Fire-and-forget: silently ignore when trace server is not running
-      logger.debug("trace", "Trace flush failed (server not running?)", {
+      // Queue for retry on next flush
+      this.pendingQueue.push({ path, data: serialized });
+      if (this.pendingQueue.length > MAX_PENDING) {
+        this.pendingQueue.shift(); // Drop oldest
+      }
+      logger.debug("trace", "Trace flush queued for retry (server not running?)", {
         path,
+        pending: this.pendingQueue.length,
       });
     }
   }
