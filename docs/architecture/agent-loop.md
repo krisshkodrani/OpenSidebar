@@ -11,10 +11,10 @@ The agent loop is the core orchestration engine that runs in the service worker.
 - `constants.ts` - Centralized configuration constants (thresholds, limits, string lengths)
 - `loop.ts` - Main `AgentLoop` class
 - `context.ts` - `ContextManager` for conversation history
-- `progress.ts` - `ProgressTracker` for stuck detection via snapshot fingerprinting
+- `stagnation.ts` - `StagnationMonitor` for stuck detection via snapshot fingerprinting
 - `step-labels.ts` - Human-readable step label generation for `AgentStep` timeline
 - `executor.ts` - Tool execution logic (parallel/sequential strategies)
-- `guardian.ts` - `PlanGuardian` for task decomposition and completion validation
+- `planner.ts` - `TaskPlanner` for task decomposition and completion validation
 - `tool-recovery.ts` - Extract tool calls from plain text LLM responses
 - `trace.ts` - `TraceRecorder` for full-fidelity session recording
 
@@ -41,10 +41,10 @@ class AgentLoop {
   ): Promise<void>;
 
   // Public API
-  injectHint(text: string): void;
+  injectFeedback(text: string): void;
   getCurrentTurn(): number;
   getOriginalQuery(): string;
-  getProgressTracker(): ProgressTracker;
+  getStagnationMonitor(): StagnationMonitor;
   pause(): void;
   resume(): void;
   isPaused(): boolean;
@@ -402,14 +402,14 @@ See [Navigation Bridge](./navigation-bridge.md) for details.
 
 ## Progress Tracker
 
-The `ProgressTracker` (`progress.ts`) detects when the agent is stuck in a loop by fingerprinting DOM snapshots after each DOM-modifying action. If the snapshot fingerprint doesn't change for multiple consecutive turns, it intervenes:
+The `StagnationMonitor` (`stagnation.ts`) detects when the agent is stuck in a loop by fingerprinting DOM snapshots after each DOM-modifying action. If the snapshot fingerprint doesn't change for multiple consecutive turns, it intervenes:
 
-- **Nudge** (6 stale turns): Injects a user message suggesting alternative approaches
-- **Pivot** (9 stale turns): More aggressive strategy change
-- **Escalate** (12 stale turns): Fires once, suggests more drastic action changes
-- **Subsequent signals** (every 6 turns after): Repeat nudges
+- **Reflection** (6 stagnant turns): Injects a user message suggesting alternative approaches
+- **Pivot** (9 stagnant turns): More aggressive strategy change
+- **Escalate** (12 stagnant turns): Fires once, suggests more drastic action changes
+- **Subsequent signals** (every 6 turns after): Repeat reflections
 
-Snapshot fingerprinting hashes `url + element count + sorted element signatures (tagName:text:isVisible)`. The tracker broadcasts `AGENT_STUCK` messages to the side panel and sends `"resolved"` when progress resumes.
+Snapshot fingerprinting hashes `url + element count + sorted element signatures (tagName:text:isVisible)`. The tracker broadcasts `AGENT_STAGNATION` messages to the side panel and sends `"resolved"` when progress resumes.
 
 ## Vision Bridge
 
@@ -426,13 +426,13 @@ The agent loop supports pausing via a Promise-based gate:
 
 Users trigger pause/resume via `PAUSE_AGENT` / `RESUME_AGENT` messages from the side panel.
 
-## Hint Injection
+## Feedback Injection
 
-Users can send messages while the agent is running. These are treated as hints:
+Users can send messages while the agent is running. These are treated as feedback:
 
-- Side panel sends `USER_CHAT` with `isHint: true`
-- Background routes to `agentLoop.injectHint(text)` instead of creating a new loop
-- On the next turn, the hint is appended as a `UserMessage`: `"[User hint]: {text}"`
+- Side panel sends `USER_CHAT` with `isFeedback: true`
+- Background routes to `agentLoop.injectFeedback(text)` instead of creating a new loop
+- On the next turn, the feedback is appended as a `UserMessage`: `"[User feedback]: {text}"`
 
 ## Unified Mode Behavior
 
@@ -440,7 +440,7 @@ The agent loop operates in a single unified mode that combines the best behavior
 
 - **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
-- **Two-tier escalation** — Text-only responses trigger nudge→escalate→give-up. The system has two tiers (fast/smart) with a single escalation step. Context distillation compresses history before smart model handoff.
+- **Two-tier escalation** — Text-only responses trigger reflection→escalate→give-up. The system has two tiers (fast/smart) with a single escalation step. Context distillation compresses history before smart model handoff.
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
 - **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
 - **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.
@@ -483,13 +483,13 @@ The `TraceRecorder` captures full-fidelity session data for offline evaluation:
 interface TraceEntry {
   sessionId: string;
   turnNumber: number;
-  snapshot: { url; title; elementCount; viewportTextLength; scrollY };
+  snapshot: { url; title; elementCount; visibleContentLength; scrollY };
   elements: TaggedElement[];
   llmRequest: { model; messageCount; toolCount; compressionLevel };
   llmResponse: { content; toolCalls; finishReason; usage; durationMs };
   toolExecutions: TraceToolExecution[];
   events: TraceEvent[];
-  progressState: { staleTurns; signal };
+  progressState: { stagnantTurns; signal };
 }
 ```
 
@@ -506,11 +506,11 @@ The agent uses a two-tier architecture with independent provider pools for each 
 - **Cerebras** (`zai-glm-4.7`) — Highest priority, native reasoning + prefix caching
 - **OpenRouter** (`z-ai/glm-4.7`) — Fallback
 
-Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `PlanGuardian` also uses the smart pool.
+Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `TaskPlanner` also uses the smart pool.
 
 ### Context Distillation
 
-On escalation, `distillForEscalation()` compresses the full conversation history (potentially 40K+ tokens) into a ~1K token structured timeline before handing off to the smart model. This preserves Cerebras prefix caching and gives the smart model a cleaner signal than raw history.
+On escalation, `summarizeTrajectory()` compresses the full conversation history (potentially 40K+ tokens) into a ~1K token structured timeline before handing off to the smart model. This preserves Cerebras prefix caching and gives the smart model a cleaner signal than raw history.
 
 ## Testing
 
@@ -528,8 +528,8 @@ On escalation, `distillForEscalation()` compresses the full conversation history
 | `src/background/agent/constants.ts`   | Centralized configuration constants  |
 | `src/background/agent/executor.ts`    | Tool execution (parallel/sequential) |
 | `src/background/agent/context.ts`     | ContextManager - sliding window      |
-| `src/background/agent/progress.ts`    | ProgressTracker - stuck detection    |
-| `src/background/agent/guardian.ts`    | PlanGuardian - task decomposition    |
+| `src/background/agent/stagnation.ts`  | StagnationMonitor - stuck detection    |
+| `src/background/agent/planner.ts`     | TaskPlanner - task decomposition    |
 | `src/background/agent/step-labels.ts` | Step label generation                |
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |

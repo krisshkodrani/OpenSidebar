@@ -26,7 +26,7 @@ Both share the same `LLMClient` class. Escalation is a one-way `switchModel()` c
 Every turn, the agent receives a **DOM snapshot** — a structured representation of the page state injected into the system prompt. The snapshot contains:
 
 - **Tagged interactive elements** (max 50 per snapshot): buttons, inputs, links, selects, canvas elements, `[draggable]` elements, and anything matching ARIA roles (`role='button'`, `role='tab'`, etc.)
-- **Viewport text** (up to 15,000 chars raw, compressed dynamically): the visible text content, with lightweight structural markers (`## ` for headings, `- ` for list items, `\n` for block elements)
+- **Visible content** (up to 15,000 chars raw, compressed dynamically): the visible text content, with lightweight structural markers (`## ` for headings, `- ` for list items, `\n` for block elements)
 - **Scroll position**: `y/maxY` pixels with percentage and directional indicators ("more content below," "at bottom of page")
 - **Page metadata**: title, URL
 
@@ -76,7 +76,7 @@ The format is `[tag] tagName#id attrs "text" (role)`. Role is only shown when it
 
 The agent loop (`AgentLoop.loop()`) is a while-loop bounded by `maxTurns` (default 30, user-configurable). Each iteration:
 
-1. **Observe**: The system prompt is rebuilt with the current DOM snapshot (elements, viewport text, scroll position, URL). If a plan is active, the current step is injected.
+1. **Observe**: The system prompt is rebuilt with the current DOM snapshot (elements, visible content, scroll position, URL). If a plan is active, the current step is injected.
 
 2. **Think**: The LLM is prompted to produce 2-3 lines of structured reasoning:
    - *What do I see?* (key page state, relevant elements)
@@ -95,7 +95,7 @@ MiniMax M2.5 emits `<think>...</think>` reasoning blocks inline. These are handl
 
 - **Streaming UI**: A `createThinkFilter()` state machine suppresses think blocks from the text deltas sent to the side panel. It tracks chunk boundaries to avoid cutting in the middle of a tag.
 - **Conversation history**: Think blocks are preserved **raw** in the message history. This is critical — M2.5's reasoning chain continuity improves significantly when it can see its own prior reasoning.
-- **Logic/logging**: `stripThinkTags()` produces `cleanContent` used for nudge detection, tool call recovery, and structured logging. The non-streaming `complete()` method (used by the PlanGuardian) strips think tags from its return value since the guardian needs clean JSON for parsing.
+- **Logic/logging**: `stripThinkTags()` produces `cleanContent` used for reflection detection, tool call recovery, and structured logging. The non-streaming `complete()` method (used by the TaskPlanner) strips think tags from its return value since the planner needs clean JSON for parsing.
 
 ---
 
@@ -170,14 +170,14 @@ When models emit JSON tool calls as plain text instead of using the `tool_calls`
 
 ## 5. Planning & Task Decomposition
 
-### The PlanGuardian
+### The TaskPlanner
 
-Before the first LLM turn, a `PlanGuardian` instance (always using `MODEL_SMART`) analyzes the user's query and page context. It decides:
+Before the first LLM turn, a `TaskPlanner` instance (always using `MODEL_SMART`) analyzes the user's query and page context. It decides:
 
 - **Simple task** (one click, one field, one navigation): returns `null`, no plan created
 - **Multi-step task**: decomposes into 2-8 subtasks, each expected to require 1-5 tool calls
 
-The guardian's decomposition prompt enforces generic behavior: *"Be generic — derive steps from the task description and page context, not assumptions about the site."*
+The planner's decomposition prompt enforces generic behavior: *"Be generic — derive steps from the task description and page context, not assumptions about the site."*
 
 ### Plan Injection
 
@@ -207,12 +207,12 @@ When `currentIndex` exceeds the subtask count, the directive becomes: *"All N st
 
 ### Done Validation
 
-When the agent calls `done()` and a plan exists, the guardian validates:
+When the agent calls `done()` and a plan exists, the planner validates:
 
 1. Sends the original query, plan subtasks, agent summary, and page context to `MODEL_SMART`
 2. The validation prompt is strict: *"ALL planned subtasks must be reasonably covered by the summary to approve. Partial completion is NOT completion."*
 3. If rejected, the rejection reason is injected as a tool result: `"done() REJECTED: [reason]. Continue working."`
-4. **Safety valve**: After 3 rejections (`MAX_DONE_REJECTIONS`), the done is forced through regardless. This prevents infinite loops when the guardian is overly strict.
+4. **Safety valve**: After 3 rejections (`MAX_DONE_REJECTIONS`), the done is forced through regardless. This prevents infinite loops when the planner is overly strict.
 
 ---
 
@@ -222,14 +222,14 @@ The `ContextManager` implements a sliding-window conversation history with dynam
 
 ### Compression Levels
 
-| Level | Utilization | Viewport Text | Element Text | Element Count | Attributes |
+| Level | Utilization | Visible Content | Element Text | Element Count | Attributes |
 |-------|:-----------:|:-------------:|:------------:|:-------------:|:----------:|
 | NONE | 0-50% | Full | Full | All 50 | All |
 | LIGHT | 50-70% | 3,000 chars | 40 chars | All 50 | All |
 | MEDIUM | 70-85% | 2,000 chars | 20 chars | All 50 | id, role, type, href, label, description |
 | HEAVY | 85%+ | Removed | 15 chars | Top 10 | role, type, description |
 
-The compression level is computed from estimated token counts: base template (~550 tokens), elements, viewport text, plan status, and full history. Token estimation uses `text.length / 4` as a fast approximation.
+The compression level is computed from estimated token counts: base template (~550 tokens), elements, visible content, plan status, and full history. Token estimation uses `text.length / 4` as a fast approximation.
 
 ### HEAVY Mode Element Scoring
 
@@ -257,7 +257,7 @@ The default context window is 32,000 tokens (`maxContextTokens`, user-configurab
 
 ## 7. Stuck Detection & Graduated Intervention
 
-The `ProgressTracker` detects stuck loops by **snapshot fingerprinting**. After each DOM-modifying action, it computes a fingerprint of the page state:
+The `StagnationMonitor` detects stuck loops by **snapshot fingerprinting**. After each DOM-modifying action, it computes a fingerprint of the page state:
 
 ```
 URL | elementCount | sorted(tagName:text[:30]:visibility:stateAttrs)
@@ -269,11 +269,11 @@ If the fingerprint is identical across consecutive turns, the stale counter incr
 
 | Stale Turns | Action |
 |:-----------:|--------|
-| 6 | **Nudge**: Injects a structured prompt forcing the agent to apply the Verify step (expected vs. actual), then try ONE different approach from a specific list (screenshot, scroll, press_key, find_element) |
+| 6 | **Reflection**: Injects a structured prompt forcing the agent to apply the Verify step (expected vs. actual), then try ONE different approach from a specific list (screenshot, scroll, press_key, find_element) |
 | 12 | **Escalate**: Switches to `MODEL_SMART`, takes fresh screenshot, instructs agent to start fresh analysis |
-| 18, 24, ... | **Repeat nudge** every 6 turns after escalation |
+| 18, 24, ... | **Repeat reflection** every 6 turns after escalation |
 
-On recovery (fingerprint changes after a stuck period), an `AGENT_STUCK` message with signal `"resolved"` is broadcast to the side panel, clearing the stuck banner.
+On recovery (fingerprint changes after a stuck period), an `AGENT_STAGNATION` message with signal `"resolved"` is broadcast to the side panel, clearing the stuck banner.
 
 ---
 
@@ -287,16 +287,16 @@ The agent calls `escalate({reason: "..."})`. The loop intercepts this before the
 
 1. Calls `llm.switchModel(MODEL_SMART)`
 2. Refreshes the DOM snapshot (with retry — critical that the new model sees current state)
-3. Injects `ESCALATION_NUDGE` as the tool result
+3. Injects `ESCALATION_REFLECTION` as the tool result
 
 ### Automatic Escalation
 
 Triggered by either:
 
 - **Stuck detection**: 12 consecutive stale fingerprints (see Section 7)
-- **Repeated text-only responses**: After 2 consecutive nudges for text output (no tool calls), escalation fires
+- **Repeated text-only responses**: After 2 consecutive reflections for text output (no tool calls), escalation fires
 
-### The Escalation Nudge
+### The Escalation Reflection
 
 Both paths inject the same constant:
 
@@ -318,13 +318,13 @@ If the agent calls `escalate` again after already being escalated, it receives:
 
 When the LLM returns text without any tool calls, the loop applies a graduated intervention:
 
-1. **Turn 1, substantive text, no plan**: Likely answering a user question. Soft nudge suggesting `done({"summary": "..."})` to deliver the answer.
+1. **Turn 1, substantive text, no plan**: Likely answering a user question. Soft reflection suggesting `done({"summary": "..."})` to deliver the answer.
 
-2. **Regular nudge**: Refreshes the snapshot and injects the `NUDGE_MESSAGE`, which reminds the agent to either call a tool or wrap its answer in `done()`.
+2. **Regular reflection**: Refreshes the snapshot and injects the `REFLECTION_MESSAGE`, which reminds the agent to either call a tool or wrap its answer in `done()`.
 
-3. **Escalation gate (2 consecutive nudges)**: Switches to `MODEL_SMART`, refreshes snapshot, injects `ESCALATION_NUDGE`.
+3. **Escalation gate (2 consecutive reflections)**: Switches to `MODEL_SMART`, refreshes snapshot, injects `ESCALATION_REFLECTION`.
 
-4. **Give-up (3 consecutive nudges)**: Stops the loop, surfaces the last text response to the user with a "send a follow-up to continue" message.
+4. **Give-up (3 consecutive reflections)**: Stops the loop, surfaces the last text response to the user with a "send a follow-up to continue" message.
 
 5. **Ratio-based give-up**: After 10+ turns post-escalation, if >40% of all turns were text-only (no tool calls), the loop gives up.
 
@@ -397,7 +397,7 @@ Vision token usage is reported back to the agent loop via a callback bridge (`se
 
 ## 13. Session Metrics & Cost Transparency
 
-Every LLM call (agent turns, guardian decomposition, guardian validation, vision) reports token usage back to `AgentLoop.recordUsage()`. The accumulated `SessionMetrics` include:
+Every LLM call (agent turns, planner decomposition, planner validation, vision) reports token usage back to `AgentLoop.recordUsage()`. The accumulated `SessionMetrics` include:
 
 - Total prompt/completion/combined tokens
 - Total cost (from OpenRouter's inline `usage.cost` field — no extra API calls)

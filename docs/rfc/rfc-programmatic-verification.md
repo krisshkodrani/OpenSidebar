@@ -7,7 +7,7 @@ Proposed
 - **Book 1**: Victor Dibia, *Designing Multi-Agent Systems* (2025). Ch 10 §10.4.4 "When to Use Numeric Metrics vs LLM Judges"; Ch 15 §15.5.1 "Explicit Completion Evaluation with TaskStatusTool"; Ch 7 §7.5.2 "Step Progress Evaluation"; Ch 7 §7.5.3 "Intelligent Retry Logic".
 - **Book 2**: Antonio Gulli, *Agentic Design Patterns* (2025). Ch 4 "Reflection" (lines 665-668, 756-757) — reflection cost analysis; Ch 1 "Prompt Chaining" — structured output for verification.
 - **Book 3**: Denis Rothman, *Context Engineering for Multi-Agent Systems* (Packt, 2025). Ch 2 §"Adding agent specialization controls and validation" — lightweight pass/fail validator; Ch 2 §"Validating MCP messages" — structural guardrails; Ch 5 §"Refactoring the agents for production" — stable data contracts.
-- **Internal**: `src/background/orchestrator/verifier.ts` (current LLM-based verifier), `src/background/orchestrator/index.ts` (orchestrator loop), `src/background/agent/progress.ts` (snapshot fingerprinting).
+- **Internal**: `src/background/orchestrator/verifier.ts` (current LLM-based verifier), `src/background/orchestrator/index.ts` (orchestrator loop), `src/background/agent/stagnation.ts` (snapshot fingerprinting).
 
 ## Context
 
@@ -44,7 +44,7 @@ The codebase already contains the building blocks for programmatic verification:
 
 1. **`deriveVerifierFallbackDecision()`** (`verifier.ts:116`) — A keyword-based heuristic that checks for "completed", "success", "done", "blocked", "captcha" etc. Currently only used as a fallback when the LLM verifier fails. This should be the **first** check, not the fallback.
 
-2. **`ProgressTracker`** (`agent/progress.ts`) — Fingerprints snapshots by hashing URL + element count + element signatures. Already detects when the page state has changed vs. stalled. This is a free signal for "did the action have any effect?"
+2. **`StagnationMonitor`** (`agent/stagnation.ts`) — Fingerprints snapshots by hashing URL + element count + element signatures. Already detects when the page state has changed vs. stalled. This is a free signal for "did the action have any effect?"
 
 3. **DOM snapshot diffs** — The agent loop already compares `prevElementCount` across turns. A URL change + element count change is strong programmatic evidence of progress.
 

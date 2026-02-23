@@ -123,7 +123,7 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 
 | Message Type      | Purpose                     | Payload                                 | Expected Response                                                                             |
 | ----------------- | --------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `USER_CHAT`       | User sends a chat message   | `{ text, tabId, workspaceId, isHint? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
+| `USER_CHAT`       | User sends a chat message   | `{ text, tabId, workspaceId, isFeedback? }` | `AGENT_RESPONSE` (streamed via multiple `STREAM_CHUNK` messages, then final `AGENT_RESPONSE`) |
 | `STOP_AGENT`      | User clicks stop button     | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: IDLE`                                                            |
 | `SETTINGS_UPDATE` | User changes settings       | `{ settings: Partial<UserSettings> }`   | `{ ok: true }` (sync response)                                                                |
 | `PAUSE_AGENT`     | User pauses agent execution | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: PAUSED`                                                          |
@@ -139,7 +139,7 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 | `AGENT_RESPONSE`    | Final agent response for a turn      | `{ text, isStreaming, toolCalls }`                                                               |
 | `NAVIGATION_RESUME` | Page load completed after navigation | `{ success, url, error? }`                                                                       |
 | `AGENT_STEP`        | Step timeline update                 | `{ step: AgentStep, update: boolean }`                                                           |
-| `AGENT_STUCK`       | Agent stuck detection signal         | `{ signal: "nudge"                                                                               | "pivot" | "escalate" | "resolved", staleTurns, url, message }` |
+| `AGENT_STAGNATION`       | Agent stagnation detection signal    | `{ signal: "escalate" \| "resolved", stagnantTurns, url, message }` |
 | `AGENT_TURN`        | Turn progress update                 | `{ turn, maxTurns, provider? }`                                                                  |
 | `TASK_PROGRESS`     | Subtask progress update              | `{ taskId, subtasks, currentIndex, totalTurnsUsed }`                                             |
 | `TASK_COMPLETION`   | Task completion report               | `{ taskId, status, totalTurnsUsed, totalTimeMs, summary, subtaskResults, urlHistory, metrics? }` |
@@ -271,20 +271,20 @@ Side Panel          Service Worker
     │                     │
 ```
 
-### 5. Stuck Detection
+### 5. Stagnation Detection
 
 ```
 Side Panel          Service Worker          Content Script
     │                     │                       │
-    │                     │ (ProgressTracker detects stale snapshot)
-    │← AGENT_STUCK ─────  │ (signal: "nudge", staleTurns: 6)
+    │                     │ (StagnationMonitor detects stagnant snapshot)
+    │← AGENT_STAGNATION ─────  │ (signal: "escalate", stagnantTurns: 6)
     │                     │                       │
-    │                     │ (injects nudge into LLM context)
+    │                     │ (injects reflection into LLM context)
     │                     │── TOOL_EXECUTE ──────→ │
     │                     │←── TOOL_RESULT ──────  │
     │                     │                       │
     │                     │ (snapshot changed → progress detected)
-    │← AGENT_STUCK ─────  │ (signal: "resolved")
+    │← AGENT_STAGNATION ─────  │ (signal: "resolved")
     │                     │                       │
 ```
 

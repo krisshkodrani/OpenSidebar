@@ -41,7 +41,7 @@ The existing `AgentLoop` becomes a **Worker**. It is spawned by the Orchestrator
 
 ### Task Lifecycle
 
-1.  **Decomposition**: The Orchestrator uses a **Planner** (Evolved `PlanGuardian`) to break the user query into a `Plan` consisting of `Subtasks`.
+1.  **Decomposition**: The Orchestrator uses a **Planner** (Evolved `TaskPlanner`) to break the user query into a `Plan` consisting of `Subtasks`.
 2.  **Dispatch**: The Orchestrator identifies independent subtasks (e.g., "Solve Challenge 1", "Solve Challenge 2") and spawns multiple Workers.
 3.  **Execution**: Workers run in parallel (on different tabs or the same tab with specialized locking).
 4.  **Aggregation**: Workers report success/failure back to the Orchestrator.
@@ -65,7 +65,7 @@ Each Worker has its own `ContextManager`. This isolates failures. If Worker A fa
 ## Migration Strategy
 
 1.  **Phase 1 (The Challenge Requirement)**: Implement `Orchestrator` capable of spawning multiple `AgentLoop` instances. Implement simple "fork-join" parallelism.
-2.  **Phase 2**: Refactor `PlanGuardian` to support hierarchical plans (RFC 01).
+2.  **Phase 2**: Refactor `TaskPlanner` to support hierarchical plans (RFC 01).
 3.  **Phase 3**: Optimize memory usage with Context Forking (RFC 02).
 
 ## Next Steps

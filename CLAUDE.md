@@ -43,13 +43,13 @@ Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Scr
 The orchestrator. Receives user messages from the side panel, runs the agent loop, dispatches tool calls to the content script, and streams responses back.
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Per-workspace `AgentLoop` instances via `agentLoops = Map<workspaceId, AgentLoop>`. Supports parallel agent execution across workspaces.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, hint injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, nudge→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, viewport text). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `distillForEscalation()` compresses full history into a structured timeline (~1K tokens) before smart model handoff. `summarizeHistory()` utility extracts tool name + args + outcome per turn.
-- `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
+- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. Barrel-exported via `agent/index.ts`.
+- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, visible content). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline (~1K tokens) before smart model handoff. `summarizeHistory()` utility extracts tool name + args + outcome per turn.
+- `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
 - `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier. Fast pool: Cerebras (`gpt-oss-120b`) → Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Smart pool: Cerebras (`zai-glm-4.7`) → OpenRouter (`z-ai/glm-4.7`). Both pools use `PoolConfig` interface for generic configuration. `ProviderPool` manages cooldowns (60s on 429) and immediate failover. `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so callers know which provider served after failover. Streaming payload includes `stream_options: { include_usage: true }` to ensure Cerebras/Groq return token counts. `switchToSmart()` reads from smart pool, `switchToFast()` reads from fast pool. GLM-4.7 has native reasoning (no `reasoning` parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 52 tools and bridges to content script / memory.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 53 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
 - `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
@@ -65,18 +65,18 @@ Injected into every page at `document_idle`. Handles DOM snapshot generation and
 
 - `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` to clear cookie banners and overlay modals on load.
 - `tagging.ts` — Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`. Tags `canvas` and `[draggable='true']` elements. Extracts label associations (explicit `<label for>`, implicit wrapper, aria-labelledby).
-- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, viewport text, scroll position.
+- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, visible content, scroll position.
 - `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID.
 
 ### Side Panel (`src/sidepanel/`)
 
 React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 
-- `App.tsx` — Root component. Composes Header, StuckBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
-- `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stuckState, turnProgress).
+- `App.tsx` — Root component. Composes Header, StallBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
+- `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stagnationState, turnProgress).
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
 - `hooks/useSpeechToText.ts` — `useSpeechToText()` custom hook. Two providers: Browser (Web Speech API, real-time interim + final transcripts) and Groq (MediaRecorder → Whisper `whisper-large-v3-turbo` API). Returns `{ isRecording, isProcessing, error, toggle, stop, isSupported }`.
-- `components/` — `Header`, `MessageBubble`, `InputArea` (mic button for voice input), `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`.
+- `components/` — `Header`, `MessageBubble`, `InputArea` (mic button for voice input), `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
 ### Offscreen Document (`src/offscreen/`)
 
@@ -100,8 +100,8 @@ Shared utilities used across all execution contexts. Barrel-exported via `index.
 
 Single source of truth for all interfaces. Key patterns:
 
-- `RuntimeMessage` — discriminated union (26 members, discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`.
-- `ToolName` enum (52 tools) → `ToolArgsMap` maps each tool to its typed arguments.
+- `RuntimeMessage` — discriminated union (26 members, discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`.
+- `ToolName` enum (53 tools) → `ToolArgsMap` maps each tool to its typed arguments.
 - `ToolDefinition` — OpenAI function-calling schema format, used by `ToolRegistry`.
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
@@ -110,7 +110,7 @@ Single source of truth for all interfaces. Key patterns:
 
 ### Messaging Protocol
 
-All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content, offscreen), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
+All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content, offscreen), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
 
 ### Traces & Evals
 
@@ -161,12 +161,12 @@ For build errors, also check `bun run build` output directly — Vite/Rollup sur
 
 ### Generic over task-specific
 
-All agent infrastructure (planning, progress tracking, completion judgment, stuck detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a complex multi-step workflow the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
+All agent infrastructure (planning, progress tracking, completion judgment, stagnation detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a complex multi-step workflow the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
 
 - **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong in the agent loop.
 - **The agent adapts through prompting and memory, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses `memory_add` / `memory_search` to learn and recall strategies across sessions.
 - **Tools are generic primitives.** Click, type, scroll, navigate — not "solve step 5 of the challenge." Higher-level behavior emerges from the LLM's reasoning over these primitives.
-- **Plans are dynamic.** The guardian decomposes any user query into subtasks based on context — it doesn't have a list of known task templates.
+- **Plans are dynamic.** The planner decomposes any user query into subtasks based on context — it doesn't have a list of known task templates.
 
 ### When in doubt, ask: "Would this work on a site I've never seen?"
 

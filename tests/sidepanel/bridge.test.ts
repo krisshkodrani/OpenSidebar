@@ -37,7 +37,7 @@ describe("Bridge Message Routing", () => {
             error: null,
             taskProgress: null,
             taskCompletion: null,
-            stuckState: null,
+            stagnationState: null,
             turnProgress: null,
             pendingApproval: null,
             pendingEscalation: null,
@@ -107,12 +107,12 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().isAgentRunning).toBe(true);
     });
 
-    test("AGENT_STATUS IDLE clears running, stuckState, and turnProgress", () => {
+    test("AGENT_STATUS IDLE clears running, stagnationState, and turnProgress", () => {
         // Pre-set some state
         useStore.getState().setAgentRunning(true);
-        useStore.getState().setStuckState({
+        useStore.getState().setStagnationState({
             signal: "nudge",
-            staleTurns: 6,
+            stagnantTurns: 6,
             url: "https://example.com",
             receivedAt: Date.now(),
         });
@@ -139,7 +139,7 @@ describe("Bridge Message Routing", () => {
         send("AGENT_STATUS", { status: AgentStatus.IDLE, detail: "Done" });
 
         expect(useStore.getState().isAgentRunning).toBe(false);
-        expect(useStore.getState().stuckState).toBeNull();
+        expect(useStore.getState().stagnationState).toBeNull();
         expect(useStore.getState().turnProgress).toBeNull();
         expect(useStore.getState().pendingApproval).toBeNull();
         expect(useStore.getState().taskRecovery).toBeNull();
@@ -153,52 +153,52 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().isAgentRunning).toBe(false);
     });
 
-    test("AGENT_STUCK nudge sets stuck state", () => {
+    test("AGENT_STAGNATION nudge sets stagnation state", () => {
         setupBridge();
-        send("AGENT_STUCK", {
+        send("AGENT_STAGNATION", {
             signal: "nudge",
-            staleTurns: 6,
+            stagnantTurns: 6,
             url: "https://example.com/page",
             message: "Agent appears stuck",
         });
 
-        const stuck = useStore.getState().stuckState;
-        expect(stuck).not.toBeNull();
-        expect(stuck!.signal).toBe("nudge");
-        expect(stuck!.staleTurns).toBe(6);
-        expect(stuck!.url).toBe("https://example.com/page");
+        const stagnation = useStore.getState().stagnationState;
+        expect(stagnation).not.toBeNull();
+        expect(stagnation!.signal).toBe("nudge");
+        expect(stagnation!.stagnantTurns).toBe(6);
+        expect(stagnation!.url).toBe("https://example.com/page");
     });
 
-    test("AGENT_STUCK escalate sets stuck state with escalate signal", () => {
+    test("AGENT_STAGNATION escalate sets stagnation state with escalate signal", () => {
         setupBridge();
-        send("AGENT_STUCK", {
+        send("AGENT_STAGNATION", {
             signal: "escalate",
-            staleTurns: 12,
+            stagnantTurns: 12,
             url: "https://example.com",
             message: "Agent is stuck",
         });
 
-        expect(useStore.getState().stuckState!.signal).toBe("escalate");
-        expect(useStore.getState().stuckState!.staleTurns).toBe(12);
+        expect(useStore.getState().stagnationState!.signal).toBe("escalate");
+        expect(useStore.getState().stagnationState!.stagnantTurns).toBe(12);
     });
 
-    test("AGENT_STUCK resolved clears stuck state", () => {
-        useStore.getState().setStuckState({
+    test("AGENT_STAGNATION resolved clears stagnation state", () => {
+        useStore.getState().setStagnationState({
             signal: "nudge",
-            staleTurns: 6,
+            stagnantTurns: 6,
             url: "https://example.com",
             receivedAt: Date.now(),
         });
 
         setupBridge();
-        send("AGENT_STUCK", {
+        send("AGENT_STAGNATION", {
             signal: "resolved",
-            staleTurns: 0,
+            stagnantTurns: 0,
             url: "https://example.com",
             message: "",
         });
 
-        expect(useStore.getState().stuckState).toBeNull();
+        expect(useStore.getState().stagnationState).toBeNull();
     });
 
     test("AGENT_TURN sets turn progress", () => {
@@ -392,6 +392,23 @@ describe("Bridge Message Routing", () => {
         expect(recovery!.workspaceId).toBe("ws-recovered");
     });
 
+    test("STREAM_CHUNK replaceContent clears streamed garbage", () => {
+        useStore.getState().addMessage({
+            id: "a1",
+            role: "assistant",
+            content: '{"tool":"dismiss_overlays","toolInput":{}}',
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: true,
+        });
+
+        setupBridge();
+        send("STREAM_CHUNK", { delta: "", done: false, replaceContent: "" });
+
+        expect(useStore.getState().messages[0].content).toBe("");
+        expect(useStore.getState().messages[0].isStreaming).toBe(true);
+    });
+
     test("STREAM_CHUNK done finalizes streaming", () => {
         useStore.getState().addMessage({
             id: "a1",
@@ -414,5 +431,63 @@ describe("Bridge Message Routing", () => {
         send("SCREENSHOT_CAPTURED", payload);
 
         expect(onScreenshot).toHaveBeenCalledWith(payload);
+    });
+
+    test("IDLE clears stale taskProgress when no TASK_COMPLETION was received", () => {
+        useStore.getState().setTaskProgress({
+            taskId: "t1",
+            subtasks: [{ description: "Step 1", status: "running", turnsUsed: 2, turnBudget: 20 }],
+            currentIndex: 0,
+            totalTurnsUsed: 2,
+        });
+
+        setupBridge();
+        send("AGENT_STATUS", { status: AgentStatus.IDLE, detail: "Stopped" });
+
+        expect(useStore.getState().taskProgress).toBeNull();
+        expect(useStore.getState().taskCompletion).toBeNull();
+    });
+
+    test("ERROR clears stale taskProgress when no TASK_COMPLETION was received", () => {
+        useStore.getState().setTaskProgress({
+            taskId: "t1",
+            subtasks: [{ description: "Step 1", status: "running", turnsUsed: 1, turnBudget: 10 }],
+            currentIndex: 0,
+            totalTurnsUsed: 1,
+        });
+
+        setupBridge();
+        send("AGENT_STATUS", { status: AgentStatus.ERROR, detail: "Runtime error" });
+
+        expect(useStore.getState().taskProgress).toBeNull();
+        expect(useStore.getState().taskCompletion).toBeNull();
+    });
+
+    test("IDLE preserves taskCompletion after normal TASK_COMPLETION flow", () => {
+        useStore.getState().setTaskProgress({
+            taskId: "t1",
+            subtasks: [],
+            currentIndex: 0,
+            totalTurnsUsed: 0,
+        });
+
+        setupBridge();
+
+        // Normal flow: TASK_COMPLETION arrives first
+        send("TASK_COMPLETION", {
+            taskId: "t1",
+            status: "completed",
+            summary: "All done",
+            totalTurnsUsed: 5,
+            subtaskResults: [],
+        });
+
+        // Then IDLE arrives
+        send("AGENT_STATUS", { status: AgentStatus.IDLE, detail: "Done" });
+
+        // taskCompletion should be preserved (TASK_COMPLETION already cleared taskProgress)
+        expect(useStore.getState().taskCompletion).not.toBeNull();
+        expect(useStore.getState().taskCompletion!.status).toBe("completed");
+        expect(useStore.getState().taskProgress).toBeNull();
     });
 });

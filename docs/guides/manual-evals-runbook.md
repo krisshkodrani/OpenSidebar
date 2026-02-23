@@ -6,12 +6,12 @@ Collect traces from two runs — baseline (agent alone) and coached (you guide v
 
 There is no "record my actions" button. The agent always executes; you **coach it with hints**.
 
-During an active run, the input area switches to hint mode:
-- Placeholder changes to **"Send a hint..."**
+During an active run, the input area switches to feedback mode:
+- Placeholder changes to **"Send feedback..."**
 - Send button turns **amber**
-- Your message is injected into the agent's conversation as a nudge
+- Your message is injected into the agent's conversation as feedback
 
-The agent reads your hint on its next turn and adjusts. If teach mode is ON and the task succeeds, the orchestrator extracts the plan as a **learned skill** for future replay.
+The agent reads your feedback on its next turn and adjusts. If teach mode is ON and the task succeeds, the orchestrator extracts the plan as a **learned skill** for future replay.
 
 **Why hints over demonstrations:** The agent still plans, reasons, and verifies. Hints build transferable reasoning; recorded demos just replay brittle click sequences.
 
@@ -95,7 +95,7 @@ Write them down:
 |---------|-------|-----|
 | Teach Mode | **ON** | Learn from successful completion |
 | Auto Skill Replay | **OFF** | You're teaching fresh, not replaying |
-| Max Turns | **40** | Extra room for hint-guided retries |
+| Max Turns | **40** | Extra room for feedback-guided retries |
 
 ### Steps
 1. Navigate to the challenge page (same URL as baseline)
@@ -103,8 +103,8 @@ Write them down:
 3. Watch the planner decompose the task
 4. For each node the executor runs:
    - **If it's doing the right thing** → let it run
-   - **If it's stuck or wrong** → type a hint in the amber input area
-   - Keep hints **short and actionable**:
+   - **If it's stuck or wrong** → type feedback in the amber input area
+   - Keep feedback **short and actionable**:
      - Good: `"The login button is inside the nav bar at the top, try read_page first"`
      - Good: `"You need to scroll down to see the form"`
      - Bad: `"I think maybe you should try a different approach to this problem"`

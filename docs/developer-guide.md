@@ -8,7 +8,7 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 
 **Core Systems (All Working):**
 - Side Panel UI - Chat interface with real-time streaming, orchestrator console, step timeline
-- Agent Loop - 52 tools, sliding window context, progress tracking, hint injection
+- Agent Loop - 52 tools, sliding window context, progress tracking, feedback injection
 - Orchestrator - Planner/executor/verifier pipeline with lane isolation, skills, and conversation collaboration
 - Content Script - DOM distillation, element tagging, action execution, shadow DOM, React detection
 - Navigation Bridge - State persistence across page loads
@@ -57,9 +57,9 @@ Side Panel (React/Zustand) <-> Service Worker <-> Content Script (DOM)
 The orchestrator. Receives user messages from the side panel, runs the agent loop or orchestrator pipeline, dispatches tool calls to the content script, and streams responses back.
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Per-workspace `AgentLoop` instances via `agentLoops = Map<workspaceId, AgentLoop>`.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, hint injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, nudge→escalate→give-up for text-only responses. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data. Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `distillForEscalation()` compresses full history into a structured timeline before smart model handoff.
-- `agent/progress.ts` — `ProgressTracker`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: nudge at 6 stale turns, escalate at 12. Broadcasts `AGENT_STUCK` signals.
+- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Barrel-exported via `agent/index.ts`.
+- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data. Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline before smart model handoff.
+- `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text.
 - `agent/trace.ts` — `TraceRecorder`. Full-fidelity session recording (DOM snapshots, LLM requests/responses, tool executions, events). Drains to `traces/` via log server.
@@ -96,7 +96,7 @@ Multi-step task decomposition and execution pipeline. Activated for complex task
 
 ### Prompts (`src/prompts/`)
 
-- `registry.ts` — `PromptRegistry`. Maps `PromptId` to versioned prompt templates. Includes system prompts for planner, verifier, executor, guardian, pre-flight review, retrospective, and advocate roles.
+- `registry.ts` — `PromptRegistry`. Maps `PromptId` to versioned prompt templates. Includes system prompts for planner, verifier, executor, pre-flight review, retrospective, and advocate roles.
 - `types.ts` — `PromptId` union type. All prompt identifiers.
 - `render.ts` — Template rendering with parameter substitution.
 
@@ -106,7 +106,7 @@ Injected into every page at `document_idle`. Handles DOM snapshot generation and
 
 - `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` on load.
 - `tagging.ts` — Vimium-style numeric tagging of interactive elements. Stable hash-based IDs (FNV-1a). Tags `canvas`, `[draggable='true']`, and inline clickable elements.
-- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, viewport text, scroll position, framework detection.
+- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, visible content, scroll position, framework detection.
 - `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element.
 - `framework-detect.ts` — Detects React via fiber keys. Gates React Toolkit tools.
 
@@ -118,7 +118,7 @@ React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 - `store.ts` — Zustand + Immer store. Holds `SidePanelState`.
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check.
 - `hooks/useSpeechToText.ts` — Voice input via Browser Speech API or Groq Whisper.
-- `components/` — `Header`, `MessageBubble`, `InputArea` (hint mode during agent runs), `ControlBar` (pause/resume/turn counter), `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StuckBanner`, `TaskProgressPanel`, `CompletionSummary`, `MetricsBar`, `StepTimeline`, `OrchestratorConsole`, `PlanBoard`, `LearnedSkillsPanel`, `EscalationBanner`, `ApprovalBanner`, `RecoveryBanner`, `ArchitectureStrip`, `ScreenshotLightbox`, `SavedPromptsDrawer`, `PromptPicker`.
+- `components/` — `Header`, `MessageBubble`, `InputArea` (feedback mode during agent runs), `ControlBar` (pause/resume/turn counter), `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`, `MetricsBar`, `StepTimeline`, `OrchestratorConsole`, `PlanBoard`, `LearnedSkillsPanel`, `EscalationBanner`, `ApprovalBanner`, `RecoveryBanner`, `ArchitectureStrip`, `ScreenshotLightbox`, `SavedPromptsDrawer`, `PromptPicker`.
 
 ### Offscreen Document (`src/offscreen/`)
 
@@ -195,16 +195,16 @@ Task Complete → [Skill Learning] (if teach mode ON)
 
 Two-tier escalation: tier 0 (fast) → tier 1 (smart):
 - Screenshots unlock at tier 1
-- Context distillation on escalation: `distillForEscalation()` replaces raw history with compact timeline
-- BRAINS→HANDS pattern: start smart (tier 1) for 2 turns, hand off to fast (tier 0)
-- Text-only response: nudge → escalate (at 2, tier 0→1 only) → give-up (at 3)
+- Context distillation on escalation: `summarizeTrajectory()` replaces raw history with compact timeline
+- plan-then-act pattern: start smart (tier 1) for 2 turns, hand off to fast (tier 0)
+- Text-only response: reflection → escalate (at 2, tier 0→1 only) → give-up (at 3)
 
 ## Skills System
 
 Learned skills enable the agent to replay successful plans on similar future queries:
 
 - **Teach Mode**: Toggle in settings. When ON and a task completes successfully, the orchestrator extracts the plan as a reusable skill.
-- **Hint Coaching**: During active runs, the input area switches to amber "Send a hint..." mode. Hints are injected into the agent's context via `injectHint()`.
+- **Feedback Coaching**: During active runs, the input area switches to amber "Send feedback..." mode. Feedback is injected into the agent's context via `injectFeedback()`.
 - **Auto-Replay**: When a new query matches a learned skill, the orchestrator replays the stored plan instead of re-planning from scratch.
 - **Management**: Side panel → Settings → Learned Skills panel shows all skills with pin/enable controls.
 
@@ -300,7 +300,7 @@ src/
 │   ├── agent/
 │   │   ├── loop.ts       # AgentLoop orchestration
 │   │   ├── context.ts    # ContextManager (sliding window + distillation)
-│   │   ├── progress.ts   # ProgressTracker (stuck detection)
+│   │   ├── stagnation.ts  # StagnationMonitor (stuck detection)
 │   │   ├── step-labels.ts # Human-readable step labels
 │   │   ├── tool-recovery.ts # Extract tool calls from LLM text
 │   │   └── trace.ts      # TraceRecorder (session recording)
@@ -353,13 +353,13 @@ src/
 │   │   └── useSpeechToText.ts # Voice input (Browser/Groq Whisper)
 │   └── components/       # UI components
 │       ├── Header.tsx
-│       ├── InputArea.tsx  # Chat input + hint mode
+│       ├── InputArea.tsx  # Chat input + feedback mode
 │       ├── MessageBubble.tsx
 │       ├── ControlBar.tsx # Pause/resume/turn counter
 │       ├── SettingsDrawer.tsx
 │       ├── StatusBar.tsx
 │       ├── ToolCallBadge.tsx
-│       ├── StuckBanner.tsx
+│       ├── StallBanner.tsx
 │       ├── StepTimeline.tsx
 │       ├── TaskProgressPanel.tsx
 │       ├── OrchestratorConsole.tsx
@@ -404,7 +404,7 @@ logs/                     # Application logs
 
 ## Key Types
 
-**RuntimeMessage** - discriminated union (27+ members) for all inter-context messages. Key members: `USER_CHAT`, `STREAM_CHUNK`, `AGENT_STATUS`, `TOOL_EXECUTE`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `AGENT_STUCK`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `SESSION_METRICS`, `SCREENSHOT_CAPTURED`.
+**RuntimeMessage** - discriminated union (27+ members) for all inter-context messages. Key members: `USER_CHAT`, `STREAM_CHUNK`, `AGENT_STATUS`, `TOOL_EXECUTE`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `SESSION_METRICS`, `SCREENSHOT_CAPTURED`.
 
 **UserSettings** - Configuration:
 ```typescript

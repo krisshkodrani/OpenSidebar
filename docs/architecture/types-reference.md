@@ -189,7 +189,7 @@ export type RuntimeMessage =
   | ScreenshotCapturedMessage
   | DismissModalsMessage
   | DismissModalsResponse
-  | AgentStuckMessage
+  | AgentStagnationMessage
   | AgentTurnMessage
   | TaskProgressMessage
   | TaskCompletionMessage
@@ -212,8 +212,8 @@ export interface UserChatMessage extends BaseMessage {
     tabId: number;
     /** Active workspace ID, if any */
     workspaceId: string | null;
-    /** When true, inject as hint into running agent context (don't start new loop) */
-    isHint?: boolean;
+    /** When true, inject as feedback into running agent context (don't start new loop) */
+    isFeedback?: boolean;
   };
 }
 ```
@@ -389,16 +389,16 @@ export interface AgentActivityMessage extends BaseMessage {
 
 ## Agent Feedback & Control Messages
 
-### `AgentStuckMessage`
+### `AgentStagnationMessage`
 
 ```typescript
 /** Background broadcasts stuck detection signals to the side panel */
-export interface AgentStuckMessage extends BaseMessage {
-  type: "AGENT_STUCK";
+export interface AgentStagnationMessage extends BaseMessage {
+  type: "AGENT_STAGNATION";
   source: MessageSource.BACKGROUND;
   payload: {
-    signal: "nudge" | "pivot" | "escalate" | "resolved";
-    staleTurns: number;
+    signal: "escalate" | "resolved";
+    stagnantTurns: number;
     url: string;
     /** Human-readable explanation */
     message: string;
@@ -1095,7 +1095,7 @@ export interface DomSnapshot {
   /** Array of tagged interactive elements */
   elements: TaggedElement[];
   /** Plain text content of the visible viewport (truncated) */
-  viewportText: string;
+  visibleContent: string;
   /** Viewport dimensions */
   viewport: { width: number; height: number };
   /** Scroll position */
@@ -1167,7 +1167,7 @@ export interface DomSnapshotRequest extends BaseMessage {
   type: "DOM_SNAPSHOT_REQUEST";
   source: MessageSource.BACKGROUND;
   payload: {
-    /** Whether to include viewport text (expensive) */
+    /** Whether to include visible content (expensive) */
     includeText: boolean;
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
@@ -1243,20 +1243,20 @@ export interface ChatEntry {
   isStreaming: boolean;
   /** Real-time step timeline for agent execution */
   steps?: AgentStep[];
-  /** Whether this user message was sent as a hint during execution */
-  isHint?: boolean;
+  /** Whether this user message was sent as feedback during execution */
+  isFeedback?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
   completionData?: TaskCompletionMessage["payload"];
 }
 ```
 
-### `StuckState`
+### `StagnationState`
 
 ```typescript
-/** Stuck detection state for the side panel */
-export interface StuckState {
-  signal: "nudge" | "pivot" | "escalate";
-  staleTurns: number;
+/** Stagnation detection state for the side panel */
+export interface StagnationState {
+  signal: "escalate";
+  stagnantTurns: number;
   url: string;
   /** Timestamp of the stuck signal (for auto-dismiss timing) */
   receivedAt: number;
@@ -1301,8 +1301,8 @@ export interface SidePanelState {
   taskProgress: TaskProgressMessage["payload"] | null;
   /** Completed task report (null until task finishes) */
   taskCompletion: TaskCompletionMessage["payload"] | null;
-  /** Non-null when the agent is detected as stuck */
-  stuckState: StuckState | null;
+  /** Non-null when the agent is detected as stagnant */
+  stagnationState: StagnationState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
   /** Live session metrics (null when no active session or tracking disabled) */
@@ -1534,7 +1534,7 @@ export interface TraceEntry {
     url: string;
     title: string;
     elementCount: number;
-    viewportTextLength: number;
+    visibleContentLength: number;
     scrollY: number;
   };
   /** Full elements array (for eval replay — reconstruct system prompt) */
@@ -1565,7 +1565,7 @@ export interface TraceEntry {
   events: TraceEvent[];
   /** Progress tracker state */
   progressState: {
-    staleTurns: number;
+    stagnantTurns: number;
     signal: string | null;
   };
 }
@@ -1594,7 +1594,7 @@ export interface TraceToolExecution {
 export interface TraceEvent {
   type:
     | "escalation"
-    | "hint"
+    | "feedback"
     | "modal_dismiss"
     | "done_rejected"
     | "plan_update"

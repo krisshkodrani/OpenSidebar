@@ -269,6 +269,22 @@ button:active:not(:disabled) {
   animation: slide-up 0.25s ease-out;
 }
 
+/* --- Step entrance animation --- */
+.step-enter {
+  animation: step-fade-in 0.25s ease-out both;
+}
+
+@keyframes step-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* --- Timestamp hover-reveal --- */
 .message-ts {
   opacity: 0;
@@ -324,6 +340,10 @@ button:active:not(:disabled) {
   }
 
   .plan-sheet-enter {
+    animation: none;
+  }
+
+  .step-enter {
     animation: none;
   }
 

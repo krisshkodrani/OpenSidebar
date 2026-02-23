@@ -6,7 +6,7 @@ How to write effective prompts for the OpenSidebar browser agent.
 
 The agent treats your input as a **task to accomplish on the current page**. It will:
 
-1. **Decompose** multi-step tasks into a plan (via the guardian model)
+1. **Decompose** multi-step tasks into a plan (via the planner model)
 2. **Execute** each step by reading the page, finding elements, and interacting with them
 3. **Track progress** step-by-step and verify completion before moving on
 4. **Signal completion** by calling `done()` with a summary

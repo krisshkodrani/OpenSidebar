@@ -2,11 +2,11 @@
 
 ## Summary
 
-This RFC redefines the `PlanGuardian` into a **Hierarchical Planner**. Instead of a linear list of strings, the planner will output a structured **Task Graph** where tasks can have subtasks, dependencies, and assigned metadata. This allows the Orchestrator to dispatch parallel agents effectively.
+This RFC redefines the `TaskPlanner` into a **Hierarchical Planner**. Instead of a linear list of strings, the planner will output a structured **Task Graph** where tasks can have subtasks, dependencies, and assigned metadata. This allows the Orchestrator to dispatch parallel agents effectively.
 
 ## Motivation
 
-The current `PlanGuardian` produces a flat list of strings (`string[]`). This is insufficient for parallel execution because:
+The current `TaskPlanner` produces a flat list of strings (`string[]`). This is insufficient for parallel execution because:
 1.  **No Dependencies**: We don't know which steps *must* be sequential and which can be parallel.
 2.  **No Context**: A string like "Click button" doesn't carry enough context for a fresh agent.
 3.  **No Hierarchy**: Complex tasks (e.g., "Research A and B") need recursively nested subtasks.
@@ -91,7 +91,7 @@ Based on the evaluation against *Designing Multi-Agent Systems* (plan-based orch
     - Nodes blocked by failed/missing dependencies are failed explicitly with tactical logs.
 
 3.  **Plan-Reality Drift Signaling**
-    - Planner assumptions are checked against live page snapshot signals (title/url/viewport text).
+    - Planner assumptions are checked against live page snapshot signals (title/url/visible content).
     - Drift is surfaced to executors as a "reality check signal" and logged for debugging.
 
 4.  **Dynamic Handoff on Reroute**
@@ -99,7 +99,7 @@ Based on the evaluation against *Designing Multi-Agent Systems* (plan-based orch
 
 ## Migration
 
-1.  **Step 1**: Update `PlanGuardian` to output a simplified JSON with `parallel: boolean` flag.
+1.  **Step 1**: Update `TaskPlanner` to output a simplified JSON with `parallel: boolean` flag.
 2.  **Step 2**: Implement the full Graph based Planner.
 
 ## Implementation Status (2026-02-16)

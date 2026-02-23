@@ -46,7 +46,7 @@ Both sources arrive at the same conclusions from different directions:
 |---|---|---|---|
 | Proactive summarization | Recap recovers ~16pp | Summarizer is a core role | Partial — only at escalation |
 | Repeat critical info each turn | Snowball recovers ~6pp | Plan-state chaining | Partial — plan state yes, goal no |
-| Short independent conversations | Episodic tasks = zero degradation | Role separation, handoff contracts | Partial — BRAINS→HANDS, subtasks |
+| Short independent conversations | Episodic tasks = zero degradation | Role separation, handoff contracts | Partial — plan-then-act, subtasks |
 | Structured handoffs on failure | "Consolidate before retrying" | `NodeHandoffArtifact` pattern | Missing — no fresh-start mechanism |
 | Semantic > deterministic compression | Temperature/concat don't help | Summarizer, not just truncation | Gap — EXTREME uses truncation only |
 
@@ -60,7 +60,7 @@ Three specific failure modes stem from multi-turn degradation:
 
 **P2: Late Distillation.** Context distillation only fires at escalation (5+ stale turns). By then the model has already spent multiple turns in a degraded state, compounding errors. The paper shows degradation begins at turn 2 and worsens monotonically — waiting for stuck detection means the damage is already done.
 
-**P3: Non-Episodic Subtasks.** The guardian decomposes tasks into subtasks, but doesn't enforce independence between them. The paper found that *episodic* tasks (like translation) show zero degradation because each turn is self-contained. Non-episodic tasks (where earlier outputs constrain later ones) degrade worst. Our subtask boundaries don't optimize for this. The book's plan-state chaining (Context RFC 3) partially addresses this by carrying subtask results forward, but the guardian prompt doesn't explicitly optimize for episodic decomposition.
+**P3: Non-Episodic Subtasks.** The planner decomposes tasks into subtasks, but doesn't enforce independence between them. The paper found that *episodic* tasks (like translation) show zero degradation because each turn is self-contained. Non-episodic tasks (where earlier outputs constrain later ones) degrade worst. Our subtask boundaries don't optimize for this. The book's plan-state chaining (Context RFC 3) partially addresses this by carrying subtask results forward, but the planner prompt doesn't explicitly optimize for episodic decomposition.
 
 **P4: Lossy Deterministic Compression.** Our compression pipeline (LIGHT→MEDIUM→HEAVY→EXTREME) uses character truncation, message dropping, and fixed-format timelines. The book prescribed a dedicated summarizer role; we descoped it (Context RFC 9) because 3 deterministic mechanisms already existed and an LLM summarizer adds 2-4 expensive calls per session. The paper's findings challenge this: it shows that deterministic approaches (temperature tuning, concatenation) are insufficient for multi-turn resilience — what matters is *semantic* preservation of causal chains. Our `summarizeHistory()` produces `T3: click {id: 5} → "Clicked element"` which preserves structure but loses the *why* — the causal relationship between actions. The paper's Recap works because it preserves meaning, not just tokens.
 
@@ -94,7 +94,7 @@ Introduce a `rollingDistill()` method on `ContextManager` that periodically comp
 1. Preserve the last `ROLLING_DISTILL_KEEP_RECENT` messages (proposed: 6) verbatim
 2. Compress all earlier messages (except the original query) into a **causal-chain-aware** summary (see S5)
 3. Replace the compressed messages with a single `user` message containing the summary
-4. This is lighter than `distillForEscalation()` — no tier switch, no persona change, just history compaction
+4. This is lighter than `summarizeTrajectory()` — no tier switch, no persona change, just history compaction
 
 **Why 8 turns?** The paper shows degradation is monotonic from turn 2 onward with steepest decline in turns 3-6. At 8 turns, we're well past the danger zone but have enough material to summarize meaningfully. The 6 verbatim recent messages ensure the model has full-fidelity access to its current working context.
 
@@ -146,14 +146,14 @@ This is stronger than escalation — it eliminates the accumulated noise, anchor
 
 ### S4: Episodic Subtask Enforcement
 
-**Insight**: Structure guardian plan decomposition to maximize subtask independence.
+**Insight**: Structure planner plan decomposition to maximize subtask independence.
 
 **Paper basis**: Translation task anomaly — zero degradation when each turn is episodic (self-contained). Non-decomposable tasks degrade worst.
 **Book basis**: Plan-state chaining (Context RFC 3) captures subtask results so later steps can reference them structurally. The episodic directive extends this by ensuring the *descriptions themselves* are self-contained, not just the result chain.
 
 The paper's translation task anomaly is key — zero degradation when each turn is episodic. Combined with the book's plan-state chaining (which carries forward completed subtask results in the system prompt), we can make each subtask effectively a "fresh mini-conversation" that doesn't depend on recalling history.
 
-**Behavior**: Add a structural directive to the guardian's plan decomposition prompt:
+**Behavior**: Add a structural directive to the planner's plan decomposition prompt:
 
 ```
 Decompose the task into INDEPENDENT subtasks where possible.
@@ -169,7 +169,7 @@ If a subtask truly depends on a prior subtask's runtime output (e.g., a generate
 note this explicitly as: [DEPENDS: step N output].
 ```
 
-This doesn't guarantee full independence (some tasks are inherently sequential), but it prompts the guardian to make each subtask's description self-contained — carrying forward the necessary context rather than relying on the model to recall it from conversation history. Plan-state chaining ensures that even when dependencies exist, the completed results are structurally present in the system prompt rather than buried in history.
+This doesn't guarantee full independence (some tasks are inherently sequential), but it prompts the planner to make each subtask's description self-contained — carrying forward the necessary context rather than relying on the model to recall it from conversation history. Plan-state chaining ensures that even when dependencies exist, the completed results are structurally present in the system prompt rather than buried in history.
 
 ### S5: Causal-Chain-Aware Summarization
 
@@ -215,7 +215,7 @@ T7: click [3] (first result "Sony WH-1000XM5") → ERROR: element not found afte
 
 | Detection Signal | Tagged Pathology | Existing Mechanism |
 |---|---|---|
-| Dead-end detection fires (same outcome N times) | `anchoring` | `DEAD_END_DETECTION` in loop.ts |
+| Dead-end detection fires (same outcome N times) | `anchoring` | `STAGNATION_DETECTION` in loop.ts |
 | Redundant action detection fires | `anchoring` | `REDUNDANT_ACTION` in loop.ts |
 | Text-only response with no tool calls | `premature_generation` or `verbosity` | Text-only handler in loop.ts |
 | Rolling distillation discards >60% of messages | `middle_turn_loss` | S1 trigger (new) |
@@ -399,7 +399,7 @@ if (
   progress.reset();
   failedActionMemory.length = 0;
   consecutiveTextOnly = 0;
-  deadEndWindow.length = 0;
+  stagnationWindow.length = 0;
 
   // Stay on smart tier
   if (escalationTier === 0) {
@@ -412,9 +412,9 @@ if (
 
 ### S4: Episodic Subtask Directive
 
-**File**: `src/prompts/registry.ts` (or wherever the guardian plan prompt is defined)
+**File**: `src/prompts/registry.ts` (or wherever the planner plan prompt is defined)
 
-Append to the plan decomposition section of the guardian prompt:
+Append to the plan decomposition section of the planner prompt:
 
 ```typescript
 const EPISODIC_SUBTASK_DIRECTIVE = `
@@ -601,7 +601,7 @@ Add a `pathologies` command to the trace CLI:
 - Test that a `fresh_start_recovery` trace event is emitted
 
 **S4 — Episodic directive**:
-- Test that the guardian prompt includes the episodic subtask directive
+- Test that the planner prompt includes the episodic subtask directive
 - Eval: compare subtask descriptions with/without directive for cross-reference patterns
 
 **S5 — Causal-chain summarization**:
@@ -649,7 +649,7 @@ Use the existing eval infrastructure (`bun run evals`) to measure:
 - **S1**: Reduces context window usage over long sessions. After distillation at turn 8, history shrinks from ~12 messages to ~8 (1 original + 1 summary + 6 recent). Saves ~2000-4000 tokens per cycle.
 - **S2**: Adds ~30-50 tokens per turn. Negligible.
 - **S3**: One-time cost of building `FreshStartBrief` + full history rebuild. Net token savings since the fresh context is much smaller than the accumulated history.
-- **S4**: Adds ~100 tokens to the guardian prompt. One-time per session.
+- **S4**: Adds ~100 tokens to the planner prompt. One-time per session.
 - **S5**: Same output length as current `summarizeHistory()` but with 2x information density per token (action+observation grouped). Zero additional cost.
 - **S6**: Negligible — one `recordEvent()` call piggybacks on existing detection logic.
 

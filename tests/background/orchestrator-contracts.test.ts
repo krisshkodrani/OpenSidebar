@@ -63,20 +63,17 @@ describe("Orchestrator role contracts", () => {
   });
 
   test("executor contract respects global disable flags", () => {
-    const node = makeNode([ToolName.NAVIGATE, ToolName.TAKE_SCREENSHOT, ToolName.DONE]);
+    const node = makeNode([ToolName.NAVIGATE, ToolName.DONE]);
     const contract = buildRoleExecutionContract(
       "executor",
       {
         ...baseSettings,
         disableNavigation: true,
-        disableScreenshot: true,
       },
       node,
     );
 
     expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
-    expect(contract.allowedTools.includes(ToolName.TAKE_SCREENSHOT)).toBe(false);
     expect(contract.disabledTools.has(ToolName.NAVIGATE)).toBe(true);
-    expect(contract.disabledTools.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
   });
 });

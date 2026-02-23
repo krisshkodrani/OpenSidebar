@@ -33,6 +33,31 @@ describe("Orchestrator verifier fallback", () => {
     expect(decision.confidence).toBeGreaterThan(0.5);
   });
 
+  test("fallback skips reroute for blocked output when executor completed", () => {
+    const decision = deriveVerifierFallbackDecision({
+      taskQuery: "Summarize page",
+      objective: "Summarize this page",
+      successCriteria: "Page summarized",
+      output: "Page not found — this is a 404 error page.",
+      executorOutcome: "completed",
+    });
+    // Should NOT reroute — "not found" is page content, not failure
+    expect(decision.decision).not.toBe("reroute");
+  });
+
+  test("accepts when executor completed even without success keywords", () => {
+    const decision = deriveVerifierFallbackDecision({
+      taskQuery: "Summarize page",
+      objective: "Summarize this page",
+      successCriteria: "Page summarized",
+      output: "This is a blog about cooking recipes with 12 posts visible.",
+      executorOutcome: "completed",
+    });
+    expect(decision.decision).toBe("accept");
+    expect(decision.confidence).toBeGreaterThanOrEqual(0.7);
+    expect(decision.reason).toContain("executor");
+  });
+
   test("returns retry when output is inconclusive", () => {
     const decision = deriveVerifierFallbackDecision({
       taskQuery: "Apply filter",
@@ -127,6 +152,25 @@ describe("programmaticVerify", () => {
       successCriteria: "Something done",
     });
     expect(result).toBeNull();
+  });
+
+  test("skips blocked markers when executor completed successfully", () => {
+    const result = programmaticVerify({
+      output: "This is a Page not found page with a support guide link.",
+      successCriteria: "Page summarized",
+      executorOutcome: "completed",
+    });
+    expect(result).toBeNull(); // Falls through to LLM verification
+  });
+
+  test("blocked markers still fire when executor did not complete", () => {
+    const result = programmaticVerify({
+      output: "Page not found, access denied",
+      successCriteria: "Form submitted",
+      executorOutcome: "stopped",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("reroute");
   });
 
   test("error with success marker does not short-circuit to retry", () => {

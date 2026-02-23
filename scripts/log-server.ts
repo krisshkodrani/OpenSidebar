@@ -23,6 +23,7 @@ const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
 const DATA_DIR = join(PROJECT_ROOT, "data");
 const SKILLS_FILE = join(DATA_DIR, "skills.json");
 const MEMORY_FILE = join(DATA_DIR, "memory.json");
+const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 const VIEWER_HTML = join(dirname(import.meta.dir), "scripts", "trace-viewer.html");
 const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
 
@@ -202,6 +203,9 @@ if (!existsSync(TRACE_DIR)) {
 if (!existsSync(RUN_TRACE_DIR)) {
   mkdirSync(RUN_TRACE_DIR, { recursive: true });
 }
+if (!existsSync(SCREENSHOT_DIR)) {
+  mkdirSync(SCREENSHOT_DIR, { recursive: true });
+}
 if (!existsSync(GOLDEN_DIR)) {
   mkdirSync(GOLDEN_DIR, { recursive: true });
 }
@@ -360,6 +364,40 @@ const server = Bun.serve({
         return new Response(null, { status: 204, headers: CORS_HEADERS });
       } catch (err) {
         return new Response(`Trace session error: ${err}`, {
+          status: 500,
+          headers: CORS_HEADERS,
+        });
+      }
+    }
+
+    // Screenshot save endpoint — decode base64 data URL and write to traces/screenshots/
+    if (url.pathname === "/traces/screenshot" && req.method === "POST") {
+      try {
+        const body = await req.json();
+        const sessionId = body?.sessionId;
+        const turnNumber = body?.turnNumber;
+        const dataUrl = body?.dataUrl;
+        if (
+          !sessionId ||
+          typeof sessionId !== "string" ||
+          typeof turnNumber !== "number" ||
+          !dataUrl ||
+          typeof dataUrl !== "string"
+        ) {
+          return new Response("Expected { sessionId, turnNumber, dataUrl }", {
+            status: 400,
+            headers: CORS_HEADERS,
+          });
+        }
+        // Strip data URL prefix (e.g. "data:image/jpeg;base64,")
+        const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+        const buffer = Buffer.from(base64, "base64");
+        const filename = `${sessionId}-T${turnNumber}.jpg`;
+        const filepath = join(SCREENSHOT_DIR, filename);
+        await writeFile(filepath, buffer);
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      } catch (err) {
+        return new Response(`Screenshot save error: ${err}`, {
           status: 500,
           headers: CORS_HEADERS,
         });
@@ -564,6 +602,30 @@ const server = Bun.serve({
           headers: CORS_HEADERS,
         });
       }
+    }
+
+    // GET /api/traces/:sessionId/screenshots/:turn — serve screenshot image
+    const screenshotMatch = url.pathname.match(
+      /^\/api\/traces\/([a-zA-Z0-9_-]+)\/screenshots\/(\d+)$/,
+    );
+    if (screenshotMatch && req.method === "GET") {
+      const sessionId = screenshotMatch[1];
+      const turn = screenshotMatch[2];
+      const filepath = join(SCREENSHOT_DIR, `${sessionId}-T${turn}.jpg`);
+      if (!existsSync(filepath)) {
+        return new Response("Screenshot not found", {
+          status: 404,
+          headers: CORS_HEADERS,
+        });
+      }
+      const file = Bun.file(filepath);
+      return new Response(file, {
+        headers: {
+          ...CORS_HEADERS,
+          "Content-Type": "image/jpeg",
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
     }
 
     // GET /viewer — serve the trace viewer HTML

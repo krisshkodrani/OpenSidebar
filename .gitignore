@@ -52,4 +52,6 @@ full-test-output.txt
 test-output.txt
 analyze-log.js
 
-/books
+/books/*
+!/books/notes/
+!/books/notes/**

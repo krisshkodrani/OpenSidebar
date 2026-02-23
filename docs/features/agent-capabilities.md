@@ -11,7 +11,7 @@ OpenSidebar uses a single **Unified Mode** that combines the speed of parallel e
 - **Parallel Tool Execution**: Multiple non-conflicting actions in a single turn (e.g., reading several elements, checking multiple checkboxes).
 - **Dynamic Context Compression**: Automatic history compression (NONE→LIGHT→MEDIUM→HEAVY) to maintain performance within token budgets.
 - **Real-Time Streaming**: See the agent's thought process and actions character-by-character.
-- **Context Distillation**: On escalation, `distillForEscalation()` compresses full history into a structured timeline (~1K tokens).
+- **Context Distillation**: On escalation, `summarizeTrajectory()` compresses full history into a structured timeline (~1K tokens).
 
 ## Two-Tier LLM Architecture
 
@@ -79,9 +79,9 @@ Blocks exact tool+args repeats that previously failed. `FAILED_ACTION_MEMORY` bu
 
 Sliding window of 8 recent actions. Warns at 2 consecutive repeats of the same action, blocks at 3 to prevent grinding loops.
 
-### Dead-End Detection
+### Stagnation Detection
 
-Outcome fingerprinting via `normalizeOutcome()` detects when the agent keeps getting the same result. Nudge injected at 3 identical consecutive outcomes, strategy pivot forced at 5. Sliding window of 6 outcomes.
+Outcome fingerprinting via `normalizeOutcome()` detects when the agent keeps getting the same result. Reflection injected at 3 identical consecutive outcomes, strategy pivot forced at 5. Sliding window of 6 outcomes.
 
 ### Element ID Validation
 
@@ -145,7 +145,7 @@ The `dismiss_overlays` tool triggers on-demand modal cleanup via the `DISMISS_MO
 Learned skills enable the agent to replay successful plans:
 
 - **Teach Mode**: When ON and a task succeeds, the orchestrator extracts the plan as a reusable skill
-- **Hint Coaching**: During active runs, input area switches to amber "Send a hint..." mode for real-time guidance
+- **Feedback Coaching**: During active runs, input area switches to amber "Send feedback..." mode for real-time guidance
 - **Auto-Replay**: Matching skills are replayed on similar future queries
 - **Management**: Settings → Learned Skills panel with pin/enable controls
 

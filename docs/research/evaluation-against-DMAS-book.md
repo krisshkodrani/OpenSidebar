@@ -144,13 +144,13 @@ async function searchMemory(query: string, limit: number): Promise<MemorySearchR
 interface TraceEntry {
   sessionId: string;
   turnNumber: number;
-  snapshot: { url, title, elementCount, viewportTextLength, scrollY };
+  snapshot: { url, title, elementCount, visibleContentLength, scrollY };
   elements: TaggedElement[];
   llmRequest: { model, messageCount, toolCount, compressionLevel };
   llmResponse: { content, toolCalls, finishReason, usage, durationMs };
   toolExecutions: TraceToolExecution[];
   events: TraceEvent[];
-  progressState: { staleTurns, signal };
+  progressState: { stagnantTurns, signal };
 }
 ```
 
@@ -282,8 +282,8 @@ export function* parseSSEChunks(text: string): Generator<SSEChunk, void, undefin
 
 **What OpenSidebar Implements:**
 ```typescript
-// PlanGuardian generates plan upfront, but revision is limited
-class PlanGuardian {
+// TaskPlanner generates plan upfront, but revision is limited
+class TaskPlanner {
   async decompose(query: string, snapshot: DomSnapshot): Promise<TaskPlan | null> {
     // Single-shot planning with smart model
     // Returns plan or null for simple tasks
@@ -292,13 +292,13 @@ class PlanGuardian {
 ```
 
 **Why This Is Problematic:**
-- ⚠️ **Single-shot planning:** Guardian creates plan once; replanning is still mostly reactive
+- ⚠️ **Single-shot planning:** Planner creates plan once; replanning is still mostly reactive
 - ⚠️ **No meta-agent** specifically focused on planning/replanning
 - ⚠️ **Plan stuck at current index:** Can't easily backtrack or branch
 - ⚠️ **Generic prompting** prevents task-specific optimization (by design, but limits adaptability)
 
 **Evidence:**
-- PlanGuardian in `src/background/agent/guardian.ts`
+- TaskPlanner in `src/background/agent/planner.ts`
 - No dedicated replanner agent; revision depends on loop heuristics and model behavior
 - No hierarchical planning or multi-level decomposition
 
@@ -756,7 +756,7 @@ if (turnCount % 5 === 0) {
     turnNumber: turnCount,
     timestamp: Date.now(),
     agentState: {
-      plan: this.guardian.getCurrentPlan(),
+      plan: this.planner.getCurrentPlan(),
       context: this.context.getMessages(),
       toolResults: this.executedTools,
       metrics: this.metrics

@@ -11,7 +11,7 @@ The side panel is OpenSidebar's user-facing interface built with React, TypeScri
 - `App.tsx` - Main component, message listener, composes all sub-components
 - `store.ts` - Zustand + Immer state management
 - `bridge.ts` - Centralized message router. Routes all `RuntimeMessage` types to store actions
-- `components/` - UI components (Header, InputArea, MessageBubble, ControlBar, StuckBanner, TaskProgressPanel, MetricsBar, CompletionSummary, SettingsDrawer, SavedPromptsDrawer, etc.)
+- `components/` - UI components (Header, InputArea, MessageBubble, ControlBar, StallBanner, TaskProgressPanel, MetricsBar, CompletionSummary, SettingsDrawer, SavedPromptsDrawer, etc.)
 
 ## Component Hierarchy
 
@@ -22,7 +22,7 @@ App (Main container)
 ├── SettingsDrawer (conditional overlay)
 │   └── LearnedSkillsPanel (skills management with pin/enable)
 ├── SavedPromptsDrawer (conditional overlay)
-├── StuckBanner (visible when agent is stuck)
+├── StallBanner (visible when agent is stalled)
 ├── EscalationBanner (visible during escalation dialog)
 ├── ApprovalBanner (plan approval prompt)
 ├── RecoveryBanner (recovery actions)
@@ -42,7 +42,7 @@ App (Main container)
 ├── TaskProgressPanel (visible during decomposed tasks)
 └── Bottom Section
     └── InputArea
-        └── Send / Send Hint (amber) / Stop button
+        └── Send / Send Feedback (amber) / Stop button
 ```
 
 ## State Management
@@ -62,7 +62,7 @@ interface SidePanelState {
   error: string | null; // Error message
   taskProgress: TaskProgressMessage["payload"] | null; // Active subtask progress
   taskCompletion: TaskCompletionMessage["payload"] | null; // Completed task report
-  stuckState: StuckState | null; // Agent stuck detection
+  stagnationState: StagnationState | null; // Agent stagnation detection
   turnProgress: TurnProgress | null; // Current turn / maxTurns
   sessionMetrics: SessionMetrics | null; // Real-time token/cost tracking
   savedPrompts: SavedPrompt[]; // User-saved prompt templates
@@ -77,7 +77,7 @@ interface SidePanelState {
 - `updateStatus(status, detail)` - Update agent status
 - `setAgentRunning(isRunning)` - Toggle running state
 - `setInputText(text)` - Update input field
-- `setStuckState(state)` - Set/clear stuck detection banner
+- `setStagnationState(state)` - Set/clear stuck detection banner
 - `setTaskProgress(payload)` - Update subtask progress panel
 - `setTaskCompletion(payload)` - Set task completion report
 - `setTurnProgress(payload)` - Update turn counter
@@ -107,8 +107,8 @@ useEffect(() => {
       case "AGENT_RESPONSE":
         handleAgentResponse(message.payload);
         break;
-      case "AGENT_STUCK":
-        setStuckState(message.payload);
+      case "AGENT_STAGNATION":
+        setStagnationState(message.payload);
         break;
       case "AGENT_TURN":
         setTurnProgress(message.payload);
@@ -304,17 +304,15 @@ Displays chat messages with:
 
 - Auto-resizing textarea
 - Send button (converts to Stop button when running)
-- **Hint mode**: When agent is running, input stays enabled — messages are sent as hints with amber "Send Hint" button
+- **Feedback mode**: When agent is running, input stays enabled — messages are sent as feedback with amber "Send Feedback" button
 - Enter to submit, Shift+Enter for new line
 
-### StuckBanner
+### StallBanner
 
 - Fixed-position banner between Header and main chat area
-- Visible only when `stuckState !== null`
-- **Nudge**: yellow styling
-- **Pivot**: orange styling
+- Visible only when `stagnationState !== null`
 - **Escalate**: red styling
-- Dismissible; auto-clears on `AGENT_STUCK` with `signal: "resolved"` or when agent goes idle
+- Dismissible; auto-clears on `AGENT_STAGNATION` with `signal: "resolved"` or when agent goes idle
 
 ### TaskProgressPanel
 

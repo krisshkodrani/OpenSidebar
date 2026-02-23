@@ -129,6 +129,19 @@ describe("Orchestrator integration join tests", () => {
 
     (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
+    // Mock fetch so the router classifier returns "plan" (tests exercise the planner pipeline)
+    const _origFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      if (url.startsWith("http://127.0.0.1:7589/")) {
+        return new Response(null, { status: 204 });
+      }
+      // Router classifier calls — return "plan" so planner always runs
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"route":"plan","confidence":0.9,"reason":"test"}' } }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+
     (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
       runtimeMessages.push(msg);
       if (msg?.type === "ESCALATION_REQUEST" && autoEscalationDecision && activeOrchestrator) {
@@ -188,7 +201,7 @@ describe("Orchestrator integration join tests", () => {
         snapshot: {
           title: "Catalog Page",
           url: "https://example.com/catalog",
-          viewportText: "product list and add to cart",
+          visibleContent: "product list and add to cart",
           elements: [],
           viewport: { width: 1200, height: 800 },
           scroll: { x: 0, y: 0, maxY: 5000 },
@@ -199,7 +212,10 @@ describe("Orchestrator integration join tests", () => {
 
     orchestratorDeps = {
       createPlanner: () => ({
-        buildNodes: async (...args: unknown[]) => plannerBuildNodesImpl(...args),
+        buildNodes: async (...args: unknown[]) => {
+          const nodes = await plannerBuildNodesImpl(...args);
+          return { nodes, isSingleNode: nodes.length <= 1, difficulty: "moderate" as const };
+        },
         expandNode: async (...args: unknown[]) => plannerExpandNodeImpl(...args),
       }),
       createVerifier: () => ({
@@ -237,7 +253,7 @@ describe("Orchestrator integration join tests", () => {
           isPaused() {
             return false;
           },
-          injectHint(_text: string) {},
+          injectFeedback(_text: string) {},
         } as any;
       },
       workspaceManager: {

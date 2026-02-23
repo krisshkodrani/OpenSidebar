@@ -55,18 +55,18 @@ LLM output:  escalate({ reason: "This captcha requires spatial reasoning" })
 - **Permanent** for the session — no automatic de-escalation
 - Sets `voluntaryEscalation = true`
 - Refreshes the DOM snapshot so the smart model sees current state
-- Injects `ESCALATION_NUDGE` to orient the smart model
+- Injects `ESCALATION_REFLECTION` to orient the smart model
 - Runs context distillation (see below)
 
 This is the cleanest path because the model self-identifies its limitation.
 
 ### 2. Stuck Detection (stale turns)
 
-The `ProgressTracker` fingerprints each turn's DOM snapshot (URL + element count + element signatures). If the fingerprint hasn't changed for consecutive turns, it fires signals:
+The `StagnationMonitor` fingerprints each turn's DOM snapshot (URL + element count + element signatures). If the fingerprint hasn't changed for consecutive turns, it fires signals:
 
 ```
-Stale turns 1-5:   nudge ("try a different approach")
-Stale turn 6:      escalate to smart model
+Stagnant turns 1-5:   reflection ("try a different approach")
+Stagnant turn 6:       escalate to smart model
 ```
 
 **Behavior:**
@@ -79,7 +79,7 @@ Stale turn 6:      escalate to smart model
 When the LLM responds with text but no tool calls, the loop treats it as a failure to act. Filler text (low-information narration like "I'll now click the button") is detected and fast-tracked — one filler response adds +2 to the counter.
 
 ```
-1st text-only:   nudge ("you must call a tool")
+1st text-only:   reflection ("you must call a tool")
 2nd text-only:   escalate to smart model
 3rd+ text-only (post-escalation):  give up (return IDLE to user)
 ```
@@ -95,25 +95,25 @@ When a multi-step plan is active, a watchdog tracks how long the agent spends on
 **Behavior:**
 - **Temporary** — subject to de-escalation
 - Performs a strategy pivot
-- Injects a step-specific watchdog message + `ESCALATION_NUDGE`
+- Injects a step-specific watchdog message + `ESCALATION_REFLECTION`
 
 ## What Happens at Escalation
 
 Every escalation path does the same core steps:
 
 ```
-1. context.distillForEscalation()  → compress history for smart model
+1. context.summarizeTrajectory()  → compress history for smart model
 2. llm.switchToSmart()             → swap to smart pool (Cerebras → OpenRouter)
 3. context.setModelTier("smart")   → swap system prompt persona
-4. Inject ESCALATION_NUDGE         → orient the smart model
+4. Inject ESCALATION_REFLECTION         → orient the smart model
 ```
 
 ### Context Distillation
 
-This is the key innovation replacing the old "expand to 64K context" approach. Instead of giving the smart model the full conversation history (which could be 40K+ tokens of noisy observe→act loops), `distillForEscalation()` compresses the entire history into a structured timeline:
+This is the key innovation replacing the old "expand to 64K context" approach. Instead of giving the smart model the full conversation history (which could be 40K+ tokens of noisy observe→act loops), `summarizeTrajectory()` compresses the entire history into a structured timeline:
 
 ```typescript
-public distillForEscalation(originalQuery: string): void {
+public summarizeTrajectory(originalQuery: string): void {
   const timeline = summarizeHistory(this.history);
   this.history = [];
   this.history.push({ role: "user", content: originalQuery });
@@ -135,9 +135,9 @@ T4: read_page → 15 elements, "Search Results"
 
 This replaces 40K+ tokens of raw history with ~1K tokens of structured timeline, making 32K context sufficient for the smart model (no 64K expansion needed). The smart model gets the original query + a concise log of everything that was tried, which is all it needs to formulate a new strategy.
 
-### ESCALATION_NUDGE
+### ESCALATION_REFLECTION
 
-The `ESCALATION_NUDGE` is critical. It tells the smart model:
+The `ESCALATION_REFLECTION` is critical. It tells the smart model:
 
 > You are now the upgraded model, brought in because the previous model got stuck.
 > Review the conversation history and current page state. Then:
@@ -167,11 +167,11 @@ On de-escalation:
 ```
 1. llm.switchToFast()          → swap back to fast pool (Cerebras → Groq → OpenRouter)
 2. context.setModelTier("fast")  → swap persona back
-3. Inject DEESCALATION_NUDGE   → orient the fast model
+3. Inject DEESCALATION_REFLECTION   → orient the fast model
 4. cooldownRemaining = 3       → prevent immediate re-escalation
 ```
 
-The `DEESCALATION_NUDGE` tells the fast model:
+The `DEESCALATION_REFLECTION` tells the fast model:
 
 > The smarter model made progress and you're back in control.
 > Review the recent history to understand what was accomplished. Continue from where it left off.
@@ -199,9 +199,9 @@ Turn  3 [fast/cerebras]   → type password, click submit      ✓
 Turn  4 [fast/cerebras]   → page has a CAPTCHA puzzle        ✗ stale
 Turn  5 [fast/cerebras]   → tries clicking CAPTCHA           ✗ stale
 Turn  6 [fast/cerebras]   → tries again                      ✗ stale
-                            ↳ nudge injected
+                            ↳ reflection injected
 Turn  7 [fast/cerebras]   → still stuck                      ✗ stale
-                            ↳ ESCALATE: distill + screenshot + nudge
+                            ↳ ESCALATE: distill + screenshot + reflection
                             ↳ History compressed: 7 turns → ~500 token timeline
 Turn  8 [smart/cerebras]  → analyzes screenshot + timeline, reasons about puzzle
 Turn  9 [smart/cerebras]  → solves CAPTCHA with execute_js   ✓ progress!
@@ -255,9 +255,9 @@ OpenRouter is the absolute fallback for both tiers — even if cooled down, `get
 
 9. **Same tool set for both models.** Both tiers have access to all 52 tools. The difference is reasoning quality, not capability.
 
-## Guardian Integration
+## Planner Integration
 
-The `PlanGuardian` (task decomposition and completion validation) also uses GLM-4.7 via the smart pool:
+The `TaskPlanner` (task decomposition and completion validation) also uses GLM-4.7 via the smart pool:
 
 ```typescript
 constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
@@ -266,4 +266,4 @@ constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
 }
 ```
 
-This means the guardian benefits from Cerebras speed + prefix caching for both `decompose()` and `validateDone()` calls.
+This means the planner benefits from Cerebras speed + prefix caching for both `decompose()` and `validateDone()` calls.

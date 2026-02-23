@@ -10,6 +10,7 @@ Feature proposals and technical decisions for OpenSidebar.
 | [Programmatic Verification](./rfc-programmatic-verification.md) | **Proposed** | Replace LLM-based node verification with DOM-state checks; eliminate critic/advocate debate — based on Dibia Ch 10, Gulli Ch 4, Rothman Ch 2 |
 | [Batched Action Execution](./rfc-batched-actions.md) | **Proposed** | Reduce LLM round trips for predictable workflows (forms, logins) via batch hints + `fill_form` tool — based on Dibia Ch 5, Gulli Ch 3/6, Rothman Ch 4 |
 | [Orchestrator Call Reduction](./rfc-orchestrator-call-reduction.md) | **Proposed** | Remove deliberation, plan review, debate rounds, retrospective LLM calls; replace with programmatic checks — based on Dibia Ch 11, Gulli Ch 7/17, Rothman Ch 4/8 |
+| [Centralized Prompt Management](./rfc-centralized-prompt-management.md) | **Proposed** | Move all prompts into root `prompts/`, compile at build time, and share one prompt manifest across runtime + evals |
 
 ## Orchestrator Design
 

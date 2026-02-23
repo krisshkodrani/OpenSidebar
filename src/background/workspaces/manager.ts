@@ -6,17 +6,8 @@ import { isContentScript } from "../../utils/context";
 const STORAGE_KEY_WORKSPACES = "opensidebar:workspaces";
 const STORAGE_KEY_NEXT_NUM = "opensidebar:nextWorkspaceNum";
 
-// Color rotation for workspaces
-const WORKSPACE_COLORS: chrome.tabGroups.ColorEnum[] = [
-  "blue",
-  "red",
-  "yellow",
-  "green",
-  "pink",
-  "purple",
-  "cyan",
-  "orange",
-];
+// Static tab-group color for all workspaces
+const GROUP_COLOR: chrome.tabGroups.ColorEnum = "blue";
 
 type WorkspaceManagerDeps = {
   isContentScript?: () => boolean;
@@ -76,6 +67,10 @@ export class WorkspaceManager {
       logger.info("workspace", "WorkspaceManager initialized", {
         count: this.workspaces.length,
       });
+
+      // Re-apply title + color to every persisted tab group so they survive
+      // browser / service-worker restarts.
+      this.reconcileTabGroups();
     } catch (error) {
       logger.error("workspace", "Failed to initialize WorkspaceManager", {
         error,
@@ -122,6 +117,22 @@ export class WorkspaceManager {
     }
 
     this.listenersSetup = true;
+  }
+
+  /**
+   * Re-apply title + color to every persisted tab group.
+   * Chrome tab groups survive browser restarts but the extension may not have
+   * called tabGroups.update since the last SW wake-up.  Fire-and-forget.
+   */
+  private reconcileTabGroups(): void {
+    for (const ws of this.workspaces) {
+      if (ws.tabGroupId === null) continue;
+      chrome.tabGroups
+        .update(ws.tabGroupId, { title: ws.name, color: ws.color })
+        .catch(() => {
+          // Group may no longer exist — ignore silently
+        });
+    }
   }
 
   /**
@@ -242,7 +253,7 @@ export class WorkspaceManager {
 
   public async createWorkspace(
     name: string,
-    color: chrome.tabGroups.ColorEnum = "blue",
+    color: chrome.tabGroups.ColorEnum = GROUP_COLOR,
     initialTabId?: number,
   ): Promise<Workspace> {
     logger.info("workspace", "Creating workspace started", {
@@ -373,7 +384,7 @@ export class WorkspaceManager {
   }
 
   public getNextColor(): chrome.tabGroups.ColorEnum {
-    return WORKSPACE_COLORS[this.workspaces.length % WORKSPACE_COLORS.length];
+    return GROUP_COLOR;
   }
 
   public async getWorkspaceForTab(tabId: number): Promise<Workspace | null> {

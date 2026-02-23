@@ -1210,6 +1210,130 @@
     font-weight: 600;
     letter-spacing: 0.3px;
   }
+
+  /* ── Sub-View Toggle (Turns | Perception) ───────────────────── */
+  .subview-toggle {
+    display: flex;
+    gap: 2px;
+    padding: 8px 20px 0;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+  }
+  .subview-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #7a7a9e;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .subview-btn:hover { color: #b0b0d0; }
+  .subview-btn.active {
+    color: #5dade2;
+    border-bottom-color: #3a7bd5;
+  }
+
+  /* ── Perception Cards ───────────────────────────────────────── */
+  .perception-card {
+    background: #16213e;
+    border: 1px solid rgba(15, 52, 96, 0.6);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .perception-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(15, 52, 96, 0.3);
+    border-bottom: 1px solid rgba(15, 52, 96, 0.4);
+  }
+  .perception-card-header .turn-number {
+    font-size: 13px;
+    font-weight: 700;
+    color: #5dade2;
+  }
+  .perception-card-body {
+    display: flex;
+    min-height: 200px;
+  }
+  .perception-left {
+    flex: 1;
+    border-right: 1px solid rgba(15, 52, 96, 0.4);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .perception-right {
+    flex: 1;
+    padding: 12px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .perception-screenshot {
+    max-width: 100%;
+    border-radius: 4px;
+    border: 1px solid rgba(15, 52, 96, 0.6);
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .perception-screenshot:hover { opacity: 0.85; }
+  .perception-screenshot-placeholder {
+    background: rgba(15, 52, 96, 0.3);
+    border: 1px dashed rgba(15, 52, 96, 0.6);
+    border-radius: 4px;
+    padding: 30px;
+    text-align: center;
+    color: #4a4a6e;
+    font-size: 12px;
+  }
+  .perception-elements {
+    font-size: 11px;
+    color: #7a7a9e;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    max-height: 250px;
+    overflow-y: auto;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .perception-interpretation {
+    font-size: 12px;
+    color: #c0c0d8;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .perception-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: #7a7a9e;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid rgba(15, 52, 96, 0.4);
+  }
+  .perception-meta span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .perception-no-data {
+    padding: 40px 16px;
+    text-align: center;
+    color: #7a7a9e;
+    font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -1284,12 +1408,17 @@
         <div id="trace-detail-query" class="detail-header-title"></div>
         <div id="trace-detail-stats" class="detail-header-stats"></div>
       </div>
+      <div id="trace-subview-toggle" class="subview-toggle" style="display:none;">
+        <button class="subview-btn active" data-subview="turns">Turns</button>
+        <button class="subview-btn" data-subview="perception">Perception</button>
+      </div>
       <div id="trace-search-row" class="search-row" style="display:none;">
         <input id="trace-turn-search" type="text" class="search-input" placeholder="Filter turns by tool name, text, event type..." />
       </div>
       <div id="trace-turn-list" class="detail-body">
         <div class="detail-empty"><div class="icon">&#9776;</div><div>Select a session to view turns</div></div>
       </div>
+      <div id="trace-perception-list" class="detail-body" style="display:none;"></div>
     </div>
   </div>
 
@@ -1467,6 +1596,7 @@
     currentSessionId: null,
     currentEntries: [],
     searchQuery: '',
+    activeSubview: 'turns',
   };
 
   var traceEls = {
@@ -1486,6 +1616,8 @@
     detailOutcome: document.getElementById('trace-detail-outcome'),
     detailQuery: document.getElementById('trace-detail-query'),
     detailStats: document.getElementById('trace-detail-stats'),
+    subviewToggle: document.getElementById('trace-subview-toggle'),
+    perceptionList: document.getElementById('trace-perception-list'),
   };
 
   function traceFilterState() {
@@ -1501,9 +1633,11 @@
 
   function isoDayOffset(daysBack) {
     var d = new Date();
-    d.setHours(0, 0, 0, 0);
     d.setDate(d.getDate() - daysBack);
-    return d.toISOString().slice(0, 10);
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
   }
 
   function fetchTraceSessions(filters) {
@@ -1975,11 +2109,115 @@
     });
   }
 
+  function renderPerceptionList() {
+    var entries = traceState.currentEntries;
+    var perceptionEntries = [];
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].perception) {
+        perceptionEntries.push(entries[i]);
+      }
+    }
+    if (perceptionEntries.length === 0) {
+      traceEls.perceptionList.innerHTML =
+        '<div class="perception-no-data">No perception data in this session.<br>Perception data is recorded when the vision model interprets page screenshots.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < perceptionEntries.length; i++) {
+      var entry = perceptionEntries[i];
+      var p = entry.perception;
+      var turnNum = entry.turnNumber != null ? entry.turnNumber : i;
+      var sessionId = entry.sessionId || traceState.currentSessionId;
+      var screenshotUrl = '/api/traces/' + encodeURIComponent(sessionId) + '/screenshots/' + turnNum;
+
+      html += '<div class="perception-card">';
+      html += '<div class="perception-card-header">';
+      html += '<span class="turn-number">Turn ' + turnNum + '</span>';
+      html += '<span class="badge badge-model">' + escapeHtml(p.model || 'unknown') + '</span>';
+      if (p.cached) html += '<span class="badge badge-stopped">cached</span>';
+      html += '</div>';
+
+      html += '<div class="perception-card-body">';
+
+      // Left: screenshot + elements
+      html += '<div class="perception-left">';
+      html += '<img class="perception-screenshot" src="' + escapeHtml(screenshotUrl) + '" alt="Turn ' + turnNum + ' screenshot" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';" />';
+      html += '<div class="perception-screenshot-placeholder" style="display:none;">Screenshot not available</div>';
+
+      // Compact element list
+      if (entry.elements && entry.elements.length > 0) {
+        var elemLines = [];
+        var maxElems = Math.min(entry.elements.length, 25);
+        for (var j = 0; j < maxElems; j++) {
+          var el = entry.elements[j];
+          var line = '[' + el.tag + '] ' + el.tagName;
+          if (el.attributes && el.attributes.id) line += '#' + el.attributes.id;
+          if (el.attributes && el.attributes.type) line += ' type=' + el.attributes.type;
+          if (el.text) line += ' "' + el.text.slice(0, 80) + '"';
+          elemLines.push(line);
+        }
+        if (entry.elements.length > maxElems) {
+          elemLines.push('... +' + (entry.elements.length - maxElems) + ' more');
+        }
+        html += '<div class="perception-elements">' + escapeHtml(elemLines.join('\n')) + '</div>';
+      }
+      html += '</div>';
+
+      // Right: interpretation + metadata
+      html += '<div class="perception-right">';
+      html += '<div class="perception-interpretation">' + escapeHtml(p.interpretation) + '</div>';
+      html += '<div class="perception-meta">';
+      html += '<span>Model: ' + escapeHtml(p.model || '?') + '</span>';
+      if (p.providerId) html += '<span>Provider: ' + escapeHtml(p.providerId) + '</span>';
+      html += '<span>Duration: ' + (p.durationMs != null ? p.durationMs + 'ms' : '?') + '</span>';
+      html += '<span>Cached: ' + (p.cached ? 'Yes' : 'No') + '</span>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '</div></div>';
+    }
+    traceEls.perceptionList.innerHTML = html;
+  }
+
+  function updateSubviewCounts() {
+    var entries = traceState.currentEntries;
+    var turnCount = entries.length;
+    var perceptionCount = 0;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].perception) perceptionCount++;
+    }
+    var btns = traceEls.subviewToggle.querySelectorAll('.subview-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var sv = btns[i].getAttribute('data-subview');
+      if (sv === 'turns') btns[i].textContent = 'Turns (' + turnCount + ')';
+      else if (sv === 'perception') btns[i].textContent = 'Perception (' + perceptionCount + ')';
+    }
+  }
+
+  function switchSubview(view) {
+    traceState.activeSubview = view;
+    var btns = traceEls.subviewToggle.querySelectorAll('.subview-btn');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('active', btns[i].getAttribute('data-subview') === view);
+    }
+    if (view === 'turns') {
+      traceEls.turnList.style.display = '';
+      traceEls.searchRow.style.display = '';
+      traceEls.perceptionList.style.display = 'none';
+    } else {
+      traceEls.turnList.style.display = 'none';
+      traceEls.searchRow.style.display = 'none';
+      traceEls.perceptionList.style.display = '';
+      renderPerceptionList();
+    }
+  }
+
   function selectTraceSession(sessionId) {
     if (traceState.currentSessionId === sessionId) return;
     traceState.currentSessionId = sessionId;
     traceState.currentEntries = [];
     traceState.searchQuery = '';
+    traceState.activeSubview = 'turns';
     traceEls.turnSearch.value = '';
     renderTraceSessionList();
 
@@ -1988,11 +2226,24 @@
       if (traceState.allSessions[i].sessionId === sessionId) { session = traceState.allSessions[i]; break; }
     }
     if (session) renderTraceTurnHeader(session);
+    traceEls.subviewToggle.style.display = '';
+    var resetBtns = traceEls.subviewToggle.querySelectorAll('.subview-btn');
+    for (var i = 0; i < resetBtns.length; i++) {
+      var sv = resetBtns[i].getAttribute('data-subview');
+      if (sv === 'turns') resetBtns[i].textContent = 'Turns';
+      else if (sv === 'perception') resetBtns[i].textContent = 'Perception';
+    }
+    switchSubview('turns');
     traceEls.turnList.innerHTML = '<div class="item-loading"><div class="spinner"></div><div>Loading turns...</div></div>';
 
     fetchTraceEntries(sessionId).then(function(entries) {
       traceState.currentEntries = entries;
-      renderTraceTurnList();
+      updateSubviewCounts();
+      if (traceState.activeSubview === 'turns') {
+        renderTraceTurnList();
+      } else {
+        renderPerceptionList();
+      }
     }).catch(function(err) {
       traceEls.turnList.innerHTML = '<div class="error-banner">Failed to load turns: ' + escapeHtml(String(err)) + '</div>';
     });
@@ -2011,6 +2262,9 @@
         traceState.currentEntries = [];
         traceEls.detailHeader.style.display = 'none';
         traceEls.searchRow.style.display = 'none';
+        traceEls.subviewToggle.style.display = 'none';
+        traceEls.perceptionList.style.display = 'none';
+        traceEls.turnList.style.display = '';
         traceEls.turnList.innerHTML = '<div class="detail-empty"><div class="icon">&#9776;</div><div>Select a session to view turns</div></div>';
       }
     }).catch(function(err) {
@@ -2057,6 +2311,11 @@
       if (e.key === 'Escape' && document.activeElement === traceEls.turnSearch) {
         traceEls.turnSearch.value = ''; traceState.searchQuery = ''; renderTraceTurnList();
       }
+    });
+    traceEls.subviewToggle.querySelectorAll('.subview-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        switchSubview(this.getAttribute('data-subview'));
+      });
     });
 
     fetchTraceDays().then(function(days) {

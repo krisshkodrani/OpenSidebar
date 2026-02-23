@@ -117,6 +117,17 @@ describe("Orchestrator conversation collaboration", () => {
     chromeAny.scripting.executeScript ??= mock(async () => undefined);
     (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
+    // Mock fetch so the router classifier returns "plan" (tests exercise the planner pipeline)
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      if (url.startsWith("http://127.0.0.1:7589/")) {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"route":"plan","confidence":0.9,"reason":"test"}' } }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+
     (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
       runtimeMessages.push(msg);
       return { ok: true };
@@ -163,7 +174,7 @@ describe("Orchestrator conversation collaboration", () => {
         snapshot: {
           title: "Test Page",
           url: "https://example.com/test",
-          viewportText: "test page content",
+          visibleContent: "test page content",
           elements: [],
           viewport: { width: 1200, height: 800 },
           scroll: { x: 0, y: 0, maxY: 5000 },
@@ -174,7 +185,10 @@ describe("Orchestrator conversation collaboration", () => {
 
     orchestratorDeps = {
       createPlanner: () => ({
-        buildNodes: async (...args: unknown[]) => plannerBuildNodesImpl(...args),
+        buildNodes: async (...args: unknown[]) => {
+          const nodes = await plannerBuildNodesImpl(...args);
+          return { nodes, isSingleNode: nodes.length <= 1, difficulty: "moderate" as const };
+        },
         expandNode: async (...args: unknown[]) => plannerExpandNodeImpl(...args),
       }),
       createVerifier: () => ({
@@ -208,7 +222,7 @@ describe("Orchestrator conversation collaboration", () => {
           pause() {},
           resume() {},
           isPaused() { return false; },
-          injectHint(_text: string) {},
+          injectFeedback(_text: string) {},
         } as any;
       },
       workspaceManager: {

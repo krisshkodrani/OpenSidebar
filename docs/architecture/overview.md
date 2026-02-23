@@ -167,7 +167,7 @@ src/
 │   ├── agent/           # Agent loop (single-step execution)
 │   │   ├── loop.ts      # AgentLoop (LLM→tool→LLM cycle)
 │   │   ├── context.ts   # ContextManager (sliding window + distillation)
-│   │   ├── progress.ts  # ProgressTracker (stuck detection)
+│   │   ├── stagnation.ts # StagnationMonitor (stuck detection)
 │   │   ├── step-labels.ts
 │   │   ├── tool-recovery.ts
 │   │   └── trace.ts     # TraceRecorder

@@ -72,7 +72,7 @@ All three sources arrive at the same conclusion from different angles:
 
 **P3: Escalation thrashing on medium tasks.** `ESCALATION_LIMITS.MAX_CYCLES = 5` and `COOLDOWN_TURNS = 3` are calibrated for an "average" task. But a simple task should never escalate more than once (and ideally zero times), while a hard task might legitimately need 3–4 escalation cycles as it explores different strategies.
 
-**P4: Wasted guardian rejections.** `MAX_DONE_REJECTIONS = 3` means the guardian can reject `done()` three times regardless of task complexity. For a simple task, the agent was probably right the first time — the guardian is second-guessing a correct completion. For a complex task, 3 rejections may not be enough to prevent premature termination on a partially-completed workflow.
+**P4: Wasted planner rejections.** `MAX_DONE_REJECTIONS = 3` means the planner can reject `done()` three times regardless of task complexity. For a simple task, the agent was probably right the first time — the planner is second-guessing a correct completion. For a complex task, 3 rejections may not be enough to prevent premature termination on a partially-completed workflow.
 
 **P5: No feedback loop.** All constants are compile-time values. The system cannot learn from its own execution history. A task that took 25 turns last time gets the same limits as a task the agent has never seen. This contradicts Rothman's "engineer for production reality" principle and the tracing analysis's call for "auto-remediation triggers."
 
@@ -81,7 +81,7 @@ All three sources arrive at the same conclusion from different angles:
 - Replacing the existing constants file (it remains the source of static defaults)
 - Making *all* constants adaptive (safety rails stay fixed — see Classification below)
 - Requiring the smart model for every task (fast-tier tasks use defaults)
-- Adding LLM calls solely to assess difficulty (piggyback on existing guardian decomposition)
+- Adding LLM calls solely to assess difficulty (piggyback on existing planner decomposition)
 - Runtime learning across sessions (future work — this RFC covers per-session adaptation only)
 
 ## Solution
@@ -99,18 +99,18 @@ All three sources arrive at the same conclusion from different angles:
 | **Safety rails** | `MAX_SESSION_MS`, `APPROVAL_TIMEOUT_MS`, `sanitizeUserInput`, `sanitizeForPrompt` | No | Protect user and system. Model must not extend these. |
 | **Infrastructure** | `COOLDOWN_MS`, backoff formulas, `ALARM_PERIOD_MINUTES`, `FLUSH_*` | No | Provider/platform constraints, not task-dependent. |
 | **Cost/budget caps** | `DEFAULT_MAX_TOTAL_COST_USD`, `DEFAULT_MAX_TOTAL_TOKENS`, user `maxTurns` | No | User's wallet. Never let the model spend more. |
-| **Execution strategy** | `STUCK_THRESHOLDS.*`, `TOOL_FAILURE_THRESHOLDS.*`, `ESCALATION_LIMITS.*`, `DEAD_END_DETECTION.*` | Yes | Task-dependent reflexes. The core of this RFC. |
-| **Guardian calibration** | `MAX_DONE_REJECTIONS`, `LLM_CONFIG.MAX_SUBTASKS` | Yes | Directly tied to task complexity. |
+| **Execution strategy** | `STUCK_THRESHOLDS.*`, `TOOL_FAILURE_THRESHOLDS.*`, `ESCALATION_LIMITS.*`, `STAGNATION_DETECTION.*` | Yes | Task-dependent reflexes. The core of this RFC. |
+| **Planner calibration** | `MAX_DONE_REJECTIONS`, `LLM_CONFIG.MAX_SUBTASKS` | Yes | Directly tied to task complexity. |
 | **Compression** | `COMPRESSION_TRIGGERS.*`, `ROLLING_DISTILL.*` | Partially | Thresholds are turn-count proxies for token pressure — could be informed by estimated task length. |
 | **Logging/display** | `STRING_LIMITS.*`, `BROADCAST_INTERVALS.*` | No | UX and debugging, not execution. |
 
 ### S1: Difficulty Assessment at Plan Time
 
-**Insight:** Piggyback on the guardian's existing decomposition call to emit a difficulty rating.
+**Insight:** Piggyback on the planner's existing decomposition call to emit a difficulty rating.
 
 **Book basis:** Dibia (2025): "Plan-based orchestration involves a dedicated planner agent that generates a sequence of actions before execution begins" (§2.3.1, p.36). The planner already analyzes the task — asking it to also rate difficulty adds near-zero marginal cost.
 
-**Behavior:** The guardian's `decompose()` call already sends the user query + DOM snapshot to the smart model and gets back a structured plan. We extend the response schema to include a `difficulty` field and an optional `runtimeLimits` override object.
+**Behavior:** The planner's `decompose()` call already sends the user query + DOM snapshot to the smart model and gets back a structured plan. We extend the response schema to include a `difficulty` field and an optional `runtimeLimits` override object.
 
 The smart model assesses difficulty based on:
 - Number of steps in its own plan (more steps = harder)
@@ -134,10 +134,10 @@ The smart model assesses difficulty based on:
 
 **Book basis:** Rothman (2025): "externalize guardrail/retry/isolation thresholds into versioned policy config." This is the in-session version of that principle — the planner produces a policy override for the current task.
 
-**Behavior:** Define a `RuntimeLimits` interface covering all adaptive constants. The guardian can return a `Partial<RuntimeLimits>` — only the fields it wants to override. The loop merges these with static defaults at session start.
+**Behavior:** Define a `RuntimeLimits` interface covering all adaptive constants. The planner can return a `Partial<RuntimeLimits>` — only the fields it wants to override. The loop merges these with static defaults at session start.
 
 ```typescript
-/** Adaptive limits that the guardian can override per-task */
+/** Adaptive limits that the planner can override per-task */
 export interface RuntimeLimits {
   // Stuck detection
   stuckEscalate: number;        // default: STUCK_THRESHOLDS.ESCALATE (5)
@@ -152,13 +152,13 @@ export interface RuntimeLimits {
   toolFailureWarn: number;      // default: TOOL_FAILURE_THRESHOLDS.WARN (4)
   toolFailureExit: number;      // default: TOOL_FAILURE_THRESHOLDS.EXIT (6)
 
-  // Guardian calibration
+  // Planner calibration
   maxDoneRejections: number;    // default: AGENT_LIMITS.MAX_DONE_REJECTIONS (3)
   maxConsecutiveAllFail: number; // default: AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL (5)
 
-  // Dead-end detection
-  deadEndNudge: number;         // default: DEAD_END_DETECTION.NUDGE_THRESHOLD (3)
-  deadEndPivot: number;         // default: DEAD_END_DETECTION.PIVOT_THRESHOLD (5)
+  // Stagnation detection
+  stagnationReflection: number;         // default: STAGNATION_DETECTION.REFLECTION_THRESHOLD (3)
+  stagnationPivot: number;         // default: STAGNATION_DETECTION.PIVOT_THRESHOLD (5)
 
   // Step watchdog
   stepWarnTurns: number;        // default: STEP_WATCHDOG.WARN_TURNS (5)
@@ -171,7 +171,7 @@ export interface RuntimeLimits {
 
 ### S3: Difficulty-to-Limits Mapping
 
-**Insight:** Each difficulty level maps to a preset limits profile. The guardian can further fine-tune individual values.
+**Insight:** Each difficulty level maps to a preset limits profile. The planner can further fine-tune individual values.
 
 **Book basis:** Dibia (2025) on agent specialization: "Different agents can have different expertise" (§1.3.2, p.7). By analogy, different tasks should have different tolerance profiles. Rothman (2025) on policy-driven architecture: policy should be versioned and explicit, not implicit in code.
 
@@ -188,8 +188,8 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 4,        // exit early
     maxDoneRejections: 1,      // trust the agent's judgment
     maxConsecutiveAllFail: 3,  // fail fast
-    deadEndNudge: 2,
-    deadEndPivot: 3,
+    stagnationReflection: 2,
+    stagnationPivot: 3,
     stepWarnTurns: 3,
     stepEscalateTurns: 6,
     maxFreshStarts: 1,
@@ -208,8 +208,8 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 8,
     maxDoneRejections: 4,
     maxConsecutiveAllFail: 6,
-    deadEndNudge: 4,
-    deadEndPivot: 6,
+    stagnationReflection: 4,
+    stagnationPivot: 6,
     stepWarnTurns: 7,
     stepEscalateTurns: 14,
     maxFreshStarts: 2,
@@ -224,8 +224,8 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 10,
     maxDoneRejections: 5,
     maxConsecutiveAllFail: 7,
-    deadEndNudge: 4,
-    deadEndPivot: 7,
+    stagnationReflection: 4,
+    stagnationPivot: 7,
     stepWarnTurns: 8,
     stepEscalateTurns: 16,
     maxFreshStarts: 3,
@@ -233,17 +233,17 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
 };
 ```
 
-**Merge order:** `staticDefaults → difficultyProfile → guardianOverrides`
+**Merge order:** `staticDefaults → difficultyProfile → plannerOverrides`
 
-The guardian can override individual values beyond the profile. For example, a `complex` task on a site the agent has memory of being flaky could set `toolFailureExit: 12` while inheriting everything else from the `complex` profile.
+The planner can override individual values beyond the profile. For example, a `complex` task on a site the agent has memory of being flaky could set `toolFailureExit: 12` while inheriting everything else from the `complex` profile.
 
-### S4: Guardian Schema Extension
+### S4: Planner Schema Extension
 
 **Insight:** Extend the existing decomposition response schema to include difficulty and optional limit overrides, at zero additional LLM cost.
 
-**Book basis:** Dibia (2025) on structured output: "Use structured output for reliability" (§4.5, p.74). The guardian already returns structured JSON — adding fields is trivial.
+**Book basis:** Dibia (2025) on structured output: "Use structured output for reliability" (§4.5, p.74). The planner already returns structured JSON — adding fields is trivial.
 
-**Behavior:** The guardian prompt gains a `difficulty` field (required, enum) and `limit_overrides` field (optional, object). The system prompt explains:
+**Behavior:** The planner prompt gains a `difficulty` field (required, enum) and `limit_overrides` field (optional, object). The system prompt explains:
 
 ```
 You must also assess the task difficulty:
@@ -261,7 +261,7 @@ Optionally, override specific runtime limits if you have strong
 reason (e.g., known flaky site from memory, unusually deep form).
 ```
 
-**Fallback:** If the guardian doesn't return difficulty (model failure, simple task that skips decomposition), default to `moderate` — the current behavior.
+**Fallback:** If the planner doesn't return difficulty (model failure, simple task that skips decomposition), default to `moderate` — the current behavior.
 
 ### S5: Mid-Session Reassessment
 
@@ -295,7 +295,7 @@ Rothman (2025) lesson #8: "Keep the system glass-box. Traceability of decisions,
 // In TraceSession
 difficultyAssessment: Difficulty;
 runtimeLimits: RuntimeLimits;        // resolved limits (after merge)
-limitOverrides: Partial<RuntimeLimits> | null;  // what the guardian changed
+limitOverrides: Partial<RuntimeLimits> | null;  // what the planner changed
 
 // In TraceEntry (on reassessment turns only)
 limitReassessment?: {
@@ -308,7 +308,7 @@ limitReassessment?: {
 
 This enables:
 - **Profile tuning:** Analyze outcomes grouped by difficulty level to refine the presets
-- **Override analysis:** Identify which guardian overrides correlate with better/worse outcomes
+- **Override analysis:** Identify which planner overrides correlate with better/worse outcomes
 - **Reassessment tracking:** Measure how often initial assessments are wrong and in which direction
 - **Eval integration:** Eval cases can assert expected difficulty levels for known tasks
 
@@ -331,8 +331,8 @@ export interface RuntimeLimits {
   toolFailureExit: number;
   maxDoneRejections: number;
   maxConsecutiveAllFail: number;
-  deadEndNudge: number;
-  deadEndPivot: number;
+  stagnationReflection: number;
+  stagnationPivot: number;
   stepWarnTurns: number;
   stepEscalateTurns: number;
   maxFreshStarts: number;
@@ -348,8 +348,8 @@ export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
   toolFailureExit: TOOL_FAILURE_THRESHOLDS.EXIT,
   maxDoneRejections: AGENT_LIMITS.MAX_DONE_REJECTIONS,
   maxConsecutiveAllFail: AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL,
-  deadEndNudge: DEAD_END_DETECTION.NUDGE_THRESHOLD,
-  deadEndPivot: DEAD_END_DETECTION.PIVOT_THRESHOLD,
+  stagnationReflection: STAGNATION_DETECTION.NUDGE_THRESHOLD,
+  stagnationPivot: STAGNATION_DETECTION.PIVOT_THRESHOLD,
   stepWarnTurns: STEP_WATCHDOG.WARN_TURNS,
   stepEscalateTurns: STEP_WATCHDOG.ESCALATE_TURNS,
   maxFreshStarts: FRESH_START.MAX_PER_SESSION,
@@ -366,8 +366,8 @@ const MINIMUM_LIMITS: RuntimeLimits = {
   toolFailureExit: 3,
   maxDoneRejections: 1,
   maxConsecutiveAllFail: 2,
-  deadEndNudge: 2,
-  deadEndPivot: 3,
+  stagnationReflection: 2,
+  stagnationPivot: 3,
   stepWarnTurns: 2,
   stepEscalateTurns: 4,
   maxFreshStarts: 1,
@@ -384,8 +384,8 @@ const MAXIMUM_LIMITS: RuntimeLimits = {
   toolFailureExit: 15,
   maxDoneRejections: 7,
   maxConsecutiveAllFail: 10,
-  deadEndNudge: 6,
-  deadEndPivot: 10,
+  stagnationReflection: 6,
+  stagnationPivot: 10,
   stepWarnTurns: 12,
   stepEscalateTurns: 20,
   maxFreshStarts: 4,
@@ -393,10 +393,10 @@ const MAXIMUM_LIMITS: RuntimeLimits = {
 
 export function resolveRuntimeLimits(
   difficulty: Difficulty,
-  guardianOverrides?: Partial<RuntimeLimits> | null,
+  plannerOverrides?: Partial<RuntimeLimits> | null,
 ): RuntimeLimits {
   const profile = DIFFICULTY_PROFILES[difficulty] ?? {};
-  const merged = { ...DEFAULT_RUNTIME_LIMITS, ...profile, ...guardianOverrides };
+  const merged = { ...DEFAULT_RUNTIME_LIMITS, ...profile, ...plannerOverrides };
   // Clamp every value to [MINIMUM, MAXIMUM]
   const result = { ...merged };
   for (const key of Object.keys(result) as (keyof RuntimeLimits)[]) {
@@ -419,7 +419,7 @@ class AgentLoop {
     this.limits = { ...DEFAULT_RUNTIME_LIMITS };
   }
 
-  /** Called after guardian decomposition returns */
+  /** Called after planner decomposition returns */
   applyDifficultyAssessment(difficulty: Difficulty, overrides?: Partial<RuntimeLimits> | null): void {
     this.difficulty = difficulty;
     this.limits = resolveRuntimeLimits(difficulty, overrides);
@@ -445,7 +445,7 @@ class AgentLoop {
 
 Every site in `loop.ts` that currently reads e.g. `STUCK_THRESHOLDS.ESCALATE` would instead read `this.limits.stuckEscalate`.
 
-### File: `src/background/guardian.ts`
+### File: `src/background/agent/planner.ts`
 
 Extend the decomposition prompt and response parsing:
 
@@ -464,7 +464,7 @@ to deviate from the difficulty preset (e.g. known flaky site from memory).
 `;
 
 // In response parsing:
-interface GuardianDecompositionResult {
+interface PlannerDecompositionResult {
   steps: SubtaskStep[];
   difficulty?: Difficulty;
   limit_overrides?: Partial<RuntimeLimits>;
@@ -479,7 +479,7 @@ Extend trace types:
 // TraceSession additions
 difficultyAssessment?: Difficulty;
 resolvedLimits?: RuntimeLimits;
-guardianLimitOverrides?: Partial<RuntimeLimits> | null;
+plannerLimitOverrides?: Partial<RuntimeLimits> | null;
 
 // TraceEntry addition (only on reassessment turns)
 limitReassessment?: {
@@ -503,7 +503,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 - Returns defaults for `moderate` with no overrides
 - Applies `simple` profile correctly (all values tighter)
 - Applies `extreme` profile correctly (all values wider)
-- Guardian overrides take precedence over profile
+- Planner overrides take precedence over profile
 - Clamps to `MINIMUM_LIMITS` floor (model can't set `stuckEscalate: 0`)
 - Clamps to `MAXIMUM_LIMITS` ceiling (model can't set `stuckGiveUp: 999`)
 
@@ -513,7 +513,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 - Respects floor/ceiling after reassessment
 - Logs previous and updated values
 
-**S4 — Guardian parsing:**
+**S4 — Planner parsing:**
 - Parses `difficulty` field from decomposition response
 - Falls back to `moderate` when field missing
 - Parses `limit_overrides` when present
@@ -538,7 +538,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 ## Impact
 
 ### Performance
-- **Zero additional LLM calls.** Difficulty assessment piggybacks on existing guardian decomposition (S1).
+- **Zero additional LLM calls.** Difficulty assessment piggybacks on existing planner decomposition (S1).
 - **Potential token savings on simple tasks.** Fewer wasted turns = fewer LLM calls = lower cost. A `simple` task that currently runs 10 turns before giving up would terminate at 6.
 - **Potential throughput improvement on complex tasks.** Wider limits mean the agent completes tasks it previously abandoned, avoiding user re-runs.
 
@@ -550,13 +550,13 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 ### Observability
 - **Difficulty labels in traces** enable segmented analysis: "what's our success rate on `complex` vs `simple` tasks?"
 - **Limit override tracking** enables profile tuning over time: "are the `extreme` presets too generous?"
-- **Reassessment events** measure guardian accuracy: "how often is the initial assessment wrong?"
+- **Reassessment events** measure planner accuracy: "how often is the initial assessment wrong?"
 
 ### Risks
 
 | Risk | Mitigation |
 |---|---|
-| Guardian produces wrong difficulty | Fallback to `moderate` (current behavior). Floor/ceiling clamps prevent extreme values. |
+| Planner produces wrong difficulty | Fallback to `moderate` (current behavior). Floor/ceiling clamps prevent extreme values. |
 | Smart model games limits to extend its own tenure | Mid-session can only widen, not tighten (except `maxDoneRejections`). Safety rails (`MAX_SESSION_MS`, cost caps) are never adaptive. |
 | Profile presets are miscalibrated | Trace data enables empirical tuning. Initial profiles are conservative (close to current defaults for `moderate`). |
 | Added complexity in loop.ts | `this.limits.X` is a direct replacement for `CONSTANT.X` — same read pattern, different source. |
@@ -566,7 +566,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 | Decision | Chosen | Rejected Alternative | Rationale |
 |---|---|---|---|
 | Difficulty granularity | 4 levels (simple/moderate/complex/extreme) | Numeric 1–10 scale | 4 levels are interpretable by the model and map to distinct profiles. A numeric scale invites hallucinated precision. |
-| Assessment timing | Guardian decomposition (existing call) | Separate difficulty-assessment LLM call | Zero marginal cost. Dibia (2025, §4.5): piggyback on structured output. |
+| Assessment timing | Planner decomposition (existing call) | Separate difficulty-assessment LLM call | Zero marginal cost. Dibia (2025, §4.5): piggyback on structured output. |
 | Override mechanism | `Partial<RuntimeLimits>` merge | Full `RuntimeLimits` required from model | Partial overrides minimize model burden and schema complexity. Most tasks need 0–2 overrides. |
 | Mid-session direction | Can only widen (except `maxDoneRejections`) | Bidirectional | Prevents death spiral where model tightens limits → gets terminated → escalates → tightens again. |
 | Floor/ceiling clamps | `MINIMUM_LIMITS` / `MAXIMUM_LIMITS` | Trust the model | Defense in depth. Model can hallucinate `stuckGiveUp: 0` or `toolFailureExit: 1000`. Clamps bound the damage. |

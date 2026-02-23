@@ -30,8 +30,8 @@ describe("resolveRuntimeLimits", () => {
     expect(result.toolFailureExit).toBe(4);
     expect(result.maxDoneRejections).toBe(1);
     expect(result.maxConsecutiveAllFail).toBe(3);
-    expect(result.deadEndNudge).toBe(2);
-    expect(result.deadEndPivot).toBe(3);
+    expect(result.stagnationReflection).toBe(2);
+    expect(result.stagnationPivot).toBe(3);
     expect(result.stepWarnTurns).toBe(3);
     expect(result.stepEscalateTurns).toBe(6);
     expect(result.maxFreshStarts).toBe(1);

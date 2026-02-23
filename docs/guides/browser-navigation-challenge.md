@@ -39,8 +39,8 @@ If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden el
 
 - The agent will auto-dismiss cookie banners and modals before starting.
 - Tasks include: clicking buttons, filling forms, selecting dropdowns, drag-and-drop, drawing strokes, keyboard shortcuts, and reading page content.
-- If the agent stalls on a task, the progress tracker nudges it after 6 unchanged turns, escalates to the smart model at 12, and gives up on that subtask after repeated failure.
-- You can send a hint at any time via the input area (it switches to hint mode during a run).
+- If the agent stalls on a task, the stagnation monitor injects a reflection after 6 unchanged turns, escalates to the smart model at 12, and gives up on that subtask after repeated failure.
+- You can send feedback at any time via the input area (it switches to feedback mode during a run).
 - Pause/resume via the control bar if you need to intervene.
 
 ## Monitoring the Run

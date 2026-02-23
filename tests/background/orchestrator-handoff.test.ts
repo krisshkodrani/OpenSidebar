@@ -140,10 +140,51 @@ describe("Orchestrator handoff briefing", () => {
     const signal = buildAssumptionDriftSignal(node, {
       title: "Product catalog",
       url: "https://shop.example.com/products",
-      viewportText: "Browse products and add to cart",
+      visibleContent: "Browse products and add to cart",
     });
 
     expect(signal).toContain("Potential plan-reality drift");
+  });
+
+  test("includes VERIFICATION CHECKPOINT when gate is present", () => {
+    const node = makeNode([
+      {
+        role: "planner",
+        phase: "planned",
+        note: "Submit and verify",
+        timestamp: 1,
+      },
+    ]);
+    node.verificationGate = {
+      trigger: "text 'Code accepted' visible",
+      action: "call_done",
+      pattern: "Code\\s+accepted",
+    };
+    const instruction = buildExecutorInstruction(node);
+
+    expect(instruction).toContain("VERIFICATION CHECKPOINT:");
+    expect(instruction).toContain("text 'Code accepted' visible");
+    expect(instruction).toContain("call done() immediately");
+    expect(instruction).toContain("Do NOT continue executing");
+  });
+
+  test("includes advance_step action text for non-final gates", () => {
+    const node = makeNode([]);
+    node.verificationGate = {
+      trigger: "URL contains /step3",
+      action: "advance_step",
+    };
+    const instruction = buildExecutorInstruction(node);
+
+    expect(instruction).toContain("VERIFICATION CHECKPOINT:");
+    expect(instruction).toContain("advance to the next step");
+  });
+
+  test("omits VERIFICATION CHECKPOINT when no gate", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(node);
+
+    expect(instruction).not.toContain("VERIFICATION CHECKPOINT:");
   });
 
   test("creates a linked reroute node for handoff chaining", () => {

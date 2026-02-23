@@ -22,7 +22,7 @@ interface DomSnapshot {
   title: string; // Page title
   url: string; // Current URL
   elements: TaggedElement[]; // Interactive elements with tags
-  viewportText: string; // Visible text content
+  visibleContent: string; // Visible text content
   viewport: { width: number; height: number };
   scroll: { x: number; y: number; maxY: number };
   survivingOverlays?: { tagId: number; coveragePercent: number }[];
@@ -269,7 +269,7 @@ Background requests a fresh snapshot:
     requestId: string,
     source: "background",
     payload: {
-        includeText: boolean,  // Include viewport text?
+        includeText: boolean,  // Include visible content?
         refresh: boolean,     // Re-tag elements?
         showTags?: boolean    // Render visual [N] overlays?
     }

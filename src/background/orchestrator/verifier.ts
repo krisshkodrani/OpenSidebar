@@ -11,6 +11,7 @@ export interface NodeVerificationInput {
   successCriteria: string;
   output: string;
   handoffContext?: string;
+  executorOutcome?: string;
 }
 
 export type VerificationFailureType =
@@ -36,6 +37,7 @@ export interface ProgrammaticVerificationInput {
   currentUrl?: string;
   previousTitle?: string;
   currentTitle?: string;
+  executorOutcome?: string;
 }
 
 const VERIFY_SYSTEM = renderPrompt("orchestrator.verifier.system");
@@ -77,8 +79,8 @@ export function programmaticVerify(
   const text = input.output.trim().toLowerCase();
   if (!text) return null;
 
-  // Blocked markers → reroute
-  if (BLOCKED_MARKERS.some((m) => text.includes(m))) {
+  // Blocked markers → reroute (skip when executor completed — markers may be page content)
+  if (input.executorOutcome !== "completed" && BLOCKED_MARKERS.some((m) => text.includes(m))) {
     return {
       decision: "reroute",
       reason: "Execution appears blocked by page constraints.",
@@ -197,13 +199,22 @@ export function deriveVerifierFallbackDecision(
     };
   }
 
-  if (BLOCKED_MARKERS.some((m) => text.includes(m))) {
+  if (input.executorOutcome !== "completed" && BLOCKED_MARKERS.some((m) => text.includes(m))) {
     return {
       decision: "reroute",
       reason: "Execution appears blocked by page constraints.",
       confidence: 0.9,
       failureType: "blocked",
       rerouteObjective: `Use an alternate path to achieve: ${input.objective}`,
+    };
+  }
+
+  // Executor explicitly called done() — trust it over keyword heuristics
+  if (input.executorOutcome === "completed") {
+    return {
+      decision: "accept",
+      reason: "Executor completed; verifier parse failed, accepting on executor signal.",
+      confidence: 0.7,
     };
   }
 
@@ -241,7 +252,7 @@ export class OrchestratorVerifier {
       executorInstruction: string;
       pageTitle: string;
       pageUrl: string;
-      viewportText: string;
+      visibleContent: string;
     },
     signal?: AbortSignal,
   ): Promise<string | null> {
@@ -255,7 +266,7 @@ export class OrchestratorVerifier {
             content:
               `Executor instruction:\n${input.executorInstruction}\n\n` +
               `Current page: ${input.pageTitle} (${input.pageUrl})\n` +
-              `Viewport text (first 500 chars):\n${input.viewportText.slice(0, 500)}`,
+              `Visible content (first 500 chars):\n${input.visibleContent.slice(0, 500)}`,
           },
         ],
         max_tokens: 150,
@@ -291,7 +302,7 @@ export class OrchestratorVerifier {
               `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
           },
         ],
-        max_tokens: 220,
+        max_tokens: 512,
         temperature: 0,
         signal,
       });

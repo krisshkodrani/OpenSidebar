@@ -31,7 +31,7 @@ describe("SidePanel Store", () => {
             error: null,
             taskProgress: null,
             taskCompletion: null,
-            stuckState: null,
+            stagnationState: null,
             turnProgress: null,
             pendingApproval: null,
             pendingEscalation: null,
@@ -282,6 +282,9 @@ describe("SidePanel Store", () => {
     });
 
     test("addStep does NOT attach to finalized (non-streaming) assistant message", () => {
+        // Agent must be running for addStep to create new messages
+        useStore.getState().setAgentRunning(true);
+
         // Add a finalized assistant message (previous turn)
         useStore.getState().addMessage({
             id: "a-final",
@@ -311,6 +314,9 @@ describe("SidePanel Store", () => {
     });
 
     test("addStep creates new streaming message when no assistant messages exist", () => {
+        // Agent must be running for addStep to create new messages
+        useStore.getState().setAgentRunning(true);
+
         // Only a user message exists
         useStore.getState().addMessage({
             id: "u1",
@@ -335,6 +341,30 @@ describe("SidePanel Store", () => {
         expect(newMsg.isStreaming).toBe(true);
         expect(newMsg.content).toBe("");
         expect(newMsg.steps).toHaveLength(1);
+    });
+
+    test("addStep silently drops step when agent is not running and no streaming message", () => {
+        // Agent is NOT running (default state)
+        useStore.getState().addMessage({
+            id: "u1",
+            role: "user",
+            content: "Hello",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: false,
+        });
+
+        useStore.getState().addStep({
+            id: "s-late",
+            type: "info",
+            label: "Late arriving step",
+            status: "done",
+            timestamp: Date.now(),
+        });
+
+        // No ghost bubble created
+        expect(useStore.getState().messages).toHaveLength(1);
+        expect(useStore.getState().messages[0].role).toBe("user");
     });
 
     // --- Agent feedback action tests ---
@@ -400,26 +430,26 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().taskCompletion).toBeNull();
     });
 
-    test("setStuckState stores stuck info", () => {
-        const stuck = {
+    test("setStagnationState stores stagnation info", () => {
+        const stagnation = {
             signal: "nudge" as const,
-            staleTurns: 6,
+            stagnantTurns: 6,
             url: "https://example.com",
             receivedAt: Date.now(),
         };
-        useStore.getState().setStuckState(stuck);
-        expect(useStore.getState().stuckState).toEqual(stuck);
+        useStore.getState().setStagnationState(stagnation);
+        expect(useStore.getState().stagnationState).toEqual(stagnation);
     });
 
-    test("clearStuckState resets to null", () => {
-        useStore.getState().setStuckState({
+    test("clearStagnationState resets to null", () => {
+        useStore.getState().setStagnationState({
             signal: "escalate" as const,
-            staleTurns: 12,
+            stagnantTurns: 12,
             url: "https://example.com",
             receivedAt: Date.now(),
         });
-        useStore.getState().clearStuckState();
-        expect(useStore.getState().stuckState).toBeNull();
+        useStore.getState().clearStagnationState();
+        expect(useStore.getState().stagnationState).toBeNull();
     });
 
     test("setTurnProgress stores turn info", () => {
@@ -491,9 +521,9 @@ describe("SidePanel Store", () => {
             totalTurnsUsed: 0,
             subtaskResults: [],
         });
-        useStore.getState().setStuckState({
+        useStore.getState().setStagnationState({
             signal: "nudge" as const,
-            staleTurns: 6,
+            stagnantTurns: 6,
             url: "https://example.com",
             receivedAt: Date.now(),
         });
@@ -550,10 +580,45 @@ describe("SidePanel Store", () => {
         const state = useStore.getState();
         expect(state.taskProgress).toBeNull();
         expect(state.taskCompletion).toBeNull();
-        expect(state.stuckState).toBeNull();
+        expect(state.stagnationState).toBeNull();
         expect(state.turnProgress).toBeNull();
         expect(state.pendingApproval).toBeNull();
         expect(state.pendingEscalation).toBeNull();
         expect(state.taskRecovery).toBeNull();
+    });
+
+    test("setActiveWorkspaceId flushes messages before clearing", () => {
+        // Set workspace A with messages
+        useStore.getState().setActiveWorkspaceId("ws-A");
+        useStore.setState({
+            messages: [
+                {
+                    id: "msg-1",
+                    role: "user",
+                    content: "Hello workspace A",
+                    timestamp: Date.now(),
+                    toolCalls: [],
+                    isStreaming: false,
+                },
+            ],
+        });
+
+        // Reset the mock to track new calls
+        const setMock = chrome.storage.local.set as ReturnType<typeof mock>;
+        setMock.mockClear();
+
+        // Switch to workspace B
+        useStore.getState().setActiveWorkspaceId("ws-B");
+
+        // flushPersist should have called chrome.storage.local.set with ws-A key
+        expect(setMock).toHaveBeenCalled();
+        const firstCall = setMock.mock.calls[0][0] as Record<string, unknown>;
+        expect(firstCall).toHaveProperty("chatMessages:ws-A");
+        const flushedMessages = firstCall["chatMessages:ws-A"] as any[];
+        expect(flushedMessages).toHaveLength(1);
+        expect(flushedMessages[0].content).toBe("Hello workspace A");
+
+        // Store messages should be cleared for ws-B
+        expect(useStore.getState().messages).toEqual([]);
     });
 });
