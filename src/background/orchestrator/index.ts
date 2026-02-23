@@ -56,6 +56,7 @@ import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
 import { LearnedSkill, SkillStore } from "../skills/store";
+import { classifyRoute, RouteDecision } from "./router";
 
 const DEFAULT_MAX_WORKERS = 3;
 const DEFAULT_MAX_REPLANS = 3;
@@ -1770,6 +1771,7 @@ export class Orchestrator {
         });
         task.status = "failed";
         task.finishedAt = Date.now();
+        this.sendTerminationCompletion(task, "Recovered task failed");
         await this.clearTaskCheckpoint(task.workspaceId);
         this.tasksByWorkspace.delete(task.workspaceId);
         this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -1891,11 +1893,76 @@ export class Orchestrator {
 
     this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
 
+    // ─── Route classification ───
+    let routeDecision: RouteDecision | undefined;
+    try {
+      const routeTab = await chrome.tabs.get(input.tabId);
+      routeDecision = await classifyRoute(
+        input.query,
+        routeTab.title || "Untitled",
+        routeTab.url || "",
+        input.settings,
+      );
+      task.routeDecision = routeDecision;
+      this.emitTraceEvent(task, "route_classified", {
+        route: routeDecision.route,
+        confidence: routeDecision.confidence,
+        reason: routeDecision.reason,
+      }, "system");
+    } catch {
+      // Router failure → fall through to existing pipeline
+    }
+
     let nodes: TaskNode[] = [];
+
+    // ─── Direct / Agent fast-path: skip planner ───
+    if (routeDecision && routeDecision.route !== "plan") {
+      nodes = [{
+        id: crypto.randomUUID(),
+        role: "executor",
+        description: input.query,
+        successCriteria: "The user goal is completed.",
+        allowedTools: Object.values(ToolName),
+        dependencies: [],
+        assumptions: [],
+        handoffArtifacts: [{
+          role: "planner",
+          phase: "planned",
+          note: `Router: ${routeDecision.route} (${routeDecision.reason})`,
+          timestamp: Date.now(),
+        }],
+        reflexionLog: [],
+        handoffDepth: 0,
+        status: "pending",
+        retries: 0,
+      }];
+      task.planClassification = { isSingleNode: true, difficulty: "simple" };
+      this.emitTraceEvent(task, "plan_decomposed", {
+        nodeCount: 1,
+        structured: false,
+        routerFastPath: true,
+        route: routeDecision.route,
+      }, "planner");
+      this.sendMessage({
+        type: "AGENT_STEP",
+        workspaceId: input.workspaceId,
+        payload: {
+          step: {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: `Router: skipped planner (${routeDecision.route})`,
+            status: "done",
+            timestamp: Date.now(),
+          },
+          update: false,
+        },
+      });
+    }
+
     let replaySkillId: string | null = null;
     let replayMatchContext: ReplayMatchContext | null = null;
     const replayAttempted = Boolean(input.settings.autoSkillReplayEnabled);
-    if (input.settings.autoSkillReplayEnabled) {
+    if (nodes.length === 0 && input.settings.autoSkillReplayEnabled) {
       this.emitTraceEvent(
         task,
         "skill_replay_attempted",
@@ -1948,20 +2015,15 @@ export class Orchestrator {
           replaySkillId = matched.skill.id;
           await this.skillStore.recordSkillSelection(matched.skill.id);
           nodes = this.buildNodesFromSkill(matched.skill);
-          this.sendMessage({
-            type: "AGENT_STEP",
-            workspaceId: input.workspaceId,
-            payload: {
-              step: {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: `Skill replay: ${matched.skill.name}`,
-                detail: `Matched learned skill (${matched.score.toFixed(2)} confidence)`,
-                status: "done",
-                timestamp: Date.now(),
-              },
-              update: false,
-            },
+          task.planClassification = {
+            isSingleNode: nodes.length === 1,
+            difficulty: "moderate",
+          };
+          // Skill replay is internal bookkeeping — log + trace only, not in chat
+          logger.info("orchestrator", `Skill replay: ${matched.skill.name}`, {
+            skillId: matched.skill.id,
+            score: matched.score,
+            stepCount: matched.skill.steps.length,
           });
         }
         this.emitTraceEvent(
@@ -1998,16 +2060,23 @@ export class Orchestrator {
         input.cerebrasApiKey,
       );
       const tab = await chrome.tabs.get(input.tabId);
-      nodes = await this.runInLane(task, "planner", async () =>
+      const buildResult = await this.runInLane(task, "planner", async () =>
         planner.buildNodes(
           input.query,
           tab.title || "Untitled",
           tab.url || "",
         ),
       );
+      nodes = buildResult.nodes;
+      task.planClassification = {
+        isSingleNode: buildResult.isSingleNode,
+        difficulty: buildResult.difficulty,
+      };
       this.emitTraceEvent(task, "plan_decomposed", {
         nodeCount: nodes.length,
         structured: true,
+        isSingleNode: buildResult.isSingleNode,
+        difficulty: buildResult.difficulty,
       }, "planner");
       this.sendMessage({
         type: "AGENT_STEP",
@@ -2050,6 +2119,7 @@ export class Orchestrator {
           retries: 0,
         },
       ];
+      task.planClassification = { isSingleNode: true, difficulty: "moderate" };
       this.emitTraceEvent(task, "plan_decomposed", {
         nodeCount: 1,
         structured: false,
@@ -2075,6 +2145,9 @@ export class Orchestrator {
 
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
+      if (task.nodes.length > 0) {
+        this.sendTerminationCompletion(task, "Stopped by user during planning");
+      }
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
@@ -2265,13 +2338,15 @@ export class Orchestrator {
                 stepDetail: step.detail,
               });
             }
+            const isSingleNode = task.planClassification?.isSingleNode === true;
             this.sendMessage({
               type: "AGENT_STEP",
               workspaceId: task.workspaceId,
               payload: {
                 step: {
                   ...step,
-                  label: `Executor: ${step.label}`,
+                  // Single-node tasks: clean labels. Multi-node: prefix with Executor.
+                  label: isSingleNode ? step.label : `Executor: ${step.label}`,
                 },
                 update,
               },
@@ -2297,6 +2372,17 @@ export class Orchestrator {
           runId: task.runId || task.id,
           correlationId: task.runId || task.id,
           suppressUiBroadcast: true,
+          // For single-node tasks, forward stream chunks directly to the side panel
+          // so the user sees real-time content instead of just "Task completed."
+          onStreamChunk: task.planClassification?.isSingleNode
+            ? (delta: string, done: boolean) => {
+                this.sendMessage({
+                  type: "STREAM_CHUNK",
+                  workspaceId: task.workspaceId,
+                  payload: { delta, done },
+                });
+              }
+            : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: input.settings.bypassApprovals ?? false,
           onMemoryAdd: (item: BufferedMemory) => {
@@ -2334,7 +2420,7 @@ export class Orchestrator {
                 executorInstruction,
                 pageTitle: snapshot.title || "",
                 pageUrl: snapshot.url || "",
-                viewportText: snapshot.viewportText || "",
+                visibleContent: snapshot.visibleContent || "",
               }),
             );
             if (advisory) {
@@ -2427,6 +2513,22 @@ export class Orchestrator {
           entryCount: executorEvidence.length,
         }, "executor");
         if (result.outcome === "completed") {
+          // Fast-path: single-node tasks skip the entire verification pipeline
+          const isSingleNodeTask = task.planClassification?.isSingleNode === true;
+          if (isSingleNodeTask) {
+            this.appendHandoffArtifact(node, {
+              role: "verifier",
+              phase: "verifier_accept",
+              note: "Single-node task: executor completed, verification skipped.",
+            });
+            node.status = "completed";
+            node.result = result.summary;
+            await this.memoryBuffer.commitWorker(workerId);
+            this.emitTraceEvent(task, "verification_skipped", {
+              nodeId: node.id,
+              reason: "single_node_task",
+            }, "verifier");
+          } else {
           const verifierHandoffContext = buildVerifierContext(node, taskStateBrief);
           // Capture post-execution URL/title for programmatic verification
           let currentUrl: string | undefined;
@@ -2445,6 +2547,7 @@ export class Orchestrator {
             currentUrl,
             previousTitle: snapshot?.title,
             currentTitle,
+            executorOutcome: result.outcome,
           });
           let verification: NodeVerificationResult;
           if (programmaticResult) {
@@ -2463,6 +2566,7 @@ export class Orchestrator {
                 successCriteria: node.successCriteria,
                 output: result.summary,
                 handoffContext: verifierHandoffContext,
+                executorOutcome: result.outcome,
               }),
             );
           }
@@ -2796,6 +2900,7 @@ export class Orchestrator {
             node.error = `Verifier ${verification.decision}: ${verification.reason}`;
             this.memoryBuffer.discardWorker(workerId);
           }
+          } // end else (multi-node verification)
         } else {
           const retryDecision = decideRetryPolicy(
             {
@@ -3001,6 +3106,7 @@ export class Orchestrator {
 
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
+      this.sendTerminationCompletion(task, "Stopped by user during execution");
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
@@ -3051,12 +3157,16 @@ export class Orchestrator {
       }
     }
 
+    // Build summary from executor results. For single-node tasks this is the
+    // done() summary; for multi-node tasks it's an aggregated result.
     const summary = this.buildProgrammaticSummary(task);
-    this.sendMessage({
-      type: "STREAM_CHUNK",
-      workspaceId: task.workspaceId,
-      payload: { delta: summary, done: false },
-    });
+    if (summary) {
+      this.sendMessage({
+        type: "STREAM_CHUNK",
+        workspaceId: task.workspaceId,
+        payload: { delta: summary, done: false },
+      });
+    }
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
@@ -3217,20 +3327,9 @@ export class Orchestrator {
       });
       if (!learned) return;
 
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: task.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: `Teach mode: updated skill "${learned.name}"`,
-            detail: `Stored ${learned.steps.length} reusable steps`,
-            status: "done",
-            timestamp: Date.now(),
-          },
-          update: false,
-        },
+      logger.info("skills", `Teach mode: updated skill "${learned.name}"`, {
+        skillId: learned.id,
+        stepCount: learned.steps.length,
       });
       this.emitTraceEvent(
         task,
@@ -3278,11 +3377,11 @@ export class Orchestrator {
     }
   }
 
-  injectHint(workspaceId: string, text: string): void {
+  injectFeedback(workspaceId: string, text: string): void {
     const workers = this.workersByWorkspace.get(workspaceId)?.executor;
     if (!workers) return;
     for (const worker of workers.values()) {
-      worker.loop.injectHint(text);
+      worker.loop.injectFeedback(text);
       if (worker.loop.isPaused()) worker.loop.resume();
     }
   }
@@ -3351,10 +3450,14 @@ export class Orchestrator {
       workspaceId,
     }, "system");
     task.status = "stopped";
+    task.finishedAt = Date.now();
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
     if (pendingEscalationId) {
       this.pendingEscalationResolvers.delete(pendingEscalationId);
       task.pendingEscalation = undefined;
+    }
+    if (task.nodes.length > 0) {
+      this.sendTerminationCompletion(task, "Stopped by user");
     }
     void this.persistTaskCheckpoint(task);
     const pools = this.workersByWorkspace.get(workspaceId);
@@ -3408,7 +3511,7 @@ export class Orchestrator {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { includeText: true, refresh: true, showTags },
+        payload: { refresh: true, showTags },
       });
       return response.payload.snapshot;
     } catch {
@@ -3419,19 +3522,21 @@ export class Orchestrator {
   private buildProgrammaticSummary(task: OrchestratorTask): string {
     const completed = task.nodes.filter(n => n.status === "completed").length;
     const failed = task.nodes.filter(n => n.status === "failed").length;
-    const total = task.nodes.length;
     const lastCompleted = [...task.nodes].reverse().find(n => n.status === "completed");
-    const parts: string[] = [
-      `Task: ${task.query}`,
-      `Result: ${completed}/${total} subtasks completed${failed > 0 ? `, ${failed} failed` : ""}.`,
-    ];
-    if (lastCompleted?.result) {
-      parts.push(`Final output: ${lastCompleted.result.slice(0, 200)}`);
+
+    // Single-node completed: show executor's actual output directly
+    if (task.planClassification?.isSingleNode && failed === 0 && lastCompleted?.result) {
+      return lastCompleted.result;
     }
-    if (failed > 0) {
-      parts.push(`Failures: ${task.nodes.filter(n => n.status === "failed").map(n => n.description).join("; ")}`);
+
+    // Multi-node or partial: return empty — the TASK_COMPLETION card
+    // handles the structured display (subtask list, metrics, status).
+    // Avoids a redundant text dump above the card.
+    if (completed > 0 && lastCompleted?.result) {
+      return lastCompleted.result.slice(0, 500);
     }
-    return parts.join("\n");
+
+    return "";
   }
 
   private sendProgress(task: OrchestratorTask): void {
@@ -3443,6 +3548,37 @@ export class Orchestrator {
         subtasks: toSubtasks(task.nodes),
         currentIndex: task.currentIndex,
         totalTurnsUsed: 0,
+      },
+    });
+  }
+
+  private sendTerminationCompletion(task: OrchestratorTask, terminationReason: string): void {
+    const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
+      description: node.description,
+      status:
+        node.status === "completed"
+          ? "completed"
+          : isUserSkippedNode(node)
+            ? "skipped"
+            : "failed",
+      turnsUsed: 0,
+      result: node.result || node.error || "",
+    }));
+    const completed = subtaskResults.filter((r) => r.status === "completed").length;
+
+    this.sendMessage({
+      type: "TASK_COMPLETION",
+      workspaceId: task.workspaceId,
+      payload: {
+        taskId: task.id,
+        status: completed > 0 ? "partial" : "failed",
+        totalTurnsUsed: 0,
+        totalTimeMs: (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
+        summary: terminationReason,
+        subtaskResults,
+        urlHistory: [],
+        metrics: task.sessionMetrics,
+        terminationReason,
       },
     });
   }
