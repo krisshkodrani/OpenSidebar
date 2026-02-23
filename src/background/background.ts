@@ -391,12 +391,12 @@ chrome.runtime.onMessage.addListener(
           message.payload.tabId,
           wsId,
         );
-        if (message.payload.isHint) {
-          logger.debug("agent", "User hint", {
+        if (message.payload.isFeedback) {
+          logger.debug("agent", "User feedback", {
             text: message.payload.text,
             workspaceId: resolvedWsId,
           });
-          orchestrator.injectHint(resolvedWsId, message.payload.text);
+          orchestrator.injectFeedback(resolvedWsId, message.payload.text);
         } else {
           handleUserChat(message.payload, resolvedWsId);
         }
@@ -695,7 +695,7 @@ chrome.runtime.onMessage.addListener(
           title: "",
           url: lastUrl,
           elements: [],
-          viewportText: "",
+          visibleContent: "",
           viewport: { width: 0, height: 0 },
           scroll: { x: 0, y: 0, maxY: 0 },
         };

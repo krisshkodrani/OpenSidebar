@@ -1,4 +1,5 @@
 import { logger } from "../../utils";
+import { flushPersist } from "./chat-slice";
 import type { UiSlice, SliceCreator } from "./types";
 
 export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
@@ -28,13 +29,15 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
   setActiveWorkspaceId: (id) => {
     const currentId = get().activeWorkspaceId;
     if (currentId === id) return;
+    // Flush pending messages for CURRENT workspace before switching
+    flushPersist(get().messages, currentId);
     set((state) => {
       state.activeWorkspaceId = id;
       // Cross-slice: clear chat messages and agent transient state
       state.messages = [];
       state.taskProgress = null;
       state.taskCompletion = null;
-      state.stuckState = null;
+      state.stagnationState = null;
       state.turnProgress = null;
       state.pendingApproval = null;
       state.pendingEscalation = null;

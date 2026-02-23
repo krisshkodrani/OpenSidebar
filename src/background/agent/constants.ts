@@ -21,6 +21,8 @@ export const STUCK_THRESHOLDS = {
   GIVE_UP: 10,
   /** Tighter give-up when already on the smart model (saves wasted turns) */
   GIVE_UP_SMART: 8,
+  /** Same-URL turns before forced escalation (independent of DOM delta) */
+  SAME_URL_ESCALATE: 8,
 } as const;
 
 /** Escalation/de-escalation cycle limits */
@@ -35,11 +37,21 @@ export const ESCALATION_LIMITS = {
   PROGRESS_GATE: 2,
 } as const;
 
-/** BRAINS→HANDS: smart model orients, then fast model executes */
+/** plan-then-act: smart model orients, then fast model executes */
 export const ORIENTATION = {
-  /** Turns the smart model ("brains") runs before handing off to fast ("hands") */
+  /** Turns the smart model runs before handing off to fast model */
   PHASE_TURNS: 2,
 } as const;
+
+/** Tools that signal an investigation-type task (extend smart orientation phase when used) */
+export const INVESTIGATION_TOOLS = new Set<string>([
+  "inspect_hidden", "execute_js", "xray_page", "read_element",
+  "inspect_react",
+]);
+/** Additional turns to extend orientation when investigation tools are used */
+export const INVESTIGATION_EXTENSION = 3;
+/** Maximum total orientation turns (cap for extended phase) */
+export const MAX_ORIENTATION_TURNS = 6;
 
 /** Tool failure circuit breaker */
 export const TOOL_FAILURE_THRESHOLDS = {
@@ -49,6 +61,16 @@ export const TOOL_FAILURE_THRESHOLDS = {
   EXIT: 6,
 } as const;
 
+/** Discovery budget: nudge after consecutive turns of only reading/inspecting */
+export const DISCOVERY_BUDGET = { MAX_CONSECUTIVE: 3 } as const;
+
+export const DISCOVERY_ONLY_TOOLS = new Set<string>([
+  "read_page", "find_element", "inspect_hidden", "read_element",
+  "xray_page", "inspect_react", "inspect_react_tree", "memory_search",
+  "get_cookies", "read_pdf", "search_history", "get_bookmarks",
+  "recall_demo", "transcribe_audio",
+]);
+
 /** Redundant action detection (informational — nudges, never blocks) */
 export const REDUNDANT_ACTION = {
   /** Size of the sliding window for recent successful tool calls */
@@ -57,6 +79,14 @@ export const REDUNDANT_ACTION = {
   INFO_THRESHOLD: 4,
   /** Same tool name (any args) repetitions before a soft note */
   TOOL_NAME_INFO_THRESHOLD: 6,
+} as const;
+
+/** Tool result cache configuration */
+export const TOOL_CACHE = {
+  /** Maximum cached entries (FIFO eviction) */
+  MAX_SIZE: 64,
+  /** Redundant action block: skip execution after this many same (tool+args+fingerprint) repeats */
+  BLOCK_THRESHOLD: 3,
 } as const;
 
 /** Step duration watchdog */
@@ -85,7 +115,7 @@ export const LLM_CONFIG = {
   DECOMPOSITION_MAX_TOKENS: 512,
   /** Token budget for validation */
   VALIDATION_MAX_TOKENS: 256,
-  /** Maximum subtasks from guardian */
+  /** Maximum subtasks from planner */
   MAX_SUBTASKS: 8,
 } as const;
 
@@ -133,12 +163,12 @@ export const FAILED_ACTION_MEMORY = {
   POST_ESCALATION_PIVOT_TURNS: 5,
 } as const;
 
-/** Outcome-based dead-end detection */
-export const DEAD_END_DETECTION = {
+/** Outcome-based stagnation detection */
+export const STAGNATION_DETECTION = {
   /** Size of the sliding window for recent outcomes */
   WINDOW: 6,
-  /** Consecutive identical outcomes before injecting a nudge */
-  NUDGE_THRESHOLD: 3,
+  /** Consecutive identical outcomes before injecting a reflection */
+  REFLECTION_THRESHOLD: 3,
   /** Consecutive identical outcomes before forcing a strategy pivot */
   PIVOT_THRESHOLD: 5,
 } as const;
@@ -181,10 +211,10 @@ export const FRESH_START = {
 // Difficulty-Adaptive Runtime Limits (RFC: rfc-adaptive-runtime-limits.md)
 // ---------------------------------------------------------------------------
 
-/** Task difficulty level assessed by the guardian at plan time */
+/** Task difficulty level assessed by the planner at plan time */
 export type Difficulty = "simple" | "moderate" | "complex" | "extreme";
 
-/** Adaptive limits that the guardian can override per-task */
+/** Adaptive limits that the planner can override per-task */
 export interface RuntimeLimits {
   stuckEscalate: number;
   stuckGiveUp: number;
@@ -195,11 +225,12 @@ export interface RuntimeLimits {
   toolFailureExit: number;
   maxDoneRejections: number;
   maxConsecutiveAllFail: number;
-  deadEndNudge: number;
-  deadEndPivot: number;
+  stagnationReflection: number;
+  stagnationPivot: number;
   stepWarnTurns: number;
   stepEscalateTurns: number;
   maxFreshStarts: number;
+  sameUrlEscalate: number;
 }
 
 /** Static defaults — equivalent to current hard-coded values (the "moderate" baseline) */
@@ -213,11 +244,12 @@ export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
   toolFailureExit: TOOL_FAILURE_THRESHOLDS.EXIT,
   maxDoneRejections: AGENT_LIMITS.MAX_DONE_REJECTIONS,
   maxConsecutiveAllFail: AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL,
-  deadEndNudge: DEAD_END_DETECTION.NUDGE_THRESHOLD,
-  deadEndPivot: DEAD_END_DETECTION.PIVOT_THRESHOLD,
+  stagnationReflection: STAGNATION_DETECTION.REFLECTION_THRESHOLD,
+  stagnationPivot: STAGNATION_DETECTION.PIVOT_THRESHOLD,
   stepWarnTurns: STEP_WATCHDOG.WARN_TURNS,
   stepEscalateTurns: STEP_WATCHDOG.ESCALATE_TURNS,
   maxFreshStarts: FRESH_START.MAX_PER_SESSION,
+  sameUrlEscalate: STUCK_THRESHOLDS.SAME_URL_ESCALATE,
 };
 
 /** Hard floor — no profile or override can go below these */
@@ -231,11 +263,12 @@ const MINIMUM_LIMITS: RuntimeLimits = {
   toolFailureExit: 3,
   maxDoneRejections: 1,
   maxConsecutiveAllFail: 2,
-  deadEndNudge: 2,
-  deadEndPivot: 3,
+  stagnationReflection: 2,
+  stagnationPivot: 3,
   stepWarnTurns: 2,
   stepEscalateTurns: 4,
   maxFreshStarts: 1,
+  sameUrlEscalate: 4,
 };
 
 /** Hard ceiling — no profile or override can exceed these */
@@ -249,11 +282,12 @@ const MAXIMUM_LIMITS: RuntimeLimits = {
   toolFailureExit: 15,
   maxDoneRejections: 7,
   maxConsecutiveAllFail: 10,
-  deadEndNudge: 6,
-  deadEndPivot: 10,
+  stagnationReflection: 6,
+  stagnationPivot: 10,
   stepWarnTurns: 12,
   stepEscalateTurns: 20,
   maxFreshStarts: 4,
+  sameUrlEscalate: 16,
 };
 
 /** Per-difficulty preset overrides (merged on top of DEFAULT_RUNTIME_LIMITS) */
@@ -267,11 +301,12 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 4,
     maxDoneRejections: 1,
     maxConsecutiveAllFail: 3,
-    deadEndNudge: 2,
-    deadEndPivot: 3,
+    stagnationReflection: 2,
+    stagnationPivot: 3,
     stepWarnTurns: 3,
     stepEscalateTurns: 6,
     maxFreshStarts: 1,
+    sameUrlEscalate: 6,
   },
   moderate: {
     // Mostly defaults — the static constants were tuned for this tier
@@ -287,11 +322,12 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 8,
     maxDoneRejections: 4,
     maxConsecutiveAllFail: 6,
-    deadEndNudge: 4,
-    deadEndPivot: 6,
+    stagnationReflection: 4,
+    stagnationPivot: 6,
     stepWarnTurns: 7,
     stepEscalateTurns: 14,
     maxFreshStarts: 2,
+    sameUrlEscalate: 10,
   },
   extreme: {
     stuckEscalate: 8,
@@ -303,24 +339,25 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureExit: 10,
     maxDoneRejections: 5,
     maxConsecutiveAllFail: 7,
-    deadEndNudge: 4,
-    deadEndPivot: 7,
+    stagnationReflection: 4,
+    stagnationPivot: 7,
     stepWarnTurns: 8,
     stepEscalateTurns: 16,
     maxFreshStarts: 3,
+    sameUrlEscalate: 12,
   },
 };
 
 /**
- * Resolve runtime limits by merging: defaults → difficulty profile → guardian overrides.
+ * Resolve runtime limits by merging: defaults → difficulty profile → planner overrides.
  * Every value is clamped to [MINIMUM, MAXIMUM].
  */
 export function resolveRuntimeLimits(
   difficulty: Difficulty,
-  guardianOverrides?: Partial<RuntimeLimits> | null,
+  plannerOverrides?: Partial<RuntimeLimits> | null,
 ): RuntimeLimits {
   const profile = DIFFICULTY_PROFILES[difficulty] ?? {};
-  const merged = { ...DEFAULT_RUNTIME_LIMITS, ...profile, ...guardianOverrides };
+  const merged = { ...DEFAULT_RUNTIME_LIMITS, ...profile, ...plannerOverrides };
   const result = { ...merged };
   for (const key of Object.keys(result) as (keyof RuntimeLimits)[]) {
     result[key] = Math.max(

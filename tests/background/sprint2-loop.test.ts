@@ -69,7 +69,7 @@ const mockSnapshot: DomSnapshot = {
     { tagName: "input", tag: 12, text: "", isVisible: true, attributes: { type: "text" } },
     { tagName: "a", tag: 20, text: "Link", isVisible: true, attributes: { href: "/" } },
   ],
-  viewportText: "text",
+  visibleContent: "text",
   viewport: { width: 1280, height: 800 },
 };
 

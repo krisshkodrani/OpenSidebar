@@ -31,12 +31,12 @@ function costLabel(metrics: SessionMetrics): string {
   return `${formatCost(metrics.totalCost)}${suffix}`;
 }
 
-function statusConfig(status: AgentStatus, isStuck: boolean) {
-  if (isStuck) {
+function statusConfig(status: AgentStatus, isStalled: boolean) {
+  if (isStalled) {
     return {
       color: "text-amber-600 dark:text-amber-400",
       dotColor: "bg-amber-500",
-      label: "Stuck",
+      label: "Stalled",
     };
   }
   switch (status) {
@@ -86,13 +86,13 @@ export function StatusLine() {
   const turnProgress = useStore((s) => s.turnProgress);
   const sessionMetrics = useStore((s) => s.sessionMetrics);
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
-  const stuckState = useStore((s) => s.stuckState);
+  const stagnationState = useStore((s) => s.stagnationState);
   const taskProgress = useStore((s) => s.taskProgress);
   const taskCompletion = useStore((s) => s.taskCompletion);
   const togglePlanBoard = useStore((s) => s.togglePlanBoard);
 
-  const isStuck = !!stuckState;
-  const cfg = statusConfig(status, isStuck);
+  const isStalled = !!stagnationState;
+  const cfg = statusConfig(status, isStalled);
   const isPaused = status === AgentStatus.PAUSED;
   const canPause =
     status === AgentStatus.THINKING ||
@@ -129,8 +129,8 @@ export function StatusLine() {
   if (!isAgentRunning && status === AgentStatus.IDLE && !taskCompletion)
     return null;
 
-  const statusLabel = isStuck
-    ? `Stuck (${stuckState!.staleTurns} turns)`
+  const statusLabel = isStalled
+    ? `Stalled (${stagnationState!.stagnantTurns} turns)`
     : isPaused
       ? "Paused"
       : detail;
@@ -141,7 +141,7 @@ export function StatusLine() {
       {status !== AgentStatus.IDLE &&
       status !== AgentStatus.ERROR &&
       status !== AgentStatus.PAUSED &&
-      !isStuck ? (
+      !isStalled ? (
         <Loader2 size={10} className={`animate-spin shrink-0 ${cfg.color}`} />
       ) : (
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />

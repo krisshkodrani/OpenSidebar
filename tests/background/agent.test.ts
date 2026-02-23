@@ -73,10 +73,10 @@ describe("AgentLoop", () => {
 
     expect(mockCompleteStream).toHaveBeenCalled();
     expect(onStatus).toHaveBeenCalledWith(AgentStatus.THINKING, "Analyzing...");
-    // Unified mode: nudge→escalate→give-up ends with "Stuck" since mock LLM never emits tools
+    // Unified mode: nudge→escalate→give-up ends with "Stalled" since mock LLM never emits tools
     expect(onStatus).toHaveBeenCalledWith(
       AgentStatus.IDLE,
-      "Stuck — send a follow-up to continue",
+      "Stalled — send a follow-up to continue",
     );
   });
 

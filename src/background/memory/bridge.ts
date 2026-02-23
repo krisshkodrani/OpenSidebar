@@ -72,7 +72,7 @@ export async function sendMessageToMemory(
     setTimeout(() => {
       chrome.runtime.onMessage.removeListener(listener);
       reject(new Error("Memory operation timed out"));
-    }, 30000); // Embeddings can be slow to auto-download model first time
+    }, 10000); // Embeddings can be slow to auto-download model first time
 
     chrome.runtime.onMessage.addListener(listener);
     chrome.runtime.sendMessage(message);

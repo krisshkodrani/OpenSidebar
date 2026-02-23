@@ -33,7 +33,7 @@ function makeSnapshot(overrides?: Partial<DomSnapshot>): DomSnapshot {
         isDisabled: false,
       },
     ],
-    viewportText: "Welcome to the test page",
+    visibleContent: "Welcome to the test page",
     viewport: { width: 1280, height: 720 },
     scroll: { x: 0, y: 0, maxY: 2000 },
     ...overrides,

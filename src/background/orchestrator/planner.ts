@@ -1,7 +1,10 @@
-import { PlanGuardian } from "../agent/guardian";
+import { TaskPlanner } from "../agent/planner";
+import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
+import { resolveToolProfile } from "../tools/metadata";
 import {
+  BuildNodesResult,
   PlannerAssignment,
   TaskNode,
 } from "./types";
@@ -16,7 +19,6 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLOSE_TAB,
   ToolName.SWITCH_TAB,
   ToolName.WAIT,
-  ToolName.TAKE_SCREENSHOT,
   ToolName.HOVER_ELEMENT,
   ToolName.FIND_ELEMENT,
   ToolName.SELECT_OPTION,
@@ -114,10 +116,10 @@ export function validatePlannerAssignments(raw: unknown): PlannerAssignment[] {
 }
 
 export class OrchestratorPlanner {
-  private guardian: PlanGuardian;
+  private planner: TaskPlanner;
 
   constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
-    this.guardian = new PlanGuardian(openRouterApiKey, cerebrasApiKey);
+    this.planner = new TaskPlanner(openRouterApiKey, cerebrasApiKey);
   }
 
   async buildNodes(
@@ -125,13 +127,15 @@ export class OrchestratorPlanner {
     pageTitle: string,
     pageUrl: string,
     signal?: AbortSignal,
-  ): Promise<TaskNode[]> {
-    const decomposition = await this.guardian.decompose(
+  ): Promise<BuildNodesResult> {
+    const decomposition = await this.planner.decompose(
       query,
       pageTitle,
       pageUrl,
       signal,
     );
+
+    const difficulty: Difficulty = decomposition?.difficulty ?? "moderate";
 
     let rawAssignments: PlannerAssignment[] = [];
     let nodeIds: string[] = [];
@@ -143,7 +147,7 @@ export class OrchestratorPlanner {
         successCriteria:
           step.successCriteria ||
           `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-        allowedTools: [...EXECUTOR_DEFAULT_TOOLS],
+        allowedTools: resolveToolProfile(step.toolProfile) ?? [...EXECUTOR_DEFAULT_TOOLS],
         dependencies: (step.dependencies || [])
           .filter(
             (depIndex) =>
@@ -151,6 +155,7 @@ export class OrchestratorPlanner {
           )
           .map((depIndex) => nodeIds[depIndex]),
         assumptions: step.assumptions || [],
+        verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
       }));
       logger.info(
         "orchestrator",
@@ -180,7 +185,7 @@ export class OrchestratorPlanner {
       count: assignments.length,
     });
 
-    return assignments.map((assignment, index) => ({
+    const nodes: TaskNode[] = assignments.map((assignment, index) => ({
       id: nodeIds[index],
       role: assignment.role,
       description: assignment.objective,
@@ -203,9 +208,16 @@ export class OrchestratorPlanner {
       ],
       reflexionLog: [],
       handoffDepth: 0,
+      verificationGate: assignment.verificationGate,
       status: "pending" as const,
       retries: 0,
     }));
+
+    // Simple task: decomposition had no subtasks (empty array)
+    const isSingleNode = nodes.length === 1 &&
+      (!decomposition?.subtasks?.length || decomposition.subtasks.length === 0);
+
+    return { nodes, isSingleNode, difficulty };
   }
 
   async expandNode(
@@ -215,7 +227,7 @@ export class OrchestratorPlanner {
     reason: string,
     signal?: AbortSignal,
   ): Promise<TaskNode[] | null> {
-    const decomposition = await this.guardian.decompose(
+    const decomposition = await this.planner.decompose(
       `Replan objective: ${node.description}\nReason: ${reason}`,
       pageTitle,
       pageUrl,
@@ -241,7 +253,7 @@ export class OrchestratorPlanner {
       successCriteria:
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: [...node.allowedTools],
+      allowedTools: resolveToolProfile(step.toolProfile) ?? [...node.allowedTools],
       dependencies: [
         ...(index === 0 ? node.dependencies : []),
         ...(step.dependencies || [])
@@ -263,6 +275,7 @@ export class OrchestratorPlanner {
       reflexionLog: [],
       handoffDepth: node.handoffDepth,
       handoffFromNodeId: node.id,
+      verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
       status: "pending",
       retries: 0,
     }));

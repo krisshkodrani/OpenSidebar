@@ -17,9 +17,6 @@ function applyGlobalToolFlags(
   settings: UserSettings,
   allowed: Set<ToolName>,
 ): void {
-  if (settings.disableScreenshot) {
-    allowed.delete(ToolName.TAKE_SCREENSHOT);
-  }
   if (settings.disableNavigation) {
     allowed.delete(ToolName.NAVIGATE);
   }

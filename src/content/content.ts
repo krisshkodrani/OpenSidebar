@@ -523,7 +523,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           }
 
           const snapshot = buildSnapshot(
-            message.payload.includeText,
             message.payload.refresh,
             message.payload.showTags ?? false,
           );

@@ -156,12 +156,6 @@ export async function executeAction(
       return executeScroll(args as unknown as ScrollPageArgs);
     case ToolName.READ_PAGE:
       return executeRead();
-    case ToolName.TAKE_SCREENSHOT:
-      return {
-        success: true,
-        result: "Screenshot handled by service worker",
-        navigated: false,
-      };
     case ToolName.HOVER_ELEMENT:
       return executeHover(args as unknown as { id: number });
     case ToolName.FIND_ELEMENT:
@@ -276,7 +270,7 @@ async function executeClick(args: ClickElementArgs): Promise<{
     const overlayLikely = isLikelyOverlay(finalTop);
     const result = overlayLikely
       ? `Click intercepted! Element [${args.id}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Use hide_element(${blockingTag}) to remove it, or press_key("Escape").`
-      : `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: scroll_page, find_element, or click a different element.`;
+      : `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: hide_element(${blockingTag}) to remove it, scroll_page to reposition, or execute_js to click programmatically.`;
     return { success: false, result, navigated: false };
   }
 
@@ -541,8 +535,8 @@ function executeRead(): {
     );
   }
 
-  if (snapshot.viewportText) {
-    lines.push("", "Page text:", snapshot.viewportText);
+  if (snapshot.visibleContent) {
+    lines.push("", "Page text:", snapshot.visibleContent);
   }
 
   return {

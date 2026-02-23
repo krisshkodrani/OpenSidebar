@@ -95,7 +95,7 @@ describe("Reactive overlay dismissal — no pre-loop DISMISS_MODALS", () => {
                 title: "Test",
                 url: "https://test.com",
                 elements: [],
-                viewportText: "",
+                visibleContent: "",
                 viewport: { width: 1024, height: 768 },
                 scroll: { x: 0, y: 0, maxY: 0 },
               },

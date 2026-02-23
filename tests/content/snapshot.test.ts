@@ -9,10 +9,10 @@ describe("buildSnapshot", () => {
 
     test("captures page title and url", () => {
         document.title = "Test Page";
-        // Cannot easily mock window.location.href in readonly JSDOM in some envs, 
+        // Cannot easily mock window.location.href in readonly JSDOM in some envs,
         // but typically it defaults to about:blank or similar.
 
-        const snapshot = buildSnapshot(false, true);
+        const snapshot = buildSnapshot(true);
         expect(snapshot.title).toBe("Test Page");
     });
 
@@ -21,15 +21,14 @@ describe("buildSnapshot", () => {
         btn.textContent = "OK";
         document.body.appendChild(btn);
 
-        const snapshot = buildSnapshot(false, true);
+        const snapshot = buildSnapshot(true);
         expect(snapshot.elements.length).toBe(1);
         expect(snapshot.elements[0].text).toBe("OK");
     });
 
-    test("extracts viewport text", () => {
+    test("visibleContent is undefined", () => {
         document.body.innerHTML = "<div>Hello World</div>";
-        const snapshot = buildSnapshot(true, true);
-        // Again, dependent on TreeWalker working in JSDOM environment
-        expect(snapshot.viewportText).toContain("Hello World");
+        const snapshot = buildSnapshot(true);
+        expect(snapshot.visibleContent).toBeUndefined();
     });
 });

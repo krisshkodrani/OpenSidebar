@@ -12,7 +12,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   workspaceEnabled: true,
   theme: "system",
   showElementTags: false,
-  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: true,
   showMessageDetailsByDefault: false,
   siteAccessMode: "allow_all",

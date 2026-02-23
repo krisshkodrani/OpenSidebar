@@ -1,10 +1,10 @@
 import { DomSnapshot } from "../../types";
 import { STUCK_THRESHOLDS } from "./constants";
 
-export interface ProgressSignal {
+export interface StagnationSignal {
   type: "escalate";
   message: string;
-  staleTurns: number;
+  stagnantTurns: number;
 }
 
 /** Key attributes that indicate meaningful state changes */
@@ -21,14 +21,14 @@ const STATE_ATTRS = [
 const PROGRESS_DELTA_THRESHOLD = 0.1;
 
 /** Build a set of element signatures from a snapshot */
-function contentSignatures(snap: DomSnapshot): Set<string> {
+export function computeElementSignatures(snap: DomSnapshot): Set<string> {
   const sigs = new Set<string>();
   for (const e of snap.elements) {
     const attrSig = STATE_ATTRS.filter((a) => a in e.attributes)
       .map((a) => `${a}=${e.attributes[a]}`)
       .join(",");
     sigs.add(
-      `${e.tagName}:${e.text.slice(0, 30)}:${e.isVisible ? 1 : 0}:${attrSig}`,
+      `${e.tagName}:${e.text.slice(0, 30)}:${attrSig}`,
     );
   }
   return sigs;
@@ -51,45 +51,77 @@ function signatureDelta(prev: Set<string>, curr: Set<string>): number {
   return diffCount / Math.max(prev.size, curr.size);
 }
 
+/**
+ * Compute a cache-key fingerprint for a DOM snapshot.
+ * Used by the perception layer to avoid redundant vision calls.
+ */
+export function computeSnapshotFingerprint(snap: DomSnapshot): string {
+  const sigs = computeElementSignatures(snap);
+  // Sort for deterministic hash, then join
+  const sorted = [...sigs].sort();
+  // Simple FNV-1a-style hash of the sorted signatures
+  let hash = 2166136261;
+  for (const sig of sorted) {
+    for (let i = 0; i < sig.length; i++) {
+      hash ^= sig.charCodeAt(i);
+      hash = (hash * 16777619) >>> 0;
+    }
+  }
+  return `${snap.url}|${snap.title || ""}|${snap.elements.length}|${hash.toString(36)}`;
+}
+
 const STUCK_ESCALATE_MSG =
   "No progress detected. Escalating to next model tier.";
 
-export class ProgressTracker {
+export class StagnationMonitor {
   private lastSignatures = new Set<string>();
   private lastUrl = "";
-  private staleTurns = 0;
+  private stagnantTurns = 0;
   private escalationFired = false;
+  private _sameUrlTurns = 0;
 
-  onSnapshotRefresh(snap: DomSnapshot): ProgressSignal | null {
-    const currSigs = contentSignatures(snap);
+  /** Turns spent on the same URL, independent of DOM delta. Resets on URL change. */
+  get sameUrlTurns(): number {
+    return this._sameUrlTurns;
+  }
+
+  onSnapshotRefresh(snap: DomSnapshot): StagnationSignal | null {
+    const currSigs = computeElementSignatures(snap);
     const url = snap.url || "";
     const delta = signatureDelta(this.lastSignatures, currSigs);
     const urlChanged = url !== this.lastUrl;
 
     this.lastSignatures = currSigs;
+
+    // Same-URL counter: independent of DOM delta, tracks absolute URL stability
+    if (url === this.lastUrl) {
+      this._sameUrlTurns++;
+    } else {
+      this._sameUrlTurns = 0;
+    }
     this.lastUrl = url;
 
     // Meaningful content change — above noise threshold
     if (delta >= PROGRESS_DELTA_THRESHOLD) {
-      this.staleTurns = 0;
+      this.stagnantTurns = 0;
       return null;
     }
 
     if (urlChanged) {
-      // URL changed but content barely differs — halve stale count (partial credit)
-      this.staleTurns = Math.floor(this.staleTurns / 2);
+      // URL changed but content barely differs — halve stagnant count (partial credit)
+      this.stagnantTurns = Math.floor(this.stagnantTurns / 2);
       return null;
     }
 
-    // Same content, same URL — stuck
-    this.staleTurns++;
+    // Same content, same URL — stagnant
+    this.stagnantTurns++;
 
-    if (this.staleTurns >= STUCK_THRESHOLDS.ESCALATE && !this.escalationFired) {
+    if (this.stagnantTurns >= STUCK_THRESHOLDS.ESCALATE && !this.escalationFired) {
       this.escalationFired = true;
       return {
         type: "escalate",
         message: STUCK_ESCALATE_MSG,
-        staleTurns: this.staleTurns,
+        stagnantTurns: this.stagnantTurns,
       };
     }
     return null;
@@ -99,23 +131,24 @@ export class ProgressTracker {
   reset() {
     this.lastSignatures = new Set<string>();
     this.lastUrl = "";
-    this.staleTurns = 0;
+    this.stagnantTurns = 0;
     this.escalationFired = false;
+    this._sameUrlTurns = 0;
   }
 
-  /** Reset escalation flag and stale counter so escalation can fire again for the next tier */
+  /** Reset escalation flag and stagnant counter so escalation can fire again for the next tier */
   resetEscalation() {
     this.escalationFired = false;
-    this.staleTurns = 0;
+    this.stagnantTurns = 0;
   }
 
   /**
-   * Returns true if the tracker is in a stale state (staleTurns > 0) but no
+   * Returns true if the monitor is in a stagnant state (stagnantTurns > 0) but no
    * signal was emitted — either because escalation already fired or because
-   * staleTurns hasn't reached the threshold yet.  The loop uses this to
-   * distinguish "null because page actually changed" from "null but still stuck."
+   * stagnantTurns hasn't reached the threshold yet.  The loop uses this to
+   * distinguish "null because page actually changed" from "null but still stagnant."
    */
   isStillStuck(): boolean {
-    return this.staleTurns > 0;
+    return this.stagnantTurns > 0;
   }
 }

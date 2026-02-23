@@ -48,7 +48,6 @@ export enum ToolName {
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",
   SWITCH_TAB = "switch_tab",
-  TAKE_SCREENSHOT = "take_screenshot",
   HOVER_ELEMENT = "hover_element",
   FIND_ELEMENT = "find_element",
   WAIT = "wait",
@@ -86,7 +85,9 @@ export enum ToolName {
   XRAY_PAGE = "xray_page",
   FAST_FORWARD = "fast_forward",
   DISMISS_OVERLAYS = "dismiss_overlays",
+  CLOSE_POPUPS = "close_popups",
   BATCH_EXECUTE = "batch_execute",
+  RECALL_DEMO = "recall_demo",
 
   // React toolkit (on-demand — enabled only when React is detected on the page)
   INSPECT_REACT = "inspect_react",
@@ -155,7 +156,7 @@ export type RuntimeMessage =
   | ScreenshotCapturedMessage
   | DismissModalsMessage
   | DismissModalsResponse
-  | AgentStuckMessage
+  | AgentStagnationMessage
   | AgentTurnMessage
   | TaskProgressMessage
   | TaskCompletionMessage
@@ -187,8 +188,8 @@ export interface UserChatMessage extends BaseMessage {
     tabId: number;
     /** Active workspace ID, if any */
     workspaceId: string | null;
-    /** When true, inject as hint into running agent context (don't start new loop) */
-    isHint?: boolean;
+    /** When true, inject as feedback into running agent context (don't start new loop) */
+    isFeedback?: boolean;
   };
 }
 
@@ -253,6 +254,8 @@ export interface StreamChunkMessage extends BaseMessage {
     done: boolean;
     /** Source citations collected during the session (only present on done=true) */
     citations?: Citation[];
+    /** When set, replaces the entire content of the current streaming message */
+    replaceContent?: string;
   };
 }
 
@@ -389,13 +392,13 @@ export interface LaneTelemetrySnapshot {
 
 // --- Agent Feedback & Control Messages ---
 
-/** Background broadcasts stuck detection signals to the side panel */
-export interface AgentStuckMessage extends BaseMessage {
-  type: "AGENT_STUCK";
+/** Background broadcasts stagnation detection signals to the side panel */
+export interface AgentStagnationMessage extends BaseMessage {
+  type: "AGENT_STAGNATION";
   source: MessageSource.BACKGROUND;
   payload: {
     signal: "escalate" | "resolved";
-    staleTurns: number;
+    stagnantTurns: number;
     url: string;
     /** Human-readable explanation */
     message: string;
@@ -858,9 +861,6 @@ export interface SwitchTabArgs {
   tabId: number;
 }
 
-/** Arguments for take_screenshot */
-export type TakeScreenshotArgs = Record<string, never>;
-
 /** Arguments for hover_element */
 export interface HoverElementArgs {
   /** The numeric tag ID of the element to hover */
@@ -1097,6 +1097,9 @@ export type FastForwardArgs = Record<string, never>;
 /** Arguments for dismiss_overlays — no arguments */
 export type DismissOverlaysArgs = Record<string, never>;
 
+/** Arguments for close_popups — no arguments */
+export type ClosePopupsArgs = Record<string, never>;
+
 /** A single step inside a batch_execute script */
 export interface BatchExecuteStep {
   /** Tool name to execute */
@@ -1113,6 +1116,12 @@ export interface BatchExecuteArgs {
   steps: BatchExecuteStep[];
   /** What to verify after all steps complete (informational, not enforced) */
   verify?: string;
+}
+
+/** Arguments for recall_demo — retrieve a recorded demonstration by name or query */
+export interface RecallDemoArgs {
+  /** Demo name or search query to find a relevant demonstration */
+  query: string;
 }
 
 // --- React Toolkit Args ---
@@ -1170,7 +1179,6 @@ export type ToolArgsMap = {
   [ToolName.CREATE_TAB]: CreateTabArgs;
   [ToolName.CLOSE_TAB]: CloseTabArgs;
   [ToolName.SWITCH_TAB]: SwitchTabArgs;
-  [ToolName.TAKE_SCREENSHOT]: TakeScreenshotArgs;
   [ToolName.HOVER_ELEMENT]: HoverElementArgs;
   [ToolName.FIND_ELEMENT]: FindElementArgs;
   [ToolName.WAIT]: WaitArgs;
@@ -1208,7 +1216,9 @@ export type ToolArgsMap = {
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.FAST_FORWARD]: FastForwardArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
+  [ToolName.CLOSE_POPUPS]: ClosePopupsArgs;
   [ToolName.BATCH_EXECUTE]: BatchExecuteArgs;
+  [ToolName.RECALL_DEMO]: RecallDemoArgs;
   [ToolName.INSPECT_REACT]: InspectReactArgs;
   [ToolName.REACT_SET_INPUT]: ReactSetInputArgs;
   [ToolName.INSPECT_REACT_TREE]: InspectReactTreeArgs;
@@ -1236,7 +1246,7 @@ export interface DomSnapshot {
   /** Array of tagged interactive elements */
   elements: TaggedElement[];
   /** Plain text content of the visible viewport (truncated) */
-  viewportText: string;
+  visibleContent?: string;
   /** Viewport dimensions */
   viewport: { width: number; height: number };
   /** Scroll position */
@@ -1296,8 +1306,6 @@ export interface DomSnapshotRequest extends BaseMessage {
   type: "DOM_SNAPSHOT_REQUEST";
   source: MessageSource.BACKGROUND;
   payload: {
-    /** Whether to include viewport text (expensive) */
-    includeText: boolean;
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
     /** Whether to render visual [N] tag overlays on the page */
@@ -1389,8 +1397,8 @@ export interface ChatEntry {
   isStreaming: boolean;
   /** Real-time step timeline for agent execution */
   steps?: AgentStep[];
-  /** Whether this user message was sent as a hint during execution */
-  isHint?: boolean;
+  /** Whether this user message was sent as feedback during execution */
+  isFeedback?: boolean;
   /** Whether this user message is a golden recording annotation */
   isAnnotation?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
@@ -1399,12 +1407,12 @@ export interface ChatEntry {
   citations?: Citation[];
 }
 
-/** Stuck detection state for the side panel */
-export interface StuckState {
+/** Stagnation detection state for the side panel */
+export interface StagnationState {
   signal: "escalate";
-  staleTurns: number;
+  stagnantTurns: number;
   url: string;
-  /** Timestamp of the stuck signal (for auto-dismiss timing) */
+  /** Timestamp of the stagnation signal (for auto-dismiss timing) */
   receivedAt: number;
 }
 
@@ -1464,8 +1472,8 @@ export interface SidePanelState {
   taskProgress: TaskProgressMessage["payload"] | null;
   /** Completed task report (null until task finishes) */
   taskCompletion: TaskCompletionMessage["payload"] | null;
-  /** Non-null when the agent is detected as stuck */
-  stuckState: StuckState | null;
+  /** Non-null when the agent is detected as stagnating */
+  stagnationState: StagnationState | null;
   /** Current turn progress (null when agent is idle) */
   turnProgress: TurnProgress | null;
   /** Pending high-risk action awaiting user approval */
@@ -1633,8 +1641,6 @@ export interface UserSettings {
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
-  /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
-  visionModel: string;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
   /** Expand step timeline + tool logs by default in each assistant message */
@@ -1643,7 +1649,7 @@ export interface UserSettings {
   siteAccessMode?: "allow_all" | "blocklist";
   /** Blocked domains when `siteAccessMode` is `blocklist` */
   siteAccessBlocklist?: string[];
-  /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
+  /** @deprecated No-op — take_screenshot tool has been removed */
   disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;
@@ -1891,7 +1897,7 @@ export interface TraceEntry {
     url: string;
     title: string;
     elementCount: number;
-    viewportTextLength: number;
+    visibleContentLength: number;
     scrollY: number;
   };
   /** Full elements array (for eval replay — reconstruct system prompt) */
@@ -1924,10 +1930,19 @@ export interface TraceEntry {
   toolExecutions: TraceToolExecution[];
   /** Events that occurred during this turn */
   events: TraceEvent[];
-  /** Progress tracker state */
+  /** Stagnation monitor state */
   progressState: {
-    staleTurns: number;
+    stagnantTurns: number;
     signal: string | null;
+  };
+  /** Perception layer data (vision model interpretation of the page) */
+  perception?: {
+    interpretation: string;
+    model: string;
+    providerId?: string;
+    durationMs: number;
+    screenshotPath?: string;
+    cached: boolean;
   };
   /** Mid-session runtime limit reassessment (only on reassessment turns) */
   limitReassessment?: {
@@ -1997,7 +2012,7 @@ export interface TraceEventPayloadByType {
   };
   stuck_signal: {
     type: "escalate";
-    staleTurns: number;
+    stagnantTurns: number;
   };
   circuit_breaker:
     | {
@@ -2054,10 +2069,10 @@ export interface TraceSession {
   metrics: SessionMetrics | null;
   /** Workspace ID for session isolation correlation */
   workspaceId?: string | null;
-  /** Guardian's difficulty assessment for this session */
+  /** Planner's difficulty assessment for this session */
   difficultyAssessment?: string;
   /** Resolved runtime limits after merging defaults + profile + overrides */
   resolvedLimits?: Record<string, number>;
-  /** Guardian's per-field limit overrides (null if none) */
-  guardianLimitOverrides?: Record<string, number> | null;
+  /** Planner's per-field limit overrides (null if none) */
+  plannerLimitOverrides?: Record<string, number> | null;
 }

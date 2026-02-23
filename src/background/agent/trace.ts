@@ -111,7 +111,7 @@ export class TraceRecorder {
       url: string;
       title: string;
       elementCount: number;
-      viewportTextLength: number;
+      visibleContentLength: number;
       scrollY: number;
     },
     elements: TaggedElement[],
@@ -206,10 +206,44 @@ export class TraceRecorder {
     } as TraceEvent);
   }
 
-  /** Record progress tracker state */
-  recordProgress(staleTurns: number, signal: string | null): void {
+  /** Record perception data (vision model interpretation) for the current turn */
+  recordPerception(
+    perception: {
+      interpretation: string;
+      model: string;
+      providerId?: string;
+      durationMs: number;
+      cached: boolean;
+    },
+    screenshotDataUrl?: string,
+  ): void {
     if (!this.currentTurn) return;
-    this.currentTurn.progressState = { staleTurns, signal };
+    const turnNumber = this.currentTurn.turnNumber;
+    this.currentTurn.perception = {
+      interpretation: perception.interpretation,
+      model: perception.model,
+      providerId: perception.providerId,
+      durationMs: perception.durationMs,
+      cached: perception.cached,
+      // Set path synchronously — deterministic format, regardless of POST success
+      ...(screenshotDataUrl && turnNumber != null
+        ? { screenshotPath: `screenshots/${this.sessionId}-T${turnNumber}.jpg` }
+        : {}),
+    };
+    // Fire-and-forget screenshot save to trace server
+    if (screenshotDataUrl && turnNumber != null) {
+      this.flush("/traces/screenshot", {
+        sessionId: this.sessionId,
+        turnNumber,
+        dataUrl: screenshotDataUrl,
+      });
+    }
+  }
+
+  /** Record progress tracker state */
+  recordProgress(stagnantTurns: number, signal: string | null): void {
+    if (!this.currentTurn) return;
+    this.currentTurn.progressState = { stagnantTurns, signal };
   }
 
   /** Finalize and flush the current turn to the trace server */
@@ -241,9 +275,12 @@ export class TraceRecorder {
       toolExecutions: this.turnToolExecutions,
       events: this.turnEvents,
       progressState: this.currentTurn.progressState ?? {
-        staleTurns: 0,
+        stagnantTurns: 0,
         signal: null,
       },
+      ...(this.currentTurn.perception
+        ? { perception: this.currentTurn.perception }
+        : {}),
     };
 
     this.currentTurn = null;
@@ -254,14 +291,14 @@ export class TraceRecorder {
   setDifficultyInfo(info: {
     difficulty: string;
     resolvedLimits: Record<string, number>;
-    guardianOverrides: Record<string, number> | null;
+    plannerOverrides: Record<string, number> | null;
   }): void {
     this.difficultyInfo = info;
   }
   private difficultyInfo: {
     difficulty: string;
     resolvedLimits: Record<string, number>;
-    guardianOverrides: Record<string, number> | null;
+    plannerOverrides: Record<string, number> | null;
   } | null = null;
 
   /** Finalize the session and flush session metadata */
@@ -304,7 +341,7 @@ export class TraceRecorder {
         ? {
             difficultyAssessment: this.difficultyInfo.difficulty,
             resolvedLimits: this.difficultyInfo.resolvedLimits,
-            guardianLimitOverrides: this.difficultyInfo.guardianOverrides,
+            plannerLimitOverrides: this.difficultyInfo.plannerOverrides,
           }
         : {}),
     };

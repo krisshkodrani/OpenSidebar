@@ -136,7 +136,7 @@ describe("ContextManager", () => {
         title: "Test Page",
         url: "https://example.com",
         elements: [],
-        viewportText: "Some text",
+        visibleContent: "Some text",
         viewport: { width: 1280, height: 800 },
         scroll: { x: 0, y: 500, maxY: 3000 },
       });
@@ -152,7 +152,7 @@ describe("ContextManager", () => {
         title: "Test Page",
         url: "https://example.com",
         elements: [],
-        viewportText: "Some text",
+        visibleContent: "Some text",
         viewport: { width: 1280, height: 800 },
         scroll: { x: 0, y: 3000, maxY: 3000 },
       });
@@ -168,7 +168,7 @@ describe("ContextManager", () => {
         title: "Test Page",
         url: "https://example.com",
         elements: [],
-        viewportText: "Some text",
+        visibleContent: "Some text",
         viewport: { width: 1280, height: 800 },
         scroll: { x: 0, y: 0, maxY: 0 },
       });
@@ -183,7 +183,7 @@ describe("ContextManager", () => {
         title: "Test Page",
         url: "https://example.com",
         elements: [],
-        viewportText: "",
+        visibleContent: "",
         viewport: { width: 1280, height: 800 },
         scroll: { x: 0, y: 1500, maxY: 3000 },
       });
@@ -350,7 +350,7 @@ describe("ContextManager", () => {
         elements: [
           { tagName: "button", id: 1, text: "Click me", isVisible: true, attributes: {} },
         ],
-        viewportText: "Some text",
+        visibleContent: "Some text",
         scrollPosition: { scrollTop: 0, scrollHeight: 1000, clientHeight: 800 },
       });
 
@@ -379,7 +379,7 @@ describe("ContextManager", () => {
         elements: [
           { tagName: "button", id: 1, text: "Click me", isVisible: true, attributes: {} },
         ],
-        viewportText: "content",
+        visibleContent: "content",
         scrollPosition: { scrollTop: 0, scrollHeight: 1000, clientHeight: 800 },
       });
 
@@ -399,16 +399,16 @@ describe("ContextManager", () => {
     test("fast persona appears by default", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
-      expect(systemContent).toContain("sharp, resourceful web automation expert");
-      expect(systemContent).not.toContain("seasoned systems thinker");
+      expect(systemContent).toContain("You are the execution model");
+      expect(systemContent).not.toContain("You are the reasoning model");
     });
 
     test("smart persona appears after setModelTier('smart')", () => {
       context.setModelTier("smart");
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
-      expect(systemContent).toContain("seasoned systems thinker");
-      expect(systemContent).not.toContain("sharp, resourceful web automation expert");
+      expect(systemContent).toContain("You are the reasoning model");
+      expect(systemContent).not.toContain("You are the execution model");
     });
   });
 
@@ -442,7 +442,7 @@ describe("ContextManager", () => {
     test("system prompt contains investigation guidance", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
-      expect(systemContent).toContain("Investigation:");
+      expect(systemContent).toContain("Investigation protocol");
       expect(systemContent).toContain("inspect_hidden");
       expect(systemContent).toContain("read_element reads attributes");
     });
@@ -473,7 +473,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "text",
+        visibleContent: "text",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -492,7 +492,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "text",
+        visibleContent: "text",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -510,7 +510,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "text",
+        visibleContent: "text",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -539,7 +539,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "text",
+        visibleContent: "text",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -558,7 +558,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "text",
+        visibleContent: "text",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -600,7 +600,7 @@ describe("ContextManager", () => {
           { tagName: "button", tag: 5, text: "Submit", isVisible: true, attributes: {} },
           { tagName: "input", tag: 12, text: "", isVisible: true, attributes: { type: "text" } },
         ],
-        viewportText: "content",
+        visibleContent: "content",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -614,7 +614,7 @@ describe("ContextManager", () => {
         title: "Test",
         url: "https://example.com",
         elements: [],
-        viewportText: "content",
+        visibleContent: "content",
         viewport: { width: 1280, height: 800 },
       });
 
@@ -659,7 +659,7 @@ describe("ContextManager", () => {
       expect(doneLineMatch![0]).not.toContain("→");
     });
 
-    test("distillForEscalation includes plan state", () => {
+    test("summarizeTrajectory includes plan state", () => {
       context.setPlanStatus(
         [
           { description: "Step A", status: "completed", result: "Done" },
@@ -669,7 +669,7 @@ describe("ContextManager", () => {
       );
       context.addMessage(userMsg("Do the task"));
 
-      context.distillForEscalation("Do the task");
+      context.summarizeTrajectory("Do the task");
 
       const messages = context.getMessages();
       const planMsg = messages.find(

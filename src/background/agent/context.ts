@@ -3,6 +3,7 @@ import { DomSnapshot, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 import { COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
+import { getPromptTemplate } from "../../prompts";
 
 /**
  * Format a single element in compact notation.
@@ -39,14 +40,13 @@ export function formatSnapshotElements(elements: TaggedElement[]): string {
     .join("\n");
 }
 
-const FAST_PERSONA = `You are a sharp, resourceful web automation expert who thrives on solving problems efficiently. You move fast, think clearly, and always know which tool to reach for next.`;
+const FAST_PERSONA = "You are the execution model. Keep Think blocks to 2-3 lines. Prefer the most obvious action. Call one tool per turn unless batching independent fills. If an action fails twice, call escalate() instead of retrying.";
 
-const SMART_PERSONA = `You are a seasoned systems thinker with decades of experience debugging the web's trickiest edge cases. You take a step back, reason through root causes, and find solutions others miss.`;
+const SMART_PERSONA = "You are the reasoning model, called when the fast model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
 
 /** Tools whose results carry reference data worth preserving longer in history. */
 const DISCOVERY_TOOLS: ReadonlySet<string> = new Set([
   "inspect_hidden",
-  "take_screenshot",
   "execute_js",
   "memory_search",
   "transcribe_audio",
@@ -57,6 +57,7 @@ const DISCOVERY_TOOLS: ReadonlySet<string> = new Set([
   "read_element",
   "inspect_react",
   "inspect_react_tree",
+  "recall_demo",
 ]);
 
 export enum CompressionLevel {
@@ -76,8 +77,14 @@ export interface ContextMetrics {
   compressionLevel: CompressionLevel;
 }
 
+export interface PlanStatusGate {
+  trigger: string;
+  action: "call_done" | "advance_step";
+  pattern?: string;
+}
+
 export interface PlanStatus {
-  subtasks: { description: string; status: string; completedAtUrl?: string; result?: string }[];
+  subtasks: { description: string; status: string; completedAtUrl?: string; result?: string; verificationGate?: PlanStatusGate; toolProfile?: string }[];
   currentIndex: number;
 }
 
@@ -85,77 +92,7 @@ export interface PlanStatus {
 // IMPORTANT: Block ordering is designed for LLM prefix caching.
 // Block 1 (static rules) MUST come first so the prefix is stable across turns.
 // Do NOT move persona or dynamic content above the static rules.
-const SYSTEM_PROMPT_TEMPLATE = `You are OpenSidebar, an autonomous browser agent.
-
-## Core Loop: Observe → Think → Act → Verify
-Every turn, follow this cycle:
-1. **Observe**: Read Visible Elements and Viewport Text. What state is the page in?
-2. **Think** (2-3 lines):
-   - What do I see? (key page state, relevant elements)
-   - What will I do and why? (connect observation to action)
-   - What should change? (predicted outcome to verify next turn)
-3. **Act**: Call the appropriate tool(s).
-4. **Verify** (next turn): Compare expected vs actual outcome.
-   - Match → state what to do next.
-   - Mismatch → state what went wrong, then try a different approach.
-
-## Answering Questions
-If the user asks a question about the page (e.g. "what is this?", "describe...", "tell me about..."),
-answer it directly using done({"summary": "your answer"}) — do NOT start performing actions.
-Only begin acting on the page if the user asks you to DO something (click, fill, navigate, solve, etc.).
-
-## Rules
-- Always include your Think reasoning WITH tool calls. Never call tools blindly.
-- After navigation or page change, re-read page state before acting.
-- If an action had no visible effect, consider whether repeating it makes sense (e.g. the page says "click 3 more times") or whether you should try a different approach.
-- If find_element fails or returns unexpected results, call read_page to see all available elements.
-- If stuck for 2+ turns, take_screenshot to see what the page actually looks like.
-- When a subtask is active, focus only on completing that subtask before moving on.
-- Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
-- If a page returns 404 or "Page not found", do NOT keep trying. Navigate back or call done() explaining the page doesn't exist.
-- Tag IDs ([N] in Visible Elements) are integers — use them in tool params like id, sourceId, targetId.
-- Work autonomously — do not ask the user for permission between steps.
-
-## Form Submission
-- Single-field forms (search, login code): type_text with pressEnter: true.
-- Multi-field forms: fill ALL fields first, then click the submit button.
-- If pressEnter doesn't submit: press_key("Enter") as fallback, then look for a Submit/Send/Continue button and click it.
-- After submitting, verify the page changed — if nothing happened, try clicking the submit button instead.
-
-## Tool Tips
-- type_text auto-focuses; pressEnter: true submits forms in one step.
-- hide_element removes overlays/modals blocking interaction (rejects non-overlay elements).
-- scroll_page with optional id for container scrolling.
-- press_key for keyboard shortcuts or key-based inputs.
-- drag_and_drop between [draggable] elements by tag ID.
-- draw_stroke on canvas elements with start/end coordinates.
-- select_option for <select> dropdowns — pass visible option text.
-- take_screenshot when the page doesn't match expectations.
-- Batch independent actions in one turn (e.g. fill all form fields).
-- Memory: memory_search to recall, memory_add to save, memory_update to correct, memory_delete to remove stale entries, memory_list_categories to inspect organization. Types: fact (information), procedure (how-to steps), preference (user preferences). Use type filter in memory_search when you know what kind of knowledge you need.
-- escalate when stuck on riddles, puzzles, math, or multi-step logic.
-- Investigation: When stuck or content may be hidden/missing, use inspect_hidden, execute_js, or take_screenshot to gather evidence before retrying. Check get_cookies or execute_js for auth/session state.
-- xray_page toggles a CSS override that forces ALL hidden elements visible (display:none, opacity:0, visibility:hidden). Use when inspect_hidden finds content you need to interact with. Call again to disable. Triggers a snapshot refresh so new elements get tagged.
-- fast_forward accelerates all page timers (setTimeout/setInterval) to fire instantly. Use when content appears after a countdown or timed delay. Call again to restore normal timing.
-- read_element reads attributes (href, src, value) cheaply — verify link targets before navigating.
-- React: When React tools appear, inspect_react reads component state/props, react_set_input handles controlled inputs, inspect_react_tree shows the component hierarchy. Use wait_for_react after actions that trigger async state changes.
-- Audio/video: You CANNOT hear or watch media directly. Use transcribe_audio to get a text transcript of spoken content. If transcription isn't available, try read_page or take_screenshot after clicking play — some challenges reveal text visually.
-
-{{persona}}
-{{planStatus}}
-{{planInstructions}}
-{{demonstrations}}
-## Page Context
-Title: {{title}}
-URL: {{url}}
-{{scrollIndicator}}
-
-## Visible Elements
-{{elements}}
-
-## Viewport Text (Summary)
-{{viewportText}}
-`;
+const SYSTEM_PROMPT_TEMPLATE = getPromptTemplate("agent.system");
 
 export class ContextManager {
   private history: LLMMessage[] = [];
@@ -164,9 +101,11 @@ export class ContextManager {
   private maxContextTokens: number;
   private planStatus: PlanStatus | null = null;
   private demonstrations: string | null = null;
+  private demoCatalog: string | null = null;
   private storageKey: string;
   private modelTier: "fast" | "smart" = "fast";
   private originalQuery: string | null = null;
+  private pageInterpretation: string | null = null;
 
   public setModelTier(tier: "fast" | "smart"): void {
     this.modelTier = tier;
@@ -177,9 +116,19 @@ export class ContextManager {
     this.originalQuery = query;
   }
 
+  /** Set the page interpretation from the perception layer. */
+  public setPageInterpretation(interpretation: string | null): void {
+    this.pageInterpretation = interpretation;
+  }
+
   /** Inject a formatted demonstration into the system prompt context. */
   public setDemonstrations(demoText: string | null): void {
     this.demonstrations = demoText;
+  }
+
+  /** Set the compact demo catalog (one line per demo) for the system prompt prefix. */
+  public setDemoCatalog(catalog: string | null): void {
+    this.demoCatalog = catalog;
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -211,6 +160,17 @@ export class ContextManager {
   }
 
   private capturedOverlays: string[] = [];
+  /** Descriptions of nuisance popups auto-dismissed by perception triage */
+  private triagedPopups: string[] = [];
+
+  /** Record nuisance popups that were auto-dismissed by perception triage. */
+  public addTriagedPopups(descriptions: string[]): void {
+    this.triagedPopups.push(...descriptions);
+    // Cap to prevent unbounded growth
+    if (this.triagedPopups.length > 20) {
+      this.triagedPopups = this.triagedPopups.slice(-20);
+    }
+  }
 
   public setPlanStatus(
     subtasks: {
@@ -218,6 +178,8 @@ export class ContextManager {
       status: string;
       completedAtUrl?: string;
       result?: string;
+      verificationGate?: PlanStatusGate;
+      toolProfile?: string;
     }[],
     currentIndex: number,
   ): void {
@@ -226,6 +188,11 @@ export class ContextManager {
 
   public clearPlanStatus(): void {
     this.planStatus = null;
+  }
+
+  /** Get the raw plan status (for verification gate access). */
+  public getPlanStatusRaw(): PlanStatus | null {
+    return this.planStatus;
   }
 
   private formatPlanStatus(): string {
@@ -275,7 +242,15 @@ export class ContextManager {
     if (nextStep) {
       block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
     }
-    block += `Execute now and mark this subtask complete when verified.`;
+    // Append verification gate for current subtask
+    const currentSubtask = subtasks[currentIndex];
+    if (currentSubtask?.verificationGate) {
+      const gate = currentSubtask.verificationGate;
+      const actionLabel = gate.action === "call_done" ? "call done()" : "advance to next step";
+      block += `\nVERIFY: ${gate.trigger} → ${actionLabel}`;
+    }
+
+    block += `\nExecute now and mark this subtask complete when verified.`;
     return block;
   }
 
@@ -511,6 +486,16 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{planInstructions}}", "");
     }
 
+    // Inject demo catalog (compact list of available demonstrations, in static prefix)
+    if (this.demoCatalog) {
+      content = content.replace(
+        "{{demoCatalog}}",
+        `## Available Demonstrations\nUse recall_demo to retrieve step-by-step instructions for any of these:\n${this.demoCatalog}\n`,
+      );
+    } else {
+      content = content.replace("{{demoCatalog}}", "");
+    }
+
     // Inject demonstration context (if any)
     content = content.replace("{{demonstrations}}", this.demonstrations || "");
 
@@ -571,8 +556,17 @@ Do NOT call done() until every planned step is complete.
           )
           .join("\n");
         content = content.replace(
-          "## Viewport Text",
-          warnings + "\n\n## Viewport Text",
+          "## Visible Content",
+          warnings + "\n\n## Visible Content",
+        );
+      }
+
+      // Perception triage: note auto-dismissed nuisance popups so LLM doesn't look for them
+      if (this.triagedPopups.length > 0) {
+        const note = `[Auto-dismissed: ${this.triagedPopups.join(", ")}]`;
+        content = content.replace(
+          "## Visible Content",
+          note + "\n\n## Visible Content",
         );
       }
 
@@ -582,8 +576,8 @@ Do NOT call done() until every planned step is complete.
           .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
-          "## Viewport Text",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Viewport Text`,
+          "## Visible Content",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Visible Content`,
         );
       } else if (
         // Fallback for immediate snapshot if persistence hasn't caught up (rare)
@@ -594,35 +588,29 @@ Do NOT call done() until every planned step is complete.
           .map((t, i) => `[Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
-          "## Viewport Text",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Viewport Text`,
+          "## Visible Content",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Visible Content`,
         );
       }
 
       // Valid element IDs — helps LLM avoid hallucinating non-existent IDs
       if (this.snapshot.elements.length > 0) {
         const idList = this.snapshot.elements.map(e => e.tag).join(",");
-        content = content.replace("## Viewport Text",
-          `Valid element IDs: [${idList}]\n\n## Viewport Text`);
+        content = content.replace("## Page Interpretation",
+          `Valid element IDs: [${idList}]\n\n## Page Interpretation`);
       }
 
-      // Viewport text — dynamic with compression level
-      let viewportText = this.snapshot.viewportText || "No text content.";
-      if (level === CompressionLevel.HEAVY) {
-        viewportText = ""; // Remove in heavy compression
-      } else if (level === CompressionLevel.MEDIUM) {
-        viewportText = viewportText.slice(0, 2000);
-      } else if (level === CompressionLevel.LIGHT) {
-        viewportText = viewportText.slice(0, 3000);
-      }
-      content = content.replace("{{viewportText}}", sanitizeForPrompt(viewportText));
+      // Page interpretation from the perception layer (replaces raw visibleContent)
+      const interpretation = this.pageInterpretation
+        || "No visual interpretation available. Use element list above.";
+      content = content.replace("{{pageInterpretation}}", interpretation);
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     } else {
       content = content.replace("{{title}}", "No page loaded");
       content = content.replace("{{url}}", "about:blank");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
-      content = content.replace("{{viewportText}}", "");
+      content = content.replace("{{pageInterpretation}}", "");
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     }
 
@@ -687,7 +675,7 @@ Do NOT call done() until every planned step is complete.
       const line = `[${el.tag}] ${el.tagName}${hasId} ${otherAttrs} "${el.text}"${role}`;
       return sum + Math.ceil(line.length / 4);
     }, 0);
-    const textTokens = Math.ceil((this.snapshot.viewportText || "").length / 4);
+    const perceptionTokens = this.pageInterpretation ? 200 : 0; // Perception output is compact (~150 tokens)
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)
       : 0;
@@ -697,7 +685,7 @@ Do NOT call done() until every planned step is complete.
       0,
     );
 
-    const totalEstimate = baseTokens + elemTokens + textTokens + historyTokens;
+    const totalEstimate = baseTokens + elemTokens + perceptionTokens + historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
     if (utilization < 0.5) return CompressionLevel.NONE;
@@ -1113,6 +1101,8 @@ Do NOT call done() until every planned step is complete.
     this.snapshot = null;
     this.planStatus = null;
     this.capturedOverlays = [];
+    this.triagedPopups = [];
+    this.pageInterpretation = null;
     this.saveState().catch(() => {});
   }
 
@@ -1147,14 +1137,14 @@ Do NOT call done() until every planned step is complete.
   }
 
   /**
-   * Distill conversation history into a compact situation report for escalation.
+   * Summarize the trajectory into a compact situation report for escalation.
    * Replaces verbose tool call/result pairs with a structured timeline,
    * dramatically reducing context size while preserving essential signal.
    *
-   * After distillation, history contains: original query + distilled summary.
+   * After summarization, history contains: original query + distilled summary.
    * The current DOM snapshot is preserved (in system prompt, not history).
    */
-  public distillForEscalation(originalQuery: string): void {
+  public summarizeTrajectory(originalQuery: string): void {
     const timeline = summarizeHistory(this.history);
 
     // Replace history with compact context
@@ -1175,7 +1165,7 @@ Do NOT call done() until every planned step is complete.
     }
 
     this.saveState().catch(() => {});
-    logger.info("agent", "Context distilled for escalation", {
+    logger.info("agent", "Trajectory summarized for escalation", {
       timelineEntries: timeline.length,
       historyLength: this.history.length,
     });
@@ -1221,7 +1211,7 @@ Do NOT call done() until every planned step is complete.
 
 /**
  * Shared utility: walk message history and extract a compact action→outcome timeline.
- * Used by both `distillForEscalation()` and `extractAttemptSummary()`.
+ * Used by both `summarizeTrajectory()` and `extractAttemptSummary()`.
  */
 export function summarizeHistory(
   messages: LLMMessage[],
@@ -1257,6 +1247,7 @@ export function summarizeHistory(
 
       // Find the corresponding tool result
       let outcome = "no result";
+      let isFailure = false;
       for (let j = i + 1; j < messages.length; j++) {
         if (
           messages[j].role === "tool" &&
@@ -1266,13 +1257,15 @@ export function summarizeHistory(
             typeof messages[j].content === "string"
               ? messages[j].content ?? ""
               : "";
-          outcome = content.split("\n")[0].slice(0, 80);
+          isFailure = content.startsWith("Error:") || content.includes("Click intercepted")
+            || content.includes("No element with tag") || content.includes("does not appear to be");
+          outcome = content.split("\n")[0].slice(0, isFailure ? 160 : 80);
           break;
         }
       }
 
       turnNum++;
-      entries.push(`T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`);
+      entries.push(`${isFailure ? "\u26A0 " : ""}T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`);
       if (entries.length >= maxEntries) return entries;
     }
   }
@@ -1282,3 +1275,5 @@ export function summarizeHistory(
 
 /** Alias for backward compatibility */
 export const summarizeCausalChain = summarizeHistory;
+
+

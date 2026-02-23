@@ -104,18 +104,18 @@ describe("AgentLoop Public API", () => {
     } as any;
   });
 
-  describe("injectHint", () => {
+  describe("injectFeedback", () => {
     test("stores hint text without throwing", () => {
       const { agent } = createLoop();
       expect(() =>
-        agent.injectHint("Try clicking the submit button"),
+        agent.injectFeedback("Try clicking the submit button"),
       ).not.toThrow();
     });
 
     test("overwrites previous hint without throwing", () => {
       const { agent } = createLoop();
-      agent.injectHint("first hint");
-      expect(() => agent.injectHint("second hint")).not.toThrow();
+      agent.injectFeedback("first hint");
+      expect(() => agent.injectFeedback("second hint")).not.toThrow();
     });
   });
 
@@ -220,10 +220,10 @@ describe("AgentLoop Public API", () => {
     });
   });
 
-  describe("getProgressTracker", () => {
-    test("returns a ProgressTracker instance", () => {
+  describe("getStagnationMonitor", () => {
+    test("returns a StagnationMonitor instance", () => {
       const { agent } = createLoop();
-      const pt = agent.getProgressTracker();
+      const pt = agent.getStagnationMonitor();
       expect(pt).toBeDefined();
       expect(typeof pt.reset).toBe("function");
       expect(typeof pt.onSnapshotRefresh).toBe("function");

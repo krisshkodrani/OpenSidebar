@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { ProgressTracker } from "../../src/background/agent/progress";
+import { StagnationMonitor } from "../../src/background/agent/stagnation";
 import { DomSnapshot, TaggedElement } from "../../src/types";
 
 function makeElement(overrides?: Partial<TaggedElement>): TaggedElement {
@@ -21,7 +21,7 @@ function makeSnap(overrides?: Partial<DomSnapshot>): DomSnapshot {
     title: "Test Page",
     url: "https://example.com",
     elements: [makeElement()],
-    viewportText: "Hello world",
+    visibleContent: "Hello world",
     viewport: { width: 1024, height: 768 },
     scroll: { x: 0, y: 0, maxY: 1000 },
     ...overrides,
@@ -45,7 +45,7 @@ function makeManyElementSnap(
 }
 
 /** Helper: feed N stale snapshots and return the last signal */
-function feedStale(tracker: ProgressTracker, snap: DomSnapshot, count: number) {
+function feedStale(tracker: StagnationMonitor, snap: DomSnapshot, count: number) {
   let signal = null;
   for (let i = 0; i < count; i++) {
     signal = tracker.onSnapshotRefresh(snap);
@@ -53,11 +53,11 @@ function feedStale(tracker: ProgressTracker, snap: DomSnapshot, count: number) {
   return signal;
 }
 
-describe("ProgressTracker", () => {
-  let tracker: ProgressTracker;
+describe("StagnationMonitor", () => {
+  let tracker: StagnationMonitor;
 
   beforeEach(() => {
-    tracker = new ProgressTracker();
+    tracker = new StagnationMonitor();
   });
 
   it("returns null on first call (baseline)", () => {
@@ -80,7 +80,7 @@ describe("ProgressTracker", () => {
     const signal = tracker.onSnapshotRefresh(snap); // stale 5
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(5);
+    expect(signal!.stagnantTurns).toBe(5);
   });
 
   it("returns null between thresholds (stale 1-4)", () => {
@@ -182,7 +182,7 @@ describe("ProgressTracker", () => {
 
     // Reset escalation state (as the loop does after handling)
     tracker.resetEscalation();
-    // staleTurns is now 0, but lastSignatures still match snap.
+    // stagnantTurns is now 0, but lastSignatures still match snap.
 
     // 4 more stale turns — no signal yet
     feedStale(tracker, snap, 4); // stale 1-4
@@ -190,7 +190,7 @@ describe("ProgressTracker", () => {
     const esc2 = tracker.onSnapshotRefresh(snap);
     expect(esc2).not.toBeNull();
     expect(esc2!.type).toBe("escalate");
-    expect(esc2!.staleTurns).toBe(5);
+    expect(esc2!.stagnantTurns).toBe(5);
   });
 
   it("URL-only change halves stale count instead of resetting", () => {
@@ -201,13 +201,13 @@ describe("ProgressTracker", () => {
     for (let i = 0; i < 6; i++) {
       tracker.onSnapshotRefresh(snap1);
     }
-    // staleTurns = 6 (escalation already fired at 5)
+    // stagnantTurns = 6 (escalation already fired at 5)
 
     // Navigate to different URL with same content → halve to 3
     const snap2 = makeSnap({ url: "https://other.com" });
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
-    // staleTurns = 3 after halving
+    // stagnantTurns = 3 after halving
   });
 
   it("content change still fully resets stale count to 0", () => {
@@ -238,12 +238,12 @@ describe("ProgressTracker", () => {
     // Build stale turns, periodically changing URL with same content
     tracker.onSnapshotRefresh(snap1); // stale 1
     tracker.onSnapshotRefresh(snap1); // stale 2
-    // staleTurns = 2, navigate away → halve to 1
+    // stagnantTurns = 2, navigate away → halve to 1
     const snapOther = makeSnap({ url: "https://other.com" });
     tracker.onSnapshotRefresh(snapOther);
-    // staleTurns = 1, navigate back → halve to 0
+    // stagnantTurns = 1, navigate back → halve to 0
     tracker.onSnapshotRefresh(snap1);
-    // staleTurns = 0, keep going stale on same URL
+    // stagnantTurns = 0, keep going stale on same URL
     feedStale(tracker, snap1, 4); // stale 1-4
     const signal = tracker.onSnapshotRefresh(snap1); // stale 5 → escalate
     expect(signal).not.toBeNull();
@@ -261,21 +261,21 @@ describe("ProgressTracker", () => {
     for (let i = 0; i < 6; i++) {
       tracker.onSnapshotRefresh(snap1);
     }
-    // staleTurns = 6, URL change halves to 3
+    // stagnantTurns = 6, URL change halves to 3
     tracker.onSnapshotRefresh(snap2);
-    // 1 more stale → staleTurns = 4
-    // 2 more stale → staleTurns = 5 → escalation would fire but already fired at 5
+    // 1 more stale → stagnantTurns = 4
+    // 2 more stale → stagnantTurns = 5 → escalation would fire but already fired at 5
     // Since escalationFired is true, no signal
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).toBeNull();
   });
 });
 
-describe("ProgressTracker — isStillStuck", () => {
-  let tracker: ProgressTracker;
+describe("StagnationMonitor — isStillStuck", () => {
+  let tracker: StagnationMonitor;
 
   beforeEach(() => {
-    tracker = new ProgressTracker();
+    tracker = new StagnationMonitor();
   });
 
   it("returns false before any snapshots", () => {
@@ -301,7 +301,7 @@ describe("ProgressTracker — isStillStuck", () => {
     expect(tracker.isStillStuck()).toBe(true);
   });
 
-  it("returns false after real content change resets staleTurns", () => {
+  it("returns false after real content change resets stagnantTurns", () => {
     const snap1 = makeSnap();
     tracker.onSnapshotRefresh(snap1); // baseline
     feedStale(tracker, snap1, 5); // escalation fires
@@ -317,7 +317,7 @@ describe("ProgressTracker — isStillStuck", () => {
     tracker.onSnapshotRefresh(snap); // baseline
     feedStale(tracker, snap, 5); // escalation fires
 
-    tracker.resetEscalation(); // staleTurns = 0
+    tracker.resetEscalation(); // stagnantTurns = 0
     expect(tracker.isStillStuck()).toBe(false);
 
     // New stale turn — still stuck but below threshold, no signal emitted
@@ -341,11 +341,11 @@ describe("ProgressTracker — isStillStuck", () => {
   });
 });
 
-describe("ProgressTracker — delta threshold", () => {
-  let tracker: ProgressTracker;
+describe("StagnationMonitor — delta threshold", () => {
+  let tracker: StagnationMonitor;
 
   beforeEach(() => {
-    tracker = new ProgressTracker();
+    tracker = new StagnationMonitor();
   });
 
   it("small DOM change (< 10%) does NOT reset stale count", () => {
@@ -365,7 +365,7 @@ describe("ProgressTracker — delta threshold", () => {
     const signal = tracker.onSnapshotRefresh(snap2);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(5);
+    expect(signal!.stagnantTurns).toBe(5);
   });
 
   it("small DOM change below threshold keeps stale count incrementing", () => {
@@ -385,7 +385,7 @@ describe("ProgressTracker — delta threshold", () => {
     const signal = tracker.onSnapshotRefresh(snapNoise);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(5);
+    expect(signal!.stagnantTurns).toBe(5);
   });
 
   it("large DOM change (>= 10%) resets stale count", () => {
@@ -439,6 +439,28 @@ describe("ProgressTracker — delta threshold", () => {
     expect(signal).toBeNull(); // delta = 1.0 → progress
   });
 
+  it("scroll-only visibility changes do NOT reset stale count", () => {
+    // 10 elements, change only isVisible on 5 of them (simulates scroll)
+    const elements = Array.from({ length: 10 }, (_, i) =>
+      makeElement({ tag: i + 1, text: `Item ${i + 1}`, isVisible: true }),
+    );
+    const snap1 = makeSnap({ elements });
+    tracker.onSnapshotRefresh(snap1); // baseline
+
+    feedStale(tracker, snap1, 4); // stale 1-4
+
+    // Only isVisible changes (scroll moved viewport) — should NOT reset stale count
+    const scrolledElements = elements.map((e, i) => ({
+      ...e,
+      isVisible: i >= 5, // top 5 scrolled out, bottom 5 scrolled in
+    }));
+    const snap2 = makeSnap({ elements: scrolledElements });
+    const signal = tracker.onSnapshotRefresh(snap2); // stale 5 → escalate
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe("escalate");
+    expect(signal!.stagnantTurns).toBe(5);
+  });
+
   it("element count swing from lazy-load (< 10%) stays stale", () => {
     // 50 elements, 3 added → delta = 3/53 ≈ 5.7% → below threshold
     const snap1 = makeManyElementSnap(50);
@@ -458,6 +480,66 @@ describe("ProgressTracker — delta threshold", () => {
     const signal = tracker.onSnapshotRefresh(snapLazy);
     expect(signal).not.toBeNull();
     expect(signal!.type).toBe("escalate");
-    expect(signal!.staleTurns).toBe(5);
+    expect(signal!.stagnantTurns).toBe(5);
+  });
+});
+
+describe("StagnationMonitor — sameUrlTurns", () => {
+  let tracker: StagnationMonitor;
+
+  beforeEach(() => {
+    tracker = new StagnationMonitor();
+  });
+
+  it("sameUrlTurns increments on same URL regardless of content delta", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline — sameUrlTurns = 0 (first call, no prev URL)
+    expect(tracker.sameUrlTurns).toBe(0);
+
+    // Same URL, same content
+    tracker.onSnapshotRefresh(snap1);
+    expect(tracker.sameUrlTurns).toBe(1);
+
+    // Same URL, different content (content change resets stagnantTurns but NOT sameUrlTurns)
+    const snap2 = makeSnap({ elements: [makeElement({ text: "Changed" })] });
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.sameUrlTurns).toBe(2);
+
+    // Same URL again
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.sameUrlTurns).toBe(3);
+  });
+
+  it("sameUrlTurns resets on URL change", () => {
+    const snap1 = makeSnap();
+    tracker.onSnapshotRefresh(snap1); // baseline
+    tracker.onSnapshotRefresh(snap1); // sameUrlTurns = 1
+    tracker.onSnapshotRefresh(snap1); // sameUrlTurns = 2
+    expect(tracker.sameUrlTurns).toBe(2);
+
+    // Navigate to different URL
+    const snap2 = makeSnap({ url: "https://other.com" });
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.sameUrlTurns).toBe(0);
+
+    // Same new URL
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.sameUrlTurns).toBe(1);
+  });
+
+  it("sameUrlTurns resets on full reset() but NOT on resetEscalation()", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap);
+    tracker.onSnapshotRefresh(snap);
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.sameUrlTurns).toBe(2);
+
+    // resetEscalation should NOT reset sameUrlTurns
+    tracker.resetEscalation();
+    expect(tracker.sameUrlTurns).toBe(2);
+
+    // full reset should reset sameUrlTurns
+    tracker.reset();
+    expect(tracker.sameUrlTurns).toBe(0);
   });
 });

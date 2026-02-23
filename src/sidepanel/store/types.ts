@@ -9,7 +9,7 @@ import type {
   PendingEscalation,
   SavedPrompt,
   SessionMetrics,
-  StuckState,
+  StagnationState,
   TaskCompletionMessage,
   TaskProgressMessage,
   TaskRecoveryState,
@@ -24,6 +24,7 @@ export interface ChatSlice {
   inputText: string;
   addMessage: (msg: ChatEntry) => void;
   appendStreamDelta: (delta: string) => void;
+  replaceStreamContent: (content: string) => void;
   finalizeStream: (citations?: Citation[]) => void;
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;
@@ -37,7 +38,7 @@ export interface AgentSlice {
   statusDetail: string;
   isAgentRunning: boolean;
   turnProgress: TurnProgress | null;
-  stuckState: StuckState | null;
+  stagnationState: StagnationState | null;
   taskProgress: TaskProgressMessage["payload"] | null;
   taskCompletion: TaskCompletionMessage["payload"] | null;
   taskRecovery: TaskRecoveryState | null;
@@ -50,8 +51,8 @@ export interface AgentSlice {
   setTaskProgress: (payload: TaskProgressMessage["payload"]) => void;
   setTaskCompletion: (payload: TaskCompletionMessage["payload"]) => void;
   clearTaskProgress: () => void;
-  setStuckState: (state: StuckState) => void;
-  clearStuckState: () => void;
+  setStagnationState: (state: StagnationState) => void;
+  clearStagnationState: () => void;
   setTurnProgress: (progress: TurnProgress) => void;
   clearTurnProgress: () => void;
   setPendingApproval: (approval: PendingApproval) => void;

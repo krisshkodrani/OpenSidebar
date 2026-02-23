@@ -36,8 +36,6 @@ export function formatStepLabel(
       return `Scroll ${args.direction ?? "down"}`;
     case ToolName.READ_PAGE:
       return "Read page content";
-    case ToolName.TAKE_SCREENSHOT:
-      return "Take screenshot";
     case ToolName.HOVER_ELEMENT:
       return `Hover element [${args.id ?? "?"}]`;
     case ToolName.FIND_ELEMENT: {

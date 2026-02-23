@@ -6,7 +6,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
   statusDetail: "Ready",
   isAgentRunning: false,
   turnProgress: null,
-  stuckState: null,
+  stagnationState: null,
   taskProgress: null,
   taskCompletion: null,
   taskRecovery: null,
@@ -43,14 +43,14 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
       state.taskCompletion = null;
     }),
 
-  setStuckState: (stuckState) =>
+  setStagnationState: (stagnationState) =>
     set((state) => {
-      state.stuckState = stuckState;
+      state.stagnationState = stagnationState;
     }),
 
-  clearStuckState: () =>
+  clearStagnationState: () =>
     set((state) => {
-      state.stuckState = null;
+      state.stagnationState = null;
     }),
 
   setTurnProgress: (progress) =>

@@ -83,8 +83,8 @@ export function actionToToolCall(
 
 function buildSystemPromptFromSnapshot(snapshot: DomSnapshot): string {
   const elements = formatSnapshotElements(snapshot.elements);
-  const viewportText = snapshot.viewportText
-    ? `\n\nViewport text:\n${snapshot.viewportText.slice(0, 3000)}`
+  const visibleContent = snapshot.visibleContent
+    ? `\n\nVisible content:\n${snapshot.visibleContent.slice(0, 3000)}`
     : "";
 
   return [
@@ -95,7 +95,7 @@ function buildSystemPromptFromSnapshot(snapshot: DomSnapshot): string {
     "",
     "Interactive elements:",
     elements,
-    viewportText,
+    visibleContent,
   ].join("\n");
 }
 

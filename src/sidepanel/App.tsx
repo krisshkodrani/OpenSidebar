@@ -201,9 +201,11 @@ export default function App() {
       onClose: (windowId) => {
         chrome.windows.getCurrent().then((currentWindow) => {
           if (currentWindow.id === windowId) {
-            logger.info("ui", "Received close request from background", {
+            logger.info("ui", "Panel close requested, flushing and closing", {
               windowId,
             });
+            // Flush pending messages before panel destruction
+            useStore.getState().setActiveWorkspaceId(null);
             globalThis.close();
           }
         });
@@ -294,13 +296,13 @@ export default function App() {
     [addMessage, setInputText, setAgentRunning, updateStatus, setError],
   );
 
-  // Send hint to running agent
-  const handleSendHint = useCallback(
+  // Send feedback to running agent
+  const handleSendFeedback = useCallback(
     async (text: string) => {
       const trimmedText = text.trim();
       if (!trimmedText) return;
 
-      // Show hint in chat
+      // Show feedback in chat
       addMessage({
         id: crypto.randomUUID(),
         role: "user",
@@ -308,7 +310,7 @@ export default function App() {
         timestamp: Date.now(),
         toolCalls: [],
         isStreaming: false,
-        isHint: true,
+        isFeedback: true,
       });
 
       try {
@@ -320,12 +322,12 @@ export default function App() {
             text: trimmedText,
             tabId: 0,
             workspaceId: useStore.getState().activeWorkspaceId,
-            isHint: true,
+            isFeedback: true,
           },
         });
       } catch (e) {
-        logger.error("ui", "Failed to send hint", { error: e });
-        setError("Failed to send hint to agent.");
+        logger.error("ui", "Failed to send feedback", { error: e });
+        setError("Failed to send feedback to agent.");
       }
     },
     [addMessage, setError],
@@ -483,7 +485,7 @@ export default function App() {
       <div className="flex flex-col shrink-0 z-20 border-t border-warm-200 dark:border-warm-800">
         <InputArea
           onSend={handleSend}
-          onSendHint={handleSendHint}
+          onSendFeedback={handleSendFeedback}
           onSendAnnotation={handleSendAnnotation}
           onStop={handleStop}
         />

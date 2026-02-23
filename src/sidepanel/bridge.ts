@@ -51,12 +51,16 @@ export function initializeBridge(
           message.payload.status === AgentStatus.ERROR
         ) {
           state.setAgentRunning(false);
-          state.clearStuckState();
+          state.clearStagnationState();
           state.clearTurnProgress();
           state.clearPendingApproval();
           state.clearPendingEscalation();
           state.clearTaskRecovery();
           state.clearLaneTelemetry();
+          // Clear stale task progress if no TASK_COMPLETION was received
+          if (state.taskProgress) {
+            state.clearTaskProgress();
+          }
           // Keep sessionMetrics visible after completion (cleared on next run start)
         } else {
           state.setAgentRunning(true);
@@ -93,7 +97,10 @@ export function initializeBridge(
         break;
 
       case "STREAM_CHUNK": {
-        const { delta, done, citations } = message.payload;
+        const { delta, done, citations, replaceContent } = message.payload;
+        if (replaceContent !== undefined) {
+          state.replaceStreamContent(replaceContent);
+        }
         if (done) {
           state.finalizeStream(citations);
         } else if (delta) {
@@ -126,13 +133,13 @@ export function initializeBridge(
 
       // --- New message types from RFCs ---
 
-      case "AGENT_STUCK":
+      case "AGENT_STAGNATION":
         if (message.payload.signal === "resolved") {
-          state.clearStuckState();
+          state.clearStagnationState();
         } else {
-          state.setStuckState({
+          state.setStagnationState({
             signal: message.payload.signal,
-            staleTurns: message.payload.staleTurns,
+            stagnantTurns: message.payload.stagnantTurns,
             url: message.payload.url,
             receivedAt: Date.now(),
           });

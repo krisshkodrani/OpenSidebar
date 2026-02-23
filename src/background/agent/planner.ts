@@ -2,6 +2,7 @@ import { LLMClient } from "../llm";
 import { TokenUsage } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
+import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 
 /** Result of task decomposition */
@@ -17,6 +18,8 @@ export interface PlanStep {
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
+  verifyAfter?: { trigger: string; action: "call_done" | "advance_step"; pattern?: string };
+  toolProfile?: "full" | "read_only" | "form_fill" | "navigate";
 }
 
 /** Result of done() validation */
@@ -25,71 +28,10 @@ export interface DoneValidation {
   reason?: string;
 }
 
-const DECOMPOSE_SYSTEM = `You are a task planner for a browser automation agent.
+const DECOMPOSE_SYSTEM = renderPrompt("planner.decompose.system");
+const VALIDATE_SYSTEM = renderPrompt("planner.validate_done.system");
 
-Given a user task and page context, decide if it needs multiple steps.
-
-Criteria for Multi-Step:
-- Complexity: Task requires distinct phases (e.g. "Search -> Scrape Results -> Aggregate").
-- Length: more than 2-3 distinct interactions required.
-
-Criteria for Simple (Single-Step):
-- Navigation + 1-2 interactions (e.g. "Go to X and click Y").
-- Direct questions (e.g. "What is on this page?").
-- Single form fills.
-
-Response Rules:
-- Simple tasks: return {"isMultiStep": false}
-- Multi-step tasks: return {"isMultiStep": true, "subtasks": ["step 1", ...]}
-- Prefer structured plans when possible:
-{
-  "isMultiStep": true,
-  "steps": [
-    {
-      "objective": "concrete step objective",
-      "successCriteria": "observable completion condition",
-      "dependencies": [0],
-      "assumptions": ["short assumption about page state"]
-    }
-  ]
-}
-- 3-8 subtasks maximum.
-- Group related actions into single steps.
-- Last subtask should verify the overall goal was achieved.
-- Dependencies must reference earlier step indexes only.
-- SUBTASK INDEPENDENCE: Each subtask description must be self-contained.
-  - A subtask should be completable using the DOM state and its own description.
-  - Do NOT write subtasks that reference "the result from step N" or "the value found above."
-  - Instead, inline the expected context: e.g., instead of "Click the link found in step 2",
-    write "Click the 'Settings' link in the navigation menu."
-  - If a subtask truly depends on a prior subtask's runtime output,
-    note this explicitly as: [DEPENDS: step N output].
-
-DIFFICULTY ASSESSMENT (required):
-Always include a "difficulty" field in your response. Assess the task as one of:
-- "simple": 1-2 interactions, single page, obvious target element
-- "moderate": 3-5 steps, may navigate, clear success criteria
-- "complex": 6-10 steps, multi-page, needs verification
-- "extreme": 10+ steps, multi-site, or ambiguous success criteria
-This controls how patient the execution engine is with retries and failures.
-
-Respond with JSON only.`;
-
-const VALIDATE_SYSTEM = `You are a task completion judge for a browser automation agent.
-
-The agent claims it finished. Review the plan and summary. Decide if the ENTIRE task is done.
-
-Rules:
-- ALL planned subtasks must be reasonably covered by the summary to approve.
-- If only a subset is done, REJECT and state what remains.
-- Partial completion is NOT completion. Be strict.
-- Judge based on the original task goal, not just the plan steps.
-
-Respond with JSON only:
-- {"approved": true}
-- {"approved": false, "reason": "You completed X but Y and Z remain. Continue with: ..."}`;
-
-export class PlanGuardian {
+export class TaskPlanner {
   private llm: LLMClient;
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
@@ -97,7 +39,7 @@ export class PlanGuardian {
 
   constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
     this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
-    // Guardian always uses the smart model tier
+    // Planner always uses the smart model tier
     this.llm.switchToSmart();
   }
 
@@ -123,9 +65,10 @@ export class PlanGuardian {
             content: `Page: ${pageTitle} (${pageUrl})\nTask: ${query}`,
           },
         ],
-        max_tokens: 512,
+        max_tokens: 768,
         temperature: 0,
         signal,
+        response_format: { type: "json_object" },
       });
       const llmMs = Date.now() - start;
       if (response.usage)
@@ -228,11 +171,40 @@ export class PlanGuardian {
               }
             }
           }
+          // Parse optional verification gate
+          let verifyAfter: PlanStep["verifyAfter"] | undefined;
+          if (
+            obj.verifyAfter &&
+            typeof obj.verifyAfter === "object" &&
+            !Array.isArray(obj.verifyAfter)
+          ) {
+            const va = obj.verifyAfter as Record<string, unknown>;
+            if (typeof va.trigger === "string" && va.trigger.trim().length > 0) {
+              verifyAfter = {
+                trigger: va.trigger.trim(),
+                action:
+                  va.action === "call_done" ? "call_done" : "advance_step",
+                ...(typeof va.pattern === "string" && va.pattern.trim().length > 0
+                  ? { pattern: va.pattern.trim() }
+                  : {}),
+              };
+            }
+          }
+
+          // Parse optional tool profile
+          const VALID_PROFILES = new Set(["full", "read_only", "form_fill", "navigate"]);
+          let toolProfile: PlanStep["toolProfile"];
+          if (typeof obj.toolProfile === "string" && VALID_PROFILES.has(obj.toolProfile)) {
+            toolProfile = obj.toolProfile as PlanStep["toolProfile"];
+          }
+
           result.push({
             objective: obj.objective.trim(),
             successCriteria,
             dependencies,
             assumptions,
+            ...(verifyAfter ? { verifyAfter } : {}),
+            ...(toolProfile ? { toolProfile } : {}),
           });
         }
         return result;
@@ -257,7 +229,7 @@ export class PlanGuardian {
       if (subtasks.length > 8) {
         logger.warn(
           "agent",
-          "Guardian decomposition exceeded 8 subtasks, truncating",
+          "Planner decomposition exceeded 8 subtasks, truncating",
           {
             original: subtasks.length,
           },
@@ -269,7 +241,7 @@ export class PlanGuardian {
               (dep) => dep < cappedSteps.length,
             );
           }
-          logger.info("agent", "Guardian produced structured plan", {
+          logger.info("agent", "Planner produced structured plan", {
             subtaskCount: cappedSteps.length,
             difficulty,
           });
@@ -284,7 +256,7 @@ export class PlanGuardian {
       }
 
       if (steps) {
-        logger.info("agent", "Guardian produced structured plan", {
+        logger.info("agent", "Planner produced structured plan", {
           subtaskCount: steps.length,
           difficulty,
         });
@@ -296,7 +268,7 @@ export class PlanGuardian {
         };
       }
 
-      logger.info("agent", "Guardian decomposed task", {
+      logger.info("agent", "Planner decomposed task", {
         subtaskCount: subtasks.length,
         difficulty,
       });
@@ -304,7 +276,7 @@ export class PlanGuardian {
     } catch (err: any) {
       logger.warn(
         "agent",
-        "Guardian decompose failed, treating as simple task",
+        "Planner decompose failed, treating as simple task",
         {
           error: err?.message,
         },
@@ -338,6 +310,7 @@ export class PlanGuardian {
         max_tokens: 256,
         temperature: 0,
         signal,
+        response_format: { type: "json_object" },
       });
       const llmMs = Date.now() - start;
       if (response.usage)
@@ -363,7 +336,7 @@ export class PlanGuardian {
         parsed = JSON.parse(match[0]);
       }
 
-      logger.info("agent", "Guardian validateDone", {
+      logger.info("agent", "Planner validateDone", {
         approved: parsed.approved,
         reason: parsed.reason?.slice(0, 200),
       });
@@ -374,7 +347,7 @@ export class PlanGuardian {
     } catch (err: any) {
       logger.warn(
         "agent",
-        "Guardian validateDone failed, falling back to structural check",
+        "Planner validateDone failed, falling back to structural check",
         {
           error: err?.message,
         },
@@ -386,7 +359,7 @@ export class PlanGuardian {
       if (completedCount < plan.length) {
         return {
           approved: false,
-          reason: `Guardian unavailable. Structural check: ${completedCount}/${plan.length} subtasks completed. Continue.`,
+          reason: `Planner unavailable. Structural check: ${completedCount}/${plan.length} subtasks completed. Continue.`,
         };
       }
       return { approved: true };

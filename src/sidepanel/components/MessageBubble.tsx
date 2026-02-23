@@ -1,18 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import {
-  AgentStep,
   ChatEntry,
   Citation,
   SessionMetrics,
   TaskCompletionMessage,
-  ToolName,
 } from "../../types";
 import { clsx } from "clsx";
 import { useStore } from "../store";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
-import { ScreenshotLightbox } from "./ScreenshotLightbox";
 import {
   CheckCircle2,
   XCircle,
@@ -210,7 +207,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     (s) => s.settings.showMessageDetailsByDefault ?? false,
   );
   const isUser = message.role === "user";
-  const isHint = isUser && message.isHint;
+  const isFeedback = isUser && message.isFeedback;
   const isAnnotation = isUser && message.isAnnotation;
   const hasDetails =
     !isUser &&
@@ -218,8 +215,6 @@ export const MessageBubble = React.memo(function MessageBubble({
   const [showDetails, setShowDetails] = useState(
     message.isStreaming || showDetailsByDefault,
   );
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-
   useEffect(() => {
     if (message.isStreaming) setShowDetails(true);
   }, [message.isStreaming]);
@@ -237,14 +232,6 @@ export const MessageBubble = React.memo(function MessageBubble({
     return marked.parse(cleaned) as string;
   }, [message.content, isUser]);
 
-  const screenshotSteps = useMemo(() => {
-    if (!message.steps) return [];
-    return message.steps.filter(
-      (step): step is AgentStep & { screenshotUrl: string } =>
-        step.toolName === ToolName.TAKE_SCREENSHOT && !!step.screenshotUrl,
-    );
-  }, [message.steps]);
-
   const stepCount = message.steps?.length ?? 0;
 
   return (
@@ -254,33 +241,13 @@ export const MessageBubble = React.memo(function MessageBubble({
         isUser ? "items-end" : "items-start",
       )}
     >
-      {!isUser && screenshotSteps.length > 0 && (
-        <div className="flex flex-col gap-2 max-w-[85%]">
-          {screenshotSteps.map((step, idx) => (
-            <img
-              key={step.id}
-              src={step.screenshotUrl}
-              alt={`Page screenshot ${idx + 1}`}
-              className="max-h-[200px] rounded border border-warm-200 dark:border-warm-700 cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={() => setLightboxSrc(step.screenshotUrl)}
-            />
-          ))}
-        </div>
-      )}
-      {lightboxSrc && (
-        <ScreenshotLightbox
-          src={lightboxSrc}
-          onClose={() => setLightboxSrc(null)}
-        />
-      )}
-
       <div
         className={clsx(
           "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
           isUser
             ? isAnnotation
               ? "bg-violet-500 text-white italic whitespace-pre-wrap"
-              : isHint
+              : isFeedback
                 ? "bg-amber-500 text-white whitespace-pre-wrap"
                 : "bg-primary-600 text-white whitespace-pre-wrap"
             : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60",
@@ -293,10 +260,10 @@ export const MessageBubble = React.memo(function MessageBubble({
             <span>annotation</span>
           </div>
         )}
-        {isHint && !isAnnotation && (
+        {isFeedback && !isAnnotation && (
           <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
             <MessageCircle size={10} />
-            <span>hint</span>
+            <span>feedback</span>
           </div>
         )}
         {isUser ? (
