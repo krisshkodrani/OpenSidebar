@@ -1,6 +1,9 @@
 import { ToolName, RiskLevel, Result, ToolCall } from "../types";
 import { getToolMeta } from "./tools/metadata";
 
+/** Valid tool names for fast lookup */
+const VALID_TOOL_NAMES = new Set<string>(Object.values(ToolName));
+
 /**
  * Classifies the risk level of a tool invocation.
  * Uses consolidated tool metadata from tools/metadata.ts.
@@ -90,12 +93,35 @@ export interface ValidatedToolCall {
 export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
   return calls.map((tc) => {
     const name = tc.function.name;
+
+    // Block unknown/hallucinated tool names early
+    if (!VALID_TOOL_NAMES.has(name)) {
+      return {
+        original: tc,
+        blocked: true,
+        reason: `Unknown tool "${name}". Use one of the tools provided in your tool list.`,
+      };
+    }
+
     let args: Record<string, unknown> = {};
     try {
       args = JSON.parse(tc.function.arguments || "{}");
     } catch {
       // Unparseable args — let executor handle the error
       return { original: tc, blocked: false };
+    }
+
+    // execute_js: block navigation via window.location / document.location
+    if (name === "execute_js") {
+      const code = (args.code as string) || (args.expression as string) || "";
+      if (/(?:window|document)\.location/i.test(code)) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "Navigation via window.location is blocked. Use the navigate tool instead.",
+        };
+      }
     }
 
     // navigate / open_tab / create_tab: re-validate URL at loop level

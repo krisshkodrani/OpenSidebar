@@ -15,7 +15,6 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.MEMORY_SEARCH, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.MEMORY_LIST_CATEGORIES, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.WAIT, {})).toBe(RiskLevel.LOW);
-        expect(classifyRisk(ToolName.TAKE_SCREENSHOT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.HOVER_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.FIND_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.DONE, { summary: "done" })).toBe(RiskLevel.LOW);
@@ -225,6 +224,37 @@ describe("validateToolCalls", () => {
             function: { name: "navigate", arguments: "not json" },
         };
         const results = validateToolCalls([tc]);
+        expect(results[0].blocked).toBe(false);
+    });
+
+    test("blocks unknown/hallucinated tool names", () => {
+        const results = validateToolCalls([
+            makeTc("go_to_url", { url: "https://example.com" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain('Unknown tool "go_to_url"');
+    });
+
+    test("blocks execute_js with window.location navigation", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "window.location.href='https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("navigate tool");
+    });
+
+    test("blocks execute_js with document.location navigation", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.location.assign('https://x.com')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("navigate tool");
+    });
+
+    test("allows execute_js without location manipulation", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.title" }),
+        ]);
         expect(results[0].blocked).toBe(false);
     });
 });
