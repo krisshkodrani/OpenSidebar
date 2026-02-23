@@ -1382,7 +1382,7 @@ export class AgentLoop {
                   .join("\n") +
                 `\n\nExecute step 1 now. Complete each step in order and verify progress before continuing. ` +
                 `If the plan fails, revise your approach and continue from the best next step. ` +
-                `Do NOT call done() until ALL ${decomposition.subtasks.length} steps are complete.`,
+                `Call done() when all ${decomposition.subtasks.length} steps are complete.`,
             });
 
             this.broadcast({
@@ -1737,7 +1737,7 @@ export class AgentLoop {
       this.lastPerceptionFingerprint = fingerprint;
       this.lastScreenshotUrl = null;
       this.context.setPageInterpretation(interpretation);
-      this.traceRecorder?.recordPerception(this.lastPerception);
+      await this.traceRecorder?.recordPerception(this.lastPerception);
       logger.info("agent", "Perception: near-empty DOM, skipping vision model", {
         elementCount: snapshot.elements.length,
         url: snapshot.url,
@@ -1767,7 +1767,7 @@ export class AgentLoop {
       this.lastPerception = result;
       this.lastPerceptionFingerprint = fingerprint;
       this.context.setPageInterpretation(result.interpretation);
-      this.traceRecorder?.recordPerception(result, dataUrl);
+      await this.traceRecorder?.recordPerception(result, dataUrl);
 
       // Track usage for non-cached calls
       if (result.usage && !result.cached) {
@@ -3868,7 +3868,7 @@ export class AgentLoop {
               if (toolName !== ToolName.READ_PAGE) {
                 visuallyModified = true;
               }
-              this.lastDomStep = { ...toolStep, status: "done", durationMs: toolMs };
+              this.lastDomStep = { ...toolStep, status: "done", durationMs: Date.now() - toolStep.timestamp };
             }
 
             // Cache store (Feature 1): cache successful results for cacheable tools
@@ -4504,6 +4504,14 @@ export class AgentLoop {
               });
               prevElementCount = snap.elements.length;
               this.context.setSnapshot(snap);
+
+              // Record post-tool DOM state so trace shows what perception was based on
+              this.traceRecorder?.recordPostToolSnapshot({
+                url: snap.url,
+                title: snap.title || "",
+                elementCount: snap.elements.length,
+                scrollY: snap.scroll?.y || 0,
+              });
 
               // Invalidate DOM cache entries after snapshot refresh
               this.toolCache.invalidateDom();

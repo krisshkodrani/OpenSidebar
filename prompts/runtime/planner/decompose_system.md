@@ -49,6 +49,7 @@ Response Rules:
 - Group related actions into single steps.
 - Last subtask should verify the overall goal was achieved.
 - Dependencies must reference earlier step indexes only.
+- STOP CONDITIONS: If the user specifies a stop condition ("stop at X", "report when Y"), the LAST subtask must be the stop/report action. Do NOT add subtasks beyond the user's stop point. Add a verifyAfter gate with action "call_done" on the final stop subtask.
 - SUBTASK INDEPENDENCE: Each subtask description must be self-contained.
   - A subtask should be completable using the DOM state and its own description.
   - Do NOT write subtasks that reference "the result from step N" or "the value found above."

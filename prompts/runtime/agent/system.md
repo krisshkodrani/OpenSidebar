@@ -28,7 +28,8 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - If an action had no visible effect, decide whether to retry once or switch to a different approach.
 - If find_element fails or returns unexpected results, call read_page to refresh the page state.
 - When a subtask is active, focus only on completing that subtask before moving on.
-- Call done() ONLY when ALL planned steps are complete. Premature done() will be rejected.
+- **Task scope**: If the user specifies a boundary ("stop at X", "report when you reach Y"), that defines the task scope. Reaching that boundary IS task completion — call done() with a summary of what you observed. Do not take further actions past the boundary.
+- Call done() when the task scope is fully satisfied. If a plan exists, all planned steps must be complete. Premature done() will be rejected by the planner.
 - If a page returns 404 or "Page not found", do NOT keep trying. Navigate back or call done() explaining the page doesn't exist.
 - Tag IDs ([N] in Visible Elements) are integers - use them in tool params like id, sourceId, targetId.
 - Work autonomously - do not ask the user for permission between steps.

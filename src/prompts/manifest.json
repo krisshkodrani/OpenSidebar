@@ -23,7 +23,7 @@
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "365490da",
+    "hash": "4ad10c50",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -58,7 +58,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v2",
-    "hash": "3b79afc0",
+    "hash": "8115afae",
     "description": "Planner decomposition system prompt for the task planner.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
@@ -86,7 +86,7 @@
   {
     "id": "agent.reflection.handoff",
     "version": "v2",
-    "hash": "51a25fc9",
+    "hash": "d066417c",
     "description": "Handoff reflection when orientation phase ends and execution resumes.",
     "sourcePath": "prompts/runtime/reflections/handoff.md"
   },
