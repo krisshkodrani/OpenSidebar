@@ -225,3 +225,68 @@ describe("Pinned Goal (S2)", () => {
     expect((prompt[0].content as string)).not.toContain("First task");
   });
 });
+
+describe("summarizeCausalChain failure highlighting", () => {
+  test("prefixes failures with warning symbol", () => {
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "click_element", '{"id": 5}'),
+      toolResultMsg("tc1", "Error: Click intercepted! Element [5] is covered by [10] <div>."),
+    ];
+    const result = summarizeCausalChain(msgs);
+    expect(result[0]).toMatch(/^\u26A0 T1:/);
+  });
+
+  test("uses 160 char limit for failure outcomes", () => {
+    const longError = "Error: " + "x".repeat(200);
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "click_element", '{"id": 5}'),
+      toolResultMsg("tc1", longError),
+    ];
+    const result = summarizeCausalChain(msgs);
+    // Outcome should be truncated to 160 chars (from first line)
+    const arrowIdx = result[0].indexOf("\u2192");
+    const outcome = result[0].slice(arrowIdx + 2);
+    expect(outcome.length).toBeLessThanOrEqual(160);
+    expect(outcome.length).toBeGreaterThan(80);
+  });
+
+  test("uses 80 char limit for success outcomes", () => {
+    const longSuccess = "Clicked " + "x".repeat(200);
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "click_element", '{"id": 5}'),
+      toolResultMsg("tc1", longSuccess),
+    ];
+    const result = summarizeCausalChain(msgs);
+    const arrowIdx = result[0].indexOf("\u2192");
+    const outcome = result[0].slice(arrowIdx + 2);
+    expect(outcome.length).toBeLessThanOrEqual(80);
+  });
+
+  test("does not prefix success entries with warning", () => {
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "click_element", '{"id": 5}'),
+      toolResultMsg("tc1", "Clicked element [5]"),
+    ];
+    const result = summarizeCausalChain(msgs);
+    expect(result[0]).not.toContain("\u26A0");
+    expect(result[0]).toMatch(/^T1:/);
+  });
+
+  test("detects 'No element with tag' as failure", () => {
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "click_element", '{"id": 99}'),
+      toolResultMsg("tc1", "No element with tag [99]. Nearby IDs: [1], [2]."),
+    ];
+    const result = summarizeCausalChain(msgs);
+    expect(result[0]).toMatch(/^\u26A0 T1:/);
+  });
+
+  test("detects 'does not appear to be' as failure", () => {
+    const msgs: LLMMessage[] = [
+      toolCallMsg("tc1", "type_text", '{"id": 5, "text": "hello"}'),
+      toolResultMsg("tc1", "Element [5] does not appear to be a text input"),
+    ];
+    const result = summarizeCausalChain(msgs);
+    expect(result[0]).toMatch(/^\u26A0 T1:/);
+  });
+});

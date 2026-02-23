@@ -2,6 +2,17 @@ import type { ChatEntry, Citation } from "../../types";
 import { logger } from "../../utils";
 import type { ChatSlice, SliceCreator } from "./types";
 
+/** Strip screenshotUrl from steps before persisting (each is ~100KB base64). */
+function stripScreenshots(messages: ChatEntry[]): ChatEntry[] {
+  return messages.map((msg) => {
+    if (!msg.steps?.some((s) => s.screenshotUrl)) return msg;
+    return {
+      ...msg,
+      steps: msg.steps.map(({ screenshotUrl, ...rest }) => rest),
+    };
+  });
+}
+
 let persistTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /** Max messages to persist per workspace (prevents storage bloat) */
@@ -16,12 +27,29 @@ function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
   const key = chatStorageKey(wsId);
   persistTimeout = setTimeout(() => {
     // Trim to last N messages to keep storage bounded
-    const toSave =
+    const trimmed =
       messages.length > MAX_PERSISTED_MESSAGES
         ? messages.slice(-MAX_PERSISTED_MESSAGES)
         : messages;
+    const toSave = stripScreenshots(trimmed);
     chrome.storage.local.set({ [key]: toSave }).catch(() => {});
   }, 300);
+}
+
+/** Flush pending debounced messages to storage immediately. */
+export function flushPersist(messages: ChatEntry[], wsId: string | null) {
+  if (persistTimeout) {
+    clearTimeout(persistTimeout);
+    persistTimeout = null;
+  }
+  if (messages.length === 0) return;
+  const key = chatStorageKey(wsId);
+  const trimmed =
+    messages.length > MAX_PERSISTED_MESSAGES
+      ? messages.slice(-MAX_PERSISTED_MESSAGES)
+      : messages;
+  const toSave = stripScreenshots(trimmed);
+  chrome.storage.local.set({ [key]: toSave }).catch(() => {});
 }
 
 export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
@@ -56,6 +84,15 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       persistMessages(get().messages, get().activeWorkspaceId);
     }),
 
+  replaceStreamContent: (content) =>
+    set((state) => {
+      const last = state.messages[state.messages.length - 1];
+      if (last?.role === "assistant" && last.isStreaming) {
+        last.content = content;
+      }
+      persistMessages(get().messages, get().activeWorkspaceId);
+    }),
+
   finalizeStream: (citations?: Citation[]) =>
     set((state) => {
       const last = state.messages[state.messages.length - 1];
@@ -83,6 +120,8 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           return;
         }
       }
+      // Don't create ghost bubbles for late-arriving steps after stream finalized
+      if (!get().isAgentRunning) return;
       state.messages.push({
         id: crypto.randomUUID(),
         role: "assistant",
@@ -102,7 +141,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
         if (msg.role === "assistant" && msg.steps) {
           const idx = msg.steps.findIndex((s) => s.id === step.id);
           if (idx !== -1) {
-            msg.steps[idx] = step;
+            msg.steps[idx] = { ...msg.steps[idx], ...step };
             break;
           }
         }

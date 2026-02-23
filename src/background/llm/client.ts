@@ -560,6 +560,7 @@ export class LLMClient {
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
+      response_format: request.response_format,
     };
 
     logger.debug("agent", "LLM Request", {
@@ -786,6 +787,7 @@ export class LLMClient {
       stop: request.stop,
       stream: true,
       stream_options: { include_usage: true },
+      response_format: request.response_format,
     };
 
     logger.debug("agent", "LLM Stream Request", {

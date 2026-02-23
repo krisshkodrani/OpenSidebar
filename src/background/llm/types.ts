@@ -44,6 +44,7 @@ export interface CompletionRequest {
   model?: string;
   stop?: string[];
   signal?: AbortSignal;
+  response_format?: { type: "json_object" };
 }
 
 /** Token usage data returned by OpenRouter in every response */

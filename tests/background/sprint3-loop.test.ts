@@ -4,7 +4,8 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { DEAD_END_DETECTION } from "../../src/background/agent/constants";
+import { STAGNATION_DETECTION, DISCOVERY_BUDGET, DISCOVERY_ONLY_TOOLS } from "../../src/background/agent/constants";
+import { buildFailureRecovery } from "../../src/background/agent/loop";
 
 // ─── Outcome Normalization (mirrors loop.ts normalizeOutcome) ──────────────
 
@@ -58,21 +59,21 @@ describe("normalizeOutcome", () => {
   });
 });
 
-describe("DEAD_END_DETECTION constants", () => {
+describe("STAGNATION_DETECTION constants", () => {
   test("window size is 6", () => {
-    expect(DEAD_END_DETECTION.WINDOW).toBe(6);
+    expect(STAGNATION_DETECTION.WINDOW).toBe(6);
   });
 
   test("nudge threshold is 3", () => {
-    expect(DEAD_END_DETECTION.NUDGE_THRESHOLD).toBe(3);
+    expect(STAGNATION_DETECTION.REFLECTION_THRESHOLD).toBe(3);
   });
 
   test("pivot threshold is 5", () => {
-    expect(DEAD_END_DETECTION.PIVOT_THRESHOLD).toBe(5);
+    expect(STAGNATION_DETECTION.PIVOT_THRESHOLD).toBe(5);
   });
 
   test("pivot threshold > nudge threshold", () => {
-    expect(DEAD_END_DETECTION.PIVOT_THRESHOLD).toBeGreaterThan(DEAD_END_DETECTION.NUDGE_THRESHOLD);
+    expect(STAGNATION_DETECTION.PIVOT_THRESHOLD).toBeGreaterThan(STAGNATION_DETECTION.REFLECTION_THRESHOLD);
   });
 });
 
@@ -85,13 +86,13 @@ describe("dead-end detection logic", () => {
     for (const outcome of outcomes) {
       const fingerprint = normalizeOutcome(outcome);
       recentOutcomes.push(fingerprint);
-      if (recentOutcomes.length > DEAD_END_DETECTION.WINDOW) recentOutcomes.shift();
+      if (recentOutcomes.length > STAGNATION_DETECTION.WINDOW) recentOutcomes.shift();
 
-      const lastN = recentOutcomes.slice(-DEAD_END_DETECTION.PIVOT_THRESHOLD);
-      const allSame = lastN.length >= DEAD_END_DETECTION.NUDGE_THRESHOLD &&
+      const lastN = recentOutcomes.slice(-STAGNATION_DETECTION.PIVOT_THRESHOLD);
+      const allSame = lastN.length >= STAGNATION_DETECTION.REFLECTION_THRESHOLD &&
         lastN.every(o => o === lastN[0]);
 
-      if (allSame && lastN.length >= DEAD_END_DETECTION.PIVOT_THRESHOLD) {
+      if (allSame && lastN.length >= STAGNATION_DETECTION.PIVOT_THRESHOLD) {
         lastResult = "pivot";
       } else if (allSame) {
         lastResult = "nudge";
@@ -155,5 +156,97 @@ describe("dead-end detection logic", () => {
     ];
     // All 3 normalize to same "Click intercepted" pattern
     expect(simulateDeadEndDetection(outcomes)).toBe("nudge");
+  });
+});
+
+describe("Warm start: perception fingerprint caching", () => {
+  test("same fingerprint skips re-computation (cache contract)", () => {
+    // Verifies the fingerprint-based caching contract used by warm start.
+    // After switch_tab, refreshPerception is called. If the page fingerprint
+    // hasn't changed, the perception result is reused (no vision model call).
+    const { computeSnapshotFingerprint } = require("../../src/background/agent/stagnation");
+
+    const snapshot1 = {
+      url: "https://example.com",
+      elements: [{ tag: 1, tagName: "button", text: "Go", attributes: {} }],
+    };
+    const snapshot2 = {
+      url: "https://example.com",
+      elements: [{ tag: 1, tagName: "button", text: "Go", attributes: {} }],
+    };
+    const snapshot3 = {
+      url: "https://other.com",
+      elements: [{ tag: 1, tagName: "button", text: "Go", attributes: {} }],
+    };
+
+    const fp1 = computeSnapshotFingerprint(snapshot1);
+    const fp2 = computeSnapshotFingerprint(snapshot2);
+    const fp3 = computeSnapshotFingerprint(snapshot3);
+
+    // Same content → same fingerprint (cache hit)
+    expect(fp1).toBe(fp2);
+    // Different URL → different fingerprint (cache miss → triggers perception)
+    expect(fp1).not.toBe(fp3);
+  });
+});
+
+// ─── buildFailureRecovery ──────────────────────────────────────────────────
+
+describe("buildFailureRecovery", () => {
+  test("suggests hide_element for covering element errors", () => {
+    const msg = buildFailureRecovery("Click intercepted! Element [5] is covered by [10] <div>.");
+    expect(msg).toContain("hide_element(10)");
+    expect(msg).toContain("execute_js");
+  });
+
+  test("suggests hide_element for overlay covering errors", () => {
+    const msg = buildFailureRecovery("Click intercepted! Element [5] is covered by overlay [7] <div>.");
+    expect(msg).toContain("hide_element(7)");
+  });
+
+  test("suggests read_page for stale element errors", () => {
+    const msg = buildFailureRecovery("No element with tag [42]. Nearby IDs: [1], [2].");
+    expect(msg).toContain("read_page");
+    expect(msg).toContain("find_element");
+  });
+
+  test("suggests read_page for 'does not exist' errors", () => {
+    const msg = buildFailureRecovery("Element does not exist in the current DOM");
+    expect(msg).toContain("read_page");
+    expect(msg).toContain("find_element");
+  });
+
+  test("returns generic fallback for unknown errors", () => {
+    const msg = buildFailureRecovery("Some other error happened");
+    expect(msg).toContain("different approach");
+    expect(msg).toContain("read_page");
+  });
+});
+
+// ─── Discovery Budget Constants ──────────────────────────────────────────
+
+describe("DISCOVERY_BUDGET", () => {
+  test("MAX_CONSECUTIVE is 3", () => {
+    expect(DISCOVERY_BUDGET.MAX_CONSECUTIVE).toBe(3);
+  });
+});
+
+describe("DISCOVERY_ONLY_TOOLS", () => {
+  test("contains read_page and find_element", () => {
+    expect(DISCOVERY_ONLY_TOOLS.has("read_page")).toBe(true);
+    expect(DISCOVERY_ONLY_TOOLS.has("find_element")).toBe(true);
+  });
+
+  test("does not contain action tools", () => {
+    expect(DISCOVERY_ONLY_TOOLS.has("click_element")).toBe(false);
+    expect(DISCOVERY_ONLY_TOOLS.has("type_text")).toBe(false);
+    expect(DISCOVERY_ONLY_TOOLS.has("scroll_page")).toBe(false);
+    expect(DISCOVERY_ONLY_TOOLS.has("navigate")).toBe(false);
+  });
+
+  test("contains investigation tools", () => {
+    expect(DISCOVERY_ONLY_TOOLS.has("inspect_hidden")).toBe(true);
+    expect(DISCOVERY_ONLY_TOOLS.has("xray_page")).toBe(true);
+    expect(DISCOVERY_ONLY_TOOLS.has("inspect_react")).toBe(true);
   });
 });
