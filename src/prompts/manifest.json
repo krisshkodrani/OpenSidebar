@@ -1,0 +1,128 @@
+[
+  {
+    "id": "evals.critique.llm_template",
+    "version": "v1",
+    "hash": "0cfdeba5",
+    "description": "Prompt template text surfaced in critique reports.",
+    "sourcePath": "prompts/evals/critique_llm_template.md"
+  },
+  {
+    "id": "evals.judge.system",
+    "version": "v1",
+    "hash": "3164433c",
+    "description": "System prompt for eval LLM-as-judge scoring.",
+    "sourcePath": "prompts/evals/judge_system.md"
+  },
+  {
+    "id": "evals.judge.user",
+    "version": "v1",
+    "hash": "7f07907e",
+    "description": "User prompt template for eval judge comparisons.",
+    "sourcePath": "prompts/evals/judge_user.md"
+  },
+  {
+    "id": "agent.system",
+    "version": "v2",
+    "hash": "365490da",
+    "description": "Core executor system prompt for browser automation turns.",
+    "sourcePath": "prompts/runtime/agent/system.md"
+  },
+  {
+    "id": "orchestrator.advisory.system",
+    "version": "v1",
+    "hash": "cd82de63",
+    "description": "Pre-execution advisory for retried/rerouted nodes.",
+    "sourcePath": "prompts/runtime/orchestrator/advisory_system.md"
+  },
+  {
+    "id": "orchestrator.router.system",
+    "version": "v1",
+    "hash": "d1c56b42",
+    "description": "Lightweight query classifier that routes user queries to direct, agent, or plan pipelines.",
+    "sourcePath": "prompts/runtime/orchestrator/router_system.md"
+  },
+  {
+    "id": "orchestrator.verifier.system",
+    "version": "v2",
+    "hash": "b5da9890",
+    "description": "Primary verifier system prompt for executor outcome validation.",
+    "sourcePath": "prompts/runtime/orchestrator/verifier_system.md"
+  },
+  {
+    "id": "perception.interpret_page",
+    "version": "v1",
+    "hash": "e2eb725b",
+    "description": "Perception module prompt for multimodal page interpretation. Sent with screenshot + element metadata to GPT-4o-mini.",
+    "sourcePath": "prompts/runtime/perception/interpret_page.md"
+  },
+  {
+    "id": "planner.decompose.system",
+    "version": "v2",
+    "hash": "3b79afc0",
+    "description": "Planner decomposition system prompt for the task planner.",
+    "sourcePath": "prompts/runtime/planner/decompose_system.md"
+  },
+  {
+    "id": "planner.validate_done.system",
+    "version": "v1",
+    "hash": "8c45dfcb",
+    "description": "Done validation system prompt for the task planner.",
+    "sourcePath": "prompts/runtime/planner/validate_done_system.md"
+  },
+  {
+    "id": "agent.reflection.deescalation",
+    "version": "v2",
+    "hash": "6589db1e",
+    "description": "De-escalation reflection when returning from smart to fast model.",
+    "sourcePath": "prompts/runtime/reflections/deescalation.md"
+  },
+  {
+    "id": "agent.reflection.escalation",
+    "version": "v2",
+    "hash": "395707d7",
+    "description": "Escalation reflection for smart-model takeover when stalled.",
+    "sourcePath": "prompts/runtime/reflections/escalation.md"
+  },
+  {
+    "id": "agent.reflection.handoff",
+    "version": "v2",
+    "hash": "51a25fc9",
+    "description": "Handoff reflection when orientation phase ends and execution resumes.",
+    "sourcePath": "prompts/runtime/reflections/handoff.md"
+  },
+  {
+    "id": "agent.reflection.pivot",
+    "version": "v2",
+    "hash": "dc80be90",
+    "description": "Strategy pivot reflection when repeated approaches fail.",
+    "sourcePath": "prompts/runtime/reflections/pivot.md"
+  },
+  {
+    "id": "agent.reflection.text_only_correction",
+    "version": "v2",
+    "hash": "839e5e1d",
+    "description": "Reflection injected when the model emits narration without tool calls.",
+    "sourcePath": "prompts/runtime/reflections/text_only_correction.md"
+  },
+  {
+    "id": "ui.saved_prompt.extract_links",
+    "version": "v1",
+    "hash": "cca36bed",
+    "description": "Default sidepanel saved prompt for extracting page links.",
+    "sourcePath": "prompts/ui/saved-prompts/extract_links.md"
+  },
+  {
+    "id": "ui.saved_prompt.fill_form",
+    "version": "v1",
+    "hash": "ca72357a",
+    "description": "Default sidepanel saved prompt for form completion.",
+    "sourcePath": "prompts/ui/saved-prompts/fill_form.md"
+  },
+  {
+    "id": "ui.saved_prompt.summarize_page",
+    "version": "v1",
+    "hash": "c3a7bf4d",
+    "description": "Default sidepanel saved prompt for concise page summarization.",
+    "sourcePath": "prompts/ui/saved-prompts/summarize_page.md"
+  }
+]

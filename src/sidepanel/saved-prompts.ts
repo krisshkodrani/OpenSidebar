@@ -1,76 +1,25 @@
 import { SavedPrompt } from "../types";
+import { getPromptTemplate } from "../prompts";
 
 const STORAGE_KEY = "opensidebar:savedPrompts";
 const SEEDED_KEY = "opensidebar:savedPromptsSeeded";
 const VERSION_KEY = "opensidebar:savedPromptsVersion";
-const CURRENT_PROMPTS_VERSION = 2;
-
-const CHALLENGE_TITLE = "Browser Navigation Challenge";
-const CHALLENGE_CATEGORY = "Challenges";
-
-const LEGACY_CHALLENGE_PROMPT =
-  "You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:\n" +
-  "1. Track which step you're on and what needs to happen\n" +
-  "2. Dismiss any modals/popups blocking the page (click Close/Dismiss/Accept buttons)\n" +
-  '3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)\n' +
-  "4. Enter the code in the input field and click Submit Code\n" +
-  "5. Verify the URL changed to the next step before continuing\n" +
-  "If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden elements. Complete all 30 steps to win.";
-
-const CHALLENGE_SPEED_PROMPT =
-  "Speed run objective: Complete all 30 challenge tasks in under 20 minutes with maximum reliability.\n\n" +
-  "Execution policy:\n" +
-  "1) First, discover and list all 30 task IDs/URLs in a checklist.\n" +
-  "2) Solve tasks in a deterministic order (1->30) unless a task is blocked; if blocked, skip and return later.\n" +
-  "3) For each task:\n" +
-  "   - read state quickly\n" +
-  "   - execute minimal required actions\n" +
-  "   - verify success immediately\n" +
-  "   - mark checklist item complete\n" +
-  "4) Retry policy:\n" +
-  "   - max 2 retries per tactic\n" +
-  "   - then switch tactic (alternate element, keyboard path, navigation reset)\n" +
-  "   - if still blocked, defer task and continue\n" +
-  "5) Efficiency rules:\n" +
-  "   - minimize tool calls and page reloads\n" +
-  "   - avoid repetitive actions\n" +
-  "   - reuse successful interaction patterns across similar tasks\n" +
-  "6) Progress report every 3 tasks:\n" +
-  "   - completed/30\n" +
-  "   - current task\n" +
-  "   - elapsed time\n" +
-  "   - estimated tokens/cost\n" +
-  "7) Completion criteria:\n" +
-  "   - only finish when all 30 tasks are verified complete.\n" +
-  "8) Final output:\n" +
-  "   - completion table for all 30 tasks\n" +
-  "   - total time\n" +
-  "   - total tokens and cost\n" +
-  "   - failed/slow tasks and root causes.\n" +
-  "Start now with task discovery and show the 30-item checklist first.";
+const CURRENT_PROMPTS_VERSION = 3;
 
 const DEFAULT_PROMPTS: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">[] = [
   {
-    title: CHALLENGE_TITLE,
-    content: CHALLENGE_SPEED_PROMPT,
-    category: CHALLENGE_CATEGORY,
-  },
-  {
     title: "Summarize this page",
-    content:
-      "Read the current page and provide a concise summary of the main content. Return the summary via done().",
+    content: getPromptTemplate("ui.saved_prompt.summarize_page"),
     category: "Research",
   },
   {
     title: "Extract all links",
-    content:
-      "Read the current page and collect every link with its text and URL. Return a formatted list via done().",
+    content: getPromptTemplate("ui.saved_prompt.extract_links"),
     category: "Research",
   },
   {
     title: "Fill out this form",
-    content:
-      "Fill out the form on this page using reasonable placeholder values. For each field, pick a realistic value based on the label. Do not submit until all fields are filled.",
+    content: getPromptTemplate("ui.saved_prompt.fill_form"),
     category: "Forms",
   },
 ];
@@ -106,43 +55,18 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
       : 1;
 
   if (result[SEEDED_KEY] && currentVersion < CURRENT_PROMPTS_VERSION) {
-    const now = Date.now();
-    const next = [...prompts];
-    let changed = false;
+    let next = [...prompts];
 
-    const challengeIdx = next.findIndex((p) => p.title === CHALLENGE_TITLE);
-    if (challengeIdx >= 0) {
-      const existing = next[challengeIdx];
-      if (existing.content === LEGACY_CHALLENGE_PROMPT) {
-        next[challengeIdx] = {
-          ...existing,
-          content: CHALLENGE_SPEED_PROMPT,
-          category: CHALLENGE_CATEGORY,
-          updatedAt: now,
-        };
-        changed = true;
-      }
-    } else {
-      next.unshift({
-        id: crypto.randomUUID(),
-        title: CHALLENGE_TITLE,
-        content: CHALLENGE_SPEED_PROMPT,
-        category: CHALLENGE_CATEGORY,
-        createdAt: now,
-        updatedAt: now,
-      });
-      changed = true;
+    // v2 -> v3: Remove challenge prompts (no longer part of product)
+    if (currentVersion < 3) {
+      next = next.filter(p => p.title !== "Browser Navigation Challenge");
     }
 
-    if (changed) {
-      await chrome.storage.local.set({
-        [STORAGE_KEY]: next,
-        [VERSION_KEY]: CURRENT_PROMPTS_VERSION,
-      });
-      return next;
-    }
-
-    await chrome.storage.local.set({ [VERSION_KEY]: CURRENT_PROMPTS_VERSION });
+    await chrome.storage.local.set({
+      [STORAGE_KEY]: next,
+      [VERSION_KEY]: CURRENT_PROMPTS_VERSION,
+    });
+    return next;
   }
 
   return prompts;

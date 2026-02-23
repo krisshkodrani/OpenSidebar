@@ -4,8 +4,10 @@
  */
 
 import type { EvalCase, JudgeScore } from "./types";
+import { getPromptTemplate, renderPrompt } from "../src/prompts";
 
 const JUDGE_MODEL = "openai/gpt-4o-mini";
+const JUDGE_SYSTEM_PROMPT = getPromptTemplate("evals.judge.system");
 
 interface ToolCallInfo {
   toolName: string;
@@ -36,7 +38,7 @@ export async function judgeCase(
       messages: [
         {
           role: "system",
-          content: "You are an eval judge for a browser automation agent. Score the agent's response on task completion, tool selection, and efficiency. Respond ONLY with valid JSON.",
+          content: JUDGE_SYSTEM_PROMPT,
         },
         { role: "user", content: prompt },
       ],
@@ -84,28 +86,15 @@ function buildJudgePrompt(
   const actualTools = actual.toolCalls
     .map((tc) => `${tc.toolName}(${JSON.stringify(tc.args)})`)
     .join("\n  ");
-
-  return `## Context
-User query: "${evalCase.metadata.query}"
-Current URL: ${evalCase.metadata.url}
-Strategy: ${evalCase.strategy}
-
-## Expected response
-Tools: ${expectedTools || "(none)"}
-Text: ${evalCase.expected.text?.slice(0, 200) || "(none)"}
-
-## Actual response
-Tools: ${actualTools || "(none)"}
-Text: ${actual.text?.slice(0, 200) || "(none)"}
-
-## Scoring criteria
-Score each 0-10:
-- taskCompletion: Would this action advance the user's goal?
-- toolSelection: Was the right tool chosen for the situation?
-- efficiency: Were there unnecessary or redundant steps?
-
-Respond with JSON:
-{"taskCompletion": N, "toolSelection": N, "efficiency": N, "reasoning": "..."}`;
+  return renderPrompt("evals.judge.user", {
+    query: evalCase.metadata.query,
+    url: evalCase.metadata.url,
+    strategy: evalCase.strategy,
+    expected_tools: expectedTools || "(none)",
+    expected_text: evalCase.expected.text?.slice(0, 200) || "(none)",
+    actual_tools: actualTools || "(none)",
+    actual_text: actual.text?.slice(0, 200) || "(none)",
+  });
 }
 
 function clamp(value: number, min: number, max: number): number {

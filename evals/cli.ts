@@ -47,7 +47,6 @@ const c = {
 
 const PROMPT_IDS: PromptId[] = [
   "orchestrator.verifier.system",
-  "orchestrator.verifier.critic.system",
   "orchestrator.advisory.system",
 ];
 
@@ -805,9 +804,7 @@ function cmdCritique(args: string[]) {
     runTraceSignals,
     runTraceCompliance,
     suggestions,
-    llmPromptTemplate:
-      "You are evaluating prompt quality for an agentic browser system. " +
-      "Given this report JSON, propose the top 3 prompt edits, each with expected impact, risk, and validation plan.",
+    llmPromptTemplate: getPromptTemplate("evals.critique.llm_template"),
   };
 
   mkdirSync(outDir, { recursive: true });

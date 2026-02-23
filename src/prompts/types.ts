@@ -1,6 +1,22 @@
 export type PromptId =
+  | "orchestrator.router.system"
   | "orchestrator.verifier.system"
-  | "orchestrator.advisory.system";
+  | "orchestrator.advisory.system"
+  | "planner.decompose.system"
+  | "planner.validate_done.system"
+  | "agent.system"
+  | "agent.reflection.text_only_correction"
+  | "agent.reflection.escalation"
+  | "agent.reflection.deescalation"
+  | "agent.reflection.handoff"
+  | "agent.reflection.pivot"
+  | "perception.interpret_page"
+  | "evals.judge.system"
+  | "evals.judge.user"
+  | "evals.critique.llm_template"
+  | "ui.saved_prompt.summarize_page"
+  | "ui.saved_prompt.extract_links"
+  | "ui.saved_prompt.fill_form";
 
 export interface PromptDefinition {
   id: PromptId;
