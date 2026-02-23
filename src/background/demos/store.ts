@@ -357,6 +357,75 @@ export class DemoStore {
     this.cache = [];
     await this.save([]);
   }
+
+  /**
+   * Compact one-liner-per-demo catalog for the system prompt's cached prefix.
+   * Format: `- "Name" — Goal (domain.com, N steps)`
+   * Returns empty string when no enabled demos exist.
+   */
+  async getCatalogSummary(): Promise<string> {
+    const demos = await this.load();
+    const enabled = demos.filter((d) => d.enabled);
+    if (enabled.length === 0) return "";
+
+    const lines = enabled.map((d) => {
+      const goal = d.goal ? ` — ${d.goal}` : "";
+      let domain = "";
+      try {
+        domain = new URL(
+          d.urlPattern.startsWith("http")
+            ? d.urlPattern
+            : `https://${d.urlPattern}`,
+        ).hostname;
+      } catch {
+        domain = d.urlPattern;
+      }
+      return `- "${d.name}"${goal} (${domain}, ${d.actions.length} steps)`;
+    });
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Find a demo by name (exact or substring) or fall back to token-overlap search.
+   * Used by the `recall_demo` tool for agent-initiated retrieval.
+   */
+  async findByQuery(query: string): Promise<Demonstration | null> {
+    const demos = await this.load();
+    const enabled = demos.filter((d) => d.enabled);
+    if (enabled.length === 0) return null;
+
+    const q = query.toLowerCase().trim();
+
+    // 1. Exact name match (case-insensitive)
+    const exact = enabled.find((d) => d.name.toLowerCase() === q);
+    if (exact) return exact;
+
+    // 2. Substring name match
+    const substring = enabled.find((d) => d.name.toLowerCase().includes(q));
+    if (substring) return substring;
+
+    // 3. Token overlap scoring (same as matchDemo but without URL filter)
+    const queryTokens = tokenize(query);
+    if (queryTokens.length === 0) return null;
+
+    let best: { demo: Demonstration; score: number } | null = null;
+    for (const demo of enabled) {
+      const tokenScore = overlapScore(queryTokens, demo.matchTokens);
+      const goalScore = demo.goal
+        ? overlapScore(queryTokens, tokenize(demo.goal))
+        : 0;
+      const score = demo.goal
+        ? 0.6 * tokenScore + 0.4 * goalScore
+        : tokenScore;
+
+      if (score > 0.2 && (!best || score > best.score)) {
+        best = { demo, score };
+      }
+    }
+
+    return best?.demo ?? null;
+  }
 }
 
 // --- Demo formatting for injection into system prompt ---

@@ -10,79 +10,12 @@ import { sendMessageToMemory } from "../memory/bridge";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { takeScreenshotWithTags } from "./screenshot";
-import { describeScreenshot } from "../vision";
-import { TokenUsage } from "../llm/types";
 import { registerReactTools } from "./react";
 import { waitForContentScriptReady } from "../tab-ready";
+import { DemoStore, formatDemoForContext } from "../demos/store";
 
 // Export registry and types
 export * from "./registry";
-
-/** Per-tab callbacks for reporting vision usage to the agent loop. */
-const visionUsageCallbacks = new Map<
-  number,
-  (usage: TokenUsage, durationMs: number, model: string) => void
->();
-
-export function setVisionUsageCallback(
-  cb: ((usage: TokenUsage, durationMs: number, model: string) => void) | null,
-  tabId?: number,
-): void {
-  if (tabId != null) {
-    if (cb) visionUsageCallbacks.set(tabId, cb);
-    else visionUsageCallbacks.delete(tabId);
-  } else {
-    // Backwards compat: null clears all
-    if (!cb) visionUsageCallbacks.clear();
-  }
-}
-
-/** Per-tab callbacks for passing screenshot thumbnails to the agent loop. */
-const screenshotCaptureCallbacks = new Map<
-  number,
-  (thumbnailDataUrl: string) => void
->();
-
-export function setScreenshotCaptureCallback(
-  cb: ((thumbnailDataUrl: string) => void) | null,
-  tabId?: number,
-): void {
-  if (tabId != null) {
-    if (cb) screenshotCaptureCallbacks.set(tabId, cb);
-    else screenshotCaptureCallbacks.delete(tabId);
-  } else {
-    // Backwards compat: null clears all
-    if (!cb) screenshotCaptureCallbacks.clear();
-  }
-}
-
-/** Downsize a full-res screenshot data URL to a ~320px wide JPEG thumbnail. */
-async function createThumbnail(dataUrl: string): Promise<string> {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  const bitmap = await createImageBitmap(blob);
-
-  const MAX_WIDTH = 320;
-  const scale = Math.min(1, MAX_WIDTH / bitmap.width);
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
-
-  const canvas = new OffscreenCanvas(w, h);
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  bitmap.close();
-
-  const thumbBlob = await canvas.convertToBlob({
-    type: "image/jpeg",
-    quality: 0.5,
-  });
-  const arrayBuf = await thumbBlob.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuf);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++)
-    binary += String.fromCharCode(bytes[i]);
-  return `data:image/jpeg;base64,${btoa(binary)}`;
-}
 
 function formatUnknownError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -390,20 +323,6 @@ const DONE_DEF: ToolDefinition = {
   },
 };
 
-const TAKE_SCREENSHOT_DEF: ToolDefinition = {
-  type: "function",
-  function: {
-    name: ToolName.TAKE_SCREENSHOT,
-    description:
-      "Capture and describe the visual layout. Use when element tags don't match what you expect, when you need spatial context, or when stuck after 3+ failed attempts.",
-    parameters: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
-};
-
 const HOVER_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -582,6 +501,16 @@ const DISMISS_OVERLAYS_DEF: ToolDefinition = {
       properties: {},
       required: [],
     },
+  },
+};
+
+const CLOSE_POPUPS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CLOSE_POPUPS,
+    description:
+      "Close all visible popups, modals, banners, and dialogs by clicking their dismiss/close buttons. Triggers proper JS cleanup handlers. Falls back to hiding if no close button found. Preferred over dismiss_overlays.",
+    parameters: { type: "object", properties: {}, required: [] },
   },
 };
 
@@ -795,7 +724,7 @@ const CLICK_COORDINATES_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLICK_COORDINATES,
     description:
-      "Click at viewport X/Y coordinates. ONLY use after take_screenshot when the target has no [N] tag (canvas apps, games, obfuscated UIs). Prefer click_element when a tag exists.",
+      "Click at viewport X/Y coordinates. ONLY use when the target has no [N] tag (canvas apps, games, obfuscated UIs). Prefer click_element when a tag exists.",
     parameters: {
       type: "object",
       properties: {
@@ -1115,6 +1044,25 @@ const FAST_FORWARD_DEF: ToolDefinition = {
     description:
       "Toggle fast-forward mode: accelerates all page timers (setTimeout/setInterval) to fire instantly. Use when content appears after a countdown or timed delay. Call again to restore normal timing.",
     parameters: { type: "object", properties: {}, required: [] },
+  },
+};
+
+const RECALL_DEMO_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.RECALL_DEMO,
+    description:
+      "Retrieve a saved demonstration by name or description. Returns step-by-step instructions from a previously recorded workflow. Use when you recognize a matching demo from the catalog, or when stuck on a repetitive task.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Demo name, goal, or description to search for.",
+        },
+      },
+      required: ["query"],
+    },
   },
 };
 
@@ -1463,7 +1411,7 @@ export function registerTools() {
           type: "DOM_SNAPSHOT_REQUEST",
           requestId: crypto.randomUUID(),
           source: MessageSource.BACKGROUND,
-          payload: { includeText: false, refresh: true, showTags: false },
+          payload: { refresh: true, showTags: false },
         });
         const elements = snapResponse?.payload?.snapshot?.elements;
         if (elements && Array.isArray(elements)) {
@@ -1585,6 +1533,196 @@ export function registerTools() {
     },
   );
 
+  // Close popups — click dismiss/close buttons, fall back to hiding
+  toolRegistry.register(
+    ToolName.CLOSE_POPUPS,
+    CLOSE_POPUPS_DEF,
+    async (_args, tabId) => {
+      logger.info("tools", "close_popups", { tabId });
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            let clicked = 0;
+            let hidden = 0;
+            const acted = new Set<Element>();
+
+            function isVisible(el: Element): boolean {
+              if (!(el instanceof HTMLElement)) return false;
+              const s = getComputedStyle(el);
+              if (s.display === "none" || s.visibility === "hidden") return false;
+              if (parseFloat(s.opacity) === 0) return false;
+              return el.offsetParent !== null || s.position === "fixed" || s.position === "sticky";
+            }
+
+            function findCloseBtn(container: Element): HTMLElement | null {
+              // 1. aria-label close/dismiss
+              const ariaEls = container.querySelectorAll(
+                '[aria-label*="close" i], [aria-label*="dismiss" i], [aria-label*="Close" i], [aria-label*="Dismiss" i]'
+              );
+              for (const el of ariaEls) {
+                if (el instanceof HTMLElement && isVisible(el)) return el;
+              }
+              // 2. class-based close buttons
+              const classEls = container.querySelectorAll(
+                '.close, .dismiss, .btn-close, [class*="close-btn"], [class*="closeBtn"], [class*="close_btn"]'
+              );
+              for (const el of classEls) {
+                if (el instanceof HTMLElement && isVisible(el)) return el;
+              }
+              // 3. X / x / times character button in top-right quadrant
+              const rect = container.getBoundingClientRect();
+              const midX = rect.left + rect.width / 2;
+              const midY = rect.top + rect.height / 2;
+              const btns = container.querySelectorAll("button, [role='button'], a");
+              for (const btn of btns) {
+                if (!(btn instanceof HTMLElement) || !isVisible(btn)) continue;
+                const text = btn.textContent?.trim() || "";
+                if (/^[×✕✖xX]$/.test(text) || text === "&times;") {
+                  const br = btn.getBoundingClientRect();
+                  const cx = br.left + br.width / 2;
+                  const cy = br.top + br.height / 2;
+                  if (cx >= midX && cy <= midY) return btn;
+                }
+              }
+              return null;
+            }
+
+            const DISMISS_PATTERNS = /^(close|dismiss|got it|ok|accept|no thanks|decline|not now|maybe later|skip|i agree|i understand|allow all|reject all|accept all|deny|continue|allow)$/i;
+
+            function findDismissBtn(container: Element): HTMLElement | null {
+              const candidates = container.querySelectorAll("button, a, [role='button']");
+              for (const el of candidates) {
+                if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
+                const text = el.textContent?.trim() || "";
+                if (DISMISS_PATTERNS.test(text)) return el;
+              }
+              return null;
+            }
+
+            function tryClickOrHide(container: HTMLElement): void {
+              if (acted.has(container)) return;
+              acted.add(container);
+              const closeBtn = findCloseBtn(container);
+              if (closeBtn) {
+                closeBtn.click();
+                clicked++;
+                return;
+              }
+              const dismissBtn = findDismissBtn(container);
+              if (dismissBtn) {
+                dismissBtn.click();
+                clicked++;
+                return;
+              }
+              container.style.display = "none";
+              hidden++;
+            }
+
+            // Phase 1: Overlay containers by selector
+            const selectors = [
+              "[role='dialog']", "[role='alertdialog']",
+              ".modal", ".overlay", ".popup", ".banner",
+              ".cookie", ".consent", ".notice",
+              "[class*='modal']", "[class*='overlay']", "[class*='popup']",
+              "[class*='banner']", "[class*='cookie']", "[class*='consent']",
+              "[class*='notification']", "[class*='toast']", "[class*='snackbar']",
+              "#onetrust-consent-sdk", ".fc-consent-root",
+              "[class*='gdpr']", "[class*='privacy']",
+            ];
+            for (const sel of selectors) {
+              const els = document.querySelectorAll(sel);
+              for (const el of els) {
+                if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
+                const style = getComputedStyle(el);
+                const isOverlay = style.position === "fixed" || style.position === "sticky"
+                  || style.position === "absolute" || parseInt(style.zIndex, 10) > 50;
+                if (!isOverlay) continue;
+                tryClickOrHide(el);
+              }
+            }
+
+            // Phase 2: Viewport-covering elements (>20% coverage, fixed/absolute)
+            const vpW = window.innerWidth;
+            const vpH = window.innerHeight;
+            const vpArea = vpW * vpH;
+            if (vpArea > 0) {
+              const all = document.querySelectorAll("*");
+              for (const raw of all) {
+                if (!(raw instanceof HTMLElement) || !isVisible(raw)) continue;
+                if (acted.has(raw)) continue;
+                const s = getComputedStyle(raw);
+                if (s.position !== "fixed" && s.position !== "absolute") continue;
+                const r = raw.getBoundingClientRect();
+                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
+                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
+                const coverage = (vW * vH) / vpArea;
+                if (coverage > 0.2) {
+                  // Backdrops/dimming layers — hide directly
+                  const childCount = raw.children.length;
+                  const text = raw.textContent?.trim() || "";
+                  if (childCount <= 1 && text.length < 10) {
+                    raw.style.display = "none";
+                    hidden++;
+                    acted.add(raw);
+                  } else {
+                    tryClickOrHide(raw);
+                  }
+                }
+              }
+            }
+
+            // Phase 3: Small floating popups (fixed/absolute, z>10, dismiss-text buttons)
+            if (vpArea > 0) {
+              const all = document.querySelectorAll("*");
+              for (const raw of all) {
+                if (!(raw instanceof HTMLElement) || !isVisible(raw)) continue;
+                if (acted.has(raw)) continue;
+                const s = getComputedStyle(raw);
+                if (s.position !== "fixed" && s.position !== "absolute") continue;
+                const z = parseInt(s.zIndex, 10);
+                if (!(z > 10)) continue;
+                const r = raw.getBoundingClientRect();
+                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
+                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
+                const coverage = (vW * vH) / vpArea;
+                // Skip viewport-covering ones (handled in phase 2)
+                if (coverage > 0.2) continue;
+                // Must have at least some visible size
+                if (vW < 30 || vH < 30) continue;
+                // Look for dismiss button
+                const dismissBtn = findDismissBtn(raw) || findCloseBtn(raw);
+                if (dismissBtn) {
+                  dismissBtn.click();
+                  clicked++;
+                  acted.add(raw);
+                }
+              }
+            }
+
+            // Phase 4: ESC key
+            const total = clicked + hidden;
+            if (total > 0) {
+              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+            }
+
+            // Phase 5: Body overflow restoration
+            const bodyStyle = getComputedStyle(document.body);
+            if (bodyStyle.overflow === "hidden") {
+              document.body.style.overflow = "";
+              document.documentElement.style.overflow = "";
+            }
+
+            return `Closed ${total} popup(s) (${clicked} clicked, ${hidden} hidden).`;
+          },
+        });
+        return results?.[0]?.result ?? "No popups found.";
+      } catch (e: any) {
+        return `Error closing popups: ${e.message}`;
+      }
+    },
+  );
+
   // Batch execution tool (intercepted by agent loop before executor runs)
   toolRegistry.register(ToolName.BATCH_EXECUTE, BATCH_EXECUTE_DEF, async (args) => {
     // Fallback — the loop intercepts batch_execute before reaching here
@@ -1682,46 +1820,6 @@ export function registerTools() {
     await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
     return `Waited ${seconds}s`;
   });
-
-  toolRegistry.register(
-    ToolName.TAKE_SCREENSHOT,
-    TAKE_SCREENSHOT_DEF,
-    async (_args, tabId, signal) => {
-      try {
-        const tab = await chrome.tabs.get(tabId);
-        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-          format: "jpeg",
-          quality: 70,
-        });
-
-        // Generate thumbnail and fire callback (before vision LLM call)
-        const captureCallback = screenshotCaptureCallbacks.get(tabId);
-        if (captureCallback) {
-          try {
-            const thumbnailUrl = await createThumbnail(dataUrl);
-            captureCallback(thumbnailUrl);
-          } catch (e) {
-            logger.warn("tools", "Thumbnail generation failed", { error: e });
-          }
-        }
-
-        const result = await describeScreenshot(dataUrl, signal);
-        // Report vision usage to the agent loop if callback is registered
-        const usageCallback = visionUsageCallbacks.get(tabId);
-        if (
-          result.usage &&
-          result.model &&
-          result.durationMs != null &&
-          usageCallback
-        ) {
-          usageCallback(result.usage, result.durationMs, result.model);
-        }
-        return result.description;
-      } catch (e: any) {
-        return `Error capturing screenshot: ${e.message}`;
-      }
-    },
-  );
 
   // Control Flow Tool
   toolRegistry.register(ToolName.DONE, DONE_DEF, async (args) => {
@@ -2534,6 +2632,26 @@ export function registerTools() {
         },
       });
       return results?.[0]?.result ?? "Fast-forward toggled.";
+    },
+  );
+
+  // Demo recall tool
+  toolRegistry.register(
+    ToolName.RECALL_DEMO,
+    RECALL_DEMO_DEF,
+    async (args) => {
+      const query = args.query as string;
+      if (!query || !query.trim()) return "Error: query is required.";
+      logger.info("tools", "recall_demo", { query });
+      try {
+        const demoStore = new DemoStore();
+        const demo = await demoStore.findByQuery(query);
+        if (!demo) return `No demonstration found matching "${query}".`;
+        await demoStore.recordDemoUsage(demo.id);
+        return formatDemoForContext(demo);
+      } catch (e: any) {
+        return `Error recalling demo: ${e.message}`;
+      }
     },
   );
 
