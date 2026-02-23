@@ -140,6 +140,22 @@ export function buildExecutorInstruction(
       : "- Call done() only when success criteria are satisfied.",
     "- Call done() only when success criteria are satisfied.",
   );
+
+  if (node.verificationGate) {
+    const gate = node.verificationGate;
+    const actionText =
+      gate.action === "call_done"
+        ? "call done() immediately to deliver the result"
+        : "advance to the next step";
+    sections.push(
+      "",
+      "VERIFICATION CHECKPOINT:",
+      `After each action, check: ${gate.trigger}`,
+      `If triggered: ${actionText}.`,
+      "Do NOT continue executing additional tools once this condition is met.",
+    );
+  }
+
   return sections.join("\n");
 }
 
@@ -205,12 +221,12 @@ function tokenizeAssumption(assumption: string): string[] {
 
 export function buildAssumptionDriftSignal(
   node: TaskNode,
-  snapshot?: { title?: string; url?: string; viewportText?: string } | null,
+  snapshot?: { title?: string; url?: string; visibleContent?: string } | null,
 ): string {
   if (!snapshot || node.assumptions.length === 0) {
     return "No assumption drift evaluation available.";
   }
-  const corpus = `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.viewportText || ""}`.toLowerCase();
+  const corpus = `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.visibleContent || ""}`.toLowerCase();
   const matched: string[] = [];
   const unmatched: string[] = [];
 

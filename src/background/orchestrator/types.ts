@@ -1,4 +1,5 @@
 import { AgentLoop } from "../agent";
+import type { Difficulty } from "../agent/constants";
 import {
   AgentRole,
   EscalationDecisionMessage,
@@ -7,6 +8,13 @@ import {
   ToolName,
   UserSettings,
 } from "../../types";
+import type { RouteDecision } from "./router";
+
+export interface VerificationGate {
+  trigger: string;     // "text 'Code accepted' visible", "URL contains /step3"
+  action: "call_done" | "advance_step";
+  pattern?: string;    // optional regex for precise matching
+}
 
 export interface PlannerAssignment {
   role: Extract<AgentRole, "executor">;
@@ -15,6 +23,7 @@ export interface PlannerAssignment {
   allowedTools: ToolName[];
   dependencies?: string[];
   assumptions?: string[];
+  verificationGate?: VerificationGate;
 }
 
 export interface StructuredEvidence {
@@ -73,10 +82,17 @@ export interface TaskNode {
   reflexionLog: ReflexionEntry[];
   handoffDepth: number;
   handoffFromNodeId?: string;
+  verificationGate?: VerificationGate;
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   retries: number;
   result?: string;
   error?: string;
+}
+
+export interface BuildNodesResult {
+  nodes: TaskNode[];
+  isSingleNode: boolean;
+  difficulty: Difficulty;
 }
 
 export interface OrchestratorTask {
@@ -106,6 +122,11 @@ export interface OrchestratorTask {
     packet: EscalationPacket;
     selectedOption?: EscalationDecisionMessage["payload"];
   };
+  planClassification?: {
+    isSingleNode: boolean;
+    difficulty: Difficulty;
+  };
+  routeDecision?: RouteDecision;
 }
 
 export interface OrchestratorCheckpoint {
