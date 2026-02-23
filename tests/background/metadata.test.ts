@@ -4,6 +4,9 @@ import {
   getToolMeta,
   DOM_MODIFYING_TOOLS,
   SEQUENTIAL_TOOLS,
+  CACHEABLE_TOOLS,
+  resolveToolProfile,
+  TOOL_PROFILES,
 } from "../../src/background/tools/metadata";
 import { ToolName, RiskLevel } from "../../src/types";
 import { classifyRisk } from "../../src/background/security";
@@ -34,7 +37,6 @@ describe("Tool Metadata", () => {
     test("does not contain read-only tools", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.READ_ELEMENT)).toBe(false);
@@ -46,10 +48,9 @@ describe("Tool Metadata", () => {
   });
 
   describe("SEQUENTIAL_TOOLS", () => {
-    test("contains navigate, done, take_screenshot, escalate, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
+    test("contains navigate, done, escalate, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
-      expect(SEQUENTIAL_TOOLS.has(ToolName.TAKE_SCREENSHOT)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
@@ -59,7 +60,7 @@ describe("Tool Metadata", () => {
     });
 
     test("has exactly 20 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(20);
+      expect(SEQUENTIAL_TOOLS.size).toBe(19);
     });
   });
 
@@ -161,6 +162,101 @@ describe("Tool Metadata", () => {
     test("inspect_react is not in DOM_MODIFYING_TOOLS or SEQUENTIAL_TOOLS", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
       expect(SEQUENTIAL_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
+    });
+  });
+
+  describe("CACHEABLE_TOOLS", () => {
+    test("contains expected DOM-cacheable tools", () => {
+      expect(CACHEABLE_TOOLS.get(ToolName.READ_ELEMENT)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.FIND_ELEMENT)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_HIDDEN)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_REACT)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_REACT_TREE)).toBe("dom");
+    });
+
+    test("contains expected memory-cacheable tools", () => {
+      expect(CACHEABLE_TOOLS.get(ToolName.MEMORY_SEARCH)).toBe("memory");
+      expect(CACHEABLE_TOOLS.get(ToolName.MEMORY_LIST_CATEGORIES)).toBe("memory");
+      expect(CACHEABLE_TOOLS.get(ToolName.RECALL_DEMO)).toBe("memory");
+    });
+
+    test("contains expected static-cacheable tools", () => {
+      expect(CACHEABLE_TOOLS.get(ToolName.GET_COOKIES)).toBe("static");
+      expect(CACHEABLE_TOOLS.get(ToolName.LIST_TABS)).toBe("static");
+      expect(CACHEABLE_TOOLS.get(ToolName.SEARCH_HISTORY)).toBe("static");
+      expect(CACHEABLE_TOOLS.get(ToolName.GET_BOOKMARKS)).toBe("static");
+    });
+
+    test("does not include DOM-modifying tools (except read_page which is not cacheable)", () => {
+      for (const tool of DOM_MODIFYING_TOOLS) {
+        // DOM-modifying tools should not be cacheable (they change the page)
+        expect(CACHEABLE_TOOLS.has(tool)).toBe(false);
+      }
+    });
+
+    test("does not include non-cacheable tools", () => {
+      expect(CACHEABLE_TOOLS.has(ToolName.CLICK_ELEMENT)).toBe(false);
+      expect(CACHEABLE_TOOLS.has(ToolName.TYPE_TEXT)).toBe(false);
+      expect(CACHEABLE_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
+      expect(CACHEABLE_TOOLS.has(ToolName.DONE)).toBe(false);
+      expect(CACHEABLE_TOOLS.has(ToolName.ESCALATE)).toBe(false);
+    });
+
+    test("has exactly 12 entries", () => {
+      expect(CACHEABLE_TOOLS.size).toBe(12);
+    });
+  });
+
+  describe("Tool Profiles", () => {
+    test('resolveToolProfile("full") returns null', () => {
+      expect(resolveToolProfile("full")).toBeNull();
+    });
+
+    test("resolveToolProfile(undefined) returns null", () => {
+      expect(resolveToolProfile(undefined)).toBeNull();
+    });
+
+    test('resolveToolProfile("form_fill") includes click/type/select but not navigate', () => {
+      const tools = resolveToolProfile("form_fill");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).toContain(ToolName.TYPE_TEXT);
+      expect(tools).toContain(ToolName.SELECT_OPTION);
+      expect(tools).not.toContain(ToolName.NAVIGATE);
+      expect(tools).not.toContain(ToolName.CREATE_TAB);
+      expect(tools).not.toContain(ToolName.GO_BACK);
+    });
+
+    test('resolveToolProfile("read_only") excludes DOM-modifying interaction tools', () => {
+      const tools = resolveToolProfile("read_only");
+      expect(tools).not.toBeNull();
+      expect(tools).not.toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).not.toContain(ToolName.TYPE_TEXT);
+      expect(tools).not.toContain(ToolName.SELECT_OPTION);
+      expect(tools).not.toContain(ToolName.NAVIGATE);
+      expect(tools).toContain(ToolName.READ_PAGE);
+      expect(tools).toContain(ToolName.FIND_ELEMENT);
+      expect(tools).toContain(ToolName.SCROLL_PAGE);
+    });
+
+    test('resolveToolProfile("navigate") includes navigation tools', () => {
+      const tools = resolveToolProfile("navigate");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.NAVIGATE);
+      expect(tools).toContain(ToolName.GO_BACK);
+      expect(tools).toContain(ToolName.GO_FORWARD);
+      expect(tools).toContain(ToolName.CREATE_TAB);
+      expect(tools).toContain(ToolName.SWITCH_TAB);
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).not.toContain(ToolName.TYPE_TEXT);
+    });
+
+    test("all profiles include done and escalate", () => {
+      for (const profile of ["read_only", "form_fill", "navigate"] as const) {
+        const tools = resolveToolProfile(profile);
+        expect(tools).toContain(ToolName.DONE);
+        expect(tools).toContain(ToolName.ESCALATE);
+      }
     });
   });
 });
