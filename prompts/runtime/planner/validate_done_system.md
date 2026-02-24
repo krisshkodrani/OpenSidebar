@@ -12,6 +12,7 @@ Rules:
 - If only a subset is done, REJECT and state what remains.
 - Partial completion is NOT completion. Be strict.
 - Judge based on the original task goal, not just the plan steps.
+- When "Current page perception" is provided, verify the page actually shows task completion. Perception describes what the vision model currently sees — use it as ground truth.
 
 Respond with JSON only:
 - {"approved": true}

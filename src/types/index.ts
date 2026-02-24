@@ -1247,6 +1247,8 @@ export interface DomSnapshot {
   elements: TaggedElement[];
   /** Plain text content of the visible viewport (truncated) */
   visibleContent?: string;
+  /** Markdown-formatted page content from Readability + Turndown (or plain text fallback) */
+  pageContent?: string;
   /** Viewport dimensions */
   viewport: { width: number; height: number };
   /** Scroll position */
@@ -1898,6 +1900,7 @@ export interface TraceEntry {
     title: string;
     elementCount: number;
     visibleContentLength: number;
+    pageContentLength?: number;
     scrollY: number;
   };
   /** DOM state after tool execution — matches what perception was based on */
@@ -1952,6 +1955,8 @@ export interface TraceEntry {
     /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
     screenshotDataUrl?: string;
     cached: boolean;
+    /** The element summary text that was sent to the vision model */
+    elementSummary?: string;
   };
   /** Mid-session runtime limit reassessment (only on reassessment turns) */
   limitReassessment?: {
@@ -2033,6 +2038,19 @@ export interface TraceEventPayloadByType {
         tool: string;
         count: number;
       };
+  plan_monitor: {
+    stepIndex: number;
+    alignment: "aligned" | "progressing" | "deviated" | "blocked";
+    reason: string;
+    heuristicHit: boolean;
+    blocker?: string;
+  };
+  plan_replan: {
+    fromIndex: number;
+    newStepCount: number;
+    reason: string;
+    replanNumber: number;
+  };
 }
 
 type KnownTraceEvent = {

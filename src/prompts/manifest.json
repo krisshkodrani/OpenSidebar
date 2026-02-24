@@ -23,7 +23,7 @@
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "4ad10c50",
+    "hash": "97e80c79",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -51,21 +51,35 @@
   {
     "id": "perception.interpret_page",
     "version": "v1",
-    "hash": "e2eb725b",
+    "hash": "03ede43c",
     "description": "Perception module prompt for multimodal page interpretation. Sent with screenshot + element metadata to GPT-4o-mini.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {
     "id": "planner.decompose.system",
     "version": "v2",
-    "hash": "8115afae",
+    "hash": "99128855",
     "description": "Planner decomposition system prompt for the task planner.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {
+    "id": "planner.monitor_step.system",
+    "version": "v1",
+    "hash": "6a9f5694",
+    "description": "Lightweight step alignment classifier for plan monitoring.",
+    "sourcePath": "prompts/runtime/planner/monitor_step_system.md"
+  },
+  {
+    "id": "planner.replan.system",
+    "version": "v1",
+    "hash": "5e733b13",
+    "description": "Selective replan system prompt for plan repair after deviation.",
+    "sourcePath": "prompts/runtime/planner/replan_system.md"
+  },
+  {
     "id": "planner.validate_done.system",
     "version": "v1",
-    "hash": "8c45dfcb",
+    "hash": "40725834",
     "description": "Done validation system prompt for the task planner.",
     "sourcePath": "prompts/runtime/planner/validate_done_system.md"
   },

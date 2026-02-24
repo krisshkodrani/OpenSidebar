@@ -81,4 +81,11 @@ Include a "toolProfile" field to restrict tools to what the step needs:
 - "full" (default): all tools available
 Using a focused profile improves accuracy and reduces cost.
 
+EXPECTED STATE (recommended for each step):
+Include "expectedState" describing what the page should look like after the step:
+- "description": what the vision model should observe (1-2 sentences)
+- "urlPattern" (optional): regex for expected URL
+- "expectedPhrases" (optional): key content phrases that should appear in perception
+When "Page state" context is provided in the user message, use it to make plans grounded in actual page state rather than assumptions.
+
 Respond with JSON only.

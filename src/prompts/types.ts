@@ -4,6 +4,8 @@ export type PromptId =
   | "orchestrator.advisory.system"
   | "planner.decompose.system"
   | "planner.validate_done.system"
+  | "planner.replan.system"
+  | "planner.monitor_step.system"
   | "agent.system"
   | "agent.reflection.text_only_correction"
   | "agent.reflection.escalation"

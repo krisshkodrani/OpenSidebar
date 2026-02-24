@@ -20,6 +20,28 @@ export interface PlanStep {
   assumptions: string[];
   verifyAfter?: { trigger: string; action: "call_done" | "advance_step"; pattern?: string };
   toolProfile?: "full" | "read_only" | "form_fill" | "navigate";
+  expectedState?: {
+    description: string;       // what perception should show after step completion
+    urlPattern?: string;       // optional regex for expected URL
+    expectedPhrases?: string[];// key content that should appear in perception
+  };
+}
+
+/** Alignment classification from plan monitor */
+export type PlanAlignment = "aligned" | "progressing" | "deviated" | "blocked";
+
+/** Result of a plan monitoring check */
+export interface PlanMonitorResult {
+  alignment: PlanAlignment;
+  reason: string;
+  replanFromIndex?: number;
+  blocker?: string;
+}
+
+/** Result of a selective replan */
+export interface ReplanResult {
+  newSteps: PlanStep[];
+  reason: string;
 }
 
 /** Result of done() validation */
@@ -30,17 +52,32 @@ export interface DoneValidation {
 
 const DECOMPOSE_SYSTEM = renderPrompt("planner.decompose.system");
 const VALIDATE_SYSTEM = renderPrompt("planner.validate_done.system");
+const MONITOR_STEP_SYSTEM = renderPrompt("planner.monitor_step.system");
 
 export class TaskPlanner {
   private llm: LLMClient;
+  private openRouterApiKey: string;
+  private cerebrasApiKey?: string;
+  private fastLlm: LLMClient | null = null;
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
 
   constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
+    this.openRouterApiKey = openRouterApiKey;
+    this.cerebrasApiKey = cerebrasApiKey;
     this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
     // Planner always uses the smart model tier
     this.llm.switchToSmart();
+  }
+
+  /** Lazy-initialized fast-tier LLM client for lightweight monitoring calls */
+  private getFastLlm(): LLMClient {
+    if (!this.fastLlm) {
+      this.fastLlm = new LLMClient(this.openRouterApiKey, undefined, this.cerebrasApiKey);
+      // Stay on fast tier — never switchToSmart
+    }
+    return this.fastLlm;
   }
 
   setUsageCallback(
@@ -54,15 +91,21 @@ export class TaskPlanner {
     pageTitle: string,
     pageUrl: string,
     signal?: AbortSignal,
+    perception?: string,
   ): Promise<PlanDecomposition | null> {
     try {
       const start = Date.now();
+      let userContent = `Page: ${pageTitle} (${pageUrl})`;
+      if (perception) {
+        userContent += `\nPage state:\n${perception}`;
+      }
+      userContent += `\n\nTask: ${query}`;
       const response = await this.llm.complete({
         messages: [
           { role: "system", content: DECOMPOSE_SYSTEM },
           {
             role: "user",
-            content: `Page: ${pageTitle} (${pageUrl})\nTask: ${query}`,
+            content: userContent,
           },
         ],
         max_tokens: 768,
@@ -198,6 +241,31 @@ export class TaskPlanner {
             toolProfile = obj.toolProfile as PlanStep["toolProfile"];
           }
 
+          // Parse optional expectedState
+          let expectedState: PlanStep["expectedState"];
+          if (
+            obj.expectedState &&
+            typeof obj.expectedState === "object" &&
+            !Array.isArray(obj.expectedState)
+          ) {
+            const es = obj.expectedState as Record<string, unknown>;
+            if (typeof es.description === "string" && es.description.trim().length > 0) {
+              expectedState = {
+                description: es.description.trim(),
+                ...(typeof es.urlPattern === "string" && es.urlPattern.trim().length > 0
+                  ? { urlPattern: es.urlPattern.trim() }
+                  : {}),
+                ...(Array.isArray(es.expectedPhrases)
+                  ? {
+                      expectedPhrases: (es.expectedPhrases as unknown[])
+                        .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+                        .map((p) => p.trim()),
+                    }
+                  : {}),
+              };
+            }
+          }
+
           result.push({
             objective: obj.objective.trim(),
             successCriteria,
@@ -205,6 +273,7 @@ export class TaskPlanner {
             assumptions,
             ...(verifyAfter ? { verifyAfter } : {}),
             ...(toolProfile ? { toolProfile } : {}),
+            ...(expectedState ? { expectedState } : {}),
           });
         }
         return result;
@@ -292,11 +361,17 @@ export class TaskPlanner {
     pageTitle: string,
     pageUrl: string,
     signal?: AbortSignal,
+    perception?: string,
   ): Promise<DoneValidation> {
     try {
       const planText = plan
         .map((s, i) => `${i + 1}. [${s.status}] ${s.description}`)
         .join("\n");
+
+      let userContent = `Original task: ${query}\n\nPlan:\n${planText}\n\nAgent summary: ${doneSummary}\n\nCurrent page: ${pageTitle} (${pageUrl})`;
+      if (perception) {
+        userContent += `\n\nCurrent page perception:\n${perception}`;
+      }
 
       const start = Date.now();
       const response = await this.llm.complete({
@@ -304,7 +379,7 @@ export class TaskPlanner {
           { role: "system", content: VALIDATE_SYSTEM },
           {
             role: "user",
-            content: `Original task: ${query}\n\nPlan:\n${planText}\n\nAgent summary: ${doneSummary}\n\nCurrent page: ${pageTitle} (${pageUrl})`,
+            content: userContent,
           },
         ],
         max_tokens: 256,
@@ -363,6 +438,258 @@ export class TaskPlanner {
         };
       }
       return { approved: true };
+    }
+  }
+
+  /**
+   * Monitor step alignment: compare current perception against expected state.
+   * Phase A: heuristic (no LLM). Phase B: fast LLM (only if heuristics inconclusive).
+   * Returns null on graceful skip/failure.
+   */
+  async monitorStep(
+    step: PlanStep,
+    stepIndex: number,
+    perception: string,
+    pageUrl: string,
+    signal?: AbortSignal,
+  ): Promise<PlanMonitorResult | null> {
+    if (!step.expectedState) return null;
+
+    try {
+      // --- Phase A: Heuristic checks (no LLM call) ---
+
+      // Check for BLOCKERS in perception
+      const blockerMatch = perception.match(/BLOCKERS:[\s\S]*?(?=\n[A-Z]+:|$)/i);
+      if (blockerMatch) {
+        const blockerText = blockerMatch[0];
+        if (/PREREQ\b/i.test(blockerText)) {
+          const prereqMatch = blockerText.match(/PREREQ\s+"?([^"\n]+)"?/i);
+          return {
+            alignment: "blocked",
+            reason: "Prerequisite blocker detected in perception",
+            blocker: prereqMatch?.[1] || "Unknown prerequisite",
+          };
+        }
+        if (/RELEVANT\b/i.test(blockerText) && !/None/i.test(blockerText)) {
+          const relevantMatch = blockerText.match(/RELEVANT\s+\[\d+\]\s+"?([^"\n]+)"?/i);
+          return {
+            alignment: "blocked",
+            reason: "Relevant blocker detected in perception",
+            blocker: relevantMatch?.[1] || "Blocking overlay or dialog",
+          };
+        }
+      }
+
+      const expected = step.expectedState;
+
+      // URL pattern check
+      let urlMatches = true;
+      if (expected.urlPattern) {
+        try {
+          urlMatches = new RegExp(expected.urlPattern, "i").test(pageUrl);
+        } catch {
+          urlMatches = true; // Invalid regex — skip check
+        }
+      }
+
+      // Phrase matching
+      const phrases = expected.expectedPhrases || [];
+      const lowerPerception = perception.toLowerCase();
+      let matchedPhrases = 0;
+      for (const phrase of phrases) {
+        if (lowerPerception.includes(phrase.toLowerCase())) {
+          matchedPhrases++;
+        }
+      }
+
+      // Heuristic decisions
+      if (urlMatches && phrases.length > 0 && matchedPhrases === phrases.length) {
+        return {
+          alignment: "aligned",
+          reason: `URL matches${expected.urlPattern ? " pattern" : ""} and all ${phrases.length} expected phrases found`,
+        };
+      }
+      if (urlMatches && phrases.length > 0 && matchedPhrases > 0) {
+        return {
+          alignment: "progressing",
+          reason: `URL matches, ${matchedPhrases}/${phrases.length} expected phrases found`,
+        };
+      }
+      if (!urlMatches && expected.urlPattern) {
+        // URL doesn't match — likely deviated, but confirm with LLM
+      }
+
+      // --- Phase B: Fast LLM (heuristics inconclusive) ---
+      const fastLlm = this.getFastLlm();
+      const start = Date.now();
+      const response = await fastLlm.complete({
+        messages: [
+          {
+            role: "system",
+            content: MONITOR_STEP_SYSTEM,
+          },
+          {
+            role: "user",
+            content: `Step ${stepIndex + 1}: "${step.objective}"
+Expected state: ${expected.description}${expected.urlPattern ? `\nExpected URL pattern: ${expected.urlPattern}` : ""}${phrases.length > 0 ? `\nExpected phrases: ${phrases.join(", ")}` : ""}
+Current URL: ${pageUrl}
+Current perception:\n${perception.slice(0, 800)}`,
+          },
+        ],
+        max_tokens: 150,
+        temperature: 0,
+        signal,
+        response_format: { type: "json_object" },
+      });
+      const llmMs = Date.now() - start;
+      if (response.usage) {
+        this.usageCallback?.(
+          response.usage,
+          llmMs,
+          response.actualModel ?? fastLlm.getCurrentModel(),
+        );
+      }
+
+      const text = (response.content || "").trim();
+      const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+      let parsed: any;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        parsed = JSON.parse(match[0]);
+      }
+
+      const VALID_ALIGNMENTS = new Set(["aligned", "progressing", "deviated", "blocked"]);
+      const alignment: PlanAlignment = VALID_ALIGNMENTS.has(parsed.alignment)
+        ? (parsed.alignment as PlanAlignment)
+        : "progressing";
+
+      return {
+        alignment,
+        reason: parsed.reason || "LLM assessment",
+        ...(alignment === "deviated" ? { replanFromIndex: stepIndex } : {}),
+        ...(alignment === "blocked" ? { blocker: parsed.reason } : {}),
+      };
+    } catch (err: any) {
+      logger.warn("agent", "Plan monitor failed (graceful skip)", {
+        stepIndex,
+        error: err?.message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Selective replan: replace steps from deviation point onward.
+   * Uses smart model for high-quality plan repair.
+   */
+  async replanFrom(
+    originalQuery: string,
+    completedSteps: { index: number; objective: string; result?: string }[],
+    failedStep: { index: number; objective: string },
+    perception: string,
+    pageUrl: string,
+    signal?: AbortSignal,
+  ): Promise<ReplanResult | null> {
+    try {
+      const REPLAN_SYSTEM = renderPrompt("planner.replan.system");
+
+      const completedText = completedSteps.length > 0
+        ? completedSteps.map((s) => `${s.index + 1}. [done] ${s.objective}${s.result ? ` → ${s.result.slice(0, 100)}` : ""}`).join("\n")
+        : "None completed yet.";
+
+      const start = Date.now();
+      const response = await this.llm.complete({
+        messages: [
+          { role: "system", content: REPLAN_SYSTEM },
+          {
+            role: "user",
+            content: `Original task: ${originalQuery}\n\nCompleted steps:\n${completedText}\n\nDeviated at step ${failedStep.index + 1}: "${failedStep.objective}"\n\nCurrent URL: ${pageUrl}\nCurrent perception:\n${perception.slice(0, 1000)}`,
+          },
+        ],
+        max_tokens: 768,
+        temperature: 0,
+        signal,
+        response_format: { type: "json_object" },
+      });
+      const llmMs = Date.now() - start;
+      if (response.usage) {
+        this.usageCallback?.(
+          response.usage,
+          llmMs,
+          response.actualModel ?? this.llm.getCurrentModel(),
+        );
+      }
+
+      const text = (response.content || "").trim();
+      const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+      let parsed: any;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error(`No JSON object found in: ${cleaned.slice(0, 100)}`);
+        parsed = JSON.parse(match[0]);
+      }
+
+      if (!Array.isArray(parsed.steps) || parsed.steps.length === 0) {
+        return null;
+      }
+
+      // Cap at 8 steps
+      const rawSteps = parsed.steps.slice(0, 8);
+      const newSteps: PlanStep[] = [];
+      for (const raw of rawSteps) {
+        if (!raw || typeof raw !== "object") continue;
+        const obj = raw as Record<string, unknown>;
+        if (typeof obj.objective !== "string" || obj.objective.trim().length === 0) continue;
+
+        let expectedState: PlanStep["expectedState"];
+        if (obj.expectedState && typeof obj.expectedState === "object" && !Array.isArray(obj.expectedState)) {
+          const es = obj.expectedState as Record<string, unknown>;
+          if (typeof es.description === "string" && es.description.trim().length > 0) {
+            expectedState = {
+              description: es.description.trim(),
+              ...(typeof es.urlPattern === "string" && es.urlPattern.trim().length > 0
+                ? { urlPattern: es.urlPattern.trim() }
+                : {}),
+              ...(Array.isArray(es.expectedPhrases)
+                ? { expectedPhrases: (es.expectedPhrases as unknown[]).filter((p): p is string => typeof p === "string").map((p) => p.trim()) }
+                : {}),
+            };
+          }
+        }
+
+        newSteps.push({
+          objective: (obj.objective as string).trim(),
+          successCriteria: typeof obj.successCriteria === "string" ? obj.successCriteria.trim() : `Step completed.`,
+          dependencies: [],
+          assumptions: Array.isArray(obj.assumptions)
+            ? (obj.assumptions as unknown[]).filter((a): a is string => typeof a === "string").map((a) => a.trim())
+            : [],
+          ...(expectedState ? { expectedState } : {}),
+        });
+      }
+
+      if (newSteps.length === 0) return null;
+
+      logger.info("agent", "Planner replanFrom produced new steps", {
+        fromIndex: failedStep.index,
+        newStepCount: newSteps.length,
+        reason: parsed.reason?.slice(0, 200),
+      });
+
+      return {
+        newSteps,
+        reason: parsed.reason || "Plan repaired after deviation",
+      };
+    } catch (err: any) {
+      logger.warn("agent", "Planner replanFrom failed", {
+        error: err?.message,
+      });
+      return null;
     }
   }
 }
