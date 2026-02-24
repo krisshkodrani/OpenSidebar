@@ -155,7 +155,7 @@ export async function classifyRoute(
             { role: "system", content: systemPrompt },
             { role: "user", content: query },
           ],
-          max_tokens: 64,
+          max_tokens: 512,
           temperature: 0,
         }),
         signal: AbortSignal.timeout(ROUTER_TIMEOUT_MS),

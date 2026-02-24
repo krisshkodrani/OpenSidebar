@@ -269,7 +269,7 @@ export class OrchestratorVerifier {
               `Visible content (first 500 chars):\n${input.visibleContent.slice(0, 500)}`,
           },
         ],
-        max_tokens: 150,
+        max_tokens: 4096,
         temperature: 0,
         signal,
       });
@@ -302,7 +302,7 @@ export class OrchestratorVerifier {
               `\nHandoff context:\n${input.handoffContext || "No additional handoff context."}\n`,
           },
         ],
-        max_tokens: 512,
+        max_tokens: 4096,
         temperature: 0,
         signal,
       });
