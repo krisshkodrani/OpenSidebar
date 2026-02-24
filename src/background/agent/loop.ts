@@ -21,7 +21,8 @@ import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS, CACHEABLE_TOOLS, resolveToolProf
 import type { ToolProfile } from "../tools/metadata";
 import { REACT_TOOL_NAMES } from "../tools/react";
 import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
-import { waitForDomReady } from "../tab-ready";
+import { waitForContentScriptReady, waitForDomReady } from "../tab-ready";
+import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import { checkVerificationGate, detectAdmission } from "./verification";
@@ -1257,20 +1258,99 @@ export class AgentLoop {
       await this.context.loadState();
     }
 
-    if (initialSnapshot) {
-      this.context.setSnapshot(initialSnapshot);
+    // Ensure we have a snapshot — either from the orchestrator, warmup cache, or by fetching our own
+    let snapshot = initialSnapshot;
+    let warmupPerception: PerceptionResult | null = null;
+    let warmupScreenshot: string | null = null;
+
+    if (!snapshot) {
+      this.log.warn("agent", "No initial snapshot from orchestrator, checking warmup", { tabId });
+
+      // Check if warmup has a cached or in-progress result for this tab
+      const pending = perceptionWarmup.getPending(tabId);
+      if (pending) {
+        this.log.info("agent", "Awaiting perception warmup", { tabId });
+        const entry = await pending;
+        if (entry) {
+          snapshot = entry.snapshot;
+          warmupPerception = entry.perception;
+          warmupScreenshot = entry.screenshotUrl;
+          this.log.info("agent", "Using warmup snapshot + perception", {
+            tabId,
+            elementCount: snapshot.elements.length,
+            provider: entry.perception.providerId,
+          });
+        }
+      } else {
+        // Check static cache (warmup may have finished already)
+        const cached = perceptionWarmup.get(tabId);
+        if (cached) {
+          snapshot = cached.snapshot;
+          warmupPerception = cached.perception;
+          warmupScreenshot = cached.screenshotUrl;
+          this.log.info("agent", "Using cached warmup snapshot + perception", {
+            tabId,
+            elementCount: snapshot.elements.length,
+            ageMs: Date.now() - cached.timestamp,
+          });
+        }
+      }
+
+      // Still no snapshot — fetch our own (content script may not have been ready during warmup)
+      if (!snapshot) {
+        this.log.warn("agent", "No warmup available, fetching snapshot directly", { tabId });
+        await waitForContentScriptReady(tabId, 3000);
+        const count = await this.refreshSnapshot(tabId);
+        if (count >= 0) {
+          snapshot = this.context.getSnapshot() ?? undefined;
+          this.log.info("agent", "Fetched snapshot fallback", { elementCount: count });
+        }
+      }
+    }
+
+    // Consume the warmup entry so it's not reused by a subsequent task
+    perceptionWarmup.consume(tabId);
+
+    if (snapshot) {
+      if (initialSnapshot) {
+        this.context.setSnapshot(snapshot);
+      } else {
+        // Warmup or fallback snapshot — set it in context
+        this.context.setSnapshot(snapshot);
+      }
+      // If snapshot was fetched via fallback/warmup, update trace startUrl
+      if (!initialSnapshot && snapshot.url) {
+        this.traceRecorder.setSessionInfo(initialUserText, snapshot.url);
+      }
       // Track starting origin for off-domain navigation detection
-      if (initialSnapshot.url) {
+      if (snapshot.url) {
         try {
-          this.startingOrigin = new URL(initialSnapshot.url).origin;
+          this.startingOrigin = new URL(snapshot.url).origin;
         } catch {
           /* */
         }
         // Record initial page as citation
-        this.recordCitation(initialSnapshot.url, initialSnapshot.title || "", ToolName.READ_PAGE);
+        this.recordCitation(snapshot.url, snapshot.title || "", ToolName.READ_PAGE);
       }
-      // Initial perception: interpret the page before first turn
-      await this.refreshPerceptionAndTriage(tabId);
+
+      if (warmupPerception) {
+        // Use pre-computed perception — skip the 1-2s vision API call
+        this.lastPerception = warmupPerception;
+        this.lastPerceptionFingerprint = computeSnapshotFingerprint(snapshot);
+        this.lastScreenshotUrl = warmupScreenshot;
+        this.context.setPageInterpretation(warmupPerception.interpretation);
+        this.log.info("agent", "Perception from warmup (skipped vision API)", {
+          provider: warmupPerception.providerId,
+          durationMs: warmupPerception.durationMs,
+        });
+        // Still triage popups since it's fast and important
+        await this.triagePopups(tabId);
+      } else {
+        // No warmup available — run perception normally
+        await this.refreshPerceptionAndTriage(tabId);
+      }
+    } else {
+      this.log.warn("agent", "Starting without snapshot — content script unreachable", { tabId });
     }
 
     // 2. Add User Message

@@ -24,6 +24,7 @@ import {
 } from "./keepalive";
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { orchestrator } from "./orchestrator";
+import { perceptionWarmup } from "./perception-warmup";
 import { DemoStore } from "./demos/store";
 import { buildGoldenCases } from "./golden/builder";
 import type { GoldenAction } from "../types";
@@ -58,6 +59,12 @@ setNavigationCallbacks(
 
 // 3. Initialize Keepalive Alarm
 registerAlarmListener();
+
+// 3b. Invalidate perception warmup cache on navigation and tab close
+chrome.webNavigation?.onCommitted.addListener((details) => {
+  if (details.frameId === 0) perceptionWarmup.invalidate(details.tabId);
+});
+chrome.tabs.onRemoved.addListener((tabId) => perceptionWarmup.invalidate(tabId));
 
 // 4. Initialize Side Panel Behavior
 // We handle panel opening manually to support toggle/auto-close behavior
@@ -197,6 +204,8 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
         tabId,
         workspace: existingWorkspace.name,
       });
+      // Fire-and-forget: proactively warm perception cache for this tab
+      perceptionWarmup.warmup(tabId);
     } else {
       // ONLY create if user explicitly opened it
       if (await hasUserOpenedPanel(tabId)) {
@@ -219,6 +228,8 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
             id: workspace.id,
             tabId,
           });
+          // Fire-and-forget: proactively warm perception cache for this tab
+          perceptionWarmup.warmup(tabId);
         } catch (createError) {
           logger.error("workspace", "Failed to create workspace", {
             tabId,
