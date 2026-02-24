@@ -221,12 +221,12 @@ function tokenizeAssumption(assumption: string): string[] {
 
 export function buildAssumptionDriftSignal(
   node: TaskNode,
-  snapshot?: { title?: string; url?: string; visibleContent?: string } | null,
+  snapshot?: { title?: string; url?: string; visibleContent?: string; pageContent?: string } | null,
 ): string {
   if (!snapshot || node.assumptions.length === 0) {
     return "No assumption drift evaluation available.";
   }
-  const corpus = `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.visibleContent || ""}`.toLowerCase();
+  const corpus = `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.pageContent || snapshot.visibleContent || ""}`.toLowerCase();
   const matched: string[] = [];
   const unmatched: string[] = [];
 

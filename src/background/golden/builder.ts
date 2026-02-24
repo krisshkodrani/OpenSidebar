@@ -83,8 +83,9 @@ export function actionToToolCall(
 
 function buildSystemPromptFromSnapshot(snapshot: DomSnapshot): string {
   const elements = formatSnapshotElements(snapshot.elements);
-  const visibleContent = snapshot.visibleContent
-    ? `\n\nVisible content:\n${snapshot.visibleContent.slice(0, 3000)}`
+  const pageText = snapshot.pageContent || snapshot.visibleContent;
+  const visibleContent = pageText
+    ? `\n\nVisible content:\n${pageText.slice(0, 3000)}`
     : "";
 
   return [

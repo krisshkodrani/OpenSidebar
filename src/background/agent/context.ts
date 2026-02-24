@@ -28,7 +28,12 @@ export function formatElementCompact(
   const disabled = el.isDisabled ? " [disabled]" : "";
   const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
 
-  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}`;
+  // Flag elements where text color matches background color (invisible text)
+  const textColor = el.attributes["text-color"];
+  const bgColor = el.attributes["bg-color"];
+  const invisible = textColor && bgColor && textColor === bgColor ? " [invisible-text]" : "";
+
+  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}`;
 }
 
 /**
@@ -106,6 +111,7 @@ export class ContextManager {
   private modelTier: "fast" | "smart" = "fast";
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
+  private pageContent: string | null = null;
 
   public setModelTier(tier: "fast" | "smart"): void {
     this.modelTier = tier;
@@ -256,6 +262,7 @@ export class ContextManager {
 
   public setSnapshot(snapshot: DomSnapshot) {
     this.snapshot = snapshot;
+    this.pageContent = snapshot.pageContent ?? null;
     if (snapshot.capturedTexts && snapshot.capturedTexts.length > 0) {
       // Append new texts, avoiding exact immediate duplicates if possible,
       // but simple append is safer for now to preserve history.
@@ -544,6 +551,24 @@ Do NOT call done() until every planned step is complete.
         );
       }
 
+      // Page content: Readability Markdown or plain text fallback, with dynamic truncation
+      const pageContentCharLimits: Record<CompressionLevel, number> = {
+        [CompressionLevel.NONE]: 60000,
+        [CompressionLevel.LIGHT]: 40000,
+        [CompressionLevel.MEDIUM]: 20000,
+        [CompressionLevel.HEAVY]: 8000,
+      };
+      if (this.pageContent) {
+        const charLimit = pageContentCharLimits[level];
+        let truncated = this.pageContent;
+        if (truncated.length > charLimit) {
+          truncated = truncated.slice(0, charLimit) + "\n\n[Content truncated — use scroll_page to see more]";
+        }
+        content = content.replace("{{pageContent}}", truncated);
+      } else {
+        content = content.replace("{{pageContent}}", "No page content extracted.");
+      }
+
       // Surviving overlay warnings (overlays that auto-dismissal couldn't remove)
       if (
         this.snapshot.survivingOverlays &&
@@ -556,8 +581,8 @@ Do NOT call done() until every planned step is complete.
           )
           .join("\n");
         content = content.replace(
-          "## Visible Content",
-          warnings + "\n\n## Visible Content",
+          "## Page Content",
+          warnings + "\n\n## Page Content",
         );
       }
 
@@ -565,8 +590,8 @@ Do NOT call done() until every planned step is complete.
       if (this.triagedPopups.length > 0) {
         const note = `[Auto-dismissed: ${this.triagedPopups.join(", ")}]`;
         content = content.replace(
-          "## Visible Content",
-          note + "\n\n## Visible Content",
+          "## Page Content",
+          note + "\n\n## Page Content",
         );
       }
 
@@ -576,8 +601,8 @@ Do NOT call done() until every planned step is complete.
           .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
-          "## Visible Content",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Visible Content`,
+          "## Page Content",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed during this session. Review for any important information.\n${archived}\n\n## Page Content`,
         );
       } else if (
         // Fallback for immediate snapshot if persistence hasn't caught up (rare)
@@ -588,8 +613,8 @@ Do NOT call done() until every planned step is complete.
           .map((t, i) => `[Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
           .join("\n\n");
         content = content.replace(
-          "## Visible Content",
-          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Visible Content`,
+          "## Page Content",
+          `## Dismissed Overlay Content\nThe following text was extracted from overlays/modals that were automatically dismissed. Review for any important information.\n${archived}\n\n## Page Content`,
         );
       }
 
@@ -610,6 +635,7 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{url}}", "about:blank");
       content = content.replace("{{scrollIndicator}}", "");
       content = content.replace("{{elements}}", "");
+      content = content.replace("{{pageContent}}", "");
       content = content.replace("{{pageInterpretation}}", "");
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     }
@@ -676,6 +702,7 @@ Do NOT call done() until every planned step is complete.
       return sum + Math.ceil(line.length / 4);
     }, 0);
     const perceptionTokens = this.pageInterpretation ? 200 : 0; // Perception output is compact (~150 tokens)
+    const pageContentTokens = this.pageContent ? Math.ceil(Math.min(this.pageContent.length, 60000) / 4) : 0;
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)
       : 0;
@@ -685,7 +712,7 @@ Do NOT call done() until every planned step is complete.
       0,
     );
 
-    const totalEstimate = baseTokens + elemTokens + perceptionTokens + historyTokens;
+    const totalEstimate = baseTokens + elemTokens + perceptionTokens + pageContentTokens + historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
     if (utilization < 0.5) return CompressionLevel.NONE;
@@ -1103,6 +1130,7 @@ Do NOT call done() until every planned step is complete.
     this.capturedOverlays = [];
     this.triagedPopups = [];
     this.pageInterpretation = null;
+    this.pageContent = null;
     this.saveState().catch(() => {});
   }
 

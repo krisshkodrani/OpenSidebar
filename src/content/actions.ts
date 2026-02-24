@@ -535,8 +535,8 @@ function executeRead(): {
     );
   }
 
-  if (snapshot.visibleContent) {
-    lines.push("", "Page text:", snapshot.visibleContent);
+  if (snapshot.pageContent) {
+    lines.push("", "Page content:", snapshot.pageContent);
   }
 
   return {

@@ -12,6 +12,7 @@
 
 import { DomSnapshot } from "../types";
 import { tagElements, getCachedElements, getOverflowMetadata } from "./tagging";
+import { extractPageContent, extractVisibleText } from "./readability";
 
 export function buildSnapshot(
   refresh: boolean,
@@ -38,6 +39,19 @@ export function buildSnapshot(
 
   if (overflow) {
     snapshot.overflow = overflow;
+  }
+
+  // DOM distillation: Readability + Turndown → Markdown, fallback to visible text
+  if (refresh) {
+    const markdown = extractPageContent();
+    if (markdown && markdown.length > 50) {
+      snapshot.pageContent = markdown;
+    } else {
+      const plainText = extractVisibleText();
+      if (plainText.length > 50) {
+        snapshot.pageContent = plainText;
+      }
+    }
   }
 
   return snapshot;

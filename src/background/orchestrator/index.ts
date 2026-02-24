@@ -2198,7 +2198,7 @@ export class Orchestrator {
       input.openRouterApiKey,
       input.cerebrasApiKey,
     );
-    let initialTabConsumed = false;
+    const nodeTabMap = new Map<string, number>();
     let initialTabUrl = "about:blank";
     try {
       initialTabUrl = (await chrome.tabs.get(input.tabId)).url || "about:blank";
@@ -2275,10 +2275,24 @@ export class Orchestrator {
       await this.persistTaskCheckpoint(task);
 
       const workerId = crypto.randomUUID();
-      const tabId = initialTabConsumed
-        ? await this.createWorkerTab(initialTabUrl, task.workspaceId)
-        : input.tabId;
-      initialTabConsumed = true;
+      let tabId: number;
+      const previousTabId = nodeTabMap.get(node.id);
+      if (previousTabId != null) {
+        // Retry: reuse tab from previous attempt (validate it still exists)
+        try {
+          await chrome.tabs.get(previousTabId);
+          tabId = previousTabId;
+        } catch {
+          tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
+        }
+      } else if (nodeTabMap.size === 0) {
+        // First node: use the user's original tab
+        tabId = input.tabId;
+      } else {
+        // Additional parallel node: create a new worker tab
+        tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
+      }
+      nodeTabMap.set(node.id, tabId);
 
       const snapshot = await this.getSnapshot(tabId, input.settings.showElementTags ?? false);
       const driftSignal = buildAssumptionDriftSignal(node, snapshot);
@@ -2420,7 +2434,7 @@ export class Orchestrator {
                 executorInstruction,
                 pageTitle: snapshot.title || "",
                 pageUrl: snapshot.url || "",
-                visibleContent: snapshot.visibleContent || "",
+                visibleContent: snapshot.pageContent || snapshot.visibleContent || "",
               }),
             );
             if (advisory) {

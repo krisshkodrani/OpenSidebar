@@ -116,6 +116,7 @@ export class TraceRecorder {
       title: string;
       elementCount: number;
       visibleContentLength: number;
+      pageContentLength?: number;
       scrollY: number;
     },
     elements: TaggedElement[],
@@ -220,6 +221,7 @@ export class TraceRecorder {
       cached: boolean;
     },
     screenshotDataUrl?: string,
+    elementSummary?: string,
   ): Promise<void> {
     if (!this.currentTurn) return;
     const turnNumber = this.currentTurn.turnNumber;
@@ -231,6 +233,9 @@ export class TraceRecorder {
       cached: perception.cached,
       ...(screenshotDataUrl
         ? { screenshotDataUrl }
+        : {}),
+      ...(elementSummary
+        ? { elementSummary }
         : {}),
     };
   }
