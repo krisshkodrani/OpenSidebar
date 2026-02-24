@@ -126,11 +126,12 @@ export function StepTimeline({
   const hasRunning = steps.some((s) => s.status === "running");
   const hasError = steps.some((s) => s.status === "error");
 
+  const stepWord = steps.length === 1 ? "step" : "steps";
   const headerLabel = hasRunning
-    ? `${doneCount > 0 ? `${doneCount} of ${steps.length}` : `${steps.length}`} steps`
+    ? `${doneCount > 0 ? `${doneCount} of ${steps.length}` : `${steps.length}`} ${stepWord}`
     : hasError
-      ? `${steps.length} steps (with errors)`
-      : `${steps.length} steps`;
+      ? `${steps.length} ${stepWord} (with errors)`
+      : `${steps.length} ${stepWord}`;
 
   return (
     <div className="max-w-[85%] mb-1">

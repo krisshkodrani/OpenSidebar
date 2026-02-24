@@ -474,7 +474,17 @@ export default function App() {
               </div>
             </div>
           ) : (
-            messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)
+            messages
+              .filter(
+                (msg) =>
+                  msg.role === "user" ||
+                  msg.isStreaming ||
+                  msg.content.trim() ||
+                  msg.toolCalls.length > 0 ||
+                  msg.completionData ||
+                  (msg.steps?.length ?? 0) > 0,
+              )
+              .map((msg) => <MessageBubble key={msg.id} message={msg} />)
           )}
         </div>
 

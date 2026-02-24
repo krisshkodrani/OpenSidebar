@@ -540,7 +540,7 @@ export class AgentLoop {
   } | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
-  private onStreamChunk: ((delta: string, done: boolean) => void) | null;
+  private onStreamChunk: ((delta: string, done: boolean, replaceContent?: string) => void) | null;
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
@@ -576,6 +576,8 @@ export class AgentLoop {
   private lastPerceptionFingerprint: string = "";
   /** Consecutive turns the perception fingerprint has been unchanged */
   private perceptionFingerprintAge: number = 0;
+  /** Fingerprint at which the last objective checkpoint was injected (prevents spam) */
+  private objectiveCheckpointFingerprint: string = "";
   /** Last screenshot data URL from perception (for step thumbnails) */
   private lastScreenshotUrl: string | null = null;
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
@@ -843,7 +845,7 @@ export class AgentLoop {
       suppressUiBroadcast?: boolean;
       /** Called for STREAM_CHUNK even when suppressUiBroadcast is true.
        *  Allows orchestrator to forward content for single-node tasks. */
-      onStreamChunk?: (delta: string, done: boolean) => void;
+      onStreamChunk?: (delta: string, done: boolean, replaceContent?: string) => void;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
@@ -937,7 +939,7 @@ export class AgentLoop {
     if (this.suppressUiBroadcast) {
       // Forward STREAM_CHUNK to callback even when UI broadcasts are suppressed
       if (msg.type === "STREAM_CHUNK" && this.onStreamChunk) {
-        this.onStreamChunk(msg.payload.delta, msg.payload.done);
+        this.onStreamChunk(msg.payload.delta, msg.payload.done, msg.payload.replaceContent);
       }
       return;
     }
@@ -1204,6 +1206,7 @@ export class AgentLoop {
     this.taskId = null;
     this.planSubtasks = [];
     this.planSteps = [];
+    this.objectiveCheckpointFingerprint = "";
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
@@ -1443,6 +1446,20 @@ export class AgentLoop {
               ? { ...(decomposition.limitOverrides as Record<string, number>) }
               : null,
           });
+          if (decomposition.subtasks.length >= 2 && decomposition.steps) {
+            this.traceRecorder?.setPlanDecomposition({
+              subtasks: decomposition.subtasks,
+              steps: decomposition.steps.map((s) => ({
+                objective: s.objective,
+                successCriteria: s.successCriteria,
+                dependencies: s.dependencies,
+                assumptions: s.assumptions,
+                ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
+                ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
+                ...(s.expectedState ? { expectedState: s.expectedState } : {}),
+              })),
+            });
+          }
 
           if (decomposition.subtasks.length >= 2) {
             this.taskId = crypto.randomUUID();
@@ -1866,6 +1883,7 @@ export class AgentLoop {
           url: snapshot.url,
           title: snapshot.title,
           scroll: snapshot.scroll,
+          objective: this.originalQuery || undefined,
         },
         this.abortController?.signal,
       );
@@ -1951,10 +1969,45 @@ export class AgentLoop {
   /**
    * Refresh perception then auto-dismiss nuisance popups identified in BLOCKERS.
    * Use this instead of bare `refreshPerception()` at all call sites.
+   *
+   * Also checks perception's OBJECTIVE_CHECK signal and injects a checkpoint
+   * message when the objective appears satisfied, giving the agent explicit
+   * permission to call done().
    */
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
     await this.refreshPerception(tabId);
     await this.triagePopups(tabId);
+
+    // Objective checkpoint: if perception reports the objective is done,
+    // inject a message giving the agent permission to stop.
+    // Only fire when no internal plan is active (plan monitor handles that case)
+    // and only once per fingerprint to avoid spam.
+    if (
+      this.lastPerception?.objectiveCheck?.status === "done" &&
+      this.planSteps.length === 0 &&
+      this.lastPerceptionFingerprint !== this.objectiveCheckpointFingerprint
+    ) {
+      this.objectiveCheckpointFingerprint = this.lastPerceptionFingerprint;
+      const evidence = this.lastPerception.objectiveCheck.evidence;
+      this.context.addMessage({
+        role: "user",
+        content:
+          `CHECKPOINT: Visual perception indicates the objective may be satisfied.\n` +
+          `Original objective: "${this.originalQuery}"\n` +
+          `Evidence: ${evidence}\n` +
+          `If the objective is complete, call done() immediately. Do NOT continue to unrelated tasks.`,
+      });
+      this.log.info("agent", "Objective checkpoint injected", {
+        turn: this.turnCount,
+        evidence,
+        fingerprint: this.lastPerceptionFingerprint,
+      });
+      this.traceRecorder?.recordEvent("objective_checkpoint", {
+        status: "done",
+        evidence,
+        fingerprint: this.lastPerceptionFingerprint,
+      });
+    }
   }
 
   /**
@@ -2565,7 +2618,7 @@ export class AgentLoop {
       const thinkingStep: AgentStep = {
         id: thinkingStepId,
         type: "thinking",
-        label: this.turnCount === 1 ? "Planning approach" : "Thinking...",
+        label: this.turnCount === 1 ? "Understanding request" : "Thinking...",
         status: "running",
         timestamp: Date.now(),
       };
@@ -2718,9 +2771,12 @@ export class AgentLoop {
             tools: recovered.map((tc) => tc.function.name),
           });
           response.tool_calls = recovered;
-          // Retract the raw JSON that was already streamed to chat —
-          // replace the streaming message content with empty string
-          // since the text was tool-call JSON, not real assistant content.
+          // Clear text content — it was tool-call JSON, not real narration.
+          // Leaving it causes 422 errors: providers reject assistant messages
+          // with both non-null content and tool_calls.
+          response.content = null;
+          cleanContent = null;
+          // Retract the raw JSON that was already streamed to chat.
           this.broadcast({
             type: "STREAM_CHUNK",
             payload: { delta: "", done: false, replaceContent: "" },

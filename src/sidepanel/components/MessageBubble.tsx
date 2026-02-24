@@ -289,8 +289,12 @@ export const MessageBubble = React.memo(function MessageBubble({
             className="text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
           >
             {showDetails
-              ? "Hide"
-              : `${stepCount > 0 ? `${stepCount} steps` : `${message.toolCalls.length} tools`}`}
+              ? stepCount > 0
+                ? "Hide steps"
+                : "Hide tools"
+              : stepCount > 0
+                ? `${stepCount} ${stepCount === 1 ? "step" : "steps"}`
+                : `${message.toolCalls.length} ${message.toolCalls.length === 1 ? "tool" : "tools"}`}
           </button>
         </div>
       )}

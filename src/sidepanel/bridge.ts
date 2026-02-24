@@ -162,9 +162,17 @@ export function initializeBridge(
         state.setTaskProgress(message.payload);
         break;
 
-      case "TASK_COMPLETION":
+      case "TASK_COMPLETION": {
         state.setTaskCompletion(message.payload);
+        // Auto-close PlanSheet for trivial tasks (single subtask or 0-1 turns)
+        const results = message.payload.subtaskResults ?? [];
+        const isTrivial =
+          results.length <= 1 || (message.payload.totalTurnsUsed ?? 0) <= 1;
+        if (isTrivial && state.showPlanBoard) {
+          state.togglePlanBoard();
+        }
         break;
+      }
 
       case "SESSION_METRICS":
         state.setSessionMetrics(message.payload);

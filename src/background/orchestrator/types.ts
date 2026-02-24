@@ -127,6 +127,8 @@ export interface OrchestratorTask {
     difficulty: Difficulty;
   };
   routeDecision?: RouteDecision;
+  /** Internal: tracks whether onStreamChunk forwarded non-empty content (for dedup) */
+  _streamHasContent?: boolean;
 }
 
 export interface OrchestratorCheckpoint {

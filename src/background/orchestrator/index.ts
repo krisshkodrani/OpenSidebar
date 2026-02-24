@@ -1950,7 +1950,7 @@ export class Orchestrator {
           step: {
             id: crypto.randomUUID(),
             type: "info",
-            label: `Router: skipped planner (${routeDecision.route})`,
+            label: "Analyzing request",
             status: "done",
             timestamp: Date.now(),
           },
@@ -2085,7 +2085,7 @@ export class Orchestrator {
           step: {
             id: crypto.randomUUID(),
             type: "info",
-            label: `Planner: generated ${nodes.length} executor subtasks`,
+            label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
             status: "done",
             timestamp: Date.now(),
           },
@@ -2132,7 +2132,7 @@ export class Orchestrator {
           step: {
             id: crypto.randomUUID(),
             type: "info",
-            label: "Planner: fallback to single subtask",
+            label: "Planning approach",
             detail: error?.message || "Unknown planner error",
             status: "done",
             timestamp: Date.now(),
@@ -2389,12 +2389,24 @@ export class Orchestrator {
           // For single-node tasks, forward stream chunks directly to the side panel
           // so the user sees real-time content instead of just "Task completed."
           onStreamChunk: task.planClassification?.isSingleNode
-            ? (delta: string, done: boolean) => {
-                this.sendMessage({
-                  type: "STREAM_CHUNK",
-                  workspaceId: task.workspaceId,
-                  payload: { delta, done },
-                });
+            ? (delta: string, done: boolean, replaceContent?: string) => {
+                if (delta || done || replaceContent !== undefined) {
+                  this.sendMessage({
+                    type: "STREAM_CHUNK",
+                    workspaceId: task.workspaceId,
+                    payload: {
+                      delta,
+                      done,
+                      ...(replaceContent !== undefined ? { replaceContent } : {}),
+                    },
+                  });
+                }
+                // Track whether real content was streamed (for dedup in finalization)
+                if (replaceContent !== undefined) {
+                  task._streamHasContent = false;
+                } else if (delta) {
+                  task._streamHasContent = true;
+                }
               }
             : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
@@ -3173,7 +3185,9 @@ export class Orchestrator {
 
     // Build summary from executor results. For single-node tasks this is the
     // done() summary; for multi-node tasks it's an aggregated result.
-    const summary = this.buildProgrammaticSummary(task);
+    // Skip for single-node tasks that already streamed content to avoid duplicate bubbles.
+    const alreadyStreamed = task.planClassification?.isSingleNode && task._streamHasContent;
+    const summary = alreadyStreamed ? "" : this.buildProgrammaticSummary(task);
     if (summary) {
       this.sendMessage({
         type: "STREAM_CHUNK",
@@ -3518,9 +3532,9 @@ export class Orchestrator {
           });
         }
       } catch {
-        // no-op
+        // no-op — content script may already be injected
       }
-      await this.deps.waitForContentScriptReady(tabId, 2000);
+      await this.deps.waitForContentScriptReady(tabId, 3000);
       const response = await chrome.tabs.sendMessage(tabId, {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
@@ -3528,7 +3542,11 @@ export class Orchestrator {
         payload: { refresh: true, showTags },
       });
       return response.payload.snapshot;
-    } catch {
+    } catch (err) {
+      logger.warn("orchestrator", "getSnapshot failed — executor will fetch its own", {
+        tabId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return undefined;
     }
   }
