@@ -1926,9 +1926,9 @@ export class AgentLoop {
         // Non-critical — popup may already be gone
       }
 
-      // Brief pause to let JS cleanup handlers fire
+      // Wait for DOM to settle after dismiss (event-driven, not arbitrary sleep)
       if (dismissed > 0) {
-        await new Promise((r) => setTimeout(r, 100));
+        await waitForDomReady(tabId, { timeoutMs: 200 });
       }
     }
 
