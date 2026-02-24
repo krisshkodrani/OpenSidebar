@@ -7,6 +7,22 @@ export interface StagnationSignal {
   stagnantTurns: number;
 }
 
+/** Result of comparing two consecutive DOM snapshots after a tool execution. */
+export interface ActionEffect {
+  /** Fraction of element signatures that changed (0.0–1.0) */
+  deltaPercent: number;
+  /** Whether the page URL changed between snapshots */
+  urlChanged: boolean;
+  prevUrl?: string;
+  currentUrl: string;
+  /** Elements present in current but not previous snapshot */
+  elementsAdded: number;
+  /** Elements present in previous but not current snapshot */
+  elementsRemoved: number;
+  prevCount: number;
+  currentCount: number;
+}
+
 /** Key attributes that indicate meaningful state changes */
 const STATE_ATTRS = [
   "disabled",
@@ -79,10 +95,16 @@ export class StagnationMonitor {
   private stagnantTurns = 0;
   private escalationFired = false;
   private _sameUrlTurns = 0;
+  private _lastActionEffect: ActionEffect | null = null;
 
   /** Turns spent on the same URL, independent of DOM delta. Resets on URL change. */
   get sameUrlTurns(): number {
     return this._sameUrlTurns;
+  }
+
+  /** Last computed action effect — null before first snapshot pair. */
+  get lastActionEffect(): ActionEffect | null {
+    return this._lastActionEffect;
   }
 
   onSnapshotRefresh(snap: DomSnapshot): StagnationSignal | null {
@@ -90,6 +112,26 @@ export class StagnationMonitor {
     const url = snap.url || "";
     const delta = signatureDelta(this.lastSignatures, currSigs);
     const urlChanged = url !== this.lastUrl;
+
+    // Compute action effect from symmetric diff (cheap — sets are already built)
+    let added = 0;
+    let removed = 0;
+    for (const sig of currSigs) {
+      if (!this.lastSignatures.has(sig)) added++;
+    }
+    for (const sig of this.lastSignatures) {
+      if (!currSigs.has(sig)) removed++;
+    }
+    this._lastActionEffect = {
+      deltaPercent: delta,
+      urlChanged,
+      prevUrl: this.lastUrl || undefined,
+      currentUrl: url,
+      elementsAdded: added,
+      elementsRemoved: removed,
+      prevCount: this.lastSignatures.size,
+      currentCount: currSigs.size,
+    };
 
     this.lastSignatures = currSigs;
 
@@ -134,6 +176,7 @@ export class StagnationMonitor {
     this.stagnantTurns = 0;
     this.escalationFired = false;
     this._sameUrlTurns = 0;
+    this._lastActionEffect = null;
   }
 
   /** Reset escalation flag and stagnant counter so escalation can fire again for the next tier */

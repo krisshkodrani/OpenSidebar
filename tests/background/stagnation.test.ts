@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { StagnationMonitor } from "../../src/background/agent/stagnation";
+import { StagnationMonitor, ActionEffect } from "../../src/background/agent/stagnation";
 import { DomSnapshot, TaggedElement } from "../../src/types";
 
 function makeElement(overrides?: Partial<TaggedElement>): TaggedElement {
@@ -541,5 +541,111 @@ describe("StagnationMonitor — sameUrlTurns", () => {
     // full reset should reset sameUrlTurns
     tracker.reset();
     expect(tracker.sameUrlTurns).toBe(0);
+  });
+});
+
+describe("StagnationMonitor — ActionEffect", () => {
+  let tracker: StagnationMonitor;
+
+  beforeEach(() => {
+    tracker = new StagnationMonitor();
+  });
+
+  it("lastActionEffect is null before any snapshots", () => {
+    expect(tracker.lastActionEffect).toBeNull();
+  });
+
+  it("computes full effect on first snapshot (prev is empty)", () => {
+    const snap = makeManyElementSnap(5);
+    tracker.onSnapshotRefresh(snap);
+    const effect = tracker.lastActionEffect!;
+    expect(effect).not.toBeNull();
+    // First call: prev is empty → signatureDelta returns 1.0
+    expect(effect.deltaPercent).toBe(1.0);
+    // prev URL is "" and current is the URL → urlChanged is true
+    expect(effect.urlChanged).toBe(true);
+    expect(effect.elementsAdded).toBe(5);
+    expect(effect.elementsRemoved).toBe(0);
+    expect(effect.prevCount).toBe(0);
+    expect(effect.currentCount).toBe(5);
+    expect(effect.currentUrl).toBe("https://example.com");
+  });
+
+  it("computes zero delta when snapshot is unchanged", () => {
+    const snap = makeManyElementSnap(5);
+    tracker.onSnapshotRefresh(snap); // baseline
+    tracker.onSnapshotRefresh(snap); // identical
+    const effect = tracker.lastActionEffect!;
+    expect(effect.deltaPercent).toBe(0);
+    expect(effect.urlChanged).toBe(false);
+    expect(effect.elementsAdded).toBe(0);
+    expect(effect.elementsRemoved).toBe(0);
+    expect(effect.prevCount).toBe(5);
+    expect(effect.currentCount).toBe(5);
+  });
+
+  it("detects URL change", () => {
+    const snap1 = makeSnap({ url: "https://a.com" });
+    tracker.onSnapshotRefresh(snap1);
+    const snap2 = makeSnap({ url: "https://b.com" });
+    tracker.onSnapshotRefresh(snap2);
+    const effect = tracker.lastActionEffect!;
+    expect(effect.urlChanged).toBe(true);
+    expect(effect.prevUrl).toBe("https://a.com");
+    expect(effect.currentUrl).toBe("https://b.com");
+  });
+
+  it("counts added and removed elements correctly", () => {
+    // Start with 3 elements
+    const snap1 = makeManyElementSnap(3);
+    tracker.onSnapshotRefresh(snap1);
+
+    // Change to 5 elements: keep 1 original, remove 2, add 4 new
+    const elements = [
+      makeElement({ tag: 1, text: "Element 1" }), // kept
+      makeElement({ tag: 4, text: "Brand new A", tagName: "div" }),
+      makeElement({ tag: 5, text: "Brand new B", tagName: "div" }),
+      makeElement({ tag: 6, text: "Brand new C", tagName: "div" }),
+      makeElement({ tag: 7, text: "Brand new D", tagName: "div" }),
+    ];
+    const snap2 = makeSnap({ elements });
+    tracker.onSnapshotRefresh(snap2);
+
+    const effect = tracker.lastActionEffect!;
+    // Element 2 and 3 removed, 4 new elements added
+    expect(effect.elementsAdded).toBe(4);
+    expect(effect.elementsRemoved).toBe(2);
+    expect(effect.prevCount).toBe(3);
+    expect(effect.currentCount).toBe(5);
+    expect(effect.deltaPercent).toBeGreaterThan(0);
+  });
+
+  it("is cleared by reset()", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.lastActionEffect).not.toBeNull();
+    tracker.reset();
+    expect(tracker.lastActionEffect).toBeNull();
+  });
+
+  it("is NOT cleared by resetEscalation()", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.lastActionEffect).not.toBeNull();
+    tracker.resetEscalation();
+    expect(tracker.lastActionEffect).not.toBeNull();
+  });
+
+  it("prevUrl is undefined on first snapshot (no previous URL)", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.lastActionEffect!.prevUrl).toBeUndefined();
+  });
+
+  it("prevUrl is set on subsequent snapshots", () => {
+    tracker.onSnapshotRefresh(makeSnap({ url: "https://first.com" }));
+    tracker.onSnapshotRefresh(makeSnap({ url: "https://second.com" }));
+    expect(tracker.lastActionEffect!.prevUrl).toBe("https://first.com");
+    expect(tracker.lastActionEffect!.currentUrl).toBe("https://second.com");
   });
 });

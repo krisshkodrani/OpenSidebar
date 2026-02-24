@@ -26,7 +26,7 @@ import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import { checkVerificationGate, detectAdmission } from "./verification";
-import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
+import { StagnationMonitor, computeSnapshotFingerprint, ActionEffect } from "./stagnation";
 import { perceive, PerceptionResult, buildElementSummary } from "../perception";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
@@ -54,6 +54,7 @@ import {
   ROLLING_DISTILL,
   FRESH_START,
   TOOL_CACHE,
+  ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
   resolveRuntimeLimits,
   INVESTIGATION_TOOLS,
@@ -125,6 +126,83 @@ function validateElementIds(
     );
   }
   return null;
+}
+
+/**
+ * Format an ActionEffect into a human-readable injection message.
+ * Returns null if no message should be injected (e.g., first snapshot).
+ */
+export function formatActionEffect(effect: ActionEffect): string | null {
+  if (effect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD && !effect.urlChanged) {
+    return "[Action effect: No observable DOM change — page state appears unchanged.]";
+  }
+  const parts: string[] = [];
+  const pct = Math.round(effect.deltaPercent * 100);
+  parts.push(`${pct}% elements changed`);
+  if (effect.urlChanged) parts.push("URL changed");
+  if (effect.elementsAdded > 0) parts.push(`+${effect.elementsAdded} new`);
+  if (effect.elementsRemoved > 0) parts.push(`-${effect.elementsRemoved} removed`);
+  return `[Action effect: ${parts.join(", ")}]`;
+}
+
+/** Tools that require a pre-action feasibility check on the target element. */
+const PREFLIGHT_CHECK_TOOLS = new Set<string>([
+  ToolName.CLICK_ELEMENT,
+  ToolName.TYPE_TEXT,
+  ToolName.HOVER_ELEMENT,
+  ToolName.SELECT_OPTION,
+  ToolName.DRAG_AND_DROP,
+  ToolName.DRAW_STROKE,
+  ToolName.UPLOAD_FILE,
+  ToolName.RIGHT_CLICK,
+  ToolName.SET_CHECKBOX,
+  ToolName.REACT_SET_INPUT,
+]);
+
+/**
+ * Pre-action feasibility check: validates element interactability beyond just ID existence.
+ * Returns { error, warning } — error is a hard block, warning is informational.
+ */
+function preflightElementCheck(
+  toolName: string,
+  args: Record<string, unknown>,
+  snapshot: DomSnapshot | null,
+): { error: string | null; warning: string | null } {
+  if (!snapshot || !PREFLIGHT_CHECK_TOOLS.has(toolName)) {
+    return { error: null, warning: null };
+  }
+
+  // Resolve the element ID(s) to check
+  const ids: Array<{ id: number; param: string }> = [];
+  if (args.id != null) ids.push({ id: Number(args.id), param: "id" });
+  if (args.sourceId != null) ids.push({ id: Number(args.sourceId), param: "sourceId" });
+  if (args.targetId != null) ids.push({ id: Number(args.targetId), param: "targetId" });
+
+  for (const { id, param } of ids) {
+    if (isNaN(id)) continue;
+    const el = snapshot.elements.find((e) => e.tag === id);
+    if (!el) continue; // validateElementIds handles missing elements
+
+    if (el.isDisabled) {
+      return {
+        error: `Error: Element [${id}] (${param}) is disabled and cannot be interacted with. Find an alternative or wait for it to become enabled.`,
+        warning: null,
+      };
+    }
+    if (el.rect.width === 0 && el.rect.height === 0) {
+      return {
+        error: `Error: Element [${id}] (${param}) has zero size (0×0) and cannot be clicked.`,
+        warning: null,
+      };
+    }
+    if (!el.isVisible) {
+      return {
+        error: null,
+        warning: `Warning: Element [${id}] (${param}) is not visible in the viewport. Consider scrolling to it first, or it may be hidden.`,
+      };
+    }
+  }
+  return { error: null, warning: null };
 }
 
 /** Tools that cannot appear inside a batch_execute step. */
@@ -614,6 +692,9 @@ export class AgentLoop {
 
   /** Content-addressed tool result cache */
   private toolCache = new ToolResultCache(TOOL_CACHE.MAX_SIZE);
+
+  /** Consecutive turns where DOM-modifying tools had no observable effect */
+  private consecutiveZeroEffectTurns = 0;
 
   /** Off-domain navigation detection */
   private startingOrigin: string | null = null;
@@ -2723,7 +2804,7 @@ export class AgentLoop {
       // Derive clean content (no <think> blocks) for logging and logic,
       // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
       const rawContent = response.content;
-      const cleanContent = rawContent
+      let cleanContent = rawContent
         ? stripThinkTags(rawContent) || null
         : null;
 
@@ -2991,6 +3072,22 @@ export class AgentLoop {
                   mode: "parallel",
                 });
                 return { toolCall, result: null, error: idError };
+              }
+
+              // Pre-action feasibility check (disabled, zero-size, invisible)
+              const preflight = preflightElementCheck(
+                toolName,
+                args,
+                this.context.getSnapshot(),
+              );
+              if (preflight.error) {
+                this.log.warn("agent", "Preflight check failed", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  reason: preflight.error,
+                  mode: "parallel",
+                });
+                return { toolCall, result: null, error: preflight.error };
               }
 
               const preDecision = this.middleware.evaluatePreTool(
@@ -3293,6 +3390,34 @@ export class AgentLoop {
                 mode: "sequential",
               });
               continue;
+            }
+
+            // Pre-action feasibility check (disabled, zero-size, invisible)
+            const preflight = preflightElementCheck(
+              toolName,
+              args,
+              this.context.getSnapshot(),
+            );
+            if (preflight.error) {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: preflight.error,
+              });
+              this.log.warn("agent", "Preflight check failed", {
+                turn: this.turnCount,
+                tool: toolName,
+                reason: preflight.error,
+                mode: "sequential",
+              });
+              continue;
+            }
+            if (preflight.warning) {
+              // Soft warning: inject as context but don't block execution
+              this.context.addMessage({
+                role: "user",
+                content: preflight.warning,
+              });
             }
 
             const preDecision = this.middleware.evaluatePreTool(
@@ -4953,6 +5078,38 @@ export class AgentLoop {
 
               // Progress tracking: detect stuck loops
               const progressSignal = this.stagnation.onSnapshotRefresh(snap);
+
+              // P0: Surface action effect — tell the agent whether its last action changed the page
+              const actionEffect = this.stagnation.lastActionEffect;
+              if (actionEffect && domModified) {
+                const effectLine = formatActionEffect(actionEffect);
+                if (effectLine) {
+                  this.context.addMessage({ role: "user", content: effectLine });
+                  this.traceRecorder?.recordEvent("action_effect", {
+                    deltaPercent: actionEffect.deltaPercent,
+                    urlChanged: actionEffect.urlChanged,
+                    elementsAdded: actionEffect.elementsAdded,
+                    elementsRemoved: actionEffect.elementsRemoved,
+                  });
+                }
+                // P1b: Track consecutive zero-effect turns for dual-gating
+                if (actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD && !actionEffect.urlChanged) {
+                  this.consecutiveZeroEffectTurns++;
+                  if (this.consecutiveZeroEffectTurns >= ACTION_EFFECT.WARNING_THRESHOLD) {
+                    this.context.addMessage({
+                      role: "user",
+                      content: `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect on the page. Your current approach is not working — try a fundamentally different strategy (different element, different tool, or different page area).]`,
+                    });
+                    this.traceRecorder?.recordEvent("zero_effect_warning", {
+                      consecutiveTurns: this.consecutiveZeroEffectTurns,
+                    });
+                    this.consecutiveZeroEffectTurns = 0; // reset after warning
+                  }
+                } else {
+                  this.consecutiveZeroEffectTurns = 0;
+                }
+              }
+
               if (progressSignal) {
                 this.traceRecorder?.recordProgress(
                   progressSignal.stagnantTurns,

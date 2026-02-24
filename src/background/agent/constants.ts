@@ -173,6 +173,14 @@ export const STAGNATION_DETECTION = {
   PIVOT_THRESHOLD: 5,
 } as const;
 
+/** Action effect verification thresholds */
+export const ACTION_EFFECT = {
+  /** Below this delta fraction, the action had ~no observable effect */
+  ZERO_THRESHOLD: 0.02,
+  /** Consecutive zero-effect turns before injecting a strategy-change warning */
+  WARNING_THRESHOLD: 3,
+} as const;
+
 /** Batch execution limits */
 export const BATCH_LIMITS = {
   /** Maximum steps in a single batch_execute call */
