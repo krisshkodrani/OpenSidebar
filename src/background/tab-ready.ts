@@ -153,3 +153,36 @@ export function clearTabReady(tabId: number): void {
 export function isTabReady(tabId: number): boolean {
   return readyTabs.has(tabId);
 }
+
+/**
+ * Ensure the content script is injected and ready on a tab.
+ * Re-injects via chrome.scripting.executeScript if not already ready,
+ * then waits for the CONTENT_SCRIPT_READY signal.
+ *
+ * Handles Service Worker restarts where existing tabs lose their
+ * content script connection.
+ */
+export async function ensureContentScript(
+  tabId: number,
+  timeoutMs = 5000,
+): Promise<boolean> {
+  if (readyTabs.has(tabId)) return true;
+
+  // Attempt to re-inject the content script
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const contentScriptPath = manifest.content_scripts?.[0]?.js?.[0];
+    if (contentScriptPath) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [contentScriptPath],
+      });
+    }
+  } catch {
+    // May fail on chrome:// pages or if already injected — that's fine
+  }
+
+  // Wait for the content script to signal ready
+  await waitForContentScriptReady(tabId, timeoutMs);
+  return readyTabs.has(tabId);
+}

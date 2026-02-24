@@ -12,7 +12,7 @@
 
 import { DomSnapshot, MessageSource } from "../types";
 import { logger } from "../utils";
-import { isTabReady, waitForContentScriptReady } from "./tab-ready";
+import { isTabReady, ensureContentScript } from "./tab-ready";
 import { perceive, PerceptionResult } from "./perception";
 import { computeSnapshotFingerprint } from "./agent/stagnation";
 
@@ -86,9 +86,13 @@ class PerceptionWarmup {
     try {
       logger.info("warmup", "Perception warmup started", { tabId });
 
-      // 1. Wait for content script (event-driven, up to 5s — generous since user hasn't typed yet)
+      // 1. Ensure content script is injected and ready (handles SW restart)
       if (!isTabReady(tabId)) {
-        await waitForContentScriptReady(tabId, 5000);
+        const ready = await ensureContentScript(tabId, 5000);
+        if (!ready) {
+          logger.warn("warmup", "Content script not ready after injection attempt", { tabId });
+          return null;
+        }
       }
 
       // 2. Request snapshot from content script

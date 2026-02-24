@@ -21,7 +21,7 @@ import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS, CACHEABLE_TOOLS, resolveToolProf
 import type { ToolProfile } from "../tools/metadata";
 import { REACT_TOOL_NAMES } from "../tools/react";
 import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
-import { waitForContentScriptReady, waitForDomReady } from "../tab-ready";
+import { waitForContentScriptReady, waitForDomReady, ensureContentScript } from "../tab-ready";
 import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
@@ -1296,10 +1296,10 @@ export class AgentLoop {
         }
       }
 
-      // Still no snapshot — fetch our own (content script may not have been ready during warmup)
+      // Still no snapshot — ensure content script is injected (handles SW restart), then fetch
       if (!snapshot) {
-        this.log.warn("agent", "No warmup available, fetching snapshot directly", { tabId });
-        await waitForContentScriptReady(tabId, 3000);
+        this.log.warn("agent", "No warmup available, ensuring content script and fetching snapshot", { tabId });
+        await ensureContentScript(tabId, 5000);
         const count = await this.refreshSnapshot(tabId);
         if (count >= 0) {
           snapshot = this.context.getSnapshot() ?? undefined;
