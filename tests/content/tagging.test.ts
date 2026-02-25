@@ -50,15 +50,15 @@ describe("tagElements", () => {
     expect(tagged[0].text).toBe("Hello");
   });
 
-  test("respects MAX_TAGGED_ELEMENTS cap of 50", () => {
-    for (let i = 0; i < 60; i++) {
+  test("respects MAX_TAGGED_ELEMENTS cap of 1000", () => {
+    for (let i = 0; i < 1010; i++) {
       const btn = document.createElement("button");
       btn.textContent = `Button ${i}`;
       document.body.appendChild(btn);
     }
 
     const tagged = tagElements();
-    expect(tagged.length).toBeLessThanOrEqual(50);
+    expect(tagged.length).toBeLessThanOrEqual(1000);
   });
 
   test("extracts priority attributes", () => {
@@ -683,7 +683,7 @@ describe("task-relevance element scoring (WI-3)", () => {
 
   test("form input scores higher than generic button", () => {
     // Create many generic buttons to fill the cap
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < 1005; i++) {
       const btn = document.createElement("button");
       btn.textContent = `Action ${i}`;
       btn.setAttribute("name", `btn-${i}`); // protect from collapse
@@ -702,8 +702,8 @@ describe("task-relevance element scoring (WI-3)", () => {
   });
 
   test("draggable/dropzone elements score high", () => {
-    // 55 generic buttons
-    for (let i = 0; i < 55; i++) {
+    // 1005 generic buttons
+    for (let i = 0; i < 1005; i++) {
       const btn = document.createElement("button");
       btn.textContent = `Filler ${i}`;
       btn.setAttribute("name", `filler-${i}`);
@@ -737,84 +737,3 @@ describe("task-relevance element scoring (WI-3)", () => {
   });
 });
 
-describe("adaptive element cap for DnD pages (WI-4)", () => {
-  beforeEach(() => {
-    document.body.innerHTML = "";
-    resetStableIds();
-  });
-
-  test("default cap is 50 on normal pages", () => {
-    for (let i = 0; i < 60; i++) {
-      const btn = document.createElement("button");
-      btn.textContent = `Button ${i}`;
-      btn.setAttribute("name", `btn-${i}`);
-      document.body.appendChild(btn);
-    }
-
-    const tagged = tagElements();
-    expect(tagged.length).toBeLessThanOrEqual(50);
-  });
-
-  test("cap raised to 75 when draggable elements present", () => {
-    // Create 70 unique buttons + some draggable items
-    for (let i = 0; i < 68; i++) {
-      const btn = document.createElement("button");
-      btn.textContent = `Action ${i}`;
-      btn.setAttribute("name", `action-${i}`);
-      document.body.appendChild(btn);
-    }
-    for (let i = 0; i < 5; i++) {
-      const drag = document.createElement("div");
-      drag.setAttribute("draggable", "true");
-      drag.setAttribute("tabindex", "0");
-      drag.textContent = `Piece ${i}`;
-      document.body.appendChild(drag);
-    }
-
-    const tagged = tagElements();
-    // Should allow more than 50 because DnD detected
-    expect(tagged.length).toBeGreaterThan(50);
-    expect(tagged.length).toBeLessThanOrEqual(75);
-  });
-
-  test("cap raised to 75 when dropzone elements present", () => {
-    for (let i = 0; i < 68; i++) {
-      const btn = document.createElement("button");
-      btn.textContent = `Nav ${i}`;
-      btn.setAttribute("name", `nav-${i}`);
-      document.body.appendChild(btn);
-    }
-    for (let i = 0; i < 5; i++) {
-      const zone = document.createElement("div");
-      zone.setAttribute("tabindex", "0");
-      zone.setAttribute("data-droptarget", "true");
-      zone.textContent = `Zone ${i}`;
-      document.body.appendChild(zone);
-    }
-
-    const tagged = tagElements();
-    expect(tagged.length).toBeGreaterThan(50);
-    expect(tagged.length).toBeLessThanOrEqual(75);
-  });
-
-  test("overflow metadata reflects effective cap", () => {
-    for (let i = 0; i < 80; i++) {
-      const btn = document.createElement("button");
-      btn.textContent = `Item ${i}`;
-      btn.setAttribute("name", `item-${i}`);
-      document.body.appendChild(btn);
-    }
-    // Add draggable to trigger DnD cap
-    const drag = document.createElement("div");
-    drag.setAttribute("draggable", "true");
-    drag.setAttribute("tabindex", "0");
-    drag.textContent = "Piece";
-    document.body.appendChild(drag);
-
-    const tagged = tagElements();
-    const overflow = getOverflowMetadata();
-    // Should have overflow since 81 > 75
-    expect(overflow).not.toBeNull();
-    expect(overflow!.total).toBe(81);
-  });
-});
