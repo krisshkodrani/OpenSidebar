@@ -125,7 +125,7 @@ export function buildElementSummary(elements: TaggedElement[]): string {
  */
 export function parseObjectiveCheck(text: string): ObjectiveCheck | null {
   const match = text.match(
-    /OBJECTIVE_CHECK:\s*(DONE|NOT_DONE|UNCLEAR)\b[.:\s—\-]*(.*)/i,
+    /OBJECTIVE_CHECK:\s*(DONE|NOT_DONE|UNCLEAR)\b[.:\s\u2014-]*(.*)/i,
   );
   if (!match) return null;
   const raw = match[1].toUpperCase();
