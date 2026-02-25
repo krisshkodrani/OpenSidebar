@@ -384,9 +384,9 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-warm-50 dark:bg-warm-900">
         <div className="animate-pulse flex flex-col items-center gap-3">
-          <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-            <span className="text-white font-bold text-xl tracking-tight">
-              OS
+          <div className="px-4 py-3 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
+            <span className="text-white font-bold text-lg tracking-tight">
+              OpenSidebar
             </span>
           </div>
           <span className="text-xs text-warm-400 dark:text-warm-500">
