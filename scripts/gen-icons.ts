@@ -4,9 +4,10 @@
  */
 import sharp from "sharp";
 import { mkdirSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 
-const OUT = join(import.meta.dir, "..", "public", "icons");
+const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "icons");
 mkdirSync(OUT, { recursive: true });
 
 const sizes = [16, 48, 128] as const;

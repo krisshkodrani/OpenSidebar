@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 import { decideRetryPolicy } from "../../src/background/orchestrator/retry-policy";
 

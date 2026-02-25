@@ -1,6 +1,6 @@
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { killTree, clearPort, spawnWithExited } from "./process-utils.ts";
 
 const VITE_CONFIG_ARTIFACT = /^vite\.config\.ts\.timestamp-.*\.mjs$/;
 
@@ -34,30 +34,26 @@ async function run(): Promise<void> {
     return;
   }
 
-  const child = spawn(process.execPath, ["run", "--bun", "vite", ...args], {
-    cwd,
+  // Clear port 5173 before spawning Vite
+  await clearPort(5173);
+
+  const child = spawnWithExited("npx", ["vite", ...args], {
     stdio: "inherit",
+    shell: true,
   });
 
-  const forwardSignal = (signal: NodeJS.Signals): void => {
-    if (!child.killed) {
-      child.kill(signal);
-    }
+  // Use killTree for proper Windows process tree killing
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    killTree(child);
   };
 
-  process.on("SIGINT", () => forwardSignal("SIGINT"));
-  process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (signal) {
-        resolve(1);
-        return;
-      }
-      resolve(code ?? 0);
-    });
-  });
+  const exitCode = await child.exited;
 
   const afterCount = await cleanupArtifacts(cwd);
   if (afterCount > 0) {

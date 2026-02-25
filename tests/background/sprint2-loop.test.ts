@@ -4,7 +4,7 @@
  * escalation constants, and compression trigger constants.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { ToolName, DomSnapshot } from "../../src/types";
 import {
   ESCALATION_LIMITS,

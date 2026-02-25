@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 
 /**
@@ -47,17 +47,17 @@ describe("Content script reinjection flow", () => {
       content_scripts: [{ js: ["content.js"] }],
     });
     (chrome.scripting as any) = {
-      executeScript: mock(() => Promise.resolve()),
+      executeScript: vi.fn(() => Promise.resolve()),
     };
-    (chrome.tabs as any).get = mock(() => Promise.resolve({ id: 1, url: "https://example.com" }));
-    (chrome.tabs as any).sendMessage = mock(() => Promise.resolve({
+    (chrome.tabs as any).get = vi.fn(() => Promise.resolve({ id: 1, url: "https://example.com" }));
+    (chrome.tabs as any).sendMessage = vi.fn(() => Promise.resolve({
       payload: { result: "OK" },
     }));
   });
 
   test("tab-closed scenario returns error without reinject attempt", async () => {
     // Simulate tab closed: chrome.tabs.get throws
-    (chrome.tabs as any).get = mock(() => Promise.reject(new Error("No tab with id: 999")));
+    (chrome.tabs as any).get = vi.fn(() => Promise.reject(new Error("No tab with id: 999")));
 
     // The bridge reconnect logic should:
     // 1. Detect bridge disconnect

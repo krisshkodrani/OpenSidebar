@@ -1,24 +1,29 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
 import { AgentStatus, ToolName } from "../../src/types";
 
 /**
  * Planner + Done Guard tests.
  *
- * These share a single mock.module for "../../src/background/llm" to avoid
- * bun's process-global mock.module conflicts with other test files
+ * These share a single vi.mock for "../../src/background/llm" to avoid
+ * process-global mock conflicts with other test files
  * (agent.test.ts, loop-overlay.test.ts, loop-api.test.ts all mock the same module).
  *
  * `complete()` serves planner calls (decompose/validateDone).
  * `completeStream()` serves executor calls (AgentLoop main loop).
  */
 
+const { mockComplete, mockCompleteStream } = vi.hoisted(() => ({
+    mockComplete: vi.fn() as any,
+    mockCompleteStream: vi.fn() as any,
+}));
+
 let completeImpl: (request: any) => any;
 let streamCallCount = 0;
 
-const mockComplete = mock((request: any) => completeImpl(request));
-
-const mockCompleteStream = mock((request: any, onTextDelta: (delta: string) => void) => {
+// Wire up implementations that close over module-scope vars
+mockComplete.mockImplementation((request: any) => completeImpl(request));
+mockCompleteStream.mockImplementation((request: any, onTextDelta: (delta: string) => void) => {
     streamCallCount++;
     onTextDelta("Completing...");
     return Promise.resolve({
@@ -36,14 +41,14 @@ const mockCompleteStream = mock((request: any, onTextDelta: (delta: string) => v
     });
 });
 
-mock.module("../../src/background/llm", () => ({
+vi.mock("../../src/background/llm", () => ({
     LLMClient: class {
         private model = "google/gemini-2.5-flash-lite";
         _isSmartTier = false;
         complete = mockComplete;
         completeStream = mockCompleteStream;
-        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; this._isSmartTier = true; });
-        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false; });
+        switchToSmart = vi.fn(() => { this.model = "minimax/minimax-m2.5"; this._isSmartTier = true; });
+        switchToFast = vi.fn(() => { this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false; });
         isSmartTier = () => this._isSmartTier;
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "openrouter";
@@ -366,7 +371,7 @@ describe("TaskPlanner.decompose", () => {
         });
 
         const guardian = new TaskPlanner("test-key");
-        const usageCb = mock();
+        const usageCb = vi.fn();
         guardian.setUsageCallback(usageCb);
 
         await guardian.decompose("Multi-step task", "Page", "https://example.com");

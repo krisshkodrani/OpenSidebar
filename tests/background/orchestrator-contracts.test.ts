@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import "../setup";
 import { ToolName, UserSettings } from "../../src/types";
 import { TaskNode } from "../../src/background/orchestrator/types";

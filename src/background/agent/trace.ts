@@ -315,6 +315,12 @@ export class TraceRecorder {
     plannerOverrides: Record<string, number> | null;
   } | null = null;
 
+  /** Store the full plan decomposition for session trace */
+  setPlanDecomposition(decomposition: TraceSession["planDecomposition"]): void {
+    this.planDecomposition = decomposition;
+  }
+  private planDecomposition: TraceSession["planDecomposition"] = undefined;
+
   /** Finalize the session and flush session metadata */
   async finalize(
     outcome: TraceSession["outcome"],
@@ -357,6 +363,9 @@ export class TraceRecorder {
             resolvedLimits: this.difficultyInfo.resolvedLimits,
             plannerLimitOverrides: this.difficultyInfo.plannerOverrides,
           }
+        : {}),
+      ...(this.planDecomposition
+        ? { planDecomposition: this.planDecomposition }
         : {}),
     };
 

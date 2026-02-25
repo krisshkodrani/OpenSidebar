@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { describe, test, expect, beforeAll } from "vitest";
 import "../setup";
 import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 56 tools are registered", () => {
+    test("all 57 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(56);
+        expect(defs.length).toBe(57);
     });
 
     test("every ToolName enum value has a registered definition", () => {

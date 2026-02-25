@@ -1990,7 +1990,12 @@ export function registerTools() {
           args: [code],
         });
         const value = results?.[0]?.result;
-        return value !== undefined ? value : "undefined";
+        if (value === undefined || value === "undefined") {
+          return "undefined\n\n⚠ Script returned undefined — the return value was lost. " +
+            "Use a simpler expression (e.g. document.querySelector(...).textContent) " +
+            "or try read_element / inspect_hidden instead. Do NOT retry the same script.";
+        }
+        return value;
       } catch (error: unknown) {
         return `Error executing JS: ${formatUnknownError(error)}`;
       }

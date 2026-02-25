@@ -4,14 +4,14 @@
  * scroll indicator, and action trace summarization.
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 
 // Mock chrome APIs
 globalThis.chrome = {
   storage: {
     session: {
-      get: mock(async () => ({})),
-      set: mock(async () => {}),
+      get: vi.fn(async () => ({})),
+      set: vi.fn(async () => {}),
     },
   },
 } as any;
@@ -389,9 +389,9 @@ describe("ContextManager", () => {
       const nonSystem = prompt.filter(m => m.role !== "system");
       expect(nonSystem).toHaveLength(0);
 
-      // System prompt should NOT contain snapshot data
+      // System prompt should NOT contain snapshot URL (note: template has "user@example.com" in tool examples)
       const system = prompt.find(m => m.role === "system");
-      expect(system!.content).not.toContain("example.com");
+      expect(system!.content).not.toContain("URL: https://example.com");
     });
   });
 

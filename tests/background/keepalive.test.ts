@@ -3,14 +3,14 @@
  * Tests for service worker keepalive alarm functionality.
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 
 // Mock chrome APIs
 globalThis.chrome = {
     alarms: {
-        create: mock(async () => { }),
-        clear: mock(async () => { }),
-        onAlarm: { addListener: mock(() => { }) },
+        create: vi.fn(async () => { }),
+        clear: vi.fn(async () => { }),
+        onAlarm: { addListener: vi.fn(() => { }) },
     },
 } as any;
 

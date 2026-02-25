@@ -1,12 +1,12 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
 
 // Mock modules before importing AgentLoop
-mock.module("../../src/background/llm", () => ({
+vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
     private model = "google/gemini-2.5-flash-lite";
     _isSmartTier = false;
-    complete = mock(() =>
+    complete = vi.fn(() =>
       Promise.resolve({
         role: "assistant",
         content: "done",
@@ -14,7 +14,7 @@ mock.module("../../src/background/llm", () => ({
         finish_reason: "stop",
       }),
     );
-    completeStream = mock((_req: any, onDelta: (d: string) => void) => {
+    completeStream = vi.fn((_req: any, onDelta: (d: string) => void) => {
       onDelta("ok");
       return Promise.resolve({
         role: "assistant",
@@ -29,16 +29,16 @@ mock.module("../../src/background/llm", () => ({
         finish_reason: "stop",
       });
     });
-    switchToSmart = mock(() => {
+    switchToSmart = vi.fn(() => {
       this.model = "minimax/minimax-m2.5"; this._isSmartTier = true;
     });
-    switchToFast = mock(() => {
+    switchToFast = vi.fn(() => {
       this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false;
     });
     isSmartTier = () => this._isSmartTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
-    setFailoverCallback = mock(() => {});
+    setFailoverCallback = vi.fn(() => {});
     getActiveProviderInfo = () => ({
       providerId: "openrouter",
       model: this.model,
@@ -50,9 +50,9 @@ mock.module("../../src/background/llm", () => ({
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
 }));
 
-mock.module("../../src/background/keepalive", () => ({
-  startKeepalive: mock(async () => {}),
-  stopKeepalive: mock(async () => {}),
+vi.mock("../../src/background/keepalive", () => ({
+  startKeepalive: vi.fn(async () => {}),
+  stopKeepalive: vi.fn(async () => {}),
 }));
 
 import { AgentLoop } from "../../src/background/agent/loop";
@@ -61,9 +61,9 @@ import { AgentLoop } from "../../src/background/agent/loop";
 let tabMessages: any[] = [];
 
 function createLoop() {
-  const onStatus = mock();
-  const onMessage = mock();
-  const onStep = mock();
+  const onStatus = vi.fn();
+  const onMessage = vi.fn();
+  const onStep = vi.fn();
   const agent = new AgentLoop(
     "test-key",
     undefined,
@@ -82,7 +82,7 @@ describe("Reactive overlay dismissal — no pre-loop DISMISS_MODALS", () => {
   beforeEach(() => {
     tabMessages = [];
     // Override chrome.tabs.sendMessage to track calls
-    (chrome.tabs as any).sendMessage = mock(
+    (chrome.tabs as any).sendMessage = vi.fn(
       async (_tabId: number, msg: any) => {
         tabMessages.push(msg);
         if (msg.type === "DOM_SNAPSHOT_REQUEST") {

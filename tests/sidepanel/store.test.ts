@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { useStore } from "../../src/sidepanel/store";
 import { AgentStatus } from "../../src/types";
@@ -9,16 +9,16 @@ describe("SidePanel Store", () => {
         globalThis.chrome = globalThis.chrome || {} as any;
         globalThis.chrome.storage = {
             session: {
-                get: mock(async () => ({})),
-                set: mock(async () => {}),
+                get: vi.fn(async () => ({})),
+                set: vi.fn(async () => {}),
             },
             local: {
-                get: mock(async () => ({})),
-                set: mock(async () => {}),
+                get: vi.fn(async () => ({})),
+                set: vi.fn(async () => {}),
             },
             sync: {
-                get: mock(async () => ({})),
-                set: mock(async () => {}),
+                get: vi.fn(async () => ({})),
+                set: vi.fn(async () => {}),
             },
         } as any;
 
@@ -99,7 +99,7 @@ describe("SidePanel Store", () => {
 
     test("loadSettingsFromStorage merges saved settings with defaults", async () => {
         // Mock storage to return partial settings
-        (chrome.storage.sync.get as any) = mock(async () => ({
+        (chrome.storage.sync.get as any) = vi.fn(async () => ({
             userSettings: {
                 openRouterApiKey: "sk-or-test-123",
                 maxTurns: 10,
@@ -119,7 +119,7 @@ describe("SidePanel Store", () => {
     });
 
     test("loadSettingsFromStorage uses defaults when storage is empty", async () => {
-        (chrome.storage.sync.get as any) = mock(async () => ({}));
+        (chrome.storage.sync.get as any) = vi.fn(async () => ({}));
 
         await useStore.getState().loadSettingsFromStorage();
 
@@ -149,7 +149,7 @@ describe("SidePanel Store", () => {
             },
         ];
 
-        (chrome.storage.local.get as any) = mock(async () => ({
+        (chrome.storage.local.get as any) = vi.fn(async () => ({
             chatMessages: storedMessages,
         }));
 
@@ -165,7 +165,7 @@ describe("SidePanel Store", () => {
     });
 
     test("loadMessagesFromStorage handles empty storage", async () => {
-        (chrome.storage.session.get as any) = mock(async () => ({}));
+        (chrome.storage.session.get as any) = vi.fn(async () => ({}));
 
         await useStore.getState().loadMessagesFromStorage();
 
@@ -173,7 +173,7 @@ describe("SidePanel Store", () => {
     });
 
     test("clearHistory clears persisted messages", async () => {
-        const setSpy = mock(async () => {});
+        const setSpy = vi.fn(async () => {});
         (chrome.storage.local.set as any) = setSpy;
 
         useStore.getState().addMessage({

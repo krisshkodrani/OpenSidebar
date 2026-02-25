@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 import { executeAction, isLikelyOverlay } from "../../src/content/actions";

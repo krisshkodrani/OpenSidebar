@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import "../setup";
 import { startRecording, stopRecording, isRecording } from "../../src/content/recorder";
 

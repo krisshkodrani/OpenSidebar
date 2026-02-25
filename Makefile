@@ -1,5 +1,5 @@
 # OpenSidebar — developer commands
-# Requires: bun, make (GNU Make)
+# Requires: node, npm, make (GNU Make)
 
 .PHONY: dev build lint test fmt clean logs viewer traces evals help
 
@@ -7,50 +7,50 @@
 
 ## Start full dev stack (build + log server + Vite HMR). Traces are captured.
 dev:
-	bun run dev:stack
+	npm run dev:stack
 
 ## Production build only
 build:
-	bun run build
+	npm run build
 
 ## Run all tests
 test:
-	bun test
+	npm test
 
 ## Lint source files
 lint:
-	bun run lint
+	npm run lint
 
 ## Format source files
 fmt:
-	bun run fmt
+	npm run fmt
 
 # ── Logs & Traces ────────────────────────────────────────────────
 
 ## Start log drain server (captures logs + traces on port 7589)
 logs:
-	bun run logs
+	npm run logs
 
 ## Open trace viewer UI in browser
 viewer:
 	@echo "Starting server... open http://127.0.0.1:7589/viewer"
-	bun run viewer
+	npm run viewer
 
 ## List captured trace sessions
 traces:
-	bun run traces:list
+	npm run traces:list
 
 ## Show aggregate trace statistics
 traces-stats:
-	bun run traces:stats
+	npm run traces:stats
 
 ## Tail recent log entries
 logs-tail:
-	bun run logs:tail
+	npm run logs:tail
 
 ## Show error-level log entries
 logs-errors:
-	bun run logs:errors
+	npm run logs:errors
 
 ## Delete all traces and start fresh
 traces-clean:
@@ -63,26 +63,26 @@ traces-clean:
 
 ## Convert traces to eval cases
 evals-convert:
-	bun run evals:convert
+	npm run evals:convert
 
 ## Run eval cases against LLM
 evals-run:
-	bun run evals:run
+	npm run evals:run
 
 ## Show eval statistics
 evals-stats:
-	bun run evals:stats
+	npm run evals:stats
 
 ## Pattern analysis across eval results
 evals-analyze:
-	bun run evals:analyze
+	npm run evals:analyze
 
 # ── Housekeeping ─────────────────────────────────────────────────
 
 ## Remove build artifacts
 clean:
 	rm -rf dist/
-	bun run clean:vite-artifacts
+	npm run clean:vite-artifacts
 
 ## Show available targets
 help:

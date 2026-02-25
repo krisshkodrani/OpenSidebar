@@ -1,0 +1,99 @@
+import React, { useState } from "react";
+import Badge from "../Badge";
+import { screenshotUrl } from "../../api";
+import { truncate } from "../../utils";
+
+interface PerceptionData {
+  interpretation?: string;
+  model?: string;
+  providerId?: string;
+  durationMs?: number;
+  cached?: boolean;
+  screenshotDataUrl?: string;
+  elementSummary?: string;
+}
+
+interface Element {
+  tag?: number;
+  attributes?: Record<string, string>;
+  tagName?: string;
+  text?: string;
+}
+
+interface PerceptionCardProps {
+  entry: Record<string, unknown>;
+  sessionId: string;
+}
+
+export default function PerceptionCard({ entry, sessionId }: PerceptionCardProps) {
+  const [imgError, setImgError] = useState(false);
+  const p = entry.perception as PerceptionData;
+  const turnNum = (entry.turnNumber as number) ?? 0;
+  const elements = (entry.elements as Element[]) || [];
+
+  const screenshotSrc = p.screenshotDataUrl
+    ? p.screenshotDataUrl
+    : screenshotUrl(sessionId, turnNum);
+
+  // Prefer the stored element summary (exactly what the model saw),
+  // fall back to reconstructing from raw elements for older traces
+  const elementText = p.elementSummary
+    ? p.elementSummary
+    : elements.map((el) => {
+        let line = `[${el.tag}] ${el.tagName || ""}`;
+        if (el.attributes?.id) line += `#${el.attributes.id}`;
+        if (el.attributes?.type) line += ` type=${el.attributes.type}`;
+        if (el.text) line += ` "${truncate(el.text, 80)}"`;
+        return line;
+      }).join("\n");
+
+  return (
+    <div className="bg-trace-panel border border-[rgba(15,52,96,0.6)] rounded-lg mb-4 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(15,52,96,0.3)] border-b border-[rgba(15,52,96,0.4)]">
+        <span className="text-[13px] font-bold text-trace-accent-light">Turn {turnNum}</span>
+        <Badge variant="model">{p.model || "unknown"}</Badge>
+        {p.cached && <Badge variant="stopped">cached</Badge>}
+        {p.elementSummary && <Badge variant="default">exact input</Badge>}
+      </div>
+
+      {/* Body */}
+      <div className="flex min-h-[200px]">
+        {/* Left: screenshot + elements */}
+        <div className="flex-1 border-r border-[rgba(15,52,96,0.4)] p-3 flex flex-col gap-2.5 min-w-0">
+          {!imgError ? (
+            <img
+              className="max-w-full rounded border border-[rgba(15,52,96,0.6)] cursor-pointer transition-opacity hover:opacity-85"
+              src={screenshotSrc}
+              alt={`Turn ${turnNum} screenshot`}
+              loading="lazy"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className="bg-[rgba(15,52,96,0.3)] border border-dashed border-[rgba(15,52,96,0.6)] rounded p-8 text-center text-trace-dim text-xs">
+              Screenshot not available
+            </div>
+          )}
+          {elementText && (
+            <div className="text-[11px] text-trace-muted font-mono max-h-[400px] overflow-y-auto leading-normal whitespace-pre-wrap break-all">
+              {elementText}
+            </div>
+          )}
+        </div>
+
+        {/* Right: interpretation + metadata */}
+        <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
+          <div className="text-xs text-[#c0c0d8] leading-relaxed whitespace-pre-wrap break-words">
+            {p.interpretation}
+          </div>
+          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-[rgba(15,52,96,0.4)]">
+            <span>Model: {p.model || "?"}</span>
+            {p.providerId && <span>Provider: {p.providerId}</span>}
+            <span>Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}</span>
+            <span>Cached: {p.cached ? "Yes" : "No"}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

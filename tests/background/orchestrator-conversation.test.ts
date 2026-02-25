@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
 import { SessionMetrics, ToolName, UserSettings } from "../../src/types";
 import {
@@ -114,7 +114,7 @@ describe("Orchestrator conversation collaboration", () => {
     chromeAny.storage.sync ??= {};
     chromeAny.tabs ??= {};
     chromeAny.scripting ??= {};
-    chromeAny.scripting.executeScript ??= mock(async () => undefined);
+    chromeAny.scripting.executeScript ??= vi.fn(async () => undefined);
     (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
     // Mock fetch so the router classifier returns "plan" (tests exercise the planner pipeline)
@@ -128,13 +128,13 @@ describe("Orchestrator conversation collaboration", () => {
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
 
-    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
       runtimeMessages.push(msg);
       return { ok: true };
     });
     (globalThis as any).__runtimeMessages = runtimeMessages;
 
-    (chrome.storage.local as any).get = mock(async (key: string) => {
+    (chrome.storage.local as any).get = vi.fn(async (key: string) => {
       if (key === "opensidebar:orchestrator:checkpoints") {
         return { [key]: checkpointStore };
       }
@@ -143,7 +143,7 @@ describe("Orchestrator conversation collaboration", () => {
       }
       return {};
     });
-    (chrome.storage.local as any).set = mock(async (payload: Record<string, unknown>) => {
+    (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
       const key = "opensidebar:orchestrator:checkpoints";
       if (payload[key]) {
         const value = payload[key] as Record<string, unknown>;
@@ -158,18 +158,18 @@ describe("Orchestrator conversation collaboration", () => {
       }
     });
 
-    (chrome.storage.sync as any).get = mock(async () => ({
+    (chrome.storage.sync as any).get = vi.fn(async () => ({
       userSettings: baseSettings,
     }));
 
-    (chrome.tabs as any).get = mock(async (tabId: number) => ({
+    (chrome.tabs as any).get = vi.fn(async (tabId: number) => ({
       id: tabId,
       url: "https://example.com/app",
       title: "Example App",
       groupId: 1,
     }));
-    (chrome.tabs as any).create = mock(async () => ({ id: 202 }));
-    (chrome.tabs as any).sendMessage = mock(async () => ({
+    (chrome.tabs as any).create = vi.fn(async () => ({ id: 202 }));
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
           title: "Test Page",
@@ -187,7 +187,7 @@ describe("Orchestrator conversation collaboration", () => {
       createPlanner: () => ({
         buildNodes: async (...args: unknown[]) => {
           const nodes = await plannerBuildNodesImpl(...args);
-          return { nodes, isSingleNode: nodes.length <= 1, difficulty: "moderate" as const };
+          return { nodes, isSingleNode: false, difficulty: "moderate" as const };
         },
         expandNode: async (...args: unknown[]) => plannerExpandNodeImpl(...args),
       }),

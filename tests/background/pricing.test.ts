@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { estimateCostUsd, findModelPricing } from "../../src/background/llm/pricing";
 
 describe("pricing estimator", () => {

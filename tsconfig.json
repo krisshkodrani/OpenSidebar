@@ -26,8 +26,7 @@
             ]
         },
         "types": [
-            "chrome",
-            "bun"
+            "chrome"
         ]
     },
     "include": [

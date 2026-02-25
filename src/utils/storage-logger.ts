@@ -16,6 +16,7 @@ export interface StorageLogEntry {
   cat: LogCategory;
   msg: string;
   rid?: string;
+  sid?: string;
   data?: Record<string, unknown>;
 }
 

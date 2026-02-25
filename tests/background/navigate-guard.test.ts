@@ -1,20 +1,20 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect, vi } from "vitest";
 import "../setup";
 import { AgentLoop } from "../../src/background/agent/loop";
 import { SubtaskSummary } from "../../src/types";
 
 // Mock LLM Client
-mock.module("../../src/background/llm", () => ({
+vi.mock("../../src/background/llm", () => ({
     LLMClient: class {
         private model = "google/gemini-2.5-flash-lite";
         _isSmartTier = false;
-        complete = mock(() => Promise.resolve({
+        complete = vi.fn(() => Promise.resolve({
             role: "assistant",
             content: "ok",
             tool_calls: undefined,
             finish_reason: "stop",
         }));
-        completeStream = mock((_req: any, onDelta: (d: string) => void) => {
+        completeStream = vi.fn((_req: any, onDelta: (d: string) => void) => {
             onDelta("ok");
             return Promise.resolve({
                 role: "assistant",
@@ -23,13 +23,13 @@ mock.module("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
-        switchToSmart = mock(() => { this.model = "minimax/minimax-m2.5"; this._isSmartTier = true; });
-        switchToFast = mock(() => { this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false; });
+        switchToSmart = vi.fn(() => { this.model = "minimax/minimax-m2.5"; this._isSmartTier = true; });
+        switchToFast = vi.fn(() => { this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false; });
         isSmartTier = () => this._isSmartTier;
         getCurrentModel = () => this.model;
         getCurrentProvider = () => "openrouter";
         getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });
-        setFailoverCallback = mock(() => {});
+        setFailoverCallback = vi.fn(() => {});
     },
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",
@@ -38,9 +38,9 @@ mock.module("../../src/background/llm", () => ({
 
 function createAgent(): AgentLoop {
     return new AgentLoop("test-key", undefined, undefined, false, {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
-        onStep: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
     });
 }
 

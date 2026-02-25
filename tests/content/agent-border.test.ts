@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 
 // Since setAgentBorder is defined inside content.ts as a module-level function,

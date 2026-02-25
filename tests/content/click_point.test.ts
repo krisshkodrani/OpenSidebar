@@ -1,5 +1,5 @@
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 import { executeAction } from "../../src/content/actions";

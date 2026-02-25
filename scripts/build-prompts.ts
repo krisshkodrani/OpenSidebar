@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 type PromptFrontmatter = {
@@ -119,7 +120,7 @@ function toGeneratedTs(prompts: CompiledPrompt[], root: string): string {
 }
 
 function main(): void {
-  const repoRoot = resolve(import.meta.dir, "..");
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const promptsRoot = join(repoRoot, "prompts");
   const outDir = join(repoRoot, "src", "prompts");
   const outTs = join(outDir, "generated.ts");

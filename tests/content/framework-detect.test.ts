@@ -5,7 +5,7 @@
  * and returns null when no supported framework is present.
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { detectFramework } from "../../src/content/framework-detect";
 

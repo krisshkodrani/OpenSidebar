@@ -37,6 +37,17 @@ module.exports = {
                     light: "#faf9f7",
                     dark: "#1c1917",
                 },
+                trace: {
+                    bg: "#1a1a2e",
+                    panel: "#16213e",
+                    border: "#0f3460",
+                    accent: "#3a7bd5",
+                    "accent-light": "#5dade2",
+                    text: "#e0e0e0",
+                    muted: "#7a7a9e",
+                    dim: "#4a4a6e",
+                    subtle: "#a0a0c0",
+                },
             },
             boxShadow: {
                 soft: "0 1px 3px 0 rgba(0,0,0,0.04), 0 1px 2px -1px rgba(0,0,0,0.03)",

@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import type { PlanStep, PlanAlignment, PlanMonitorResult, ReplanResult, PlanDecomposition } from "../../src/background/agent/planner";
 
 // --- Type tests ---

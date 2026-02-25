@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
 import { SkillStore } from "../../src/background/skills/store";
 import { SKILLS_STORAGE_KEY } from "../../src/skills/types";
@@ -8,10 +8,10 @@ describe("SkillStore", () => {
 
   beforeEach(() => {
     storageSkills = [];
-    (chrome.storage.local as any).get = mock(async (key: string) => ({
+    (chrome.storage.local as any).get = vi.fn(async (key: string) => ({
       [key]: storageSkills,
     }));
-    (chrome.storage.local as any).set = mock(async (payload: Record<string, unknown>) => {
+    (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
       if (Array.isArray(payload[SKILLS_STORAGE_KEY])) {
         storageSkills = payload[SKILLS_STORAGE_KEY] as any[];
       }

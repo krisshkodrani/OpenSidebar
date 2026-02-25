@@ -1,7 +1,4 @@
-import { Global, describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-
-GlobalRegistrator.register();
+// Vitest's `environment: "happy-dom"` in vitest.config.ts handles DOM registration automatically.
 
 // Vite build-time constants (injected via `define` in vite.config.ts)
 (globalThis as any).__DEV__ = true;

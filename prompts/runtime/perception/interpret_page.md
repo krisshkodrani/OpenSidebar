@@ -26,5 +26,5 @@ Report:
    If no blockers: "None."
 6. SPATIAL: Notable layout relationships (e.g. "submit button below form", "nav sidebar left").
 7. HAZARDS: Distractors or traps — elements with text-color matching background-color (invisible), animated/floating elements with vague CTAs ("Click Me", "Click Here"), large numbers of similar buttons with no clear purpose. For each: [tagId] "why suspicious". If none: "None."
-
+{{objectiveSection}}
 Be terse. Sentence fragments. No aesthetic commentary.

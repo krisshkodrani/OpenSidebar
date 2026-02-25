@@ -1,5 +1,5 @@
 import "../setup";
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import { classifyRoute, type RouteDecision } from "../../src/background/orchestrator/router";
 import type { UserSettings } from "../../src/types";
 

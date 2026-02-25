@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import type { CacheType } from "../../src/background/agent/tool-cache";
