@@ -2102,4 +2102,21 @@ export interface TraceSession {
   resolvedLimits?: Record<string, number>;
   /** Planner's per-field limit overrides (null if none) */
   plannerLimitOverrides?: Record<string, number> | null;
+  /** Full plan decomposition from the planner (subtask descriptions + detailed steps) */
+  planDecomposition?: {
+    subtasks: string[];
+    steps: Array<{
+      objective: string;
+      successCriteria: string;
+      dependencies: number[];
+      assumptions: string[];
+      verifyAfter?: { trigger: string; action: string; pattern?: string };
+      toolProfile?: string;
+      expectedState?: {
+        description: string;
+        urlPattern?: string;
+        expectedPhrases?: string[];
+      };
+    }>;
+  };
 }

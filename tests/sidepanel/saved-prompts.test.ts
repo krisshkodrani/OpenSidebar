@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import {
   loadSavedPrompts,
@@ -19,7 +19,7 @@ describe("Saved Prompts CRUD", () => {
     globalThis.chrome = globalThis.chrome || ({} as any);
     globalThis.chrome.storage = {
       local: {
-        get: mock(async (keyOrKeys: string | string[]) => {
+        get: vi.fn(async (keyOrKeys: string | string[]) => {
           if (Array.isArray(keyOrKeys)) {
             const result: Record<string, unknown> = {};
             for (const k of keyOrKeys) result[k] = stored[k];
@@ -27,12 +27,12 @@ describe("Saved Prompts CRUD", () => {
           }
           return { [keyOrKeys]: stored[keyOrKeys] };
         }),
-        set: mock(async (obj: Record<string, unknown>) => {
+        set: vi.fn(async (obj: Record<string, unknown>) => {
           Object.assign(stored, obj);
         }),
       },
-      session: { get: mock(async () => ({})), set: mock(async () => {}) },
-      sync: { get: mock(async () => ({})), set: mock(async () => {}) },
+      session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+      sync: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
     } as any;
   });
 

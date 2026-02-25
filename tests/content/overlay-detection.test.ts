@@ -3,7 +3,7 @@
  * Tests for: expanded selectors, lowered threshold, dialog[open], aria-modal, backdrop detection
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { isLikelyOverlay } from "../../src/content/actions";
 import { detectViewportCoveringOverlays } from "../../src/content/content";

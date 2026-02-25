@@ -4,6 +4,10 @@ An open-source Chrome extension that turns your browser into an AI-powered agent
 
 OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: a fast model (`gpt-oss-120b`) for quick observe → act cycles, with escalation to a smart model (`z-ai/glm-4.7`, GLM-4.7 with native reasoning) when tasks get harder. Tri-provider failover (Cerebras → Groq → OpenRouter) keeps inference fast and resilient. A local "Second Brain" provides persistent memory across sessions.
 
+<!-- Add screenshots to docs/screenshots/ and uncomment the relevant lines below -->
+<!-- ![Side Panel](docs/screenshots/sidepanel.png) -->
+<!-- ![Trace Viewer](docs/screenshots/trace-viewer.png) -->
+
 ---
 
 ## Features

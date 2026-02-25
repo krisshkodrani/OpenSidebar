@@ -4,9 +4,10 @@
 
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { isAbsolute, join, dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import type { EvalCase, EvalResult } from "./types";
 
-const PROJECT_ROOT = join(dirname(import.meta.dir));
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
 export const CASES_DIR = join(PROJECT_ROOT, "evals", "cases");
 export const RESULTS_DIR = join(PROJECT_ROOT, "evals", "results");

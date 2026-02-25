@@ -3,14 +3,14 @@
  * Tests for S1 (rolling distillation), S2 (pinned goal), S5 (causal chain summary).
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 
 // Mock chrome APIs
 globalThis.chrome = {
   storage: {
     session: {
-      get: mock(async () => ({})),
-      set: mock(async () => {}),
+      get: vi.fn(async () => ({})),
+      set: vi.fn(async () => {}),
     },
   },
 } as any;

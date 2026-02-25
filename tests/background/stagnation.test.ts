@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect, beforeEach } from "vitest";
 import { StagnationMonitor, ActionEffect } from "../../src/background/agent/stagnation";
 import { DomSnapshot, TaggedElement } from "../../src/types";
 

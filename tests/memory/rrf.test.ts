@@ -1,4 +1,4 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { reciprocalRankFusion } from "../../src/offscreen/memory/utils";
 
 describe("Reciprocal Rank Fusion", () => {

@@ -5,27 +5,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-bun run build          # Production build (vite build)
-bun run dev            # Dev server with HMR (load dist/ as unpacked extension)
-bun run lint           # ESLint (src/**/*.ts,tsx)
-bun run fmt            # Prettier format src/
-bun test               # Run all tests
-bun test tests/content/tagging.test.ts  # Run a single test file
-bun run logs           # Start log drain server (receives logs from extension)
-bun run logs:query     # Query log file (tail, errors, since, search, stats, help)
-bun run logs:tail      # Show last 50 log entries
-bun run logs:errors    # Show error-level entries only
-bun run traces         # Query trace files (list, show, turns, stats)
-bun run traces:list    # List all recorded sessions
-bun run traces:stats   # Aggregate trace statistics
-bun run evals          # Eval pipeline CLI (convert, run, stats, analyze)
-bun run evals:convert  # Convert traces to eval cases
-bun run evals:run      # Run eval cases against LLM
-bun run evals:stats    # Show eval statistics
-bun run evals:analyze  # Pattern analysis across eval results
+npm run dev:stack      # Recommended: dev server + log server + trace viewer together
+npm run dev            # Standalone Vite dev server (no log server)
+npm run build          # Production build (vite build)
+npm run lint           # ESLint (src/**/*.ts,tsx)
+npm run fmt            # Prettier format src/
+npm test               # Run all tests (vitest)
+npx vitest run tests/content/tagging.test.ts  # Run a single test file
+npm run logs           # Start log drain server + trace viewer (http://127.0.0.1:7589/viewer)
+npm run logs:query     # Query log file (tail, errors, since, search, stats, help)
+npm run logs:tail      # Show last 50 log entries
+npm run logs:errors    # Show error-level entries only
+npm run traces         # Query trace files (list, show, turns, stats)
+npm run traces:list    # List all recorded sessions
+npm run traces:stats   # Aggregate trace statistics
+npm run evals          # Eval pipeline CLI (convert, run, stats, analyze)
+npm run evals:convert  # Convert traces to eval cases
+npm run evals:run      # Run eval cases against LLM
+npm run evals:stats    # Show eval statistics
+npm run evals:analyze  # Pattern analysis across eval results
 ```
 
-**Note:** On this Windows machine, bun was installed via `npm install -g bun` and may not be in PATH by default. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
+Both `dev:stack` and `dev` automatically clear stale processes on ports 5173/7589 before starting, preventing "port in use" errors from orphaned Vite processes.
+
+Scripts use `tsx` for TypeScript execution and `vitest` for testing. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
 
 ## Architecture
 
@@ -93,7 +96,7 @@ Runs heavy memory operations outside the service worker.
 Shared utilities used across all execution contexts. Barrel-exported via `index.ts`.
 
 - `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
-- `storage-logger.ts` — `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `bun run logs` is running.
+- `storage-logger.ts` — `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `npm run logs` is running.
 - `context.ts` — `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`, `isOffscreen()`.
 
 ### Types (`src/types/index.ts`)
@@ -120,6 +123,8 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 **Trace Query** (`scripts/trace-query.ts`): CLI for querying trace files. Commands: `list`, `show <id>`, `turns <id>`, `turn <id> <N>`, `filter --outcome <o>`, `stats`.
 
+**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, screenshots, skills, and memory. Start with `npm run logs` or `npm run dev:stack`.
+
 **Eval Pipeline** (`evals/`): Trace-based evaluation system that replays recorded interactions offline.
 
 - `types.ts` — `EvalCase`, `EvalResult`, `JudgeScore` types.
@@ -134,12 +139,12 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 ### Scripts (`scripts/`)
 
-- `log-server.ts` — Bun HTTP server (`127.0.0.1:7589`). Receives log batches from the extension's `StorageLogger` and appends to `logs/opensidebar.jsonl`. 50MB rotation, 5 files max.
+- `log-server.ts` — Node.js HTTP server (`127.0.0.1:7589`). Receives log batches from the extension's `StorageLogger` and appends to `logs/opensidebar.jsonl`. 50MB rotation, 5 files max.
 - `log-query.ts` — CLI for querying JSONL logs. Commands: `tail [N]`, `errors`, `since <duration>`, `level <lvl>`, `category <cat>`, `search <text>`, `stats`, `help`.
 
 ## Testing
 
-Tests use **Bun test runner** with `happy-dom` for DOM simulation. The global test setup (`tests/setup.ts`) mocks `chrome.*` APIs, `getBoundingClientRect`, `scrollIntoView`, etc. Tests live in `tests/` mirroring `src/` structure.
+Tests use **Vitest** with `happy-dom` for DOM simulation. The global test setup (`tests/setup.ts`) mocks `chrome.*` APIs, `getBoundingClientRect`, `scrollIntoView`, etc. Tests live in `tests/` mirroring `src/` structure.
 
 Test files cover: agent loop, context manager, keepalive, navigation bridge, security, streaming, tools, content script (tagging, snapshot, shadow DOM), memory (RRF, storage), sidepanel store, and logger.
 
@@ -147,15 +152,15 @@ Test files cover: agent loop, context manager, keepalive, navigation bridge, sec
 
 When investigating errors (build failures, runtime exceptions, unexpected behavior), **check the logs first** — they are the best source of truth for what actually happened at runtime.
 
-1. **Start the log drain** (if not already running): `bun run logs`
-2. **Query recent errors**: `bun run logs:errors`
-3. **Tail live output**: `bun run logs:tail`
-4. **Search for a keyword**: `bun run logs:query search <text>`
+1. **Start the log drain** (if not already running): `npm run logs`
+2. **Query recent errors**: `npm run logs:errors`
+3. **Tail live output**: `npm run logs:tail`
+4. **Search for a keyword**: `npm run logs:query search <text>`
 5. **Log file location**: `logs/opensidebar.jsonl` (JSONL format, one structured entry per line)
 
-The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `bun run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
+The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `npm run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
 
-For build errors, also check `bun run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
+For build errors, also check `npm run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
 
 ## Design Principles
 

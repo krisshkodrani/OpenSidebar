@@ -19,8 +19,9 @@
 
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const PROJECT_ROOT = join(dirname(import.meta.dir));
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const INDEX_FILE = join(TRACE_DIR, "index.jsonl");
 

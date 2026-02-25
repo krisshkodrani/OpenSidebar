@@ -1,8 +1,6 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
-import { AgentLoop } from "../../src/background/agent/loop";
 import { AgentStatus } from "../../src/types";
-import { workspaceManager } from "../../src/background/workspaces/manager";
 
 // Default completeStream implementation (text only, no tool calls)
 const defaultCompleteStreamFn = (
@@ -19,12 +17,26 @@ const defaultCompleteStreamFn = (
 };
 
 // Mock LLM Client — now mocking completeStream instead of complete
-const mockCompleteStream = mock(defaultCompleteStreamFn);
+const { mockCompleteStream } = vi.hoisted(() => {
+  const defaultFn = (
+    request: any,
+    onTextDelta: (delta: string) => void,
+  ) => {
+    onTextDelta("Final answer");
+    return Promise.resolve({
+      role: "assistant",
+      content: "Final answer",
+      tool_calls: undefined,
+      finish_reason: "stop",
+    });
+  };
+  return { mockCompleteStream: vi.fn(defaultFn) };
+});
 
-mock.module("../../src/background/llm", () => ({
+vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
     private model = "google/gemini-2.5-flash-lite";
-    complete = mock(() =>
+    complete = vi.fn(() =>
       Promise.resolve({
         role: "assistant",
         content: "Final answer",
@@ -34,11 +46,11 @@ mock.module("../../src/background/llm", () => ({
     );
     completeStream = mockCompleteStream;
     _isSmartTier = false;
-    switchToSmart = mock(() => {
+    switchToSmart = vi.fn(() => {
       this.model = "minimax/minimax-m2.5";
       this._isSmartTier = true;
     });
-    switchToFast = mock(() => {
+    switchToFast = vi.fn(() => {
       this.model = "google/gemini-2.5-flash-lite";
       this._isSmartTier = false;
     });
@@ -49,7 +61,7 @@ mock.module("../../src/background/llm", () => ({
       providerId: "openrouter",
       model: this.model,
     });
-    setFailoverCallback = mock(() => {});
+    setFailoverCallback = vi.fn(() => {});
   },
   MODEL_FAST: "google/gemini-2.5-flash-lite",
   MODEL_SMART: "minimax/minimax-m2.5",
@@ -57,11 +69,14 @@ mock.module("../../src/background/llm", () => ({
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
 }));
 
+import { AgentLoop } from "../../src/background/agent/loop";
+import { workspaceManager } from "../../src/background/workspaces/manager";
+
 describe("AgentLoop", () => {
   test("runs simple conversation with streaming", async () => {
-    const onStatus = mock();
-    const onMessage = mock();
-    const onStep = mock();
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const onStep = vi.fn();
 
     const agent = new AgentLoop("test-key", undefined, undefined, {
       onStatusUpdate: onStatus,
@@ -81,9 +96,9 @@ describe("AgentLoop", () => {
   });
 
   test("emits thinking steps during simple conversation", async () => {
-    const onStatus = mock();
-    const onMessage = mock();
-    const onStep = mock();
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const onStep = vi.fn();
 
     const agent = new AgentLoop("test-key", undefined, undefined, {
       onStatusUpdate: onStatus,
@@ -189,7 +204,7 @@ describe("High-risk approval policy", () => {
   beforeEach(() => {
     mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
     mockCompleteStream.mockClear();
-    (chrome.runtime as any).sendMessage = mock(async () => ({ success: true }));
+    (chrome.runtime as any).sendMessage = vi.fn(async () => ({ success: true }));
   });
 
   test("requests explicit approval for high-risk tool when bypass is off", async () => {
@@ -197,21 +212,21 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav", "navigate", { url: "https://example.com" }),
     ]);
 
-    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
       if (msg?.type === "APPROVAL_REQUEST") {
         AgentLoop.resolveApproval(msg.payload.approvalId, true);
       }
       return { success: true };
     });
 
-    const onStep = mock();
+    const onStep = vi.fn();
     const agent = new AgentLoop(
       "test-key",
       undefined,
       undefined,
       {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
         onStep,
       },
       { bypassApprovals: false },
@@ -236,7 +251,7 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav_reject", "navigate", { url: "https://example.com" }),
     ]);
 
-    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
       if (msg?.type === "APPROVAL_REQUEST") {
         AgentLoop.resolveApproval(msg.payload.approvalId, false);
       }
@@ -248,8 +263,8 @@ describe("High-risk approval policy", () => {
       undefined,
       undefined,
       {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
       },
       { bypassApprovals: false },
     );
@@ -266,7 +281,7 @@ describe("High-risk approval policy", () => {
     ]);
 
     // No resolveApproval call -> should timeout and deny.
-    (chrome.runtime as any).sendMessage = mock(async (_msg: any) => ({
+    (chrome.runtime as any).sendMessage = vi.fn(async (_msg: any) => ({
       success: true,
     }));
 
@@ -275,8 +290,8 @@ describe("High-risk approval policy", () => {
       undefined,
       undefined,
       {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
       },
       { bypassApprovals: false, approvalTimeoutMs: 5 },
     );
@@ -292,18 +307,18 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav_bypass", "navigate", { url: "https://example.com" }),
     ]);
 
-    (chrome.runtime as any).sendMessage = mock(async (_msg: any) => ({
+    (chrome.runtime as any).sendMessage = vi.fn(async (_msg: any) => ({
       success: true,
     }));
 
-    const onStep = mock();
+    const onStep = vi.fn();
     const agent = new AgentLoop(
       "test-key",
       undefined,
       undefined,
       {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
         onStep,
       },
       { bypassApprovals: true },
@@ -354,9 +369,9 @@ describe("Workspace-scoped tab operations", () => {
       undefined,
       undefined,
       {
-        onStatusUpdate: mock(),
-        onMessage: mock(),
-        onStep: mock(),
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
       },
       { workspaceId },
     );
@@ -390,7 +405,7 @@ describe("Workspace-scoped tab operations", () => {
     // Spy on the singleton methods directly
     workspaceManager.getWorkspaceById = origGetWorkspaceById;
     workspaceManager.addTabToWorkspace = origAddTabToWorkspace;
-    (chrome.runtime as any).sendMessage = mock(async (msg: any) => {
+    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
       if (msg?.type === "APPROVAL_REQUEST") {
         AgentLoop.resolveApproval(msg.payload.approvalId, true);
       }
@@ -434,7 +449,7 @@ describe("Workspace-scoped tab operations", () => {
 
     // Spy on chrome.tabs.sendMessage to verify snapshot refresh targets new tab
     const originalSendMessage = chrome.tabs.sendMessage;
-    const sendMessageSpy = mock(async () => ({
+    const sendMessageSpy = vi.fn(async () => ({
       payload: { result: "ok", success: true },
     }));
     (chrome.tabs as any).sendMessage = sendMessageSpy;
@@ -499,7 +514,7 @@ describe("Workspace-scoped tab operations", () => {
 
     // Mock chrome.tabs.get to return proper tab objects
     const originalGet = chrome.tabs.get;
-    (chrome.tabs as any).get = mock(async (id: number) => ({
+    (chrome.tabs as any).get = vi.fn(async (id: number) => ({
       id,
       title: `Tab ${id}`,
       url: `https://example.com/${id}`,
@@ -530,7 +545,7 @@ describe("Workspace-scoped tab operations", () => {
 
     // Mock chrome.tabs.query to return all tabs
     const originalQuery = chrome.tabs.query;
-    (chrome.tabs as any).query = mock(async () => [
+    (chrome.tabs as any).query = vi.fn(async () => [
       { id: 123, title: "Tab A", url: "https://a.com", active: true },
       { id: 456, title: "Tab B", url: "https://b.com", active: false },
     ]);

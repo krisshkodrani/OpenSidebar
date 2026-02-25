@@ -4,8 +4,8 @@ import {
   expect,
   beforeEach,
   afterEach,
-  spyOn,
-} from "bun:test";
+  vi,
+} from "vitest";
 import "../setup";
 
 import { WorkspaceManager } from "../../src/background/workspaces/manager";
@@ -17,9 +17,9 @@ describe("WorkspaceManager.init()", () => {
 
   beforeEach(() => {
     // Suppress logger console output
-    consoleSpy = spyOn(console, "log").mockImplementation(() => {});
-    groupSpy = spyOn(console, "groupCollapsed").mockImplementation(() => {});
-    groupEndSpy = spyOn(console, "groupEnd").mockImplementation(() => {});
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    groupSpy = vi.spyOn(console, "groupCollapsed").mockImplementation(() => {});
+    groupEndSpy = vi.spyOn(console, "groupEnd").mockImplementation(() => {});
   });
 
   afterEach(async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import "../setup";
 import { AgentStatus, ChatEntry, ToolName } from "../../src/types";
 import {

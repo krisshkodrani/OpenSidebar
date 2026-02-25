@@ -129,8 +129,18 @@ export class WorkspaceManager {
       if (ws.tabGroupId === null) continue;
       chrome.tabGroups
         .update(ws.tabGroupId, { title: ws.name, color: ws.color })
-        .catch(() => {
-          // Group may no longer exist — ignore silently
+        .then(() => {
+          logger.debug("workspace", "Reconciled tab group title", {
+            groupId: ws.tabGroupId,
+            title: ws.name,
+          });
+        })
+        .catch((e) => {
+          logger.warn("workspace", "Failed to reconcile tab group", {
+            groupId: ws.tabGroupId,
+            name: ws.name,
+            error: e,
+          });
         });
     }
   }
@@ -251,6 +261,43 @@ export class WorkspaceManager {
 
   // --- CRUD ---
 
+  /**
+   * Apply title and color to a tab group with retries.
+   * Chrome can silently drop title updates on freshly-created groups.
+   * Returns true if the title was confirmed applied.
+   */
+  private async applyGroupTitle(
+    groupId: number,
+    title: string,
+    color: chrome.tabGroups.ColorEnum,
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((r) =>
+            setTimeout(r, 50 * Math.pow(2, attempt)),
+          );
+        }
+        await chrome.tabGroups.update(groupId, { title, color });
+        const verify = await chrome.tabGroups.get(groupId);
+        if (verify.title === title) return true;
+        logger.warn("workspace", "Title not applied, retrying", {
+          groupId,
+          attempt: attempt + 1,
+          expected: title,
+          actual: verify.title,
+        });
+      } catch (e) {
+        logger.warn("workspace", "tabGroups.update threw, retrying", {
+          groupId,
+          attempt: attempt + 1,
+          error: e,
+        });
+      }
+    }
+    return false;
+  }
+
   public async createWorkspace(
     name: string,
     color: chrome.tabGroups.ColorEnum = GROUP_COLOR,
@@ -277,25 +324,60 @@ export class WorkspaceManager {
         });
 
         groupId = await chrome.tabs.group({ tabIds: [tabId] });
+        // Track the tab immediately — even if titling fails, the tab IS
+        // in this Chrome group.  Without this, getWorkspaceForTab() can't
+        // find the workspace and subsequent opens create duplicate groups.
+        tabIds.push(tabId);
         logger.info("workspace", "Tab grouped successfully", {
           groupId,
           tabId,
         });
 
-        await chrome.tabGroups.update(groupId, { title: name, color });
-        logger.info("workspace", "Group updated with name and color", {
-          groupId,
-          name,
-          color,
-        });
-
-        tabIds.push(tabId);
+        const titled = await this.applyGroupTitle(groupId, name, color);
+        if (!titled) {
+          // Title refused to stick after retries — ungroup to avoid
+          // leaving an orphaned untitled group in the tab strip.
+          logger.error(
+            "workspace",
+            "Failed to apply title after retries, ungrouping",
+            { groupId, name },
+          );
+          try {
+            await chrome.tabs.ungroup(tabId);
+          } catch {
+            /* ignore */
+          }
+          groupId = null;
+          tabIds.length = 0;
+        } else {
+          logger.info("workspace", "Group updated with name and color", {
+            groupId,
+            name,
+            color,
+          });
+        }
       } catch (e) {
         logger.error("workspace", "Failed to create group with tab", {
           tabId,
           error: e,
           errorMessage: e instanceof Error ? e.message : String(e),
         });
+        // If group was created but something else threw, try to recover
+        // the title so we don't leave an untitled group.
+        if (groupId !== null) {
+          try {
+            await chrome.tabGroups.update(groupId, { title: name, color });
+          } catch {
+            // Can't title it — ungroup to prevent orphaned untitled group
+            try {
+              await chrome.tabs.ungroup(tabId!);
+            } catch {
+              /* ignore */
+            }
+            groupId = null;
+            tabIds.length = 0;
+          }
+        }
       }
     } else {
       logger.warn("workspace", "No tabId provided for workspace creation");
@@ -523,7 +605,21 @@ export class WorkspaceManager {
           groupId: ws.tabGroupId,
         });
       } catch (e) {
-        logger.warn("workspace", "Failed to add tab to group", { error: e });
+        // Group is likely stale — recreate with all tracked tabs + the new one
+        logger.warn("workspace", "Group stale, recreating", {
+          staleGroupId: ws.tabGroupId,
+          error: e,
+        });
+        try {
+          const allTabIds = ws.tabIds.includes(tabId)
+            ? ws.tabIds
+            : [...ws.tabIds, tabId];
+          const newGroupId = await chrome.tabs.group({ tabIds: allTabIds });
+          ws.tabGroupId = newGroupId;
+          await this.applyGroupTitle(newGroupId, ws.name, ws.color);
+        } catch (e2) {
+          logger.warn("workspace", "Failed to recreate group", { error: e2 });
+        }
       }
     }
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import "../setup";
 import { RiskLevel, ToolName } from "../../src/types";
 import { AgentMiddleware } from "../../src/background/agent/middleware";

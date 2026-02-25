@@ -99,6 +99,18 @@ export function recoverToolCallsFromText(content: string): ToolCall[] | null {
 
     if (!name) continue;
 
+    // Unwrap common nesting wrappers (e.g. { tool_input: { text: "foo" } } → { text: "foo" })
+    const WRAPPER_KEYS = ["tool_input", "input", "arguments", "params", "parameters"];
+    if (Object.keys(args).length === 1) {
+      const key = Object.keys(args)[0];
+      if (WRAPPER_KEYS.includes(key)) {
+        const inner = args[key];
+        if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+          args = inner as Record<string, unknown>;
+        }
+      }
+    }
+
     // Validate tool name (case-insensitive)
     const normalized = name.toLowerCase();
     if (!VALID_TOOL_NAMES.has(normalized)) continue;

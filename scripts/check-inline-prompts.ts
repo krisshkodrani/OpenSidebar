@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(import.meta.dir, "..");
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_DIRS = [join(ROOT, "src"), join(ROOT, "evals")];
 const EXCLUDE_SUFFIXES = [join("src", "prompts", "generated.ts")];
 const MARKERS = [

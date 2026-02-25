@@ -51,7 +51,7 @@
   {
     "id": "perception.interpret_page",
     "version": "v1",
-    "hash": "03ede43c",
+    "hash": "c0520eda",
     "description": "Perception module prompt for multimodal page interpretation. Sent with screenshot + element metadata to GPT-4o-mini.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },

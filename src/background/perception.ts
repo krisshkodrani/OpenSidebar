@@ -32,6 +32,13 @@ interface PerceptionProvider {
   providerId: string;
 }
 
+export type ObjectiveCheckStatus = "done" | "not_done" | "unclear";
+
+export interface ObjectiveCheck {
+  status: ObjectiveCheckStatus;
+  evidence: string;
+}
+
 export interface PerceptionResult {
   interpretation: string;
   usage?: TokenUsage;
@@ -39,6 +46,7 @@ export interface PerceptionResult {
   providerId?: string;
   durationMs: number;
   cached: boolean;
+  objectiveCheck?: ObjectiveCheck;
 }
 
 export interface PerceptionInput {
@@ -47,10 +55,12 @@ export interface PerceptionInput {
   url: string;
   title: string;
   scroll: { y: number; maxY: number };
+  /** Current agent objective — enables OBJECTIVE_CHECK in perception output */
+  objective?: string;
 }
 
 /** Build a compact element summary for the perception prompt. */
-function buildElementSummary(elements: TaggedElement[]): string {
+export function buildElementSummary(elements: TaggedElement[]): string {
   const counts: Record<string, number> = {};
   for (const el of elements) {
     const category =
@@ -70,24 +80,59 @@ function buildElementSummary(elements: TaggedElement[]): string {
   if (counts.link) parts.push(`${counts.link} links`);
   if (counts.other) parts.push(`${counts.other} other`);
 
-  // Include key elements (inputs and primary buttons) with IDs
-  const keyElements: string[] = [];
+  // Include elements with IDs: inputs, buttons, and a sample of others (cap ~50 lines)
+  const lines: string[] = [];
+  const VAGUE_CTA = /^(click\s*(me|here)|press\s*(me|here)|go|submit|ok|yes|no)$/i;
+  const textCounts: Record<string, number> = {};
+
   for (const el of elements) {
-    if (keyElements.length >= 10) break;
-    if (
-      ["input", "textarea", "select"].includes(el.tagName) ||
-      el.attributes.type === "submit"
-    ) {
-      const text = el.text.slice(0, 30);
-      keyElements.push(`[${el.tag}] ${el.tagName} "${text}"`);
+    if (lines.length >= 50) break;
+    const text = el.text.slice(0, 40);
+    const isInput = ["input", "textarea", "select"].includes(el.tagName);
+    const isButton = el.tagName === "button" || el.role === "button" || el.attributes.type === "submit";
+
+    if (isInput || isButton || lines.length < 30) {
+      lines.push(`[${el.tag}] ${el.tagName} "${text}"`);
+    }
+
+    // Track duplicate vague text
+    const normalized = text.trim().toLowerCase();
+    if (normalized && VAGUE_CTA.test(normalized)) {
+      textCounts[normalized] = (textCounts[normalized] || 0) + 1;
     }
   }
 
+  // Flag suspicious duplicates
+  const suspicious: string[] = [];
+  for (const [text, count] of Object.entries(textCounts)) {
+    if (count >= 3) suspicious.push(`${count}x "${text}"`);
+  }
+
   let summary = `${elements.length} total (${parts.join(", ")})`;
-  if (keyElements.length > 0) {
-    summary += `\nKey: ${keyElements.join(", ")}`;
+  if (lines.length > 0) {
+    summary += `\nElements:\n${lines.join("\n")}`;
+  }
+  if (suspicious.length > 0) {
+    summary += `\n⚠ Suspicious duplicates: ${suspicious.join(", ")}`;
   }
   return summary;
+}
+
+/**
+ * Parse the OBJECTIVE_CHECK line from perception output.
+ * Expected format: "8. OBJECTIVE_CHECK: DONE — Evidence sentence."
+ * or "OBJECTIVE_CHECK: NOT_DONE — Still on the same page."
+ */
+export function parseObjectiveCheck(text: string): ObjectiveCheck | null {
+  const match = text.match(
+    /OBJECTIVE_CHECK:\s*(DONE|NOT_DONE|UNCLEAR)\b[.:\s—\-]*(.*)/i,
+  );
+  if (!match) return null;
+  const raw = match[1].toUpperCase();
+  const status: ObjectiveCheckStatus =
+    raw === "DONE" ? "done" : raw === "NOT_DONE" ? "not_done" : "unclear";
+  const evidence = (match[2] || "").trim().slice(0, 200);
+  return { status, evidence };
 }
 
 /** Build ordered list of perception providers from available API keys. */
@@ -153,11 +198,17 @@ export async function perceive(
       : 0;
   const moreBelow = input.scroll.y < input.scroll.maxY - 10;
 
+  // Build conditional OBJECTIVE_CHECK section when an objective is provided
+  const objectiveSection = input.objective
+    ? `8. OBJECTIVE_CHECK: The agent's current objective is: "${input.objective}". Does the visible page state suggest this objective has been accomplished? Answer exactly: DONE / NOT_DONE / UNCLEAR, followed by one sentence of evidence.`
+    : "";
+
   const promptText = renderPrompt("perception.interpret_page", {
     title: input.title || "Unknown",
     url: input.url || "Unknown",
     scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
     elementSummary: buildElementSummary(input.elements),
+    objectiveSection,
   });
 
   const callStart = Date.now();
@@ -278,6 +329,11 @@ export async function perceive(
           durationMs: Date.now() - callStart,
         });
 
+        // Parse OBJECTIVE_CHECK if objective was provided
+        const objectiveCheck = input.objective
+          ? parseObjectiveCheck(cleaned)
+          : undefined;
+
         return {
           interpretation: cleaned,
           usage,
@@ -285,6 +341,7 @@ export async function perceive(
           providerId: provider.providerId,
           durationMs: Date.now() - callStart,
           cached: false,
+          ...(objectiveCheck ? { objectiveCheck } : {}),
         };
       } catch (error: any) {
         if (error.name === "AbortError" || error.name === "TimeoutError") {

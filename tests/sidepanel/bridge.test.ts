@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { useStore } from "../../src/sidepanel/store";
 import { initializeBridge } from "../../src/sidepanel/bridge";
@@ -17,15 +17,15 @@ describe("Bridge Message Routing", () => {
         globalThis.chrome = globalThis.chrome || {} as any;
         globalThis.chrome.runtime = {
             onMessage: {
-                addListener: mock((fn: any) => { capturedListener = fn; }),
-                removeListener: mock(() => {}),
+                addListener: vi.fn((fn: any) => { capturedListener = fn; }),
+                removeListener: vi.fn(() => {}),
             },
-            sendMessage: mock(async () => {}),
+            sendMessage: vi.fn(async () => {}),
         } as any;
         globalThis.chrome.storage = {
-            session: { get: mock(async () => ({})), set: mock(async () => {}) },
-            local: { get: mock(async () => ({})), set: mock(async () => {}) },
-            sync: { get: mock(async () => ({})), set: mock(async () => {}) },
+            session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            sync: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
         } as any;
 
         useStore.setState({
@@ -64,8 +64,8 @@ describe("Bridge Message Routing", () => {
     });
 
     function setupBridge() {
-        const onScreenshot = mock(() => {});
-        const onClose = mock(() => {});
+        const onScreenshot = vi.fn(() => {});
+        const onClose = vi.fn(() => {});
         const cleanup = initializeBridge(useStore, { onScreenshot, onClose });
         return { onScreenshot, onClose, cleanup };
     }

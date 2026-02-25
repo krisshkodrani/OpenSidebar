@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, beforeAll } from "bun:test";
+import { describe, test, expect, vi, beforeEach, beforeAll } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 
@@ -17,13 +17,27 @@ const defaultCompleteStreamFn = (
 };
 
 // Mock LLM Client — same pattern as agent.test.ts
-const mockCompleteStream = mock(defaultCompleteStreamFn);
+const { mockCompleteStream } = vi.hoisted(() => {
+  const defaultFn = (
+    request: any,
+    onTextDelta: (delta: string) => void,
+  ) => {
+    onTextDelta("Final answer");
+    return Promise.resolve({
+      role: "assistant",
+      content: "Final answer",
+      tool_calls: undefined,
+      finish_reason: "stop",
+    });
+  };
+  return { mockCompleteStream: vi.fn(defaultFn) };
+});
 
-mock.module("../../src/background/llm", () => ({
+vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
     private model = "google/gemini-2.5-flash-lite";
     _isSmartTier = false;
-    complete = mock(() =>
+    complete = vi.fn(() =>
       Promise.resolve({
         role: "assistant",
         content: "Final answer",
@@ -32,10 +46,10 @@ mock.module("../../src/background/llm", () => ({
       }),
     );
     completeStream = mockCompleteStream;
-    switchToSmart = mock(() => {
+    switchToSmart = vi.fn(() => {
       this.model = "minimax/minimax-m2.5"; this._isSmartTier = true;
     });
-    switchToFast = mock(() => {
+    switchToFast = vi.fn(() => {
       this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false;
     });
     isSmartTier = () => this._isSmartTier;
@@ -45,7 +59,7 @@ mock.module("../../src/background/llm", () => ({
       providerId: "openrouter",
       model: this.model,
     });
-    setFailoverCallback = mock(() => {});
+    setFailoverCallback = vi.fn(() => {});
   },
   MODEL_FAST: "google/gemini-2.5-flash-lite",
   MODEL_SMART: "minimax/minimax-m2.5",
@@ -89,9 +103,9 @@ describe("batch_execute", () => {
 
   function createAgent() {
     return new AgentLoop("test-key", undefined, undefined, {
-      onStatusUpdate: mock(),
-      onMessage: mock(),
-      onStep: mock(),
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
     });
   }
 
@@ -175,14 +189,15 @@ describe("batch_execute", () => {
   });
 
   test("bail on error result", async () => {
-    // Mock chrome.tabs.sendMessage to return error on second call
-    let callCount = 0;
-    (chrome.tabs as any).sendMessage = mock(async () => {
-      callCount++;
-      // Fail on the 2nd tool call (type_text, after click snapshot requests)
-      // The second TOOL_EXECUTE message should be for type_text
-      if (callCount === 2) {
-        return { payload: { result: "Error: No element with tag 99", success: false } };
+    // Mock chrome.tabs.sendMessage to return error on the 2nd TOOL_EXECUTE call.
+    // Discriminate by message type so snapshot/readiness probes don't shift the counter.
+    let toolExecCount = 0;
+    (chrome.tabs as any).sendMessage = vi.fn(async (_tabId: number, msg: any) => {
+      if (msg?.type === "TOOL_EXECUTE") {
+        toolExecCount++;
+        if (toolExecCount === 2) {
+          return { payload: { result: "Error: No element with tag 99", success: false } };
+        }
       }
       return { payload: { result: "ok", success: true } };
     });
@@ -314,7 +329,7 @@ describe("batch_execute", () => {
   });
 
   test("step handler receives batch status updates", async () => {
-    const onStep = mock();
+    const onStep = vi.fn();
     setupLLMSequence([
       makeBatchCall("tc_batch", [
         { tool: "click_element", args: { id: 1 } },
@@ -323,8 +338,8 @@ describe("batch_execute", () => {
     ]);
 
     const agent = new AgentLoop("test-key", undefined, undefined, {
-      onStatusUpdate: mock(),
-      onMessage: mock(),
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
       onStep: onStep,
     });
     await agent.start("Click two", 123);

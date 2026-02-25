@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { formatActionEffect } from "../../src/background/agent/loop";
 import { ActionEffect } from "../../src/background/agent/stagnation";
 import { DomSnapshot, TaggedElement, ToolName } from "../../src/types";

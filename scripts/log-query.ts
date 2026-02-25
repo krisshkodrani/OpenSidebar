@@ -17,8 +17,9 @@
 
 import { existsSync, readFileSync } from "fs";
 import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
-const PROJECT_ROOT = join(dirname(import.meta.dir));
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOG_FILE = join(PROJECT_ROOT, "logs", "opensidebar.jsonl");
 
 // ANSI colors

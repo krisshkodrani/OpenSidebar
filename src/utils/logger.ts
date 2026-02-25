@@ -93,6 +93,7 @@ class Logger {
     message: string,
     data?: Record<string, unknown>,
     requestId?: string,
+    sessionId?: string,
   ) {
     // Level gate
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.minLevel]) return;
@@ -115,6 +116,7 @@ class Logger {
       cat: category,
       msg: message,
       rid: requestId,
+      sid: sessionId,
       data: sanitizeData(data),
     };
     storageLogger.push(storageEntry);
@@ -172,8 +174,9 @@ class Logger {
     message: string,
     data?: Record<string, unknown>,
     requestId?: string,
+    sessionId?: string,
   ) {
-    this.log("DEBUG", category, message, data, requestId);
+    this.log("DEBUG", category, message, data, requestId, sessionId);
   }
 
   public info(
@@ -181,8 +184,9 @@ class Logger {
     message: string,
     data?: Record<string, unknown>,
     requestId?: string,
+    sessionId?: string,
   ) {
-    this.log("INFO", category, message, data, requestId);
+    this.log("INFO", category, message, data, requestId, sessionId);
   }
 
   public warn(
@@ -190,8 +194,9 @@ class Logger {
     message: string,
     data?: Record<string, unknown>,
     requestId?: string,
+    sessionId?: string,
   ) {
-    this.log("WARN", category, message, data, requestId);
+    this.log("WARN", category, message, data, requestId, sessionId);
   }
 
   public error(
@@ -199,8 +204,16 @@ class Logger {
     message: string,
     data?: Record<string, unknown>,
     requestId?: string,
+    sessionId?: string,
   ) {
-    this.log("ERROR", category, message, data, requestId);
+    this.log("ERROR", category, message, data, requestId, sessionId);
+  }
+
+  /**
+   * Create a scoped logger that automatically attaches a sessionId.
+   */
+  public withSessionId(sessionId: string): SessionScopedLogger {
+    return new SessionScopedLogger(this, sessionId);
   }
 }
 
@@ -244,6 +257,53 @@ export class ScopedLogger {
     data?: Record<string, unknown>,
   ) {
     this.parent.error(category, message, data, this.requestId);
+  }
+}
+
+/**
+ * Session-scoped logger that automatically attaches a sessionId to every call.
+ * Created via logger.withSessionId(id).
+ */
+export class SessionScopedLogger {
+  constructor(
+    private parent: Logger,
+    private sessionId: string,
+  ) {}
+
+  public debug(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+    requestId?: string,
+  ) {
+    this.parent.debug(category, message, data, requestId, this.sessionId);
+  }
+
+  public info(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+    requestId?: string,
+  ) {
+    this.parent.info(category, message, data, requestId, this.sessionId);
+  }
+
+  public warn(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+    requestId?: string,
+  ) {
+    this.parent.warn(category, message, data, requestId, this.sessionId);
+  }
+
+  public error(
+    category: LogCategory,
+    message: string,
+    data?: Record<string, unknown>,
+    requestId?: string,
+  ) {
+    this.parent.error(category, message, data, requestId, this.sessionId);
   }
 }
 

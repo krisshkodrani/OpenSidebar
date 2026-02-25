@@ -3,7 +3,7 @@
  * Tests for state persistence, event handling, and resumption logic.
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 
 // Mock chrome APIs
 const mockStorage = new Map<string, any>();
@@ -11,7 +11,7 @@ const mockStorage = new Map<string, any>();
 globalThis.chrome = {
     storage: {
         local: {
-            get: mock(async (key: string | null) => {
+            get: vi.fn(async (key: string | null) => {
                 if (key === null) {
                     // Return all stored items
                     const result: Record<string, any> = {};
@@ -23,26 +23,26 @@ globalThis.chrome = {
                 const value = mockStorage.get(key);
                 return value ? { [key]: value } : {};
             }),
-            set: mock(async (items: Record<string, any>) => {
+            set: vi.fn(async (items: Record<string, any>) => {
                 for (const [key, value] of Object.entries(items)) {
                     mockStorage.set(key, value);
                 }
             }),
-            remove: mock(async (key: string) => {
+            remove: vi.fn(async (key: string) => {
                 mockStorage.delete(key);
             }),
         },
     },
     runtime: {
-        sendMessage: mock(async () => { }),
-        onStartup: { addListener: mock(() => { }) },
+        sendMessage: vi.fn(async () => { }),
+        onStartup: { addListener: vi.fn(() => { }) },
     },
     webNavigation: {
-        onCompleted: { addListener: mock(() => { }) },
-        onErrorOccurred: { addListener: mock(() => { }) },
+        onCompleted: { addListener: vi.fn(() => { }) },
+        onErrorOccurred: { addListener: vi.fn(() => { }) },
     },
     tabs: {
-        onRemoved: { addListener: mock(() => { }) },
+        onRemoved: { addListener: vi.fn(() => { }) },
         TAB_ID_NONE: -1,
     },
 } as any;
@@ -172,8 +172,8 @@ describe("Navigation Bridge", () => {
 
     describe("setNavigationCallbacks", () => {
         test("sets callbacks without error", () => {
-            const resumeCallback = mock(() => { });
-            const statusCallback = mock(() => { });
+            const resumeCallback = vi.fn(() => { });
+            const statusCallback = vi.fn(() => { });
 
             expect(() => {
                 setNavigationCallbacks(resumeCallback, statusCallback);

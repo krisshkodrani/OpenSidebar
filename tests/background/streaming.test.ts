@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { parseSSEStream } from "../../src/background/streaming";
 
 function makeStream(chunks: string[]): ReadableStream<Uint8Array> {

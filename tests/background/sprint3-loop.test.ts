@@ -3,9 +3,10 @@
  * Tests for: outcome-based dead-end detection (normalizeOutcome, constants)
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vitest";
 import { STAGNATION_DETECTION, DISCOVERY_BUDGET, DISCOVERY_ONLY_TOOLS } from "../../src/background/agent/constants";
 import { buildFailureRecovery } from "../../src/background/agent/loop";
+import { computeSnapshotFingerprint } from "../../src/background/agent/stagnation";
 
 // ─── Outcome Normalization (mirrors loop.ts normalizeOutcome) ──────────────
 
@@ -164,7 +165,7 @@ describe("Warm start: perception fingerprint caching", () => {
     // Verifies the fingerprint-based caching contract used by warm start.
     // After switch_tab, refreshPerception is called. If the page fingerprint
     // hasn't changed, the perception result is reused (no vision model call).
-    const { computeSnapshotFingerprint } = require("../../src/background/agent/stagnation");
+    // computeSnapshotFingerprint is imported at the top of this file
 
     const snapshot1 = {
       url: "https://example.com",

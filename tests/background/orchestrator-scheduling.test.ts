@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import "../setup";
 import { getDependencyState, getRunnablePendingNodes } from "../../src/background/orchestrator/scheduling";
 import { TaskNode } from "../../src/background/orchestrator/types";

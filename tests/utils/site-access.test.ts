@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { getBlockedRuleForUrl, getSiteAccessRules, matchBlockedRule } from "../../src/utils/site-access";
 import type { UserSettings } from "../../src/types";
 

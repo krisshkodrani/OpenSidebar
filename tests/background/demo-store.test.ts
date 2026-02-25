@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { DemoStore, cleanupActions, formatDemoForContext } from "../../src/background/demos/store";
 import { DemoAction, Demonstration } from "../../src/types";

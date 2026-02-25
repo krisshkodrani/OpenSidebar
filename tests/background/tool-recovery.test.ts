@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { extractJsonObjects, recoverToolCallsFromText } from "../../src/background/agent/tool-recovery";
 
 describe("extractJsonObjects", () => {
@@ -197,5 +197,75 @@ describe("recoverToolCallsFromText", () => {
         const args = JSON.parse(result![0].function.arguments);
         expect(args.id).toBe(1);
         expect(args.text).toBe('{"key":"val"}');
+    });
+
+    // Test 18: Pattern B with tool_input nesting
+    it("unwraps tool_input nesting in Pattern B", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "find_element", "tool_input": {"text": "Next Page"}}'
+        );
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result![0].function.name).toBe("find_element");
+        const args = JSON.parse(result![0].function.arguments);
+        expect(args.text).toBe("Next Page");
+        expect(args.tool_input).toBeUndefined();
+    });
+
+    // Test 19: Pattern B with input nesting
+    it("unwraps input nesting in Pattern B", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "click_element", "input": {"id": 75}}'
+        );
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        const args = JSON.parse(result![0].function.arguments);
+        expect(args.id).toBe(75);
+        expect(args.input).toBeUndefined();
+    });
+
+    // Test 20: Pattern B with arguments nesting
+    it("unwraps arguments nesting in Pattern B", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "type_text", "arguments": {"id": 1, "text": "hello"}}'
+        );
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        const args = JSON.parse(result![0].function.arguments);
+        expect(args.id).toBe(1);
+        expect(args.text).toBe("hello");
+    });
+
+    // Test 21: Pattern B flat args preserved (no unwrap needed)
+    it("preserves flat args in Pattern B when no wrapper", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "click_element", "id": 42}'
+        );
+        expect(result).not.toBeNull();
+        const args = JSON.parse(result![0].function.arguments);
+        expect(args.id).toBe(42);
+    });
+
+    // Test 22: Does not unwrap when multiple keys exist
+    it("does not unwrap when multiple sibling keys exist alongside wrapper", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "type_text", "tool_input": {"text": "hi"}, "extra": true}'
+        );
+        expect(result).not.toBeNull();
+        const args = JSON.parse(result![0].function.arguments);
+        // Should NOT unwrap because there are 2 keys (tool_input + extra)
+        expect(args.tool_input).toEqual({ text: "hi" });
+        expect(args.extra).toBe(true);
+    });
+
+    // Test 23: Unwrap does not apply to array values
+    it("does not unwrap array wrapper values", () => {
+        const result = recoverToolCallsFromText(
+            '{"tool": "read_page", "arguments": [1, 2, 3]}'
+        );
+        expect(result).not.toBeNull();
+        const args = JSON.parse(result![0].function.arguments);
+        // Array should NOT be unwrapped — kept as-is
+        expect(args.arguments).toEqual([1, 2, 3]);
     });
 });

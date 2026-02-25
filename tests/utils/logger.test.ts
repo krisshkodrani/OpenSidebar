@@ -1,4 +1,4 @@
-import { describe, test, expect, spyOn, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { logger } from "../../src/utils/logger";
 
 describe("Logger", () => {
@@ -9,11 +9,11 @@ describe("Logger", () => {
     let consoleGroupEndSpy: any;
 
     beforeEach(() => {
-        consoleLogSpy = spyOn(console, "log").mockImplementation(() => { });
-        consoleWarnSpy = spyOn(console, "warn").mockImplementation(() => { });
-        consoleErrorSpy = spyOn(console, "error").mockImplementation(() => { });
-        consoleGroupCollapsedSpy = spyOn(console, "groupCollapsed").mockImplementation(() => { });
-        consoleGroupEndSpy = spyOn(console, "groupEnd").mockImplementation(() => { });
+        consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+        consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+        consoleGroupCollapsedSpy = vi.spyOn(console, "groupCollapsed").mockImplementation(() => { });
+        consoleGroupEndSpy = vi.spyOn(console, "groupEnd").mockImplementation(() => { });
         // Ensure DEBUG is visible in tests
         logger.setLevel("DEBUG");
     });

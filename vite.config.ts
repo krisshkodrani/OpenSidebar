@@ -32,12 +32,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      exclude: ["sql.js", "@huggingface/transformers", "voy-search"],
+      exclude: ["@huggingface/transformers", "voy-search"],
     },
     build: {
       rollupOptions: {
         input: {
           offscreen: "src/offscreen/memory/index.html",
+          "trace-viewer": "src/trace-viewer/index.html",
         },
         external: [],
       },

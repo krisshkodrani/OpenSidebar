@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { analyzeTraceContractCompliance } from "../../evals/contract-compliance";
 
 describe("trace role contract compliance", () => {
