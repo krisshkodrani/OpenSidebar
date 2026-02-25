@@ -110,6 +110,12 @@ async function main(): Promise<void> {
     console.log(`\n[dev:stack] Received ${signal}. Stopping child processes...`);
     killTree(dev);
     if (logs) killTree(logs);
+    // Force exit after 2s — on Windows, force-killed cmd.exe shells
+    // don't always emit 'close', so the exited promises can hang forever.
+    setTimeout(() => {
+      console.log("[dev:stack] Force exit (child processes did not close in time).");
+      process.exit(0);
+    }, 2000).unref();
   };
 
   process.on("SIGINT", () => shutdown("SIGINT"));

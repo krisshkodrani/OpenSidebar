@@ -26,30 +26,8 @@ const dynamicTagEntries = new Map<
 /** CSS class for the injected label overlay */
 const LABEL_CLASS = "qsidebar-tag";
 
-/** Pixels above/below viewport to include (peripheral vision) */
-const VIEWPORT_EXPANSION = 500;
-
-/** Default hard cap on tagged elements per snapshot */
-export const MAX_TAGGED_ELEMENTS = 50;
-
-/** Elevated cap for pages with drag-and-drop elements */
-const MAX_TAGGED_ELEMENTS_DND = 75;
-
-/** Return effective cap: raised for DnD pages to ensure drop zones are tagged */
-function getEffectiveCap(candidates: Element[]): number {
-  const hasDraggable = candidates.some(
-    (el) => el.getAttribute("draggable") === "true",
-  );
-  const hasDropzone = candidates.some(
-    (el) =>
-      el.hasAttribute("dropzone") ||
-      (el as HTMLElement).dataset?.droptarget ||
-      (el as HTMLElement).dataset?.dropzone,
-  );
-  return hasDraggable || hasDropzone
-    ? MAX_TAGGED_ELEMENTS_DND
-    : MAX_TAGGED_ELEMENTS;
-}
+/** Safety backstop — cap tagged elements to prevent runaway DOMs from eating context */
+export const MAX_TAGGED_ELEMENTS = 1000;
 
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
 const MAX_SHADOW_DEPTH = 3;
@@ -588,10 +566,8 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
 
   const results: TaggedElement[] = [];
   const activeHashes = new Set<string>();
-  const effectiveCap = getEffectiveCap(allCandidates);
-
   for (const el of allCandidates) {
-    if (results.length >= effectiveCap) break;
+    if (results.length >= MAX_TAGGED_ELEMENTS) break;
     // Visibility already pre-filtered by collapseNearIdentical pipeline
 
     // Compute stable hash and get/allocate a stable ID
@@ -675,7 +651,7 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
     }
     if (!isElementVisible(entry.el)) continue; // Hidden but might reappear — keep entry
     // Allow up to 5 overflow slots beyond effective cap for pinned dynamic tags
-    if (results.length >= effectiveCap + 5) break;
+    if (results.length >= MAX_TAGGED_ELEMENTS + 5) break;
 
     const hash = idToHash.get(id);
     if (hash) activeHashes.add(hash);
@@ -735,15 +711,6 @@ export function isElementVisible(el: Element): boolean {
 
   // Must not be clipped entirely
   if (style.clip === "rect(0px, 0px, 0px, 0px)") return false;
-
-  // Viewport-relative filtering with expansion margin
-  const viewportTop = -VIEWPORT_EXPANSION;
-  const viewportBottom = window.innerHeight + VIEWPORT_EXPANSION;
-  const viewportLeft = 0;
-  const viewportRight = window.innerWidth;
-
-  if (rect.bottom < viewportTop || rect.top > viewportBottom) return false;
-  if (rect.right < viewportLeft || rect.left > viewportRight) return false;
 
   return true;
 }
