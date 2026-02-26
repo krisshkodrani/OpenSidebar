@@ -22,6 +22,9 @@ import {
   readSessionIndex,
   readPromptFile,
   loadApiKeys,
+  PLANNER_GOLDEN_DIR,
+  CONTEXT_GOLDEN_DIR,
+  STAGNATION_GOLDEN_DIR,
   type ApiKeys,
 } from "./utils";
 import { analyzeSessionsContractCompliance } from "./contract-compliance";
@@ -36,6 +39,25 @@ import {
 } from "./perception-extractor";
 import { runPerceptionEvals, type PerceptionProvider } from "./perception-runner";
 import { buildPerceptionReport } from "./perception-report";
+import {
+  extractAndSavePlannerCase,
+  extractPlannerCasesFromSessions,
+  extractValidateDoneCases,
+} from "./planner-extractor";
+import { runPlannerEvals } from "./planner-runner";
+import { buildPlannerReport } from "./planner-report";
+import {
+  extractAndSaveContextCase,
+  extractContextCasesFromSession,
+} from "./context-extractor";
+import { runContextEvals } from "./context-runner";
+import { buildContextReport } from "./context-report";
+import {
+  extractAndSaveStagnationCase,
+  extractStagnationCasesFromSessions,
+} from "./stagnation-extractor";
+import { runStagnationEvals } from "./stagnation-runner";
+import { buildStagnationReport } from "./stagnation-report";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -111,6 +133,33 @@ async function main() {
       break;
     case "perception-critique":
       await cmdPerceptionCritique(args.slice(1));
+      break;
+    case "planner-extract":
+      cmdPlannerExtract(args.slice(1));
+      break;
+    case "planner-extract-all":
+      cmdPlannerExtractAll(args.slice(1));
+      break;
+    case "planner-critique":
+      await cmdPlannerCritique(args.slice(1));
+      break;
+    case "context-extract":
+      cmdContextExtract(args.slice(1));
+      break;
+    case "context-extract-all":
+      cmdContextExtractAll(args.slice(1));
+      break;
+    case "context-critique":
+      await cmdContextCritique(args.slice(1));
+      break;
+    case "stagnation-extract":
+      cmdStagnationExtract(args.slice(1));
+      break;
+    case "stagnation-extract-all":
+      cmdStagnationExtractAll(args.slice(1));
+      break;
+    case "stagnation-critique":
+      await cmdStagnationCritique(args.slice(1));
       break;
     case "help":
     default:
@@ -792,6 +841,266 @@ async function cmdPerceptionCritique(args: string[]) {
   console.log(`Report: ${mdPath}`);
 }
 
+// ── Planner pipeline commands ────────────────────────────────────────
+
+function cmdPlannerExtract(args: string[]) {
+  const sessionId = args[0];
+  if (!sessionId) {
+    console.error("Usage: evals planner-extract <session-id> [--id <id>] [--method <decompose|validateDone>] [--dimension <d>] [--difficulty <d>]");
+    process.exit(1);
+  }
+
+  const idIdx = args.indexOf("--id");
+  const id = idIdx !== -1 ? args[idIdx + 1] : undefined;
+  const methodIdx = args.indexOf("--method");
+  const method = methodIdx !== -1 ? args[methodIdx + 1] as "decompose" | "validateDone" : undefined;
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] as any : undefined;
+  const diffIdx = args.indexOf("--difficulty");
+  const difficulty = diffIdx !== -1 ? args[diffIdx + 1] as any : undefined;
+
+  if (method === "validateDone") {
+    const cases = extractValidateDoneCases(sessionId);
+    if (cases.length === 0) {
+      console.log("No validateDone cases found in this session.");
+      return;
+    }
+    if (!existsSync(PLANNER_GOLDEN_DIR)) mkdirSync(PLANNER_GOLDEN_DIR, { recursive: true });
+    for (const evalCase of cases) {
+      const outPath = join(PLANNER_GOLDEN_DIR, `${evalCase.id}.json`);
+      writeFileSync(outPath, JSON.stringify(evalCase, null, 2), "utf-8");
+      console.log(`${c.green}Extracted${c.reset}: ${outPath}`);
+    }
+    return;
+  }
+
+  const outputPath = extractAndSavePlannerCase(sessionId, { id, method, dimension, difficulty });
+  console.log(`${c.green}Planner case extracted${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+function cmdPlannerExtractAll(args: string[]) {
+  const maxIdx = args.indexOf("--max");
+  const max = maxIdx !== -1 ? parseInt(args[maxIdx + 1], 10) : 10;
+
+  const cases = extractPlannerCasesFromSessions({ max });
+  if (cases.length === 0) {
+    console.log("No sessions with plan decompositions found.");
+    return;
+  }
+
+  // PLANNER_GOLDEN_DIR imported at top level
+  if (!existsSync(PLANNER_GOLDEN_DIR)) mkdirSync(PLANNER_GOLDEN_DIR, { recursive: true });
+
+  for (const evalCase of cases) {
+    const outPath = join(PLANNER_GOLDEN_DIR, `${evalCase.id}.json`);
+    writeFileSync(outPath, JSON.stringify(evalCase, null, 2), "utf-8");
+    console.log(`${c.green}Extracted${c.reset}: ${evalCase.id}`);
+  }
+  console.log(`\n${cases.length} planner case(s) extracted.`);
+}
+
+async function cmdPlannerCritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
+  const methodIdx = args.indexOf("--method");
+  const method = methodIdx !== -1 ? args[methodIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readPlannerEvalCases } = await import("./utils");
+  const cases = readPlannerEvalCases();
+
+  const results = await runPlannerEvals({
+    keys,
+    dimension,
+    method,
+    judge: judgeFlag,
+    outDir: join(outDir, "planner"),
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildPlannerReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `planner-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Planner: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+// ── Context pipeline commands ────────────────────────────────────────
+
+function cmdContextExtract(args: string[]) {
+  const sessionId = args[0];
+  const turnStr = args[1];
+  if (!sessionId || !turnStr) {
+    console.error("Usage: evals context-extract <session-id> <turn> [--id <id>] [--dimension <d>] [--difficulty <d>]");
+    process.exit(1);
+  }
+
+  const turnNumber = parseInt(turnStr, 10);
+  if (isNaN(turnNumber)) {
+    console.error(`Invalid turn number: ${turnStr}`);
+    process.exit(1);
+  }
+
+  const idIdx = args.indexOf("--id");
+  const id = idIdx !== -1 ? args[idIdx + 1] : undefined;
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] as any : undefined;
+  const diffIdx = args.indexOf("--difficulty");
+  const difficulty = diffIdx !== -1 ? args[diffIdx + 1] as any : undefined;
+
+  const outputPath = extractAndSaveContextCase(sessionId, turnNumber, { id, dimension, difficulty });
+  console.log(`${c.green}Context case extracted${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+function cmdContextExtractAll(args: string[]) {
+  const sessionId = args[0];
+  if (!sessionId) {
+    console.error("Usage: evals context-extract-all <session-id> [--max <n>]");
+    process.exit(1);
+  }
+
+  const maxIdx = args.indexOf("--max");
+  const max = maxIdx !== -1 ? parseInt(args[maxIdx + 1], 10) : 10;
+
+  const cases = extractContextCasesFromSession(sessionId, { max });
+  if (cases.length === 0) {
+    console.log("No context cases extracted (session may be too short).");
+    return;
+  }
+
+  // CONTEXT_GOLDEN_DIR imported at top level
+  if (!existsSync(CONTEXT_GOLDEN_DIR)) mkdirSync(CONTEXT_GOLDEN_DIR, { recursive: true });
+
+  for (const evalCase of cases) {
+    const outPath = join(CONTEXT_GOLDEN_DIR, `${evalCase.id}.json`);
+    writeFileSync(outPath, JSON.stringify(evalCase, null, 2), "utf-8");
+    console.log(`${c.green}Extracted${c.reset}: ${evalCase.id}`);
+  }
+  console.log(`\n${cases.length} context case(s) extracted.`);
+}
+
+async function cmdContextCritique(args: string[]) {
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  const { readContextEvalCases } = await import("./utils");
+  const cases = readContextEvalCases();
+
+  const results = await runContextEvals({
+    dimension,
+    outDir: join(outDir, "context"),
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildContextReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `context-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Context: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+// ── Stagnation pipeline commands ─────────────────────────────────────
+
+function cmdStagnationExtract(args: string[]) {
+  const sessionId = args[0];
+  if (!sessionId) {
+    console.error("Usage: evals stagnation-extract <session-id> [--id <id>] [--dimension <d>] [--difficulty <d>]");
+    process.exit(1);
+  }
+
+  const idIdx = args.indexOf("--id");
+  const id = idIdx !== -1 ? args[idIdx + 1] : undefined;
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] as any : undefined;
+  const diffIdx = args.indexOf("--difficulty");
+  const difficulty = diffIdx !== -1 ? args[diffIdx + 1] as any : undefined;
+
+  const outputPath = extractAndSaveStagnationCase(sessionId, { id, dimension, difficulty });
+  console.log(`${c.green}Stagnation case extracted${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+function cmdStagnationExtractAll(args: string[]) {
+  const maxIdx = args.indexOf("--max");
+  const max = maxIdx !== -1 ? parseInt(args[maxIdx + 1], 10) : 10;
+
+  const cases = extractStagnationCasesFromSessions({ max });
+  if (cases.length === 0) {
+    console.log("No sessions found for stagnation extraction.");
+    return;
+  }
+
+  // STAGNATION_GOLDEN_DIR imported at top level
+  if (!existsSync(STAGNATION_GOLDEN_DIR)) mkdirSync(STAGNATION_GOLDEN_DIR, { recursive: true });
+
+  for (const evalCase of cases) {
+    const outPath = join(STAGNATION_GOLDEN_DIR, `${evalCase.id}.json`);
+    writeFileSync(outPath, JSON.stringify(evalCase, null, 2), "utf-8");
+    console.log(`${c.green}Extracted${c.reset}: ${evalCase.id}`);
+  }
+  console.log(`\n${cases.length} stagnation case(s) extracted.`);
+}
+
+async function cmdStagnationCritique(args: string[]) {
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  const { readStagnationEvalCases } = await import("./utils");
+  const cases = readStagnationEvalCases();
+
+  const results = await runStagnationEvals({
+    dimension,
+    outDir: join(outDir, "stagnation"),
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildStagnationReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `stagnation-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Stagnation: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
 function cmdHelp() {
   console.log(`
 ${c.bold}Eval Pipeline CLI${c.reset}
@@ -877,6 +1186,45 @@ Perception workflow:
   3. Or batch: tsx evals/cli.ts perception-extract-all <session-id> --max 10
   4. Critique: npm run evals:perception
   5. Read report in evals/reports/
+
+Planner eval commands:
+  planner-extract <session-id> [options]  Extract planner case from session
+    --id <id>         Custom case ID
+    --method <m>      decompose (default) or validateDone
+    --dimension <d>   difficulty_accuracy, step_quality, coverage, done_validation
+    --difficulty <d>  easy, medium, or hard
+
+  planner-extract-all [--max <n>]        Batch-extract from all sessions with plans
+
+  planner-critique [options]             Replay, score, judge, generate report
+    --judge           Enable LLM-as-judge
+    --dimension <d>   Filter by dimension
+    --method <m>      Filter by method
+    --out <dir>       Output directory
+
+Context eval commands:
+  context-extract <session-id> <turn> [options]  Extract context compression case
+    --id <id>         Custom case ID
+    --dimension <d>   goal_amnesia, plan_integrity, tool_results, token_efficiency
+    --difficulty <d>  easy, medium, or hard
+
+  context-extract-all <session-id> [--max <n>]   Auto-extract at turn 30, 60, 100
+
+  context-critique [options]             Replay compression (no LLM), score, report
+    --dimension <d>   Filter by dimension
+    --out <dir>       Output directory
+
+Stagnation eval commands:
+  stagnation-extract <session-id> [options]      Extract stagnation case from session
+    --id <id>         Custom case ID
+    --dimension <d>   false_positive, false_negative, timing, url_handling
+    --difficulty <d>  easy, medium, or hard
+
+  stagnation-extract-all [--max <n>]     Batch-extract from all sessions
+
+  stagnation-critique [options]          Replay through StagnationMonitor, score, report
+    --dimension <d>   Filter by dimension
+    --out <dir>       Output directory
 `);
 }
 
