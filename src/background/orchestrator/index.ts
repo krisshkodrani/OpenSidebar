@@ -2389,8 +2389,8 @@ export class Orchestrator {
           // For single-node tasks, forward stream chunks directly to the side panel
           // so the user sees real-time content instead of just "Task completed."
           onStreamChunk: task.planClassification?.isSingleNode
-            ? (delta: string, done: boolean, replaceContent?: string) => {
-                if (delta || done || replaceContent !== undefined) {
+            ? (delta: string, done: boolean, replaceContent?: string, thinking?: string) => {
+                if (delta || done || replaceContent !== undefined || thinking) {
                   this.sendMessage({
                     type: "STREAM_CHUNK",
                     workspaceId: task.workspaceId,
@@ -2398,6 +2398,7 @@ export class Orchestrator {
                       delta,
                       done,
                       ...(replaceContent !== undefined ? { replaceContent } : {}),
+                      ...(thinking ? { thinking } : {}),
                     },
                   });
                 }

@@ -1,6 +1,6 @@
 import "../setup";
 import { describe, test, expect, beforeEach } from "vitest";
-import { perceive, type PerceptionInput } from "../../src/background/perception";
+import { perceive, parseCompletionSignal, type PerceptionInput } from "../../src/background/perception";
 import { computeSnapshotFingerprint, computeElementSignatures } from "../../src/background/agent/stagnation";
 import type { DomSnapshot, TaggedElement } from "../../src/types";
 
@@ -264,6 +264,167 @@ describe("perceive()", () => {
             cleanup();
             globalThis.fetch = originalFetch;
         }
+    });
+
+    test("uses orientation mode when no subtask provided", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LAYOUT: Test page.\n2. STATE: Idle.");
+        });
+        try {
+            const result = await perceive(makeInput({ objective: "buy shoes" }));
+            expect(result.mode).toBe("orientation");
+            // Orientation mode should contain the generic section marker
+            const parsed = JSON.parse(sentBody);
+            const promptText = parsed.messages[0].content[0].text;
+            expect(promptText).toContain("situational awareness");
+            expect(promptText).not.toContain("CURRENT SUBTASK");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("uses focused mode when subtask provided", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. SUBTASK_STATE: Form is empty.\n5. COMPLETION_SIGNAL: NOT_DONE — fields not filled");
+        });
+        try {
+            const result = await perceive(makeInput({
+                subtask: "Fill the shipping address form",
+                toolProfile: "form_fill",
+            }));
+            expect(result.mode).toBe("focused");
+            const parsed = JSON.parse(sentBody);
+            const promptText = parsed.messages[0].content[0].text;
+            expect(promptText).toContain("CURRENT SUBTASK: Fill the shipping address form");
+            expect(promptText).toContain("TOOL PROFILE: form_fill");
+            expect(promptText).not.toContain("situational awareness");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("falls back to orientation when subtask is too short", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        globalThis.fetch = mockFetch(() => {
+            return jsonResponse("1. LAYOUT: Test.");
+        });
+        try {
+            const result = await perceive(makeInput({ subtask: "do it" }));
+            expect(result.mode).toBe("orientation");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("parses COMPLETION_SIGNAL in focused mode", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        globalThis.fetch = mockFetch(() => {
+            return jsonResponse(
+                "1. SUBTASK_STATE: Form filled.\n" +
+                "2. ACTIONABLE: None — subtask complete.\n" +
+                "3. BLOCKERS: None.\n" +
+                "4. VISUAL-ONLY: None.\n" +
+                "5. COMPLETION_SIGNAL: DONE — Confirmation message visible."
+            );
+        });
+        try {
+            const result = await perceive(makeInput({
+                subtask: "Submit the checkout form",
+            }));
+            expect(result.completionSignal).toBeDefined();
+            expect(result.completionSignal?.status).toBe("done");
+            expect(result.completionSignal?.scope).toBe("subtask");
+            expect(result.completionSignal?.evidence).toContain("Confirmation");
+            // Backward compat
+            expect(result.objectiveCheck?.status).toBe("done");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("parses OBJECTIVE_CHECK in orientation mode", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        globalThis.fetch = mockFetch(() => {
+            return jsonResponse(
+                "1. LAYOUT: Confirmation page.\n" +
+                "6. OBJECTIVE_CHECK: DONE — Order confirmation #1234 visible."
+            );
+        });
+        try {
+            const result = await perceive(makeInput({ objective: "Buy red shoes" }));
+            expect(result.completionSignal).toBeDefined();
+            expect(result.completionSignal?.status).toBe("done");
+            expect(result.completionSignal?.scope).toBe("objective");
+            expect(result.completionSignal?.evidence).toContain("Order confirmation");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+});
+
+describe("parseCompletionSignal()", () => {
+    test("parses COMPLETION_SIGNAL: DONE", () => {
+        const result = parseCompletionSignal(
+            "5. COMPLETION_SIGNAL: DONE — Form submitted successfully.",
+            "subtask",
+        );
+        expect(result).toEqual({
+            status: "done",
+            evidence: "Form submitted successfully.",
+            scope: "subtask",
+        });
+    });
+
+    test("parses COMPLETION_SIGNAL: NOT_DONE", () => {
+        const result = parseCompletionSignal(
+            "5. COMPLETION_SIGNAL: NOT_DONE — Two fields still empty.",
+            "subtask",
+        );
+        expect(result?.status).toBe("not_done");
+        expect(result?.evidence).toContain("Two fields");
+    });
+
+    test("parses OBJECTIVE_CHECK: UNCLEAR", () => {
+        const result = parseCompletionSignal(
+            "6. OBJECTIVE_CHECK: UNCLEAR — Page is loading.",
+            "objective",
+        );
+        expect(result?.status).toBe("unclear");
+        expect(result?.scope).toBe("objective");
+    });
+
+    test("returns null when no signal found", () => {
+        const result = parseCompletionSignal("No matching content here.", "subtask");
+        expect(result).toBeNull();
+    });
+
+    test("handles em-dash separator", () => {
+        const result = parseCompletionSignal(
+            "COMPLETION_SIGNAL: DONE\u2014Confirmation visible.",
+            "subtask",
+        );
+        expect(result?.status).toBe("done");
+        expect(result?.evidence).toContain("Confirmation");
+    });
+
+    test("truncates long evidence to 200 chars", () => {
+        const longEvidence = "A".repeat(300);
+        const result = parseCompletionSignal(
+            `COMPLETION_SIGNAL: DONE — ${longEvidence}`,
+            "subtask",
+        );
+        expect(result?.evidence.length).toBeLessThanOrEqual(200);
     });
 });
 

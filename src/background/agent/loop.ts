@@ -15,7 +15,7 @@ import {
   ToolName,
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
-import { LLMClient, stripThinkTags } from "../llm";
+import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
 import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS, CACHEABLE_TOOLS, resolveToolProfile } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
@@ -32,7 +32,7 @@ import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
 import { estimateCostUsd } from "../llm/pricing";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel, buildElementResolver, ElementResolver } from "./step-labels";
 import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { parseNuisanceBlockers } from "./popup-triage";
@@ -618,7 +618,7 @@ export class AgentLoop {
   } | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
-  private onStreamChunk: ((delta: string, done: boolean, replaceContent?: string) => void) | null;
+  private onStreamChunk: ((delta: string, done: boolean, replaceContent?: string, thinking?: string) => void) | null;
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
@@ -692,6 +692,9 @@ export class AgentLoop {
 
   /** Content-addressed tool result cache */
   private toolCache = new ToolResultCache(TOOL_CACHE.MAX_SIZE);
+
+  /** Resolves element tag IDs to human-readable labels from current snapshot */
+  private elementResolver: ElementResolver | undefined;
 
   /** Consecutive turns where DOM-modifying tools had no observable effect */
   private consecutiveZeroEffectTurns = 0;
@@ -926,7 +929,7 @@ export class AgentLoop {
       suppressUiBroadcast?: boolean;
       /** Called for STREAM_CHUNK even when suppressUiBroadcast is true.
        *  Allows orchestrator to forward content for single-node tasks. */
-      onStreamChunk?: (delta: string, done: boolean, replaceContent?: string) => void;
+      onStreamChunk?: (delta: string, done: boolean, replaceContent?: string, thinking?: string) => void;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
@@ -1020,7 +1023,7 @@ export class AgentLoop {
     if (this.suppressUiBroadcast) {
       // Forward STREAM_CHUNK to callback even when UI broadcasts are suppressed
       if (msg.type === "STREAM_CHUNK" && this.onStreamChunk) {
-        this.onStreamChunk(msg.payload.delta, msg.payload.done, msg.payload.replaceContent);
+        this.onStreamChunk(msg.payload.delta, msg.payload.done, msg.payload.replaceContent, msg.payload.thinking);
       }
       return;
     }
@@ -1221,7 +1224,7 @@ export class AgentLoop {
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH) return true;
     if (this.bypassApprovals) {
-      const bypassContext = formatStepLabel(toolName, args);
+      const bypassContext = formatStepLabel(toolName, args, this.elementResolver);
       this.stepHandler(
         {
           id: crypto.randomUUID(),
@@ -1245,7 +1248,7 @@ export class AgentLoop {
       });
       return true;
     }
-    const context = formatStepLabel(toolName, args);
+    const context = formatStepLabel(toolName, args, this.elementResolver);
     const approved = await this.requestApproval(toolName, args, context);
     if (!approved) {
       this.log.warn("policy", "High-risk tool denied or timed out", {
@@ -1396,12 +1399,8 @@ export class AgentLoop {
     perceptionWarmup.consume(tabId);
 
     if (snapshot) {
-      if (initialSnapshot) {
-        this.context.setSnapshot(snapshot);
-      } else {
-        // Warmup or fallback snapshot — set it in context
-        this.context.setSnapshot(snapshot);
-      }
+      this.context.setSnapshot(snapshot);
+      this.elementResolver = buildElementResolver(snapshot.elements);
       // If snapshot was fetched via fallback/warmup, update trace startUrl
       if (!initialSnapshot && snapshot.url) {
         this.traceRecorder.setSessionInfo(initialUserText, snapshot.url);
@@ -1527,20 +1526,22 @@ export class AgentLoop {
               ? { ...(decomposition.limitOverrides as Record<string, number>) }
               : null,
           });
-          if (decomposition.subtasks.length >= 2 && decomposition.steps) {
-            this.traceRecorder?.setPlanDecomposition({
-              subtasks: decomposition.subtasks,
-              steps: decomposition.steps.map((s) => ({
-                objective: s.objective,
-                successCriteria: s.successCriteria,
-                dependencies: s.dependencies,
-                assumptions: s.assumptions,
-                ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
-                ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
-                ...(s.expectedState ? { expectedState: s.expectedState } : {}),
-              })),
-            });
-          }
+          this.traceRecorder?.setPlanDecomposition({
+            subtasks: decomposition.subtasks,
+            ...(decomposition.steps
+              ? {
+                  steps: decomposition.steps.map((s) => ({
+                    objective: s.objective,
+                    successCriteria: s.successCriteria,
+                    dependencies: s.dependencies,
+                    assumptions: s.assumptions,
+                    ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
+                    ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
+                    ...(s.expectedState ? { expectedState: s.expectedState } : {}),
+                  })),
+                }
+              : {}),
+          });
 
           if (decomposition.subtasks.length >= 2) {
             this.taskId = crypto.randomUUID();
@@ -1862,6 +1863,7 @@ export class AgentLoop {
       });
       if (snapResponse?.payload?.snapshot) {
         this.context.setSnapshot(snapResponse.payload.snapshot);
+        this.elementResolver = buildElementResolver(snapResponse.payload.snapshot.elements);
         return snapResponse.payload.snapshot.elements.length;
       }
     } catch {
@@ -1957,6 +1959,12 @@ export class AgentLoop {
       });
       this.lastScreenshotUrl = dataUrl;
 
+      // Resolve current subtask for goal-conditioned perception (focused mode)
+      const planStatus = this.context.getPlanStatusRaw();
+      const runningSubtask = planStatus?.subtasks.find(
+        (s: { status: string }) => s.status === "running",
+      );
+
       const result = await perceive(
         {
           screenshotDataUrl: dataUrl,
@@ -1965,6 +1973,8 @@ export class AgentLoop {
           title: snapshot.title,
           scroll: snapshot.scroll,
           objective: this.originalQuery || undefined,
+          subtask: runningSubtask?.description,
+          toolProfile: runningSubtask?.toolProfile,
         },
         this.abortController?.signal,
       );
@@ -2059,35 +2069,51 @@ export class AgentLoop {
     await this.refreshPerception(tabId);
     await this.triagePopups(tabId);
 
-    // Objective checkpoint: if perception reports the objective is done,
-    // inject a message giving the agent permission to stop.
-    // Only fire when no internal plan is active (plan monitor handles that case)
-    // and only once per fingerprint to avoid spam.
+    // Completion checkpoint: if perception reports completion, inject a message
+    // giving the agent permission to advance or call done().
+    // - Subtask-scoped signal (focused mode): only fire when plan IS active
+    // - Objective-scoped signal (orientation mode): only fire when no plan active
+    // Only once per fingerprint to avoid spam.
+    const signal = this.lastPerception?.completionSignal;
     if (
-      this.lastPerception?.objectiveCheck?.status === "done" &&
-      this.planSteps.length === 0 &&
+      signal?.status === "done" &&
       this.lastPerceptionFingerprint !== this.objectiveCheckpointFingerprint
     ) {
-      this.objectiveCheckpointFingerprint = this.lastPerceptionFingerprint;
-      const evidence = this.lastPerception.objectiveCheck.evidence;
-      this.context.addMessage({
-        role: "user",
-        content:
-          `CHECKPOINT: Visual perception indicates the objective may be satisfied.\n` +
-          `Original objective: "${this.originalQuery}"\n` +
-          `Evidence: ${evidence}\n` +
-          `If the objective is complete, call done() immediately. Do NOT continue to unrelated tasks.`,
-      });
-      this.log.info("agent", "Objective checkpoint injected", {
-        turn: this.turnCount,
-        evidence,
-        fingerprint: this.lastPerceptionFingerprint,
-      });
-      this.traceRecorder?.recordEvent("objective_checkpoint", {
-        status: "done",
-        evidence,
-        fingerprint: this.lastPerceptionFingerprint,
-      });
+      const isSubtaskSignal = signal.scope === "subtask";
+      const hasPlan = this.planSteps.length > 0;
+
+      // Subtask signals are relevant when a plan is active;
+      // objective signals are relevant when no plan is active
+      if (isSubtaskSignal === hasPlan) {
+        this.objectiveCheckpointFingerprint = this.lastPerceptionFingerprint;
+        const evidence = signal.evidence;
+        const label = isSubtaskSignal ? "subtask" : "objective";
+        const target = isSubtaskSignal
+          ? `Current subtask: "${this.lastPerception?.interpretation?.match(/SUBTASK_STATE:(.+)/)?.[1]?.trim() || "current step"}"`
+          : `Original objective: "${this.originalQuery}"`;
+        this.context.addMessage({
+          role: "user",
+          content:
+            `CHECKPOINT: Visual perception indicates the ${label} may be satisfied.\n` +
+            `${target}\n` +
+            `Evidence: ${evidence}\n` +
+            (isSubtaskSignal
+              ? `If the current subtask is complete, proceed to the next step or call done() if all steps are finished.`
+              : `If the objective is complete, call done() immediately. Do NOT continue to unrelated tasks.`),
+        });
+        this.log.info("agent", `Completion checkpoint injected (${label})`, {
+          turn: this.turnCount,
+          evidence,
+          scope: signal.scope,
+          fingerprint: this.lastPerceptionFingerprint,
+        });
+        this.traceRecorder?.recordEvent("completion_checkpoint", {
+          status: "done",
+          scope: signal.scope,
+          evidence,
+          fingerprint: this.lastPerceptionFingerprint,
+        });
+      }
     }
   }
 
@@ -2808,6 +2834,15 @@ export class AgentLoop {
         ? stripThinkTags(rawContent) || null
         : null;
 
+      // Extract thinking content and broadcast to UI before any done:true
+      const thinkingContent = rawContent ? extractThinkContent(rawContent) : null;
+      if (thinkingContent) {
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: false, thinking: thinkingContent },
+        });
+      }
+
       // Log LLM response summary for debugging
       const toolSummary =
         response.tool_calls?.map((tc) => {
@@ -2869,20 +2904,14 @@ export class AgentLoop {
         cleanContent?.slice(0, STRING_LIMITS.REASONING_LOG) || null;
 
       // 2. Add Assistant Message to History
-      this.context.addMessage({
-        role: "assistant",
-        content: response.content,
-        tool_calls: response.tool_calls
-          ? response.tool_calls.map((tc) => ({
-              id: tc.id,
-              type: "function",
-              function: {
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              },
-            }))
-          : undefined,
-      });
+      // For tool_calls path, deferred until after safety gate + batch cap
+      // so tool_calls in history match actual results (prevents 422 on next turn).
+      if (!response.tool_calls || response.tool_calls.length === 0) {
+        this.context.addMessage({
+          role: "assistant",
+          content: response.content,
+        });
+      }
 
       // Mark thinking step as done
       this.stepHandler(
@@ -2917,6 +2946,50 @@ export class AgentLoop {
         const validated = validateToolCalls(response.tool_calls);
         const blockedCalls = validated.filter((v) => v.blocked);
         const auditedCalls = validated.filter((v) => v.auditFlag);
+        for (const a of auditedCalls) {
+          this.traceRecorder?.recordEvent("safety_gate_audit", {
+            tool: a.original.function.name,
+            flag: a.auditFlag,
+            phase: "output",
+          });
+        }
+        const allowedToolCalls = validated
+          .filter((v) => !v.blocked)
+          .map((v) => v.original);
+
+        // Batch cap: limit parallel tool calls to prevent mega-turns
+        if (allowedToolCalls.length > BATCH_LIMITS.MAX_STEPS) {
+          this.log.warn("agent", "Parallel batch capped", {
+            requested: allowedToolCalls.length,
+            capped: BATCH_LIMITS.MAX_STEPS,
+          });
+          this.traceRecorder?.recordEvent("batch_cap_enforced", {
+            requested: allowedToolCalls.length,
+          });
+        }
+        response.tool_calls = allowedToolCalls.slice(0, BATCH_LIMITS.MAX_STEPS);
+
+        // Deferred assistant message: only includes tool_calls that will have
+        // corresponding results (blocked + batch-capped allowed). Prevents 422
+        // errors from orphaned tool_call IDs when batch cap discards excess calls.
+        const finalToolCalls = [
+          ...blockedCalls.map((b) => b.original),
+          ...response.tool_calls,
+        ];
+        this.context.addMessage({
+          role: "assistant",
+          content: response.content,
+          tool_calls: finalToolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          })),
+        });
+
+        // Add blocked tool results (after assistant message for correct ordering)
         for (const b of blockedCalls) {
           this.context.addMessage({
             role: "tool",
@@ -2929,32 +3002,9 @@ export class AgentLoop {
             phase: "output",
           });
         }
-        for (const a of auditedCalls) {
-          this.traceRecorder?.recordEvent("safety_gate_audit", {
-            tool: a.original.function.name,
-            flag: a.auditFlag,
-            phase: "output",
-          });
-        }
-        const allowedToolCalls = validated
-          .filter((v) => !v.blocked)
-          .map((v) => v.original);
-        if (allowedToolCalls.length === 0 && blockedCalls.length > 0) {
-          continue; // All tool calls blocked — retry
-        }
-        // Use the filtered list for dispatch
-        response.tool_calls = allowedToolCalls;
 
-        // Batch cap: limit parallel tool calls to prevent mega-turns
-        if (response.tool_calls.length > BATCH_LIMITS.MAX_STEPS) {
-          this.log.warn("agent", "Parallel batch capped", {
-            requested: response.tool_calls.length,
-            capped: BATCH_LIMITS.MAX_STEPS,
-          });
-          this.traceRecorder?.recordEvent("batch_cap_enforced", {
-            requested: response.tool_calls.length,
-          });
-          response.tool_calls = response.tool_calls.slice(0, BATCH_LIMITS.MAX_STEPS);
+        if (response.tool_calls.length === 0 && blockedCalls.length > 0) {
+          continue; // All tool calls blocked — retry
         }
 
         // Determine if we can parallelize: no sequential tools present
@@ -3099,7 +3149,7 @@ export class AgentLoop {
               const toolStep: AgentStep = {
                 id: crypto.randomUUID(),
                 type: "tool",
-                label: formatStepLabel(toolName, args),
+                label: formatStepLabel(toolName, args, this.elementResolver),
                 detail: JSON.stringify(args),
                 toolName,
                 status: "running",
@@ -3441,7 +3491,7 @@ export class AgentLoop {
                 {
                   id: crypto.randomUUID(),
                   type: "info",
-                  label: `Approval bypassed: ${formatStepLabel(toolName, args)}`,
+                  label: `Approval bypassed: ${formatStepLabel(toolName, args, this.elementResolver)}`,
                   status: "done",
                   timestamp: Date.now(),
                 },
@@ -3918,7 +3968,7 @@ export class AgentLoop {
                 {
                   id: crypto.randomUUID(),
                   type: "tool",
-                  label: formatStepLabel(toolName, args),
+                  label: formatStepLabel(toolName, args, this.elementResolver),
                   toolName,
                   status: "done",
                   timestamp: Date.now(),
@@ -4250,7 +4300,7 @@ export class AgentLoop {
             const toolStep: AgentStep = {
               id: toolStepId,
               type: "tool",
-              label: formatStepLabel(toolName, args),
+              label: formatStepLabel(toolName, args, this.elementResolver),
               detail: JSON.stringify(args),
               toolName,
               status: "running",

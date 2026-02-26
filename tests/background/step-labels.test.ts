@@ -42,7 +42,7 @@ describe("formatStepLabel", () => {
     });
 
     test("click_element shows tag ID", () => {
-        expect(formatStepLabel(ToolName.CLICK_ELEMENT, { id: 7 })).toBe("Click element [7]");
+        expect(formatStepLabel(ToolName.CLICK_ELEMENT, { id: 7 })).toBe("Click [7]");
     });
 
     test("navigate shows hostname", () => {
@@ -66,7 +66,7 @@ describe("formatStepLabel", () => {
     });
 
     test("hide_element shows tag ID", () => {
-        expect(formatStepLabel(ToolName.HIDE_ELEMENT, { id: 12 })).toBe("Hide element [12]");
+        expect(formatStepLabel(ToolName.HIDE_ELEMENT, { id: 12 })).toBe("Hide [12]");
     });
 
     test("read_element shows text by default", () => {
