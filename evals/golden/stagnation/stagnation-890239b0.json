@@ -1,0 +1,305 @@
+{
+  "id": "stagnation-890239b0",
+  "sourceSessionId": "890239b0-f5aa-47b0-a61d-2ee98d1bff73",
+  "input": {
+    "snapshots": [
+      {
+        "turnNumber": 2,
+        "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=2",
+        "title": "Browser Navigation Challenge - The Ultimate Test",
+        "elements": [
+          {
+            "tagName": "button",
+            "text": "Reveal Code",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Section",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Proceed Forward",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Close",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Close",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Moving!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          }
+        ]
+      },
+      {
+        "turnNumber": 3,
+        "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=2",
+        "title": "Browser Navigation Challenge - The Ultimate Test",
+        "elements": [
+          {
+            "tagName": "button",
+            "text": "Reveal Code",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Section",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Proceed Forward",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Close",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          }
+        ]
+      },
+      {
+        "turnNumber": 4,
+        "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=2",
+        "title": "Browser Navigation Challenge - The Ultimate Test",
+        "elements": [
+          {
+            "tagName": "button",
+            "text": "Reveal Code",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Page",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Next Section",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Proceed Forward",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Dismiss",
+            "attributes": {}
+          },
+          {
+            "tagName": "button",
+            "text": "Close",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Moving!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Try This!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          },
+          {
+            "tagName": "div",
+            "text": "Here!",
+            "attributes": {}
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "escalation": {
+      "shouldFire": false
+    },
+    "sessionWasStuck": false
+  },
+  "reference": {
+    "escalationEvents": [],
+    "sessionOutcome": "stopped",
+    "sessionTurnCount": 4
+  },
+  "metadata": {
+    "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=2",
+    "query": "Objective: Go to step 2\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (Router fallback)\n- Executor start (executor): Executor started objective: Go to step 2\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied.",
+    "difficulty": "medium",
+    "tags": [
+      "stagnation",
+      "not-stuck"
+    ],
+    "dimension": "false_positive"
+  }
+}

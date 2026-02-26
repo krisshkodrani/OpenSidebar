@@ -1,0 +1,41 @@
+{
+  "id": "stagnation-ff5d8ff4",
+  "sourceSessionId": "ff5d8ff4-a9d0-42d6-8f43-6ac7e1bfb979",
+  "input": {
+    "snapshots": [
+      {
+        "turnNumber": 1,
+        "url": "",
+        "title": "",
+        "elements": []
+      },
+      {
+        "turnNumber": 2,
+        "url": "",
+        "title": "",
+        "elements": []
+      }
+    ]
+  },
+  "expected": {
+    "escalation": {
+      "shouldFire": false
+    },
+    "sessionWasStuck": false
+  },
+  "reference": {
+    "escalationEvents": [],
+    "sessionOutcome": "stopped",
+    "sessionTurnCount": 2
+  },
+  "metadata": {
+    "url": "",
+    "query": "Objective: ok, find the way to navigate to step 2 by solving the puzzle in step 1. Stop once you reach step 2\nSuccess criteria: The subtask outcome for \"ok, find the way to navigate to step 2 by solving the puzzle in step 1. Stop once you reach step 2\" is verified on the page or in tool output.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Planner assigned objective: ok, find the way to navigate to step 2 by solving the puzzle in step 1. Stop once you reach step 2\n- Executor start (executor): Executor started objective: ok, find the way to navigate to step 2 by solving the puzzle in step 1. Stop once you reach step 2\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied.",
+    "difficulty": "medium",
+    "tags": [
+      "stagnation",
+      "not-stuck"
+    ],
+    "dimension": "false_positive"
+  }
+}
