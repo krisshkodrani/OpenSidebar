@@ -1,13 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { X } from "lucide-react";
 
 export interface DemoSaveData {
   name: string;
   description?: string;
   goal?: string;
-  preconditions?: string[];
   outcomeSignal?: string;
-  golden: boolean;
 }
 
 interface DemoSaveModalProps {
@@ -24,10 +21,7 @@ export function DemoSaveModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [goal, setGoal] = useState("");
-  const [preconditions, setPreconditions] = useState<string[]>([]);
-  const [preconditionInput, setPreconditionInput] = useState("");
   const [outcomeSignal, setOutcomeSignal] = useState("");
-  const [golden, setGolden] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,23 +34,9 @@ export function DemoSaveModal({
       name: trimmedName,
       description: description.trim() || undefined,
       goal: goal.trim() || undefined,
-      preconditions: preconditions.length > 0 ? preconditions : undefined,
       outcomeSignal: outcomeSignal.trim() || undefined,
-      golden,
     });
-  }, [name, description, goal, preconditions, outcomeSignal, golden, onSave]);
-
-  const addPrecondition = useCallback(() => {
-    const val = preconditionInput.trim();
-    if (val && !preconditions.includes(val)) {
-      setPreconditions((p) => [...p, val]);
-      setPreconditionInput("");
-    }
-  }, [preconditionInput, preconditions]);
-
-  const removePrecondition = useCallback((index: number) => {
-    setPreconditions((p) => p.filter((_, i) => i !== index));
-  }, []);
+  }, [name, description, goal, outcomeSignal, onSave]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -136,55 +116,6 @@ export function DemoSaveModal({
             />
           </div>
 
-          {/* Preconditions */}
-          <div>
-            <label className="block text-[11px] font-medium text-warm-600 dark:text-warm-400 mb-1">
-              Preconditions{" "}
-              <span className="text-warm-400 font-normal">optional</span>
-            </label>
-            {preconditions.length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-1.5">
-                {preconditions.map((p, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-warm-100 dark:bg-warm-800 text-warm-700 dark:text-warm-300 border border-warm-200 dark:border-warm-600"
-                  >
-                    {p}
-                    <button
-                      onClick={() => removePrecondition(i)}
-                      className="text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 ml-0.5"
-                    >
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-1">
-              <input
-                type="text"
-                value={preconditionInput}
-                onChange={(e) => setPreconditionInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    addPrecondition();
-                  }
-                }}
-                placeholder="e.g. Must be logged out"
-                className={inputClass + " flex-1"}
-              />
-              <button
-                onClick={addPrecondition}
-                disabled={!preconditionInput.trim()}
-                className="px-2 py-1 text-[10px] rounded bg-warm-100 dark:bg-warm-800 text-warm-600 dark:text-warm-300 hover:bg-warm-200 dark:hover:bg-warm-700 disabled:opacity-40 border border-warm-300 dark:border-warm-600"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
           {/* Outcome signal */}
           <div>
             <label className="block text-[11px] font-medium text-warm-600 dark:text-warm-400 mb-1">
@@ -200,18 +131,6 @@ export function DemoSaveModal({
             />
           </div>
 
-          {/* Golden checkbox */}
-          <label className="flex items-center gap-2 py-1 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={golden}
-              onChange={(e) => setGolden(e.target.checked)}
-              className="rounded border-warm-300 dark:border-warm-600 text-amber-500 focus:ring-amber-500/30"
-            />
-            <span className="text-xs text-warm-700 dark:text-warm-300">
-              Add to eval dataset
-            </span>
-          </label>
         </div>
 
         {/* Footer */}

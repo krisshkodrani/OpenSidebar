@@ -26,9 +26,8 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
 import { DemoStore } from "./demos/store";
-import { buildGoldenCases } from "./golden/builder";
-import type { GoldenAction } from "../types";
-import { toolRegistry } from "./tools/registry";
+import { RecordingSession } from "./recording-session";
+import { ManualModeHandler } from "./manual-mode";
 
 logger.info("system", "Service Worker Initialized");
 
@@ -77,10 +76,11 @@ let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSidePanelOpens = new Set<number>();
 let demoActionCounter = 0;
 
-// Golden recording state
-let goldenActive = false;
-let goldenActions: GoldenAction[] = [];
-let goldenScreenshot: string | null = null;
+// Recording session (replaces old golden state)
+let activeRecording: RecordingSession | null = null;
+
+// Manual mode handlers (per workspace)
+const manualHandlers = new Map<string, ManualModeHandler>();
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(
@@ -485,51 +485,131 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    // --- Manual Mode ---
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "MANUAL_TOOL_EXECUTE"
+    ) {
+      const wsId = message.workspaceId;
+      (async () => {
+        try {
+          // Reject if agent is running
+          if (orchestrator.hasActiveTasks()) {
+            chrome.runtime
+              .sendMessage({
+                type: "MANUAL_TOOL_RESULT",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                workspaceId: wsId ?? undefined,
+                payload: {
+                  command: message.payload.command,
+                  success: false,
+                  result: "Cannot use manual commands while agent is running. Stop the agent first.",
+                  durationMs: 0,
+                },
+              })
+              .catch(() => {});
+            return;
+          }
+
+          const resolvedWsId = await resolveWorkspaceId(
+            message.payload.tabId,
+            wsId,
+          );
+
+          // Get or create handler for this workspace
+          let handler = manualHandlers.get(resolvedWsId);
+          if (!handler) {
+            handler = new ManualModeHandler();
+            manualHandlers.set(resolvedWsId, handler);
+          }
+
+          const result = await handler.handleCommand(message.payload, resolvedWsId);
+
+          chrome.runtime
+            .sendMessage({
+              type: "MANUAL_TOOL_RESULT",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              workspaceId: resolvedWsId,
+              payload: result,
+            })
+            .catch(() => {});
+        } catch (e: any) {
+          logger.error("manual", "Manual command failed", { error: e.message });
+          chrome.runtime
+            .sendMessage({
+              type: "MANUAL_TOOL_RESULT",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              workspaceId: wsId ?? undefined,
+              payload: {
+                command: message.payload.command,
+                success: false,
+                result: `Error: ${e.message}`,
+                durationMs: 0,
+              },
+            })
+            .catch(() => {});
+        }
+      })();
+      return false;
+    }
+
     // --- Demo Recording ---
     if (
       message.source === MessageSource.SIDEPANEL &&
       message.type === "DEMO_RECORD_START"
     ) {
       const tabId = message.payload.tabId;
-      const isGolden = message.payload.golden === true;
       demoActionCounter = 0;
 
-      if (isGolden) {
-        goldenActive = true;
-        goldenActions = [];
-        goldenScreenshot = null;
-        // Capture initial screenshot
-        chrome.tabs
-          .captureVisibleTab({ format: "jpeg", quality: 70 })
-          .then((dataUrl) => {
-            goldenScreenshot = dataUrl;
-          })
-          .catch(() => {});
-      }
+      // Create RecordingSession
+      (async () => {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const startUrl = tab.url || "";
+          const wsId = await resolveWorkspaceId(tabId, null);
+          activeRecording = new RecordingSession(
+            `Recording ${new Date().toLocaleString()}`,
+            startUrl,
+            wsId,
+          );
+        } catch {
+          activeRecording = new RecordingSession(
+            `Recording ${new Date().toLocaleString()}`,
+            "",
+          );
+        }
 
-      chrome.tabs
-        .sendMessage(tabId, {
-          type: "DEMO_RECORD_START",
-          requestId: message.requestId,
-          source: MessageSource.BACKGROUND,
-          payload: { golden: isGolden },
-        })
-        .then(() => {
-          // Notify side panel that recording is active
-          chrome.runtime
-            .sendMessage({
-              type: "DEMO_RECORD_STATUS",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: { active: true, actionCount: 0 },
-            })
-            .catch(() => {});
-        })
-        .catch((err) => {
-          logger.warn("demos", "Failed to start recording", {
-            error: err?.message,
+        // Tell content script to start capturing (always golden mode)
+        chrome.tabs
+          .sendMessage(tabId, {
+            type: "DEMO_RECORD_START",
+            requestId: message.requestId,
+            source: MessageSource.BACKGROUND,
+            payload: { golden: true },
+          })
+          .then(() => {
+            chrome.runtime
+              .sendMessage({
+                type: "DEMO_RECORD_STATUS",
+                requestId: crypto.randomUUID(),
+                source: MessageSource.BACKGROUND,
+                payload: {
+                  active: true,
+                  actionCount: 0,
+                  sessionId: activeRecording?.sessionId,
+                },
+              })
+              .catch(() => {});
+          })
+          .catch((err) => {
+            logger.warn("demos", "Failed to start recording", {
+              error: err?.message,
+            });
           });
-        });
+      })();
       return false;
     }
 
@@ -542,11 +622,8 @@ chrome.runtime.onMessage.addListener(
       const {
         description: demoDesc,
         goal: demoGoal,
-        preconditions: demoPreconditions,
         outcomeSignal: demoOutcome,
-        golden: demoGolden,
       } = message.payload;
-      const wasGolden = demoGolden || goldenActive;
 
       chrome.tabs.sendMessage(
         tabId,
@@ -554,24 +631,23 @@ chrome.runtime.onMessage.addListener(
           type: "DEMO_RECORD_STOP",
           requestId: message.requestId,
           source: MessageSource.BACKGROUND,
-          payload: { golden: wasGolden },
+          payload: { golden: true },
         },
         async (response: any) => {
           try {
             const actions = response?.actions || [];
-            // Get current tab URL for the demo
             const tab = await chrome.tabs.get(tabId);
             const demoStore = new DemoStore();
             const demo = await demoStore.saveDemonstration({
               name: demoName,
               description: demoDesc,
               goal: demoGoal,
-              preconditions: demoPreconditions,
               outcomeSignal: demoOutcome,
               actions,
               url: tab.url || "",
             });
-            // Notify side panel
+
+            // Notify side panel: recording stopped
             chrome.runtime
               .sendMessage({
                 type: "DEMO_RECORD_STATUS",
@@ -589,48 +665,32 @@ chrome.runtime.onMessage.addListener(
               })
               .catch(() => {});
 
-            // Golden mode: build eval cases and POST to log server
-            if (wasGolden && goldenActions.length > 0) {
-              const tools = toolRegistry.getDefinitions();
-              const evalCases = buildGoldenCases(
-                goldenActions,
-                demoName,
-                goldenScreenshot,
-                tools,
-              );
-              // Fire-and-forget POST to log server
-              fetch("http://127.0.0.1:7589/golden", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: demoName, cases: evalCases }),
-              })
-                .then((res) => res.json())
-                .then((result: any) => {
-                  logger.info("golden", "Golden dataset saved", {
-                    filename: result.filename,
-                    caseCount: result.caseCount,
-                  });
-                  chrome.runtime
-                    .sendMessage({
-                      type: "GOLDEN_SAVED",
-                      requestId: crypto.randomUUID(),
-                      source: MessageSource.BACKGROUND,
-                      payload: {
-                        filename: result.filename,
-                        caseCount: result.caseCount,
-                      },
-                    })
-                    .catch(() => {});
-                })
-                .catch((err) => {
-                  logger.warn(
-                    "golden",
-                    "Failed to save golden dataset (log server down?)",
-                    {
-                      error: err?.message,
-                    },
-                  );
+            // Finalize via TraceRecorder (resilient queueing)
+            if (activeRecording) {
+              try {
+                const result = await activeRecording.finalize(demoName, demoGoal);
+                logger.info("recording", "Recording saved via TraceRecorder", {
+                  sessionId: result.sessionId,
+                  turnCount: result.turnCount,
+                  durationMs: result.durationMs,
                 });
+                chrome.runtime
+                  .sendMessage({
+                    type: "RECORDING_SAVED",
+                    requestId: crypto.randomUUID(),
+                    source: MessageSource.BACKGROUND,
+                    payload: {
+                      sessionId: result.sessionId,
+                      turnCount: result.turnCount,
+                      name: demoName,
+                    },
+                  })
+                  .catch(() => {});
+              } catch (err: any) {
+                logger.error("recording", "Failed to finalize recording", {
+                  error: err?.message,
+                });
+              }
             }
           } catch (err: any) {
             logger.error("demos", "Failed to save demo", {
@@ -645,10 +705,7 @@ chrome.runtime.onMessage.addListener(
               })
               .catch(() => {});
           } finally {
-            // Reset golden state
-            goldenActive = false;
-            goldenActions = [];
-            goldenScreenshot = null;
+            activeRecording = null;
           }
         },
       );
@@ -677,8 +734,14 @@ chrome.runtime.onMessage.addListener(
       message.source === MessageSource.CONTENT &&
       message.type === "GOLDEN_ACTION"
     ) {
-      if (goldenActive) {
-        goldenActions.push(message.payload.goldenAction);
+      if (activeRecording) {
+        activeRecording
+          .recordAction(message.payload.goldenAction)
+          .catch((err) => {
+            logger.warn("recording", "Failed to record action", {
+              error: err?.message,
+            });
+          });
       }
       demoActionCounter++;
       chrome.runtime
@@ -686,7 +749,11 @@ chrome.runtime.onMessage.addListener(
           type: "DEMO_RECORD_STATUS",
           requestId: crypto.randomUUID(),
           source: MessageSource.BACKGROUND,
-          payload: { active: true, actionCount: demoActionCounter },
+          payload: {
+            active: true,
+            actionCount: demoActionCounter,
+            sessionId: activeRecording?.sessionId,
+          },
         })
         .catch(() => {});
       return false;
@@ -697,36 +764,42 @@ chrome.runtime.onMessage.addListener(
       message.source === MessageSource.SIDEPANEL &&
       message.type === "GOLDEN_ANNOTATION"
     ) {
-      if (goldenActive) {
-        const lastUrl =
-          goldenActions.length > 0
-            ? goldenActions[goldenActions.length - 1].action.url
-            : "";
+      if (activeRecording) {
         const stubSnapshot = {
           title: "",
-          url: lastUrl,
-          elements: [],
+          url: "",
+          elements: [] as any[],
           visibleContent: "",
           viewport: { width: 0, height: 0 },
           scroll: { x: 0, y: 0, maxY: 0 },
         };
-        goldenActions.push({
-          action: {
-            type: "annotate",
-            timestamp: Date.now(),
-            url: lastUrl,
-            value: message.payload.text,
-          },
-          tagId: null,
-          snapshot: stubSnapshot,
-        });
+        activeRecording
+          .recordAction({
+            action: {
+              type: "annotate",
+              timestamp: Date.now(),
+              url: "",
+              value: message.payload.text,
+            },
+            tagId: null,
+            snapshot: stubSnapshot,
+          })
+          .catch((err) => {
+            logger.warn("recording", "Failed to record annotation", {
+              error: err?.message,
+            });
+          });
         demoActionCounter++;
         chrome.runtime
           .sendMessage({
             type: "DEMO_RECORD_STATUS",
             requestId: crypto.randomUUID(),
             source: MessageSource.BACKGROUND,
-            payload: { active: true, actionCount: demoActionCounter },
+            payload: {
+              active: true,
+              actionCount: demoActionCounter,
+              sessionId: activeRecording?.sessionId,
+            },
           })
           .catch(() => {});
       }
@@ -927,3 +1000,4 @@ async function restoreWorkspacesFromExistingGroups() {
     });
   }
 }
+
