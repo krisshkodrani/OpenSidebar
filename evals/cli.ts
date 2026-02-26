@@ -15,13 +15,14 @@
  */
 
 import { convertSession, convertRun } from "./converter";
-import { runEvals, replayCase } from "./runner";
+import { runEvals, replayCase, type EvalProvider } from "./runner";
 import {
   readEvalResults,
   readEvalCases,
   readSessionIndex,
   readPromptFile,
-  loadApiKey,
+  loadApiKeys,
+  type ApiKeys,
 } from "./utils";
 import { analyzeSessionsContractCompliance } from "./contract-compliance";
 import { extractAndSave } from "./extractor";
@@ -29,6 +30,12 @@ import { judgeCase } from "./judge";
 import { scoreToolNameMatch, scoreToolParamMatch, scoreSequenceMatch } from "./scorer";
 import { buildCritiqueReport } from "./report";
 import type { EvalCase, EvalResult } from "./types";
+import {
+  extractAndSavePerceptionCase,
+  extractPerceptionCasesFromSession,
+} from "./perception-extractor";
+import { runPerceptionEvals, type PerceptionProvider } from "./perception-runner";
+import { buildPerceptionReport } from "./perception-report";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -95,6 +102,15 @@ async function main() {
       break;
     case "regression":
       await cmdRegression(args.slice(1));
+      break;
+    case "perception-extract":
+      cmdPerceptionExtract(args.slice(1));
+      break;
+    case "perception-extract-all":
+      await cmdPerceptionExtractAll(args.slice(1));
+      break;
+    case "perception-critique":
+      await cmdPerceptionCritique(args.slice(1));
       break;
     case "help":
     default:
@@ -639,6 +655,143 @@ async function cmdRegression(args: string[]) {
   process.exit(failed ? 1 : 0);
 }
 
+function cmdPerceptionExtract(args: string[]) {
+  const sessionId = args[0];
+  const turnStr = args[1];
+  if (!sessionId || !turnStr) {
+    console.error(
+      "Usage: evals perception-extract <session-id> <turn> [--id <id>] [--dimension <d>] [--difficulty <d>] [--notes <text>] [--page-type <t>] [--signal <status>]",
+    );
+    process.exit(1);
+  }
+
+  const turnNumber = parseInt(turnStr, 10);
+  if (isNaN(turnNumber)) {
+    console.error(`Invalid turn number: ${turnStr}`);
+    process.exit(1);
+  }
+
+  const getArg = (flag: string) => {
+    const idx = args.indexOf(flag);
+    return idx !== -1 ? args[idx + 1] : undefined;
+  };
+
+  const signalStatus = getArg("--signal");
+  const signal = signalStatus
+    ? {
+        status: signalStatus as "done" | "not_done" | "unclear",
+        scope: "subtask" as const,
+      }
+    : undefined;
+
+  const outputPath = extractAndSavePerceptionCase(sessionId, turnNumber, {
+    id: getArg("--id"),
+    dimension: getArg("--dimension") as any,
+    difficulty: getArg("--difficulty") as any,
+    notes: getArg("--notes"),
+    pageType: getArg("--page-type"),
+    signal,
+  });
+
+  console.log(`${c.green}Perception case extracted${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+async function cmdPerceptionExtractAll(args: string[]) {
+  const sessionId = args[0];
+  if (!sessionId) {
+    console.error("Usage: evals perception-extract-all <session-id> [--max <n>]");
+    process.exit(1);
+  }
+
+  const maxIdx = args.indexOf("--max");
+  const max = maxIdx !== -1 ? parseInt(args[maxIdx + 1], 10) : undefined;
+
+  const cases = extractPerceptionCasesFromSession(sessionId, { max });
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No perception turns found in session${c.reset}`);
+    return;
+  }
+
+  // Save all cases
+  const { PERCEPTION_GOLDEN_DIR } = await import("./utils");
+
+  if (!existsSync(PERCEPTION_GOLDEN_DIR)) {
+    mkdirSync(PERCEPTION_GOLDEN_DIR, { recursive: true });
+  }
+
+  for (const evalCase of cases) {
+    const filename = `${evalCase.id}.json`;
+    const outputPath = join(PERCEPTION_GOLDEN_DIR, filename);
+    writeFileSync(outputPath, JSON.stringify(evalCase, null, 2), "utf-8");
+  }
+
+  console.log(
+    `${c.green}Extracted ${cases.length} perception case(s)${c.reset}`,
+  );
+}
+
+async function cmdPerceptionCritique(args: string[]) {
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : "both";
+  if (!["groq", "openrouter", "both"].includes(providerArg)) {
+    console.error(
+      `${c.red}Invalid provider: ${providerArg}. Use "groq", "openrouter", or "both".${c.reset}`,
+    );
+    process.exit(1);
+  }
+
+  const dimIdx = args.indexOf("--dimension");
+  const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
+  const judgeEnabled = args.includes("--judge");
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  console.log(
+    `${c.bold}Running perception critique [provider: ${providerArg}]${c.reset}\n`,
+  );
+
+  const { readPerceptionEvalCases } = await import("./utils");
+  const cases = readPerceptionEvalCases();
+
+  const results = await runPerceptionEvals({
+    keys,
+    provider: providerArg as PerceptionProvider,
+    dimension,
+    judge: judgeEnabled,
+    outDir: join("evals", "results", "perception"),
+  });
+
+  if (results.length === 0) {
+    console.log(`${c.yellow}No results produced${c.reset}`);
+    return;
+  }
+
+  // Generate report
+  const report = buildPerceptionReport({ cases, results });
+  mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `perception-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(
+    `\n${c.bold}Results: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`,
+  );
+  console.log(`Report: ${mdPath}`);
+}
+
 function cmdHelp() {
   console.log(`
 ${c.bold}Eval Pipeline CLI${c.reset}
@@ -676,9 +829,31 @@ Commands:
   critique [options]
     Unified critique: load golden cases, replay, score, judge, generate report
     Options:
-      --model <m>    Override replay model
-      --tag <p>      Filter by pathology tag
-      --out <dir>    Output directory (default: evals/reports)
+      --model <m>           Override replay model
+      --tag <p>             Filter by pathology tag
+      --out <dir>           Output directory (default: evals/reports)
+      --provider <p>        Force provider: cerebras or openrouter (auto-selects cerebras if key present)
+
+  perception-extract <session-id> <turn> [options]
+    Extract a perception eval case from a trace turn
+    Options:
+      --id <case-id>          Custom case ID
+      --dimension <d>         Dimension tag (accuracy, blockers, etc.)
+      --difficulty <d>        easy, medium, or hard
+      --notes <text>          Notes for the case
+      --page-type <type>      Page type description
+      --signal <status>       Expected completion signal (done, not_done, unclear)
+
+  perception-extract-all <session-id> [--max <n>]
+    Batch-extract all perception turns from a session
+
+  perception-critique [options]
+    Replay perception cases, score, judge, generate comparison report
+    Options:
+      --provider <p>          groq, openrouter, or both (default: both)
+      --dimension <d>         Filter by dimension tag
+      --judge                 Enable LLM-as-judge
+      --out <dir>             Output directory (default: evals/reports)
 
   results [--session <id>]                Show eval results
   stats                                   Aggregate statistics
@@ -695,6 +870,13 @@ Workflow:
   2. Extract golden cases: npm run evals extract <session-id> <turn> --tag <pathology>
   3. Critique: npm run evals:critique
   4. Read report in evals/reports/
+
+Perception workflow:
+  1. Record traces with perception data (screenshots)
+  2. Extract: tsx evals/cli.ts perception-extract <session-id> <turn> --dimension accuracy
+  3. Or batch: tsx evals/cli.ts perception-extract-all <session-id> --max 10
+  4. Critique: npm run evals:perception
+  5. Read report in evals/reports/
 `);
 }
 
@@ -766,6 +948,26 @@ async function cmdCritique(args: string[]) {
   const tagFilter = tagIdx !== -1 ? args[tagIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as EvalProvider : undefined;
+  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+
+  // Load current system prompt instructions to inject into replays.
+  // Golden cases have stale prompts baked in from trace extraction —
+  // we replace the instructions portion while keeping original page context.
+  const promptPath = join("prompts", "runtime", "agent", "system.md");
+  let currentPrompt: string | undefined;
+  if (existsSync(promptPath)) {
+    const raw = readFileSync(promptPath, "utf-8");
+    // Strip YAML front-matter and template variables
+    let cleaned = raw.replace(/^---[\s\S]*?---\n?/, "").trim();
+    // Remove template placeholders that won't be rendered ({{var}} lines)
+    cleaned = cleaned.replace(/^\{\{[^}]+\}\}$/gm, "").replace(/\n{3,}/g, "\n\n");
+    currentPrompt = cleaned.trim();
+  }
 
   // 1. Load golden cases from evals/golden/
   const goldenDir = join("evals", "golden");
@@ -807,15 +1009,17 @@ async function cmdCritique(args: string[]) {
     process.exit(1);
   }
 
-  console.log(`${c.bold}Running critique on ${cases.length} golden case(s)${c.reset}\n`);
-
-  let apiKey: string;
+  let keys: ApiKeys;
   try {
-    apiKey = loadApiKey();
+    keys = loadApiKeys();
   } catch (err: any) {
     console.error(`${c.red}${err.message}${c.reset}`);
     process.exit(1);
   }
+
+  const provider: EvalProvider = providerArg ?? (keys.cerebras ? "cerebras" : "openrouter");
+
+  console.log(`${c.bold}Running critique on ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
   const results: EvalResult[] = [];
 
@@ -832,8 +1036,8 @@ async function cmdCritique(args: string[]) {
     let result: EvalResult;
 
     try {
-      // 3. Replay
-      const actual = await replayCase(apiKey, evalCase, replayModel);
+      // 3. Replay (inject current system prompt so prompt edits are tested)
+      const actual = await replayCase(keys, evalCase, replayModel, currentPrompt, provider);
       const durationMs = Date.now() - start;
 
       // 4. Score
@@ -864,7 +1068,7 @@ async function cmdCritique(args: string[]) {
 
       // 5. Judge every case (not just failures)
       try {
-        result.scores.judge = await judgeCase(apiKey, evalCase, actual);
+        result.scores.judge = await judgeCase(keys.openrouter, evalCase, actual);
         if (result.scores.judge.pass && result.status === "fail") {
           result.status = "pass"; // Judge override
         }

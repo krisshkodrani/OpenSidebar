@@ -16,6 +16,8 @@ export type PromptId =
   | "evals.judge.system"
   | "evals.judge.user"
   | "evals.critique.llm_template"
+  | "evals.perception_judge.system"
+  | "evals.perception_judge.user"
   | "ui.saved_prompt.summarize_page"
   | "ui.saved_prompt.extract_links"
   | "ui.saved_prompt.fill_form";
