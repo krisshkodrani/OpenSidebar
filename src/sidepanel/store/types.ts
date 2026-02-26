@@ -25,6 +25,7 @@ export interface ChatSlice {
   addMessage: (msg: ChatEntry) => void;
   appendStreamDelta: (delta: string) => void;
   replaceStreamContent: (content: string) => void;
+  setStreamThinking: (thinking: string) => void;
   finalizeStream: (citations?: Citation[]) => void;
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;
@@ -95,11 +96,13 @@ export interface UiSlice {
   activeWorkspaceId: string | null;
   demoRecording: boolean;
   demoActionCount: number;
+  manualRecording: { sessionId: string; turnCount: number; name: string } | null;
   setReady: () => void;
   togglePlanBoard: () => void;
   setError: (error: string | null) => void;
   setActiveWorkspaceId: (id: string | null) => void;
   setDemoRecording: (active: boolean, actionCount?: number) => void;
+  setManualRecording: (r: { sessionId: string; turnCount: number; name: string } | null) => void;
 }
 
 // --- Combined Store ---

@@ -9,6 +9,7 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
   activeWorkspaceId: null,
   demoRecording: false,
   demoActionCount: 0,
+  manualRecording: null,
 
   setReady: () =>
     set((state) => {
@@ -52,5 +53,10 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
     set((state) => {
       state.demoRecording = active;
       if (actionCount !== undefined) state.demoActionCount = actionCount;
+    }),
+
+  setManualRecording: (r) =>
+    set((state) => {
+      state.manualRecording = r;
     }),
 });

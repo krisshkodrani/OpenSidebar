@@ -20,7 +20,7 @@ export function Header({
       </div>
 
       <span className="text-xs font-semibold text-warm-400 dark:text-warm-500 tracking-wide select-none">
-        OS
+        OpenSidebar
       </span>
 
       <div className="flex items-center gap-0.5">
