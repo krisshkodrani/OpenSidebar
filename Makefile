@@ -1,15 +1,17 @@
 # OpenSidebar — developer commands
 # Requires: node, npm, make (GNU Make)
 
-.PHONY: dev build lint test fmt clean logs viewer traces evals help
+.PHONY: dev build test lint fmt logs traces \
+	evals-critique evals-extract evals-validate \
+	clean help
 
 # ── Primary workflows ────────────────────────────────────────────
 
-## Start full dev stack (build + log server + Vite HMR). Traces are captured.
+## Full dev stack: Vite HMR + log server + trace viewer
 dev:
-	npm run dev:stack
+	npm run dev
 
-## Production build only
+## Production build
 build:
 	npm run build
 
@@ -27,84 +29,56 @@ fmt:
 
 # ── Logs & Traces ────────────────────────────────────────────────
 
-## Start log drain server (captures logs + traces on port 7589)
+## Start log drain server + trace viewer (port 7589)
 logs:
 	npm run logs
 
-## Open trace viewer UI in browser
-viewer:
-	@echo "Starting server... open http://127.0.0.1:7589/viewer"
-	npm run viewer
-
 ## List captured trace sessions
 traces:
-	npm run traces:list
-
-## Show aggregate trace statistics
-traces-stats:
-	npm run traces:stats
-
-## Tail recent log entries
-logs-tail:
-	npm run logs:tail
-
-## Show error-level log entries
-logs-errors:
-	npm run logs:errors
-
-## Delete all traces and start fresh
-traces-clean:
-	rm -f traces/*.jsonl
-	rm -f traces/runs/*.jsonl
-	rm -rf traces/archive/*
-	@echo "All traces cleared."
+	npm run traces list
 
 # ── Evals ────────────────────────────────────────────────────────
 
-## Convert traces to eval cases
-evals-convert:
-	npm run evals:convert
+## Run unified critique: replay golden cases, judge, generate report
+## Optional: TAG=find_element_loop to filter by pathology
+evals-critique:
+	npm run evals:critique $(if $(TAG),-- --tag $(TAG))
 
-## Run eval cases against LLM
-evals-run:
-	npm run evals:run
+## Extract golden case from trace turn
+## Usage: make evals-extract S=<session> T=<turn> TAG=<pathology> TOOL=<name>
+evals-extract:
+	npx tsx evals/cli.ts extract $(S) $(T) $(if $(TAG),--tag $(TAG)) $(if $(TOOL),--correct-tool $(TOOL))
 
-## Show eval statistics
-evals-stats:
-	npm run evals:stats
-
-## Pattern analysis across eval results
-evals-analyze:
-	npm run evals:analyze
+## Structural validation of golden cases (no API key needed)
+evals-validate:
+	npm run evals:validate
 
 # ── Housekeeping ─────────────────────────────────────────────────
 
 ## Remove build artifacts
 clean:
 	rm -rf dist/
-	npm run clean:vite-artifacts
+	tsx scripts/vite-clean.ts --clean-only
 
 ## Show available targets
 help:
 	@echo ""
-	@echo "  make dev            Full dev stack (build + logs + Vite HMR)"
-	@echo "  make build          Production build"
-	@echo "  make test           Run all tests"
-	@echo "  make lint           Lint source files"
-	@echo "  make fmt            Format source files"
+	@echo "  make dev              Full dev stack (Vite + logs + trace viewer)"
+	@echo "  make build            Production build"
+	@echo "  make test             Run all tests"
+	@echo "  make lint             Lint source files"
+	@echo "  make fmt              Format source files"
 	@echo ""
-	@echo "  make logs           Start log drain server (port 7589)"
-	@echo "  make viewer         Start server + trace viewer UI"
-	@echo "  make traces         List trace sessions"
-	@echo "  make traces-stats   Aggregate trace statistics"
-	@echo "  make traces-clean   Delete all traces"
-	@echo "  make logs-tail      Tail recent logs"
-	@echo "  make logs-errors    Show error logs"
+	@echo "  make logs             Start log server + trace viewer (port 7589)"
+	@echo "  make traces           List trace sessions"
 	@echo ""
-	@echo "  make evals-convert  Convert traces to eval cases"
-	@echo "  make evals-run      Run evals against LLM"
-	@echo "  make evals-stats    Eval statistics"
-	@echo "  make evals-analyze  Pattern analysis"
+	@echo "  make evals-critique                        Replay + judge + report"
+	@echo "  make evals-critique TAG=find_element_loop  Filter by pathology"
+	@echo "  make evals-extract S=<id> T=<turn> TAG=<p> Extract golden case"
+	@echo "  make evals-validate                        Structural validation (offline)"
 	@echo ""
-	@echo "  make clean          Remove build artifacts"
+	@echo "  make clean            Remove build artifacts"
+	@echo ""
+	@echo "  For advanced commands: npm run traces -- help"
+	@echo "                         npm run evals -- help"
 	@echo ""

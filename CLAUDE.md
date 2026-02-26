@@ -5,28 +5,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev:stack      # Recommended: dev server + log server + trace viewer together
-npm run dev            # Standalone Vite dev server (no log server)
+# Core development
+npm run dev            # Full dev stack: Vite HMR + log server + trace viewer
 npm run build          # Production build (vite build)
 npm run lint           # ESLint (src/**/*.ts,tsx)
 npm run fmt            # Prettier format src/
 npm test               # Run all tests (vitest)
 npx vitest run tests/content/tagging.test.ts  # Run a single test file
+
+# Logs & Traces
 npm run logs           # Start log drain server + trace viewer (http://127.0.0.1:7589/viewer)
-npm run logs:query     # Query log file (tail, errors, since, search, stats, help)
 npm run logs:tail      # Show last 50 log entries
 npm run logs:errors    # Show error-level entries only
-npm run traces         # Query trace files (list, show, turns, stats)
-npm run traces:list    # List all recorded sessions
-npm run traces:stats   # Aggregate trace statistics
-npm run evals          # Eval pipeline CLI (convert, run, stats, analyze)
-npm run evals:convert  # Convert traces to eval cases
-npm run evals:run      # Run eval cases against LLM
-npm run evals:stats    # Show eval statistics
-npm run evals:analyze  # Pattern analysis across eval results
+npm run traces         # Trace query CLI (list, show, turns, stats, help)
+
+# Evals
+npm run evals          # Eval CLI help (shows all subcommands)
+npm run evals:critique # Replay golden cases + judge + generate report
+npm run evals:validate # Structural validation of golden cases (offline, no API key)
 ```
 
-Both `dev:stack` and `dev` automatically clear stale processes on ports 5173/7589 before starting, preventing "port in use" errors from orphaned Vite processes.
+`npm run dev` automatically clears stale processes on ports 5173/7589 before starting, preventing "port in use" errors from orphaned Vite processes.
 
 Scripts use `tsx` for TypeScript execution and `vitest` for testing. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
 
@@ -123,7 +122,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 **Trace Query** (`scripts/trace-query.ts`): CLI for querying trace files. Commands: `list`, `show <id>`, `turns <id>`, `turn <id> <N>`, `filter --outcome <o>`, `stats`.
 
-**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, screenshots, skills, and memory. Start with `npm run logs` or `npm run dev:stack`.
+**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, screenshots, skills, and memory. Start with `npm run logs` or `npm run dev`.
 
 **Eval Pipeline** (`evals/`): Trace-based evaluation system that replays recorded interactions offline.
 
@@ -131,11 +130,14 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 - `converter.ts` — Converts trace sessions into eval cases using strategies: `first-turn`, `any-turn`, `recovery`, `escalation`.
 - `runner.ts` — Replays eval cases against the LLM via OpenRouter (no browser needed).
 - `scorer.ts` — Scoring: tool name match, param match (fuzzy), sequence alignment (Levenshtein).
-- `judge.ts` — LLM-as-judge for qualitative assessment of failed cases.
-- `cli.ts` — CLI entry point: `convert`, `run`, `results`, `stats`, `analyze`.
+- `judge.ts` — LLM-as-judge (Claude Sonnet) with 5-dimension rubric + prompt fix suggestions.
+- `extractor.ts` — Golden case extraction from specific trace turns with corrected expectations.
+- `report.ts` — Actionable markdown report generator with per-pathology breakdown.
+- `cli.ts` — CLI entry point: `extract`, `critique`, `regression`, `convert`, `run`, `stats`, `analyze`.
 - `utils.ts` — Shared utilities: file I/O, API key loading, Levenshtein distance.
+- `golden/` — 10 curated golden cases (2 per pathology) with real system prompts.
 
-**Workflow**: Record traces → Convert to eval cases → Run evals → Analyze patterns → Improve prompts/tools → Verify with evals.
+**Workflow**: Record traces → Extract golden cases → Run critique (`npm run evals:critique`) → Read report → Apply prompt fixes → Re-run critique to verify.
 
 ### Scripts (`scripts/`)
 
@@ -155,7 +157,7 @@ When investigating errors (build failures, runtime exceptions, unexpected behavi
 1. **Start the log drain** (if not already running): `npm run logs`
 2. **Query recent errors**: `npm run logs:errors`
 3. **Tail live output**: `npm run logs:tail`
-4. **Search for a keyword**: `npm run logs:query search <text>`
+4. **Search for a keyword**: `npx tsx scripts/log-query.ts search <text>`
 5. **Log file location**: `logs/opensidebar.jsonl` (JSONL format, one structured entry per line)
 
 The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `npm run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).

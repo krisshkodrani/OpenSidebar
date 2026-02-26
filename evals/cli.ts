@@ -15,16 +15,19 @@
  */
 
 import { convertSession, convertRun } from "./converter";
-import { runEvals } from "./runner";
+import { runEvals, replayCase } from "./runner";
 import {
   readEvalResults,
   readEvalCases,
   readSessionIndex,
   readPromptFile,
-  readRunTraceEvents,
-  readRunTraceManifests,
+  loadApiKey,
 } from "./utils";
-import { analyzeSessionsContractCompliance, analyzeRunTraceCompliance } from "./contract-compliance";
+import { analyzeSessionsContractCompliance } from "./contract-compliance";
+import { extractAndSave } from "./extractor";
+import { judgeCase } from "./judge";
+import { scoreToolNameMatch, scoreToolParamMatch, scoreSequenceMatch } from "./scorer";
+import { buildCritiqueReport } from "./report";
 import type { EvalCase, EvalResult } from "./types";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
@@ -78,8 +81,11 @@ async function main() {
     case "ab":
       await cmdAB(args.slice(1));
       break;
+    case "extract":
+      cmdExtract(args.slice(1));
+      break;
     case "critique":
-      cmdCritique(args.slice(1));
+      await cmdCritique(args.slice(1));
       break;
     case "stats":
       cmdStats();
@@ -470,13 +476,17 @@ function cmdAnalyze() {
   // Judge analysis if available
   const judged = results.filter((r) => r.scores.judge);
   if (judged.length > 0) {
-    const avgTask = avg(judged.map((r) => r.scores.judge!.taskCompletion));
     const avgTool = avg(judged.map((r) => r.scores.judge!.toolSelection));
+    const avgParam = avg(judged.map((r) => r.scores.judge!.parameterAccuracy ?? 0));
     const avgEff = avg(judged.map((r) => r.scores.judge!.efficiency));
+    const avgAnti = avg(judged.map((r) => r.scores.judge!.antiPatternAvoidance ?? 0));
+    const avgReason = avg(judged.map((r) => r.scores.judge!.reasoningQuality ?? 0));
     console.log(`\n  ${c.bold}Judge scores (${judged.length} cases):${c.reset}`);
-    console.log(`    Task completion: ${avgTask.toFixed(1)}/10`);
-    console.log(`    Tool selection:  ${avgTool.toFixed(1)}/10`);
-    console.log(`    Efficiency:      ${avgEff.toFixed(1)}/10`);
+    console.log(`    Tool selection:       ${avgTool.toFixed(1)}/10`);
+    console.log(`    Parameter accuracy:   ${avgParam.toFixed(1)}/10`);
+    console.log(`    Efficiency:           ${avgEff.toFixed(1)}/10`);
+    console.log(`    Anti-pattern:         ${avgAnti.toFixed(1)}/10`);
+    console.log(`    Reasoning quality:    ${avgReason.toFixed(1)}/10`);
   }
 
   const compliance = analyzeSessionsContractCompliance(
@@ -633,7 +643,7 @@ function cmdHelp() {
   console.log(`
 ${c.bold}Eval Pipeline CLI${c.reset}
 
-Usage: bun run evals <command> [args]
+Usage: tsx evals/cli.ts <command> [args]
 
 Commands:
   convert <session-id> [--strategy <s>]   Convert trace to eval cases
@@ -643,6 +653,12 @@ Commands:
     Strategies: verifier-decision, lane-isolation, escalation-flow, all (default)
 
   convert-golden                         Convert golden fixtures to eval cases
+
+  extract <session-id> <turn> [options]  Extract golden case from trace turn
+    --correct-tool <name>   Override expected tool name
+    --correct-args <json>   Override expected tool args
+    --tag <pathology>       Pathology tag for the case
+    --id <case-id>          Custom case ID
 
   run [options]                           Run eval cases against LLM
     --case <id>    Run a specific case
@@ -658,11 +674,11 @@ Commands:
     Options: --case <id>, --all, --model <m>
 
   critique [options]
-    Generate AI-consumable critique artifacts from eval history
+    Unified critique: load golden cases, replay, score, judge, generate report
     Options:
-      --session <id>   Filter by sourceSessionId/prefix
-      --run <id>       Include orchestrator run-trace signals for runId/prefix
-      --out <dir>      Output directory (default: evals/reports)
+      --model <m>    Override replay model
+      --tag <p>      Filter by pathology tag
+      --out <dir>    Output directory (default: evals/reports)
 
   results [--session <id>]                Show eval results
   stats                                   Aggregate statistics
@@ -675,12 +691,10 @@ Commands:
   help                                    Show this help
 
 Workflow:
-  1. Record traces: run agent with 'bun run logs' active
-  2. Convert: bun run evals convert <session-id>
-  3. Run: bun run evals run --all
-  4. A/B: bun run evals ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/b.txt --all
-  5. Analyze: bun run evals analyze
-  6. Critique: bun run evals critique
+  1. Record traces: run agent with 'npm run logs' active
+  2. Extract golden cases: npm run evals extract <session-id> <turn> --tag <pathology>
+  3. Critique: npm run evals:critique
+  4. Read report in evals/reports/
 `);
 }
 
@@ -703,199 +717,198 @@ function compareResults(a: EvalResult, b: EvalResult): "A" | "B" | "tie" {
   return "tie";
 }
 
-function cmdCritique(args: string[]) {
-  const cases = readEvalCases();
-  const results = readEvalResults();
-  if (cases.length === 0 || results.length === 0) {
-    console.log("Need eval cases and results first. Run 'evals convert' and 'evals run'.");
-    return;
+function cmdExtract(args: string[]) {
+  const sessionId = args[0];
+  const turnStr = args[1];
+  if (!sessionId || !turnStr) {
+    console.error("Usage: evals extract <session-id> <turn> [--correct-tool <name>] [--correct-args <json>] [--tag <pathology>] [--id <case-id>]");
+    process.exit(1);
   }
 
-  const sessionIdx = args.indexOf("--session");
-  const sessionFilter = sessionIdx !== -1 ? args[sessionIdx + 1] : undefined;
-  const outIdx = args.indexOf("--out");
-  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
-  const runIdx = args.indexOf("--run");
-  const runFilter = runIdx !== -1 ? args[runIdx + 1] : undefined;
-
-  const filteredCases = !sessionFilter
-    ? cases
-    : cases.filter((c) => c.sourceSessionId.startsWith(sessionFilter));
-  const caseIdSet = new Set(filteredCases.map((c) => c.id));
-  const filteredResults = results.filter((r) => caseIdSet.has(r.caseId));
-
-  if (filteredCases.length === 0 || filteredResults.length === 0) {
-    console.log("No matching cases/results for critique.");
-    return;
+  const turnNumber = parseInt(turnStr, 10);
+  if (isNaN(turnNumber)) {
+    console.error(`Invalid turn number: ${turnStr}`);
+    process.exit(1);
   }
 
-  const latestByCase = new Map<string, EvalResult>();
-  for (const result of filteredResults) {
-    const prev = latestByCase.get(result.caseId);
-    if (!prev || prev.timestamp < result.timestamp) {
-      latestByCase.set(result.caseId, result);
+  const toolIdx = args.indexOf("--correct-tool");
+  const correctTool = toolIdx !== -1 ? args[toolIdx + 1] : undefined;
+  const argsIdx = args.indexOf("--correct-args");
+  let correctArgs: Record<string, unknown> | undefined;
+  if (argsIdx !== -1 && args[argsIdx + 1]) {
+    try {
+      correctArgs = JSON.parse(args[argsIdx + 1]);
+    } catch {
+      console.error("Invalid JSON for --correct-args");
+      process.exit(1);
     }
   }
-  const latestResults = Array.from(latestByCase.values());
+  const tagIdx = args.indexOf("--tag");
+  const tag = tagIdx !== -1 ? args[tagIdx + 1] : undefined;
+  const idIdx = args.indexOf("--id");
+  const id = idIdx !== -1 ? args[idIdx + 1] : undefined;
 
-  const total = latestResults.length;
-  const passed = latestResults.filter((r) => r.status === "pass").length;
-  const failed = latestResults.filter((r) => r.status === "fail").length;
-  const errored = latestResults.filter((r) => r.status === "error").length;
-
-  const avgComposite = avg(latestResults.map((r) => r.scores.composite ?? 0));
-  const avgToolName = avg(latestResults.map((r) => r.scores.toolNameMatch));
-  const avgToolParam = avg(latestResults.map((r) => r.scores.toolParamMatch));
-  const avgSequence = avg(latestResults.map((r) => r.scores.sequenceMatch));
-
-  const caseById = new Map(filteredCases.map((c) => [c.id, c]));
-  const trackStats = summarizeByTrack(latestResults, caseById);
-  const missedTools = summarizeMissedTools(latestResults, caseById);
-  const lowComposite = latestResults
-    .filter((r) => (r.scores.composite ?? 0) < 0.6)
-    .map((r) => {
-      const c = caseById.get(r.caseId);
-      return {
-        caseId: r.caseId,
-        sessionId: c?.sourceSessionId ?? "unknown",
-        track: c?.promptQuality?.track ?? "unspecified",
-        status: r.status,
-        composite: r.scores.composite ?? 0,
-        query: c?.metadata.query ?? "",
-        expectedEscalation: c?.promptQuality?.expectedEscalation ?? "unspecified",
-      };
-    })
-    .slice(0, 40);
-
-  const goldenCoverage = summarizeGoldenCoverage(filteredCases);
-  const suggestions = buildPromptSuggestions({
-    failed,
-    errored,
-    trackStats,
-    missedTools,
-    lowCompositeCount: lowComposite.length,
-    goldenCoverage,
+  const outputPath = extractAndSave(sessionId, turnNumber, {
+    correctTool,
+    correctArgs,
+    tag,
+    id,
   });
-  const runTraceSignals = summarizeRunTraceSignals(runFilter);
-  const runTraceCompliance = summarizeRunTraceCompliance(runFilter);
 
-  const report = {
-    generatedAt: new Date().toISOString(),
-    scope: {
-      sessionFilter: sessionFilter ?? null,
-      casesConsidered: filteredCases.length,
-      latestResultsConsidered: latestResults.length,
-    },
-    summary: {
-      passRate: total ? passed / total : 0,
-      failed,
-      errored,
-      averages: {
-        composite: avgComposite,
-        toolNameMatch: avgToolName,
-        toolParamMatch: avgToolParam,
-        sequenceMatch: avgSequence,
-      },
-    },
-    trackStats,
-    missedTools,
-    lowCompositeCases: lowComposite,
-    goldenCoverage,
-    runTraceSignals,
-    runTraceCompliance,
-    suggestions,
-    llmPromptTemplate: getPromptTemplate("evals.critique.llm_template"),
-  };
+  console.log(`${c.green}Golden case extracted${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+async function cmdCritique(args: string[]) {
+  const modelIdx = args.indexOf("--model");
+  const model = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
+  const tagIdx = args.indexOf("--tag");
+  const tagFilter = tagIdx !== -1 ? args[tagIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  // 1. Load golden cases from evals/golden/
+  const goldenDir = join("evals", "golden");
+  if (!existsSync(goldenDir)) {
+    console.error(`No golden directory found: ${goldenDir}`);
+    process.exit(1);
+  }
+
+  const jsonFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".json"));
+  const jsonlFiles = readdirSync(goldenDir).filter((f) => f.endsWith(".jsonl"));
+  if (jsonFiles.length === 0 && jsonlFiles.length === 0) {
+    console.error("No golden files found in evals/golden/");
+    process.exit(1);
+  }
+
+  let cases: EvalCase[] = [];
+  for (const file of jsonFiles) {
+    const content = readFileSync(join(goldenDir, file), "utf-8");
+    cases.push(JSON.parse(content) as EvalCase);
+  }
+  for (const file of jsonlFiles) {
+    const content = readFileSync(join(goldenDir, file), "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try { cases.push(JSON.parse(line) as EvalCase); } catch { /* skip */ }
+    }
+  }
+
+  // 2. Filter by tag if specified
+  if (tagFilter) {
+    cases = cases.filter((cs) =>
+      cs.metadata.pathology === tagFilter ||
+      cs.metadata.tags?.includes(tagFilter),
+    );
+  }
+
+  if (cases.length === 0) {
+    console.error(`No golden cases found${tagFilter ? ` matching tag "${tagFilter}"` : ""}`);
+    process.exit(1);
+  }
+
+  console.log(`${c.bold}Running critique on ${cases.length} golden case(s)${c.reset}\n`);
+
+  let apiKey: string;
+  try {
+    apiKey = loadApiKey();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const results: EvalResult[] = [];
+
+  for (let i = 0; i < cases.length; i++) {
+    const evalCase = cases[i];
+    const replayModel = model ?? evalCase.input.model;
+    const pathology = evalCase.metadata.pathology ?? "untagged";
+
+    process.stdout.write(
+      `  [${i + 1}/${cases.length}] ${pathology} ${evalCase.id.slice(0, 30)}... `,
+    );
+
+    const start = Date.now();
+    let result: EvalResult;
+
+    try {
+      // 3. Replay
+      const actual = await replayCase(apiKey, evalCase, replayModel);
+      const durationMs = Date.now() - start;
+
+      // 4. Score
+      const expectedToolCalls = evalCase.expected.toolCalls.map((tc) => ({
+        toolName: tc.toolName as string,
+        args: tc.args,
+      }));
+
+      const toolNameScore = scoreToolNameMatch(expectedToolCalls, actual.toolCalls);
+      const toolParamScore = scoreToolParamMatch(expectedToolCalls, actual.toolCalls);
+      const sequenceScore = scoreSequenceMatch(expectedToolCalls, actual.toolCalls);
+      const composite = toolNameScore * 0.45 + toolParamScore * 0.25 + sequenceScore * 0.3;
+      const pass = toolNameScore >= 0.8 && sequenceScore >= 0.7;
+
+      result = {
+        caseId: evalCase.id,
+        timestamp: new Date().toISOString(),
+        durationMs,
+        status: pass ? "pass" : "fail",
+        actual,
+        scores: {
+          toolNameMatch: toolNameScore,
+          toolParamMatch: toolParamScore,
+          sequenceMatch: sequenceScore,
+          composite,
+        },
+      };
+
+      // 5. Judge every case (not just failures)
+      try {
+        result.scores.judge = await judgeCase(apiKey, evalCase, actual);
+        if (result.scores.judge.pass && result.status === "fail") {
+          result.status = "pass"; // Judge override
+        }
+      } catch (err: any) {
+        console.warn(`judge error: ${err.message}`);
+      }
+
+      const statusColor = result.status === "pass" ? c.green : c.red;
+      console.log(
+        `${statusColor}${result.status}${c.reset} ` +
+        `names=${toolNameScore.toFixed(2)} seq=${sequenceScore.toFixed(2)} ` +
+        `${durationMs}ms`,
+      );
+    } catch (err: any) {
+      result = {
+        caseId: evalCase.id,
+        timestamp: new Date().toISOString(),
+        durationMs: Date.now() - start,
+        status: "error",
+        actual: { toolCalls: [], text: null },
+        scores: { toolNameMatch: 0, toolParamMatch: 0, sequenceMatch: 0 },
+        error: err.message,
+      };
+      console.log(`${c.red}error${c.reset} ${err.message.slice(0, 80)}`);
+    }
+
+    results.push(result);
+  }
+
+  // 6. Generate report
+  const caseById = new Map(cases.map((cs) => [cs.id, cs]));
+  const report = buildCritiqueReport({ cases, results, caseById });
 
   mkdirSync(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const jsonPath = join(outDir, `critique-${stamp}.json`);
   const mdPath = join(outDir, `critique-${stamp}.md`);
-  writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf-8");
-  writeFileSync(mdPath, renderCritiqueMarkdown(report), "utf-8");
+  writeFileSync(mdPath, report, "utf-8");
 
-  console.log(`${c.green}Critique report generated${c.reset}`);
-  console.log(`  JSON: ${jsonPath}`);
-  console.log(`  MD:   ${mdPath}`);
-}
-
-function summarizeRunTraceSignals(runFilter?: string) {
-  const manifests = readRunTraceManifests();
-  if (manifests.length === 0) return null;
-
-  const selected = runFilter
-    ? manifests.find((m: any) => m.runId === runFilter || String(m.runId || "").startsWith(runFilter))
-    : manifests[manifests.length - 1];
-  if (!selected || typeof selected.runId !== "string") return null;
-
-  const events = readRunTraceEvents(selected.runId).filter(
-    (event: any) => typeof event.type === "string",
-  );
-  const counts: Record<string, number> = {};
-  for (const event of events as any[]) {
-    const type = event.type as string;
-    counts[type] = (counts[type] || 0) + 1;
-  }
-
-  const skillOutcomeEvents = (events as any[]).filter(
-    (event) => event.type === "skill_replay_outcome",
-  );
-  const durationDeltas = skillOutcomeEvents
-    .map((event) => Number(event?.data?.durationDeltaMs))
-    .filter((n) => Number.isFinite(n));
-  const tokenDeltas = skillOutcomeEvents
-    .map((event) => Number(event?.data?.tokenDelta))
-    .filter((n) => Number.isFinite(n));
-
-  return {
-    runId: selected.runId,
-    source: selected.source ?? null,
-    startedAt: selected.startedAt ?? null,
-    totalEvents: events.length,
-    eventCounts: counts,
-    laneIsolated: counts["lane_isolated"] || 0,
-    escalationsRequested: counts["escalation_requested"] || 0,
-    checkpointResumes: counts["task_resumed_from_checkpoint"] || 0,
-    completions: counts["task_completed"] || 0,
-    skillReplayAttempts: counts["skill_replay_attempted"] || 0,
-    skillReplayHits: counts["skill_replay_selected"] || 0,
-    skillReplayMisses: counts["skill_replay_miss"] || 0,
-    skillReplayDryRunMatches: counts["skill_replay_dry_run_match"] || 0,
-    skillReplaySuccesses: skillOutcomeEvents.filter(
-      (event) => event?.data?.success === true,
-    ).length,
-    skillReplayFailures: skillOutcomeEvents.filter(
-      (event) => event?.data?.success === false,
-    ).length,
-    skillLearnedEvents: counts["skill_learned"] || 0,
-    avgReplayDurationDeltaMs: durationDeltas.length ? avg(durationDeltas) : 0,
-    avgReplayTokenDelta: tokenDeltas.length ? avg(tokenDeltas) : 0,
-  };
-}
-
-function summarizeRunTraceCompliance(runFilter?: string) {
-  const manifests = readRunTraceManifests();
-  if (manifests.length === 0) return null;
-
-  const selected = runFilter
-    ? manifests.find((m: any) => m.runId === runFilter || String(m.runId || "").startsWith(runFilter))
-    : manifests[manifests.length - 1];
-  if (!selected || typeof selected.runId !== "string") return null;
-
-  const events = readRunTraceEvents(selected.runId);
-  const violations = analyzeRunTraceCompliance(selected.runId, events as any[]);
-
-  const byType: Record<string, number> = {};
-  for (const v of violations) {
-    byType[v.type] = (byType[v.type] || 0) + 1;
-  }
-
-  return {
-    runId: selected.runId,
-    totalViolations: violations.length,
-    byType,
-    violations: violations.slice(0, 20),
-  };
+  // Summary
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Results: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
 }
 
 function summarizeByTrack(
@@ -946,130 +959,6 @@ function summarizeMissedTools(
     .sort((a, b) => b[1] - a[1])
     .slice(0, 20)
     .map(([toolName, misses]) => ({ toolName, misses }));
-}
-
-function summarizeGoldenCoverage(
-  cases: ReturnType<typeof readEvalCases>,
-): { byTrack: Record<string, number>; tracksMissing: string[] } {
-  const requiredTracks = [
-    "orchestrator_lane_isolation",
-    "verifier_critic",
-    "human_escalation",
-    "budget_and_termination",
-    "checkpoint_resume",
-    "core_task_success",
-  ];
-  const byTrack: Record<string, number> = {};
-  for (const evalCase of cases) {
-    const track = evalCase.promptQuality?.track ?? "unspecified";
-    byTrack[track] = (byTrack[track] || 0) + 1;
-  }
-  const tracksMissing = requiredTracks.filter((track) => !byTrack[track]);
-  return { byTrack, tracksMissing };
-}
-
-function buildPromptSuggestions(input: {
-  failed: number;
-  errored: number;
-  trackStats: Record<
-    string,
-    { total: number; pass: number; fail: number; error: number; avgComposite: number }
-  >;
-  missedTools: { toolName: string; misses: number }[];
-  lowCompositeCount: number;
-  goldenCoverage: { byTrack: Record<string, number>; tracksMissing: string[] };
-}) {
-  const suggestions: string[] = [];
-  const worstTrack = Object.entries(input.trackStats).sort(
-    (a, b) => a[1].avgComposite - b[1].avgComposite,
-  )[0];
-  if (worstTrack) {
-    suggestions.push(
-      `Prioritize prompt improvements for track '${worstTrack[0]}' (lowest avgComposite=${worstTrack[1].avgComposite.toFixed(3)}).`,
-    );
-  }
-  if (input.missedTools.length > 0) {
-    const top = input.missedTools.slice(0, 3).map((m) => m.toolName).join(", ");
-    suggestions.push(
-      `Strengthen tool-selection instructions for frequently missed tools: ${top}.`,
-    );
-  }
-  if (input.lowCompositeCount > 0) {
-    suggestions.push(
-      `Review low-composite cases (${input.lowCompositeCount}) and extract recurring failure prompts for few-shot guidance.`,
-    );
-  }
-  if (input.goldenCoverage.tracksMissing.length > 0) {
-    suggestions.push(
-      `Add golden cases for missing tracks: ${input.goldenCoverage.tracksMissing.join(", ")}.`,
-    );
-  }
-  if (input.failed + input.errored > 0) {
-    suggestions.push(
-      "Add explicit 'must not' instructions in prompts for known failure modes and validate via A/B runs.",
-    );
-  }
-  return suggestions;
-}
-
-function renderCritiqueMarkdown(report: any): string {
-  const trackLines = Object.entries(report.trackStats)
-    .map(([track, stats]: [string, any]) => {
-      const passRate = stats.total > 0 ? (stats.pass / stats.total) * 100 : 0;
-      return `- ${track}: pass=${stats.pass}/${stats.total} (${passRate.toFixed(1)}%), avgComposite=${stats.avgComposite.toFixed(3)}`;
-    })
-    .join("\n");
-
-  const toolLines = report.missedTools.length
-    ? report.missedTools.map((m: any) => `- ${m.toolName}: ${m.misses}`).join("\n")
-    : "- none";
-
-  const suggestions = report.suggestions.map((s: string) => `- ${s}`).join("\n");
-  const runTraceSection = report.runTraceSignals
-    ? `## Run Trace Signals\n\n- runId: ${report.runTraceSignals.runId}\n- totalEvents: ${report.runTraceSignals.totalEvents}\n- laneIsolated: ${report.runTraceSignals.laneIsolated}\n- escalationsRequested: ${report.runTraceSignals.escalationsRequested}\n- checkpointResumes: ${report.runTraceSignals.checkpointResumes}\n- completions: ${report.runTraceSignals.completions}\n- skillReplayAttempts: ${report.runTraceSignals.skillReplayAttempts}\n- skillReplayHits: ${report.runTraceSignals.skillReplayHits}\n- skillReplayMisses: ${report.runTraceSignals.skillReplayMisses}\n- skillReplayDryRunMatches: ${report.runTraceSignals.skillReplayDryRunMatches}\n- skillReplaySuccesses: ${report.runTraceSignals.skillReplaySuccesses}\n- skillReplayFailures: ${report.runTraceSignals.skillReplayFailures}\n- skillLearnedEvents: ${report.runTraceSignals.skillLearnedEvents}\n- avgReplayDurationDeltaMs: ${Number(report.runTraceSignals.avgReplayDurationDeltaMs || 0).toFixed(2)}\n- avgReplayTokenDelta: ${Number(report.runTraceSignals.avgReplayTokenDelta || 0).toFixed(2)}\n`
-    : "## Run Trace Signals\n\n- none\n";
-  const complianceSection = report.runTraceCompliance
-    ? `## Run Trace Compliance\n\n- runId: ${report.runTraceCompliance.runId}\n- totalViolations: ${report.runTraceCompliance.totalViolations}\n- byType: ${JSON.stringify(report.runTraceCompliance.byType)}\n${report.runTraceCompliance.violations.map((v: any) => `- [${v.type}] ${v.message}`).join("\n")}\n`
-    : "";
-
-  return `# Evals Critique Report
-
-Generated: ${report.generatedAt}
-
-## Summary
-
-- cases: ${report.scope.latestResultsConsidered}
-- pass rate: ${(report.summary.passRate * 100).toFixed(1)}%
-- failed: ${report.summary.failed}
-- errored: ${report.summary.errored}
-- avg composite: ${report.summary.averages.composite.toFixed(3)}
-
-## Track Performance
-
-${trackLines}
-
-## Most Missed Tools
-
-${toolLines}
-
-## Golden Coverage
-
-- byTrack: ${JSON.stringify(report.goldenCoverage.byTrack)}
-- missingTracks: ${report.goldenCoverage.tracksMissing.join(", ") || "none"}
-
-${runTraceSection}
-
-${complianceSection}
-## Suggested Prompt Improvements
-
-${suggestions}
-
-## LLM Instruction Seed
-
-\`\`\`
-${report.llmPromptTemplate}
-\`\`\`
-`;
 }
 
 function avg(values: number[]): number {

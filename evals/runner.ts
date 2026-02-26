@@ -215,7 +215,7 @@ export async function runEvals(options: {
   return results;
 }
 
-async function replayCase(
+export async function replayCase(
   apiKey: string,
   evalCase: EvalCase,
   model: string,
