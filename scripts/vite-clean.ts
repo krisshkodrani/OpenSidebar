@@ -1,6 +1,6 @@
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { killTree, clearPort, spawnWithExited } from "./process-utils.ts";
+import { killTree, clearPort, spawnWithExited, IS_WINDOWS } from "./process-utils.ts";
 
 const VITE_CONFIG_ARTIFACT = /^vite\.config\.ts\.timestamp-.*\.mjs$/;
 
@@ -37,10 +37,16 @@ async function run(): Promise<void> {
   // Clear port 5173 before spawning Vite
   await clearPort(5173);
 
-  const child = spawnWithExited("npx", ["vite", ...args], {
-    stdio: "inherit",
-    shell: true,
-  });
+  // Spawn Node directly (no cmd.exe shell) to avoid Windows "Terminate batch job?" prompt
+  const child = IS_WINDOWS
+    ? spawnWithExited(process.execPath, [
+        path.resolve("node_modules/vite/bin/vite.js"),
+        ...args,
+      ], { stdio: "inherit" })
+    : spawnWithExited("npx", ["vite", ...args], {
+        stdio: "inherit",
+        shell: true,
+      });
 
   // Use killTree for proper Windows process tree killing
   let shuttingDown = false;
