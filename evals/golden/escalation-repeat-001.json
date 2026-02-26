@@ -27,7 +27,8 @@
             "function": {
               "name": "click_element",
               "arguments": "{\"id\": 66}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -49,7 +50,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

@@ -45,19 +45,23 @@ function buildSummary(results: StagnationEvalResult[]): string {
   const avgFN = avg(results.map((r) => r.scores.falseNegativeRate));
   const avgComp = avg(results.map((r) => r.scores.composite));
 
+  const minEsc = min(results.map((r) => r.scores.escalationAccuracy));
+  const minTim = min(results.map((r) => r.scores.timingAccuracy));
+  const minComp = min(results.map((r) => r.scores.composite));
+
   return `## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total results | ${total} |
-| Pass rate | ${passRate}% (${passed}/${total}) |
-| Failed | ${failed} |
-| Errors | ${errored} |
-| Avg escalation accuracy | ${avgEsc.toFixed(3)} |
-| Avg timing accuracy | ${avgTim.toFixed(3)} |
-| Avg false positive score | ${avgFP.toFixed(3)} |
-| Avg false negative score | ${avgFN.toFixed(3)} |
-| Avg composite | ${avgComp.toFixed(3)} |
+| Metric | Avg | Min (worst) |
+|--------|-----|-------------|
+| Total results | ${total} | — |
+| Pass rate | ${passRate}% (${passed}/${total}) | — |
+| Failed | ${failed} | — |
+| Errors | ${errored} | — |
+| Escalation accuracy | ${avgEsc.toFixed(3)} | ${minEsc.toFixed(3)} |
+| Timing accuracy | ${avgTim.toFixed(3)} | ${minTim.toFixed(3)} |
+| False positive score | ${avgFP.toFixed(3)} | — |
+| False negative score | ${avgFN.toFixed(3)} | — |
+| Composite | ${avgComp.toFixed(3)} | ${minComp.toFixed(3)} |
 `;
 }
 
@@ -295,4 +299,9 @@ function buildThresholdRecommendations(
 function avg(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function min(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.min(...values);
 }

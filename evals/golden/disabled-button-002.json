@@ -35,7 +35,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -57,7 +58,8 @@
             "function": {
               "name": "click_element",
               "arguments": "{\"id\": 47}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -79,7 +81,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -101,7 +104,8 @@
             "function": {
               "name": "read_element",
               "arguments": "{\"id\": 46, \"attribute\": \"value\"}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -119,7 +123,8 @@
             "function": {
               "name": "type_text",
               "arguments": "{\"id\": 46, \"text\": \"47NV6U\", \"pressEnter\": false}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

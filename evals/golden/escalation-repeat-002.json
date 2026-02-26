@@ -35,7 +35,8 @@
             "function": {
               "name": "scroll_page",
               "arguments": "{\"direction\": \"up\"}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -53,7 +54,8 @@
             "function": {
               "name": "scroll_page",
               "arguments": "{\"direction\": \"top\"}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -71,7 +73,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -93,7 +96,8 @@
             "function": {
               "name": "read_element",
               "arguments": "{\"id\": 40, \"attribute\": \"data-code\"}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -111,7 +115,8 @@
             "function": {
               "name": "read_element",
               "arguments": "{\"attribute\": \"aria-label\", \"id\": 80}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -133,7 +138,8 @@
             "function": {
               "name": "click_element",
               "arguments": "{\"id\": 85}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -155,7 +161,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

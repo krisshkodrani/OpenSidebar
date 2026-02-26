@@ -56,6 +56,8 @@ export function scoreToolParamMatch(
 /**
  * Score how well the sequence of tool calls matches.
  * Uses Levenshtein distance normalized to 0-1.
+ * When expected is a single tool call: if the model's first call matches,
+ * score based on that match (extra speculative calls are penalized lightly).
  */
 export function scoreSequenceMatch(
   expected: ToolCallInfo[],
@@ -65,6 +67,15 @@ export function scoreSequenceMatch(
   const actNames = actual.map((tc) => tc.toolName);
   const maxLen = Math.max(expNames.length, actNames.length);
   if (maxLen === 0) return 1;
+
+  // Single expected tool: check if first actual matches (common in golden evals).
+  // Score 1.0 for exact single match, 0.8 if first matches but extras present.
+  if (expNames.length === 1 && actNames.length >= 1) {
+    if (actNames[0] === expNames[0]) {
+      return actNames.length === 1 ? 1.0 : 0.8;
+    }
+  }
+
   const distance = levenshteinDistance(expNames, actNames);
   return 1 - distance / maxLen;
 }

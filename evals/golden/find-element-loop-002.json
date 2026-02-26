@@ -27,7 +27,8 @@
             "function": {
               "name": "type_text",
               "arguments": "{\n  \"id\": 207,\n  \"text\": \"S5CRFE\",\n  \"pressEnter\": true\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -45,7 +46,8 @@
             "function": {
               "name": "read_element",
               "arguments": "{\n  \"id\": 193,\n  \"attribute\": \"disabled\"\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -63,7 +65,8 @@
             "function": {
               "name": "click_element",
               "arguments": "{\n  \"id\": 392\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -81,7 +84,8 @@
             "function": {
               "name": "find_element",
               "arguments": "{\n  \"text\": \"Accept\"\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -99,7 +103,8 @@
             "function": {
               "name": "click_element",
               "arguments": "{\n  \"id\": 415\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -117,7 +122,8 @@
             "function": {
               "name": "close_popups",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

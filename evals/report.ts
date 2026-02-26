@@ -45,6 +45,12 @@ export function buildCritiqueReport(data: CritiqueData): string {
   sections.push(`# Eval Critique Report\n`);
   sections.push(`Generated: ${new Date().toISOString()}\n`);
 
+  // Model versions used
+  const models = new Set(results.map((r) => r.modelVersion).filter(Boolean));
+  if (models.size > 0) {
+    sections.push(`Models: ${Array.from(models).join(", ")}\n`);
+  }
+
   // Summary table
   sections.push(buildSummarySection(results));
 
@@ -53,6 +59,9 @@ export function buildCritiqueReport(data: CritiqueData): string {
 
   // Failed case details
   sections.push(buildFailedCaseSection(results, caseById));
+
+  // Judge-scorer disagreements
+  sections.push(buildDisagreementSection(results, caseById));
 
   // Prompt improvement recommendations
   sections.push(buildRecommendationsSection(results, caseById));
@@ -74,31 +83,40 @@ function buildSummarySection(results: EvalResult[]): string {
   const avgAntiPat = avg(judged.map((r) => r.scores.judge!.antiPatternAvoidance ?? 0));
   const avgReason = avg(judged.map((r) => r.scores.judge!.reasoningQuality ?? 0));
 
+  const minToolSel = min(judged.map((r) => r.scores.judge!.toolSelection));
+  const minParamAcc = min(judged.map((r) => r.scores.judge!.parameterAccuracy ?? 0));
+  const minEff = min(judged.map((r) => r.scores.judge!.efficiency));
+  const minAntiPat = min(judged.map((r) => r.scores.judge!.antiPatternAvoidance ?? 0));
+  const minReason = min(judged.map((r) => r.scores.judge!.reasoningQuality ?? 0));
+
   const avgNameMatch = avg(results.map((r) => r.scores.toolNameMatch));
   const avgParamMatch = avg(results.map((r) => r.scores.toolParamMatch));
   const avgSeqMatch = avg(results.map((r) => r.scores.sequenceMatch));
+  const minNameMatch = min(results.map((r) => r.scores.toolNameMatch));
+  const minParamMatch = min(results.map((r) => r.scores.toolParamMatch));
+  const minSeqMatch = min(results.map((r) => r.scores.sequenceMatch));
 
   return `## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total cases | ${total} |
-| Pass rate | ${passRate}% (${passed}/${total}) |
-| Failed | ${failed} |
-| Errors | ${errored} |
-| Avg tool name match | ${avgNameMatch.toFixed(3)} |
-| Avg param match | ${avgParamMatch.toFixed(3)} |
-| Avg sequence match | ${avgSeqMatch.toFixed(3)} |
+| Metric | Avg | Min (worst) |
+|--------|-----|-------------|
+| Total cases | ${total} | — |
+| Pass rate | ${passRate}% (${passed}/${total}) | — |
+| Failed | ${failed} | — |
+| Errors | ${errored} | — |
+| Tool name match | ${avgNameMatch.toFixed(3)} | ${minNameMatch.toFixed(3)} |
+| Param match | ${avgParamMatch.toFixed(3)} | ${minParamMatch.toFixed(3)} |
+| Sequence match | ${avgSeqMatch.toFixed(3)} | ${minSeqMatch.toFixed(3)} |
 
 ### Judge Scores (${judged.length} cases judged)
 
-| Dimension | Avg Score |
-|-----------|-----------|
-| Tool Selection | ${avgToolSel.toFixed(1)}/10 |
-| Parameter Accuracy | ${avgParamAcc.toFixed(1)}/10 |
-| Efficiency | ${avgEff.toFixed(1)}/10 |
-| Anti-Pattern Avoidance | ${avgAntiPat.toFixed(1)}/10 |
-| Reasoning Quality | ${avgReason.toFixed(1)}/10 |
+| Dimension | Avg | Min (worst) |
+|-----------|-----|-------------|
+| Tool Selection | ${avgToolSel.toFixed(1)}/10 | ${minToolSel.toFixed(1)}/10 |
+| Parameter Accuracy | ${avgParamAcc.toFixed(1)}/10 | ${minParamAcc.toFixed(1)}/10 |
+| Efficiency | ${avgEff.toFixed(1)}/10 | ${minEff.toFixed(1)}/10 |
+| Anti-Pattern Avoidance | ${avgAntiPat.toFixed(1)}/10 | ${minAntiPat.toFixed(1)}/10 |
+| Reasoning Quality | ${avgReason.toFixed(1)}/10 | ${minReason.toFixed(1)}/10 |
 `;
 }
 
@@ -196,6 +214,57 @@ ${judgeBlock}`;
   return `## Failed Cases (${failures.length} total)\n\n${details}`;
 }
 
+function buildDisagreementSection(results: EvalResult[], caseById: Map<string, EvalCase>): string {
+  const disagreements: Array<{
+    caseId: string;
+    pathology: string;
+    scorerStatus: string;
+    judgePass: boolean;
+    composite: number;
+    judgeScores: string;
+  }> = [];
+
+  for (const result of results) {
+    if (!result.scores.judge || !result.scores.composite) continue;
+
+    const scorerPass = result.scores.composite >= 0.8;
+    const judgePass = result.scores.judge.pass;
+
+    if (scorerPass !== judgePass) {
+      const evalCase = caseById.get(result.caseId);
+      const pathology = evalCase?.metadata.pathology ?? "untagged";
+      const j = result.scores.judge;
+      disagreements.push({
+        caseId: result.caseId,
+        pathology,
+        scorerStatus: scorerPass ? "pass" : "fail",
+        judgePass,
+        composite: result.scores.composite,
+        judgeScores: `toolSel=${j.toolSelection} antiPat=${j.antiPatternAvoidance ?? 0}`,
+      });
+    }
+  }
+
+  if (disagreements.length === 0) {
+    return "## Judge-Scorer Disagreements\n\nNo disagreements — scorer and judge agree on all cases.\n";
+  }
+
+  const rows = disagreements
+    .map((d) =>
+      `| ${d.caseId} | ${d.pathology} | ${d.scorerStatus} | ${d.judgePass ? "pass" : "fail"} | ${d.composite.toFixed(2)} | ${d.judgeScores} |`,
+    )
+    .join("\n");
+
+  return `## Judge-Scorer Disagreements (${disagreements.length} cases)
+
+These cases need manual review — the automated scorer and LLM judge disagree on pass/fail.
+
+| Case ID | Pathology | Scorer | Judge | Composite | Judge Scores |
+|---------|-----------|--------|-------|-----------|--------------|
+${rows}
+`;
+}
+
 function buildRecommendationsSection(results: EvalResult[], caseById: Map<string, EvalCase>): string {
   // Collect prompt fix suggestions from judge, grouped by pathology
   const suggestionMap = new Map<string, { suggestion: string; pathology: string; count: number }>();
@@ -271,4 +340,9 @@ ${recLines}
 function avg(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function min(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.min(...values);
 }

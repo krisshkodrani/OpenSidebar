@@ -35,7 +35,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

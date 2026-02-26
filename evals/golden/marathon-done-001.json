@@ -19,6 +19,10 @@
         "content": "[DISTILLED HISTORY — 7 actions]\nT1: inspect_hidden  → Found 6 hidden element(s) matching \"code\" (scanned in 8ms): [truncated]\nT2: find_element \"Enter Code to Proceed\" → Found \"Enter Code to Proceed\" near [196] <h3> \"Enter Code to Proceed to Step 8:\"\nT3: find_element \"Submit Code\" → Found \"Submit Code\" near [193] <button> \"Submit Code\". Use tag [193] to interact\nT4: find_element \"code\" → Found \"code\" near [459] <p> \"You are on step 7. Complete the challeng...roceed.\"\nT5: find_element \"Enter Code\" → Found \"Enter Code\" near [196] <h3> \"Enter Code to Proceed to Step 8:\". Use tag [\nT6: read_page  → Page: Browser Navigation Challenge - The Ultimate Test [truncated]\nT7: type_text [207] \"A34QJJ\" → Typed \"A34QJJ\" into [207] and pressed Enter"
       },
       {
+        "role": "user",
+        "content": "[SYSTEM STAGNATION WARNING] You have been executing for 100 turns on the same objective without completing it. The page state has not changed meaningfully in the last 12 turns. You must either call escalate() to request help or call done() if the task cannot be completed. Do NOT continue cycling with more tool calls."
+      },
+      {
         "role": "assistant",
         "content": null,
         "tool_calls": [
@@ -27,7 +31,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -45,7 +50,8 @@
             "function": {
               "name": "type_text",
               "arguments": "{\n  \"id\": 295,\n  \"text\": \"A34QJJ\",\n  \"pressEnter\": true\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -63,7 +69,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -81,7 +88,8 @@
             "function": {
               "name": "inspect_hidden",
               "arguments": "{\n  \"pattern\": \"code\",\n  \"maxResults\": 20\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -99,7 +107,8 @@
             "function": {
               "name": "hover_element",
               "arguments": "{\n  \"id\": 493\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -117,7 +126,8 @@
             "function": {
               "name": "find_element",
               "arguments": "{\n  \"text\": \"Keep hovering...\"\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
