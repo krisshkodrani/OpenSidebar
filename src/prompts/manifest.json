@@ -35,6 +35,20 @@
     "sourcePath": "prompts/evals/perception_judge_user.md"
   },
   {
+    "id": "evals.planner_judge.system",
+    "version": "v1",
+    "hash": "f13a16f1",
+    "description": "System prompt for planner eval LLM-as-judge with 5-dimension rubric.",
+    "sourcePath": "prompts/evals/planner_judge_system.md"
+  },
+  {
+    "id": "evals.planner_judge.user",
+    "version": "v1",
+    "hash": "764a6e0f",
+    "description": "User prompt template for planner eval judge.",
+    "sourcePath": "prompts/evals/planner_judge_user.md"
+  },
+  {
     "id": "agent.system",
     "version": "v2",
     "hash": "fa3ecfb5",

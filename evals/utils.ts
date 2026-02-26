@@ -5,7 +5,14 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { isAbsolute, join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import type { EvalCase, EvalResult, PerceptionEvalCase } from "./types";
+import type {
+  EvalCase,
+  EvalResult,
+  PerceptionEvalCase,
+  PlannerEvalCase,
+  ContextEvalCase,
+  StagnationEvalCase,
+} from "./types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -189,6 +196,63 @@ export function readPerceptionEvalCases(): PerceptionEvalCase[] {
   for (const file of files) {
     try {
       const content = readFileSync(join(PERCEPTION_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Planner eval I/O ─────────────────────────────────────────────────
+
+export const PLANNER_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "planner");
+export const PLANNER_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "planner");
+
+/** Read all planner eval cases from the planner golden dir */
+export function readPlannerEvalCases(): PlannerEvalCase[] {
+  if (!existsSync(PLANNER_GOLDEN_DIR)) return [];
+  const files = readdirSync(PLANNER_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: PlannerEvalCase[] = [];
+  for (const file of files) {
+    try {
+      const content = readFileSync(join(PLANNER_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Context eval I/O ─────────────────────────────────────────────────
+
+export const CONTEXT_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "context");
+export const CONTEXT_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "context");
+
+/** Read all context eval cases from the context golden dir */
+export function readContextEvalCases(): ContextEvalCase[] {
+  if (!existsSync(CONTEXT_GOLDEN_DIR)) return [];
+  const files = readdirSync(CONTEXT_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: ContextEvalCase[] = [];
+  for (const file of files) {
+    try {
+      const content = readFileSync(join(CONTEXT_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Stagnation eval I/O ──────────────────────────────────────────────
+
+export const STAGNATION_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "stagnation");
+export const STAGNATION_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "stagnation");
+
+/** Read all stagnation eval cases from the stagnation golden dir */
+export function readStagnationEvalCases(): StagnationEvalCase[] {
+  if (!existsSync(STAGNATION_GOLDEN_DIR)) return [];
+  const files = readdirSync(STAGNATION_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: StagnationEvalCase[] = [];
+  for (const file of files) {
+    try {
+      const content = readFileSync(join(STAGNATION_GOLDEN_DIR, file), "utf-8");
       cases.push(JSON.parse(content));
     } catch { /* skip malformed */ }
   }

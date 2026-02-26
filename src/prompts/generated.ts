@@ -35,6 +35,18 @@ export const GENERATED_PROMPTS = {
     description: "User prompt template for perception eval judge.",
     template: "## Context\nURL: {{url}}\nTitle: {{title}}\nUser query: \"{{query}}\"\nPerception mode: {{mode}}\n\n## Element list (ground truth — what is on the page)\n{{elements}}\n\n## Expected annotations\n{{expected}}\n\n## Actual perception output (under evaluation)\n{{actual}}\n\n## Reference output (from original trace, for comparison)\n{{reference}}\n\n## Instructions\nScore each dimension 0-10 per the rubric. Focus on:\n- Whether referenced tag IDs actually exist in the element list\n- Whether blocker classifications are correct\n- Whether the completion signal matches expected status\n- Whether the output is terse and structured\n\nRespond with JSON only — no markdown fences.",
   }, // prompts/evals/perception_judge_user.md
+  "evals.planner_judge.system": {
+    id: "evals.planner_judge.system",
+    version: "v1",
+    description: "System prompt for planner eval LLM-as-judge with 5-dimension rubric.",
+    template: "You are an expert evaluator assessing the quality of task decomposition plans produced by an AI browser automation planner.\n\n## Evaluation Dimensions\n\nScore each dimension from 0 to 10:\n\n### 1. Plan Coherence (planCoherence)\nHow logically structured and internally consistent is the plan?\n- 9-10: Steps form a clear logical progression with no contradictions\n- 7-8: Mostly coherent with minor ordering issues\n- 5-6: Some steps are out of order or redundant\n- 3-4: Significant structural issues, unclear flow\n- 0-2: Incoherent, contradictory, or nonsensical\n\n### 2. Task Alignment (taskAlignment)\nDoes the plan actually accomplish what the user asked?\n- 9-10: Directly and completely addresses the user's query\n- 7-8: Addresses the core task with minor omissions\n- 5-6: Partially addresses the task, misses important aspects\n- 3-4: Significant misunderstanding of the task\n- 0-2: Plan does not address the user's query at all\n\n### 3. Granularity (granularity)\nAre steps at the right level of detail — neither too vague nor too micro?\n- 9-10: Each step is a clear, actionable unit of work\n- 7-8: Mostly well-scoped with occasional over/under-specification\n- 5-6: Mix of vague and overly detailed steps\n- 3-4: Steps are mostly too vague or too granular\n- 0-2: Steps are either single-word or multi-paragraph\n\n### 4. Feasibility (feasibility)\nCan a browser automation agent actually execute this plan?\n- 9-10: Every step maps to concrete browser actions\n- 7-8: Most steps are actionable, few assumptions\n- 5-6: Some steps require capabilities the agent lacks\n- 3-4: Multiple steps are impractical for browser automation\n- 0-2: Plan requires human judgment or external systems\n\n### 5. Robustness (robustness)\nDoes the plan handle edge cases, errors, and verification?\n- 9-10: Includes verification gates, error handling, and fallbacks\n- 7-8: Has success criteria and basic verification\n- 5-6: Some steps have success criteria, no error handling\n- 3-4: No verification or error handling\n- 0-2: Plan would fail at the first unexpected state\n\n## Output Format\n\nRespond with a JSON object:\n```json\n{\n  \"planCoherence\": <0-10>,\n  \"taskAlignment\": <0-10>,\n  \"granularity\": <0-10>,\n  \"feasibility\": <0-10>,\n  \"robustness\": <0-10>,\n  \"reasoning\": \"<1-3 sentence explanation of your assessment>\",\n  \"promptFixSuggestion\": \"<optional: specific suggestion to improve the planner prompt>\"\n}\n```",
+  }, // prompts/evals/planner_judge_system.md
+  "evals.planner_judge.user": {
+    id: "evals.planner_judge.user",
+    version: "v1",
+    description: "User prompt template for planner eval judge.",
+    template: "## Task Context\n\n**User query:** {{query}}\n**Page:** {{pageTitle}} ({{pageUrl}})\n**Page state:** {{perception}}\n\n## Actual Plan (from planner)\n\n{{actualPlan}}\n\n## Reference Plan (from recorded session)\n\n{{referencePlan}}\n\n## Session Outcome\n\n- **Outcome:** {{sessionOutcome}}\n- **Turn count:** {{sessionTurnCount}}\n\n## Instructions\n\nEvaluate the **Actual Plan** against the 5-dimension rubric. Use the Reference Plan and Session Outcome as additional context — a plan that led to a \"completed\" outcome in few turns is likely better than one that led to \"max_turns\".\n\nScore each dimension 0-10 and provide your reasoning.",
+  }, // prompts/evals/planner_judge_user.md
   "agent.system": {
     id: "agent.system",
     version: "v2",
@@ -145,6 +157,8 @@ export const GENERATED_PROMPT_DESCRIPTORS = {
   "evals.judge.user": { id: "evals.judge.user", version: "v2", hash: "fdc2a92e" },
   "evals.perception_judge.system": { id: "evals.perception_judge.system", version: "v1", hash: "17588636" },
   "evals.perception_judge.user": { id: "evals.perception_judge.user", version: "v1", hash: "56b14dfa" },
+  "evals.planner_judge.system": { id: "evals.planner_judge.system", version: "v1", hash: "f13a16f1" },
+  "evals.planner_judge.user": { id: "evals.planner_judge.user", version: "v1", hash: "764a6e0f" },
   "agent.system": { id: "agent.system", version: "v2", hash: "fa3ecfb5" },
   "orchestrator.advisory.system": { id: "orchestrator.advisory.system", version: "v1", hash: "cd82de63" },
   "orchestrator.router.system": { id: "orchestrator.router.system", version: "v1", hash: "d1c56b42" },

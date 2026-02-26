@@ -153,6 +153,209 @@ export interface PerceptionJudgeScore {
   pass: boolean;
 }
 
+// ── Planner eval types ────────────────────────────────────────────────
+
+export type PlannerEvalMethod = "decompose" | "validateDone";
+
+export interface PlannerEvalCase {
+  id: string;
+  sourceSessionId: string;
+  method: PlannerEvalMethod;
+  input: {
+    query: string;
+    pageTitle: string;
+    pageUrl: string;
+    perception?: string;
+    /** validateDone only */
+    plan?: { description: string; status: string }[];
+    doneSummary?: string;
+  };
+  expected: {
+    /** decompose */
+    difficulty?: "simple" | "moderate" | "complex" | "extreme";
+    isMultiStep?: boolean;
+    stepCountRange?: { min: number; max: number };
+    mustCoverTopics?: string[];
+    antiPatterns?: string[];
+    /** validateDone */
+    approved?: boolean;
+  };
+  reference: {
+    decomposition?: {
+      subtasks: string[];
+      steps?: Array<{
+        objective: string;
+        successCriteria: string;
+        dependencies: number[];
+        verifyAfter?: { trigger: string; action: string };
+        toolProfile?: string;
+      }>;
+      difficulty: string;
+    };
+    sessionOutcome: "completed" | "stopped" | "max_turns" | "error";
+    sessionTurnCount: number;
+    escalationCount: number;
+  };
+  metadata: {
+    url: string;
+    query: string;
+    difficulty: "easy" | "medium" | "hard";
+    tags: string[];
+    dimension?: "difficulty_accuracy" | "step_quality" | "coverage" | "done_validation";
+  };
+}
+
+export interface PlannerEvalResult {
+  caseId: string;
+  timestamp: string;
+  durationMs: number;
+  status: "pass" | "fail" | "error";
+  method: PlannerEvalMethod;
+  actual: {
+    decomposition?: { subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean };
+    validation?: { approved: boolean; reason?: string };
+  };
+  scores: {
+    difficultyAccuracy: number;
+    stepCountScore: number;
+    coverageScore: number;
+    stepQualityScore: number;
+    antiPatternScore: number;
+    composite: number;
+    judge?: PlannerJudgeScore;
+  };
+  error?: string;
+}
+
+export interface PlannerJudgeScore {
+  planCoherence: number;
+  taskAlignment: number;
+  granularity: number;
+  feasibility: number;
+  robustness: number;
+  reasoning: string;
+  promptFixSuggestion?: string;
+  pass: boolean;
+}
+
+// ── Context compression eval types ───────────────────────────────────
+
+export interface ContextEvalCase {
+  id: string;
+  sourceSessionId: string;
+  sourceTurn: number;
+  input: {
+    history: Array<{
+      role: string;
+      content: string | null;
+      tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      tool_call_id?: string;
+    }>;
+    snapshot: { url: string; title: string; elementCount: number; scrollY: number };
+    elements: Array<{ tag: number; tagName: string; text: string; role?: string; attributes: Record<string, string> }>;
+    originalQuery: string;
+    planStatus?: { subtasks: { description: string; status: string }[]; currentIndex: number };
+    maxContextTokens: number;
+    perception?: string;
+  };
+  expected: {
+    mustPreserve: {
+      originalQuery: boolean;
+      planStatus: boolean;
+      recentToolResults: number;
+      errorPatterns?: string[];
+      keyFacts?: string[];
+    };
+    expectedLevel: "none" | "light" | "medium" | "heavy";
+    tokenReductionMin?: number;
+  };
+  metadata: {
+    url: string;
+    query: string;
+    historyLength: number;
+    difficulty: "easy" | "medium" | "hard";
+    tags: string[];
+    dimension?: "goal_amnesia" | "plan_integrity" | "tool_results" | "token_efficiency" | "trajectory_quality";
+  };
+}
+
+export interface ContextEvalResult {
+  caseId: string;
+  timestamp: string;
+  durationMs: number;
+  status: "pass" | "fail" | "error";
+  compressionLevel: string;
+  actual: {
+    promptTokensBefore: number;
+    promptTokensAfter: number;
+    reductionPercent: number;
+    historyLengthBefore: number;
+    historyLengthAfter: number;
+  };
+  scores: {
+    goalPreservation: number;
+    planPreservation: number;
+    toolResultPreservation: number;
+    keyFactPreservation: number;
+    tokenEfficiency: number;
+    composite: number;
+  };
+  error?: string;
+}
+
+// ── Stagnation eval types ────────────────────────────────────────────
+
+export interface StagnationEvalCase {
+  id: string;
+  sourceSessionId: string;
+  input: {
+    snapshots: Array<{
+      turnNumber: number;
+      url: string;
+      title: string;
+      elements: Array<{ tagName: string; text: string; attributes: Record<string, string> }>;
+    }>;
+  };
+  expected: {
+    escalation: { shouldFire: boolean; expectedTurnRange?: { min: number; max: number } };
+    sessionWasStuck: boolean;
+  };
+  reference: {
+    escalationEvents: Array<{ turn: number; stagnantTurns: number }>;
+    sessionOutcome: "completed" | "stopped" | "max_turns" | "error";
+    sessionTurnCount: number;
+  };
+  metadata: {
+    url: string;
+    query: string;
+    difficulty: "easy" | "medium" | "hard";
+    tags: string[];
+    dimension?: "false_positive" | "false_negative" | "timing" | "url_handling";
+  };
+}
+
+export interface StagnationEvalResult {
+  caseId: string;
+  timestamp: string;
+  durationMs: number;
+  status: "pass" | "fail" | "error";
+  actual: {
+    escalationFired: boolean;
+    escalationTurn?: number;
+    stagnantTurnCounts: number[];
+    totalStagnantTurns: number;
+    urlChanges: number;
+  };
+  scores: {
+    escalationAccuracy: number;
+    timingAccuracy: number;
+    falsePositiveRate: number;
+    falseNegativeRate: number;
+    composite: number;
+  };
+  error?: string;
+}
+
 // ── Tool eval types ──────────────────────────────────────────────────
 
 /** LLM-as-judge qualitative assessment */
