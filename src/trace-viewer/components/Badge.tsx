@@ -8,6 +8,8 @@ type BadgeVariant =
   | "failure"
   | "max_turns"
   | "model"
+  | "manual"
+  | "recording"
   | "tool"
   | "enabled"
   | "disabled"
@@ -18,7 +20,8 @@ type BadgeVariant =
   | "dynamic"
   | "original-query"
   | `event-${string}`
-  | `role-${string}`;
+  | `role-${string}`
+  | `difficulty-${string}`;
 
 const VARIANT_CLASSES: Record<string, string> = {
   completed: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
@@ -28,6 +31,8 @@ const VARIANT_CLASSES: Record<string, string> = {
   failure: "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
   max_turns: "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
   model: "bg-blue-500/[0.12] text-trace-accent-light border border-blue-500/25 font-mono text-[9px] normal-case font-medium",
+  manual: "bg-indigo-500/15 text-[#a78bfa] border border-indigo-500/30 font-mono text-[9px] normal-case font-medium",
+  recording: "bg-red-500/15 text-red-400 border border-red-500/30 font-mono text-[9px] normal-case font-medium",
   tool: "bg-purple-500/15 text-[#bb8fce] border border-purple-500/30 font-mono normal-case font-medium text-[11px]",
   enabled: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
   disabled: "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
@@ -37,6 +42,11 @@ const VARIANT_CLASSES: Record<string, string> = {
   cached: "bg-green-500/10 text-[#2ecc71] border border-green-500/20 text-[9px]",
   dynamic: "bg-orange-500/10 text-[#e67e22] border border-orange-500/20 text-[9px]",
   "original-query": "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30 text-[9px]",
+  // difficulty badges
+  "difficulty-simple": "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
+  "difficulty-moderate": "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30",
+  "difficulty-complex": "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
+  "difficulty-extreme": "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
   // role badges
   "role-system": "bg-purple-500/15 text-[#bb8fce] border border-purple-500/30",
   "role-user": "bg-blue-500/15 text-trace-accent-light border border-blue-500/30",
@@ -62,8 +72,7 @@ interface BadgeProps {
 
 export default function Badge({ variant, children, className = "" }: BadgeProps) {
   const cls =
-    VARIANT_CLASSES[variant] ??
-    (variant.startsWith("event-") ? DEFAULT_EVENT_CLASS : DEFAULT_EVENT_CLASS);
+    VARIANT_CLASSES[variant] ?? DEFAULT_EVENT_CLASS;
 
   return (
     <span

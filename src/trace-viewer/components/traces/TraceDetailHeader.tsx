@@ -1,5 +1,6 @@
 import React from "react";
 import Badge from "../Badge";
+import CollapsibleSection from "../CollapsibleSection";
 import { outcomeClass, formatDuration, formatCost, formatTokens, truncate } from "../../utils";
 
 interface TraceDetailHeaderProps {
@@ -61,6 +62,81 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           <span>{truncate(session.startUrl as string, 50)}</span>
         )}
       </div>
+      <PlanSection session={session} />
+    </div>
+  );
+}
+
+// ── Plan section ────────────────────────────────────────────────────
+
+function PlanSection({ session }: { session: Record<string, unknown> }) {
+  const plan = session.planDecomposition as
+    | { subtasks?: string[]; steps?: Array<Record<string, unknown>>; difficulty?: string }
+    | undefined;
+  const difficulty = (session.difficultyAssessment as string) ?? plan?.difficulty;
+
+  if (!plan && !difficulty) return null;
+
+  const subtasks = plan?.subtasks ?? [];
+  const steps = plan?.steps as Array<{
+    objective?: string;
+    successCriteria?: string;
+    dependencies?: number[];
+    toolProfile?: string;
+  }> | undefined;
+
+  const difficultyVariant = difficulty
+    ? (`difficulty-${difficulty.toLowerCase()}` as const)
+    : undefined;
+
+  return (
+    <div className="border-t border-trace-border mt-2.5 pt-2.5">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
+          Plan
+        </span>
+        {difficultyVariant && (
+          <Badge variant={difficultyVariant}>{difficulty}</Badge>
+        )}
+      </div>
+      {subtasks.length > 0 && (
+        <ol className="list-decimal list-inside text-[12px] text-trace-muted leading-relaxed pl-1 mb-1.5">
+          {subtasks.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
+      {steps && steps.length > 0 && (
+        <CollapsibleSection
+          label={<span className="text-[11px]">Step details ({steps.length})</span>}
+          className="mt-1"
+        >
+          <div className="pl-3 pt-1.5 space-y-2 text-[11px] text-trace-muted">
+            {steps.map((step, i) => (
+              <div key={i} className="border-l-2 border-trace-border pl-2">
+                <div className="text-trace-subtle font-medium">
+                  {i + 1}. {step.objective ?? "(no objective)"}
+                </div>
+                {step.successCriteria && (
+                  <div className="text-[10px]">
+                    Success: {step.successCriteria}
+                  </div>
+                )}
+                {step.dependencies && step.dependencies.length > 0 && (
+                  <div className="text-[10px]">
+                    Deps: [{step.dependencies.join(", ")}]
+                  </div>
+                )}
+                {step.toolProfile && (
+                  <div className="text-[10px]">
+                    Tools: {step.toolProfile}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
     </div>
   );
 }
