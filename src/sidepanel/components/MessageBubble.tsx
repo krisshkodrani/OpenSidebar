@@ -5,7 +5,9 @@ import {
   Citation,
   SessionMetrics,
   TaskCompletionMessage,
+  ToolCallSummary,
 } from "../../types";
+import { formatStepLabel } from "../../background/agent/step-labels";
 import { clsx } from "clsx";
 import { useStore } from "../store";
 import { ToolCallBadge } from "./ToolCallBadge";
@@ -17,9 +19,49 @@ import {
   MessageCircle,
   ExternalLink,
   StickyNote,
+  Terminal,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true, gfm: true });
+
+const JSON_TEXT_KEYS = [
+  "summary",
+  "text",
+  "content",
+  "answer",
+  "response",
+  "result",
+  "message",
+  "description",
+];
+
+function extractJsonText(raw: string): string | null {
+  let text = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "");
+  text = text.trim();
+  if (!text.startsWith("{")) return null;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) return null;
+  const record = obj as Record<string, unknown>;
+  for (const key of JSON_TEXT_KEYS) {
+    if (typeof record[key] === "string" && record[key]) return record[key] as string;
+  }
+  // Fallback: collect all string values (depth-limited)
+  const strings: string[] = [];
+  const collect = (val: unknown, depth: number) => {
+    if (depth > 3) return;
+    if (typeof val === "string" && val) strings.push(val);
+    else if (typeof val === "object" && val !== null && !Array.isArray(val)) {
+      for (const v of Object.values(val)) collect(v, depth + 1);
+    }
+  };
+  collect(record, 0);
+  return strings.length > 0 ? strings.join("\n\n") : null;
+}
 
 function formatTokensCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -209,6 +251,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
   const isAnnotation = isUser && message.isAnnotation;
+  const isManualCommand = !!message.isManualCommand;
   const hasDetails =
     !isUser &&
     ((message.steps?.length ?? 0) > 0 || message.toolCalls.length > 0);
@@ -221,7 +264,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
-    const cleaned = message.content
+    let cleaned = message.content
       .replace(
         /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
         "",
@@ -229,10 +272,37 @@ export const MessageBubble = React.memo(function MessageBubble({
       .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
       .trim();
     if (!cleaned) return "";
+    const extracted = extractJsonText(cleaned);
+    if (extracted) cleaned = extracted;
     return marked.parse(cleaned) as string;
   }, [message.content, isUser]);
 
   const stepCount = message.steps?.length ?? 0;
+
+  // Human-readable summary for tool-only turns (no LLM text output)
+  // Prefer pre-resolved step labels (with element names) over raw tool call labels
+  const toolOnlyLabel = useMemo(() => {
+    if (isUser || renderedHtml || message.thinking || message.completionData)
+      return null;
+    // Steps already have resolved labels from the background (with element names)
+    const toolSteps = message.steps?.filter((s) => s.type === "tool");
+    if (toolSteps && toolSteps.length > 0) {
+      return toolSteps.map((s) => s.label).join(" → ");
+    }
+    // Fallback: raw tool calls without element resolution
+    if (message.toolCalls.length === 0) return null;
+    return message.toolCalls
+      .map((tc: ToolCallSummary) => formatStepLabel(tc.toolName, tc.args))
+      .join(" → ");
+  }, [isUser, renderedHtml, message.thinking, message.completionData, message.steps, message.toolCalls]);
+
+  const showBubble =
+    isUser ||
+    message.completionData ||
+    renderedHtml ||
+    message.thinking ||
+    toolOnlyLabel ||
+    (message.toolCalls.length > 0 && message.isStreaming);
 
   return (
     <div
@@ -241,46 +311,67 @@ export const MessageBubble = React.memo(function MessageBubble({
         isUser ? "items-end" : "items-start",
       )}
     >
-      <div
-        className={clsx(
-          "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
-          isUser
-            ? isAnnotation
-              ? "bg-violet-500 text-white italic whitespace-pre-wrap"
-              : isFeedback
-                ? "bg-amber-500 text-white whitespace-pre-wrap"
-                : "bg-primary-600 text-white whitespace-pre-wrap"
-            : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60",
-          !isUser && message.isStreaming && "streaming-cursor",
-        )}
-      >
-        {isAnnotation && (
-          <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
-            <StickyNote size={10} />
-            <span>annotation</span>
-          </div>
-        )}
-        {isFeedback && !isAnnotation && (
-          <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
-            <MessageCircle size={10} />
-            <span>feedback</span>
-          </div>
-        )}
-        {isUser ? (
-          message.content
-        ) : message.completionData ? (
-          <CompletionSummary data={message.completionData} />
-        ) : message.content ? (
-          <div
-            className="prose-chat"
-            dangerouslySetInnerHTML={{ __html: renderedHtml }}
-          />
-        ) : message.toolCalls.length > 0 ? (
-          <span className="text-warm-500 italic">Thinking...</span>
-        ) : (
-          ""
-        )}
-      </div>
+      {showBubble && (
+        <div
+          className={clsx(
+            "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
+            isUser
+              ? isManualCommand
+                ? "bg-indigo-500 text-white font-mono whitespace-pre-wrap"
+                : isAnnotation
+                  ? "bg-violet-500 text-white italic whitespace-pre-wrap"
+                  : isFeedback
+                    ? "bg-amber-500 text-white whitespace-pre-wrap"
+                    : "bg-primary-600 text-white whitespace-pre-wrap"
+              : isManualCommand
+                ? "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-indigo-200/60 dark:border-indigo-700/60"
+                : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60",
+            !isUser && message.isStreaming && "streaming-cursor",
+          )}
+        >
+          {isUser && isManualCommand && (
+            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
+              <Terminal size={10} />
+              <span>manual</span>
+            </div>
+          )}
+          {isAnnotation && !isManualCommand && (
+            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
+              <StickyNote size={10} />
+              <span>annotation</span>
+            </div>
+          )}
+          {isFeedback && !isAnnotation && !isManualCommand && (
+            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
+              <MessageCircle size={10} />
+              <span>feedback</span>
+            </div>
+          )}
+          {!isUser && message.thinking && (
+            <div className="text-warm-400 dark:text-warm-500 italic text-xs leading-relaxed whitespace-pre-wrap">
+              {message.thinking}
+            </div>
+          )}
+          {isUser ? (
+            message.content
+          ) : message.completionData ? (
+            <CompletionSummary data={message.completionData} />
+          ) : renderedHtml ? (
+            <div
+              className="prose-chat"
+              dangerouslySetInnerHTML={{ __html: renderedHtml }}
+            />
+          ) : toolOnlyLabel ? (
+            <span className="text-warm-400 dark:text-warm-500 italic text-xs">
+              {toolOnlyLabel}
+            </span>
+          ) : message.isStreaming ? (
+            <span className="text-warm-500 italic">Thinking...</span>
+          ) : message.thinking ? null : (
+            ""
+          )}
+        </div>
+      )}
 
       {hasDetails && (
         <div className="w-full max-w-[85%] mt-0.5">

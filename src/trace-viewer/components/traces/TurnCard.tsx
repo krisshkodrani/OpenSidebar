@@ -53,7 +53,7 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
         <span className="text-[13px] font-bold text-trace-accent-light shrink-0">
           Turn {turnNum}
         </span>
-        {model && <Badge variant="model">{shortModel(model)}</Badge>}
+        {model && <Badge variant={model === "manual" ? "manual" : model === "recording" ? "recording" : "model"}>{shortModel(model)}</Badge>}
         {compressionLevel && compressionLevel !== "NONE" && (
           <span className="text-[10px] text-trace-muted">
             compress: {compressionLevel}

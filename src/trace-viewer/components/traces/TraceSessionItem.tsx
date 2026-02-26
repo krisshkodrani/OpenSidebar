@@ -52,7 +52,7 @@ export default function TraceSessionItem({
       {models.length > 0 && (
         <div className="flex gap-1 mt-1 flex-wrap">
           {models.map((m, i) => (
-            <Badge key={i} variant="model">
+            <Badge key={i} variant={m === "manual" ? "manual" : m === "recording" ? "recording" : "model"}>
               {shortModel(m)}
             </Badge>
           ))}

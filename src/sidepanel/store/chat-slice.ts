@@ -93,6 +93,14 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       persistMessages(get().messages, get().activeWorkspaceId);
     }),
 
+  setStreamThinking: (thinking) =>
+    set((state) => {
+      const last = state.messages[state.messages.length - 1];
+      if (last?.role === "assistant") {
+        last.thinking = thinking;
+      }
+    }),
+
   finalizeStream: (citations?: Citation[]) =>
     set((state) => {
       const last = state.messages[state.messages.length - 1];
