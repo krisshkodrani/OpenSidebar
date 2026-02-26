@@ -10,7 +10,7 @@
 
 import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { killTree, clearPort, spawnWithExited } from "./process-utils.ts";
+import { killTree, clearPort, spawnWithExited, IS_WINDOWS } from "./process-utils.ts";
 
 const LOG_SERVER_PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const VITE_PORT = 5173;
@@ -80,10 +80,16 @@ async function main(): Promise<void> {
     );
   } else {
     console.log("[dev:stack] Starting log drain server...");
-    logs = spawnWithExited("npx", ["tsx", "scripts/log-server.ts"], {
-      stdio: "inherit",
-      shell: true,
-    });
+    // Spawn Node directly (no cmd.exe shell) to avoid Windows "Terminate batch job?" prompt
+    logs = IS_WINDOWS
+      ? spawnWithExited(process.execPath, [
+          path.resolve("node_modules/tsx/dist/cli.mjs"),
+          "scripts/log-server.ts",
+        ], { stdio: "inherit" })
+      : spawnWithExited("npx", ["tsx", "scripts/log-server.ts"], {
+          stdio: "inherit",
+          shell: true,
+        });
     if (await waitForLogServer()) {
       console.log("[dev:stack] Log server healthy.");
     } else {
@@ -95,10 +101,15 @@ async function main(): Promise<void> {
 
   // 4. Start Vite DIRECTLY — no vite-clean wrapper
   console.log("[dev:stack] Starting Vite dev server...");
-  const dev = spawnWithExited("npx", ["vite"], {
-    stdio: "inherit",
-    shell: true,
-  });
+  // Spawn Node directly (no cmd.exe shell) to avoid Windows "Terminate batch job?" prompt
+  const dev = IS_WINDOWS
+    ? spawnWithExited(process.execPath, [
+        path.resolve("node_modules/vite/bin/vite.js"),
+      ], { stdio: "inherit" })
+    : spawnWithExited("npx", ["vite"], {
+        stdio: "inherit",
+        shell: true,
+      });
 
   console.log(`[dev:stack] Trace viewer: http://127.0.0.1:${LOG_SERVER_PORT}/viewer`);
 
