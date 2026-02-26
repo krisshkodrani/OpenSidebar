@@ -39,6 +39,7 @@ export default defineConfig(({ mode }) => {
         input: {
           offscreen: "src/offscreen/memory/index.html",
           "trace-viewer": "src/trace-viewer/index.html",
+          "permissions-microphone": "src/permissions/microphone.html",
         },
         external: [],
       },
