@@ -67,6 +67,16 @@ vi.mock("../../src/background/llm", () => ({
   MODEL_SMART: "minimax/minimax-m2.5",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
+  extractThinkContent: (text: string) => {
+    const blocks: string[] = [];
+    const re = /<think>([\s\S]*?)<\/think>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const inner = m[1].trim();
+      if (inner) blocks.push(inner);
+    }
+    return blocks.length > 0 ? blocks.join("\n\n") : null;
+  },
 }));
 
 import { AgentLoop } from "../../src/background/agent/loop";

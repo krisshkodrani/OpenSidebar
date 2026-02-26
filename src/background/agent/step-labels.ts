@@ -1,12 +1,40 @@
-import { ToolName } from "../../types";
+import { ToolName, TaggedElement } from "../../types";
+
+/** Resolve an element tag ID to a short human-readable label like `"Submit" button` */
+export type ElementResolver = (id: number) => string | undefined;
+
+/** Build a resolver from a snapshot's tagged elements */
+export function buildElementResolver(
+  elements: TaggedElement[],
+): ElementResolver {
+  const map = new Map<number, TaggedElement>();
+  for (const el of elements) map.set(el.tag, el);
+  return (id: number) => {
+    const el = map.get(id);
+    if (!el) return undefined;
+    const text = el.text?.slice(0, 24);
+    if (text) return `"${text}" ${el.tagName}`;
+    return el.tagName;
+  };
+}
 
 /**
  * Maps a tool invocation to a concise, human-readable label for the step timeline.
+ * When `resolve` is provided, element IDs are replaced with descriptive names.
  */
 export function formatStepLabel(
   toolName: ToolName,
   args: Record<string, unknown>,
+  resolve?: ElementResolver,
 ): string {
+  /** Resolve a tag ID to a label, falling back to `[id]` */
+  const el = (id: unknown): string => {
+    if (id == null) return "[?]";
+    const num = Number(id);
+    const label = resolve && !isNaN(num) ? resolve(num) : undefined;
+    return label ?? `[${id}]`;
+  };
+
   switch (toolName) {
     case ToolName.NAVIGATE: {
       const url = args.url as string | undefined;
@@ -20,7 +48,7 @@ export function formatStepLabel(
       return "Navigate";
     }
     case ToolName.CLICK_ELEMENT:
-      return `Click element [${args.id ?? "?"}]`;
+      return `Click ${el(args.id)}`;
     case ToolName.TYPE_TEXT: {
       const text = args.text as string | undefined;
       const preview = text
@@ -28,16 +56,16 @@ export function formatStepLabel(
           ? `"${text.slice(0, 24)}..."`
           : `"${text}"`
         : "";
-      return `Type ${preview} into [${args.id ?? "?"}]`;
+      return `Type ${preview} into ${el(args.id)}`;
     }
     case ToolName.SELECT_OPTION:
-      return `Select "${args.value ?? "?"}" in [${args.id ?? "?"}]`;
+      return `Select "${args.value ?? "?"}" in ${el(args.id)}`;
     case ToolName.SCROLL_PAGE:
       return `Scroll ${args.direction ?? "down"}`;
     case ToolName.READ_PAGE:
       return "Read page content";
     case ToolName.HOVER_ELEMENT:
-      return `Hover element [${args.id ?? "?"}]`;
+      return `Hover ${el(args.id)}`;
     case ToolName.FIND_ELEMENT: {
       const text = args.text as string | undefined;
       return text ? `Find "${text.slice(0, 30)}"` : "Find element";
@@ -84,11 +112,11 @@ export function formatStepLabel(
       return `Press ${modStr}${key ?? "?"}`;
     }
     case ToolName.DRAG_AND_DROP:
-      return `Drag [${args.sourceId ?? "?"}] → [${args.targetId ?? "?"}]`;
+      return `Drag ${el(args.sourceId)} → ${el(args.targetId)}`;
     case ToolName.DRAW_STROKE:
-      return `Draw on canvas [${args.id ?? "?"}]`;
+      return `Draw on canvas ${el(args.id)}`;
     case ToolName.HIDE_ELEMENT:
-      return `Hide element [${args.id ?? "?"}]`;
+      return `Hide ${el(args.id)}`;
     case ToolName.DONE:
       return "Task complete";
     case ToolName.ESCALATE: {
@@ -100,8 +128,8 @@ export function formatStepLabel(
     case ToolName.READ_ELEMENT: {
       const attr = args.attribute as string | undefined;
       return attr
-        ? `Read "${attr}" of [${args.id ?? "?"}]`
-        : `Read text of [${args.id ?? "?"}]`;
+        ? `Read "${attr}" of ${el(args.id)}`
+        : `Read text of ${el(args.id)}`;
     }
     case ToolName.EXECUTE_JS: {
       const code = args.code as string | undefined;
@@ -113,7 +141,7 @@ export function formatStepLabel(
       return `Execute JS: ${preview}`;
     }
     case ToolName.UPLOAD_FILE:
-      return `Upload file to [${args.id ?? "?"}]`;
+      return `Upload file to ${el(args.id)}`;
     case ToolName.GO_BACK:
       return "Go back";
     case ToolName.GO_FORWARD:
@@ -121,9 +149,9 @@ export function formatStepLabel(
     case ToolName.LIST_TABS:
       return "List tabs";
     case ToolName.RIGHT_CLICK:
-      return `Right-click [${args.id ?? "?"}]`;
+      return `Right-click ${el(args.id)}`;
     case ToolName.SET_CHECKBOX:
-      return `Set checkbox [${args.id ?? "?"}] = ${args.checked ?? "?"}`;
+      return `Set checkbox ${el(args.id)} = ${args.checked ?? "?"}`;
     case ToolName.DOWNLOAD_FILE: {
       const url = args.url as string | undefined;
       if (url) {
@@ -141,7 +169,7 @@ export function formatStepLabel(
       return `Click at (${x ?? "?"}, ${y ?? "?"})`;
     }
     case ToolName.TRANSCRIBE_AUDIO:
-      return `Transcribe audio [${args.id ?? "?"}]`;
+      return `Transcribe audio ${el(args.id)}`;
     case ToolName.GROUP_TABS: {
       const title = args.title as string | undefined;
       return title ? `Group tabs: "${title}"` : "Group tabs";
@@ -204,7 +232,7 @@ export function formatStepLabel(
     case ToolName.FAST_FORWARD:
       return "Toggle fast-forward";
     case ToolName.INSPECT_REACT:
-      return `Inspect React state [${args.id ?? "?"}]`;
+      return `Inspect React state ${el(args.id)}`;
     case ToolName.REACT_SET_INPUT: {
       const val = args.value as string | undefined;
       const preview = val
@@ -212,7 +240,7 @@ export function formatStepLabel(
           ? `"${val.slice(0, 20)}..."`
           : `"${val}"`
         : "";
-      return `React set input ${preview} on [${args.id ?? "?"}]`;
+      return `React set input ${preview} on ${el(args.id)}`;
     }
     case ToolName.INSPECT_REACT_TREE: {
       const filter = args.filter as string | undefined;

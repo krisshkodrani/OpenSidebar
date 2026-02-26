@@ -72,6 +72,25 @@ function cerebrasProvider(apiKey: string): ProviderConfig {
   };
 }
 
+/** Extract reasoning content from model output: XML think tags and markdown Think/Observe/Verify sections */
+export function extractThinkContent(text: string): string | null {
+  const blocks: string[] = [];
+  // XML <think>...</think> blocks
+  const xmlRe = /<think>([\s\S]*?)<\/think>/g;
+  let m: RegExpExecArray | null;
+  while ((m = xmlRe.exec(text)) !== null) {
+    const inner = m[1].trim();
+    if (inner) blocks.push(inner);
+  }
+  // Markdown **Think**/**Observe**/**Verify** sections (up to **Act** or end)
+  const mdRe = /\*\*(Think|Observe|Verify)\*\*\s*([\s\S]*?)(?=\*\*Act\*\*|$)/gi;
+  while ((m = mdRe.exec(text)) !== null) {
+    const inner = m[2].trim();
+    if (inner) blocks.push(inner);
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
 /** Strip reasoning blocks from model output: XML think tags and markdown Think/Verify sections */
 export function stripThinkTags(text: string): string {
   // XML think blocks

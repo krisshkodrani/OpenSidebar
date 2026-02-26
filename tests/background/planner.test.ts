@@ -56,6 +56,7 @@ vi.mock("../../src/background/llm", () => ({
     MODEL_FAST: "google/gemini-2.5-flash-lite",
     MODEL_SMART: "minimax/minimax-m2.5",
     stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
+    extractThinkContent: () => null,
 }));
 
 import { TaskPlanner } from "../../src/background/agent/planner";

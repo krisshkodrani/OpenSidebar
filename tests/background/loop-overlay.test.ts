@@ -48,6 +48,7 @@ vi.mock("../../src/background/llm", () => ({
   MODEL_SMART: "minimax/minimax-m2.5",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
+  extractThinkContent: () => null,
 }));
 
 vi.mock("../../src/background/keepalive", () => ({
