@@ -8,9 +8,9 @@
   },
   {
     "id": "evals.judge.system",
-    "version": "v2",
-    "hash": "4de9e0b1",
-    "description": "System prompt for eval LLM-as-judge with 5-dimension rubric.",
+    "version": "v3",
+    "hash": "c4cf21df",
+    "description": "System prompt for eval LLM-as-judge with 5-dimension rubric. Reasoning-before-score format.",
     "sourcePath": "prompts/evals/judge_system.md"
   },
   {
@@ -36,9 +36,9 @@
   },
   {
     "id": "evals.planner_judge.system",
-    "version": "v1",
-    "hash": "f13a16f1",
-    "description": "System prompt for planner eval LLM-as-judge with 5-dimension rubric.",
+    "version": "v2",
+    "hash": "d17ef18e",
+    "description": "System prompt for planner eval LLM-as-judge with 5-dimension rubric. Reasoning-before-score format.",
     "sourcePath": "prompts/evals/planner_judge_system.md"
   },
   {
