@@ -344,32 +344,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Voice Input
-                </h3>
-
-                <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Speech Provider
-                  </label>
-                  <select
-                    value={formState.speechProvider}
-                    onChange={(e) => handleChange("speechProvider", e.target.value)}
-                    className="w-full text-sm border border-warm-300 dark:border-warm-700 rounded px-2 py-1.5 bg-warm-50 dark:bg-warm-900 dark:text-warm-100 outline-none"
-                  >
-                    <option value="browser">Browser (Web Speech API)</option>
-                    <option value="groq">Groq Whisper (Higher Accuracy)</option>
-                  </select>
-                </div>
-
-                {formState.speechProvider === "groq" && !formState.groqApiKey && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Groq API key required for Whisper.
-                  </p>
-                )}
-              </section>
-
-              <section className="space-y-3">
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
                   Appearance
                 </h3>
 

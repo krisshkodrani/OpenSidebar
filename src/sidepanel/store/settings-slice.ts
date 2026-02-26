@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: false,
-  speechProvider: "browser",
+  speechProvider: "groq",
   orchestratorMaxTotalTokens: 1_000_000,
   teachModeEnabled: true,
   autoSkillReplayEnabled: true,
