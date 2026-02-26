@@ -1,0 +1,75 @@
+{
+  "id": "planner-orchestration-001",
+  "sourceSessionId": "manual-orchestration-001",
+  "method": "decompose",
+  "input": {
+    "query": "Search for 'wireless headphones' on Amazon, add the first result to cart, and proceed to checkout",
+    "pageTitle": "Amazon.com - Online Shopping",
+    "pageUrl": "https://www.amazon.com/",
+    "perception": "LAYOUT: Amazon homepage with search bar, navigation menu, and product carousels. STATE: Logged in, cart empty. CONTENT: [1] input#twotabsearchtextbox placeholder='Search Amazon', [2] button#nav-search-submit-button \"Go\", [3] a#nav-cart \"Cart (0)\". BLOCKERS: None. SPATIAL: Search bar top-center, cart icon top-right, product grid below."
+  },
+  "expected": {
+    "difficulty": "moderate",
+    "isMultiStep": true,
+    "stepCountRange": { "min": 3, "max": 5 },
+    "mustCoverTopics": ["search", "headphones", "cart", "checkout"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"],
+    "terminationExpectations": {
+      "lastStepCallsDone": true,
+      "minVerificationGates": 3,
+      "allStepsHaveGates": true,
+      "respectsUserStopCondition": null
+    }
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Type 'wireless headphones' in the search bar and submit the search",
+        "Click on the first product result from the search results page",
+        "Click 'Add to Cart' on the product detail page and verify cart updates",
+        "Navigate to the cart and click 'Proceed to Checkout'"
+      ],
+      "steps": [
+        {
+          "objective": "Search for 'wireless headphones' using the search bar",
+          "successCriteria": "Search results page loads with headphone products listed",
+          "dependencies": [],
+          "verifyAfter": { "trigger": "Search results page with product listings visible", "action": "advance_step" },
+          "toolProfile": "form_fill"
+        },
+        {
+          "objective": "Click on the first product result to view its detail page",
+          "successCriteria": "Product detail page loads with Add to Cart button visible",
+          "dependencies": [0],
+          "verifyAfter": { "trigger": "Product detail page with price and Add to Cart button", "action": "advance_step" },
+          "toolProfile": "navigate"
+        },
+        {
+          "objective": "Click 'Add to Cart' and verify the cart count increments",
+          "successCriteria": "Cart icon shows count of 1",
+          "dependencies": [1],
+          "verifyAfter": { "trigger": "Cart count updated to 1", "action": "advance_step" },
+          "toolProfile": "form_fill"
+        },
+        {
+          "objective": "Navigate to cart and click 'Proceed to Checkout'",
+          "successCriteria": "Checkout page loads with order summary",
+          "dependencies": [2],
+          "verifyAfter": { "trigger": "Checkout page with shipping/payment form", "action": "call_done" },
+          "toolProfile": "navigate"
+        }
+      ],
+      "difficulty": "moderate"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 16,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://www.amazon.com/",
+    "query": "Search for 'wireless headphones' on Amazon, add the first result to cart, and proceed to checkout",
+    "difficulty": "medium",
+    "tags": ["planner", "decompose", "orchestration", "end-to-end", "e-commerce"],
+    "dimension": "orchestration"
+  }
+}

@@ -59,6 +59,21 @@ function buildSummary(results: PlannerEvalResult[]): string {
   const minQual = min(results.map((r) => r.scores.stepQualityScore));
   const minAnti = min(results.map((r) => r.scores.antiPatternScore));
 
+  // New dimensions — only show when any result has non-undefined values
+  const spValues = results.map((r) => r.scores.stepProgressScore).filter((v): v is number => v != null);
+  const tmValues = results.map((r) => r.scores.terminationScore).filter((v): v is number => v != null);
+  const hasExtended = spValues.length > 0 || tmValues.length > 0;
+
+  let extendedRows = "";
+  if (hasExtended) {
+    if (spValues.length > 0) {
+      extendedRows += `| Step progress score | ${avg(spValues).toFixed(3)} | ${min(spValues).toFixed(3)} |\n`;
+    }
+    if (tmValues.length > 0) {
+      extendedRows += `| Termination score | ${avg(tmValues).toFixed(3)} | ${min(tmValues).toFixed(3)} |\n`;
+    }
+  }
+
   return `## Summary
 
 | Metric | Avg | Min (worst) |
@@ -72,7 +87,7 @@ function buildSummary(results: PlannerEvalResult[]): string {
 | Coverage score | ${avgCov.toFixed(3)} | ${minCov.toFixed(3)} |
 | Step quality score | ${avgQual.toFixed(3)} | ${minQual.toFixed(3)} |
 | Anti-pattern score | ${avgAnti.toFixed(3)} | ${minAnti.toFixed(3)} |
-| Composite | ${avgComp.toFixed(3)} | ${minComp.toFixed(3)} |
+${extendedRows}| Composite | ${avgComp.toFixed(3)} | ${minComp.toFixed(3)} |
 `;
 }
 
@@ -171,9 +186,16 @@ function buildFailedCases(
       const dim = c?.metadata.dimension ?? "untagged";
 
       const judge = r.scores.judge;
+      const judgeExtras = judge
+        ? [
+            judge.verificationGateQuality != null ? `vgate=${judge.verificationGateQuality}` : "",
+            judge.terminationAwareness != null ? `term=${judge.terminationAwareness}` : "",
+          ].filter(Boolean).join(" ")
+        : "";
       const judgeBlock = judge
         ? `  - **Judge**: coh=${judge.planCoherence} ali=${judge.taskAlignment} ` +
-          `gran=${judge.granularity} feas=${judge.feasibility} rob=${judge.robustness}\n` +
+          `gran=${judge.granularity} feas=${judge.feasibility} rob=${judge.robustness}` +
+          (judgeExtras ? ` ${judgeExtras}` : "") + `\n` +
           `  - **Reasoning**: ${judge.reasoning.slice(0, 300)}\n` +
           (judge.promptFixSuggestion
             ? `  - **Prompt fix**: ${judge.promptFixSuggestion}\n`
@@ -197,7 +219,7 @@ function buildFailedCases(
 - **Dimension**: ${dim}
 - **Method**: ${r.method}
 - **Status**: ${r.status}${r.error ? ` — ${r.error}` : ""}
-- **Scores**: diff=${r.scores.difficultyAccuracy.toFixed(2)} step=${r.scores.stepCountScore.toFixed(2)} cov=${r.scores.coverageScore.toFixed(2)} qual=${r.scores.stepQualityScore.toFixed(2)} anti=${r.scores.antiPatternScore.toFixed(2)} comp=${r.scores.composite.toFixed(2)}
+- **Scores**: diff=${r.scores.difficultyAccuracy.toFixed(2)} step=${r.scores.stepCountScore.toFixed(2)} cov=${r.scores.coverageScore.toFixed(2)} qual=${r.scores.stepQualityScore.toFixed(2)} anti=${r.scores.antiPatternScore.toFixed(2)}${r.scores.stepProgressScore != null ? ` sp=${r.scores.stepProgressScore.toFixed(2)}` : ""}${r.scores.terminationScore != null ? ` term=${r.scores.terminationScore.toFixed(2)}` : ""} comp=${r.scores.composite.toFixed(2)}
 - **Expected**: ${expectedSnippet}
 - **Actual**: ${actualSnippet}
 ${judgeBlock}`;

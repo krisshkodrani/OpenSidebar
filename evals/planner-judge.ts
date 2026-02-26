@@ -32,6 +32,11 @@ export async function judgePlannerCase(
       })
     : "(no reference plan available)";
 
+  const te = evalCase.expected.terminationExpectations;
+  const terminationContext = te
+    ? `Expected: last step calls done = ${te.lastStepCallsDone}, min gates = ${te.minVerificationGates}, all gates = ${te.allStepsHaveGates}, pattern = ${te.pattern ?? "none"}`
+    : "(no termination expectations specified)";
+
   const userMessage = userTemplate
     .replace("{{query}}", evalCase.input.query)
     .replace("{{pageTitle}}", evalCase.input.pageTitle)
@@ -40,7 +45,8 @@ export async function judgePlannerCase(
     .replace("{{actualPlan}}", actualPlanText)
     .replace("{{referencePlan}}", referencePlanText)
     .replace("{{sessionOutcome}}", evalCase.reference.sessionOutcome)
-    .replace("{{sessionTurnCount}}", String(evalCase.reference.sessionTurnCount));
+    .replace("{{sessionTurnCount}}", String(evalCase.reference.sessionTurnCount))
+    .replace("{{terminationContext}}", terminationContext);
 
   const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
@@ -91,6 +97,7 @@ function formatPlan(plan: {
       lines.push(`  ${i + 1}. ${s.objective ?? "(no objective)"}`);
       if (s.successCriteria) lines.push(`     Success: ${s.successCriteria}`);
       if (s.dependencies?.length) lines.push(`     Deps: [${s.dependencies.join(", ")}]`);
+      if (s.verifyAfter) lines.push(`     Verify: "${s.verifyAfter.trigger}" → ${s.verifyAfter.action}`);
     }
   } else {
     lines.push("Subtasks:");
@@ -114,6 +121,10 @@ function parseJudgeResponse(text: string): PlannerJudgeScore {
         granularity: clamp(parsed.granularity ?? 0),
         feasibility: clamp(parsed.feasibility ?? 0),
         robustness: clamp(parsed.robustness ?? 0),
+        verificationGateQuality: parsed.verificationGateQuality != null
+          ? clamp(parsed.verificationGateQuality) : undefined,
+        terminationAwareness: parsed.terminationAwareness != null
+          ? clamp(parsed.terminationAwareness) : undefined,
         reasoning: parsed.reasoning ?? "",
         promptFixSuggestion: parsed.promptFixSuggestion ?? parsed.prompt_fix_suggestion,
         pass: false,
@@ -131,12 +142,17 @@ function parseJudgeResponse(text: string): PlannerJudgeScore {
     return match ? clamp(parseFloat(match[1])) : 0;
   };
 
+  const vgate = extract("verificationGateQuality") || extract("verification_gate_quality");
+  const term = extract("terminationAwareness") || extract("termination_awareness");
+
   const score: PlannerJudgeScore = {
     planCoherence: extract("planCoherence") || extract("plan_coherence") || extract("coherence"),
     taskAlignment: extract("taskAlignment") || extract("task_alignment") || extract("alignment"),
     granularity: extract("granularity"),
     feasibility: extract("feasibility"),
     robustness: extract("robustness"),
+    verificationGateQuality: vgate || undefined,
+    terminationAwareness: term || undefined,
     reasoning: text.slice(0, 500),
     pass: false,
   };

@@ -179,6 +179,14 @@ export interface PlannerEvalCase {
     stepCountRange?: { min: number; max: number };
     mustCoverTopics?: string[];
     antiPatterns?: string[];
+    /** Maximum acceptable step count (for length_bias detection) */
+    maxSteps?: number;
+    /** Tools that must NOT appear in the plan (for capability_mismatch detection) */
+    forbiddenToolRefs?: string[];
+    /** Per-step structured evaluation annotations */
+    stepAnnotations?: StepAnnotation[];
+    /** Termination condition expectations */
+    terminationExpectations?: TerminationExpectations;
     /** validateDone */
     approved?: boolean;
   };
@@ -203,7 +211,7 @@ export interface PlannerEvalCase {
     query: string;
     difficulty: "easy" | "medium" | "hard";
     tags: string[];
-    dimension?: "difficulty_accuracy" | "step_quality" | "coverage" | "done_validation";
+    dimension?: "difficulty_accuracy" | "step_quality" | "coverage" | "done_validation" | "capability_mismatch" | "orchestration" | "length_bias" | "step_progress" | "termination";
   };
 }
 
@@ -225,6 +233,8 @@ export interface PlannerEvalResult {
     coverageScore: number;
     stepQualityScore: number;
     antiPatternScore: number;
+    stepProgressScore?: number;
+    terminationScore?: number;
     composite: number;
     judge?: PlannerJudgeScore;
   };
@@ -237,9 +247,31 @@ export interface PlannerJudgeScore {
   granularity: number;
   feasibility: number;
   robustness: number;
+  verificationGateQuality?: number;
+  terminationAwareness?: number;
   reasoning: string;
   promptFixSuggestion?: string;
   pass: boolean;
+}
+
+/** Golden annotation for a single plan step. */
+export interface StepAnnotation {
+  index: number;
+  objectiveClarity: "high" | "medium" | "low";
+  criteriaSpecificity: "high" | "medium" | "low";
+  dependenciesCorrect: boolean;
+  requiresVerificationGate: boolean;
+  expectedGateAction?: "advance_step" | "call_done";
+  notes?: string;
+}
+
+/** What termination signals should a well-formed plan include? */
+export interface TerminationExpectations {
+  lastStepCallsDone: boolean;
+  minVerificationGates: number;
+  allStepsHaveGates: boolean;
+  respectsUserStopCondition: boolean | null;
+  pattern?: string;
 }
 
 // ── Context compression eval types ───────────────────────────────────

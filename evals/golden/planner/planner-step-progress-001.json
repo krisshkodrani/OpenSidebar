@@ -1,0 +1,109 @@
+{
+  "id": "planner-step-progress-001",
+  "sourceSessionId": "manual-step-progress-001",
+  "method": "decompose",
+  "input": {
+    "query": "Search for 'running shoes' on this e-commerce site, add the first result to cart, and complete checkout",
+    "pageTitle": "SportsDirect - Running Gear",
+    "pageUrl": "https://www.sportsdirect.com/",
+    "perception": "LAYOUT: E-commerce homepage with search bar, category navigation, and featured products. STATE: Not logged in, cart empty. CONTENT: [1] input#search-input placeholder='Search products...', [2] button.search-btn \"Search\", [3] a.cart-icon \"Cart (0)\", [4] a.account-link \"Sign In\". BLOCKERS: Cookie consent banner at bottom. SPATIAL: Search bar top-center, cart top-right, product grid below fold."
+  },
+  "expected": {
+    "difficulty": "moderate",
+    "isMultiStep": true,
+    "stepCountRange": { "min": 3, "max": 5 },
+    "mustCoverTopics": ["search", "shoes", "cart", "checkout"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"],
+    "stepAnnotations": [
+      {
+        "index": 0,
+        "objectiveClarity": "high",
+        "criteriaSpecificity": "high",
+        "dependenciesCorrect": true,
+        "requiresVerificationGate": true,
+        "expectedGateAction": "advance_step"
+      },
+      {
+        "index": 1,
+        "objectiveClarity": "high",
+        "criteriaSpecificity": "high",
+        "dependenciesCorrect": true,
+        "requiresVerificationGate": true,
+        "expectedGateAction": "advance_step"
+      },
+      {
+        "index": 2,
+        "objectiveClarity": "high",
+        "criteriaSpecificity": "high",
+        "dependenciesCorrect": true,
+        "requiresVerificationGate": true,
+        "expectedGateAction": "advance_step"
+      },
+      {
+        "index": 3,
+        "objectiveClarity": "high",
+        "criteriaSpecificity": "high",
+        "dependenciesCorrect": true,
+        "requiresVerificationGate": true,
+        "expectedGateAction": "call_done"
+      }
+    ],
+    "terminationExpectations": {
+      "lastStepCallsDone": true,
+      "minVerificationGates": 4,
+      "allStepsHaveGates": true,
+      "respectsUserStopCondition": null
+    }
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Search for 'running shoes' using the search bar",
+        "Click on the first product result from the search results",
+        "Add the product to the cart and verify cart updates",
+        "Proceed to checkout and complete the purchase flow"
+      ],
+      "steps": [
+        {
+          "objective": "Type 'running shoes' in the search bar and submit the search",
+          "successCriteria": "Search results page loads with running shoe products listed",
+          "dependencies": [],
+          "verifyAfter": { "trigger": "Search results page with product listings visible", "action": "advance_step" },
+          "toolProfile": "form_fill"
+        },
+        {
+          "objective": "Click on the first product result to view its detail page",
+          "successCriteria": "Product detail page loads with price and Add to Cart button visible",
+          "dependencies": [0],
+          "verifyAfter": { "trigger": "Product detail page with price and Add to Cart button", "action": "advance_step" },
+          "toolProfile": "navigate"
+        },
+        {
+          "objective": "Click 'Add to Cart' and verify the cart count increments to 1",
+          "successCriteria": "Cart icon shows count of 1",
+          "dependencies": [1],
+          "verifyAfter": { "trigger": "Cart count updated to 1", "action": "advance_step" },
+          "toolProfile": "form_fill"
+        },
+        {
+          "objective": "Navigate to cart and proceed through checkout to order confirmation",
+          "successCriteria": "Checkout page or order confirmation loads",
+          "dependencies": [2],
+          "verifyAfter": { "trigger": "Checkout page with shipping/payment form or order confirmation", "action": "call_done" },
+          "toolProfile": "navigate"
+        }
+      ],
+      "difficulty": "moderate"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 18,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://www.sportsdirect.com/",
+    "query": "Search for 'running shoes' on this e-commerce site, add the first result to cart, and complete checkout",
+    "difficulty": "medium",
+    "tags": ["planner", "decompose", "step-progress", "e-commerce", "end-to-end"],
+    "dimension": "step_progress"
+  }
+}
