@@ -250,6 +250,99 @@ describe("findCloseButton", () => {
         const found = findCloseButton(overlay);
         expect(found).toBe(btn);
     });
+
+    test("finds 'Got it' text button", () => {
+        const overlay = document.createElement("div");
+        const btn = document.createElement("button");
+        btn.textContent = "Got it";
+        overlay.appendChild(btn);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(btn);
+    });
+
+    test("finds 'No thanks' text button", () => {
+        const overlay = document.createElement("div");
+        const btn = document.createElement("button");
+        btn.textContent = "No thanks";
+        overlay.appendChild(btn);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(btn);
+    });
+
+    test("finds 'Accept All' in cookie consent overlay", () => {
+        const overlay = document.createElement("div");
+        overlay.textContent = "We use cookies to improve your experience.";
+        const btn = document.createElement("button");
+        btn.textContent = "Accept All";
+        overlay.appendChild(btn);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(btn);
+    });
+
+    test("prefers 'Reject All' over 'Accept All' in cookie consent overlay", () => {
+        const overlay = document.createElement("div");
+        const label = document.createElement("p");
+        label.textContent = "This site uses cookies for tracking and personalization.";
+        overlay.appendChild(label);
+
+        const acceptBtn = document.createElement("button");
+        acceptBtn.textContent = "Accept All";
+        overlay.appendChild(acceptBtn);
+
+        const rejectBtn = document.createElement("button");
+        rejectBtn.textContent = "Reject All";
+        overlay.appendChild(rejectBtn);
+
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(rejectBtn);
+    });
+
+    test("prefers aria-label over text-content match", () => {
+        const overlay = document.createElement("div");
+        // Text-matching button
+        const textBtn = document.createElement("button");
+        textBtn.textContent = "Got it";
+        overlay.appendChild(textBtn);
+        // aria-label button (higher priority)
+        const ariaBtn = document.createElement("button");
+        ariaBtn.setAttribute("aria-label", "Close dialog");
+        overlay.appendChild(ariaBtn);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(ariaBtn);
+    });
+
+    test("returns null for non-matching button text", () => {
+        const overlay = document.createElement("div");
+        const btn = document.createElement("button");
+        btn.textContent = "Learn more about our products";
+        overlay.appendChild(btn);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBeNull();
+    });
+
+    test("finds dismiss button inside link element", () => {
+        const overlay = document.createElement("div");
+        const link = document.createElement("a");
+        link.textContent = "Dismiss";
+        link.href = "#";
+        overlay.appendChild(link);
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(link);
+    });
 });
 
 describe("autoDismissModals (integrated via DISMISS_MODALS handler)", () => {
@@ -387,5 +480,47 @@ describe("extractOverlayText", () => {
         const result = extractOverlayText(el);
         expect(result.length).toBe(2000);
         expect(result.endsWith("…")).toBe(false);
+    });
+});
+
+describe("findCloseButton consent detection", () => {
+    beforeEach(() => {
+        document.body.innerHTML = "";
+    });
+
+    test("non-consent overlay does not activate consent priority", () => {
+        const overlay = document.createElement("div");
+        overlay.textContent = "Welcome to our site!";
+
+        const acceptBtn = document.createElement("button");
+        acceptBtn.textContent = "Accept All";
+        overlay.appendChild(acceptBtn);
+
+        const gotItBtn = document.createElement("button");
+        gotItBtn.textContent = "Got it";
+        overlay.appendChild(gotItBtn);
+
+        document.body.appendChild(overlay);
+
+        // Without consent keywords, "Got it" should be found via DISMISS_TEXT (priority 4)
+        // before "Accept All" which only matches via CONSENT_TEXT (priority 3, consent-only)
+        const found = findCloseButton(overlay);
+        expect(found).toBe(gotItBtn);
+    });
+
+    test("consent overlay with only accept buttons returns accept", () => {
+        const overlay = document.createElement("div");
+        const label = document.createElement("p");
+        label.textContent = "We use cookies. See our privacy policy.";
+        overlay.appendChild(label);
+
+        const btn = document.createElement("button");
+        btn.textContent = "Accept";
+        overlay.appendChild(btn);
+
+        document.body.appendChild(overlay);
+
+        const found = findCloseButton(overlay);
+        expect(found).toBe(btn);
     });
 });

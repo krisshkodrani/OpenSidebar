@@ -30,6 +30,32 @@ import {
 
 logger.info("system", "Content Script Loaded");
 
+/** Privacy-respecting consent buttons, ordered by preference (reject > accept) */
+const CONSENT_TEXT =
+  /^(reject all|reject|decline all|decline|necessary only|essentials only|accept all|accept cookies|accept all cookies|allow all|accept|agree|i agree|consent|allow)$/i;
+
+/** Generic dismiss buttons (non-consent) */
+const DISMISS_TEXT =
+  /^(close|dismiss|got it|ok|okay|no thanks|not now|maybe later|skip|i understand|continue|confirm|proceed|acknowledge|deny)$/i;
+
+/** Query selector that also pierces one level of shadow DOM */
+function querySelectorAllWithShadow(
+  root: HTMLElement,
+  selector: string,
+): HTMLElement[] {
+  const results = Array.from(root.querySelectorAll(selector)).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement,
+  );
+  for (const el of root.querySelectorAll("*")) {
+    if (el.shadowRoot) {
+      for (const shadow of el.shadowRoot.querySelectorAll(selector)) {
+        if (shadow instanceof HTMLElement) results.push(shadow);
+      }
+    }
+  }
+  return results;
+}
+
 function runJanitor() {
   const COMMON_selectors = [
     // Generic aria-labels
@@ -55,6 +81,12 @@ function runJanitor() {
     "[id*='cookie-accept']",
     "[id*='cookie-close']",
     "[id*='accept-cookies']",
+    // Additional CMP platforms
+    "#CybotCookiebotDialogBodyButtonAccept", // Cookiebot alternate
+    "[data-tid='banner-accept']", // TrustArc
+    ".cmp-button_button--accept", // Quantcast/CMP
+    ".didomi-continue-without-agreeing", // Didomi
+    "#consent_wall_optin", // Various EU sites
   ];
 
   for (const sel of COMMON_selectors) {
@@ -78,26 +110,34 @@ if (document.readyState === "complete") {
 }
 // Watch for late-injected cookie/GDPR banners (no delay — react to DOM mutations)
 let janitorRan = false;
-const janitorObserver = new MutationObserver(() => {
-  if (janitorRan) return;
-  janitorRan = true;
-  janitorObserver.disconnect();
-  runJanitor();
-});
-janitorObserver.observe(document.body ?? document.documentElement, {
-  childList: true,
-  subtree: true,
-});
-// Self-cleanup: stop observing after 3s regardless (no lingering observers)
-setTimeout(() => janitorObserver.disconnect(), 3000);
 
-// Reset stable element IDs on full page navigation (not SPA transitions)
+function armJanitorObserver() {
+  janitorRan = false;
+  const obs = new MutationObserver(() => {
+    if (janitorRan) return;
+    janitorRan = true;
+    obs.disconnect();
+    runJanitor();
+  });
+  obs.observe(document.body ?? document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  // Self-cleanup: stop observing after 3s regardless (no lingering observers)
+  setTimeout(() => obs.disconnect(), 3000);
+}
+armJanitorObserver();
+
+// Reset stable element IDs + re-arm janitor on SPA navigation
 let lastHref = window.location.href;
 window.addEventListener("pageshow", () => {
   const currentHref = window.location.href;
   if (currentHref !== lastHref) {
     resetStableIds();
     lastHref = currentHref;
+    // Re-arm janitor for late-injected banners on new SPA page
+    armJanitorObserver();
+    runJanitor();
   }
 });
 
@@ -215,15 +255,65 @@ export function findCloseButton(overlay: HTMLElement): HTMLElement | null {
     if (el instanceof HTMLElement && isElementVisible(el)) return el;
   }
 
-  // Priority 3: buttons with ×/✕/X text in top-right quadrant
+  // Priority 3: Consent-specific text buttons (privacy-preferring order)
+  const overlayText = (overlay.textContent || "").toLowerCase();
+  const isConsent =
+    /cookie|consent|gdpr|privacy|tracking|personali[sz]|data collection/.test(
+      overlayText,
+    );
+  if (isConsent) {
+    const btns = querySelectorAllWithShadow(
+      overlay,
+      "button, a, [role='button']",
+    );
+    let best: HTMLElement | null = null;
+    let bestPriority = 999;
+    for (const btn of btns) {
+      if (!isElementVisible(btn)) continue;
+      const text = btn.textContent?.trim() || "";
+      // Prefer reject (priority 1) over accept (priority 2)
+      if (
+        /^(reject all|reject|decline all|decline|necessary only|essentials only)$/i.test(
+          text,
+        )
+      ) {
+        if (bestPriority > 1) {
+          best = btn;
+          bestPriority = 1;
+        }
+      } else if (CONSENT_TEXT.test(text)) {
+        if (bestPriority > 2) {
+          best = btn;
+          bestPriority = 2;
+        }
+      }
+    }
+    if (best) return best;
+  }
+
+  // Priority 4: Generic dismiss text buttons
+  const dismissBtns = querySelectorAllWithShadow(
+    overlay,
+    "button, a, [role='button']",
+  );
+  for (const btn of dismissBtns) {
+    if (!isElementVisible(btn)) continue;
+    const text = btn.textContent?.trim() || "";
+    if (DISMISS_TEXT.test(text)) return btn;
+  }
+
+  // Priority 5: buttons with ×/✕/X text in top-right quadrant
   const overlayRect = overlay.getBoundingClientRect();
   const midX = overlayRect.left + overlayRect.width / 2;
   const midY = overlayRect.top + overlayRect.height / 2;
   const closeChars = /^[\s×✕xX✖✗✘☓]\s*$/;
 
-  const buttons = overlay.querySelectorAll("button, [role='button'], a");
+  const buttons = querySelectorAllWithShadow(
+    overlay,
+    "button, [role='button'], a",
+  );
   for (const btn of buttons) {
-    if (!(btn instanceof HTMLElement) || !isElementVisible(btn)) continue;
+    if (!isElementVisible(btn)) continue;
     const text = btn.textContent?.trim() || "";
     // Check text or if it's an SVG-only button (no text, has svg child)
     const isSvgOnly = !text && btn.querySelector("svg") !== null;
@@ -365,6 +455,15 @@ function autoDismissModals(): DismissResult {
     document.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
+  }
+
+  // Phase C.5: Restore body scroll if overlays locked it
+  if (dismissed > 0) {
+    for (const target of [document.body, document.documentElement]) {
+      if (target && window.getComputedStyle(target).overflow === "hidden") {
+        target.style.overflow = "";
+      }
+    }
   }
 
   // Phase D: Re-scan for remaining overlays
