@@ -21,9 +21,23 @@
     "sourcePath": "prompts/evals/judge_user.md"
   },
   {
+    "id": "evals.perception_judge.system",
+    "version": "v1",
+    "hash": "17588636",
+    "description": "System prompt for perception eval LLM-as-judge with 5-dimension rubric.",
+    "sourcePath": "prompts/evals/perception_judge_system.md"
+  },
+  {
+    "id": "evals.perception_judge.user",
+    "version": "v1",
+    "hash": "56b14dfa",
+    "description": "User prompt template for perception eval judge.",
+    "sourcePath": "prompts/evals/perception_judge_user.md"
+  },
+  {
     "id": "agent.system",
     "version": "v2",
-    "hash": "5c49d7e8",
+    "hash": "fa3ecfb5",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -50,8 +64,8 @@
   },
   {
     "id": "perception.interpret_page",
-    "version": "v2",
-    "hash": "0991994a",
+    "version": "v3",
+    "hash": "c6844097",
     "description": "Dual-mode perception prompt — orientation (generic) when no subtask, focused (goal-conditioned) when subtask active. Sent with screenshot + element metadata to vision model.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },

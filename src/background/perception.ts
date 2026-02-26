@@ -1,9 +1,9 @@
 /**
  * Perception Layer — Vision-based page interpretation
  *
- * Replaces raw DOM text dumps with structured page interpretations
- * produced by a multimodal model that sees both the screenshot and
- * element metadata.
+ * Dual-mode perception:
+ * - **Orientation** (no subtask): Generic page understanding for situational awareness.
+ * - **Focused** (subtask active): Goal-conditioned interpretation scoped to current subtask.
  *
  * Provider failover: Groq (Llama 4 Scout, fastest) → OpenRouter (GPT-4o-mini, fallback).
  * Fingerprint-based caching: only re-interprets when the page
@@ -24,6 +24,9 @@ const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
 
+/** Minimum subtask description length to trigger focused mode */
+const MIN_SUBTASK_LENGTH = 10;
+
 interface PerceptionProvider {
   baseUrl: string;
   apiKey: string;
@@ -32,12 +35,18 @@ interface PerceptionProvider {
   providerId: string;
 }
 
-export type ObjectiveCheckStatus = "done" | "not_done" | "unclear";
+export type CompletionSignalStatus = "done" | "not_done" | "unclear";
 
-export interface ObjectiveCheck {
-  status: ObjectiveCheckStatus;
+export interface CompletionSignal {
+  status: CompletionSignalStatus;
   evidence: string;
+  /** Whether this is a subtask-level or objective-level signal */
+  scope: "subtask" | "objective";
 }
+
+// Keep old types as aliases for backward compatibility during migration
+export type ObjectiveCheckStatus = CompletionSignalStatus;
+export type ObjectiveCheck = CompletionSignal;
 
 export interface PerceptionResult {
   interpretation: string;
@@ -46,7 +55,12 @@ export interface PerceptionResult {
   providerId?: string;
   durationMs: number;
   cached: boolean;
-  objectiveCheck?: ObjectiveCheck;
+  /** Completion signal — scoped to subtask (focused mode) or objective (orientation mode) */
+  completionSignal?: CompletionSignal;
+  /** @deprecated Use completionSignal — kept for backward compat */
+  objectiveCheck?: CompletionSignal;
+  /** Which perception mode was used */
+  mode: "orientation" | "focused";
 }
 
 export interface PerceptionInput {
@@ -55,8 +69,12 @@ export interface PerceptionInput {
   url: string;
   title: string;
   scroll: { y: number; maxY: number };
-  /** Current agent objective — enables OBJECTIVE_CHECK in perception output */
+  /** Top-level user objective (used in orientation mode fallback) */
   objective?: string;
+  /** Current subtask description — triggers focused mode when present */
+  subtask?: string;
+  /** Tool profile hint for focused mode (read_only, form_fill, navigate, full) */
+  toolProfile?: string;
 }
 
 /** Build a compact element summary for the perception prompt. */
@@ -119,20 +137,114 @@ export function buildElementSummary(elements: TaggedElement[]): string {
 }
 
 /**
- * Parse the OBJECTIVE_CHECK line from perception output.
- * Expected format: "8. OBJECTIVE_CHECK: DONE — Evidence sentence."
- * or "OBJECTIVE_CHECK: NOT_DONE — Still on the same page."
+ * Parse a completion signal line from perception output.
+ * Matches both focused mode (COMPLETION_SIGNAL) and orientation mode (OBJECTIVE_CHECK).
+ *
+ * Expected formats:
+ *   "5. COMPLETION_SIGNAL: DONE — Evidence sentence."
+ *   "6. OBJECTIVE_CHECK: NOT_DONE — Still on login page."
  */
-export function parseObjectiveCheck(text: string): ObjectiveCheck | null {
+export function parseCompletionSignal(
+  text: string,
+  scope: "subtask" | "objective",
+): CompletionSignal | null {
   const match = text.match(
-    /OBJECTIVE_CHECK:\s*(DONE|NOT_DONE|UNCLEAR)\b[.:\s\u2014-]*(.*)/i,
+    /(?:COMPLETION_SIGNAL|OBJECTIVE_CHECK):\s*(DONE|NOT_DONE|UNCLEAR)\b[.:\s\u2014-]*(.*)/i,
   );
   if (!match) return null;
   const raw = match[1].toUpperCase();
-  const status: ObjectiveCheckStatus =
+  const status: CompletionSignalStatus =
     raw === "DONE" ? "done" : raw === "NOT_DONE" ? "not_done" : "unclear";
   const evidence = (match[2] || "").trim().slice(0, 200);
-  return { status, evidence };
+  return { status, evidence, scope };
+}
+
+/** @deprecated Use parseCompletionSignal — kept for backward compat */
+export const parseObjectiveCheck = (text: string) =>
+  parseCompletionSignal(text, "objective");
+
+/**
+ * Build the perception prompt text and detect mode from input.
+ * Pure function — reusable by the eval runner to reconstruct prompts offline.
+ */
+export function buildPerceptionPrompt(input: PerceptionInput): {
+  promptText: string;
+  mode: "orientation" | "focused";
+} {
+  const scrollPct =
+    input.scroll.maxY > 0
+      ? Math.round((input.scroll.y / input.scroll.maxY) * 100)
+      : 0;
+  const moreBelow = input.scroll.y < input.scroll.maxY - 10;
+
+  const useFocusedMode =
+    !!input.subtask && input.subtask.length >= MIN_SUBTASK_LENGTH;
+  const mode: "orientation" | "focused" = useFocusedMode
+    ? "focused"
+    : "orientation";
+
+  let focusSection = "";
+  let orientationSection = "";
+
+  if (useFocusedMode) {
+    const toolHint = input.toolProfile
+      ? `\nTOOL PROFILE: ${input.toolProfile} (the agent can only use ${input.toolProfile} tools this step)`
+      : "";
+    focusSection = [
+      `\nCURRENT SUBTASK: ${input.subtask}${toolHint}`,
+      "",
+      "Report (use exact numbered format — no bold, no markdown):",
+      `1. SUBTASK_STATE: Current progress toward "${input.subtask}". Only what you observe relevant to this subtask. Cite element [N] IDs.`,
+      "2. ACTIONABLE: Elements to interact with next. List as: [tagId] brief reason. If done: \"None — subtask complete.\"",
+      "3. BLOCKERS: Anything preventing subtask progress. Classify each on its own line:",
+      "   NUISANCE [tagId] \"element text\" → click [dismissId]",
+      "   RELEVANT [tagId] \"element text\" → reason to keep",
+      "   PREREQ \"what must happen first\" → e.g. \"solve puzzle to reveal code\", \"fill [tagId] input before submit\"",
+      "   NUISANCE = cookie/consent/promo/ad popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button.",
+      "   RELEVANT = login/checkout/consent dialog with Accept/Decline — requires user decision.",
+      "   PREREQ = action/challenge that must complete before objective can proceed. Always list when an unfilled input gates progress.",
+      "   If none: \"None.\"",
+      "4. VISUAL-ONLY: Task-relevant text in images/canvas/charts/SVGs the DOM misses. Not page text already in elements.",
+      "5. COMPLETION_SIGNAL: Is this subtask visually complete? Answer exactly one:",
+      "   DONE — evidence from element metadata (not inferred from screenshot)",
+      "   NOT_DONE — what remains",
+      "   UNCLEAR — why you cannot determine",
+    ].join("\n");
+  } else {
+    const objectiveCheck = input.objective
+      ? `\n6. OBJECTIVE_CHECK: The agent's objective is: "${input.objective}". Does the visible page state suggest this objective has been accomplished? Answer exactly: DONE / NOT_DONE / UNCLEAR, followed by one evidence fragment grounded in element metadata.`
+      : "";
+    orientationSection = [
+      "\nThe agent needs situational awareness of this page.",
+      "",
+      "Report (use exact numbered format — no bold, no markdown):",
+      "1. LAYOUT: Page type and visible structure (1 fragment).",
+      "2. STATE: Active controls, open menus, focused inputs, loading indicators, toggle states. Cite [tagId] for key elements.",
+      "3. BLOCKERS: Overlays/modals/dialogs/banners blocking interaction OR logical prerequisites gating progress. For each on its own line:",
+      "   NUISANCE [tagId] \"element text\" → click [dismissTagId]",
+      "   RELEVANT [tagId] \"element text\" → reason to keep",
+      "   PREREQ \"what must happen first\" → e.g. \"complete challenge to reveal code\", \"fill [tagId] input before submit\"",
+      "   NUISANCE = cookie/consent/promo/newsletter/ad/notification/survey popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button from the element list.",
+      "   RELEVANT = login/checkout/consent dialog with Accept/Decline — user must choose. NOT auto-dismissible.",
+      "   PREREQ = content gated behind a step, timer, puzzle, or unfilled input. Always list when a required input field is empty or a challenge must be completed before proceeding.",
+      "   Vague-CTA divs (\"Click Me\", \"Try This!\", \"Nope!\") = NUISANCE with their actual [tagId] as dismiss target.",
+      "   If no blockers: \"None.\"",
+      "4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements.",
+      "5. HAZARDS: Genuinely dangerous or deceptive elements only — invisible text (text-color = bg-color), decoy buttons that navigate away, fake close buttons. For each: [tagId] \"specific risk\". Do not list elements already classified as BLOCKERS. If none: \"None.\"",
+      objectiveCheck,
+    ].join("\n");
+  }
+
+  const promptText = renderPrompt("perception.interpret_page", {
+    title: input.title || "Unknown",
+    url: input.url || "Unknown",
+    scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
+    elementSummary: buildElementSummary(input.elements),
+    focusSection,
+    orientationSection,
+  });
+
+  return { promptText, mode };
 }
 
 /** Build ordered list of perception providers from available API keys. */
@@ -188,28 +300,13 @@ export async function perceive(
       model: OPENROUTER_PERCEPTION_MODEL,
       durationMs: 0,
       cached: false,
+      mode: "orientation",
     };
   }
 
-  // Build the perception prompt with element summary
-  const scrollPct =
-    input.scroll.maxY > 0
-      ? Math.round((input.scroll.y / input.scroll.maxY) * 100)
-      : 0;
-  const moreBelow = input.scroll.y < input.scroll.maxY - 10;
-
-  // Build conditional OBJECTIVE_CHECK section when an objective is provided
-  const objectiveSection = input.objective
-    ? `8. OBJECTIVE_CHECK: The agent's current objective is: "${input.objective}". Does the visible page state suggest this objective has been accomplished? Answer exactly: DONE / NOT_DONE / UNCLEAR, followed by one sentence of evidence.`
-    : "";
-
-  const promptText = renderPrompt("perception.interpret_page", {
-    title: input.title || "Unknown",
-    url: input.url || "Unknown",
-    scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
-    elementSummary: buildElementSummary(input.elements),
-    objectiveSection,
-  });
+  // Build the perception prompt via shared helper
+  const { promptText, mode } = buildPerceptionPrompt(input);
+  const useFocusedMode = mode === "focused";
 
   const callStart = Date.now();
 
@@ -308,6 +405,7 @@ export async function perceive(
             providerId: provider.providerId,
             durationMs: Date.now() - callStart,
             cached: false,
+            mode,
           };
         }
 
@@ -325,13 +423,19 @@ export async function perceive(
         logger.info("perception", "Page interpreted", {
           provider: provider.providerId,
           model: provider.model,
+          mode,
           length: cleaned.length,
           durationMs: Date.now() - callStart,
         });
 
-        // Parse OBJECTIVE_CHECK if objective was provided
-        const objectiveCheck = input.objective
-          ? parseObjectiveCheck(cleaned)
+        // Parse completion signal — scoped to subtask in focused mode,
+        // objective in orientation mode
+        const signalScope = useFocusedMode ? "subtask" : "objective";
+        const hasSignalTarget = useFocusedMode
+          ? !!input.subtask
+          : !!input.objective;
+        const completionSignal = hasSignalTarget
+          ? parseCompletionSignal(cleaned, signalScope) ?? undefined
           : undefined;
 
         return {
@@ -341,7 +445,10 @@ export async function perceive(
           providerId: provider.providerId,
           durationMs: Date.now() - callStart,
           cached: false,
-          ...(objectiveCheck ? { objectiveCheck } : {}),
+          mode,
+          completionSignal,
+          // Backward compat: mirror to objectiveCheck
+          objectiveCheck: completionSignal,
         };
       } catch (error: any) {
         if (error.name === "AbortError" || error.name === "TimeoutError") {
@@ -355,6 +462,7 @@ export async function perceive(
             providerId: provider.providerId,
             durationMs: Date.now() - callStart,
             cached: false,
+            mode,
           };
         }
         lastError = error;
@@ -383,5 +491,6 @@ export async function perceive(
     providerId: providers[providers.length - 1].providerId,
     durationMs: Date.now() - callStart,
     cached: false,
+    mode,
   };
 }

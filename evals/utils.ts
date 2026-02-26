@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { isAbsolute, join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
-import type { EvalCase, EvalResult } from "./types";
+import type { EvalCase, EvalResult, PerceptionEvalCase } from "./types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -93,25 +93,50 @@ export function readEvalResults(): EvalResult[] {
   return results;
 }
 
-/** Load OPENROUTER_API_KEY from .env file */
-export function loadApiKey(): string {
-  const envFile = join(PROJECT_ROOT, ".env");
-  if (!existsSync(envFile)) {
-    const localEnv = join(PROJECT_ROOT, ".env.local");
-    if (existsSync(localEnv)) {
-      return extractApiKey(readFileSync(localEnv, "utf-8"));
-    }
-    throw new Error("No .env or .env.local found. Set OPENROUTER_API_KEY.");
-  }
-  return extractApiKey(readFileSync(envFile, "utf-8"));
+export interface ApiKeys {
+  openrouter: string;
+  cerebras?: string;
+  groq?: string;
 }
 
-function extractApiKey(content: string): string {
-  const match = content.match(/OPENROUTER_API_KEY=(.+)/);
-  if (!match || !match[1]) {
+/** Load API keys from .env / .env.local. OpenRouter is required; Cerebras is optional. */
+export function loadApiKeys(): ApiKeys {
+  const envFile = join(PROJECT_ROOT, ".env");
+  const localEnv = join(PROJECT_ROOT, ".env.local");
+
+  let content = "";
+  if (existsSync(envFile)) {
+    content = readFileSync(envFile, "utf-8");
+  } else if (existsSync(localEnv)) {
+    content = readFileSync(localEnv, "utf-8");
+  } else {
+    throw new Error("No .env or .env.local found. Set OPENROUTER_API_KEY.");
+  }
+
+  // Also layer .env.local on top of .env if both exist
+  if (existsSync(envFile) && existsSync(localEnv)) {
+    content += "\n" + readFileSync(localEnv, "utf-8");
+  }
+
+  const openrouter = extractEnvVar(content, "OPENROUTER_API_KEY");
+  if (!openrouter) {
     throw new Error("OPENROUTER_API_KEY not found in .env file");
   }
-  return match[1].trim();
+
+  const cerebras = extractEnvVar(content, "CEREBRAS_API_KEY") || undefined;
+  const groq = extractEnvVar(content, "GROQ_API_KEY") || undefined;
+
+  return { openrouter, cerebras, groq };
+}
+
+/** Load OPENROUTER_API_KEY from .env file (backward compat wrapper) */
+export function loadApiKey(): string {
+  return loadApiKeys().openrouter;
+}
+
+function extractEnvVar(content: string, name: string): string | null {
+  const match = content.match(new RegExp(`${name}=(.+)`));
+  return match?.[1]?.trim() || null;
 }
 
 /** Levenshtein edit distance between two arrays of strings */
@@ -149,6 +174,25 @@ export function resolveSessionId(prefix: string): string {
     throw new Error(`No session found matching: ${prefix}`);
   }
   return (match as any).sessionId;
+}
+
+// ── Perception eval I/O ──────────────────────────────────────────────
+
+export const PERCEPTION_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "perception");
+export const PERCEPTION_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "perception");
+
+/** Read all perception eval cases from the perception golden dir */
+export function readPerceptionEvalCases(): PerceptionEvalCase[] {
+  if (!existsSync(PERCEPTION_GOLDEN_DIR)) return [];
+  const files = readdirSync(PERCEPTION_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: PerceptionEvalCase[] = [];
+  for (const file of files) {
+    try {
+      const content = readFileSync(join(PERCEPTION_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
 }
 
 /** Read a prompt file from absolute or project-relative path */

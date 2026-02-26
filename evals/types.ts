@@ -76,6 +76,85 @@ export interface EvalResult {
   error?: string;
 }
 
+// ── Perception eval types ─────────────────────────────────────────────
+
+export type PerceptionMode = "orientation" | "focused";
+
+export interface PerceptionEvalCase {
+  id: string;
+  sourceSessionId: string;
+  sourceTurn: number;
+  input: {
+    screenshotDataUrl: string;
+    elements: { tag: number; tagName: string; text: string; role?: string; attributes: Record<string, string> }[];
+    url: string;
+    title: string;
+    scroll: { y: number; maxY: number };
+    subtask?: string;
+    objective?: string;
+    toolProfile?: string;
+  };
+  expected: {
+    mode: PerceptionMode;
+    requiredSections: string[];
+    pageType?: string;
+    blockers?: Array<{ type: "nuisance" | "relevant" | "prereq"; description: string; tagId?: number }>;
+    completionSignal?: { status: "done" | "not_done" | "unclear"; scope: "subtask" | "objective" } | null;
+    mustMentionElements?: number[];
+    visualOnlyContent?: string[];
+    hazards?: Array<{ tagId: number; reason: string }>;
+    notes?: string;
+  };
+  reference: {
+    interpretation: string;
+    model: string;
+    providerId?: string;
+    durationMs: number;
+  };
+  metadata: {
+    url: string;
+    query: string;
+    difficulty: "easy" | "medium" | "hard";
+    tags: string[];
+    dimension?: "accuracy" | "blockers" | "completion_signal" | "hallucination" | "hazards" | "actionability";
+  };
+}
+
+export interface PerceptionEvalResult {
+  caseId: string;
+  timestamp: string;
+  durationMs: number;
+  status: "pass" | "fail" | "error";
+  provider: { model: string; providerId: string };
+  actual: {
+    interpretation: string;
+    completionSignal?: { status: string; evidence: string; scope: string } | null;
+  };
+  scores: {
+    sectionCompleteness: number;
+    signalAccuracy: number;
+    blockerDetection: number;
+    actionability: number;
+    hallucination: number;
+    composite: number;
+    judge?: PerceptionJudgeScore;
+  };
+  error?: string;
+}
+
+export interface PerceptionJudgeScore {
+  accuracy: number;
+  blockerQuality: number;
+  groundedness: number;
+  signalCorrectness: number;
+  conciseness: number;
+  reasoning: string;
+  promptFixSuggestion?: string;
+  pass: boolean;
+}
+
+// ── Tool eval types ──────────────────────────────────────────────────
+
 /** LLM-as-judge qualitative assessment */
 export interface JudgeScore {
   toolSelection: number;
