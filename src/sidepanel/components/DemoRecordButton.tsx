@@ -51,9 +51,8 @@ export function DemoRecordButton() {
           name: data.name,
           description: data.description,
           goal: data.goal,
-          preconditions: data.preconditions,
           outcomeSignal: data.outcomeSignal,
-          golden: data.golden,
+          golden: true,
         },
       });
     } catch {

@@ -97,9 +97,12 @@ export function initializeBridge(
         break;
 
       case "STREAM_CHUNK": {
-        const { delta, done, citations, replaceContent } = message.payload;
+        const { delta, done, citations, replaceContent, thinking } = message.payload;
         if (replaceContent !== undefined) {
           state.replaceStreamContent(replaceContent);
+        }
+        if (thinking) {
+          state.setStreamThinking(thinking);
         }
         if (done) {
           state.finalizeStream(citations);
@@ -197,12 +200,60 @@ export function initializeBridge(
         });
         break;
 
-      case "GOLDEN_SAVED":
-        logger.info("ui", "Golden dataset saved", {
-          filename: message.payload.filename,
-          caseCount: message.payload.caseCount,
+      case "RECORDING_SAVED":
+        state.addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Recording "${message.payload.name}" saved — ${message.payload.turnCount} actions`,
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: false,
         });
         break;
+
+      case "MANUAL_TOOL_RESULT": {
+        const p = message.payload;
+        // Build assistant chat entry from manual command result
+        let content = p.result;
+        if (p.toolName) {
+          content = `**/${p.command}** \`${p.toolName}\` — ${p.result}`;
+        }
+        state.addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content,
+          timestamp: Date.now(),
+          toolCalls: p.toolName
+            ? [
+                {
+                  name: p.toolName,
+                  args: p.args ? JSON.stringify(p.args) : "{}",
+                  result: p.result,
+                  durationMs: p.durationMs,
+                },
+              ]
+            : [],
+          isStreaming: false,
+          isManualCommand: true,
+        });
+
+        // Update manual recording state from /record responses
+        if (p.command === "record") {
+          if (p.result.includes("started")) {
+            // Extract session info from result text
+            const nameMatch = p.result.match(/Recording started: "([^"]+)"/);
+            const idMatch = p.result.match(/ID: ([^)]+)/);
+            state.setManualRecording({
+              sessionId: idMatch?.[1] ?? "",
+              turnCount: 0,
+              name: nameMatch?.[1] ?? "manual",
+            });
+          } else if (p.result.includes("stopped")) {
+            state.setManualRecording(null);
+          }
+        }
+        break;
+      }
 
       // Messages from other sources (sidepanel->background, background->content, etc.)
       // These are filtered by the source check above, but listed for exhaustiveness.
@@ -234,6 +285,7 @@ export function initializeBridge(
       case "DEMO_ACTION_CAPTURED":
       case "GOLDEN_ACTION":
       case "GOLDEN_ANNOTATION":
+      case "MANUAL_TOOL_EXECUTE":
         break;
 
       default: {

@@ -19,6 +19,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
+import { isSlashCommand, parseSlashCommand } from "./slash-commands";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -363,6 +364,80 @@ export default function App() {
     [addMessage],
   );
 
+  // Handle manual slash command from input
+  const handleManualCommand = useCallback(
+    async (text: string) => {
+      const trimmedText = text.trim();
+      const parsed = parseSlashCommand(trimmedText);
+
+      // Add user message as manual command
+      addMessage({
+        id: crypto.randomUUID(),
+        role: "user",
+        content: trimmedText,
+        timestamp: Date.now(),
+        toolCalls: [],
+        isStreaming: false,
+        isManualCommand: true,
+      });
+      setInputText("");
+
+      if (typeof parsed === "string") {
+        // Parse error — show inline
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: parsed,
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: false,
+          isManualCommand: true,
+        });
+        return;
+      }
+
+      // Get active tab
+      let activeTabId = 0;
+      try {
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
+        if (tab?.id) activeTabId = tab.id;
+      } catch (e) {
+        logger.warn("ui", "Failed to get active tab for manual command", {
+          error: e,
+        });
+      }
+
+      // Send to background
+      try {
+        await chrome.runtime.sendMessage({
+          type: "MANUAL_TOOL_EXECUTE",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.SIDEPANEL,
+          workspaceId: useStore.getState().activeWorkspaceId,
+          payload: {
+            ...parsed,
+            tabId: activeTabId,
+          },
+        });
+      } catch (e) {
+        logger.error("ui", "Failed to send manual command", { error: e });
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "Failed to execute command — service worker not responding.",
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: false,
+          isManualCommand: true,
+        });
+      }
+    },
+    [addMessage, setInputText],
+  );
+
   const handleStop = useCallback(async () => {
     try {
       await chrome.runtime.sendMessage({
@@ -497,6 +572,7 @@ export default function App() {
           onSend={handleSend}
           onSendFeedback={handleSendFeedback}
           onSendAnnotation={handleSendAnnotation}
+          onManualCommand={handleManualCommand}
           onStop={handleStop}
         />
       </div>
