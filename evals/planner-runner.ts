@@ -21,12 +21,22 @@ import { getPromptTemplate } from "../src/prompts";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SMART_MODEL = "z-ai/glm-4.7";
 
+/** Adaptive timeout based on case difficulty */
+function decomposeTimeout(difficulty: string): number {
+  switch (difficulty) {
+    case "hard": return 240_000;
+    case "medium": return 180_000;
+    default: return 120_000;
+  }
+}
+
 /**
  * Replay a single planner decompose case.
  */
 async function replayDecompose(
   keys: ApiKeys,
   evalCase: PlannerEvalCase,
+  timeoutMs?: number,
 ): Promise<{ subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.decompose.system");
 
@@ -57,7 +67,7 @@ async function replayDecompose(
       temperature: 0,
       max_tokens: 4096,
     }),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(timeoutMs ?? 60_000),
   });
 
   if (!response.ok) {
@@ -69,11 +79,22 @@ async function replayDecompose(
   const text = json.choices?.[0]?.message?.content ?? "";
   const modelVersion: string | undefined = json.model ?? undefined;
 
+  // Strip markdown code fences (same cleanup as production planner.ts)
+  const cleaned = text
+    .replace(/```(?:json)?\s*/g, "")
+    .replace(/```/g, "")
+    .trim();
+
   let parsed: any;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Failed to parse planner JSON response: ${text.slice(0, 200)}`);
+    // Fallback: extract first {...} block
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error(`Failed to parse planner JSON response: ${text.slice(0, 200)}`);
+    }
+    parsed = JSON.parse(match[0]);
   }
 
   const subtasks: string[] = parsed.subtasks ?? parsed.steps?.map((s: any) => s.objective) ?? [];
@@ -136,11 +157,21 @@ async function replayValidateDone(
   const text = json.choices?.[0]?.message?.content ?? "";
   const modelVersion: string | undefined = json.model ?? undefined;
 
+  // Strip markdown code fences (same cleanup as production planner.ts)
+  const cleaned = text
+    .replace(/```(?:json)?\s*/g, "")
+    .replace(/```/g, "")
+    .trim();
+
   let parsed: any;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Failed to parse validateDone JSON: ${text.slice(0, 200)}`);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error(`Failed to parse validateDone JSON: ${text.slice(0, 200)}`);
+    }
+    parsed = JSON.parse(match[0]);
   }
 
   return {
@@ -199,7 +230,7 @@ export async function runPlannerEvals(options: {
 
     try {
       if (evalCase.method === "decompose") {
-        const actual = await replayDecompose(keys, evalCase);
+        const actual = await replayDecompose(keys, evalCase, decomposeTimeout(evalCase.metadata.difficulty));
         const durationMs = Date.now() - start;
         const scores = scorePlannerDecompose(evalCase, actual);
         const pass = isPlannerPass(scores, "decompose");
@@ -267,6 +298,8 @@ export async function runPlannerEvals(options: {
           coverageScore: 0,
           stepQualityScore: 0,
           antiPatternScore: 0,
+          stepProgressScore: 0,
+          terminationScore: 0,
           composite: 0,
         },
         error: err.message,

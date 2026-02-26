@@ -36,16 +36,16 @@
   },
   {
     "id": "evals.planner_judge.system",
-    "version": "v2",
-    "hash": "d17ef18e",
-    "description": "System prompt for planner eval LLM-as-judge with 5-dimension rubric. Reasoning-before-score format.",
+    "version": "v4",
+    "hash": "b13f6281",
+    "description": "System prompt for planner eval LLM-as-judge with 5+2 dimension rubric. v4: verification gate quality and termination awareness sub-dimensions.",
     "sourcePath": "prompts/evals/planner_judge_system.md"
   },
   {
     "id": "evals.planner_judge.user",
-    "version": "v1",
-    "hash": "764a6e0f",
-    "description": "User prompt template for planner eval judge.",
+    "version": "v2",
+    "hash": "44625fcf",
+    "description": "User prompt template for planner eval judge. v2: termination context section.",
     "sourcePath": "prompts/evals/planner_judge_user.md"
   },
   {
@@ -85,9 +85,9 @@
   },
   {
     "id": "planner.decompose.system",
-    "version": "v2",
-    "hash": "99128855",
-    "description": "Planner decomposition system prompt for the task planner.",
+    "version": "v3",
+    "hash": "5b0035b3",
+    "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
   {

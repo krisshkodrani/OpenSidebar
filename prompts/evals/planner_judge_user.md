@@ -1,7 +1,7 @@
 ---
 id: evals.planner_judge.user
-version: v1
-description: User prompt template for planner eval judge.
+version: v2
+description: "User prompt template for planner eval judge. v2: termination context section."
 ---
 
 ## Task Context
@@ -22,6 +22,10 @@ description: User prompt template for planner eval judge.
 
 - **Outcome:** {{sessionOutcome}}
 - **Turn count:** {{sessionTurnCount}}
+
+## Termination Context
+
+{{terminationContext}}
 
 ## Instructions
 
