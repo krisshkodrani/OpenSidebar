@@ -31,6 +31,7 @@ export interface EvalCase {
     sessionOutcome: string;
     difficulty: "easy" | "medium" | "hard";
     tags: string[];
+    pathology?: string;
   };
   /**
    * Prompt-quality expectations for orchestration behaviors.
@@ -77,9 +78,14 @@ export interface EvalResult {
 
 /** LLM-as-judge qualitative assessment */
 export interface JudgeScore {
-  taskCompletion: number;
   toolSelection: number;
+  parameterAccuracy: number;
   efficiency: number;
+  antiPatternAvoidance: number;
+  reasoningQuality: number;
   reasoning: string;
+  promptFixSuggestion?: string;
   pass: boolean;
+  /** @deprecated Use toolSelection instead */
+  taskCompletion?: number;
 }

@@ -1,157 +1,149 @@
-# OpenSidebar Evals (Manual Workflow)
+# OpenSidebar Evals
 
-This eval stack is intentionally manual-first. It is designed for prompt iteration, golden-dataset growth, and AI-assisted critique without CI gates.
+Trace-based evaluation system for the OpenSidebar browser agent. Replays recorded agent sessions offline, judges quality with a strong model, and produces actionable reports with specific prompt fix suggestions.
 
-## Why Manual-First
+## Architecture
 
-- Prompt work is exploratory and high-variance.
-- You want human judgment before promoting prompt changes.
-- You want AI to synthesize failures into concrete improvement proposals.
+```
+traces/*.jsonl          Real agent session recordings (DOM, LLM requests/responses, tool calls)
+       |
+  [extract]             Extract specific turns as golden cases with corrected expectations
+       |
+evals/golden/*.json     10 curated golden cases, 2 per pathology, with real system prompts
+       |
+  [critique]            Replay → Score → Judge (Claude Sonnet) → Report
+       |
+evals/reports/*.md      Actionable markdown with per-pathology breakdown + prompt fix suggestions
+```
 
-## Core Loop
+## Quick Start
 
-1. Record real traces.
-2. Convert traces into eval cases.
-3. Run baseline prompt.
-4. Run candidate prompt.
-5. Compare A/B.
-6. Generate critique artifacts.
-7. Update prompts and golden dataset.
+```bash
+# 1. Validate golden cases structurally (no API key needed)
+npm run evals:validate
+
+# 2. Run full critique (requires OPENROUTER_API_KEY in .env)
+npm run evals:critique
+
+# 3. Read the report
+cat evals/reports/critique-*.md
+```
 
 ## Commands
 
-### 1) Convert trace to cases
+| Command | Description |
+|---------|-------------|
+| `npm run evals:critique` | Replay all golden cases, judge with Claude Sonnet, generate report |
+| `npm run evals:critique -- --tag <p>` | Critique filtered by pathology tag |
+| `npm run evals:validate` | Structural validation of golden cases (offline, no API key) |
+| `npm run evals -- extract <id> <turn>` | Extract a golden case from a trace turn |
+| `npm run evals -- help` | Show all CLI subcommands |
+
+### Make shortcuts
 
 ```bash
-bun run evals convert <session-id> --strategy all
+make evals-critique                         # Full critique
+make evals-critique TAG=find_element_loop   # Filter by pathology
+make evals-extract S=<id> T=<turn> TAG=<p>  # Extract golden case
+make evals-validate                         # Structural validation
 ```
 
-Important: keep `bun run logs` running while collecting sessions.
-This now captures both:
-- agent turn traces: `traces/<session-id>.jsonl`
-- orchestrator run traces: `traces/runs/<run-id>.jsonl`
+### Advanced CLI (not in npm scripts)
 
-If you forgot to start `bun run logs`, manual runs still exist in the in-extension
-buffer (`chrome.storage.local`, key `opensidebar_logs`). Export them from
-`Settings -> Export Logs` as `opensidebar-logs.jsonl`.
-
-### 2) Run baseline
+These legacy commands are still available via the CLI directly:
 
 ```bash
-bun run evals run --all --prompt-variant baseline
+npx tsx evals/cli.ts convert <session-id>   # Convert trace to eval cases
+npx tsx evals/cli.ts run --all              # Run eval cases against LLM
+npx tsx evals/cli.ts stats                  # Aggregate statistics
+npx tsx evals/cli.ts analyze                # Pattern analysis
+npx tsx evals/cli.ts ab --prompt-a ... --prompt-b ...  # A/B prompt comparison
 ```
 
-Or use the shared production prompt registry directly (no copy/paste):
+## Golden Dataset
+
+10 golden cases extracted from real traces, organized by 5 recurring agent pathologies:
+
+| Pathology | Cases | What Goes Wrong |
+|-----------|-------|-----------------|
+| `find_element_loop` | 2 | Agent calls `find_element` 5+ times when `[N]` tag IDs are already visible |
+| `escalation_repeat` | 2 | After escalating to smart model, repeats the exact same failing tool call |
+| `disabled_button` | 2 | Clicks disabled submit button repeatedly, ignores need to find correct input |
+| `text_as_toolcall` | 2 | LLM outputs tool call JSON as plain text instead of using the `tool_calls` API |
+| `marathon_no_done` | 2 | 100+ turns cycling without calling `done()` or `escalate()` |
+
+Each golden case contains:
+- Real system prompt (~12-21K chars with visible elements + perception output)
+- Real conversation history from the trace
+- **Corrected** expected tool calls (what the agent *should* have done)
+- Pathology tag for filtering and reporting
+
+### Adding Golden Cases
 
 ```bash
-bun run evals run --all --prompt-id orchestrator.verifier.system --prompt-variant baseline
+# 1. Find a problematic turn in a trace
+npm run traces list
+npm run traces -- show <session-id>
+
+# 2. Extract with corrected expectations
+npm run evals -- extract <session-id> <turn> \
+  --tag <pathology> \
+  --correct-tool click_element \
+  --correct-args '{"id": 42}'
+
+# 3. Validate
+npm run evals:validate
 ```
 
-### 3) Run candidate prompt
+## Judge Rubric
 
-```bash
-bun run evals run --all --prompt-file prompts/candidate.txt --prompt-variant candidate
+The judge (Claude Sonnet) scores each case on 5 dimensions (0-10):
+
+| Dimension | What It Measures |
+|-----------|-----------------|
+| `toolSelection` | Right tool for what's visible on screen? |
+| `parameterAccuracy` | Correct element ID, text, arguments? |
+| `efficiency` | Minimal steps, no redundant actions? |
+| `antiPatternAvoidance` | No repeating failed actions, no narrating without acting? |
+| `reasoningQuality` | Think block shows correct observe-reason-act logic? |
+
+The judge also outputs a `promptFixSuggestion` — a specific system prompt edit that would fix the observed failure. These suggestions are aggregated and ranked in the critique report.
+
+## Critique Report Structure
+
+The generated markdown report contains:
+
+1. **Summary** — pass rate, avg scores, judge dimension averages
+2. **Per-Pathology Breakdown** — pass/fail counts and avg scores per pathology (worst first)
+3. **Failed Cases** — detailed analysis: expected vs actual, judge reasoning, prompt fix suggestion
+4. **Prompt Improvement Recommendations** — ranked HIGH/MED/LOW, aggregated from judge suggestions
+
+## Prompt Iteration Loop
+
+```
+Record traces  →  Extract golden cases  →  Run critique  →  Read report
+                                                              |
+                                              Apply prompt fixes from recommendations
+                                                              |
+                                              Re-run critique to verify improvement
 ```
 
-### 4) A/B comparison
+## File Layout
 
-```bash
-bun run evals ab --prompt-a prompts/baseline.txt --prompt-b prompts/candidate.txt --all
 ```
-
-You can also compare a shared production prompt against a file variant:
-
-```bash
-bun run evals ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/candidate.txt --all
+evals/
+  cli.ts                CLI entry point (extract, critique, regression, convert, run, stats, analyze)
+  types.ts              EvalCase, EvalResult, JudgeScore interfaces
+  converter.ts          Trace → eval case conversion (extracts real system prompts)
+  extractor.ts          Golden case extraction from specific trace turns
+  runner.ts             Offline replay against LLM via OpenRouter
+  scorer.ts             Tool name match, param match, sequence match scoring
+  judge.ts              Claude Sonnet judge with 5-dimension rubric
+  report.ts             Actionable markdown report generator
+  contract-compliance.ts  Contract violation analyzer
+  utils.ts              Shared utilities (trace I/O, API key loading)
+  golden/               Curated golden cases (10 files, ~40-60KB each)
+  cases/                Auto-converted eval cases (generated)
+  results/              Eval run results (generated)
+  reports/              Critique reports (generated)
 ```
-
-### 5) Human-readable analysis
-
-```bash
-bun run evals analyze
-```
-
-### 6) AI-consumable critique artifacts
-
-```bash
-bun run evals critique
-```
-
-Optional:
-
-```bash
-bun run evals critique --session <session-prefix> --out evals/reports
-bun run evals critique --run <run-id-prefix> --out evals/reports
-```
-
-This writes:
-
-- `evals/reports/critique-<timestamp>.json`
-- `evals/reports/critique-<timestamp>.md`
-
-The JSON is structured for direct LLM ingestion.
-
-## Run-Trace Metrics Included In Critique
-
-Critique includes run-trace aggregates for:
-
-- replay attempts/hits/misses
-- dry-run matches
-- replay success/failure outcomes
-- learned-skill events
-- average replay duration delta (ms)
-- average replay token delta
-
-## Golden Dataset Program
-
-Use the `promptQuality.track` field in eval cases to keep coverage balanced:
-
-1. `orchestrator_lane_isolation`
-2. `verifier_critic`
-3. `human_escalation`
-4. `budget_and_termination`
-5. `checkpoint_resume`
-6. `core_task_success`
-
-After each prompt cycle:
-
-1. Add at least 1 new case in the weakest track.
-2. Add `mustNot` constraints for newly observed bad behaviors.
-3. Re-run A/B and confirm no regressions on critical tracks.
-
-## AI Critique Prompt (Copy/Paste)
-
-Use this with the generated critique JSON:
-
-```text
-You are reviewing eval data for an agentic browser orchestrator.
-Given this critique JSON, propose:
-1) top 3 prompt edits (exact wording changes),
-2) expected impact by track,
-3) risks/regressions to watch,
-4) 5 new golden cases to add (with track labels and mustNot constraints).
-Keep changes minimal and testable.
-```
-
-## What The Books Recommend For Your Situation
-
-This workflow aligns with the direction in:
-
-- `Designing-Multi-Agent-Systems.pdf`
-- `Agentic_Design_Patterns.pdf`
-
-Key principles to follow in prompt evals:
-
-1. Evaluate by behavior contracts, not vibes.
-2. Keep role boundaries explicit (planner/executor/verifier).
-3. Use failure-taxonomy-driven datasets (not random samples).
-4. Run controlled A/B prompt experiments on the same case set.
-5. Use critique loops (judge/critic) to propose focused prompt edits.
-6. Track regressions by track so gains in one area do not silently break another.
-
-In practice for OpenSidebar: keep the loop manual, but make artifacts machine-readable (`critique-*.json`) so AI can reliably draft the next prompt revision and golden-case additions.
-
-## Prompt Source Of Truth
-
-Production prompt templates live in `src/prompts/` and are versioned/hashable.
-Use `--prompt-id` / `--prompt-id-a` / `--prompt-id-b` to run evals against the exact same prompt artifacts used in production.

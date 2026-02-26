@@ -1,26 +1,29 @@
 ---
 id: evals.judge.user
-version: v1
-description: User prompt template for eval judge comparisons.
+version: v2
+description: User prompt template for eval judge with system prompt context.
 ---
 ## Context
 User query: "{{query}}"
 Current URL: {{url}}
 Strategy: {{strategy}}
+Pathology tag: {{pathology}}
 
-## Expected response
+## System prompt excerpt (what the agent was told)
+{{system_prompt_excerpt}}
+
+## Visible elements on page (what the agent could see)
+{{visible_elements}}
+
+## Expected response (correct behavior)
 Tools: {{expected_tools}}
 Text: {{expected_text}}
 
-## Actual response
+## Actual response (what the agent did)
 Tools: {{actual_tools}}
 Text: {{actual_text}}
 
-## Scoring criteria
-Score each 0-10:
-- taskCompletion: Would this action advance the user's goal?
-- toolSelection: Was the right tool chosen for the situation?
-- efficiency: Were there unnecessary or redundant steps?
+## Instructions
+Score each dimension 0-10 per the rubric. Focus on whether the agent used the information available to it (visible elements, system prompt instructions) correctly. If the agent made a mistake, suggest a specific system prompt edit that would prevent it.
 
-Respond with JSON:
-{"taskCompletion": N, "toolSelection": N, "efficiency": N, "reasoning": "..."}
+Respond with JSON only — no markdown fences.

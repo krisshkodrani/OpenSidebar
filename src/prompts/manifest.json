@@ -8,22 +8,22 @@
   },
   {
     "id": "evals.judge.system",
-    "version": "v1",
-    "hash": "3164433c",
-    "description": "System prompt for eval LLM-as-judge scoring.",
+    "version": "v2",
+    "hash": "4de9e0b1",
+    "description": "System prompt for eval LLM-as-judge with 5-dimension rubric.",
     "sourcePath": "prompts/evals/judge_system.md"
   },
   {
     "id": "evals.judge.user",
-    "version": "v1",
-    "hash": "7f07907e",
-    "description": "User prompt template for eval judge comparisons.",
+    "version": "v2",
+    "hash": "fdc2a92e",
+    "description": "User prompt template for eval judge with system prompt context.",
     "sourcePath": "prompts/evals/judge_user.md"
   },
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "97e80c79",
+    "hash": "5c49d7e8",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -50,9 +50,9 @@
   },
   {
     "id": "perception.interpret_page",
-    "version": "v1",
-    "hash": "c0520eda",
-    "description": "Perception module prompt for multimodal page interpretation. Sent with screenshot + element metadata to GPT-4o-mini.",
+    "version": "v2",
+    "hash": "0991994a",
+    "description": "Dual-mode perception prompt — orientation (generic) when no subtask, focused (goal-conditioned) when subtask active. Sent with screenshot + element metadata to vision model.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {

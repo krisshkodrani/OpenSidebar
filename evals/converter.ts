@@ -249,9 +249,9 @@ function buildCase(
     sourceTurn: turn.turnNumber,
     strategy,
     input: {
-      systemPrompt: "", // Will be reconstructed by runner from elements
-      conversationHistory: [], // Placeholder — full history from trace
-      tools: [], // Will be populated by runner
+      systemPrompt: turn.llmRequest?.messages?.find((m: any) => m.role === "system")?.content ?? "",
+      conversationHistory: turn.llmRequest?.messages ?? [],
+      tools: [], // Runner loads from registry at replay time
       model: turn.llmRequest?.model ?? "unknown",
     },
     expected: {
