@@ -27,7 +27,8 @@
             "function": {
               "name": "read_page",
               "arguments": "{}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -45,7 +46,8 @@
             "function": {
               "name": "inspect_hidden",
               "arguments": "{\n  \"pattern\": \"input\",\n  \"maxResults\": 20\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },
@@ -67,7 +69,8 @@
             "function": {
               "name": "scroll_page",
               "arguments": "{\n  \"direction\": \"down\"\n}"
-            }
+            },
+            "type": "function"
           }
         ]
       },

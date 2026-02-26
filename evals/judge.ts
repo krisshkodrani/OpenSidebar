@@ -6,7 +6,7 @@
 import type { EvalCase, JudgeScore } from "./types";
 import { getPromptTemplate, renderPrompt } from "../src/prompts";
 
-const JUDGE_MODEL = "anthropic/claude-sonnet-4";
+const JUDGE_MODEL = "anthropic/claude-sonnet-4.6";
 const JUDGE_SYSTEM_PROMPT = getPromptTemplate("evals.judge.system");
 
 interface ToolCallInfo {

@@ -20,10 +20,17 @@ export function buildPlannerReport(data: PlannerCritiqueData): string {
   sections.push("# Planner Eval Report\n");
   sections.push(`Generated: ${new Date().toISOString()}\n`);
 
+  // Model versions used
+  const models = new Set(results.map((r) => r.modelVersion).filter(Boolean));
+  if (models.size > 0) {
+    sections.push(`Models: ${Array.from(models).join(", ")}\n`);
+  }
+
   sections.push(buildSummary(results));
   sections.push(buildDifficultyCalibration(results, caseById));
   sections.push(buildDimensionBreakdown(results, caseById));
   sections.push(buildFailedCases(results, caseById));
+  sections.push(buildDisagreements(results, caseById));
   sections.push(buildRecommendations(results));
 
   return sections.join("\n");
@@ -45,20 +52,27 @@ function buildSummary(results: PlannerEvalResult[]): string {
   const avgAnti = avg(results.map((r) => r.scores.antiPatternScore));
   const avgComp = avg(results.map((r) => r.scores.composite));
 
+  const minComp = min(results.map((r) => r.scores.composite));
+  const minDiff = min(results.map((r) => r.scores.difficultyAccuracy));
+  const minStep = min(results.map((r) => r.scores.stepCountScore));
+  const minCov = min(results.map((r) => r.scores.coverageScore));
+  const minQual = min(results.map((r) => r.scores.stepQualityScore));
+  const minAnti = min(results.map((r) => r.scores.antiPatternScore));
+
   return `## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total results | ${total} |
-| Pass rate | ${passRate}% (${passed}/${total}) |
-| Failed | ${failed} |
-| Errors | ${errored} |
-| Avg difficulty accuracy | ${avgDiff.toFixed(3)} |
-| Avg step count score | ${avgStep.toFixed(3)} |
-| Avg coverage score | ${avgCov.toFixed(3)} |
-| Avg step quality score | ${avgQual.toFixed(3)} |
-| Avg anti-pattern score | ${avgAnti.toFixed(3)} |
-| Avg composite | ${avgComp.toFixed(3)} |
+| Metric | Avg | Min (worst) |
+|--------|-----|-------------|
+| Total results | ${total} | — |
+| Pass rate | ${passRate}% (${passed}/${total}) | — |
+| Failed | ${failed} | — |
+| Errors | ${errored} | — |
+| Difficulty accuracy | ${avgDiff.toFixed(3)} | ${minDiff.toFixed(3)} |
+| Step count score | ${avgStep.toFixed(3)} | ${minStep.toFixed(3)} |
+| Coverage score | ${avgCov.toFixed(3)} | ${minCov.toFixed(3)} |
+| Step quality score | ${avgQual.toFixed(3)} | ${minQual.toFixed(3)} |
+| Anti-pattern score | ${avgAnti.toFixed(3)} | ${minAnti.toFixed(3)} |
+| Composite | ${avgComp.toFixed(3)} | ${minComp.toFixed(3)} |
 `;
 }
 
@@ -193,6 +207,58 @@ ${judgeBlock}`;
   return `## Failed Cases (${failures.length} total)\n\n${details}`;
 }
 
+function buildDisagreements(
+  results: PlannerEvalResult[],
+  caseById: Map<string, PlannerEvalCase>,
+): string {
+  const disagreements: Array<{
+    caseId: string;
+    dimension: string;
+    scorerPass: boolean;
+    judgePass: boolean;
+    composite: number;
+  }> = [];
+
+  for (const r of results) {
+    if (!r.scores.judge) continue;
+    const scorerPass = r.status === "pass" && !r.scores.judge; // status before judge override
+    // Detect: scorer said pass but judge said fail, or scorer said fail but judge said pass
+    const c = caseById.get(r.caseId);
+    const dim = c?.metadata.dimension ?? "untagged";
+
+    // Compare composite-based pass (>= 0.7) vs judge pass
+    const compositePass = r.scores.composite >= 0.7;
+    if (compositePass !== r.scores.judge.pass) {
+      disagreements.push({
+        caseId: r.caseId,
+        dimension: dim,
+        scorerPass: compositePass,
+        judgePass: r.scores.judge.pass,
+        composite: r.scores.composite,
+      });
+    }
+  }
+
+  if (disagreements.length === 0) {
+    return "## Judge-Scorer Disagreements\n\nNo disagreements — scorer and judge agree on all cases.\n";
+  }
+
+  const rows = disagreements
+    .map((d) =>
+      `| ${d.caseId.slice(0, 40)} | ${d.dimension} | ${d.scorerPass ? "pass" : "fail"} | ${d.judgePass ? "pass" : "fail"} | ${d.composite.toFixed(2)} |`,
+    )
+    .join("\n");
+
+  return `## Judge-Scorer Disagreements (${disagreements.length} cases)
+
+These cases need manual review — the automated scorer and LLM judge disagree on pass/fail.
+
+| Case ID | Dimension | Scorer | Judge | Composite |
+|---------|-----------|--------|-------|-----------|
+${rows}
+`;
+}
+
 function buildRecommendations(results: PlannerEvalResult[]): string {
   const suggestions = new Map<
     string,
@@ -230,4 +296,9 @@ function buildRecommendations(results: PlannerEvalResult[]): string {
 function avg(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function min(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.min(...values);
 }

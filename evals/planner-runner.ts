@@ -27,7 +27,7 @@ const SMART_MODEL = "z-ai/glm-4.7";
 async function replayDecompose(
   keys: ApiKeys,
   evalCase: PlannerEvalCase,
-): Promise<{ subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean }> {
+): Promise<{ subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.decompose.system");
 
   const userMessage = [
@@ -67,6 +67,7 @@ async function replayDecompose(
 
   const json = (await response.json()) as any;
   const text = json.choices?.[0]?.message?.content ?? "";
+  const modelVersion: string | undefined = json.model ?? undefined;
 
   let parsed: any;
   try {
@@ -80,7 +81,7 @@ async function replayDecompose(
   const difficulty = parsed.difficulty ?? parsed.difficultyAssessment ?? "moderate";
   const isMultiStep = parsed.isMultiStep ?? subtasks.length > 1;
 
-  return { subtasks, steps, difficulty, isMultiStep };
+  return { subtasks, steps, difficulty, isMultiStep, modelVersion };
 }
 
 /**
@@ -89,7 +90,7 @@ async function replayDecompose(
 async function replayValidateDone(
   keys: ApiKeys,
   evalCase: PlannerEvalCase,
-): Promise<{ approved: boolean; reason?: string }> {
+): Promise<{ approved: boolean; reason?: string; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.validate_done.system");
 
   const planText = (evalCase.input.plan ?? [])
@@ -133,6 +134,7 @@ async function replayValidateDone(
 
   const json = (await response.json()) as any;
   const text = json.choices?.[0]?.message?.content ?? "";
+  const modelVersion: string | undefined = json.model ?? undefined;
 
   let parsed: any;
   try {
@@ -144,6 +146,7 @@ async function replayValidateDone(
   return {
     approved: parsed.approved ?? parsed.done ?? false,
     reason: parsed.reason ?? parsed.explanation,
+    modelVersion,
   };
 }
 
@@ -207,6 +210,7 @@ export async function runPlannerEvals(options: {
           durationMs,
           status: pass ? "pass" : "fail",
           method: "decompose",
+          modelVersion: actual.modelVersion,
           actual: { decomposition: actual },
           scores,
         };
@@ -222,6 +226,7 @@ export async function runPlannerEvals(options: {
           durationMs,
           status: pass ? "pass" : "fail",
           method: "validateDone",
+          modelVersion: actual.modelVersion,
           actual: { validation: actual },
           scores,
         };

@@ -3,17 +3,41 @@
  * Replays eval cases against the LLM without a browser.
  */
 
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { createHash, randomUUID } from "crypto";
 import type { EvalCase, EvalResult } from "./types";
-import { readEvalCases, RESULTS_DIR, loadApiKey } from "./utils";
+import { readEvalCases, RESULTS_DIR, loadApiKeys, type ApiKeys } from "./utils";
 import { scoreToolNameMatch, scoreToolParamMatch, scoreSequenceMatch } from "./scorer";
 import { judgeCase } from "./judge";
 import { RunManifest, RunPromptRef, RunTraceWriter } from "../src/utils/run-trace";
+import { recoverToolCallsFromText } from "../src/background/agent/tool-recovery";
+
+const TOOL_DEFS_PATH = join("evals", "tool-definitions.json");
+
+/** Load the static tool definitions extracted from the registry. */
+function loadToolDefinitions(): any[] {
+  if (!existsSync(TOOL_DEFS_PATH)) {
+    console.warn(`Warning: ${TOOL_DEFS_PATH} not found. Run: npx tsx scripts/extract-tool-defs.ts`);
+    return [];
+  }
+  return JSON.parse(readFileSync(TOOL_DEFS_PATH, "utf-8"));
+}
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
+const CEREBRAS_API = "https://api.cerebras.ai/v1/chat/completions";
+
+export type EvalProvider = "cerebras" | "openrouter";
+
+const CEREBRAS_MODEL_MAP: Record<string, string> = {
+  "openai/gpt-oss-120b": "gpt-oss-120b",
+  "z-ai/glm-4.7": "zai-glm-4.7",
+};
+
+function toCerebrasModel(openRouterModel: string): string {
+  return CEREBRAS_MODEL_MAP[openRouterModel] ?? openRouterModel;
+}
 
 /**
  * Run eval cases and return results.
@@ -26,8 +50,11 @@ export async function runEvals(options: {
   promptOverride?: string;
   promptVariant?: string;
   promptRef?: RunPromptRef;
+  keys?: ApiKeys;
+  provider?: EvalProvider;
 }): Promise<EvalResult[]> {
-  const apiKey = loadApiKey();
+  const keys = options.keys ?? loadApiKeys();
+  const provider = options.provider ?? (keys.cerebras ? "cerebras" : "openrouter");
   let cases = readEvalCases();
 
   if (cases.length === 0) {
@@ -106,10 +133,11 @@ export async function runEvals(options: {
 
     try {
       const actual = await replayCase(
-        apiKey,
+        keys,
         evalCase,
         model,
         options.promptOverride,
+        provider,
       );
       const durationMs = Date.now() - start;
 
@@ -130,6 +158,7 @@ export async function runEvals(options: {
         durationMs,
         status: pass ? "pass" : "fail",
         promptVariant: options.promptVariant,
+        modelVersion: actual.modelVersion,
         actual,
         scores: {
           toolNameMatch: toolNameScore,
@@ -142,7 +171,7 @@ export async function runEvals(options: {
       // Run LLM-as-judge for failed cases if enabled
       if (!pass && options.judge) {
         try {
-          result.scores.judge = await judgeCase(apiKey, evalCase, actual);
+          result.scores.judge = await judgeCase(keys.openrouter, evalCase, actual);
           // Judge can override status
           if (result.scores.judge.pass) {
             result.status = "pass";
@@ -216,50 +245,66 @@ export async function runEvals(options: {
 }
 
 export async function replayCase(
-  apiKey: string,
+  keys: ApiKeys,
   evalCase: EvalCase,
   model: string,
   promptOverride?: string,
+  provider?: EvalProvider,
 ): Promise<{ toolCalls: { toolName: string; args: Record<string, unknown> }[]; text: string | null }> {
+  const useCerebras = provider === "cerebras" && !!keys.cerebras;
+
   const messages = evalCase.input.conversationHistory.length > 0
     ? evalCase.input.conversationHistory
     : [{ role: "user" as const, content: evalCase.metadata.query }];
 
   const resolvedMessages = applyPromptOverride(messages, promptOverride);
 
+  const resolvedModel = useCerebras ? toCerebrasModel(model) : model;
+
   const body: Record<string, unknown> = {
-    model,
+    model: resolvedModel,
     messages: resolvedMessages,
     max_tokens: 4096,
     temperature: 0,
   };
 
-  if (evalCase.input.tools.length > 0) {
-    body.tools = evalCase.input.tools;
+  // Use tools from the case if present, otherwise load from the static registry
+  const tools = evalCase.input.tools.length > 0
+    ? evalCase.input.tools
+    : loadToolDefinitions();
+
+  if (tools.length > 0) {
+    body.tools = tools;
     body.tool_choice = "auto";
   }
 
-  const response = await fetch(OPENROUTER_API, {
+  const apiUrl = useCerebras ? CEREBRAS_API : OPENROUTER_API;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${useCerebras ? keys.cerebras! : keys.openrouter}`,
+    "Content-Type": "application/json",
+  };
+  if (!useCerebras) {
+    headers["HTTP-Referer"] = "https://opensidebar.dev";
+    headers["X-Title"] = "OpenSidebar Evals";
+  }
+
+  const response = await fetch(apiUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://opensidebar.dev",
-      "X-Title": "OpenSidebar Evals",
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`LLM API error ${response.status}: ${text.slice(0, 200)}`);
+    const errText = await response.text();
+    throw new Error(`LLM API error ${response.status}: ${errText.slice(0, 200)}`);
   }
 
   const data = await response.json() as any;
   const choice = data.choices?.[0];
   if (!choice) throw new Error("No response choice");
+  const responseModel: string | undefined = data.model ?? undefined;
 
-  const toolCalls = (choice.message?.tool_calls ?? []).map((tc: any) => {
+  let toolCalls = (choice.message?.tool_calls ?? []).map((tc: any) => {
     let args: Record<string, unknown> = {};
     try {
       args = JSON.parse(tc.function.arguments);
@@ -267,10 +312,23 @@ export async function replayCase(
     return { toolName: tc.function.name, args };
   });
 
-  return {
-    toolCalls,
-    text: choice.message?.content ?? null,
-  };
+  const text: string | null = choice.message?.content ?? null;
+
+  // Text recovery: match production behavior when model emits tool calls as JSON text
+  if (toolCalls.length === 0 && text) {
+    const recovered = recoverToolCallsFromText(text);
+    if (recovered && recovered.length > 0) {
+      toolCalls = recovered.map((tc) => {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function.arguments);
+        } catch { /* keep empty */ }
+        return { toolName: tc.function.name, args };
+      });
+    }
+  }
+
+  return { toolCalls, text, modelVersion: responseModel };
 }
 
 function computeCompositeScore(
@@ -281,6 +339,8 @@ function computeCompositeScore(
   return toolNameMatch * 0.45 + toolParamMatch * 0.25 + sequenceMatch * 0.3;
 }
 
+const PAGE_CONTEXT_MARKER = "## Page Context";
+
 function applyPromptOverride(
   messages: EvalCase["input"]["conversationHistory"],
   promptOverride?: string,
@@ -289,10 +349,31 @@ function applyPromptOverride(
 
   const clone = messages.map((m) => ({ ...m }));
   const firstSystemIdx = clone.findIndex((m) => m.role === "system");
-  if (firstSystemIdx >= 0) {
+  if (firstSystemIdx < 0) {
+    return [{ role: "system", content: promptOverride }, ...clone];
+  }
+
+  const existing = clone[firstSystemIdx].content;
+  if (typeof existing !== "string") {
+    // Can't merge non-string content (null or ContentPart[])
     clone[firstSystemIdx].content = promptOverride;
     return clone;
   }
+  const existingCtxIdx = existing.indexOf(PAGE_CONTEXT_MARKER);
+  const overrideCtxIdx = promptOverride.indexOf(PAGE_CONTEXT_MARKER);
 
-  return [{ role: "system", content: promptOverride }, ...clone];
+  if (existingCtxIdx !== -1 && overrideCtxIdx !== -1) {
+    // Smart merge: new instructions + original page context
+    clone[firstSystemIdx].content =
+      promptOverride.slice(0, overrideCtxIdx) + existing.slice(existingCtxIdx);
+  } else if (existingCtxIdx !== -1) {
+    // Override is instructions-only (no page context section) — splice before page context
+    clone[firstSystemIdx].content =
+      promptOverride.trimEnd() + "\n\n" + existing.slice(existingCtxIdx);
+  } else {
+    // No page context marker in either — full replacement
+    clone[firstSystemIdx].content = promptOverride;
+  }
+
+  return clone;
 }

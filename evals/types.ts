@@ -62,6 +62,8 @@ export interface EvalResult {
   durationMs: number;
   status: "pass" | "fail" | "error";
   promptVariant?: string;
+  /** Model ID as returned by the API (tracks actual model served after failover) */
+  modelVersion?: string;
   actual: {
     toolCalls: { toolName: string; args: Record<string, unknown> }[];
     text: string | null;
@@ -211,6 +213,8 @@ export interface PlannerEvalResult {
   durationMs: number;
   status: "pass" | "fail" | "error";
   method: PlannerEvalMethod;
+  /** Model ID as returned by the API (tracks actual model served after failover) */
+  modelVersion?: string;
   actual: {
     decomposition?: { subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean };
     validation?: { approved: boolean; reason?: string };

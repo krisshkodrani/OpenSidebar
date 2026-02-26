@@ -49,8 +49,17 @@ export function extractGoldenCase(
     );
   }
 
-  // Extract system prompt from LLM request messages
-  const messages = turn.llmRequest?.messages ?? [];
+  // Extract system prompt from LLM request messages.
+  // Normalize: ensure all assistant tool_calls have type: "function" (OpenAI spec).
+  const messages = (turn.llmRequest?.messages ?? []).map((m: any) => {
+    if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
+      return {
+        ...m,
+        tool_calls: m.tool_calls.map((tc: any) => ({ type: "function" as const, ...tc })),
+      };
+    }
+    return m;
+  });
   const systemMsg = messages.find((m: any) => m.role === "system");
   const systemPrompt = systemMsg?.content ?? "";
 
@@ -99,7 +108,7 @@ export function extractGoldenCase(
     input: {
       systemPrompt,
       conversationHistory: messages,
-      tools: [], // Runner loads from registry at replay time
+      tools: [], // Runner loads from evals/tool-definitions.json when empty
       model: turn.llmRequest?.model ?? "unknown",
     },
     expected: {

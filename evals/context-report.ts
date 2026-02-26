@@ -46,20 +46,27 @@ function buildSummary(results: ContextEvalResult[]): string {
   const avgEff = avg(results.map((r) => r.scores.tokenEfficiency));
   const avgComp = avg(results.map((r) => r.scores.composite));
 
+  const minGoal = min(results.map((r) => r.scores.goalPreservation));
+  const minPlan = min(results.map((r) => r.scores.planPreservation));
+  const minTool = min(results.map((r) => r.scores.toolResultPreservation));
+  const minFact = min(results.map((r) => r.scores.keyFactPreservation));
+  const minEff = min(results.map((r) => r.scores.tokenEfficiency));
+  const minComp = min(results.map((r) => r.scores.composite));
+
   return `## Summary
 
-| Metric | Value |
-|--------|-------|
-| Total results | ${total} |
-| Pass rate | ${passRate}% (${passed}/${total}) |
-| Failed | ${failed} |
-| Errors | ${errored} |
-| Avg goal preservation | ${avgGoal.toFixed(3)} |
-| Avg plan preservation | ${avgPlan.toFixed(3)} |
-| Avg tool result preservation | ${avgTool.toFixed(3)} |
-| Avg key fact preservation | ${avgFact.toFixed(3)} |
-| Avg token efficiency | ${avgEff.toFixed(3)} |
-| Avg composite | ${avgComp.toFixed(3)} |
+| Metric | Avg | Min (worst) |
+|--------|-----|-------------|
+| Total results | ${total} | — |
+| Pass rate | ${passRate}% (${passed}/${total}) | — |
+| Failed | ${failed} | — |
+| Errors | ${errored} | — |
+| Goal preservation | ${avgGoal.toFixed(3)} | ${minGoal.toFixed(3)} |
+| Plan preservation | ${avgPlan.toFixed(3)} | ${minPlan.toFixed(3)} |
+| Tool result preservation | ${avgTool.toFixed(3)} | ${minTool.toFixed(3)} |
+| Key fact preservation | ${avgFact.toFixed(3)} | ${minFact.toFixed(3)} |
+| Token efficiency | ${avgEff.toFixed(3)} | ${minEff.toFixed(3)} |
+| Composite | ${avgComp.toFixed(3)} | ${minComp.toFixed(3)} |
 `;
 }
 
@@ -248,4 +255,9 @@ function buildRecommendations(
 function avg(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function min(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Math.min(...values);
 }
