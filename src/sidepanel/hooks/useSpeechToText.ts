@@ -9,8 +9,63 @@ interface SpeechToTextState {
   isSupported: boolean;
 }
 
+/**
+ * Chrome extension side panels cannot show permission prompts — they get
+ * auto-dismissed. This helper checks the current microphone permission state
+ * and, if not yet granted, opens a dedicated extension page in a new tab
+ * where the user can grant access. Returns true when permission is available.
+ */
+async function ensureMicPermission(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions.query({
+      name: "microphone" as PermissionName,
+    });
+    if (status.state === "granted") return true;
+
+    // Permission not yet granted — open the permission page in a tab.
+    // The page calls getUserMedia() which CAN show the prompt from a tab context.
+    const url = chrome.runtime.getURL("src/permissions/microphone.html");
+    const tab = await chrome.tabs.create({ url, active: true });
+
+    // Wait for either the tab to close or a MIC_PERMISSION_GRANTED message
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const done = (granted: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        chrome.runtime.onMessage.removeListener(msgListener);
+        chrome.tabs.onRemoved.removeListener(tabListener);
+        resolve(granted);
+      };
+
+      const msgListener = (msg: { type?: string }) => {
+        if (msg.type === "MIC_PERMISSION_GRANTED") done(true);
+      };
+
+      const tabListener = (closedTabId: number) => {
+        if (closedTabId === tab.id) {
+          // Tab closed — check if permission was granted before closing
+          navigator.permissions
+            .query({ name: "microphone" as PermissionName })
+            .then((s) => done(s.state === "granted"))
+            .catch(() => done(false));
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(msgListener);
+      chrome.tabs.onRemoved.addListener(tabListener);
+    });
+  } catch {
+    // Permissions API not available — try getUserMedia directly
+    return true;
+  }
+}
+
+/**
+ * Groq Whisper speech-to-text hook.
+ * Visible only when a Groq API key is configured.
+ */
 export function useSpeechToText(
-  provider: "browser" | "groq",
   groqApiKey: string,
   onTranscript: (text: string, isFinal: boolean) => void,
 ): SpeechToTextState {
@@ -18,36 +73,19 @@ export function useSpeechToText(
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const recordingRef = useRef(false); // Tracks intended state (avoids stale closures)
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
-  const SpeechRecognitionCtor =
-    typeof window !== "undefined"
-      ? window.SpeechRecognition || window.webkitSpeechRecognition
-      : undefined;
-
   const isSupported =
-    provider === "browser"
-      ? !!SpeechRecognitionCtor
-      : typeof MediaRecorder !== "undefined" &&
-        !!navigator.mediaDevices?.getUserMedia;
+    !!groqApiKey &&
+    typeof MediaRecorder !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia;
 
   // Cleanup helper: stop all active media
   const cleanup = useCallback(() => {
-    if (recognitionRef.current) {
-      recordingRef.current = false;
-      try {
-        recognitionRef.current.abort();
-      } catch {
-        /* ignore */
-      }
-      recognitionRef.current = null;
-    }
     if (
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
@@ -68,83 +106,15 @@ export function useSpeechToText(
 
   // Stop recording (public, called on send)
   const stop = useCallback(() => {
-    if (provider === "browser") {
-      recordingRef.current = false;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          /* ignore */
-        }
-      }
-    } else {
-      // Groq: stopping MediaRecorder triggers onstop → upload
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state === "recording"
-      ) {
-        mediaRecorderRef.current.stop();
-      }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state === "recording"
+    ) {
+      mediaRecorderRef.current.stop();
     }
     setIsRecording(false);
-  }, [provider]);
+  }, []);
 
-  // --- Browser Speech API ---
-  const startBrowser = useCallback(() => {
-    if (!SpeechRecognitionCtor) {
-      setError("Speech recognition not supported in this browser");
-      return;
-    }
-    setError(null);
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
-    recognitionRef.current = recognition;
-    recordingRef.current = true;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = "";
-      let final = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-      if (final) onTranscriptRef.current(final, true);
-      if (interim) onTranscriptRef.current(interim, false);
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      // "aborted" is expected when we call stop/abort
-      if (event.error === "aborted" || event.error === "no-speech") return;
-      setError(`Speech error: ${event.error}`);
-      recordingRef.current = false;
-      setIsRecording(false);
-    };
-
-    recognition.onend = () => {
-      // Chrome stops after silence — auto-restart if we're still recording
-      if (recordingRef.current) {
-        try {
-          recognition.start();
-        } catch {
-          /* ignore */
-        }
-      } else {
-        setIsRecording(false);
-      }
-    };
-
-    recognition.start();
-    setIsRecording(true);
-  }, [SpeechRecognitionCtor]);
-
-  // --- Groq Whisper ---
   const startGroq = useCallback(async () => {
     if (!groqApiKey) {
       setError("Groq API key required for Whisper");
@@ -152,6 +122,13 @@ export function useSpeechToText(
     }
     setError(null);
     chunksRef.current = [];
+
+    // Ensure mic permission is granted (side panel can't show prompts)
+    const permitted = await ensureMicPermission();
+    if (!permitted) {
+      setError("Microphone permission required for voice input");
+      return;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -225,22 +202,18 @@ export function useSpeechToText(
     if (isRecording) {
       stop();
     } else {
-      if (provider === "browser") {
-        startBrowser();
-      } else {
-        startGroq();
-      }
+      startGroq();
     }
-  }, [isRecording, provider, startBrowser, startGroq, stop]);
+  }, [isRecording, startGroq, stop]);
 
-  // Cleanup on unmount or provider change
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       cleanup();
       setIsRecording(false);
       setIsProcessing(false);
     };
-  }, [provider, cleanup]);
+  }, [cleanup]);
 
   return { isRecording, isProcessing, error, toggle, stop, isSupported };
 }

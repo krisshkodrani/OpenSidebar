@@ -58,7 +58,7 @@ describe("Bridge Message Routing", () => {
                 disableScreenshot: false,
                 disableNavigation: false,
                 bypassApprovals: false,
-                speechProvider: "browser",
+                speechProvider: "groq",
             },
         });
     });

@@ -19,7 +19,7 @@ const baseSettings: UserSettings = {
   disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: false,
-  speechProvider: "browser",
+  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
 };
 

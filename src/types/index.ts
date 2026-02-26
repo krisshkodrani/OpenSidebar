@@ -175,8 +175,10 @@ export type RuntimeMessage =
   | DemoRecordStatusMessage
   | DemoSavedMessage
   | GoldenActionMessage
-  | GoldenSavedMessage
-  | GoldenAnnotationMessage;
+  | RecordingSavedMessage
+  | GoldenAnnotationMessage
+  | ManualToolExecuteMessage
+  | ManualToolResultMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -256,6 +258,8 @@ export interface StreamChunkMessage extends BaseMessage {
     citations?: Citation[];
     /** When set, replaces the entire content of the current streaming message */
     replaceContent?: string;
+    /** Extracted LLM thinking/reasoning content */
+    thinking?: string;
   };
 }
 
@@ -1403,10 +1407,14 @@ export interface ChatEntry {
   isFeedback?: boolean;
   /** Whether this user message is a golden recording annotation */
   isAnnotation?: boolean;
+  /** Whether this message is a manual slash command or its result */
+  isManualCommand?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
   completionData?: TaskCompletionMessage["payload"];
   /** Source citations from URLs visited during the agent session */
   citations?: Citation[];
+  /** Extracted LLM thinking/reasoning content (from <think> blocks or markdown sections) */
+  thinking?: string;
 }
 
 /** Stagnation detection state for the side panel */
@@ -1657,8 +1665,8 @@ export interface UserSettings {
   disableNavigation: boolean;
   /** Skip all user approval prompts (including high-risk tool approvals) */
   bypassApprovals: boolean;
-  /** Speech-to-text provider for voice input */
-  speechProvider: "browser" | "groq";
+  /** @deprecated Voice input now always uses Groq Whisper when groqApiKey is set */
+  speechProvider?: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
   orchestratorMaxWorkers?: number;
   /** Global token budget for one orchestrator task (planner + executor + verifier) */
@@ -1784,6 +1792,7 @@ export interface DemoRecordStatusMessage extends BaseMessage {
   payload: {
     active: boolean;
     actionCount: number;
+    sessionId?: string;
   };
 }
 
@@ -1816,13 +1825,14 @@ export interface GoldenActionMessage extends BaseMessage {
   };
 }
 
-/** Background → Side panel: golden dataset saved confirmation */
-export interface GoldenSavedMessage extends BaseMessage {
-  type: "GOLDEN_SAVED";
+/** Background → Side panel: recording saved via TraceRecorder */
+export interface RecordingSavedMessage extends BaseMessage {
+  type: "RECORDING_SAVED";
   source: MessageSource.BACKGROUND;
   payload: {
-    filename: string;
-    caseCount: number;
+    sessionId: string;
+    turnCount: number;
+    name: string;
   };
 }
 
@@ -1831,6 +1841,50 @@ export interface GoldenAnnotationMessage extends BaseMessage {
   type: "GOLDEN_ANNOTATION";
   source: MessageSource.SIDEPANEL;
   payload: { text: string };
+}
+
+// --- Manual Mode Message Types ---
+
+/** Manual command type for slash commands */
+export type ManualCommand =
+  | "tool"
+  | "perceive"
+  | "snapshot"
+  | "screenshot"
+  | "record"
+  | "tags"
+  | "dismiss"
+  | "help";
+
+/** Side panel → Background: execute a manual slash command */
+export interface ManualToolExecuteMessage extends BaseMessage {
+  type: "MANUAL_TOOL_EXECUTE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    command: ManualCommand;
+    toolName?: ToolName;
+    args?: Record<string, unknown>;
+    objective?: string;
+    recordName?: string;
+    tabId: number;
+  };
+}
+
+/** Background → Side panel: result of a manual slash command */
+export interface ManualToolResultMessage extends BaseMessage {
+  type: "MANUAL_TOOL_RESULT";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    command: string;
+    success: boolean;
+    result: string;
+    toolName?: ToolName;
+    args?: Record<string, unknown>;
+    durationMs: number;
+    elements?: TaggedElement[];
+    interpretation?: string;
+    screenshotUrl?: string;
+  };
 }
 
 // --- Utility Types ---

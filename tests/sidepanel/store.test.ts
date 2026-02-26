@@ -53,7 +53,7 @@ describe("SidePanel Store", () => {
                 disableScreenshot: false,
                 disableNavigation: false,
                 bypassApprovals: false,
-                speechProvider: "browser",
+                speechProvider: "groq",
             },
         });
     });
@@ -499,7 +499,7 @@ describe("SidePanel Store", () => {
 
     test("DEFAULT_SETTINGS includes speechProvider", () => {
         const settings = useStore.getState().settings;
-        expect(settings.speechProvider).toBe("browser");
+        expect(settings.speechProvider).toBe("groq");
     });
 
     test("DEFAULT_SETTINGS includes bypassApprovals", () => {

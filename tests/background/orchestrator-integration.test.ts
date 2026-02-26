@@ -60,7 +60,7 @@ const baseSettings: UserSettings = {
   disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: true,
-  speechProvider: "browser",
+  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
   teachModeEnabled: true,
   autoSkillReplayEnabled: true,
