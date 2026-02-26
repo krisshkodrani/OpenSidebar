@@ -1460,263 +1460,44 @@ export function registerTools() {
     async (_args, tabId) => {
       logger.info("tools", "dismiss_overlays", { tabId });
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => {
-            let dismissed = 0;
-
-            // Phase 1: Selector-based — dialogs, modals, overlays, banners, cookie consent
-            const selectors = [
-              "[role='dialog']", "[role='alertdialog']",
-              ".modal", ".overlay", ".popup", ".banner",
-              ".cookie", ".consent", ".notice",
-              "[class*='modal']", "[class*='overlay']", "[class*='popup']",
-              "[class*='banner']", "[class*='cookie']", "[class*='consent']",
-              "[class*='notification']", "[class*='toast']", "[class*='snackbar']",
-              "#onetrust-consent-sdk", ".fc-consent-root",
-              "[class*='gdpr']", "[class*='privacy']",
-            ];
-            for (const sel of selectors) {
-              const els = document.querySelectorAll(sel);
-              for (const el of els) {
-                if (!(el instanceof HTMLElement)) continue;
-                const style = getComputedStyle(el);
-                if (style.display === "none" || style.visibility === "hidden") continue;
-                const isOverlay = style.position === "fixed" || style.position === "sticky"
-                  || style.position === "absolute" || parseInt(style.zIndex, 10) > 100;
-                if (!isOverlay) continue;
-                el.style.display = "none";
-                dismissed++;
-              }
-            }
-
-            // Phase 2: Viewport-covering elements (>30% coverage, fixed/absolute)
-            const vpW = window.innerWidth;
-            const vpH = window.innerHeight;
-            const vpArea = vpW * vpH;
-            if (vpArea > 0) {
-              const all = document.querySelectorAll("*");
-              for (const raw of all) {
-                if (!(raw instanceof HTMLElement)) continue;
-                const s = getComputedStyle(raw);
-                if (s.display === "none" || s.visibility === "hidden") continue;
-                if (s.position !== "fixed" && s.position !== "absolute") continue;
-                const r = raw.getBoundingClientRect();
-                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
-                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
-                if ((vW * vH) / vpArea > 0.3) {
-                  raw.style.display = "none";
-                  dismissed++;
-                }
-              }
-            }
-
-            // Phase 3: ESC key
-            if (dismissed > 0) {
-              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-            }
-
-            // Phase 4: Remove overflow:hidden from body (often set by modals)
-            const bodyStyle = getComputedStyle(document.body);
-            if (bodyStyle.overflow === "hidden") {
-              document.body.style.overflow = "";
-              document.documentElement.style.overflow = "";
-            }
-
-            return `Dismissed ${dismissed} overlay(s).`;
-          },
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: "DISMISS_MODALS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: {},
         });
-        return results?.[0]?.result ?? "No overlays found.";
+        const { dismissed } = response.payload;
+        return dismissed > 0
+          ? `Dismissed ${dismissed} overlay(s).`
+          : "No overlays found.";
       } catch (e: any) {
         return `Error dismissing overlays: ${e.message}`;
       }
     },
   );
 
-  // Close popups — click dismiss/close buttons, fall back to hiding
+  // Close popups — delegates to unified dismiss pipeline in content script
   toolRegistry.register(
     ToolName.CLOSE_POPUPS,
     CLOSE_POPUPS_DEF,
     async (_args, tabId) => {
       logger.info("tools", "close_popups", { tabId });
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => {
-            let clicked = 0;
-            let hidden = 0;
-            const acted = new Set<Element>();
-
-            function isVisible(el: Element): boolean {
-              if (!(el instanceof HTMLElement)) return false;
-              const s = getComputedStyle(el);
-              if (s.display === "none" || s.visibility === "hidden") return false;
-              if (parseFloat(s.opacity) === 0) return false;
-              return el.offsetParent !== null || s.position === "fixed" || s.position === "sticky";
-            }
-
-            function findCloseBtn(container: Element): HTMLElement | null {
-              // 1. aria-label close/dismiss
-              const ariaEls = container.querySelectorAll(
-                '[aria-label*="close" i], [aria-label*="dismiss" i], [aria-label*="Close" i], [aria-label*="Dismiss" i]'
-              );
-              for (const el of ariaEls) {
-                if (el instanceof HTMLElement && isVisible(el)) return el;
-              }
-              // 2. class-based close buttons
-              const classEls = container.querySelectorAll(
-                '.close, .dismiss, .btn-close, [class*="close-btn"], [class*="closeBtn"], [class*="close_btn"]'
-              );
-              for (const el of classEls) {
-                if (el instanceof HTMLElement && isVisible(el)) return el;
-              }
-              // 3. X / x / times character button in top-right quadrant
-              const rect = container.getBoundingClientRect();
-              const midX = rect.left + rect.width / 2;
-              const midY = rect.top + rect.height / 2;
-              const btns = container.querySelectorAll("button, [role='button'], a");
-              for (const btn of btns) {
-                if (!(btn instanceof HTMLElement) || !isVisible(btn)) continue;
-                const text = btn.textContent?.trim() || "";
-                if (/^[×✕✖xX]$/.test(text) || text === "&times;") {
-                  const br = btn.getBoundingClientRect();
-                  const cx = br.left + br.width / 2;
-                  const cy = br.top + br.height / 2;
-                  if (cx >= midX && cy <= midY) return btn;
-                }
-              }
-              return null;
-            }
-
-            const DISMISS_PATTERNS = /^(close|dismiss|got it|ok|accept|no thanks|decline|not now|maybe later|skip|i agree|i understand|allow all|reject all|accept all|deny|continue|allow)$/i;
-
-            function findDismissBtn(container: Element): HTMLElement | null {
-              const candidates = container.querySelectorAll("button, a, [role='button']");
-              for (const el of candidates) {
-                if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
-                const text = el.textContent?.trim() || "";
-                if (DISMISS_PATTERNS.test(text)) return el;
-              }
-              return null;
-            }
-
-            function tryClickOrHide(container: HTMLElement): void {
-              if (acted.has(container)) return;
-              acted.add(container);
-              const closeBtn = findCloseBtn(container);
-              if (closeBtn) {
-                closeBtn.click();
-                clicked++;
-                return;
-              }
-              const dismissBtn = findDismissBtn(container);
-              if (dismissBtn) {
-                dismissBtn.click();
-                clicked++;
-                return;
-              }
-              container.style.display = "none";
-              hidden++;
-            }
-
-            // Phase 1: Overlay containers by selector
-            const selectors = [
-              "[role='dialog']", "[role='alertdialog']",
-              ".modal", ".overlay", ".popup", ".banner",
-              ".cookie", ".consent", ".notice",
-              "[class*='modal']", "[class*='overlay']", "[class*='popup']",
-              "[class*='banner']", "[class*='cookie']", "[class*='consent']",
-              "[class*='notification']", "[class*='toast']", "[class*='snackbar']",
-              "#onetrust-consent-sdk", ".fc-consent-root",
-              "[class*='gdpr']", "[class*='privacy']",
-            ];
-            for (const sel of selectors) {
-              const els = document.querySelectorAll(sel);
-              for (const el of els) {
-                if (!(el instanceof HTMLElement) || !isVisible(el)) continue;
-                const style = getComputedStyle(el);
-                const isOverlay = style.position === "fixed" || style.position === "sticky"
-                  || style.position === "absolute" || parseInt(style.zIndex, 10) > 50;
-                if (!isOverlay) continue;
-                tryClickOrHide(el);
-              }
-            }
-
-            // Phase 2: Viewport-covering elements (>20% coverage, fixed/absolute)
-            const vpW = window.innerWidth;
-            const vpH = window.innerHeight;
-            const vpArea = vpW * vpH;
-            if (vpArea > 0) {
-              const all = document.querySelectorAll("*");
-              for (const raw of all) {
-                if (!(raw instanceof HTMLElement) || !isVisible(raw)) continue;
-                if (acted.has(raw)) continue;
-                const s = getComputedStyle(raw);
-                if (s.position !== "fixed" && s.position !== "absolute") continue;
-                const r = raw.getBoundingClientRect();
-                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
-                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
-                const coverage = (vW * vH) / vpArea;
-                if (coverage > 0.2) {
-                  // Backdrops/dimming layers — hide directly
-                  const childCount = raw.children.length;
-                  const text = raw.textContent?.trim() || "";
-                  if (childCount <= 1 && text.length < 10) {
-                    raw.style.display = "none";
-                    hidden++;
-                    acted.add(raw);
-                  } else {
-                    tryClickOrHide(raw);
-                  }
-                }
-              }
-            }
-
-            // Phase 3: Small floating popups (fixed/absolute, z>10, dismiss-text buttons)
-            if (vpArea > 0) {
-              const all = document.querySelectorAll("*");
-              for (const raw of all) {
-                if (!(raw instanceof HTMLElement) || !isVisible(raw)) continue;
-                if (acted.has(raw)) continue;
-                const s = getComputedStyle(raw);
-                if (s.position !== "fixed" && s.position !== "absolute") continue;
-                const z = parseInt(s.zIndex, 10);
-                if (!(z > 10)) continue;
-                const r = raw.getBoundingClientRect();
-                const vW = Math.max(0, Math.min(vpW, r.right) - Math.max(0, r.left));
-                const vH = Math.max(0, Math.min(vpH, r.bottom) - Math.max(0, r.top));
-                const coverage = (vW * vH) / vpArea;
-                // Skip viewport-covering ones (handled in phase 2)
-                if (coverage > 0.2) continue;
-                // Must have at least some visible size
-                if (vW < 30 || vH < 30) continue;
-                // Look for dismiss button
-                const dismissBtn = findDismissBtn(raw) || findCloseBtn(raw);
-                if (dismissBtn) {
-                  dismissBtn.click();
-                  clicked++;
-                  acted.add(raw);
-                }
-              }
-            }
-
-            // Phase 4: ESC key
-            const total = clicked + hidden;
-            if (total > 0) {
-              document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-            }
-
-            // Phase 5: Body overflow restoration
-            const bodyStyle = getComputedStyle(document.body);
-            if (bodyStyle.overflow === "hidden") {
-              document.body.style.overflow = "";
-              document.documentElement.style.overflow = "";
-            }
-
-            return `Closed ${total} popup(s) (${clicked} clicked, ${hidden} hidden).`;
-          },
+        const response = await chrome.tabs.sendMessage(tabId, {
+          type: "DISMISS_MODALS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          payload: {},
         });
-        return results?.[0]?.result ?? "No popups found.";
+        const { dismissed, remainingOverlay } = response.payload;
+        let msg =
+          dismissed > 0
+            ? `Closed ${dismissed} popup(s).`
+            : "No popups found.";
+        if (remainingOverlay) {
+          msg += ` Warning: overlay [${remainingOverlay.tagId}] still covers ${remainingOverlay.coveragePercent}% of viewport.`;
+        }
+        return msg;
       } catch (e: any) {
         return `Error closing popups: ${e.message}`;
       }
