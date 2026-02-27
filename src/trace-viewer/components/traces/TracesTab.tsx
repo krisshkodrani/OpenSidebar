@@ -23,6 +23,7 @@ export default function TracesTab() {
   const tracesError = useStore((s) => s.tracesError);
   const setSessions = useStore((s) => s.setSessions);
   const setAvailableDays = useStore((s) => s.setAvailableDays);
+  const setAvailableModels = useStore((s) => s.setAvailableModels);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSessionLogs = useStore((s) => s.setSessionLogs);
   const setTracesLoading = useStore((s) => s.setTracesLoading);
@@ -36,12 +37,14 @@ export default function TracesTab() {
     setTracesLoading(true);
     setTracesError(null);
     try {
-      const [sessionsData, daysData] = await Promise.all([
+      const [sessionsData, daysData, modelsData] = await Promise.all([
         api.fetchTraceSessions(filters),
         api.fetchTraceDays(),
+        api.fetchTraceModels(),
       ]);
       setSessions(sessionsData || []);
       setAvailableDays(daysData || []);
+      setAvailableModels(modelsData || []);
 
       // Check if current session still exists
       if (currentSessionId) {
@@ -64,7 +67,9 @@ export default function TracesTab() {
 
   // Initial load
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { refreshSessions(); }, []);
+  useEffect(() => {
+    refreshSessions();
+  }, []);
 
   // Load entries and logs when session changes
   useEffect(() => {
@@ -100,7 +105,10 @@ export default function TracesTab() {
         <>
           <TraceFilterPanel onFiltersChanged={refreshSessions} />
           {tracesError ? (
-            <ErrorBanner message={`Failed to load sessions: ${tracesError}`} hint />
+            <ErrorBanner
+              message={`Failed to load sessions: ${tracesError}`}
+              hint
+            />
           ) : (
             <TraceSessionList />
           )}

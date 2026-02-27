@@ -7,45 +7,9 @@ export interface DayBucket {
   count: number;
 }
 
-export interface CategoryBucket {
-  name: string;
+export interface ModelBucket {
+  model: string;
   count: number;
-}
-
-export interface SkillRecord {
-  id: string;
-  name: string;
-  sourceQuery: string;
-  enabled: boolean;
-  pinned: boolean;
-  uses: number;
-  successfulRuns: number;
-  failedRuns: number;
-  avgDurationMs: number;
-  avgTokens: number;
-  consecutiveReplayFailures: number;
-  createdAt: number;
-  updatedAt: number;
-  matchTokens: string[];
-  steps: SkillStep[];
-  [key: string]: unknown;
-}
-
-export interface SkillStep {
-  objective: string;
-  successCriteria: string;
-  allowedTools: string[];
-  assumptions: string[];
-}
-
-export interface MemoryRecord {
-  id: string;
-  content: string;
-  category: string;
-  type: string;
-  sourceUrl: string;
-  createdAt: number;
-  [key: string]: unknown;
 }
 
 export interface SessionLogEntry {
@@ -66,6 +30,8 @@ export interface TraceFilters {
   to: string;
   domain: string;
   sessionPrefix: string;
+  mode: string;   // "all" | "agent" | "recording" | "manual"
+  model: string;  // "all" | specific model name
 }
 
 // ── Slice Interfaces ───────────────────────────────────────────
@@ -73,6 +39,7 @@ export interface TraceFilters {
 export interface TracesSlice {
   sessions: Record<string, unknown>[];
   availableDays: DayBucket[];
+  availableModels: ModelBucket[];
   filters: TraceFilters;
   currentSessionId: string | null;
   currentEntries: Record<string, unknown>[];
@@ -84,6 +51,7 @@ export interface TracesSlice {
   tracesError: string | null;
   setSessions: (sessions: Record<string, unknown>[]) => void;
   setAvailableDays: (days: DayBucket[]) => void;
+  setAvailableModels: (models: ModelBucket[]) => void;
   setFilter: (key: keyof TraceFilters, value: string) => void;
   resetFilters: () => void;
   setCurrentSessionId: (id: string | null) => void;
@@ -102,47 +70,16 @@ export interface TracesSlice {
   setTracesError: (error: string | null) => void;
 }
 
-export interface SkillsSlice {
-  skills: SkillRecord[];
-  currentSkillId: string | null;
-  skillSearchQuery: string;
-  skillStatusFilter: string;
-  skillsLoading: boolean;
-  setSkills: (skills: SkillRecord[]) => void;
-  setCurrentSkillId: (id: string | null) => void;
-  setSkillSearchQuery: (query: string) => void;
-  setSkillStatusFilter: (filter: string) => void;
-  setSkillsLoading: (loading: boolean) => void;
-  updateSkillLocal: (id: string, updates: Partial<SkillRecord>) => void;
-  removeSkillLocal: (id: string) => void;
-}
-
-export interface MemorySlice {
-  memoryEntries: MemoryRecord[];
-  memoryCategories: CategoryBucket[];
-  currentMemoryEntryId: string | null;
-  memorySearchQuery: string;
-  memoryCategoryFilter: string;
-  memoryLoading: boolean;
-  setMemoryEntries: (entries: MemoryRecord[]) => void;
-  setMemoryCategories: (categories: CategoryBucket[]) => void;
-  setCurrentMemoryEntryId: (id: string | null) => void;
-  setMemorySearchQuery: (query: string) => void;
-  setMemoryCategoryFilter: (filter: string) => void;
-  setMemoryLoading: (loading: boolean) => void;
-  removeMemoryEntryLocal: (id: string) => void;
-}
-
 export interface UiSlice {
-  activeTab: "traces" | "skills" | "memory";
+  activeTab: "traces";
   tabInitialized: Record<string, boolean>;
-  setActiveTab: (tab: "traces" | "skills" | "memory") => void;
+  setActiveTab: (tab: "traces") => void;
   markTabInitialized: (tab: string) => void;
 }
 
 // ── Combined Store ─────────────────────────────────────────────
 
-export type Store = TracesSlice & SkillsSlice & MemorySlice & UiSlice;
+export type Store = TracesSlice & UiSlice;
 
 export type SliceCreator<T> = StateCreator<
   Store,
