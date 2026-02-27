@@ -25,14 +25,14 @@ You are on Step 1 of the 30-step Browser Navigation Challenge. For each step:
 3. Find and reveal the hidden code (look for "Reveal Code" buttons, delayed reveals, hidden DOM elements)
 4. Enter the code in the input field and click Submit Code
 5. Verify the URL changed to the next step before continuing
-If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden elements. Complete all 30 steps to win.
+If stuck for 5+ actions, try execute_js to inspect hidden elements or read_page for a fresh snapshot. Complete all 30 steps to win.
 ```
 
 **Why this works:**
 - **Explicit per-step workflow** prevents aimless loops — each step has a clear 5-action pattern
 - **Calls out progress tracking** — trace analysis shows runs with explicit step tracking are much more efficient (23 turns vs 246)
 - **"Verify URL changed"** prevents false progress detection — the agent sometimes thinks it advanced when it didn't
-- **Tool hints** (`execute_js`, `take_screenshot`) for the hardest patterns (hidden DOM, delayed reveals)
+- **Tool hints** (`execute_js`, `read_page`) for the hardest patterns (hidden DOM, delayed reveals)
 - **"5+ actions" self-imposed stuck threshold** beats the system's default 6-turn detection, triggering self-correction earlier
 
 ## What to Expect
@@ -48,18 +48,18 @@ If stuck for 5+ actions, take_screenshot and try execute_js to inspect hidden el
 Start the log drain before the run so you can watch in real time:
 
 ```bash
-bun run logs        # start log drain server (in a separate terminal)
-bun run logs:tail   # tail live output
+npm run logs        # start log drain server (in a separate terminal)
+npm run logs:tail   # tail live output
 ```
 
 After the run, query logs for issues:
 
 ```bash
-bun run logs:errors              # error-level entries only
-bun run logs:query search "stuck" # search for stuck-related logs
-bun run logs:query search "Redundant" # check for redundant action warnings
-bun run logs:query search "filler"    # check for filler text detections
-bun run logs:query stats          # summary statistics
+npm run logs:errors                          # error-level entries only
+npx tsx scripts/log-query.ts search "stuck"  # search for stuck-related logs
+npx tsx scripts/log-query.ts search "Redundant" # check for redundant action warnings
+npx tsx scripts/log-query.ts search "filler"    # check for filler text detections
+npx tsx scripts/log-query.ts stats           # summary statistics
 ```
 
 ## Debugging Failures

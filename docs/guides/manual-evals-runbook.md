@@ -19,19 +19,12 @@ The agent reads your feedback on its next turn and adjusts. If teach mode is ON 
 
 ## Pre-Flight
 
-### Option A: Single command
-```bash
-bun run dev:stack
-```
-Builds, starts the log server, and starts the dev server.
-
-### Option B: Manual
 ```bash
 # Terminal 1 — keep running the entire session
-bun run logs
+npm run logs
 
 # Terminal 2 — build once
-bun run build
+npm run build
 ```
 
 Then load/reload the extension:
@@ -135,27 +128,27 @@ Write them down:
 
 ```bash
 # Baseline
-bun run evals convert <BASELINE_SESSION_ID> --strategy all
-bun run evals convert-run <BASELINE_RUN_ID> --strategy all
+npx tsx evals/cli.ts convert <BASELINE_SESSION_ID> --strategy all
+npx tsx evals/cli.ts convert-run <BASELINE_RUN_ID> --strategy all
 
 # Teaching
-bun run evals convert <TEACHING_SESSION_ID> --strategy all
-bun run evals convert-run <TEACHING_RUN_ID> --strategy all
+npx tsx evals/cli.ts convert <TEACHING_SESSION_ID> --strategy all
+npx tsx evals/cli.ts convert-run <TEACHING_RUN_ID> --strategy all
 
 # Golden fixtures (reference expectations)
-bun run evals convert-golden
+npx tsx evals/cli.ts convert-golden
 ```
 
 ### Run evals
 ```bash
-bun run evals run --all
+npx tsx evals/cli.ts run --all
 ```
 
 ### Analyze
 ```bash
-bun run evals stats
-bun run evals analyze
-bun run evals critique
+npx tsx evals/cli.ts stats
+npx tsx evals/cli.ts analyze
+npm run evals:critique
 ```
 
 ### Outputs
@@ -186,11 +179,11 @@ New conversation collaboration patterns — verify these appear in orchestrator 
 
 Search logs for specific events:
 ```bash
-bun run logs:query search "evidence_attached"
-bun run logs:query search "advocate"
-bun run logs:query search "retrospective"
-bun run logs:query search "plan_reviewed"
-bun run logs:query search "cross_role_reflexion"
+npx tsx scripts/log-query.ts search "evidence_attached"
+npx tsx scripts/log-query.ts search "advocate"
+npx tsx scripts/log-query.ts search "retrospective"
+npx tsx scripts/log-query.ts search "plan_reviewed"
+npx tsx scripts/log-query.ts search "cross_role_reflexion"
 ```
 
 ---
@@ -199,17 +192,17 @@ bun run logs:query search "cross_role_reflexion"
 
 | Mistake | Fix |
 |---------|-----|
-| Forgot `bun run logs` | Traces won't record. Use Settings → Export Logs for buffered data, then re-run with the server |
+| Forgot `npm run logs` | Traces won't record. Use Settings → Export Logs for buffered data, then re-run with the server |
 | Teach mode OFF during coached run | Skill won't be learned. Re-run with it ON |
 | Task failed during coached run | Skill learning only fires on success. Guide more aggressively with hints |
 | Different query text between runs | Use the exact same task text for fair comparison |
-| Build stale after code changes | `bun run build` and reload extension before capture |
+| Build stale after code changes | `npm run build` and reload extension before capture |
 | Multiple tasks in one session | Keep one task per session for clean eval conversion |
 
 ## Quality Gate
 
 Before analyzing results, confirm:
-1. `bun run lint` — 0 errors
-2. `bun test` — all pass
+1. `npm run lint` — 0 errors
+2. `npm test` — all pass
 3. At least one `traces/<session-id>.jsonl` exists per run
 4. Coached run has a learned skill visible in the panel

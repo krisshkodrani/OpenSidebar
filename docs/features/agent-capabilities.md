@@ -149,14 +149,15 @@ Learned skills enable the agent to replay successful plans:
 - **Auto-Replay**: Matching skills are replayed on similar future queries
 - **Management**: Settings → Learned Skills panel with pin/enable controls
 
-## Vision Capabilities
+## Perception Layer
 
-The agent can "see" the webpage using Vision LLMs:
+The agent understands web pages through a vision-based perception layer:
 
-- **`take_screenshot`**: Captures the viewport when visual understanding is needed
-- **Vision Analysis**: Image sent to a configurable Vision Model (default: `qwen/qwen3-vl-235b-a22b-instruct`)
-- **Think Stripping**: Internal reasoning of the vision model stripped for clean output
-- **Unlocked at tier 1**: Screenshots only available after escalation to smart model
+- **Automatic perception**: After every DOM-modifying action, a screenshot + element summary is sent to a vision model
+- **Structured output**: 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens
+- **Provider failover**: Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback)
+- **Fingerprint caching**: Unchanged pages skip redundant perception calls
+- **Graceful degradation**: Element list always present even if vision fails
 
 ## React Toolkit
 

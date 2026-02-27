@@ -287,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports **52 tools** across four categories:
+The agent supports **57 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -320,7 +320,7 @@ The agent supports **52 tools** across four categories:
 - `go_back` - Go back in history
 - `go_forward` - Go forward in history
 - `wait` - Wait for duration
-- `take_screenshot` - Capture viewport (analyzed by vision LLM)
+
 - `group_tabs` - Group tabs into tab group
 - `ungroup_tabs` - Remove tabs from group
 - `create_window` - Open new browser window
@@ -411,9 +411,9 @@ The `StagnationMonitor` (`stagnation.ts`) detects when the agent is stuck in a l
 
 Snapshot fingerprinting hashes `url + element count + sorted element signatures (tagName:text:isVisible)`. The tracker broadcasts `AGENT_STAGNATION` messages to the side panel and sends `"resolved"` when progress resumes.
 
-## Vision Bridge
+## Perception Layer
 
-The `vision.ts` module provides `describeScreenshot(dataUrl)` which sends a screenshot to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter. The LLM returns a structured text description (page identity, UI state, actionable elements, errors, non-DOM content, scroll position) which is used as the `take_screenshot` tool result instead of raw image data. Think-tags are stripped from the output.
+The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Provider failover: Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback). Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
 
 ## Pause / Resume
 
@@ -438,7 +438,7 @@ Users can send messages while the agent is running. These are treated as feedbac
 
 The agent loop operates in a single unified mode that combines the best behaviors:
 
-- **Parallel tool execution** — When no sequential tools (navigate, done, take_screenshot, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
+- **Parallel tool execution** — When no sequential tools (navigate, done, escalate, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
 - **Two-tier escalation** — Text-only responses trigger reflection→escalate→give-up. The system has two tiers (fast/smart) with a single escalation step. Context distillation compresses history before smart model handoff.
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
@@ -534,7 +534,7 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (52 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (57 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
-| `src/background/vision.ts`            | Vision LLM bridge                    |
+| `src/background/perception.ts`        | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |

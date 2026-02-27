@@ -99,9 +99,9 @@ MiniMax M2.5 emits `<think>...</think>` reasoning blocks inline. These are handl
 
 ---
 
-## 4. The 52-Tool Ecosystem
+## 4. The 57-Tool Ecosystem
 
-The agent has 52 tools organized into six categories:
+The agent has 57 tools organized into six categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |
@@ -121,7 +121,6 @@ The agent has 52 tools organized into six categories:
 | `scroll_page` | Scroll page or container | No | No |
 | `find_element` | Text search, scroll to match, return tag ID | No | No |
 | `navigate` | Go to URL, wait for load | Yes | No |
-| `take_screenshot` | Capture and describe visual layout | Yes | No |
 
 *`read_page` is marked `domModifying` so the loop refreshes the snapshot after it runs, keeping element tags in sync.
 
@@ -150,13 +149,13 @@ The agent has 52 tools organized into six categories:
 
 ### Parallel vs. Sequential Execution
 
-Tools are classified as **sequential** or **parallelizable** via the `ToolMeta` interface. The sequential set includes `navigate`, `done`, `take_screenshot`, and `escalate`.
+Tools are classified as **sequential** or **parallelizable** via the `ToolMeta` interface. The sequential set includes `navigate`, `done`, and `escalate`.
 
 When the LLM emits multiple tool calls in a single turn:
 - If **none** are sequential → all execute in parallel via `Promise.all()`
 - If **any** are sequential → all execute one at a time in order
 
-This means the agent can batch multiple `click_element` + `type_text` calls in one turn (e.g., filling a form), but a `navigate` or `take_screenshot` always runs alone.
+This means the agent can batch multiple `click_element` + `type_text` calls in one turn (e.g., filling a form), but a `navigate` always runs alone.
 
 ### DOM-Modifying Tools & Snapshot Refresh
 
@@ -304,13 +303,13 @@ Both paths inject the same constant:
 > 1. *Identify what was attempted and why it failed.*
 > 2. *Formulate a different strategy — do not repeat what already failed.*
 > 3. *Call the appropriate tool to advance the task.*
-> *If the page state is unclear, start with read_page or take_screenshot.*
+> *If the page state is unclear, start with read_page.*
 
 ### Post-Escalation Behavior
 
 If the agent calls `escalate` again after already being escalated, it receives:
 
-> *Already using the most capable model. Escalation won't help further. Try a fundamentally different approach: take_screenshot, read_page, or a completely different interaction strategy.*
+> *Already using the most capable model. Escalation won't help further. Try a fundamentally different approach: read_page, or a completely different interaction strategy.*
 
 ---
 
@@ -375,23 +374,19 @@ Detects remaining viewport-covering overlays. If any survive, they're dynamicall
 
 ---
 
-## 12. Vision & Screenshots
+## 12. Perception Layer
 
-When the agent calls `take_screenshot`, the tool:
+Instead of a manual `take_screenshot` tool, OpenSidebar uses an automatic **perception layer** (`src/background/perception.ts`) that runs after every DOM-modifying action. The `perceive()` function:
 
-1. Captures the visible tab as JPEG at **40% quality** via `chrome.tabs.captureVisibleTab`
-2. Generates a **320px-wide JPEG thumbnail** (50% quality) for inline display in the step timeline
-3. Sends the full image to a vision model via OpenRouter for text description
+1. Captures the visible tab as a screenshot via `chrome.tabs.captureVisibleTab`
+2. Sends the screenshot + element summary to a vision model for structured interpretation
+3. Returns a compact 6-section interpretation (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens — replacing ~4K of raw visible text
 
-The vision model is configurable (`visionModel` user setting, default `qwen/qwen3-vl-235b-a22b-instruct`). The structured prompt extracts:
-- Page identity and key UI state (active tabs, modals, focused inputs)
-- Actionable elements with approximate screen positions
-- Errors, feedback, and non-DOM content (OCR on images, canvas, SVGs)
-- Scroll position
+The perception layer uses provider failover: Groq Llama 4 Scout (fastest) then OpenRouter GPT-4o-mini (fallback). No user-configurable setting — it uses whichever API key is available (`groqApiKey` first, `openRouterApiKey` fallback). 429/4xx on the primary provider triggers immediate failover.
 
-Response parameters: `max_tokens: 500`, `temperature: 0.2`. Up to 3 attempts total (1 initial + 2 retries) with exponential backoff from an 800ms base delay plus random jitter. Non-retryable errors (4xx except 429) abort immediately. Abort/timeout signals return a graceful fallback message rather than throwing.
+Response parameters: `max_tokens: 600`, `temperature: 0.1`, timeout 20s. Up to 2 retries with 800ms base delay and exponential backoff plus jitter. Fingerprint-based caching (via `computeSnapshotFingerprint()`) avoids redundant calls when the page hasn't changed.
 
-Vision token usage is reported back to the agent loop via a callback bridge (`setVisionUsageCallback`), so screenshot costs appear in session metrics.
+Perception usage is tracked via `recordVisionUsage()` directly in the agent loop, so vision costs appear in session metrics.
 
 ---
 
@@ -427,14 +422,14 @@ For longer-term state preservation, the `ContextManager` auto-saves conversation
 - **Generic**: No site-specific code. Works on any website the user can visit.
 - **Self-correcting**: The Verify step + stuck detection + model escalation create a multi-layered recovery system. The agent doesn't just try harder — it tries differently.
 - **Cost-efficient**: Starts with the cheapest viable model, escalates only when needed. Dynamic compression adapts context to budget. Compact element format saves ~300-450 tokens per turn compared to verbose representations.
-- **Vision-assisted**: When DOM inspection is insufficient (canvas, images, spatial layout), the agent can see the page visually.
+- **Vision-assisted**: The automatic perception layer interprets the page visually every turn, capturing spatial layout, canvas content, and non-DOM elements that pure DOM inspection would miss.
 - **Memory-persistent**: Long-term memory (vector + keyword hybrid search) allows the agent to recall strategies and facts across sessions.
 - **Transparent**: Session metrics expose exactly how many tokens and dollars each task costs, with per-model breakdowns.
 
 ### Known Limitations
 
 - **50-element cap**: Pages with hundreds of interactive elements (e.g., complex dashboards, data tables) will only see the first 50 visible elements. The agent can mitigate this with `scroll_page` and `find_element`, but may miss elements entirely.
-- **Vision latency**: Each `take_screenshot` call adds 1-3 seconds of latency for the vision model round-trip.
+- **Perception latency**: Each perception call adds 1-3 seconds of latency for the vision model round-trip, though fingerprint-based caching avoids redundant calls.
 - **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. Gemini 2.5 Flash Lite handles routine interactions well but struggles with complex multi-step logic. M2.5 is stronger but slower and more expensive.
 - **No iframe support**: The content script only sees the top-level document. Elements inside iframes are invisible to the agent.
 - **Single-tab focus**: While tab management tools exist, the agent can only actively observe one tab at a time. Cross-tab coordination requires explicit switching.

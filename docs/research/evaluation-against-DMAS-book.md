@@ -30,9 +30,9 @@ Recent stabilization and hardening work has been completed, focused on orchestra
 - Integration joins were revalidated end-to-end in full suite runs.
 
 Current verification status:
-- `bun test`: pass (572 pass, 0 fail)
-- `bun run lint`: pass (warnings only)
-- `bun run build`: pass
+- `npm test`: pass (572 pass, 0 fail)
+- `npm run lint`: pass (warnings only)
+- `npm run build`: pass
 
 Progress and next critical milestones are tracked in:
 - `docs/research/dmas-gap-closure-plan.md`
@@ -69,7 +69,7 @@ const CLICK_ELEMENT_DEF: ToolDefinition = {
 ```
 
 **Why This Is Good:**
-- ✅ **52 well-defined tools** with complete JSON schemas
+- ✅ **57 well-defined tools** with complete JSON schemas
 - ✅ **Tool categorization** via metadata (DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS)
 - ✅ **ToolRegistry pattern** (src/background/tools/registry.ts) for centralized management
 - ✅ **Type safety** with TypeScript enforcing tool definitions match the schema
@@ -263,7 +263,7 @@ export function* parseSSEChunks(text: string): Generator<SSEChunk, void, undefin
 
 **Evidence:**
 - Single `AgentLoop` class in `src/background/agent/loop.ts`
-- All 52 tools registered to single agent
+- All 57 tools registered to single agent
 - No orchestrator pattern for coordinating multiple agents
 
 **Book Citation:**
@@ -880,10 +880,10 @@ agentLoop
 **Proposed:**
 ```bash
 # Add commands
-bun run evals:benchmark  # Measure time, tokens, cost
-bun run evals:regression # Compare against baseline
-bun run evals:trends     # Show metrics over time
-bun run evals:ab         # A/B test prompt variations
+npm run evals:benchmark  # Measure time, tokens, cost
+npm run evals:regression # Compare against baseline
+npm run evals:trends     # Show metrics over time
+npm run evals:ab         # A/B test prompt variations
 ```
 
 ---
@@ -894,7 +894,7 @@ bun run evals:ab         # A/B test prompt variations
 
 | Principle | Book Reference | OpenSidebar Status | Grade |
 |-----------|---------------|-------------------|-------|
-| Tool-based architecture | Ch 4, §4.6 | ✅ 52 tools, well-structured | A+ |
+| Tool-based architecture | Ch 4, §4.6 | ✅ 57 tools, well-structured | A+ |
 | Memory system (RAG) | Ch 4, §4.7 | ✅ Hybrid vector+keyword | A+ |
 | Observability/tracing | Ch 3, §3.4.3 | ✅ Full trace recording | A |
 | Context management | Ch 4, §4.7.1 | ✅ Sliding window | B+ |

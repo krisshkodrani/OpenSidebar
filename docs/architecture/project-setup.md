@@ -10,7 +10,7 @@ OpenSidebar is a Chrome Manifest V3 extension built with:
 - **React 18** for the side panel UI
 - **TypeScript 5.7** with strict mode
 - **Tailwind CSS 3** for styling
-- **Bun** as the package manager and test runner
+- **npm** as the package manager, **tsx** for TypeScript execution, and **Vitest** for testing
 
 ## Directory Structure
 
@@ -51,10 +51,10 @@ opensidebar/
 │   │   ├── skills/
 │   │   │   └── store.ts      # SkillStore (learn + replay)
 │   │   ├── llm/              # Multi-provider LLM client (Cerebras/Groq/OpenRouter)
-│   │   ├── tools/            # 52 tool definitions + React Toolkit
+│   │   ├── tools/            # 57 tool definitions + React Toolkit
 │   │   ├── memory/           # Memory bridge to offscreen
 │   │   ├── workspaces/       # Workspace/Tab Group manager
-│   │   ├── vision.ts         # Vision LLM bridge
+│   │   ├── perception.ts    # Perception layer
 │   │   ├── navigation.ts     # Navigation bridge
 │   │   ├── keepalive.ts      # SW keepalive alarm
 │   │   ├── streaming.ts      # SSE parser with usage capture
@@ -109,7 +109,7 @@ Key dev dependencies:
 
 - `@crxjs/vite-plugin` - Chrome extension build tool
 - `@types/chrome` - Chrome API types
-- `bun-types` - Bun runtime types
+
 
 ### manifest.json
 
@@ -186,28 +186,32 @@ export default defineConfig({
 
 ```bash
 # Development
-bun run dev            # Vite dev server with HMR
-bun run dev:stack      # Build + log server + dev server (all-in-one)
-bun run build          # Production build
+npm run dev            # Vite dev server with HMR
+npm run build          # Production build
 
 # Quality
-bun run lint           # ESLint (src/**/*.ts,tsx)
-bun run fmt            # Prettier format src/
-bun test               # Run all tests (600+)
+npm run lint           # ESLint (src/**/*.ts,tsx)
+npm run fmt            # Prettier format src/
+npm test               # Run all tests (600+)
 
 # Logging & Traces
-bun run logs           # Start log drain server (127.0.0.1:7589)
-bun run logs:tail      # Show last 50 entries
-bun run logs:errors    # Show error-level entries
-bun run traces:list    # List recorded sessions
-bun run traces:stats   # Aggregate trace statistics
+npm run logs           # Start log drain server (127.0.0.1:7589)
+npm run logs:tail      # Show last 50 entries
+npm run logs:errors    # Show error-level entries
+npm run traces         # Trace query CLI (list, show, turns, stats, help)
 
 # Evals
-bun run evals          # Eval pipeline CLI
-bun run evals:convert  # Convert traces to eval cases
-bun run evals:run      # Run eval cases against LLM
-bun run evals:stats    # Show eval statistics
-bun run evals:critique # Critique eval results
+npm run evals          # Eval pipeline CLI (shows all subcommands)
+npm run evals:critique # Replay golden cases + judge + generate report
+npm run evals:validate # Structural validation of golden cases (offline)
+npm run evals:perception # Perception eval
+npm run evals:planner  # Planner eval
+npm run evals:context  # Context eval
+npm run evals:stagnation # Stagnation eval
+
+# Prompts
+npm run prompts:build  # Build compiled prompts
+npm run prompts:check  # Check prompt consistency
 ```
 
 ## Development Workflow
@@ -215,7 +219,7 @@ bun run evals:critique # Critique eval results
 1. **Install dependencies:**
 
    ```bash
-   bun install
+   npm install
    ```
 
 2. **Create environment file:**
@@ -228,7 +232,7 @@ bun run evals:critique # Critique eval results
 3. **Start dev server:**
 
    ```bash
-   bun run dev
+   npm run dev
    ```
 
 4. **Load extension:**
@@ -243,7 +247,7 @@ bun run evals:critique # Critique eval results
 
 ## Testing Setup
 
-Tests use Bun's built-in test runner with Happy DOM for DOM simulation.
+Tests use Vitest with Happy DOM for DOM simulation.
 
 **tests/setup.ts** provides Chrome API mocks:
 
@@ -259,8 +263,8 @@ Tests use Bun's built-in test runner with Happy DOM for DOM simulation.
 Run specific test files:
 
 ```bash
-bun test tests/background/streaming.test.ts
-bun test --grep "AgentLoop"
+npx vitest run tests/background/streaming.test.ts
+npx vitest run --grep "AgentLoop"
 ```
 
 ## Logging System
@@ -269,16 +273,13 @@ OpenSidebar includes structured logging with multiple output destinations:
 
 ```bash
 # Start log drain server (127.0.0.1:7589)
-bun run logs
+npm run logs
 
 # Show last 50 entries
-bun run logs:tail
+npm run logs:tail
 
 # Show error-level entries
-bun run logs:errors
-
-# Query logs
-bun run logs:query search <text>
+npm run logs:errors
 ```
 
 Log file: `logs/opensidebar.jsonl` (JSONL format, 50MB rotation, 5 files max).
@@ -286,7 +287,7 @@ Log file: `logs/opensidebar.jsonl` (JSONL format, 50MB rotation, 5 files max).
 ## Key Design Decisions
 
 1. **@crxjs/vite-plugin v2 beta** - Only version supporting MV3 with HMR
-2. **Bun over Node** - Faster installs, built-in test runner, TypeScript transpilation
+2. **npm + tsx + Vitest** - Standard Node.js toolchain with TypeScript execution via tsx
 3. **Single-file content script** - All logic in `content.ts` for simplicity
 4. **Path aliases** - `@/` imports for clean module resolution
 5. **Strict TypeScript** - Catches errors early, improves code quality
@@ -304,5 +305,5 @@ Log file: `logs/opensidebar.jsonl` (JSONL format, 50MB rotation, 5 files max).
 
 **Build errors:**
 
-- Ensure Bun is installed: `bun --version`
+- Ensure Node.js 18+ is installed: `node --version`
 - Clear `.vite/` cache if HMR issues persist

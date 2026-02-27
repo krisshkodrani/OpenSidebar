@@ -14,10 +14,15 @@ OpenSidebar can navigate, read, click, type, and research across web pages from 
 
 - Browser automation via natural language (click, type, scroll, navigate).
 - Visual DOM understanding with Vimium-style element tags (`[1]`, `[2]`, ...).
+- Perception layer — vision-based page understanding (Groq Llama 4 Scout → GPT-4o-mini fallback).
 - Two-tier model execution with automatic escalation when needed.
 - Runtime lane isolation in the orchestrator (planner, executor, verifier).
 - Teach Mode with learned skill replay (capture successful runs and reuse them, with pin/enable controls).
+- Demo recording and replay for repeatable workflows.
+- Voice input via Browser Speech API or Groq Whisper.
+- React Toolkit — on-demand tools for React apps (inspect state, set controlled inputs, component tree).
 - Local memory with hybrid retrieval (Transformers.js + SQLite FTS5 + Voy + RRF).
+- Saved prompts and prompt management.
 - Auto-managed workspaces using Chrome Tab Groups.
 - Per-tab sidebar behavior (open on click, auto-close on tab switch).
 - Navigation survival across page loads and service-worker lifecycle changes.
@@ -38,7 +43,7 @@ Side Panel (React) <-> Service Worker (Agent Loop / Orchestrator) <-> Content Sc
 | --- | --- |
 | Fast LLM | `gpt-oss-120b` via Cerebras → Groq → OpenRouter failover |
 | Smart LLM | `z-ai/glm-4.7` (GLM-4.7) via Cerebras → OpenRouter failover |
-| Vision LLM | Configurable via OpenRouter (default `qwen/qwen3-vl-235b-a22b-instruct`) |
+| Perception | Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback) |
 | Embeddings | Transformers.js (`all-MiniLM-L6-v2`) |
 | Vector Search | Voy (WASM) |
 | Keyword Search | SQLite WASM (FTS5) |
@@ -66,7 +71,6 @@ Complete technical documentation: [docs/architecture/](./docs/architecture/)
 ### Prerequisites
 
 - Node.js 18+
-- Bun
 - OpenRouter API key ([openrouter.ai](https://openrouter.ai))
 
 ### Install and Build
@@ -74,8 +78,8 @@ Complete technical documentation: [docs/architecture/](./docs/architecture/)
 ```bash
 git clone https://github.com/OpenSidebar/OpenSidebar.git
 cd OpenSidebar
-bun install
-bun run build
+npm install
+npm run build
 ```
 
 ### Load in Chrome
@@ -87,13 +91,11 @@ bun run build
 
 ### Development
 
-Use `dev:stack` — it builds the extension, starts the log/trace server, and launches Vite with HMR, all in one process:
+Use `npm run dev` — it builds the extension, starts the log/trace server, and launches Vite with HMR, all in one process:
 
 ```bash
-bun run dev:stack     # or: make dev
+npm run dev
 ```
-
-> **Why not just `bun run dev`?** Plain `bun run dev` only starts Vite. Without the log server running, execution traces are silently dropped and you lose all session data. `dev:stack` ensures traces are always captured.
 
 A `Makefile` is included for convenience — run `make help` to see all targets.
 
@@ -107,40 +109,40 @@ A `Makefile` is included for convenience — run `make help` to see all targets.
 
 ## Commands
 
-All commands are available via `bun run <script>` or `make <target>`. Run `make help` for a quick reference.
+All commands are available via `npm run <script>` or `make <target>`. Run `make help` for a quick reference.
 
 ### Day-to-day
 
-| Make | Bun | Description |
-| --- | --- | --- |
-| `make dev` | `bun run dev:stack` | **Recommended.** Build + log server + Vite HMR. Traces captured automatically. |
-| `make build` | `bun run build` | Production build only |
-| `make test` | `bun test` | Run all tests |
-| `make lint` | `bun run lint` | Run ESLint |
-| `make fmt` | `bun run fmt` | Format source files |
+| Command | Description |
+| --- | --- |
+| `npm run dev` | **Recommended.** Build + log server + Vite HMR. Traces captured automatically. |
+| `npm run build` | Production build only |
+| `npm test` | Run all tests (Vitest) |
+| `npm run lint` | Run ESLint |
+| `npm run fmt` | Format source files |
 
 ### Logs & Traces
 
-| Make | Bun | Description |
-| --- | --- | --- |
-| `make logs` | `bun run logs` | Start log drain server (port 7589) — required for trace capture |
-| `make viewer` | `bun run viewer` | Start server + open trace viewer UI |
-| `make traces` | `bun run traces:list` | List captured trace sessions |
-| `make traces-stats` | `bun run traces:stats` | Aggregate trace statistics |
-| `make traces-clean` | — | Delete all traces and start fresh |
-| `make logs-tail` | `bun run logs:tail` | Tail recent log entries |
-| `make logs-errors` | `bun run logs:errors` | Show error-level logs |
+| Command | Description |
+| --- | --- |
+| `npm run logs` | Start log drain server + trace viewer (port 7589) |
+| `npm run logs:tail` | Tail recent log entries |
+| `npm run logs:errors` | Show error-level logs |
+| `npm run traces` | Trace query CLI (`list`, `show`, `turns`, `stats`, `help`) |
 
 ### Evals
 
-| Make | Bun | Description |
-| --- | --- | --- |
-| `make evals-convert` | `bun run evals:convert` | Convert traces to eval cases |
-| `make evals-run` | `bun run evals:run` | Run eval cases against LLM |
-| `make evals-stats` | `bun run evals:stats` | Show eval statistics |
-| `make evals-analyze` | `bun run evals:analyze` | Pattern analysis across results |
+| Command | Description |
+| --- | --- |
+| `npm run evals` | Eval CLI help (shows all subcommands) |
+| `npm run evals:critique` | Replay golden cases + judge + generate report |
+| `npm run evals:validate` | Structural validation of golden cases (offline, no API key) |
+| `npm run evals:perception` | Perception layer evaluation |
+| `npm run evals:planner` | Planner evaluation |
+| `npm run evals:context` | Context management evaluation |
+| `npm run evals:stagnation` | Stagnation detection evaluation |
 
-When `bun run logs` (or `make dev`) is active, execution traces are persisted under:
+When `npm run logs` (or `npm run dev`) is active, execution traces are persisted under:
 - `traces/<session-id>.jsonl` (agent turn traces)
 - `traces/runs/<run-id>.jsonl` (orchestrator run traces)
 - `traces/index.jsonl` (manual run session index)
@@ -148,13 +150,12 @@ When `bun run logs` (or `make dev`) is active, execution traces are persisted un
 
 ### Trace Viewer UI
 
-OpenSidebar includes a custom trace viewer UI in-repo (not a third-party library):
-- Viewer UI: `scripts/trace-viewer.html`
+OpenSidebar includes a built-in React trace viewer (`src/trace-viewer/`):
 - Server/API: `scripts/log-server.ts`
 - URL: `http://127.0.0.1:7589/viewer`
 
 Start it:
-1. Run `bun run logs` (or `bun run viewer`).
+1. Run `npm run logs` (or `npm run dev`).
 2. Open `http://127.0.0.1:7589/viewer`.
 
 What you can inspect:
@@ -175,7 +176,7 @@ Useful API endpoints (served by the same process):
 Yes, manual browser runs produce logs.
 
 - Always-on buffer: structured logs are written to `chrome.storage.local` (`opensidebar_logs`) via `StorageLogger`.
-- Optional disk persistence: if `bun run logs` is running, the extension also drains logs/traces to local files:
+- Optional disk persistence: if `npm run logs` is running, the extension also drains logs/traces to local files:
   - `logs/opensidebar.jsonl`
   - `traces/<session-id>.jsonl`
   - `traces/runs/<run-id>.jsonl`
@@ -183,19 +184,18 @@ Yes, manual browser runs produce logs.
 ### How Info Is Extracted
 
 1. Start drain server in a terminal:
-   - `bun run logs`
+   - `npm run logs`
 2. Run your task manually in Chrome (open side panel, execute workflow).
 3. Inspect raw logs/traces:
-   - `bun run logs:tail`
-   - `bun run logs:query search "task_completed"`
-   - `bun run traces:list`
-   - `bun run traces:stats`
+   - `npm run logs:tail`
+   - `npm run traces -- list`
+   - `npm run traces -- stats`
 4. Convert captured traces into eval cases:
-   - `bun run evals convert <session-id> --strategy all`
+   - `npx tsx evals/cli.ts convert <session-id> --strategy all`
 5. Generate AI-readable critique artifacts:
-   - `bun run evals critique`
+   - `npm run evals:critique`
 
-If you forgot to start `bun run logs`, you can still export buffered logs from the side panel:
+If you forgot to start `npm run logs`, you can still export buffered logs from the side panel:
 - `Settings -> Export Logs` downloads `opensidebar-logs.jsonl`.
 
 ---
@@ -215,6 +215,7 @@ If you forgot to start `bun run logs`, you can still export buffered logs from t
 
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Agent Loop](./docs/architecture/agent-loop.md)
+- [Fast-Smart Collaboration](./docs/architecture/fast-smart-collaboration.md)
 - [Memory System](./docs/architecture/memory-system.md)
 - [Message Protocol](./docs/architecture/message-protocol.md)
 - [Types Reference](./docs/architecture/types-reference.md)

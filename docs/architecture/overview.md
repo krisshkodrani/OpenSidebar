@@ -40,7 +40,7 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │                  Agent Loop                           │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │  LLM     │  │ Context  │  │   Tool Registry   │   │   │
-│  │  │ Client   │  │ Manager  │  │   (52 tools)      │   │   │
+│  │  │ Client   │  │ Manager  │  │   (57 tools)      │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │ Progress │  │  Prompt  │  │   Trace           │   │   │
@@ -147,16 +147,16 @@ Background → Side Panel: TASK_COMPLETION (with metrics summary)
 | **Platform**        | Chrome Extension Manifest V3                    |
 | **Build**           | Vite 5 + @crxjs/vite-plugin                     |
 | **Language**        | TypeScript 5.7 (strict mode)                    |
-| **Package Manager** | Bun                                             |
+| **Package Manager** | npm                                             |
 | **UI**              | React 18 + Tailwind CSS 3.4                     |
 | **State**           | Zustand + Immer                                 |
 | **Fast LLM**        | GPT-OSS-120B (Cerebras → Groq → OpenRouter)     |
 | **Smart LLM**       | GLM-4.7 (Cerebras → OpenRouter), native reasoning |
-| **Vision LLM**      | OpenRouter API (configurable, default Qwen VL)  |
+| **Perception**      | Groq Llama 4 Scout → OpenRouter GPT-4o-mini      |
 | **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)              |
 | **Vector Search**   | Voy (WASM)                                      |
 | **Keyword Search**  | SQLite WASM (FTS5)                               |
-| **Tests**           | Bun test runner + Happy DOM                      |
+| **Tests**           | Vitest + Happy DOM                               |
 
 ## Directory Structure
 
@@ -188,13 +188,13 @@ src/
 │   │   ├── client.ts    # Multi-provider client (Cerebras/Groq/OpenRouter)
 │   │   └── types.ts     # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
-│   │   ├── index.ts     # 52 tool definitions
+│   │   ├── index.ts     # 57 tool definitions
 │   │   ├── registry.ts  # ToolRegistry
 │   │   ├── metadata.ts  # ToolMeta, pre-computed sets
 │   │   └── react.ts     # React Toolkit (4 on-demand tools)
 │   ├── memory/          # Offscreen document bridge
 │   ├── workspaces/      # Workspace/Tab Group management
-│   ├── vision.ts        # Vision LLM bridge
+│   ├── perception.ts    # Perception layer (vision-based page understanding)
 │   ├── navigation.ts    # Navigation Bridge
 │   ├── keepalive.ts     # SW keepalive alarm
 │   ├── streaming.ts     # SSE parser with usage capture
@@ -298,7 +298,7 @@ Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the 
 - [Agent Loop](./agent-loop.md) - Core execution engine
 - [Navigation Bridge](./navigation-bridge.md) - State persistence
 - [Memory System](./memory-system.md) - RAG implementation
-- [Tools](./tools.md) - 52 tool definitions
+- [Tools](./tools.md) - 57 tool definitions
 - [Types Reference](./types-reference.md) - TypeScript types
 - [Message Protocol](./message-protocol.md) - Message passing
 - [Side Panel UI](./sidepanel-ui.md) - React UI
