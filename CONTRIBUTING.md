@@ -6,10 +6,10 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 1. Fork the repository
 2. Clone your fork: `git clone git@github.com:yourusername/OpenSidebar.git`
-3. Install dependencies: `bun install`
+3. Install dependencies: `npm install`
 4. Copy environment file: `cp .env.example .env`
 5. Add your API keys to `.env`
-6. Build: `bun run build`
+6. Build: `npm run build`
 
 ## Project Architecture
 
@@ -57,22 +57,22 @@ To add a new tool:
 
 ```bash
 # Run all tests
-bun test
+npm test
 
 # Run specific test file
-bun test tests/background/agent.test.ts
+npx vitest run tests/background/agent.test.ts
 
 # Run tests matching pattern
-bun test --grep "AgentLoop"
+npx vitest run --grep "AgentLoop"
 ```
 
 ## Making Changes
 
 1. Create a feature branch: `git checkout -b feature/your-feature-name`
 2. Make your changes
-3. Run tests: `bun test`
-4. Run linter: `bun run lint`
-5. Format code: `bun run fmt`
+3. Run tests: `npm test`
+4. Run linter: `npm run lint`
+5. Format code: `npm run fmt`
 6. Commit with descriptive messages
 7. Push to your fork
 8. Create a Pull Request
@@ -101,7 +101,7 @@ Types:
 
 - TypeScript strict mode enabled
 - Use 2 spaces for indentation
-- Run `bun run fmt` before committing
+- Run `npm run fmt` before committing
 - Follow existing patterns in the codebase
 - Add JSDoc to new public functions
 

@@ -572,7 +572,7 @@ if (compressionRatio > 0.6) {
 Add a `pathologies` command to the trace CLI:
 
 ```typescript
-// bun run traces pathologies [sessionId]
+// npm run traces pathologies [sessionId]
 // Output: count of each pathology type, per-session or aggregate
 ```
 
@@ -621,13 +621,13 @@ Add a `pathologies` command to the trace CLI:
 
 ### Eval Pipeline
 
-Use the existing eval infrastructure (`bun run evals`) to measure:
+Use the existing eval infrastructure (`npm run evals`) to measure:
 
 1. **Baseline**: Run current eval suite, record per-case pass rates and turn counts
 2. **Post-S1+S5**: Re-run, compare turn counts (expect fewer total turns due to less drift) and inspect distilled summaries for causal chain quality
 3. **Post-S1+S2+S5**: Re-run, compare pass rates (expect improvement on longer sessions)
 4. **Post-all**: Full suite, compare recovery rates on `error_recovery` and `edge_*` golden files
-5. **Pathology analysis**: After S6, run `bun run traces pathologies` on eval sessions to establish baseline pathology distribution
+5. **Pathology analysis**: After S6, run `npm run traces pathologies` on eval sessions to establish baseline pathology distribution
 
 **New eval cases** to add:
 - `multi_turn_goal_drift.json`: Task requiring 10+ turns where the original goal could be forgotten
@@ -641,7 +641,7 @@ Use the existing eval infrastructure (`bun run evals`) to measure:
 - Verify the pinned goal section appears in every system prompt (inspect via trace)
 - Verify fresh-start recovery fires after repeated stuck detection (requires a genuinely hard page)
 - Verify causal-chain summaries are more readable than flat timelines (compare in trace viewer)
-- Verify pathology events appear in traces and are queryable via `bun run traces pathologies`
+- Verify pathology events appear in traces and are queryable via `npm run traces pathologies`
 
 ## Impact
 

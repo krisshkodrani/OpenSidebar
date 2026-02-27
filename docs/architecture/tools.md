@@ -1,6 +1,6 @@
 # Tool System
 
-OpenSidebar implements **52 tools** across five categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
+OpenSidebar implements **57 tools** across five categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
 
 ## Tool Categories
 
@@ -56,7 +56,7 @@ These tools use Chrome APIs to manage tabs and navigation.
 | `go_back`         | Go back in browser history      | `{}`                                                  |
 | `go_forward`      | Go forward in browser history   | `{}`                                                  |
 | `wait`            | Wait for dynamic content        | `{ seconds: number, reason?: string }`                |
-| `take_screenshot` | Capture viewport screenshot     | `{}`                                                  |
+
 | `group_tabs`      | Group tabs into a tab group     | `{ tabIds: number[], title: string, color?: string }` |
 | `ungroup_tabs`    | Remove tabs from a group        | `{ tabIds: number[] }`                                |
 | `create_window`   | Open a new browser window       | `{ url?: string, incognito?: boolean }`               |
@@ -201,7 +201,7 @@ Tools that must execute alone (not in parallel with others):
 
 - `navigate` - Changes page context
 - `done` - Ends the agent loop
-- `take_screenshot` - Captures current state
+
 - `escalate` - Changes model
 - `go_back` - Changes page context
 - `go_forward` - Changes page context
@@ -235,10 +235,10 @@ See `src/background/agent/tool-recovery.ts` for the `recoverToolCallsFromText()`
 
 ```bash
 # Run tool-related tests
-bun test --grep "tool"
+npx vitest run --grep "tool"
 
 # Test specific tool execution
-bun test tests/background/tools.test.ts
+npx vitest run tests/background/tools.test.ts
 ```
 
 ## Key Files

@@ -26,7 +26,6 @@ OpenSidebar sees web pages through distilled DOM snapshots where interactive ele
 
 - **Hover over elements** - "Hover over the menu to see options"
 - **Find elements by text** - "Find the login button" (returns a tag ID for interaction)
-- **Take screenshots** - "Take a screenshot of the current view" (analyzed by vision LLM)
 - **Select dropdown options** - "Select 'United States' from the country dropdown"
 - **Press keyboard keys** - "Press Enter" or "Press Ctrl+A to select all"
 - **Drag and drop** - "Drag the item to the shopping cart"
@@ -140,7 +139,6 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 - `create_window` - Open a new browser window
 
 **System & Utility:**
-- `take_screenshot` - Capture viewport (analyzed by vision LLM for text description)
 - `wait` - Pause execution for a specified duration
 - `escalate` - Switch to a smarter model for complex reasoning
 - `done` - Mark task as complete

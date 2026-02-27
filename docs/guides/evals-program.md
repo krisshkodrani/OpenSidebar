@@ -33,59 +33,59 @@ Legacy cases continue to run because the section is optional.
 
 Manual-first recommended order:
 
-1. `bun run logs`
+1. `npm run logs`
 2. Run manual task in extension
-3. `bun run traces:list`
-4. `bun run evals convert <session-id> --strategy all`
-5. `bun run evals run --all --prompt-id orchestrator.verifier.system`
-6. `bun run evals critique`
+3. `npm run traces -- list`
+4. `npx tsx evals/cli.ts convert <session-id> --strategy all`
+5. `npx tsx evals/cli.ts run --all --prompt-id orchestrator.verifier.system`
+6. `npm run evals:critique`
 
 1. Convert traces to cases:
 
 ```bash
-bun run evals convert <session-id> --strategy all
+npx tsx evals/cli.ts convert <session-id> --strategy all
 ```
 
 2. Run baseline:
 
 ```bash
-bun run evals run --all
+npx tsx evals/cli.ts run --all
 ```
 
 3. Run candidate prompt:
 
 ```bash
-bun run evals run --all --prompt-file prompts/candidate.txt --prompt-variant candidate
+npx tsx evals/cli.ts run --all --prompt-file prompts/candidate.txt --prompt-variant candidate
 ```
 
 Or run against shared production prompts:
 
 ```bash
-bun run evals run --all --prompt-id orchestrator.verifier.system --prompt-variant baseline
+npx tsx evals/cli.ts run --all --prompt-id orchestrator.verifier.system --prompt-variant baseline
 ```
 
 4. Run A/B directly:
 
 ```bash
-bun run evals ab --prompt-a prompts/baseline.txt --prompt-b prompts/candidate.txt --all
+npx tsx evals/cli.ts ab --prompt-a prompts/baseline.txt --prompt-b prompts/candidate.txt --all
 ```
 
 Mixed-source A/B is supported:
 
 ```bash
-bun run evals ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/candidate.txt --all
+npx tsx evals/cli.ts ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/candidate.txt --all
 ```
 
 5. Analyze failure clusters:
 
 ```bash
-bun run evals analyze
+npx tsx evals/cli.ts analyze
 ```
 
 6. Generate AI-readable critique artifacts:
 
 ```bash
-bun run evals critique
+npm run evals:critique
 ```
 
 See the strict operator checklist in:

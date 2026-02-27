@@ -33,7 +33,7 @@ docs/
 │   ├── memory-system.md         # Memory system user guide
 │   ├── security.md              # Security model
 │   ├── streaming-ui.md          # Streaming UI
-│   ├── tools.md                 # 52-tool reference
+│   ├── tools.md                 # 57-tool reference
 │   └── workspace-management.md  # Workspace management
 ├── guides/                      # User guides and runbooks
 │   ├── manual-evals-runbook.md  # Baseline + coached eval workflow

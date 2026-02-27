@@ -64,7 +64,7 @@ export enum MessageSource {
 
 ### `ToolName`
 
-All 52 tool names the agent can invoke.
+All 57 tool names the agent can invoke.
 
 ```typescript
 /** Tool identifiers exposed to the LLM */
@@ -79,7 +79,7 @@ export enum ToolName {
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",
   SWITCH_TAB = "switch_tab",
-  TAKE_SCREENSHOT = "take_screenshot",
+
   HOVER_ELEMENT = "hover_element",
   FIND_ELEMENT = "find_element",
   WAIT = "wait",
@@ -114,6 +114,10 @@ export enum ToolName {
   CREATE_WINDOW = "create_window",
   SEND_NOTIFICATION = "send_notification",
   INSPECT_HIDDEN = "inspect_hidden",
+  DISMISS_OVERLAYS = "dismiss_overlays",
+  CLOSE_POPUPS = "close_popups",
+  BATCH_EXECUTE = "batch_execute",
+  RECALL_DEMO = "recall_demo",
 }
 ```
 
@@ -757,7 +761,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (52 tools):
+Each tool has a typed argument interface (57 tools):
 
 ```typescript
 /** Arguments for click_element */
@@ -830,9 +834,6 @@ export interface SwitchTabArgs {
   /** Tab ID to switch to */
   tabId: number;
 }
-
-/** Arguments for take_screenshot */
-export type TakeScreenshotArgs = Record<string, never>;
 
 /** Arguments for hover_element */
 export interface HoverElementArgs {
@@ -1506,7 +1507,7 @@ export interface UserSettings {
   visionModel: string;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
-  /** Hide take_screenshot from tools; also skips auto-screenshot on stuck */
+  /** Disable perception layer (vision-based page understanding) */
   disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;

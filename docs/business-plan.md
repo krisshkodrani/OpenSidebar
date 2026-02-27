@@ -242,7 +242,7 @@ interface UserSettings {
 | **API Keys**       | User provides (BYOK)      | Included      |
 | **Memory Storage** | Local (browser)           | Cloud-hosted  |
 | **Vision Model**   | User configures           | Included      |
-| **Hosting**        | Self-host (`bun run dev`) | Your VPS      |
+| **Hosting**        | Self-host (`npm run dev`) | Your VPS      |
 | **Setup**          | User configures keys      | Just login    |
 | **Support**        | GitHub issues             | Email support |
 | **Source Code**    | Full access               | N/A           |

@@ -112,9 +112,9 @@ Completed in current implementation:
 5. Deterministic orchestration integration tests with constructor-injected dependencies.
 
 Validation snapshot:
-- `bun test`: pass
-- `bun run lint`: pass (warnings only)
-- `bun run build`: pass
+- `npm test`: pass
+- `npm run lint`: pass (warnings only)
+- `npm run build`: pass
 
 For gap-to-100% tracking and next milestones, see:
 - `docs/research/dmas-gap-closure-plan.md`

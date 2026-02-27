@@ -8,13 +8,13 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 
 **Core Systems (All Working):**
 - Side Panel UI - Chat interface with real-time streaming, orchestrator console, step timeline
-- Agent Loop - 52 tools, sliding window context, progress tracking, feedback injection
+- Agent Loop - 57 tools, sliding window context, progress tracking, feedback injection
 - Orchestrator - Planner/executor/verifier pipeline with lane isolation, skills, and conversation collaboration
 - Content Script - DOM distillation, element tagging, action execution, shadow DOM, React detection
 - Navigation Bridge - State persistence across page loads
 - Memory System - SQLite FTS5 + Voy vector search + RRF fusion
 - Workspace Management - Auto-managed Chrome Tab Groups (invisible to user)
-- Vision Model - Screenshot description via configurable vision LLM
+- Perception Layer - Vision-based page understanding (Groq Llama 4 Scout → GPT-4o-mini)
 - Skills System - Learned skills from successful tasks, auto-replay on similar queries
 - Evals Framework - Offline evaluation with golden datasets and trace replay
 
@@ -64,10 +64,10 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text.
 - `agent/trace.ts` — `TraceRecorder`. Full-fidelity session recording (DOM snapshots, LLM requests/responses, tool executions, events). Drains to `traces/` via log server.
 - `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s. Fast pool: Cerebras (`gpt-oss-120b`) → Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Smart pool: Cerebras (`zai-glm-4.7`) → OpenRouter (`z-ai/glm-4.7`). `switchToSmart()` / `switchToFast()` for tier switching. GLM-4.7 has native reasoning (no reasoning parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution). Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 52 tools and bridges to content script / memory.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 57 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential).
 - `tools/react.ts` — React Toolkit: 4 on-demand tools (`inspect_react`, `react_set_input`, `inspect_react_tree`, `wait_for_react`) gated behind framework detection.
-- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter. Retry logic with exponential backoff.
+- `perception.ts` — `perceive()`. Vision-based page understanding. Sends screenshot + element summary to vision model → structured 6-section output. Provider failover: Groq Llama 4 Scout → OpenRouter GPT-4o-mini. Fingerprint-based caching.
 - `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms` (~24s interval).
@@ -228,29 +228,25 @@ Workspaces are **automatic and invisible** to users:
 ## Build/Lint/Test Commands
 
 ```bash
-bun run dev            # Vite dev server with HMR
-bun run dev:stack      # Build + log server + dev server
-bun run build          # Production build
-bun run lint           # ESLint (src/**/*.ts,tsx)
-bun run fmt            # Prettier format src/
-bun test               # Run all tests (600+)
-bun test tests/background/agent.test.ts  # Single test file
+npm run dev            # Vite dev server with HMR
+npm run build          # Production build
+npm run lint           # ESLint (src/**/*.ts,tsx)
+npm run fmt            # Prettier format src/
+npm test               # Run all tests (600+)
+npx vitest run tests/background/agent.test.ts  # Single test file
 
-bun run logs           # Start log drain server (127.0.0.1:7589)
-bun run logs:tail      # Show last 50 entries
-bun run logs:errors    # Show error-level entries
+npm run logs           # Start log drain server (127.0.0.1:7589)
+npm run logs:tail      # Show last 50 entries
+npm run logs:errors    # Show error-level entries
 
-bun run traces:list    # List recorded sessions
-bun run traces:stats   # Aggregate trace statistics
+npm run traces -- list  # List recorded sessions
+npm run traces -- stats # Aggregate trace statistics
 
-bun run evals          # Eval pipeline CLI
-bun run evals:convert  # Convert traces to eval cases
-bun run evals:run      # Run eval cases against LLM
-bun run evals:stats    # Show eval statistics
-bun run evals:critique # Critique eval results
+npm run evals          # Eval pipeline CLI
+npm run evals:critique # Critique eval results
 ```
 
-**Note:** On Windows, bun may not be in PATH if installed via `npm install -g bun`. Use `npx bun` as fallback. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
+**Note:** The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
 
 ## Code Style Guidelines
 
@@ -321,7 +317,7 @@ src/
 │   │   ├── client.ts     # Multi-provider LLM client (Cerebras/Groq/OpenRouter)
 │   │   └── types.ts      # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
-│   │   ├── index.ts      # 52 tool definitions + registration
+│   │   ├── index.ts      # 53 core tool definitions + registration
 │   │   ├── registry.ts   # ToolRegistry
 │   │   ├── metadata.ts   # ToolMeta, DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS
 │   │   └── react.ts      # React Toolkit (4 on-demand tools)
@@ -329,7 +325,7 @@ src/
 │   │   └── bridge.ts     # Offscreen document communication
 │   ├── workspaces/
 │   │   └── manager.ts    # Auto-managed workspace system
-│   ├── vision.ts         # Screenshot description via vision model
+│   ├── perception.ts     # Perception layer
 │   ├── navigation.ts     # Navigation Bridge (state persistence)
 │   ├── keepalive.ts      # SW keepalive alarm
 │   ├── streaming.ts      # SSE parser with usage capture
@@ -429,11 +425,11 @@ interface UserSettings {
 
 ## Tool System
 
-52 tools registered in `src/background/tools/index.ts`:
+57 tools registered in `src/background/tools/index.ts`:
 
 **DOM Tools (11):** click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element
 
-**Navigation/Tab Tools (6):** navigate, create_tab, close_tab, switch_tab, wait, take_screenshot
+**Navigation/Tab Tools (5):** navigate, create_tab, close_tab, switch_tab, wait
 
 **Memory Tools (2):** memory_add, memory_search
 
@@ -450,10 +446,9 @@ interface UserSettings {
 ## Logging System
 
 ```bash
-bun run logs           # Start log drain server (127.0.0.1:7589)
-bun run logs:query     # Query log file
-bun run logs:tail      # Show last 50 entries
-bun run logs:errors    # Show error-level entries only
+npm run logs           # Start log drain server (127.0.0.1:7589)
+npm run logs:tail      # Show last 50 entries
+npm run logs:errors    # Show error-level entries only
 ```
 
 Log file: `logs/opensidebar.jsonl` (JSONL, 50MB rotation, 5 files max).
@@ -473,13 +468,13 @@ All agent infrastructure must be **task-agnostic**. Never hardcode logic for a s
 
 ## Debugging
 
-1. **Start the log drain**: `bun run logs`
-2. **Query recent errors**: `bun run logs:errors`
-3. **Tail live output**: `bun run logs:tail`
-4. **Search for a keyword**: `bun run logs:query search <text>`
-5. **Check traces**: `bun run traces:list` / `bun run traces:stats`
+1. **Start the log drain**: `npm run logs`
+2. **Query recent errors**: `npm run logs:errors`
+3. **Tail live output**: `npm run logs:tail`
+4. **Search for a keyword**: `npx tsx scripts/log-query.ts search <text>`
+5. **Check traces**: `npm run traces -- list` / `npm run traces -- stats`
 
-For build errors, check `bun run build` output directly.
+For build errors, check `npm run build` output directly.
 
 ## Path Aliases
 

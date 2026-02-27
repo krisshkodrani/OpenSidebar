@@ -4,12 +4,12 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **52 tools** organized into categories:
+OpenSidebar provides **57 tools** organized into categories:
 
 - **DOM Interaction** (17 tools)
 - **Navigation** (8 tools)
 - **Memory** (2 tools)
-- **Browser Management** (11 tools)
+- **Browser Management** (12 tools)
 - **Page Analysis** (4 tools)
 - **React Toolkit** (4 tools)
 - **Utilities** (4 tools)
@@ -229,7 +229,7 @@ Click at viewport X/Y coordinates.
 
 **Notes:**
 
-- ONLY use after `take_screenshot` when the target has no [N] tag (canvas apps, games, obfuscated UIs)
+- ONLY use when the target has no [N] tag (canvas apps, games, obfuscated UIs)
 - Prefer `click_element` when a tag exists
 
 ---
@@ -405,21 +405,6 @@ Pause for dynamic content to load, then re-orient.
 - Use for timed reveals, animations, or AJAX loads
 - Not just to re-read the page (use `read_page` for that)
 - Returns your original goal, plan progress, and fresh page state
-
----
-
-### take_screenshot
-
-Capture and describe the visual layout.
-
-| Parameters | None |
-| ---------- | ---- |
-
-**Notes:**
-
-- Use when element tags don't match what you expect
-- Use when you need spatial context
-- Use when stuck after 3+ failed attempts
 
 ---
 
@@ -685,7 +670,7 @@ Switch to a smarter, slower model for complex reasoning.
 | --------- | ------ | -------- | --------------------------------------- |
 | reason    | string | Yes      | Why the current model can't handle this |
 
-**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches to Grok 4.1 Fast model.
+**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches to GLM-4.7 (native reasoning) model.
 
 ---
 
@@ -727,7 +712,7 @@ Show a desktop notification to the user.
 | **DOM Interaction**    | click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element, read_element, right_click, set_checkbox, click_coordinates, upload_file, execute_js |
 | **Navigation**         | navigate, create_tab, close_tab, switch_tab, go_back, go_forward, list_tabs, create_window                                                                                                                                             |
 | **Memory**             | memory_add, memory_search                                                                                                                                                                                                              |
-| **Browser Management** | wait, take_screenshot, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                        |
+| **Browser Management** | wait, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                                            |
 | **Page Analysis**      | inspect_hidden, xray_page, fast_forward, read_pdf                                                                                                                                                                                      |
 | **React Toolkit**      | inspect_react, react_set_input, inspect_react_tree, wait_for_react                                                                                                                                                                     |
 | **Control Flow**       | escalate                                                                                                                                                                                                                               |
@@ -757,7 +742,7 @@ OpenSidebar uses two LLM tiers with priority-based provider failover:
 | **Fast**   | `gpt-oss-120b`                     | Cerebras (3000 TPS, highest priority) | Fast, everyday tasks (default)     |
 | **Fast**   | `openai/gpt-oss-120b`              | Groq (250K TPM)                       | Fast fallback                      |
 | **Fast**   | `openai/gpt-oss-120b`              | OpenRouter                            | Fast fallback                      |
-| **Smart**  | `x-ai/grok-4.1-fast:nitro`         | OpenRouter                            | Complex reasoning, escalated tasks |
-| **Vision** | `qwen/qwen3-vl-235b-a22b-instruct` | OpenRouter                            | Screenshot analysis (configurable) |
+| **Smart**      | `zai-glm-4.7` / `z-ai/glm-4.7`          | Cerebras → OpenRouter                 | Complex reasoning, escalated tasks |
+| **Perception** | Llama 4 Scout / GPT-4o-mini              | Groq → OpenRouter                     | Vision-based page understanding    |
 
-The `escalate` tool switches to Grok 4.1 when needed.
+The `escalate` tool switches to GLM-4.7 (native reasoning) when needed.

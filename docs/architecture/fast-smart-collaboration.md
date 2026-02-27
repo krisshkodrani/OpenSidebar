@@ -35,9 +35,9 @@ Smart Pool:  Cerebras (zai-glm-4.7)     → OpenRouter (z-ai/glm-4.7)
 
 ### Prefix Caching on Cerebras
 
-Cerebras provides prefix caching with exact prefix match on Tools + System Prompt. Because the tool list is static (all 52 tools always present), and the system prompt only varies by model tier persona, the cache hit rate is high. This is critical for the smart model: ~5.5K tokens of tool definitions are cached on every call after the first.
+Cerebras provides prefix caching with exact prefix match on Tools + System Prompt. Because the tool list is static (all 57 tools always present), and the system prompt only varies by model tier persona, the cache hit rate is high. This is critical for the smart model: ~5.5K tokens of tool definitions are cached on every call after the first.
 
-**Important:** Dynamic tool pruning would break the cache for every new page type, destroying the speed advantage. Both tiers always send all 52 tools.
+**Important:** Dynamic tool pruning would break the cache for every new page type, destroying the speed advantage. Both tiers always send all 57 tools.
 
 ## Escalation Triggers
 
@@ -144,7 +144,7 @@ The `ESCALATION_REFLECTION` is critical. It tells the smart model:
 > 1. Identify what was attempted and why it failed.
 > 2. Formulate a different strategy — do not repeat what already failed.
 > 3. Call the appropriate tool to advance the task.
-> If the page state is unclear, start with read_page or take_screenshot.
+> If the page state is unclear, start with read_page.
 
 ### GLM-4.7 Native Reasoning
 
@@ -251,9 +251,9 @@ OpenRouter is the absolute fallback for both tiers — even if cooled down, `get
 
 7. **Screenshots at escalation.** The smart model gets visual context because DOM snapshots alone may not capture what's wrong (e.g., a visual CAPTCHA, a rendering bug).
 
-8. **Static tool list for cache preservation.** All 52 tools are always sent to both tiers. Dynamic pruning would break Cerebras prefix caching.
+8. **Static tool list for cache preservation.** All 57 tools are always sent to both tiers. Dynamic pruning would break Cerebras prefix caching.
 
-9. **Same tool set for both models.** Both tiers have access to all 52 tools. The difference is reasoning quality, not capability.
+9. **Same tool set for both models.** Both tiers have access to all 57 tools. The difference is reasoning quality, not capability.
 
 ## Planner Integration
 
