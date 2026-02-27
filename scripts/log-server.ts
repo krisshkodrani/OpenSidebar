@@ -23,9 +23,6 @@ const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const RUN_TRACE_INDEX = join(RUN_TRACE_DIR, "index.jsonl");
 const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
-const DATA_DIR = join(PROJECT_ROOT, "data");
-const SKILLS_FILE = join(DATA_DIR, "skills.json");
-const MEMORY_FILE = join(DATA_DIR, "memory.json");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 const VIEWER_DIR = join(PROJECT_ROOT, "dist", "src", "trace-viewer");
 const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
@@ -269,51 +266,6 @@ if (!existsSync(SCREENSHOT_DIR)) {
 if (!existsSync(GOLDEN_DIR)) {
   mkdirSync(GOLDEN_DIR, { recursive: true });
 }
-if (!existsSync(DATA_DIR)) {
-  mkdirSync(DATA_DIR, { recursive: true });
-}
-
-/* ── Skills & Memory file helpers ─────────────────────────────── */
-
-interface SkillRecord {
-  id: string;
-  [key: string]: unknown;
-}
-
-interface MemoryRecord {
-  id: string;
-  [key: string]: unknown;
-}
-
-async function readSkills(): Promise<SkillRecord[]> {
-  try {
-    if (!existsSync(SKILLS_FILE)) return [];
-    const raw = await readFile(SKILLS_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeSkills(skills: SkillRecord[]): Promise<void> {
-  await writeFile(SKILLS_FILE, JSON.stringify(skills, null, 2));
-}
-
-async function readMemoryEntries(): Promise<MemoryRecord[]> {
-  try {
-    if (!existsSync(MEMORY_FILE)) return [];
-    const raw = await readFile(MEMORY_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeMemoryEntries(entries: MemoryRecord[]): Promise<void> {
-  await writeFile(MEMORY_FILE, JSON.stringify(entries, null, 2));
-}
 
 /** Rotate log file when it exceeds MAX_FILE_SIZE */
 function rotateIfNeeded(): void {
@@ -539,7 +491,36 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // GET /api/traces/search — filter sessions by day/domain/outcome/session/query
+  // GET /api/traces/models — list unique model names with counts
+  if (url.pathname === "/api/traces/models" && req.method === "GET") {
+    try {
+      const sessions = await readAllTraceSessions();
+      const counts = new Map<string, number>();
+      for (const s of sessions) {
+        const models: string[] = [];
+        if (Array.isArray((s as any).models)) {
+          models.push(...(s as any).models);
+        }
+        const breakdown = (s as any).metrics?.modelBreakdown;
+        if (breakdown && typeof breakdown === "object") {
+          models.push(...Object.keys(breakdown));
+        }
+        for (const m of models) {
+          if (m === "recording" || m === "manual") continue;
+          counts.set(m, (counts.get(m) || 0) + 1);
+        }
+      }
+      const result = Array.from(counts.entries())
+        .map(([model, count]) => ({ model, count }))
+        .sort((a, b) => b.count - a.count);
+      sendJson(res, result);
+    } catch (err) {
+      sendText(res, `Error reading trace models: ${err}`, 500);
+    }
+    return;
+  }
+
+  // GET /api/traces/search — filter sessions by day/domain/outcome/session/query/mode/model
   if (url.pathname === "/api/traces/search" && req.method === "GET") {
     try {
       const day = url.searchParams.get("day");
@@ -548,6 +529,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const domain = (url.searchParams.get("domain") || url.searchParams.get("website") || "").toLowerCase().trim();
       const outcome = (url.searchParams.get("outcome") || "").trim();
       const sessionPrefix = (url.searchParams.get("sessionIdPrefix") || "").trim();
+      const mode = (url.searchParams.get("mode") || "").trim();
+      const model = (url.searchParams.get("model") || "").trim();
       const q = (url.searchParams.get("q") || "").toLowerCase().trim();
       const cursor = (url.searchParams.get("cursor") || "").trim();
       const withMeta = url.searchParams.get("meta") === "1";
@@ -576,6 +559,19 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         }
         if (outcome && outcome !== "all" && outcomeValue !== outcome) return false;
         if (sessionPrefix && !sessionId.startsWith(sessionPrefix)) return false;
+        if (mode && mode !== "all") {
+          const models = Array.isArray((s as any).models) ? (s as any).models as string[] : [];
+          const hasRecording = models.includes("recording");
+          const hasManual = models.includes("manual");
+          if (mode === "recording" && !hasRecording) return false;
+          if (mode === "manual" && !hasManual) return false;
+          if (mode === "agent" && (hasRecording || hasManual)) return false;
+        }
+        if (model && model !== "all") {
+          const models = Array.isArray((s as any).models) ? (s as any).models as string[] :
+            ((s as any).metrics?.modelBreakdown ? Object.keys((s as any).metrics.modelBreakdown) : []);
+          if (!models.includes(model)) return false;
+        }
         if (q && !(query.includes(q) || startUrl.includes(q) || sessionId.includes(q.toLowerCase()))) return false;
         return true;
       });
@@ -773,161 +769,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       sendJson(res, { filename, caseCount: cases.length });
     } catch (err) {
       sendText(res, `Golden save error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // --- Skills API ---
-
-  // POST /api/skills/sync — bulk replace all skills (extension pushes full list)
-  if (url.pathname === "/api/skills/sync" && req.method === "POST") {
-    try {
-      const body = await parseJsonBody(req);
-      if (!Array.isArray(body)) {
-        sendText(res, "Expected JSON array", 400);
-        return;
-      }
-      await writeSkills(body);
-      sendJson(res, { count: body.length });
-    } catch (err) {
-      sendText(res, `Skills sync error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /api/skills — list all skills
-  if (url.pathname === "/api/skills" && req.method === "GET") {
-    try {
-      const skills = await readSkills();
-      sendJson(res, skills);
-    } catch (err) {
-      sendText(res, `Skills read error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // PUT /api/skills/:id — update a skill
-  const skillPutMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_-]+)$/);
-  if (skillPutMatch && req.method === "PUT") {
-    try {
-      const skillId = skillPutMatch[1];
-      const updates = await parseJsonBody(req);
-      const skills = await readSkills();
-      const idx = skills.findIndex((s) => s.id === skillId);
-      if (idx === -1) {
-        sendText(res, "Skill not found", 404);
-        return;
-      }
-      // Merge allowed fields
-      const allowed = ["name", "enabled", "pinned"];
-      for (const key of allowed) {
-        if (key in updates) {
-          skills[idx][key] = updates[key];
-        }
-      }
-      skills[idx].updatedAt = Date.now();
-      await writeSkills(skills);
-      sendJson(res, skills[idx]);
-    } catch (err) {
-      sendText(res, `Skills update error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // DELETE /api/skills/:id — delete a skill
-  const skillDeleteMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_-]+)$/);
-  if (skillDeleteMatch && req.method === "DELETE") {
-    try {
-      const skillId = skillDeleteMatch[1];
-      const skills = await readSkills();
-      const next = skills.filter((s) => s.id !== skillId);
-      if (next.length === skills.length) {
-        sendText(res, "Skill not found", 404);
-        return;
-      }
-      await writeSkills(next);
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Skills delete error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // --- Memory API ---
-
-  // POST /api/memory/sync — bulk replace all memory entries (extension pushes)
-  if (url.pathname === "/api/memory/sync" && req.method === "POST") {
-    try {
-      const body = await parseJsonBody(req);
-      if (!Array.isArray(body)) {
-        sendText(res, "Expected JSON array", 400);
-        return;
-      }
-      await writeMemoryEntries(body);
-      sendJson(res, { count: body.length });
-    } catch (err) {
-      sendText(res, `Memory sync error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /api/memory — list all memory entries (optional ?category= filter)
-  if (url.pathname === "/api/memory" && req.method === "GET") {
-    try {
-      let entries = await readMemoryEntries();
-      const category = (url.searchParams.get("category") || "").trim();
-      const q = (url.searchParams.get("q") || "").toLowerCase().trim();
-      if (category) {
-        entries = entries.filter((e) => String(e.category || "").toLowerCase() === category.toLowerCase());
-      }
-      if (q) {
-        entries = entries.filter((e) =>
-          String(e.content || "").toLowerCase().includes(q) ||
-          String(e.category || "").toLowerCase().includes(q) ||
-          String(e.sourceUrl || "").toLowerCase().includes(q),
-        );
-      }
-      sendJson(res, entries);
-    } catch (err) {
-      sendText(res, `Memory read error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /api/memory/categories — list categories with counts
-  if (url.pathname === "/api/memory/categories" && req.method === "GET") {
-    try {
-      const entries = await readMemoryEntries();
-      const counts = new Map<string, number>();
-      for (const e of entries) {
-        const cat = String(e.category || "uncategorized");
-        counts.set(cat, (counts.get(cat) || 0) + 1);
-      }
-      const categories = Array.from(counts.entries())
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count);
-      sendJson(res, categories);
-    } catch (err) {
-      sendText(res, `Memory categories error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // DELETE /api/memory/:id — delete a memory entry
-  const memDeleteMatch = url.pathname.match(/^\/api\/memory\/([a-zA-Z0-9_-]+)$/);
-  if (memDeleteMatch && req.method === "DELETE") {
-    try {
-      const memId = memDeleteMatch[1];
-      const entries = await readMemoryEntries();
-      const next = entries.filter((e) => e.id !== memId);
-      if (next.length === entries.length) {
-        sendText(res, "Memory entry not found", 404);
-        return;
-      }
-      await writeMemoryEntries(next);
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Memory delete error: ${err}`, 500);
     }
     return;
   }
