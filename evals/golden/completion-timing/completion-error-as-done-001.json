@@ -1,0 +1,38 @@
+{
+  "id": "completion-error-as-done-001",
+  "scenario": "error_page_confusion",
+  "difficulty": "hard",
+
+  "snapshot": {
+    "url": "https://shop.example.com/checkout/404",
+    "title": "404 - Page Not Found",
+    "elementCount": 10,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "h1", "role": "heading", "text": "404 — Page Not Found", "attributes": {}, "rect": { "x": 50, "y": 100, "width": 500, "height": 48 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "p", "role": "paragraph", "text": "The page you're looking for doesn't exist or has been moved.", "attributes": {}, "rect": { "x": 50, "y": 160, "width": 500, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "a", "role": "link", "text": "Go to Homepage", "attributes": { "href": "/" }, "rect": { "x": 50, "y": 210, "width": 140, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 4, "tagName": "a", "role": "link", "text": "Contact Support", "attributes": { "href": "/support" }, "rect": { "x": 210, "y": 210, "width": 140, "height": 36 }, "isVisible": true, "isDisabled": false }
+  ],
+  "objective": "Complete the checkout process and purchase the items in the cart.",
+  "plan": [
+    { "step": "Navigate to checkout", "status": "completed" },
+    { "step": "Fill in shipping address", "status": "pending" },
+    { "step": "Enter payment details", "status": "pending" },
+    { "step": "Confirm and place order", "status": "pending" }
+  ],
+  "actionHistory": [
+    { "tool": "click", "args": { "id": 12 }, "result": "Clicked 'Proceed to Checkout'" },
+    { "tool": "navigate", "args": { "url": "https://shop.example.com/checkout" }, "result": "Navigated to checkout — page returned 404 error" }
+  ],
+  "perception": "LAYOUT: Error page with large 404 heading centered on page. CONTENT: '404 — Page Not Found' heading. Message says the page doesn't exist or has been moved. Two links: 'Go to Homepage' and 'Contact Support'. BLOCKERS: Checkout page is not available — 404 error. No form fields, no checkout UI visible. STATE: Navigation error — the checkout URL is broken.",
+
+  "expectedAction": "continue",
+  "expectedNextTools": ["navigate", "go_back"],
+
+  "metadata": {
+    "curatedAt": "2026-02-28",
+    "notes": "404 error page — agent confused by the error state. Should NOT call done() since the task (complete checkout) hasn't been achieved. Should navigate back or try an alternative path. Hard because the page state is very different from what's expected."
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "id": "completion-premature-partial-001",
+  "scenario": "premature_partial_plan",
+  "difficulty": "medium",
+
+  "snapshot": {
+    "url": "https://shop.example.com/cart",
+    "title": "Shopping Cart - Example Shop",
+    "elementCount": 32,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "h1", "role": "heading", "text": "Your Cart", "attributes": {}, "rect": { "x": 50, "y": 20, "width": 400, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "div", "role": "generic", "text": "Wireless Mouse - $29.99 Qty: 1", "attributes": { "class": "cart-item" }, "rect": { "x": 50, "y": 80, "width": 500, "height": 60 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "div", "role": "generic", "text": "Subtotal: $29.99", "attributes": { "class": "subtotal" }, "rect": { "x": 50, "y": 160, "width": 200, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 4, "tagName": "input", "role": "textbox", "text": "", "attributes": { "id": "promo-code", "placeholder": "Enter promo code" }, "rect": { "x": 50, "y": 200, "width": 200, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 5, "tagName": "button", "role": "button", "text": "Apply", "attributes": {}, "rect": { "x": 260, "y": 200, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 6, "tagName": "a", "role": "link", "text": "Proceed to Checkout", "attributes": { "href": "/checkout" }, "rect": { "x": 50, "y": 260, "width": 200, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "objective": "Add the wireless mouse to cart, apply promo code 'SAVE10', and complete checkout.",
+  "plan": [
+    { "step": "Add Wireless Mouse to cart", "status": "completed" },
+    { "step": "Apply promo code 'SAVE10'", "status": "pending" },
+    { "step": "Proceed to checkout and complete purchase", "status": "pending" }
+  ],
+  "actionHistory": [
+    { "tool": "click", "args": { "id": 12 }, "result": "Clicked button 'Add to Cart' — item added successfully" },
+    { "tool": "navigate", "args": { "url": "https://shop.example.com/cart" }, "result": "Navigated to cart page" }
+  ],
+  "perception": "LAYOUT: Shopping cart page showing 1 item. CONTENT: Wireless Mouse ($29.99) in cart, subtotal $29.99. Promo code input field is empty. 'Proceed to Checkout' link visible. STATE: Cart has item but promo code not yet applied. Only step 1 of 3 complete.",
+
+  "expectedAction": "continue",
+  "expectedNextTools": ["type_text", "click"],
+
+  "metadata": {
+    "curatedAt": "2026-02-28",
+    "notes": "Only 1 of 3 plan subtasks done. Agent should apply the promo code next, not call done()."
+  }
+}

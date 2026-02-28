@@ -13,6 +13,9 @@ import type {
   ContextEvalCase,
   StagnationEvalCase,
 } from "./types";
+import type { E2EGoldenCase } from "./e2e-types";
+import type { EscalationGoldenCase } from "./escalation-types";
+import type { CompletionTimingGoldenCase } from "./completion-timing-types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -183,6 +186,18 @@ export function resolveSessionId(prefix: string): string {
   return (match as any).sessionId;
 }
 
+/** Find a run ID by prefix match */
+export function resolveRunId(prefix: string): string {
+  const manifests = readRunTraceManifests();
+  const match = manifests.find(
+    (m: any) => m.runId === prefix || m.runId?.startsWith(prefix),
+  );
+  if (!match) {
+    throw new Error(`No run trace found matching: ${prefix}`);
+  }
+  return (match as any).runId;
+}
+
 // ── Perception eval I/O ──────────────────────────────────────────────
 
 export const PERCEPTION_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "perception");
@@ -253,6 +268,63 @@ export function readStagnationEvalCases(): StagnationEvalCase[] {
   for (const file of files) {
     try {
       const content = readFileSync(join(STAGNATION_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── E2E eval I/O ────────────────────────────────────────────────────
+
+export const E2E_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "e2e");
+export const E2E_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "e2e");
+
+/** Read all E2E golden cases from the e2e golden dir */
+export function readE2EGoldenCases(): E2EGoldenCase[] {
+  if (!existsSync(E2E_GOLDEN_DIR)) return [];
+  const files = readdirSync(E2E_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: E2EGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(E2E_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Escalation eval I/O ──────────────────────────────────────────────
+
+export const ESCALATION_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "escalation");
+export const ESCALATION_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "escalation");
+
+/** Read all escalation golden cases from the escalation golden dir */
+export function readEscalationGoldenCases(): EscalationGoldenCase[] {
+  if (!existsSync(ESCALATION_GOLDEN_DIR)) return [];
+  const files = readdirSync(ESCALATION_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: EscalationGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(ESCALATION_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Completion-timing eval I/O ───────────────────────────────────────
+
+export const COMPLETION_TIMING_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "completion-timing");
+export const COMPLETION_TIMING_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "completion-timing");
+
+/** Read all completion-timing golden cases from the completion-timing golden dir */
+export function readCompletionTimingGoldenCases(): CompletionTimingGoldenCase[] {
+  if (!existsSync(COMPLETION_TIMING_GOLDEN_DIR)) return [];
+  const files = readdirSync(COMPLETION_TIMING_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: CompletionTimingGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(COMPLETION_TIMING_GOLDEN_DIR, file), "utf-8");
       cases.push(JSON.parse(content));
     } catch { /* skip malformed */ }
   }

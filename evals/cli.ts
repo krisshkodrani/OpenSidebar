@@ -41,11 +41,17 @@ import { runPerceptionEvals, type PerceptionProvider } from "./perception-runner
 import { buildPerceptionReport } from "./perception-report";
 import {
   extractAndSavePlannerCase,
+  extractAndSavePlannerCaseFromRun,
   extractPlannerCasesFromSessions,
+  extractPlannerCasesFromRuns,
   extractValidateDoneCases,
 } from "./planner-extractor";
 import { runPlannerEvals } from "./planner-runner";
 import { buildPlannerReport } from "./planner-report";
+import { runE2EEvals, type E2EProvider } from "./e2e-runner";
+import { buildE2EReport } from "./e2e-report";
+import { runE2EMultiturnEvals, type E2EMultiturnProvider } from "./e2e-multiturn-runner";
+import { buildE2EMultiturnReport } from "./e2e-multiturn-report";
 import {
   extractAndSaveContextCase,
   extractContextCasesFromSession,
@@ -58,6 +64,10 @@ import {
 } from "./stagnation-extractor";
 import { runStagnationEvals } from "./stagnation-runner";
 import { buildStagnationReport } from "./stagnation-report";
+import { runEscalationEvals, type SmartModel } from "./escalation-runner";
+import { buildEscalationReport } from "./escalation-report";
+import { runCompletionTimingEvals, type CompletionTimingProvider } from "./completion-timing-runner";
+import { buildCompletionTimingReport } from "./completion-timing-report";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -140,6 +150,12 @@ async function main() {
     case "planner-extract-all":
       cmdPlannerExtractAll(args.slice(1));
       break;
+    case "planner-extract-run":
+      cmdPlannerExtractRun(args.slice(1));
+      break;
+    case "planner-extract-runs":
+      cmdPlannerExtractRuns(args.slice(1));
+      break;
     case "planner-critique":
       await cmdPlannerCritique(args.slice(1));
       break;
@@ -160,6 +176,27 @@ async function main() {
       break;
     case "stagnation-critique":
       await cmdStagnationCritique(args.slice(1));
+      break;
+    case "e2e-critique":
+      await cmdE2ECritique(args.slice(1));
+      break;
+    case "e2e-validate":
+      await cmdE2EValidate();
+      break;
+    case "e2e-multiturn":
+      await cmdE2EMultiturn(args.slice(1));
+      break;
+    case "escalation-critique":
+      await cmdEscalationCritique(args.slice(1));
+      break;
+    case "escalation-validate":
+      await cmdEscalationValidate();
+      break;
+    case "completion-timing-critique":
+      await cmdCompletionTimingCritique(args.slice(1));
+      break;
+    case "completion-timing-validate":
+      await cmdCompletionTimingValidate();
       break;
     case "help":
     default:
@@ -900,12 +937,72 @@ function cmdPlannerExtractAll(args: string[]) {
   console.log(`\n${cases.length} planner case(s) extracted.`);
 }
 
+function cmdPlannerExtractRun(args: string[]) {
+  const runId = args[0];
+  if (!runId) {
+    console.error("Usage: evals planner-extract-run <run-id> [--id <id>] [--dimension <d>] [--difficulty <d>] [--page-title <t>] [--page-url <u>]");
+    process.exit(1);
+  }
+
+  const getArg = (flag: string) => {
+    const idx = args.indexOf(flag);
+    return idx !== -1 ? args[idx + 1] : undefined;
+  };
+
+  const outputPath = extractAndSavePlannerCaseFromRun(runId, {
+    id: getArg("--id"),
+    dimension: getArg("--dimension") as any,
+    difficulty: getArg("--difficulty") as any,
+    pageTitle: getArg("--page-title"),
+    pageUrl: getArg("--page-url"),
+  });
+
+  console.log(`${c.green}Planner case extracted from run trace${c.reset}`);
+  console.log(`  File: ${outputPath}`);
+}
+
+function cmdPlannerExtractRuns(args: string[]) {
+  const maxIdx = args.indexOf("--max");
+  const max = maxIdx !== -1 ? parseInt(args[maxIdx + 1], 10) : 10;
+
+  const cases = extractPlannerCasesFromRuns({ max });
+  if (cases.length === 0) {
+    console.log("No orchestrator run traces found.");
+    return;
+  }
+
+  if (!existsSync(PLANNER_GOLDEN_DIR)) mkdirSync(PLANNER_GOLDEN_DIR, { recursive: true });
+
+  for (const evalCase of cases) {
+    const outPath = join(PLANNER_GOLDEN_DIR, `${evalCase.id}.json`);
+    writeFileSync(outPath, JSON.stringify(evalCase, null, 2), "utf-8");
+    console.log(`${c.green}Extracted${c.reset}: ${evalCase.id}`);
+  }
+  console.log(`\n${cases.length} planner case(s) extracted from run traces.`);
+}
+
 async function cmdPlannerCritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const dimIdx = args.indexOf("--dimension");
   const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
   const methodIdx = args.indexOf("--method");
   const method = methodIdx !== -1 ? args[methodIdx + 1] : undefined;
+  const modelIdx = args.indexOf("--model");
+  const model = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
+  const reasoningIdx = args.indexOf("--reasoning");
+  const reasoningEffort =
+    reasoningIdx !== -1 ? args[reasoningIdx + 1] : undefined;
+  if (
+    reasoningEffort &&
+    reasoningEffort !== "low" &&
+    reasoningEffort !== "medium" &&
+    reasoningEffort !== "high"
+  ) {
+    console.error(
+      `${c.red}Invalid --reasoning value: ${reasoningEffort}. Use low|medium|high.${c.reset}`,
+    );
+    process.exit(1);
+  }
   const outIdx = args.indexOf("--out");
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
 
@@ -925,6 +1022,8 @@ async function cmdPlannerCritique(args: string[]) {
     dimension,
     method,
     judge: judgeFlag,
+    model,
+    reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined,
     outDir: join(outDir, "planner"),
   });
 
@@ -1101,6 +1200,183 @@ async function cmdStagnationCritique(args: string[]) {
   console.log(`Report: ${mdPath}`);
 }
 
+async function cmdE2ECritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EProvider : undefined;
+  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+  const stepIdx = args.indexOf("--step");
+  const stepFilter = stepIdx !== -1 ? parseInt(args[stepIdx + 1], 10) : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readE2EGoldenCases } = await import("./utils");
+  const cases = readE2EGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
+    process.exit(1);
+  }
+
+  console.log(`${c.bold}E2E Critique: ${cases.length} golden case(s)${c.reset}\n`);
+
+  const results = await runE2EEvals({
+    keys,
+    provider: providerArg,
+    judge: judgeFlag,
+    stepFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildE2EReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `e2e-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}E2E: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+async function cmdE2EValidate() {
+  const { readE2EGoldenCases } = await import("./utils");
+  const cases = readE2EGoldenCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
+    return;
+  }
+
+  console.log(`${c.bold}Validating ${cases.length} E2E golden case(s)...${c.reset}\n`);
+
+  let valid = 0;
+  let invalid = 0;
+
+  for (const goldenCase of cases) {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!goldenCase.id) errors.push("missing id");
+    if (!goldenCase.sourceSessionId) errors.push("missing sourceSessionId");
+    if (typeof goldenCase.stepNumber !== "number") errors.push("missing/invalid stepNumber");
+    if (!goldenCase.challengeUrl) errors.push("missing challengeUrl");
+
+    // Snapshot
+    if (!goldenCase.entrySnapshot?.url) errors.push("missing entrySnapshot.url");
+    if (!goldenCase.entrySnapshot?.title) errors.push("missing entrySnapshot.title");
+    if (typeof goldenCase.entrySnapshot?.elementCount !== "number") errors.push("missing entrySnapshot.elementCount");
+
+    // Elements
+    if (!Array.isArray(goldenCase.entryElements) || goldenCase.entryElements.length === 0) {
+      errors.push("empty or missing entryElements");
+    }
+
+    // Solution
+    if (!goldenCase.solution?.code) errors.push("missing solution.code");
+    if (typeof goldenCase.solution?.codeInputId !== "number") errors.push("missing solution.codeInputId");
+    if (typeof goldenCase.solution?.submitButtonId !== "number") errors.push("missing solution.submitButtonId");
+
+    // Verify solution elements exist in entryElements
+    if (goldenCase.entryElements?.length > 0 && goldenCase.solution) {
+      const tagIds = new Set(goldenCase.entryElements.map((el) => el.tag));
+      if (!tagIds.has(goldenCase.solution.codeInputId)) {
+        errors.push(`solution.codeInputId [${goldenCase.solution.codeInputId}] not in entryElements`);
+      }
+      if (!tagIds.has(goldenCase.solution.submitButtonId)) {
+        errors.push(`solution.submitButtonId [${goldenCase.solution.submitButtonId}] not in entryElements`);
+      }
+    }
+
+    // Actions
+    if (!goldenCase.actions?.sequence || goldenCase.actions.sequence.length === 0) {
+      errors.push("empty or missing actions.sequence");
+    }
+
+    // Metrics
+    if (typeof goldenCase.metrics?.turnCount !== "number") errors.push("missing metrics.turnCount");
+
+    if (errors.length > 0) {
+      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
+      invalid++;
+    } else {
+      console.log(`  ${c.green}VALID${c.reset}   ${goldenCase.id} (step ${goldenCase.stepNumber}, ${goldenCase.actions.total} actions)`);
+      valid++;
+    }
+  }
+
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
+}
+
+async function cmdE2EMultiturn(args: string[]) {
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EMultiturnProvider : undefined;
+  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+  const stepIdx = args.indexOf("--step");
+  const stepFilter = stepIdx !== -1 ? parseInt(args[stepIdx + 1], 10) : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readE2EGoldenCases } = await import("./utils");
+  const cases = readE2EGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
+    process.exit(1);
+  }
+
+  console.log(`${c.bold}E2E Multi-Turn: ${cases.length} golden case(s)${c.reset}\n`);
+
+  const results = await runE2EMultiturnEvals({
+    keys,
+    provider: providerArg,
+    stepFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildE2EMultiturnReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `e2e-multiturn-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  const totalTurns = results.reduce((s, r) => s + r.turnCount, 0);
+  console.log(`\n${c.bold}E2E Multi-Turn: ${passed} passed, ${failed} failed, ${errors} errors (${totalTurns} turns)${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
 function cmdHelp() {
   console.log(`
 ${c.bold}Eval Pipeline CLI${c.reset}
@@ -1196,10 +1472,21 @@ Planner eval commands:
 
   planner-extract-all [--max <n>]        Batch-extract from all sessions with plans
 
+  planner-extract-run <run-id> [options]  Extract planner case from orchestrator run trace
+    --id <id>         Custom case ID
+    --dimension <d>   difficulty_accuracy, step_quality, coverage, done_validation
+    --difficulty <d>  easy, medium, or hard
+    --page-title <t>  Override page title (run traces don't carry it)
+    --page-url <u>    Override page URL
+
+  planner-extract-runs [--max <n>]       Batch-extract from all orchestrator run traces
+
   planner-critique [options]             Replay, score, judge, generate report
     --judge           Enable LLM-as-judge
     --dimension <d>   Filter by dimension
     --method <m>      Filter by method
+    --model <m>       Override planner model (default: z-ai/glm-4.7)
+    --reasoning <e>   Reasoning effort for GPT-OSS models: low|medium|high
     --out <dir>       Output directory
 
 Context eval commands:
@@ -1225,6 +1512,29 @@ Stagnation eval commands:
   stagnation-critique [options]          Replay through StagnationMonitor, score, report
     --dimension <d>   Filter by dimension
     --out <dir>       Output directory
+
+E2E eval commands:
+  e2e-critique [options]                 Replay E2E golden cases, score, judge, report
+    --provider <p>    Force provider: cerebras or openrouter
+    --judge           Enable LLM-as-judge
+    --step <n>        Filter by step number
+    --out <dir>       Output directory (default: evals/reports)
+
+  e2e-validate                           Structural validation of E2E golden cases (offline)
+
+  e2e-multiturn [options]                Oracle-guided multi-turn replay eval
+    --provider <p>    Force provider: cerebras or openrouter
+    --step <n>        Filter by step number
+    --out <dir>       Output directory (default: evals/reports)
+
+Completion-timing eval commands:
+  completion-timing-critique [options]   Replay completion-timing cases, score, judge, report
+    --provider <p>    Force provider: cerebras or openrouter
+    --judge           Enable LLM-as-judge
+    --scenario <s>    Filter by scenario
+    --out <dir>       Output directory (default: evals/reports)
+
+  completion-timing-validate             Structural validation of completion-timing golden cases (offline)
 `);
 }
 
@@ -1521,6 +1831,268 @@ function avg(values: number[]): number {
 function pct(n: number, total: number): string {
   if (total === 0) return "0%";
   return `${((n / total) * 100).toFixed(0)}%`;
+}
+
+// ── Escalation commands ──────────────────────────────────────────────
+
+async function cmdEscalationCritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const smartModelIdx = args.indexOf("--smart-model");
+  const smartModelArg = smartModelIdx !== -1 ? args[smartModelIdx + 1] : "reasoning";
+  if (smartModelArg !== "reasoning" && smartModelArg !== "glm") {
+    console.error(`${c.red}Invalid --smart-model: ${smartModelArg}. Use "reasoning" or "glm".${c.reset}`);
+    process.exit(1);
+  }
+  const scenarioIdx = args.indexOf("--scenario");
+  const scenarioFilter = scenarioIdx !== -1 ? args[scenarioIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readEscalationGoldenCases } = await import("./utils");
+  const cases = readEscalationGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No escalation golden cases found in evals/golden/escalation/${c.reset}`);
+    process.exit(1);
+  }
+
+  const smartLabel = smartModelArg === "reasoning" ? "gpt-oss+reasoning" : "glm-4.7";
+  console.log(`${c.bold}Escalation Critique: ${cases.length} golden case(s) [smart: ${smartLabel}]${c.reset}\n`);
+
+  const results = await runEscalationEvals({
+    keys,
+    smartModel: smartModelArg as SmartModel,
+    judge: judgeFlag,
+    scenarioFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildEscalationReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `escalation-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Escalation: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+async function cmdEscalationValidate() {
+  const { readEscalationGoldenCases } = await import("./utils");
+  const cases = readEscalationGoldenCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No escalation golden cases found in evals/golden/escalation/${c.reset}`);
+    return;
+  }
+
+  console.log(`${c.bold}Validating ${cases.length} escalation golden case(s)...${c.reset}\n`);
+
+  let valid = 0;
+  let invalid = 0;
+
+  for (const goldenCase of cases) {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!goldenCase.id) errors.push("missing id");
+    if (!goldenCase.scenario) errors.push("missing scenario");
+    if (!["easy", "medium", "hard"].includes(goldenCase.difficulty)) errors.push("invalid difficulty");
+
+    // Fast phase
+    if (!goldenCase.fastPhase?.snapshot?.url) errors.push("missing fastPhase.snapshot.url");
+    if (!Array.isArray(goldenCase.fastPhase?.elements) || goldenCase.fastPhase.elements.length === 0) {
+      errors.push("empty or missing fastPhase.elements");
+    }
+    if (!goldenCase.fastPhase?.objective) errors.push("missing fastPhase.objective");
+    if (!Array.isArray(goldenCase.fastPhase?.stagnantHistory) || goldenCase.fastPhase.stagnantHistory.length === 0) {
+      errors.push("empty or missing fastPhase.stagnantHistory");
+    }
+
+    // Expected fast action
+    if (goldenCase.expectedFastAction !== "escalate") {
+      errors.push(`expectedFastAction should be "escalate", got "${goldenCase.expectedFastAction}"`);
+    }
+
+    // Smart phase
+    if (!goldenCase.smartPhase?.snapshot?.url) errors.push("missing smartPhase.snapshot.url");
+    if (!Array.isArray(goldenCase.smartPhase?.elements) || goldenCase.smartPhase.elements.length === 0) {
+      errors.push("empty or missing smartPhase.elements");
+    }
+    if (!goldenCase.smartPhase?.escalationReason) errors.push("missing smartPhase.escalationReason");
+
+    // Expected smart action
+    if (!goldenCase.expectedSmartAction?.toolName) errors.push("missing expectedSmartAction.toolName");
+
+    // Metadata
+    if (!goldenCase.metadata?.curatedAt) errors.push("missing metadata.curatedAt");
+
+    if (errors.length > 0) {
+      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
+      invalid++;
+    } else {
+      const altCount = goldenCase.expectedSmartAction?.acceptAlternatives?.length ?? 0;
+      console.log(
+        `  ${c.green}VALID${c.reset}   ${goldenCase.id} ` +
+        `(${goldenCase.scenario}, ${goldenCase.difficulty}, ` +
+        `${goldenCase.fastPhase.stagnantHistory.length} stagnant turns, ` +
+        `smart: ${goldenCase.expectedSmartAction.toolName}${altCount > 0 ? ` +${altCount} alt` : ""})`,
+      );
+      valid++;
+    }
+  }
+
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
+}
+
+// ── Completion-timing commands ────────────────────────────────────────
+
+async function cmdCompletionTimingCritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
+  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+  const scenarioIdx = args.indexOf("--scenario");
+  const scenarioFilter = scenarioIdx !== -1 ? args[scenarioIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readCompletionTimingGoldenCases } = await import("./utils");
+  const cases = readCompletionTimingGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No completion-timing golden cases found in evals/golden/completion-timing/${c.reset}`);
+    process.exit(1);
+  }
+
+  const provider: CompletionTimingProvider = (providerArg as CompletionTimingProvider) ?? (keys.cerebras ? "cerebras" : "openrouter");
+  console.log(`${c.bold}Completion-Timing Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
+
+  const results = await runCompletionTimingEvals({
+    keys,
+    provider,
+    judge: judgeFlag,
+    scenarioFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildCompletionTimingReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `completion-timing-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Completion-Timing: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+async function cmdCompletionTimingValidate() {
+  const { readCompletionTimingGoldenCases } = await import("./utils");
+  const cases = readCompletionTimingGoldenCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No completion-timing golden cases found in evals/golden/completion-timing/${c.reset}`);
+    return;
+  }
+
+  console.log(`${c.bold}Validating ${cases.length} completion-timing golden case(s)...${c.reset}\n`);
+
+  let valid = 0;
+  let invalid = 0;
+
+  for (const goldenCase of cases) {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!goldenCase.id) errors.push("missing id");
+    if (!goldenCase.scenario) errors.push("missing scenario");
+    if (!["easy", "medium", "hard"].includes(goldenCase.difficulty)) errors.push("invalid difficulty");
+
+    // Snapshot
+    if (!goldenCase.snapshot?.url) errors.push("missing snapshot.url");
+    if (!goldenCase.snapshot?.title) errors.push("missing snapshot.title");
+
+    // Elements
+    if (!Array.isArray(goldenCase.elements) || goldenCase.elements.length === 0) {
+      errors.push("empty or missing elements");
+    }
+
+    // Objective and perception
+    if (!goldenCase.objective) errors.push("missing objective");
+    if (!goldenCase.perception) errors.push("missing perception");
+
+    // Plan
+    if (!Array.isArray(goldenCase.plan) || goldenCase.plan.length === 0) {
+      errors.push("empty or missing plan");
+    } else {
+      for (const step of goldenCase.plan) {
+        if (!step.step) errors.push("plan step missing text");
+        if (!["completed", "pending"].includes(step.status)) errors.push(`invalid plan status: ${step.status}`);
+      }
+    }
+
+    // Action history
+    if (!Array.isArray(goldenCase.actionHistory) || goldenCase.actionHistory.length === 0) {
+      errors.push("empty or missing actionHistory");
+    }
+
+    // Expected action
+    if (goldenCase.expectedAction !== "done" && goldenCase.expectedAction !== "continue") {
+      errors.push(`invalid expectedAction: ${goldenCase.expectedAction}`);
+    }
+
+    // Metadata
+    if (!goldenCase.metadata?.curatedAt) errors.push("missing metadata.curatedAt");
+
+    if (errors.length > 0) {
+      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
+      invalid++;
+    } else {
+      const pendingSteps = goldenCase.plan.filter((p) => p.status === "pending").length;
+      const completedSteps = goldenCase.plan.filter((p) => p.status === "completed").length;
+      console.log(
+        `  ${c.green}VALID${c.reset}   ${goldenCase.id} ` +
+        `(${goldenCase.scenario}, ${goldenCase.difficulty}, ` +
+        `expected: ${goldenCase.expectedAction}, ` +
+        `plan: ${completedSteps} done / ${pendingSteps} pending, ` +
+        `${goldenCase.actionHistory.length} actions)`,
+      );
+      valid++;
+    }
+  }
+
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
 }
 
 main().catch((err) => {
