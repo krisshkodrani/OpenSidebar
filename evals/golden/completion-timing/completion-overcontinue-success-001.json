@@ -1,0 +1,39 @@
+{
+  "id": "completion-overcontinue-success-001",
+  "scenario": "overcontinue_success_visible",
+  "difficulty": "easy",
+
+  "snapshot": {
+    "url": "https://example.com/settings",
+    "title": "Settings - Example App",
+    "elementCount": 20,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "h1", "role": "heading", "text": "Settings", "attributes": {}, "rect": { "x": 50, "y": 20, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "div", "role": "alert", "text": "Settings saved successfully!", "attributes": { "class": "success-banner", "role": "alert" }, "rect": { "x": 50, "y": 70, "width": 400, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "input", "role": "textbox", "text": "Alice Smith", "attributes": { "id": "display-name", "value": "Alice Smith" }, "rect": { "x": 50, "y": 130, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 4, "tagName": "select", "role": "combobox", "text": "Dark", "attributes": { "id": "theme" }, "rect": { "x": 50, "y": 180, "width": 200, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 5, "tagName": "button", "role": "button", "text": "Save Changes", "attributes": { "type": "submit" }, "rect": { "x": 50, "y": 240, "width": 140, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "objective": "Change the display name to 'Alice Smith' and set the theme to 'Dark', then save.",
+  "plan": [
+    { "step": "Change display name to 'Alice Smith'", "status": "completed" },
+    { "step": "Set theme to 'Dark'", "status": "completed" },
+    { "step": "Click Save Changes", "status": "completed" }
+  ],
+  "actionHistory": [
+    { "tool": "type_text", "args": { "id": 3, "text": "Alice Smith" }, "result": "Typed 'Alice Smith' into input#display-name" },
+    { "tool": "select_option", "args": { "id": 4, "value": "Dark" }, "result": "Selected 'Dark' in select#theme" },
+    { "tool": "click", "args": { "id": 5 }, "result": "Clicked button 'Save Changes'" }
+  ],
+  "perception": "LAYOUT: Settings page with name and theme fields. STATE: Success banner visible — 'Settings saved successfully!'. All fields show the updated values (name: Alice Smith, theme: Dark). CONTENT: Green success alert confirms changes were saved.",
+
+  "expectedAction": "done",
+  "expectedSummaryKeywords": ["saved", "settings", "Alice Smith", "Dark"],
+
+  "metadata": {
+    "curatedAt": "2026-02-28",
+    "notes": "Success message visible, all plan steps complete. Agent should call done() with a summary."
+  }
+}
