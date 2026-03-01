@@ -227,7 +227,6 @@ export class TraceRecorder {
     elementSummary?: string,
   ): Promise<void> {
     if (!this.currentTurn) return;
-    const turnNumber = this.currentTurn.turnNumber;
     this.currentTurn.perception = {
       interpretation: perception.interpretation,
       model: perception.model,

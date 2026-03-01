@@ -1,0 +1,196 @@
+/**
+ * DOM traversal - deep query across shadow DOM/iframes, clickable element detection
+ */
+
+import { logger } from "../../utils";
+import { isElementVisible } from "./utils";
+
+/** CSS class for the injected label overlay (legacy — kept for cleanup of old labels) */
+export const LABEL_CLASS = "qsidebar-tag";
+
+/** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
+const MAX_SHADOW_DEPTH = 3;
+
+/** Time budget for cursor:pointer scan (ms) */
+const CLICKABLE_SCAN_BUDGET_MS = 10;
+
+export const INTERACTIVE_SELECTORS = [
+  "a[href]",
+  "button",
+  "input:not([type='hidden'])",
+  "textarea",
+  "select",
+  "[role='button']",
+  "[role='link']",
+  "[role='tab']",
+  "[role='menuitem']",
+  "[role='checkbox']",
+  "[role='radio']",
+  "[role='switch']",
+  "[role='combobox']",
+  "[contenteditable='true']",
+  "summary",
+  "details",
+  "[onclick]",
+  "[tabindex]:not([tabindex='-1'])",
+  "canvas",
+  "[draggable='true']",
+].join(", ");
+
+/** Container tags for clickable scan filtering */
+export const CONTAINER_TAGS = new Set([
+  "div",
+  "section",
+  "article",
+  "main",
+  "aside",
+  "header",
+  "footer",
+  "nav",
+  "form",
+  "fieldset",
+  "ul",
+  "ol",
+  "table",
+  "tbody",
+  "thead",
+  "tr",
+]);
+
+/**
+ * Recursively query elements through Shadow DOM and iframe boundaries
+ */
+export function querySelectorAllDeep(
+  root: Document | ShadowRoot | Element,
+  selector: string,
+  depth: number = 0,
+): Element[] {
+  if (depth > MAX_SHADOW_DEPTH) {
+    return [];
+  }
+
+  const results: Element[] = [];
+
+  try {
+    if (root instanceof Element) {
+      results.push(...Array.from(root.querySelectorAll(selector)));
+    } else {
+      results.push(...Array.from(root.querySelectorAll(selector)));
+    }
+
+    const allElements = root.querySelectorAll("*");
+
+    for (const el of allElements) {
+      // Shadow DOM traversal
+      if (el.shadowRoot) {
+        try {
+          const shadowResults = querySelectorAllDeep(
+            el.shadowRoot,
+            selector,
+            depth + 1,
+          );
+          results.push(...shadowResults);
+        } catch (_e) {
+          continue;
+        }
+      }
+
+      if ((el as any).shadowRoot && el !== root) {
+        try {
+          const shadowResults = querySelectorAllDeep(
+            (el as any).shadowRoot,
+            selector,
+            depth + 1,
+          );
+          results.push(...shadowResults);
+        } catch (_e) {
+          continue;
+        }
+      }
+
+      // Same-origin iframe traversal
+      if (el.tagName === "IFRAME") {
+        try {
+          const iframeDoc = (el as HTMLIFrameElement).contentDocument;
+          if (iframeDoc) {
+            const iframeResults = querySelectorAllDeep(
+              iframeDoc,
+              selector,
+              depth + 1,
+            );
+            results.push(...iframeResults);
+          }
+        } catch (_e) {
+          // Cross-origin iframe — silently skip
+          continue;
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn("content", "Deep DOM query failed", { error: e });
+  }
+
+  return [...new Set(results)];
+}
+
+/**
+ * Detect elements with cursor:pointer that aren't captured by INTERACTIVE_SELECTORS.
+ * Time-budgeted to avoid blocking on heavy pages.
+ */
+export function detectClickableElements(): Element[] {
+  const found: Element[] = [];
+  const start = performance.now();
+
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode(node) {
+        const el = node as Element;
+        // Skip our own labels (legacy cleanup)
+        if ((el as HTMLElement).classList?.contains(LABEL_CLASS))
+          return NodeFilter.FILTER_REJECT;
+        // Skip if already captured by interactive selectors
+        try {
+          if (el.matches(INTERACTIVE_SELECTORS)) return NodeFilter.FILTER_SKIP;
+        } catch {
+          return NodeFilter.FILTER_SKIP;
+        }
+        // Skip large containers
+        const tag = el.tagName.toLowerCase();
+        if (CONTAINER_TAGS.has(tag) && el.children.length > 3)
+          return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    },
+  );
+
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    // Time budget check
+    if (performance.now() - start > CLICKABLE_SCAN_BUDGET_MS) {
+      logger.warn("content", "Clickable scan exceeded time budget", {
+        found: found.length,
+        elapsedMs: Math.round(performance.now() - start),
+      });
+      break;
+    }
+
+    const el = node as Element;
+    if (!isElementVisible(el)) continue;
+
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.cursor === "pointer") {
+        const text = el.textContent?.trim() || "";
+        // Only tag leaf-ish elements with reasonable text
+        if (text.length > 0 && text.length < 200 && el.children.length <= 3) {
+          found.push(el);
+        }
+      }
+    } catch {
+      // getComputedStyle can fail for detached elements
+    }
+  }
+  return found;
+}

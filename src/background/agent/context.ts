@@ -4,120 +4,21 @@ import { logger } from "../../utils";
 import { COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
 import { getPromptTemplate } from "../../prompts";
+import {
+  formatElementCompact,
+  summarizeHistory,
+} from "./context-formatting";
+import {
+  EXECUTOR_PERSONA,
+  PLANNER_PERSONA,
+  REFERENCE_VALUE_TOOLS,
+  CompressionLevel,
+} from "./context-types";
+import type { ContextMetrics, PlanStatus, PlanStatusGate } from "./context-types";
 
-/**
- * Format a single element in compact notation.
- * [N] tagName#id key=val key="multi word" "text" (role) [position hint]
- *
- * Position hints (when viewportHeight is provided):
- * - No annotation: element is in the current viewport
- * - `^above`: element is above the viewport
- * - `v{N}px`: element is below the viewport by N pixels
- */
-export function formatElementCompact(
-  el: TaggedElement,
-  text: string,
-  attrFilter: ((k: string) => boolean) | null,
-  viewportHeight?: number,
-): string {
-  const idVal = el.attributes.id;
-  const head = idVal ? `${el.tagName}#${idVal}` : el.tagName;
-
-  const attrParts: string[] = [];
-  for (const [k, v] of Object.entries(el.attributes)) {
-    if (k === "id") continue;
-    if (attrFilter && !attrFilter(k)) continue;
-    attrParts.push(v.includes(" ") ? `${k}="${v}"` : `${k}=${v}`);
-  }
-
-  const role = el.role && el.role !== el.tagName ? ` (${el.role})` : "";
-  const disabled = el.isDisabled ? " [disabled]" : "";
-  const attrs = attrParts.length > 0 ? " " + attrParts.join(" ") : "";
-
-  // Flag elements where text color matches background color (invisible text)
-  const textColor = el.attributes["text-color"];
-  const bgColor = el.attributes["bg-color"];
-  const invisible =
-    textColor && bgColor && textColor === bgColor ? " [invisible-text]" : "";
-
-  // Position hint: indicate if element is above or below the viewport
-  let posHint = "";
-  if (viewportHeight !== undefined && el.rect) {
-    if (el.rect.y < 0) {
-      posHint = " ^above";
-    } else if (el.rect.y >= viewportHeight) {
-      posHint = ` v${Math.round(el.rect.y - viewportHeight)}px`;
-    }
-  }
-
-  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}${posHint}`;
-}
-
-/**
- * Format all tagged elements from a snapshot into the compact text the agent sees.
- * Includes position hints when viewport height is available.
- */
-export function formatSnapshotElements(
-  elements: TaggedElement[],
-  viewportHeight?: number,
-): string {
-  return elements
-    .map((el) => formatElementCompact(el, el.text, null, viewportHeight))
-    .join("\n");
-}
-
-/** Persona injected when the executor model is active (speed-optimised, action-biased). */
-const EXECUTOR_PERSONA =
-  "You are the execution model. Keep Think blocks to 2-3 lines. Prefer the most obvious action. Call one tool per turn unless batching independent fills. If an action fails twice, call escalate() instead of retrying.";
-
-/** Persona injected when the planner model is active (reasoning-heavy, investigation-biased). */
-const PLANNER_PERSONA =
-  "You are the reasoning model, called when the executor model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
-
-/** Tools whose results carry reference data worth preserving longer in history compression. */
-const REFERENCE_VALUE_TOOLS: ReadonlySet<string> = new Set([
-  "inspect_hidden",
-  "execute_js",
-  "get_cookies",
-  "search_history",
-  "read_element",
-  "recall_demo",
-]);
-
-export enum CompressionLevel {
-  NONE = "none",
-  LIGHT = "light",
-  MEDIUM = "medium",
-  HEAVY = "heavy",
-}
-
-export interface ContextMetrics {
-  systemTokens: number;
-  historyTokens: number;
-  totalTokens: number;
-  maxTokens: number;
-  utilization: number;
-  elementCount: number;
-  compressionLevel: CompressionLevel;
-}
-
-export interface PlanStatusGate {
-  trigger: string;
-  action: "call_done" | "advance_step";
-  pattern?: string;
-}
-
-export interface PlanStatus {
-  subtasks: {
-    description: string;
-    status: string;
-    completedAtUrl?: string;
-    result?: string;
-    verificationGate?: PlanStatusGate;
-    toolProfile?: string;
-  }[];
-  currentIndex: number;
-}
+// Re-export submodules for barrel compatibility
+export * from "./context-types";
+export * from "./context-formatting";
 
 // --- System prompt template ---
 // IMPORTANT: Block ordering is designed for LLM prefix caching.
@@ -1329,71 +1230,4 @@ Do NOT call done() until every planned step is complete.
   }
 }
 
-/**
- * Shared utility: walk message history and extract a compact action→outcome timeline.
- * Used by both `summarizeTrajectory()` and `extractAttemptSummary()`.
- */
-export function summarizeHistory(
-  messages: LLMMessage[],
-  maxEntries = 20,
-): string[] {
-  const entries: string[] = [];
-  let turnNum = 0;
-
-  // Walk forward to produce a chronological timeline
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    if (msg.role !== "assistant" || !msg.tool_calls) continue;
-
-    for (const tc of msg.tool_calls) {
-      const toolName = tc.function.name;
-      // Skip noise tools
-      if (["wait"].includes(toolName)) continue;
-
-      let argSnippet = "";
-      try {
-        const args = JSON.parse(tc.function.arguments);
-        const parts: string[] = [];
-        if (args.id != null) parts.push(`[${args.id}]`);
-        if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
-        if (args.url) parts.push(String(args.url).slice(0, 40));
-        if (args.direction) parts.push(args.direction);
-        if (args.summary) parts.push(`"${String(args.summary).slice(0, 30)}"`);
-        if (args.reason) parts.push(`"${String(args.reason).slice(0, 30)}"`);
-        argSnippet = parts.join(" ");
-      } catch {
-        /* */
-      }
-
-      // Find the corresponding tool result
-      let outcome = "no result";
-      let isFailure = false;
-      for (let j = i + 1; j < messages.length; j++) {
-        if (messages[j].role === "tool" && messages[j].tool_call_id === tc.id) {
-          const content =
-            typeof messages[j].content === "string"
-              ? (messages[j].content ?? "")
-              : "";
-          isFailure =
-            content.startsWith("Error:") ||
-            content.includes("Click intercepted") ||
-            content.includes("No element with tag") ||
-            content.includes("does not appear to be");
-          outcome = content.split("\n")[0].slice(0, isFailure ? 160 : 80);
-          break;
-        }
-      }
-
-      turnNum++;
-      entries.push(
-        `${isFailure ? "\u26A0 " : ""}T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`,
-      );
-      if (entries.length >= maxEntries) return entries;
-    }
-  }
-
-  return entries;
-}
-
-/** Alias for backward compatibility */
-export const summarizeCausalChain = summarizeHistory;
+// summarizeHistory and summarizeCausalChain are re-exported from ./context-formatting

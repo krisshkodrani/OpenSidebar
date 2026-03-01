@@ -316,7 +316,7 @@ export async function perceive(
   // Try each provider in priority order
   for (let pi = 0; pi < providers.length; pi++) {
     const provider = providers[pi];
-    let lastError: Error | null = null;
+    let _lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
       if (attempt > 1) {
@@ -466,7 +466,7 @@ export async function perceive(
             mode,
           };
         }
-        lastError = error;
+        _lastError = error;
         logger.warn(
           "perception",
           `${provider.providerId} attempt ${attempt} failed`,

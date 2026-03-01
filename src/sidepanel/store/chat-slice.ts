@@ -8,7 +8,7 @@ function stripScreenshots(messages: ChatEntry[]): ChatEntry[] {
     if (!msg.steps?.some((s) => s.screenshotUrl)) return msg;
     return {
       ...msg,
-      steps: msg.steps.map(({ screenshotUrl, ...rest }) => rest),
+      steps: msg.steps.map(({ screenshotUrl: _, ...rest }) => rest),
     };
   });
 }
