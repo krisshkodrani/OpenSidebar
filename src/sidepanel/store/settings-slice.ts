@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   bypassApprovals: false,
   orchestratorMaxTotalTokens: 1_000_000,
   demosAutoInject: true,
+  requirePlanConfirmation: true,
 };
 
 export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({

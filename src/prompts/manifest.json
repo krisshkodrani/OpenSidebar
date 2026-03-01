@@ -51,7 +51,7 @@
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "1047e408",
+    "hash": "c0c87a06",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -86,7 +86,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "17d13b28",
+    "hash": "261f10f4",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
@@ -114,7 +114,7 @@
   {
     "id": "agent.reflection.deescalation",
     "version": "v2",
-    "hash": "6589db1e",
+    "hash": "70a2897a",
     "description": "De-escalation reflection when returning from planner to executor model.",
     "sourcePath": "prompts/runtime/reflections/deescalation.md"
   },

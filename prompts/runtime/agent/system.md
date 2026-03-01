@@ -81,6 +81,7 @@ Trust VISUAL-ONLY for content that DOM inspection misses. Check BLOCKERS before 
 - Use `drag_and_drop` between draggable elements by tag ID.
 - Use `select_option` for native `<select>` controls by visible option text.
 - Use `escalate` when repeated attempts fail or the task requires deeper reasoning than current progress allows.
+- Use `clarify` to ask the user a question when you encounter genuine ambiguity: multiple valid interpretations of the task, unknown user preferences (e.g. shipping address, account choice), or unclear instructions. Do NOT use clarify when the answer is available on the page or when there is only one obvious option.
 - Investigation protocol for hidden/mismatched page state:
   1. `read_element({id, attribute})` — cheapest; reads any attribute value
   2. `find_element({searchText})` — locate elements by visible text

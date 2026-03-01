@@ -68,6 +68,7 @@ export enum ToolName {
   XRAY_PAGE = "xray_page",
   DISMISS_OVERLAYS = "dismiss_overlays",
   RECALL_DEMO = "recall_demo",
+  CLARIFY = "clarify",
 }
 
 /** Risk classification for a tool invocation */
@@ -150,7 +151,11 @@ export type RuntimeMessage =
   | RecordingSavedMessage
   | GoldenAnnotationMessage
   | ManualToolExecuteMessage
-  | ManualToolResultMessage;
+  | ManualToolResultMessage
+  | PlanConfirmationRequestMessage
+  | PlanConfirmationResponseMessage
+  | ClarificationRequestMessage
+  | ClarificationResponseMessage;
 
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
@@ -863,6 +868,14 @@ export interface EscalateArgs {
   reason: string;
 }
 
+/** Arguments for clarify — ask the user a question mid-execution */
+export interface ClarifyArgs {
+  /** The question to ask the user */
+  question: string;
+  /** Optional suggested answers for quick selection */
+  suggestions?: string[];
+}
+
 /** Arguments for read_element */
 export interface ReadElementArgs {
   /** The numeric tag ID of the element */
@@ -1011,6 +1024,7 @@ export type ToolArgsMap = {
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.RECALL_DEMO]: RecallDemoArgs;
+  [ToolName.CLARIFY]: ClarifyArgs;
 };
 
 // --- Content Script Types ---
@@ -1260,6 +1274,10 @@ export interface SidePanelState {
   pendingApproval: PendingApproval | null;
   /** Pending orchestrator escalation requiring user decision */
   pendingEscalation: PendingEscalation | null;
+  /** Pending plan confirmation awaiting user approval */
+  pendingPlanConfirmation: PendingPlanConfirmation | null;
+  /** Pending clarification question awaiting user answer */
+  pendingClarification: PendingClarification | null;
   /** Non-null when a task has been recovered from checkpoint */
   taskRecovery: TaskRecoveryState | null;
   /** Live session metrics (null when no active session or tracking disabled) */
@@ -1349,6 +1367,8 @@ export interface UserSettings {
   orchestratorMaxTotalTokens?: number;
   /** Auto-inject matching demos into agent context (default: true) */
   demosAutoInject?: boolean;
+  /** Require user confirmation before executing multi-step plans (default: true) */
+  requirePlanConfirmation?: boolean;
 }
 
 // --- Demonstration Types (Learning from Demonstration) ---
@@ -1559,6 +1579,71 @@ export interface ManualToolResultMessage extends BaseMessage {
     interpretation?: string;
     screenshotUrl?: string;
   };
+}
+
+// --- Plan Confirmation & Clarification Messages ---
+
+/** Background sends a plan to the side panel for user review before execution */
+export interface PlanConfirmationRequestMessage extends BaseMessage {
+  type: "PLAN_CONFIRMATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    confirmationId: string;
+    nodes: { description: string; successCriteria: string }[];
+    difficulty?: string;
+    query: string;
+  };
+}
+
+/** Side panel responds to a pending plan confirmation */
+export interface PlanConfirmationResponseMessage extends BaseMessage {
+  type: "PLAN_CONFIRMATION_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    confirmationId: string;
+    decision: "approve" | "cancel";
+    feedback?: string;
+  };
+}
+
+/** Background asks the user a clarifying question mid-execution */
+export interface ClarificationRequestMessage extends BaseMessage {
+  type: "CLARIFICATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    clarificationId: string;
+    question: string;
+    suggestions?: string[];
+    timeoutMs: number;
+  };
+}
+
+/** Side panel responds to a pending clarification request */
+export interface ClarificationResponseMessage extends BaseMessage {
+  type: "CLARIFICATION_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    clarificationId: string;
+    answer: string;
+  };
+}
+
+/** Pending plan confirmation state for sidepanel store */
+export interface PendingPlanConfirmation {
+  confirmationId: string;
+  nodes: { description: string; successCriteria: string }[];
+  difficulty?: string;
+  query: string;
+  requestedAt: number;
+}
+
+/** Pending clarification state for sidepanel store */
+export interface PendingClarification {
+  clarificationId: string;
+  question: string;
+  suggestions?: string[];
+  timeoutMs: number;
+  requestedAt: number;
 }
 
 // --- Utility Types ---

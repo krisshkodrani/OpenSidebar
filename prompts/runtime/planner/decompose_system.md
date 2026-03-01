@@ -21,6 +21,7 @@ Agent capabilities (for subtask sizing):
 - Navigation: navigate_to, go_back, create_tab, close_tab, switch_tab
 - Investigation: inspect_hidden, xray_page, execute_js, read_element, read_page
 - Data: get_cookies, search_history
+- System: done, escalate, clarify (ask user when ambiguous), wait
 Each subtask should be completable using these primitives in 1-5 tool calls.
 
 Response Rules:

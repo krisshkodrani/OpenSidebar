@@ -62,6 +62,8 @@ export function initializeBridge(
           state.clearTurnProgress();
           state.clearPendingApproval();
           state.clearPendingEscalation();
+          state.clearPendingPlanConfirmation();
+          state.clearPendingClarification();
           state.clearTaskRecovery();
           state.clearLaneTelemetry();
           // Clear stale task progress if no TASK_COMPLETION was received
@@ -98,6 +100,20 @@ export function initializeBridge(
 
       case "ESCALATION_REQUEST":
         state.setPendingEscalation({
+          ...message.payload,
+          requestedAt: Date.now(),
+        });
+        break;
+
+      case "PLAN_CONFIRMATION_REQUEST":
+        state.setPendingPlanConfirmation({
+          ...message.payload,
+          requestedAt: Date.now(),
+        });
+        break;
+
+      case "CLARIFICATION_REQUEST":
+        state.setPendingClarification({
           ...message.payload,
           requestedAt: Date.now(),
         });
@@ -271,6 +287,8 @@ export function initializeBridge(
       case "SIDE_PANEL_OPENED":
       case "APPROVAL_RESPONSE":
       case "ESCALATION_DECISION":
+      case "PLAN_CONFIRMATION_RESPONSE":
+      case "CLARIFICATION_RESPONSE":
       case "TOOL_EXECUTE":
       case "TOOL_RESULT":
       case "DOM_SNAPSHOT_REQUEST":

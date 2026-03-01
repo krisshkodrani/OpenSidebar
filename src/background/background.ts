@@ -485,6 +485,27 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    // 3c. Plan confirmation response from side panel
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "PLAN_CONFIRMATION_RESPONSE"
+    ) {
+      orchestrator.resolvePlanConfirmation(message.payload);
+      return false;
+    }
+
+    // 3d. Clarification response from side panel
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "CLARIFICATION_RESPONSE"
+    ) {
+      AgentLoop.resolveClarification(
+        message.payload.clarificationId,
+        message.payload.answer,
+      );
+      return false;
+    }
+
     // --- Manual Mode ---
     if (
       message.source === MessageSource.SIDEPANEL &&

@@ -607,6 +607,22 @@ export class AgentLoop {
     return true;
   }
 
+  private static clarificationWaiters = new Map<
+    string,
+    (answer: string) => void
+  >();
+
+  public static resolveClarification(
+    clarificationId: string,
+    answer: string,
+  ): boolean {
+    const waiter = AgentLoop.clarificationWaiters.get(clarificationId);
+    if (!waiter) return false;
+    AgentLoop.clarificationWaiters.delete(clarificationId);
+    waiter(answer);
+    return true;
+  }
+
   private llm: LLMClient;
   private context: ContextManager;
   private baseContextTokens: number; // Original context window size for de-escalation restore
@@ -1225,6 +1241,103 @@ export class AgentLoop {
     });
 
     return await approvalPromise;
+  }
+
+  private static readonly CLARIFICATION_TIMEOUT_MS = 120_000;
+
+  private async requestClarification(
+    question: string,
+    suggestions?: string[],
+  ): Promise<string> {
+    const clarificationId = crypto.randomUUID();
+    const timeoutMs = AgentLoop.CLARIFICATION_TIMEOUT_MS;
+
+    this.statusHandler(AgentStatus.PAUSED, "Waiting for user clarification...");
+    const clarifyStep: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "info",
+      label: `Clarification: "${question.slice(0, 80)}"`,
+      status: "running",
+      timestamp: Date.now(),
+    };
+    this.stepHandler(clarifyStep, false);
+
+    this.log.info("agent", "Clarification requested", {
+      clarificationId,
+      turn: this.turnCount,
+      question: question.slice(0, 200),
+    });
+    this.traceRecorder?.recordEvent("clarification", {
+      clarificationId,
+      stage: "requested",
+      turn: this.turnCount,
+      question,
+    });
+
+    return new Promise<string>((resolve) => {
+      let settled = false;
+      const settle = (answer: string, outcome: "answered" | "timeout") => {
+        if (settled) return;
+        settled = true;
+        AgentLoop.clarificationWaiters.delete(clarificationId);
+        this.stepHandler(
+          {
+            ...clarifyStep,
+            label:
+              outcome === "timeout"
+                ? "Clarification timed out"
+                : `Clarification answered`,
+            status: outcome === "timeout" ? "error" : "done",
+            durationMs: Date.now() - clarifyStep.timestamp,
+          },
+          true,
+        );
+        this.log.info("agent", "Clarification settled", {
+          clarificationId,
+          turn: this.turnCount,
+          outcome,
+        });
+        this.traceRecorder?.recordEvent("clarification", {
+          clarificationId,
+          stage: "settled",
+          turn: this.turnCount,
+          outcome,
+        });
+        resolve(answer);
+      };
+
+      const timer = setTimeout(() => {
+        settle("No response from user.", "timeout");
+      }, timeoutMs);
+
+      // Register waiter BEFORE sending message
+      AgentLoop.clarificationWaiters.set(clarificationId, (answer: string) => {
+        clearTimeout(timer);
+        settle(answer, "answered");
+      });
+
+      chrome.runtime
+        .sendMessage({
+          type: "CLARIFICATION_REQUEST",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          workspaceId: this.workspaceId,
+          payload: {
+            clarificationId,
+            question,
+            suggestions,
+            timeoutMs,
+          },
+        } as RuntimeMessage)
+        .catch((error: any) => {
+          clearTimeout(timer);
+          this.log.error("agent", "Failed to dispatch clarification request", {
+            clarificationId,
+            error: error?.message ?? String(error),
+          });
+          settle("No response from user.", "timeout");
+        });
+    });
   }
 
   private async ensureToolApproval(
@@ -1941,9 +2054,10 @@ export class AgentLoop {
     if (!allowedNames) return tools; // "full" or unknown → no filtering
 
     const allowedSet = new Set<string>(allowedNames);
-    // Always ensure done and escalate are available
+    // Always ensure done, escalate, and clarify are available
     allowedSet.add(ToolName.DONE);
     allowedSet.add(ToolName.ESCALATE);
+    allowedSet.add(ToolName.CLARIFY);
 
     return tools.filter((t) => allowedSet.has(t.function.name));
   }
@@ -3832,6 +3946,27 @@ export class AgentLoop {
               this.traceRecorder?.recordEvent("escalation", {
                 reason,
                 voluntary: true,
+              });
+              continue;
+            }
+
+            // CLARIFY tool — ask the user a question mid-execution
+            if (toolName === ToolName.CLARIFY) {
+              const question = (args.question as string) || "Could you clarify?";
+              const suggestions = args.suggestions as string[] | undefined;
+              const answer = await this.requestClarification(
+                question,
+                suggestions,
+              );
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: `User's answer: ${answer}`,
+              });
+              this.log.info("agent", "CLARIFY answered", {
+                turn: this.turnCount,
+                question: question.slice(0, 100),
+                answer: answer.slice(0, 200),
               });
               continue;
             }

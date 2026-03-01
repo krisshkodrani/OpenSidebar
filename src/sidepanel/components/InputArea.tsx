@@ -5,6 +5,8 @@ import { useSpeechToText } from "../hooks/useSpeechToText";
 import { StatusLine } from "./StatusLine";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
+import { PlanConfirmationOverlay } from "./PlanConfirmationOverlay";
+import { ClarificationOverlay } from "./ClarificationOverlay";
 import {
   isSlashCommand,
   getCommandCompletions,
@@ -32,6 +34,8 @@ export function InputArea({
   const demoRecording = useStore((s) => s.demoRecording);
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
+  const pendingPlanConfirmation = useStore((s) => s.pendingPlanConfirmation);
+  const pendingClarification = useStore((s) => s.pendingClarification);
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const manualRecording = useStore((s) => s.manualRecording);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -181,6 +185,26 @@ export function InputArea({
       <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
         <StatusLine />
         <EscalationOverlay />
+      </div>
+    );
+  }
+
+  // Plan confirmation overlay replaces the entire input area
+  if (pendingPlanConfirmation) {
+    return (
+      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
+        <StatusLine />
+        <PlanConfirmationOverlay />
+      </div>
+    );
+  }
+
+  // Clarification overlay replaces the entire input area
+  if (pendingClarification) {
+    return (
+      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
+        <StatusLine />
+        <ClarificationOverlay />
       </div>
     );
   }

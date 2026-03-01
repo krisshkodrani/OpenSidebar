@@ -388,6 +388,30 @@ const ESCALATE_DEF: ToolDefinition = {
   },
 };
 
+const CLARIFY_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CLARIFY,
+    description:
+      "Ask the user a question when you encounter ambiguity that cannot be resolved from the page. Use when multiple valid interpretations exist or user preferences are unknown.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "The question to ask the user.",
+        },
+        suggestions: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional suggested answers for quick selection.",
+        },
+      },
+      required: ["question"],
+    },
+  },
+};
+
 const READ_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -941,6 +965,11 @@ export function registerTools() {
   toolRegistry.register(ToolName.ESCALATE, ESCALATE_DEF, async (args) => {
     // This executor is a fallback — the loop intercepts escalate before reaching here
     return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
+  });
+
+  toolRegistry.register(ToolName.CLARIFY, CLARIFY_DEF, async (args) => {
+    // This executor is a fallback — the loop intercepts clarify before reaching here
+    return `Clarification requested: ${(args.question as string) || "no question given"}`;
   });
 
   // Service Worker Tools (chrome.* APIs)

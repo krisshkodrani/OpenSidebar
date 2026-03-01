@@ -188,6 +188,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
     cacheable: "memory",
   },
+
+  // Clarification (intercepted in loop)
+  [ToolName.CLARIFY]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: true,
+  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {
@@ -231,6 +238,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     // System (always)
     ToolName.DONE,
     ToolName.ESCALATE,
+    ToolName.CLARIFY,
     ToolName.WAIT,
   ],
   form_fill: [
@@ -253,6 +261,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     // System
     ToolName.DONE,
     ToolName.ESCALATE,
+    ToolName.CLARIFY,
     ToolName.WAIT,
   ],
   navigate: [
@@ -272,6 +281,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     // System
     ToolName.DONE,
     ToolName.ESCALATE,
+    ToolName.CLARIFY,
     ToolName.WAIT,
   ],
 };
