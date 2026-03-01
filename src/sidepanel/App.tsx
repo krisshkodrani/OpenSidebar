@@ -19,7 +19,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
-import { isSlashCommand, parseSlashCommand } from "./slash-commands";
+import { parseSlashCommand } from "./slash-commands";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",

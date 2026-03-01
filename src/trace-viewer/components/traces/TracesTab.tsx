@@ -66,9 +66,9 @@ export default function TracesTab() {
   }, [filters, currentSessionId]);
 
   // Initial load
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     refreshSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load entries and logs when session changes
