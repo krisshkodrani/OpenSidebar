@@ -12,6 +12,8 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
   taskRecovery: null,
   pendingApproval: null,
   pendingEscalation: null,
+  pendingPlanConfirmation: null,
+  pendingClarification: null,
   sessionMetrics: null,
   laneTelemetry: null,
 
@@ -81,6 +83,26 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
   clearPendingEscalation: () =>
     set((state) => {
       state.pendingEscalation = null;
+    }),
+
+  setPendingPlanConfirmation: (confirmation) =>
+    set((state) => {
+      state.pendingPlanConfirmation = confirmation;
+    }),
+
+  clearPendingPlanConfirmation: () =>
+    set((state) => {
+      state.pendingPlanConfirmation = null;
+    }),
+
+  setPendingClarification: (clarification) =>
+    set((state) => {
+      state.pendingClarification = clarification;
+    }),
+
+  clearPendingClarification: () =>
+    set((state) => {
+      state.pendingClarification = null;
     }),
 
   setTaskRecovery: (recovery) =>

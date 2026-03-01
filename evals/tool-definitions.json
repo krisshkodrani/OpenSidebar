@@ -359,6 +359,30 @@
   {
     "type": "function",
     "function": {
+      "name": "clarify",
+      "description": "Ask the user a question when you encounter ambiguity that cannot be resolved from the page. Use when multiple valid interpretations exist or user preferences are unknown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The question to ask the user."
+          },
+          "suggestions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional suggested answers for quick selection."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "read_element",
       "description": "Read a specific attribute (href, src, value) of an element. For visible text, check the page snapshot first — it's already there.",
       "parameters": {

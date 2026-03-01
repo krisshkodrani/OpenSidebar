@@ -41,6 +41,8 @@ describe("Bridge Message Routing", () => {
             turnProgress: null,
             pendingApproval: null,
             pendingEscalation: null,
+            pendingPlanConfirmation: null,
+            pendingClarification: null,
             taskRecovery: null,
             laneTelemetry: null,
             settings: {
@@ -348,6 +350,62 @@ describe("Bridge Message Routing", () => {
         expect(escalation).not.toBeNull();
         expect(escalation!.escalationId).toBe("esc-1");
         expect(escalation!.risk).toBe("high");
+    });
+
+    test("PLAN_CONFIRMATION_REQUEST stores pending plan confirmation", () => {
+        setupBridge();
+        send("PLAN_CONFIRMATION_REQUEST", {
+            confirmationId: "pc-1",
+            nodes: [
+                { description: "Step 1", successCriteria: "Done 1" },
+                { description: "Step 2", successCriteria: "Done 2" },
+            ],
+            difficulty: "moderate",
+            query: "Do something complex",
+        });
+
+        const confirmation = useStore.getState().pendingPlanConfirmation;
+        expect(confirmation).not.toBeNull();
+        expect(confirmation!.confirmationId).toBe("pc-1");
+        expect(confirmation!.nodes).toHaveLength(2);
+        expect(confirmation!.requestedAt).toBeGreaterThan(0);
+    });
+
+    test("CLARIFICATION_REQUEST stores pending clarification", () => {
+        setupBridge();
+        send("CLARIFICATION_REQUEST", {
+            clarificationId: "cl-1",
+            question: "Which address?",
+            suggestions: ["Home", "Work"],
+            timeoutMs: 120000,
+        });
+
+        const clarification = useStore.getState().pendingClarification;
+        expect(clarification).not.toBeNull();
+        expect(clarification!.clarificationId).toBe("cl-1");
+        expect(clarification!.question).toBe("Which address?");
+        expect(clarification!.requestedAt).toBeGreaterThan(0);
+    });
+
+    test("AGENT_STATUS IDLE clears pending plan confirmation and clarification", () => {
+        setupBridge();
+        useStore.getState().setPendingPlanConfirmation({
+            confirmationId: "pc-1",
+            nodes: [{ description: "Step 1", successCriteria: "Done" }],
+            query: "test",
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setPendingClarification({
+            clarificationId: "cl-1",
+            question: "test?",
+            timeoutMs: 120000,
+            requestedAt: Date.now(),
+        });
+
+        send("AGENT_STATUS", { status: AgentStatus.IDLE, detail: "Done" });
+
+        expect(useStore.getState().pendingPlanConfirmation).toBeNull();
+        expect(useStore.getState().pendingClarification).toBeNull();
     });
 
     test("TASK_RECOVERY stores recovery state", () => {

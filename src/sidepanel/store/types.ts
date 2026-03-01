@@ -6,7 +6,9 @@ import type {
   Citation,
   LaneTelemetrySnapshot,
   PendingApproval,
+  PendingClarification,
   PendingEscalation,
+  PendingPlanConfirmation,
   SavedPrompt,
   SessionMetrics,
   StagnationState,
@@ -45,6 +47,8 @@ export interface AgentSlice {
   taskRecovery: TaskRecoveryState | null;
   pendingApproval: PendingApproval | null;
   pendingEscalation: PendingEscalation | null;
+  pendingPlanConfirmation: PendingPlanConfirmation | null;
+  pendingClarification: PendingClarification | null;
   sessionMetrics: SessionMetrics | null;
   laneTelemetry: LaneTelemetrySnapshot | null;
   updateStatus: (status: AgentStatus, detail: string) => void;
@@ -60,6 +64,10 @@ export interface AgentSlice {
   clearPendingApproval: () => void;
   setPendingEscalation: (packet: PendingEscalation) => void;
   clearPendingEscalation: () => void;
+  setPendingPlanConfirmation: (confirmation: PendingPlanConfirmation) => void;
+  clearPendingPlanConfirmation: () => void;
+  setPendingClarification: (clarification: PendingClarification) => void;
+  clearPendingClarification: () => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;

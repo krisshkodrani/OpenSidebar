@@ -901,6 +901,10 @@ export class Orchestrator {
     string,
     (decision: EscalationDecisionPayload) => void
   >();
+  private pendingPlanConfirmationResolvers = new Map<
+    string,
+    (result: { decision: "approve" | "cancel"; feedback?: string }) => void
+  >();
   private laneSupervisorsByWorkspace = new Map<
     string,
     Record<RuntimeLane, LaneSupervisorState>
@@ -2195,6 +2199,68 @@ export class Orchestrator {
     }
 
     task.nodes = nodes;
+
+    // --- Plan Confirmation Gate ---
+    // For multi-node plans, pause and ask the user to confirm before execution
+    if (
+      nodes.length >= 2 &&
+      input.settings.requirePlanConfirmation !== false &&
+      task.status !== "stopped"
+    ) {
+      const confirmation = await this.requestPlanConfirmation(
+        task,
+        nodes.map((n) => ({
+          description: n.description,
+          successCriteria: n.successCriteria,
+        })),
+        input.query,
+        task.planClassification?.difficulty,
+      );
+
+      if (task.status === "stopped") return; // Stopped while waiting
+
+      if (confirmation.decision === "cancel") {
+        task.status = "stopped";
+        task.finishedAt = Date.now();
+        this.sendTerminationCompletion(task, "Cancelled by user during plan confirmation");
+        this.tasksByWorkspace.delete(task.workspaceId);
+        this.cleanupWorkspaceRuntime(task.workspaceId);
+        await this.clearTaskCheckpoint(task.workspaceId);
+        this.emitTraceEvent(
+          task,
+          "plan_confirmation_cancelled",
+          { taskId: task.id },
+          "system",
+        );
+        this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
+        return;
+      }
+
+      // If user provided feedback, replan with guidance appended
+      if (confirmation.feedback?.trim()) {
+        const revisedQuery = `${input.query}\n\nUser guidance: ${confirmation.feedback.trim()}`;
+        try {
+          const tab = await chrome.tabs.get(input.tabId);
+          const replanPlanner = this.deps.createPlanner(input.openRouterApiKey);
+          const replanResult = await replanPlanner.buildNodes(
+            revisedQuery,
+            tab.title || "Untitled",
+            tab.url || "",
+          );
+          if (replanResult.nodes.length > 0) {
+            task.nodes = replanResult.nodes;
+            nodes = replanResult.nodes;
+            task.replansUsed += 1;
+            this.sendProgress(task);
+          }
+        } catch (err) {
+          logger.warn("orchestrator", "Replan after feedback failed", { error: err });
+          // Proceed with original plan
+        }
+      }
+    }
+
+    if (task.status === "stopped") return;
 
     this.applyPreflightBudget(task);
     task.status = "running";
@@ -3524,6 +3590,11 @@ export class Orchestrator {
       this.pendingEscalationResolvers.delete(pendingEscalationId);
       task.pendingEscalation = undefined;
     }
+    // Cancel any pending plan confirmation
+    for (const [id, resolver] of this.pendingPlanConfirmationResolvers) {
+      resolver({ decision: "cancel" });
+      this.pendingPlanConfirmationResolvers.delete(id);
+    }
     if (task.nodes.length > 0) {
       this.sendTerminationCompletion(task, "Stopped by user");
     }
@@ -3933,6 +4004,81 @@ export class Orchestrator {
       rerouteObjective: payload.rerouteObjective,
     });
     return true;
+  }
+
+  public resolvePlanConfirmation(payload: {
+    confirmationId: string;
+    decision: "approve" | "cancel";
+    feedback?: string;
+  }): boolean {
+    const resolver = this.pendingPlanConfirmationResolvers.get(
+      payload.confirmationId,
+    );
+    if (!resolver) return false;
+    resolver({
+      decision: payload.decision,
+      feedback: payload.feedback,
+    });
+    return true;
+  }
+
+  private async requestPlanConfirmation(
+    task: OrchestratorTask,
+    nodes: { description: string; successCriteria: string }[],
+    query: string,
+    difficulty?: string,
+  ): Promise<{ decision: "approve" | "cancel"; feedback?: string }> {
+    const confirmationId = crypto.randomUUID();
+
+    this.sendStatus(task.workspaceId, AgentStatus.PAUSED, "Awaiting plan confirmation...");
+    this.sendMessage({
+      type: "PLAN_CONFIRMATION_REQUEST",
+      workspaceId: task.workspaceId,
+      payload: {
+        confirmationId,
+        nodes: nodes.map((n) => ({
+          description: n.description,
+          successCriteria: n.successCriteria,
+        })),
+        difficulty,
+        query,
+      },
+    });
+
+    logger.info("orchestrator", "Plan confirmation requested", {
+      taskId: task.id,
+      confirmationId,
+      nodeCount: nodes.length,
+    });
+
+    return new Promise<{ decision: "approve" | "cancel"; feedback?: string }>(
+      (resolve) => {
+        this.pendingPlanConfirmationResolvers.set(
+          confirmationId,
+          (result) => {
+            this.pendingPlanConfirmationResolvers.delete(confirmationId);
+            logger.info("orchestrator", "Plan confirmation received", {
+              taskId: task.id,
+              confirmationId,
+              decision: result.decision,
+              hasFeedback: !!result.feedback,
+            });
+            this.emitTraceEvent(
+              task,
+              "plan_confirmation",
+              {
+                taskId: task.id,
+                confirmationId,
+                decision: result.decision,
+                hasFeedback: !!result.feedback,
+              },
+              "system",
+            );
+            resolve(result);
+          },
+        );
+      },
+    );
   }
 
   private sendStatus(

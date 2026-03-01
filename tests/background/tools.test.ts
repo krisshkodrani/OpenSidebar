@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 34 tools are registered", () => {
+    test("all 35 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(34);
+        expect(defs.length).toBe(35);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -115,6 +115,14 @@ describe("Tool Registration", () => {
         expect(escalate).toBeDefined();
         expect(escalate!.function.description).toContain("smarter");
         expect(escalate!.function.description).toContain("riddles");
+    });
+
+    test("clarify tool requires question parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const clarify = defs.find(d => d.function.name === ToolName.CLARIFY);
+        expect(clarify).toBeDefined();
+        expect(clarify!.function.parameters.required).toContain("question");
+        expect(clarify!.function.parameters.properties.question.type).toBe("string");
     });
 
     test("find_element description mentions tag ID", () => {

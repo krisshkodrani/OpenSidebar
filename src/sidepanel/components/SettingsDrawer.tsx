@@ -391,6 +391,25 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium dark:text-warm-300">
+                      Confirm plans before execution
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Review multi-step plans before the agent starts executing
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formState.requirePlanConfirmation !== false}
+                    onChange={(e) =>
+                      handleChange("requirePlanConfirmation", e.target.checked)
+                    }
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
                       Disable Navigation Tool
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">

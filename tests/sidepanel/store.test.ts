@@ -36,6 +36,8 @@ describe("SidePanel Store", () => {
             turnProgress: null,
             pendingApproval: null,
             pendingEscalation: null,
+            pendingPlanConfirmation: null,
+            pendingClarification: null,
             taskRecovery: null,
             laneTelemetry: null,
             settings: {
@@ -574,7 +576,33 @@ describe("SidePanel Store", () => {
         expect(state.turnProgress).toBeNull();
         expect(state.pendingApproval).toBeNull();
         expect(state.pendingEscalation).toBeNull();
+        expect(state.pendingPlanConfirmation).toBeNull();
+        expect(state.pendingClarification).toBeNull();
         expect(state.taskRecovery).toBeNull();
+    });
+
+    test("setPendingPlanConfirmation and clearPendingPlanConfirmation", () => {
+        useStore.getState().setPendingPlanConfirmation({
+            confirmationId: "pc-1",
+            nodes: [{ description: "Step 1", successCriteria: "Done" }],
+            query: "Do something",
+            requestedAt: Date.now(),
+        });
+        expect(useStore.getState().pendingPlanConfirmation).not.toBeNull();
+        useStore.getState().clearPendingPlanConfirmation();
+        expect(useStore.getState().pendingPlanConfirmation).toBeNull();
+    });
+
+    test("setPendingClarification and clearPendingClarification", () => {
+        useStore.getState().setPendingClarification({
+            clarificationId: "cl-1",
+            question: "What color?",
+            timeoutMs: 120000,
+            requestedAt: Date.now(),
+        });
+        expect(useStore.getState().pendingClarification).not.toBeNull();
+        useStore.getState().clearPendingClarification();
+        expect(useStore.getState().pendingClarification).toBeNull();
     });
 
     test("setActiveWorkspaceId flushes messages before clearing", () => {

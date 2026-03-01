@@ -54,6 +54,7 @@ const baseSettings: UserSettings = {
   disableNavigation: false,
   bypassApprovals: true,
   orchestratorMaxWorkers: 3,
+  requirePlanConfirmation: false,
 };
 
 function makeNode(

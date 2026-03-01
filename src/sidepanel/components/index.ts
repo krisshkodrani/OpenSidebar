@@ -8,3 +8,5 @@ export * from "./EscalationOverlay";
 export * from "./PlanSheet";
 
 export * from "./SavedPromptsDrawer";
+export * from "./PlanConfirmationOverlay";
+export * from "./ClarificationOverlay";

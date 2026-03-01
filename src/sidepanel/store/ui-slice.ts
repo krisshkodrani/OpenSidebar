@@ -42,6 +42,8 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.turnProgress = null;
       state.pendingApproval = null;
       state.pendingEscalation = null;
+      state.pendingPlanConfirmation = null;
+      state.pendingClarification = null;
       state.taskRecovery = null;
       state.laneTelemetry = null;
     });
