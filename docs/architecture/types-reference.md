@@ -64,7 +64,7 @@ export enum MessageSource {
 
 ### `ToolName`
 
-All 57 tool names the agent can invoke.
+All 39 tool names the agent can invoke.
 
 ```typescript
 /** Tool identifiers exposed to the LLM */
@@ -74,8 +74,6 @@ export enum ToolName {
   SCROLL_PAGE = "scroll_page",
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
-  MEMORY_SEARCH = "memory_search",
-  MEMORY_ADD = "memory_add",
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",
   SWITCH_TAB = "switch_tab",
@@ -87,36 +85,23 @@ export enum ToolName {
   SELECT_OPTION = "select_option",
   PRESS_KEY = "press_key",
   DRAG_AND_DROP = "drag_and_drop",
-  DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
   READ_ELEMENT = "read_element",
   EXECUTE_JS = "execute_js",
   UPLOAD_FILE = "upload_file",
   GO_BACK = "go_back",
-  GO_FORWARD = "go_forward",
   LIST_TABS = "list_tabs",
   RIGHT_CLICK = "right_click",
   SET_CHECKBOX = "set_checkbox",
   CLICK_COORDINATES = "click_coordinates",
   DOWNLOAD_FILE = "download_file",
-  TRANSCRIBE_AUDIO = "transcribe_audio",
-  GROUP_TABS = "group_tabs",
-  UNGROUP_TABS = "ungroup_tabs",
   GET_COOKIES = "get_cookies",
   SET_COOKIE = "set_cookie",
   DELETE_COOKIE = "delete_cookie",
-  COPY_TO_CLIPBOARD = "copy_to_clipboard",
-  READ_PDF = "read_pdf",
   SEARCH_HISTORY = "search_history",
-  CREATE_BOOKMARK = "create_bookmark",
-  GET_BOOKMARKS = "get_bookmarks",
-  CREATE_WINDOW = "create_window",
-  SEND_NOTIFICATION = "send_notification",
   INSPECT_HIDDEN = "inspect_hidden",
   DISMISS_OVERLAYS = "dismiss_overlays",
-  CLOSE_POPUPS = "close_popups",
-  BATCH_EXECUTE = "batch_execute",
   RECALL_DEMO = "recall_demo",
 }
 ```
@@ -761,7 +746,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (57 tools):
+Each tool has a typed argument interface (39 tools):
 
 ```typescript
 /** Arguments for click_element */
@@ -799,22 +784,6 @@ export interface NavigateArgs {
   url?: string;
   /** Search query (uses default search engine). Provide url OR query, not both. */
   query?: string;
-}
-
-/** Arguments for memory_search */
-export interface MemorySearchArgs {
-  /** Natural language query */
-  query: string;
-  /** Maximum number of results (default: 5) */
-  limit?: number;
-}
-
-/** Arguments for memory_add */
-export interface MemoryAddArgs {
-  /** Content to store */
-  content: string;
-  /** Category tag for organization */
-  category?: string;
 }
 
 /** Arguments for create_tab */
@@ -885,20 +854,6 @@ export interface DragAndDropArgs {
   targetId: number;
 }
 
-/** Arguments for draw_stroke */
-export interface DrawStrokeArgs {
-  /** Tag ID of the canvas element */
-  id: number;
-  /** Start X offset from element top-left */
-  startX: number;
-  /** Start Y offset from element top-left */
-  startY: number;
-  /** End X offset from element top-left */
-  endX: number;
-  /** End Y offset from element top-left */
-  endY: number;
-}
-
 /** Arguments for hide_element */
 export interface HideElementArgs {
   /** The numeric tag ID of the element to hide */
@@ -936,9 +891,6 @@ export interface UploadFileArgs {
 /** Arguments for go_back */
 export type GoBackArgs = Record<string, never>;
 
-/** Arguments for go_forward */
-export type GoForwardArgs = Record<string, never>;
-
 /** Arguments for list_tabs */
 export type ListTabsArgs = Record<string, never>;
 
@@ -974,24 +926,6 @@ export interface DownloadFileArgs {
   filename?: string;
 }
 
-/** Arguments for transcribe_audio */
-export interface TranscribeAudioArgs {
-  /** The numeric tag ID of the <audio> or <video> element */
-  id: number;
-}
-
-/** Arguments for group_tabs */
-export interface GroupTabsArgs {
-  tabIds: number[];
-  title: string;
-  color?: string;
-}
-
-/** Arguments for ungroup_tabs */
-export interface UngroupTabsArgs {
-  tabIds: number[];
-}
-
 /** Arguments for get_cookies */
 export interface GetCookiesArgs {
   url?: string;
@@ -1012,46 +946,10 @@ export interface DeleteCookieArgs {
   name: string;
 }
 
-/** Arguments for copy_to_clipboard */
-export interface CopyToClipboardArgs {
-  text: string;
-}
-
-/** Arguments for read_pdf */
-export interface ReadPdfArgs {
-  url: string;
-  maxPages?: number;
-}
-
 /** Arguments for search_history */
 export interface SearchHistoryArgs {
   query: string;
   maxResults?: number;
-}
-
-/** Arguments for create_bookmark */
-export interface CreateBookmarkArgs {
-  title?: string;
-  url?: string;
-  parentId?: string;
-}
-
-/** Arguments for get_bookmarks */
-export interface GetBookmarksArgs {
-  query: string;
-  maxResults?: number;
-}
-
-/** Arguments for create_window */
-export interface CreateWindowArgs {
-  url?: string;
-  incognito?: boolean;
-}
-
-/** Arguments for send_notification */
-export interface SendNotificationArgs {
-  title: string;
-  message: string;
 }
 
 /** Arguments for inspect_hidden */
@@ -1073,7 +971,7 @@ export type ToolRouter = {
 
 /** Maps each tool name to its argument type */
 export type ToolArgsMap = {
-  // ... (46 entries mapping each ToolName to its Args type)
+  // ... (39 entries mapping each ToolName to its Args type)
   [ToolName.CLICK_ELEMENT]: ClickElementArgs;
   [ToolName.TYPE_TEXT]: TypeTextArgs;
   // ... etc.
@@ -1507,12 +1405,8 @@ export interface UserSettings {
   visionModel: string;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
-  /** Disable perception layer (vision-based page understanding) */
-  disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;
-  /** Speech-to-text provider for voice input */
-  speechProvider: "browser" | "groq";
 }
 ```
 

@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 57 tools are registered", () => {
+    test("all 34 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(57);
+        expect(defs.length).toBe(34);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -83,15 +83,6 @@ describe("Tool Registration", () => {
         expect(dnd!.function.parameters.required).toContain("targetId");
     });
 
-    test("draw_stroke tool requires id, startX, startY, endX, endY", () => {
-        const defs = toolRegistry.getDefinitions();
-        const stroke = defs.find(d => d.function.name === ToolName.DRAW_STROKE);
-        expect(stroke).toBeDefined();
-        expect(stroke!.function.parameters.required).toEqual(
-            expect.arrayContaining(["id", "startX", "startY", "endX", "endY"])
-        );
-    });
-
     test("hide_element tool requires id parameter", () => {
         const defs = toolRegistry.getDefinitions();
         const hide = defs.find(d => d.function.name === ToolName.HIDE_ELEMENT);
@@ -133,30 +124,6 @@ describe("Tool Registration", () => {
         expect(find!.function.description).toContain("tag ID");
     });
 
-    test("memory_update requires id and content", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.MEMORY_UPDATE);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("id");
-        expect(def!.function.parameters.required).toContain("content");
-        expect(def!.function.parameters.properties.category).toBeDefined();
-    });
-
-    test("memory_delete requires id", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.MEMORY_DELETE);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual(["id"]);
-    });
-
-    test("memory_list_categories requires no parameters", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.MEMORY_LIST_CATEGORIES);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual([]);
-        expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
-    });
-
     test("read_element requires id parameter", () => {
         const defs = toolRegistry.getDefinitions();
         const def = defs.find(d => d.function.name === ToolName.READ_ELEMENT);
@@ -183,13 +150,6 @@ describe("Tool Registration", () => {
     test("go_back has no required parameters", () => {
         const defs = toolRegistry.getDefinitions();
         const def = defs.find(d => d.function.name === ToolName.GO_BACK);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual([]);
-    });
-
-    test("go_forward has no required parameters", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.GO_FORWARD);
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toEqual([]);
     });
@@ -224,22 +184,6 @@ describe("Tool Registration", () => {
         expect(def!.function.parameters.properties.filename).toBeDefined();
     });
 
-    test("group_tabs requires tabIds and title", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.GROUP_TABS);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("tabIds");
-        expect(def!.function.parameters.required).toContain("title");
-        expect(def!.function.parameters.properties.color).toBeDefined();
-    });
-
-    test("ungroup_tabs requires tabIds", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.UNGROUP_TABS);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("tabIds");
-    });
-
     test("get_cookies has no required parameters", () => {
         const defs = toolRegistry.getDefinitions();
         const def = defs.find(d => d.function.name === ToolName.GET_COOKIES);
@@ -265,60 +209,12 @@ describe("Tool Registration", () => {
         expect(def!.function.parameters.required).toContain("name");
     });
 
-    test("copy_to_clipboard requires text", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.COPY_TO_CLIPBOARD);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("text");
-    });
-
-    test("read_pdf requires url", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.READ_PDF);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("url");
-        expect(def!.function.parameters.properties.maxPages).toBeDefined();
-    });
-
     test("search_history requires query", () => {
         const defs = toolRegistry.getDefinitions();
         const def = defs.find(d => d.function.name === ToolName.SEARCH_HISTORY);
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toContain("query");
         expect(def!.function.parameters.properties.maxResults).toBeDefined();
-    });
-
-    test("create_bookmark has no required parameters", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.CREATE_BOOKMARK);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual([]);
-        expect(def!.function.parameters.properties.title).toBeDefined();
-        expect(def!.function.parameters.properties.url).toBeDefined();
-    });
-
-    test("get_bookmarks requires query", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.GET_BOOKMARKS);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("query");
-    });
-
-    test("create_window has no required parameters", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.CREATE_WINDOW);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual([]);
-        expect(def!.function.parameters.properties.url).toBeDefined();
-        expect(def!.function.parameters.properties.incognito).toBeDefined();
-    });
-
-    test("send_notification requires title and message", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.SEND_NOTIFICATION);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("title");
-        expect(def!.function.parameters.required).toContain("message");
     });
 
     test("inspect_hidden has no required parameters", () => {
@@ -340,55 +236,4 @@ describe("Tool Registration", () => {
         expect(def!.function.description).toContain("hidden");
     });
 
-    test("fast_forward has no required parameters and mentions toggle", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.FAST_FORWARD);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toEqual([]);
-        expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
-        expect(def!.function.description).toContain("Toggle");
-        expect(def!.function.description).toContain("timer");
-    });
-
-    test("batch_execute requires steps parameter", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.BATCH_EXECUTE);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("steps");
-        expect(def!.function.parameters.properties.steps.type).toBe("array");
-        expect(def!.function.parameters.properties.verify).toBeDefined();
-    });
-
-    // React toolkit tools
-    test("inspect_react requires id parameter", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.INSPECT_REACT);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("id");
-        expect(def!.function.parameters.properties.depth).toBeDefined();
-    });
-
-    test("react_set_input requires id and value parameters", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.REACT_SET_INPUT);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.required).toContain("id");
-        expect(def!.function.parameters.required).toContain("value");
-        expect(def!.function.parameters.properties.submit).toBeDefined();
-    });
-
-    test("inspect_react_tree has optional depth and filter", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.INSPECT_REACT_TREE);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.properties.depth).toBeDefined();
-        expect(def!.function.parameters.properties.filter).toBeDefined();
-    });
-
-    test("wait_for_react has optional timeout parameter", () => {
-        const defs = toolRegistry.getDefinitions();
-        const def = defs.find(d => d.function.name === ToolName.WAIT_FOR_REACT);
-        expect(def).toBeDefined();
-        expect(def!.function.parameters.properties.timeout).toBeDefined();
-    });
 });

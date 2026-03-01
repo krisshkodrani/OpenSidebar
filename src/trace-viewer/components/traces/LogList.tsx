@@ -27,8 +27,16 @@ const SOURCE_COLORS: Record<string, string> = {
 function formatTs(ts: string): string {
   try {
     const d = new Date(ts);
-    return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      + "." + String(d.getMilliseconds()).padStart(3, "0");
+    return (
+      d.toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }) +
+      "." +
+      String(d.getMilliseconds()).padStart(3, "0")
+    );
   } catch {
     return ts;
   }
@@ -46,17 +54,25 @@ function LogRow({ entry }: { entry: SessionLogEntry }) {
         className={`flex gap-2 px-3 py-0.5 ${hasData ? "cursor-pointer" : ""}`}
         onClick={() => hasData && setExpanded(!expanded)}
       >
-        <span className="text-trace-dim shrink-0 w-[85px]">{formatTs(entry.ts)}</span>
-        <span className={`shrink-0 w-[38px] font-bold ${LEVEL_COLORS[entry.lvl] || "text-trace-muted"}`}>
+        <span className="text-trace-dim shrink-0 w-[85px]">
+          {formatTs(entry.ts)}
+        </span>
+        <span
+          className={`shrink-0 w-[38px] font-bold ${LEVEL_COLORS[entry.lvl] || "text-trace-muted"}`}
+        >
           {entry.lvl}
         </span>
-        <span className={`shrink-0 w-[80px] ${SOURCE_COLORS[entry.src] || "text-trace-muted"}`}>
+        <span
+          className={`shrink-0 w-[80px] ${SOURCE_COLORS[entry.src] || "text-trace-muted"}`}
+        >
           {entry.src}
         </span>
         <span className="shrink-0 w-[80px] text-trace-muted">{entry.cat}</span>
         <span className="text-trace-text truncate flex-1">{entry.msg}</span>
         {hasData && (
-          <span className="text-trace-dim shrink-0">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-trace-dim shrink-0">
+            {expanded ? "\u25BC" : "\u25B6"}
+          </span>
         )}
       </div>
       {expanded && entry.data && (
@@ -111,7 +127,8 @@ export default function LogList() {
         No logs for this session.
         <br />
         <span className="text-trace-dim text-[11px]">
-          Logs are correlated when the log drain server is running during agent execution.
+          Logs are correlated when the log drain server is running during agent
+          execution.
         </span>
       </div>
     );
@@ -139,7 +156,9 @@ export default function LogList() {
         >
           <option value="all">All Categories</option>
           {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
         </select>
         <input

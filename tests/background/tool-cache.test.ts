@@ -53,7 +53,7 @@ describe("ToolResultCache", () => {
     });
 
     test("memory entry hits regardless of fingerprint", () => {
-      const key = ToolResultCache.key(ToolName.MEMORY_SEARCH, { query: "q" });
+      const key = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "q" });
       cache.set(key, "result", "fp1", "memory");
       expect(cache.get(key, "fp2")).toBe("result");
     });
@@ -68,7 +68,7 @@ describe("ToolResultCache", () => {
   describe("invalidateDom()", () => {
     test("clears only DOM entries", () => {
       const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.MEMORY_SEARCH, { query: "b" });
+      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
       const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
 
       cache.set(domKey, "dom-result", "fp1", "dom");
@@ -86,7 +86,7 @@ describe("ToolResultCache", () => {
   describe("invalidateMemory()", () => {
     test("clears only memory entries", () => {
       const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.MEMORY_SEARCH, { query: "b" });
+      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
       const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
 
       cache.set(domKey, "dom-result", "fp1", "dom");
@@ -187,7 +187,7 @@ describe("ToolResultCache", () => {
   describe("clear()", () => {
     test("removes all entries and counts as invalidations", () => {
       cache.set(ToolResultCache.key(ToolName.FIND_ELEMENT, { a: 1 }), "r1", "fp", "dom");
-      cache.set(ToolResultCache.key(ToolName.MEMORY_SEARCH, { q: "x" }), "r2", "fp", "memory");
+      cache.set(ToolResultCache.key(ToolName.RECALL_DEMO, { q: "x" }), "r2", "fp", "memory");
       cache.set(ToolResultCache.key(ToolName.GET_COOKIES, {}), "r3", "fp", "static");
 
       cache.clear();
@@ -201,7 +201,7 @@ describe("ToolResultCache", () => {
   describe("isolation between cache types", () => {
     test("invalidateDom does not affect memory or static, and vice versa", () => {
       const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.MEMORY_SEARCH, { query: "b" });
+      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
       const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
 
       cache.set(domKey, "dom", "fp1", "dom");

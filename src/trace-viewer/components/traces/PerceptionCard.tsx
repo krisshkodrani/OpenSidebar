@@ -25,7 +25,10 @@ interface PerceptionCardProps {
   sessionId: string;
 }
 
-export default function PerceptionCard({ entry, sessionId }: PerceptionCardProps) {
+export default function PerceptionCard({
+  entry,
+  sessionId,
+}: PerceptionCardProps) {
   const [imgError, setImgError] = useState(false);
   const p = entry.perception as PerceptionData;
   const turnNum = (entry.turnNumber as number) ?? 0;
@@ -39,19 +42,23 @@ export default function PerceptionCard({ entry, sessionId }: PerceptionCardProps
   // fall back to reconstructing from raw elements for older traces
   const elementText = p.elementSummary
     ? p.elementSummary
-    : elements.map((el) => {
-        let line = `[${el.tag}] ${el.tagName || ""}`;
-        if (el.attributes?.id) line += `#${el.attributes.id}`;
-        if (el.attributes?.type) line += ` type=${el.attributes.type}`;
-        if (el.text) line += ` "${truncate(el.text, 80)}"`;
-        return line;
-      }).join("\n");
+    : elements
+        .map((el) => {
+          let line = `[${el.tag}] ${el.tagName || ""}`;
+          if (el.attributes?.id) line += `#${el.attributes.id}`;
+          if (el.attributes?.type) line += ` type=${el.attributes.type}`;
+          if (el.text) line += ` "${truncate(el.text, 80)}"`;
+          return line;
+        })
+        .join("\n");
 
   return (
     <div className="bg-trace-panel border border-[rgba(15,52,96,0.6)] rounded-lg mb-4 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(15,52,96,0.3)] border-b border-[rgba(15,52,96,0.4)]">
-        <span className="text-[13px] font-bold text-trace-accent-light">Turn {turnNum}</span>
+        <span className="text-[13px] font-bold text-trace-accent-light">
+          Turn {turnNum}
+        </span>
         <Badge variant="model">{p.model || "unknown"}</Badge>
         {p.cached && <Badge variant="stopped">cached</Badge>}
         {p.elementSummary && <Badge variant="default">exact input</Badge>}
@@ -89,7 +96,9 @@ export default function PerceptionCard({ entry, sessionId }: PerceptionCardProps
           <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-[rgba(15,52,96,0.4)]">
             <span>Model: {p.model || "?"}</span>
             {p.providerId && <span>Provider: {p.providerId}</span>}
-            <span>Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}</span>
+            <span>
+              Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}
+            </span>
             <span>Cached: {p.cached ? "Yes" : "No"}</span>
           </div>
         </div>

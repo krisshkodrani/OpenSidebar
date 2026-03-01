@@ -1,7 +1,6 @@
 declare const __DEV__: boolean;
 declare const __OPENROUTER_API_KEY__: string;
 declare const __GROQ_API_KEY__: string;
-declare const __CEREBRAS_API_KEY__: string;
 
 // Web Speech API types (not included in lib.dom by default for Chrome)
 interface SpeechRecognitionAlternative {

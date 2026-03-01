@@ -84,6 +84,47 @@ export function isCompletionTimingPass(scores: CompletionTimingScores): boolean 
   return scores.composite >= PASS_THRESHOLD;
 }
 
+/**
+ * Naive English stemmer — strips common suffixes so that
+ * "confirmed", "confirmation", "confirming" all reduce to "confirm".
+ */
+function stem(word: string): string {
+  return word
+    .replace(/ation$/, "")
+    .replace(/ment$/, "")
+    .replace(/ness$/, "")
+    .replace(/ing$/, "")
+    .replace(/tion$/, "")
+    .replace(/sion$/, "")
+    .replace(/ous$/, "")
+    .replace(/ive$/, "")
+    .replace(/able$/, "")
+    .replace(/ible$/, "")
+    .replace(/ful$/, "")
+    .replace(/less$/, "")
+    .replace(/ly$/, "")
+    .replace(/ed$/, "")
+    .replace(/er$/, "")
+    .replace(/est$/, "")
+    .replace(/es$/, "")
+    .replace(/s$/, "");
+}
+
+/**
+ * Check if a keyword matches anywhere in the text using stem-aware matching.
+ * First tries exact substring match, then falls back to stemmed word comparison.
+ */
+function stemMatch(text: string, keyword: string): boolean {
+  const kwLower = keyword.toLowerCase();
+  // Exact substring match (fast path)
+  if (text.includes(kwLower)) return true;
+  // Stem-aware: check if any word in the text shares a stem with the keyword
+  const kwStem = stem(kwLower);
+  if (kwStem.length < 3) return false; // Avoid trivially short stems
+  const words = text.split(/\s+/);
+  return words.some((w) => stem(w) === kwStem);
+}
+
 /** Score summary quality for "done" cases via keyword matching */
 function scoreSummaryQuality(
   toolCalls: Array<{ toolName: string; args: Record<string, unknown> }>,
@@ -108,7 +149,7 @@ function scoreSummaryQuality(
 
   let matches = 0;
   for (const kw of expectedKeywords) {
-    if (combined.includes(kw.toLowerCase())) matches++;
+    if (stemMatch(combined, kw)) matches++;
   }
 
   return matches / expectedKeywords.length;

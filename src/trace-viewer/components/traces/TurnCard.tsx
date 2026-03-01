@@ -6,7 +6,12 @@ import TurnLLMOutputSection from "./TurnLLMOutputSection";
 import TurnToolResultsSection from "./TurnToolResultsSection";
 import TurnSnapshotSection from "./TurnSnapshotSection";
 import TurnProgressState from "./TurnProgressState";
-import { shortModel, formatDuration, formatTokens, formatCost } from "../../utils";
+import {
+  shortModel,
+  formatDuration,
+  formatTokens,
+  formatCost,
+} from "../../utils";
 
 interface TurnCardProps {
   entry: Record<string, unknown>;
@@ -17,7 +22,7 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
   const turnNum =
     (entry.turnNumber as number) ?? (entry.turn as number) ?? index + 1;
   const model =
-    (entry.llmRequest as Record<string, unknown>)?.model as string ??
+    ((entry.llmRequest as Record<string, unknown>)?.model as string) ??
     (entry.model as string) ??
     "";
   const llmResponse = entry.llmResponse as Record<string, unknown> | undefined;
@@ -33,7 +38,9 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
     null;
   const toolCalls =
     (llmResponse?.toolCalls as Array<Record<string, unknown>>) ??
-    ((entry.response as Record<string, unknown>)?.tool_calls as Array<Record<string, unknown>>) ??
+    ((entry.response as Record<string, unknown>)?.tool_calls as Array<
+      Record<string, unknown>
+    >) ??
     [];
   const toolExecutions =
     (entry.toolExecutions as Array<Record<string, unknown>>) ?? [];
@@ -41,9 +48,10 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
   const snapshot = (entry.snapshot as Record<string, unknown>) ?? null;
   const progressState = entry.progressState as Record<string, unknown> | null;
   const llmRequest = entry.llmRequest as Record<string, unknown> | undefined;
-  const messages =
-    (llmRequest?.messages as Record<string, unknown>[]) ?? [];
-  const contextMetrics = llmRequest?.contextMetrics as Record<string, unknown> | undefined;
+  const messages = (llmRequest?.messages as Record<string, unknown>[]) ?? [];
+  const contextMetrics = llmRequest?.contextMetrics as
+    | Record<string, unknown>
+    | undefined;
   const compressionLevel = llmRequest?.compressionLevel as string | undefined;
 
   return (
@@ -53,7 +61,19 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
         <span className="text-[13px] font-bold text-trace-accent-light shrink-0">
           Turn {turnNum}
         </span>
-        {model && <Badge variant={model === "manual" ? "manual" : model === "recording" ? "recording" : "model"}>{shortModel(model)}</Badge>}
+        {model && (
+          <Badge
+            variant={
+              model === "manual"
+                ? "manual"
+                : model === "recording"
+                  ? "recording"
+                  : "model"
+            }
+          >
+            {shortModel(model)}
+          </Badge>
+        )}
         {compressionLevel && compressionLevel !== "NONE" && (
           <span className="text-[10px] text-trace-muted">
             compress: {compressionLevel}
@@ -67,26 +87,59 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
             </span>
           )}
           {usage?.cost && (
-            <span className="font-mono">{formatCost(usage.cost as number)}</span>
+            <span className="font-mono">
+              {formatCost(usage.cost as number)}
+            </span>
           )}
         </div>
       </div>
 
       {/* Body */}
       <div className="p-3">
-        <TurnEventsSection events={events as Array<{ type: string; data?: Record<string, unknown> }>} />
-        <TurnLLMInputSection messages={messages} contextMetrics={contextMetrics as TurnLLMInputSectionCM} />
+        <TurnEventsSection
+          events={
+            events as Array<{ type: string; data?: Record<string, unknown> }>
+          }
+        />
+        <TurnLLMInputSection
+          messages={messages}
+          contextMetrics={contextMetrics as TurnLLMInputSectionCM}
+        />
         <TurnLLMOutputSection
           content={content}
-          toolCalls={toolCalls as Array<{ function?: { name?: string; arguments?: string } }>}
+          toolCalls={
+            toolCalls as Array<{
+              function?: { name?: string; arguments?: string };
+            }>
+          }
         />
         <TurnToolResultsSection
-          toolExecutions={toolExecutions as Array<{ toolName?: string; success?: boolean; result?: string; error?: string; durationMs?: number }>}
+          toolExecutions={
+            toolExecutions as Array<{
+              toolName?: string;
+              success?: boolean;
+              result?: string;
+              error?: string;
+              durationMs?: number;
+            }>
+          }
         />
         <TurnSnapshotSection
-          snapshot={snapshot as { url?: string; title?: string; scrollY?: number } | null}
+          snapshot={
+            snapshot as {
+              url?: string;
+              title?: string;
+              scrollY?: number;
+            } | null
+          }
         />
-        {progressState && <TurnProgressState progressState={progressState as { staleTurns?: number; signal?: string }} />}
+        {progressState && (
+          <TurnProgressState
+            progressState={
+              progressState as { staleTurns?: number; signal?: string }
+            }
+          />
+        )}
       </div>
     </div>
   );

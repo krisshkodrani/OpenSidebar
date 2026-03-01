@@ -46,19 +46,15 @@ describe("Bridge Message Routing", () => {
             settings: {
                 openRouterApiKey: "",
                 groqApiKey: "",
-                cerebrasApiKey: "",
                 maxTurns: 30,
                 contextWindowSize: 128000,
                 memoryEnabled: true,
                 workspaceEnabled: true,
                 theme: "system",
-                showElementTags: false,
                 visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 showSessionMetrics: false,
-                disableScreenshot: false,
                 disableNavigation: false,
                 bypassApprovals: false,
-                speechProvider: "groq",
             },
         });
     });

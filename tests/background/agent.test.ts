@@ -45,16 +45,16 @@ vi.mock("../../src/background/llm", () => ({
       }),
     );
     completeStream = mockCompleteStream;
-    _isSmartTier = false;
-    switchToSmart = vi.fn(() => {
+    _isPlannerTier = false;
+    switchToPlanner = vi.fn(() => {
       this.model = "minimax/minimax-m2.5";
-      this._isSmartTier = true;
+      this._isPlannerTier = true;
     });
-    switchToFast = vi.fn(() => {
+    switchToExecutor = vi.fn(() => {
       this.model = "google/gemini-2.5-flash-lite";
-      this._isSmartTier = false;
+      this._isPlannerTier = false;
     });
-    isSmartTier = () => this._isSmartTier;
+    isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
     getActiveProviderInfo = () => ({
@@ -63,8 +63,8 @@ vi.mock("../../src/background/llm", () => ({
     });
     setFailoverCallback = vi.fn(() => {});
   },
-  MODEL_FAST: "google/gemini-2.5-flash-lite",
-  MODEL_SMART: "minimax/minimax-m2.5",
+  MODEL_EXECUTOR: "google/gemini-2.5-flash-lite",
+  MODEL_PLANNER: "minimax/minimax-m2.5",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
   extractThinkContent: (text: string) => {
@@ -88,7 +88,7 @@ describe("AgentLoop", () => {
     const onMessage = vi.fn();
     const onStep = vi.fn();
 
-    const agent = new AgentLoop("test-key", undefined, undefined, {
+    const agent = new AgentLoop("test-key", undefined, {
       onStatusUpdate: onStatus,
       onMessage: onMessage,
       onStep: onStep,
@@ -110,7 +110,7 @@ describe("AgentLoop", () => {
     const onMessage = vi.fn();
     const onStep = vi.fn();
 
-    const agent = new AgentLoop("test-key", undefined, undefined, {
+    const agent = new AgentLoop("test-key", undefined, {
       onStatusUpdate: onStatus,
       onMessage: onMessage,
       onStep: onStep,
@@ -120,7 +120,7 @@ describe("AgentLoop", () => {
 
     // Guardian decompose step + Filler-accelerated text-only give-up:
     // "Final answer" (12 chars) is detected as filler → consecutiveTextOnly += 2 each time
-    // BRAINS→HANDS: starts at tier 1 (smart model, max tier in 2-tier system)
+    // BRAINS→HANDS: starts at tier 1 (planner model, max tier in 2-tier system)
     // Pre-loop: guardian thinking(running) "Analyzing task scope..."
     // Turn 1: thinking(running) + thinking(done) → filler, textOnly=2 → already at tier 1, can't escalate
     // Turn 2: thinking(running) + thinking(done) → filler, textOnly=4 → give-up (>= 3)
@@ -233,7 +233,6 @@ describe("High-risk approval policy", () => {
     const agent = new AgentLoop(
       "test-key",
       undefined,
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -271,7 +270,6 @@ describe("High-risk approval policy", () => {
     const agent = new AgentLoop(
       "test-key",
       undefined,
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -298,7 +296,6 @@ describe("High-risk approval policy", () => {
     const agent = new AgentLoop(
       "test-key",
       undefined,
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -324,7 +321,6 @@ describe("High-risk approval policy", () => {
     const onStep = vi.fn();
     const agent = new AgentLoop(
       "test-key",
-      undefined,
       undefined,
       {
         onStatusUpdate: vi.fn(),
@@ -376,7 +372,6 @@ describe("Workspace-scoped tab operations", () => {
   function createAgent(workspaceId: string | null = null) {
     return new AgentLoop(
       "test-key",
-      undefined,
       undefined,
       {
         onStatusUpdate: vi.fn(),

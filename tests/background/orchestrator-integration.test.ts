@@ -43,27 +43,17 @@ let autoEscalationDecision:
       rerouteObjective?: string;
     }
   | null = null;
-let skillStoreSnapshot: any[] = [];
-
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-openrouter",
   groqApiKey: "",
-  cerebrasApiKey: "",
   maxTurns: 10,
   contextWindowSize: 16000,
-  memoryEnabled: true,
   workspaceEnabled: true,
   theme: "system",
-  showElementTags: false,
-  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: false,
-  disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: true,
-  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
-  teachModeEnabled: true,
-  autoSkillReplayEnabled: true,
 };
 
 function makeNode(
@@ -116,7 +106,6 @@ describe("Orchestrator integration join tests", () => {
 
     const runtimeMessages: any[] = [];
     const checkpointStore: Record<string, unknown> = {};
-    skillStoreSnapshot = [];
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -161,9 +150,6 @@ describe("Orchestrator integration join tests", () => {
       if (key === "opensidebar:orchestrator:checkpoints") {
         return { [key]: checkpointStore };
       }
-      if (key === "opensidebar:skills:v1") {
-        return { [key]: skillStoreSnapshot };
-      }
       return {};
     });
     (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
@@ -174,10 +160,6 @@ describe("Orchestrator integration join tests", () => {
         for (const k of Object.keys(checkpointStore)) {
           if (!(k in value)) delete checkpointStore[k];
         }
-      }
-      const skillKey = "opensidebar:skills:v1";
-      if (Array.isArray(payload[skillKey])) {
-        skillStoreSnapshot = payload[skillKey] as any[];
       }
     });
     (globalThis as any).__checkpointStore = checkpointStore;
@@ -883,164 +865,4 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.status).toBe("failed");
   });
 
-  test("replays learned skill before planner decomposition", async () => {
-    skillStoreSnapshot = [
-      {
-        id: "skill-login",
-        name: "login flow",
-        sourceQuery: "login to account",
-        createdAt: Date.now() - 1000,
-        updatedAt: Date.now() - 1000,
-        uses: 0,
-        successfulRuns: 1,
-        failedRuns: 0,
-        avgDurationMs: 2000,
-        avgTokens: 500,
-        matchTokens: ["login", "account"],
-        steps: [
-          {
-            objective: "Open login form",
-            successCriteria: "Login form visible",
-            allowedTools: [ToolName.CLICK_ELEMENT],
-            assumptions: [],
-          },
-          {
-            objective: "Submit credentials",
-            successCriteria: "User dashboard visible",
-            allowedTools: [ToolName.TYPE_TEXT, ToolName.CLICK_ELEMENT],
-            assumptions: [],
-          },
-        ],
-      },
-    ];
-    plannerBuildNodesImpl = async () => {
-      throw new Error("planner should not run when skill replay matches");
-    };
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask(
-      makeInput("please login account quickly"),
-    );
-
-    expect(createdLoopNodeIds).toEqual(["skill-step-0", "skill-step-1"]);
-    const messages = (globalThis as any).__runtimeMessages as Array<{
-      type?: string;
-      payload?: any;
-    }>;
-    // Skill replay is internal bookkeeping (log + trace only, not emitted as AGENT_STEP).
-    // Verify task completed successfully via the skill replay path.
-    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
-    expect(completion).toBeDefined();
-    expect(completion?.payload?.status).toBe("completed");
-  });
-
-  test("learns skill from successful execution when teach mode is enabled", async () => {
-    plannerBuildNodesImpl = async () => [makeNode("n1", "collect reusable step")];
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("collect reusable step task"));
-
-    expect(skillStoreSnapshot.length).toBeGreaterThan(0);
-    expect(String(skillStoreSnapshot[0]?.sourceQuery || "")).toContain(
-      "collect reusable step task",
-    );
-    expect(Array.isArray(skillStoreSnapshot[0]?.steps)).toBe(true);
-    expect(skillStoreSnapshot[0]?.steps?.length).toBeGreaterThan(0);
-  });
-
-  test("pinned-only replay ignores unpinned skills and uses planner", async () => {
-    skillStoreSnapshot = [
-      {
-        id: "skill-unpinned",
-        name: "unpinned flow",
-        sourceQuery: "checkout flow",
-        createdAt: Date.now() - 1000,
-        updatedAt: Date.now() - 1000,
-        uses: 0,
-        successfulRuns: 1,
-        failedRuns: 0,
-        avgDurationMs: 2000,
-        avgTokens: 500,
-        matchTokens: ["checkout", "flow"],
-        steps: [
-          {
-            objective: "Open cart",
-            successCriteria: "Cart visible",
-            allowedTools: [ToolName.CLICK_ELEMENT],
-            assumptions: [],
-          },
-        ],
-        enabled: true,
-        pinned: false,
-      },
-    ];
-    plannerBuildNodesImpl = async () => [makeNode("n1", "planner path fallback")];
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask({
-      ...makeInput("checkout flow now"),
-      settings: {
-        ...baseSettings,
-        skillReplayPinnedOnly: true,
-      },
-    });
-
-    expect(createdLoopNodeIds).toEqual(["n1"]);
-  });
-
-  test("skill replay dry-run records match but executes planner path", async () => {
-    skillStoreSnapshot = [
-      {
-        id: "skill-dryrun",
-        name: "dry-run flow",
-        sourceQuery: "checkout flow",
-        createdAt: Date.now() - 1000,
-        updatedAt: Date.now() - 1000,
-        uses: 0,
-        successfulRuns: 1,
-        failedRuns: 0,
-        consecutiveReplayFailures: 0,
-        avgDurationMs: 2000,
-        avgTokens: 500,
-        matchTokens: ["checkout", "flow"],
-        steps: [
-          {
-            objective: "Open cart",
-            successCriteria: "Cart visible",
-            allowedTools: [ToolName.CLICK_ELEMENT],
-            assumptions: [],
-          },
-        ],
-        enabled: true,
-        pinned: true,
-      },
-    ];
-    plannerBuildNodesImpl = async () => [makeNode("n1", "planner path with dry run")];
-
-    const orchestrator = new Orchestrator(orchestratorDeps);
-    activeOrchestrator = orchestrator;
-    await orchestrator.startTask({
-      ...makeInput("checkout flow now"),
-      settings: {
-        ...baseSettings,
-        skillReplayDryRun: true,
-      },
-    });
-
-    expect(createdLoopNodeIds).toEqual(["n1"]);
-    const messages = (globalThis as any).__runtimeMessages as Array<{
-      type?: string;
-      payload?: any;
-    }>;
-    expect(
-      messages.some(
-        (m) =>
-          m.type === "AGENT_STEP" &&
-          String(m.payload?.step?.label || "").includes("Skill dry-run match"),
-      ),
-    ).toBe(true);
-  });
 });

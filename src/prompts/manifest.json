@@ -51,7 +51,7 @@
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "fa3ecfb5",
+    "hash": "1047e408",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -79,14 +79,14 @@
   {
     "id": "perception.interpret_page",
     "version": "v3",
-    "hash": "c6844097",
+    "hash": "b88b4097",
     "description": "Dual-mode perception prompt — orientation (generic) when no subtask, focused (goal-conditioned) when subtask active. Sent with screenshot + element metadata to vision model.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "5b0035b3",
+    "hash": "17d13b28",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
@@ -107,7 +107,7 @@
   {
     "id": "planner.validate_done.system",
     "version": "v1",
-    "hash": "40725834",
+    "hash": "d46fffd2",
     "description": "Done validation system prompt for the task planner.",
     "sourcePath": "prompts/runtime/planner/validate_done_system.md"
   },
@@ -135,7 +135,7 @@
   {
     "id": "agent.reflection.pivot",
     "version": "v2",
-    "hash": "dc80be90",
+    "hash": "37b517d3",
     "description": "Strategy pivot reflection when repeated approaches fail.",
     "sourcePath": "prompts/runtime/reflections/pivot.md"
   },

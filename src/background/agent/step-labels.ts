@@ -85,18 +85,6 @@ export function formatStepLabel(
       return "Close tab";
     case ToolName.SWITCH_TAB:
       return `Switch to tab ${args.tabId ?? "?"}`;
-    case ToolName.MEMORY_SEARCH: {
-      const q = args.query as string | undefined;
-      return q ? `Search memory: "${q.slice(0, 30)}"` : "Search memory";
-    }
-    case ToolName.MEMORY_ADD:
-      return "Save to memory";
-    case ToolName.MEMORY_UPDATE:
-      return `Update memory [${args.id ?? "?"}]`;
-    case ToolName.MEMORY_DELETE:
-      return `Delete memory [${args.id ?? "?"}]`;
-    case ToolName.MEMORY_LIST_CATEGORIES:
-      return "List memory categories";
     case ToolName.WAIT: {
       const secs = args.seconds ?? "?";
       const reason = args.reason as string | undefined;
@@ -113,8 +101,6 @@ export function formatStepLabel(
     }
     case ToolName.DRAG_AND_DROP:
       return `Drag ${el(args.sourceId)} → ${el(args.targetId)}`;
-    case ToolName.DRAW_STROKE:
-      return `Draw on canvas ${el(args.id)}`;
     case ToolName.HIDE_ELEMENT:
       return `Hide ${el(args.id)}`;
     case ToolName.DONE:
@@ -123,7 +109,7 @@ export function formatStepLabel(
       const reason = args.reason as string | undefined;
       return reason
         ? `Escalate: "${reason.slice(0, 40)}"`
-        : "Escalate to smarter model";
+        : "Escalate to planner model";
     }
     case ToolName.READ_ELEMENT: {
       const attr = args.attribute as string | undefined;
@@ -144,8 +130,6 @@ export function formatStepLabel(
       return `Upload file to ${el(args.id)}`;
     case ToolName.GO_BACK:
       return "Go back";
-    case ToolName.GO_FORWARD:
-      return "Go forward";
     case ToolName.LIST_TABS:
       return "List tabs";
     case ToolName.RIGHT_CLICK:
@@ -168,14 +152,6 @@ export function formatStepLabel(
       const y = args.y as number | undefined;
       return `Click at (${x ?? "?"}, ${y ?? "?"})`;
     }
-    case ToolName.TRANSCRIBE_AUDIO:
-      return `Transcribe audio ${el(args.id)}`;
-    case ToolName.GROUP_TABS: {
-      const title = args.title as string | undefined;
-      return title ? `Group tabs: "${title}"` : "Group tabs";
-    }
-    case ToolName.UNGROUP_TABS:
-      return "Ungroup tabs";
     case ToolName.GET_COOKIES:
       return "Get cookies";
     case ToolName.SET_COOKIE: {
@@ -186,40 +162,11 @@ export function formatStepLabel(
       const name = args.name as string | undefined;
       return name ? `Delete cookie "${name}"` : "Delete cookie";
     }
-    case ToolName.COPY_TO_CLIPBOARD:
-      return "Copy to clipboard";
-    case ToolName.READ_PDF: {
-      const url = args.url as string | undefined;
-      if (url) {
-        try {
-          return `Read PDF: ${new URL(url).hostname}`;
-        } catch {
-          return "Read PDF";
-        }
-      }
-      return "Read PDF";
-    }
     case ToolName.SEARCH_HISTORY: {
       const query = args.query as string | undefined;
       return query
         ? `Search history: "${query.slice(0, 30)}"`
         : "Search history";
-    }
-    case ToolName.CREATE_BOOKMARK:
-      return "Create bookmark";
-    case ToolName.GET_BOOKMARKS: {
-      const query = args.query as string | undefined;
-      return query
-        ? `Search bookmarks: "${query.slice(0, 30)}"`
-        : "Search bookmarks";
-    }
-    case ToolName.CREATE_WINDOW: {
-      const incognito = args.incognito as boolean | undefined;
-      return incognito ? "Open new window (incognito)" : "Open new window";
-    }
-    case ToolName.SEND_NOTIFICATION: {
-      const title = args.title as string | undefined;
-      return title ? `Notify: "${title.slice(0, 30)}"` : "Send notification";
     }
     case ToolName.INSPECT_HIDDEN: {
       const pattern = args.pattern as string | undefined;
@@ -229,27 +176,6 @@ export function formatStepLabel(
     }
     case ToolName.XRAY_PAGE:
       return "Toggle X-ray mode";
-    case ToolName.FAST_FORWARD:
-      return "Toggle fast-forward";
-    case ToolName.INSPECT_REACT:
-      return `Inspect React state ${el(args.id)}`;
-    case ToolName.REACT_SET_INPUT: {
-      const val = args.value as string | undefined;
-      const preview = val
-        ? val.length > 20
-          ? `"${val.slice(0, 20)}..."`
-          : `"${val}"`
-        : "";
-      return `React set input ${preview} on ${el(args.id)}`;
-    }
-    case ToolName.INSPECT_REACT_TREE: {
-      const filter = args.filter as string | undefined;
-      return filter
-        ? `React tree: "${filter.slice(0, 20)}"`
-        : "Inspect React tree";
-    }
-    case ToolName.WAIT_FOR_REACT:
-      return `Wait for React (${args.timeout ?? 3000}ms)`;
     default:
       return String(toolName);
   }

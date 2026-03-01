@@ -6,7 +6,7 @@
 import { ToolName } from "../src/types";
 import { readTrace } from "./utils";
 
-type ModelTier = "fast" | "smart";
+type ModelTier = "executor" | "planner";
 
 export interface ContractViolation {
   sessionId: string;
@@ -39,8 +39,9 @@ interface TraceTurn {
   events?: { type?: string; data?: Record<string, unknown> }[];
 }
 
-const SMART_MODEL_HINTS = [
-  "glm-4.7",
+const PLANNER_MODEL_HINTS = [
+  "deepseek-v3.2",
+  "deepseek",
   "minimax",
   "grok-4",
   "gpt-5",
@@ -51,10 +52,10 @@ const SMART_MODEL_HINTS = [
 function inferModelTier(model: string | undefined): ModelTier | "unknown" {
   if (!model) return "unknown";
   const normalized = model.toLowerCase();
-  if (SMART_MODEL_HINTS.some((hint) => normalized.includes(hint))) {
-    return "smart";
+  if (PLANNER_MODEL_HINTS.some((hint) => normalized.includes(hint))) {
+    return "planner";
   }
-  return "fast";
+  return "executor";
 }
 
 function parseExecutionContract(turns: TraceTurn[]): ParsedContract | null {
@@ -63,7 +64,7 @@ function parseExecutionContract(turns: TraceTurn[]): ParsedContract | null {
       if (event.type !== "execution_contract") continue;
       const data = event.data || {};
       const role = typeof data.role === "string" ? data.role : "unknown";
-      const modelTier = data.modelTier === "smart" ? "smart" : "fast";
+      const modelTier = data.modelTier === "planner" ? "planner" : "executor";
       const allowedToolsRaw = Array.isArray(data.allowedTools)
         ? data.allowedTools
         : [];

@@ -23,6 +23,7 @@ describe("SidePanel Store", () => {
         } as any;
 
         useStore.setState({
+            activeWorkspaceId: "ws-test",
             messages: [],
             agentStatus: AgentStatus.IDLE,
             statusDetail: "Ready",
@@ -40,20 +41,15 @@ describe("SidePanel Store", () => {
             settings: {
                 openRouterApiKey: "",
                 groqApiKey: "",
-                cerebrasApiKey: "",
                 useGroqFast: false,
                 maxTurns: 30,
                 contextWindowSize: 128000,
-                memoryEnabled: true,
                 workspaceEnabled: true,
                 theme: "system",
-                showElementTags: false,
                 visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 showSessionMetrics: false,
-                disableScreenshot: false,
                 disableNavigation: false,
                 bypassApprovals: false,
-                speechProvider: "groq",
             },
         });
     });
@@ -112,7 +108,6 @@ describe("SidePanel Store", () => {
         expect(settings.openRouterApiKey).toBe("sk-or-test-123");
         expect(settings.maxTurns).toBe(10);
         // Defaults preserved for missing fields
-        expect(settings.memoryEnabled).toBe(true);
         expect(settings.workspaceEnabled).toBe(true);
         expect(settings.theme).toBe("system");
         expect(settings.contextWindowSize).toBe(128000);
@@ -150,7 +145,7 @@ describe("SidePanel Store", () => {
         ];
 
         (chrome.storage.local.get as any) = vi.fn(async () => ({
-            chatMessages: storedMessages,
+            "chatMessages:ws-test": storedMessages,
         }));
 
         await useStore.getState().loadMessagesFromStorage();
@@ -188,8 +183,8 @@ describe("SidePanel Store", () => {
         useStore.getState().clearHistory();
 
         expect(useStore.getState().messages).toHaveLength(0);
-        // Verify session storage was called with empty messages
-        expect(setSpy).toHaveBeenCalledWith({ chatMessages: [] });
+        // Verify workspace-scoped storage was cleared
+        expect(setSpy).toHaveBeenCalledWith({ "chatMessages:ws-test": [] });
     });
 
     test("DEFAULT_SETTINGS includes workspaceEnabled", () => {
@@ -495,11 +490,6 @@ describe("SidePanel Store", () => {
     test("DEFAULT_SETTINGS includes visionModel", () => {
         const settings = useStore.getState().settings;
         expect(settings.visionModel).toBe("qwen/qwen3-vl-235b-a22b-instruct");
-    });
-
-    test("DEFAULT_SETTINGS includes speechProvider", () => {
-        const settings = useStore.getState().settings;
-        expect(settings.speechProvider).toBe("groq");
     });
 
     test("DEFAULT_SETTINGS includes bypassApprovals", () => {

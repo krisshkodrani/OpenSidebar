@@ -45,10 +45,12 @@ function extractJsonText(raw: string): string | null {
   } catch {
     return null;
   }
-  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) return null;
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj))
+    return null;
   const record = obj as Record<string, unknown>;
   for (const key of JSON_TEXT_KEYS) {
-    if (typeof record[key] === "string" && record[key]) return record[key] as string;
+    if (typeof record[key] === "string" && record[key])
+      return record[key] as string;
   }
   // Fallback: collect all string values (depth-limited)
   const strings: string[] = [];
@@ -294,7 +296,14 @@ export const MessageBubble = React.memo(function MessageBubble({
     return message.toolCalls
       .map((tc: ToolCallSummary) => formatStepLabel(tc.toolName, tc.args))
       .join(" → ");
-  }, [isUser, renderedHtml, message.thinking, message.completionData, message.steps, message.toolCalls]);
+  }, [
+    isUser,
+    renderedHtml,
+    message.thinking,
+    message.completionData,
+    message.steps,
+    message.toolCalls,
+  ]);
 
   const showBubble =
     isUser ||
@@ -405,9 +414,12 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
-      {!isUser && !message.isStreaming && message.citations && message.citations.length > 0 && (
-        <CitationList citations={message.citations} />
-      )}
+      {!isUser &&
+        !message.isStreaming &&
+        message.citations &&
+        message.citations.length > 0 && (
+          <CitationList citations={message.citations} />
+        )}
 
       {/* Timestamp: hidden by default, visible on hover */}
       <span

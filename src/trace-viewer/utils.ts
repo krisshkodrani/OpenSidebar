@@ -42,7 +42,10 @@ export function truncate(s: string | undefined | null, len: number): string {
 
 export function shortModel(model: string | undefined | null): string {
   if (!model) return "?";
-  return model.replace("openai/", "").replace("z-ai/", "").replace("-instruct", "");
+  return model
+    .replace("openai/", "")
+    .replace("z-ai/", "")
+    .replace("-instruct", "");
 }
 
 export function outcomeClass(outcome: string | undefined): string {
@@ -71,15 +74,19 @@ export function isoDayOffset(daysBack: number): string {
   return `${y}-${m}-${day}`;
 }
 
-export function summarizeEventData(ev: { data?: Record<string, unknown> }): string {
+export function summarizeEventData(ev: {
+  data?: Record<string, unknown>;
+}): string {
   if (!ev.data || Object.keys(ev.data).length === 0) return "";
   const parts: string[] = [];
   const keys = Object.keys(ev.data);
   for (let i = 0; i < keys.length && i < 4; i++) {
     const val = ev.data[keys[i]];
     if (typeof val === "string") parts.push(`${keys[i]}: ${truncate(val, 40)}`);
-    else if (typeof val === "number" || typeof val === "boolean") parts.push(`${keys[i]}: ${val}`);
-    else if (val != null) parts.push(`${keys[i]}: ${truncate(JSON.stringify(val), 40)}`);
+    else if (typeof val === "number" || typeof val === "boolean")
+      parts.push(`${keys[i]}: ${val}`);
+    else if (val != null)
+      parts.push(`${keys[i]}: ${truncate(JSON.stringify(val), 40)}`);
   }
   if (keys.length > 4) parts.push("...");
   return parts.join(", ");

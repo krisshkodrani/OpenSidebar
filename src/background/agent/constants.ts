@@ -19,7 +19,7 @@ export const STUCK_THRESHOLDS = {
   ESCALATE: 5,
   /** Maximum turns before giving up entirely */
   GIVE_UP: 10,
-  /** Tighter give-up when already on the smart model (saves wasted turns) */
+  /** Tighter give-up when already on the planner model (saves wasted turns) */
   GIVE_UP_SMART: 8,
   /** Same-URL turns before forced escalation (independent of DOM delta) */
   SAME_URL_ESCALATE: 8,
@@ -31,22 +31,24 @@ export const ESCALATION_LIMITS = {
   MAX_CYCLES: 5,
   /** Turns of cooldown after de-escalation before re-escalation is allowed */
   COOLDOWN_TURNS: 3,
-  /** Minimum turns the smart model must run before de-escalation is allowed */
+  /** Minimum turns the planner model must run before de-escalation is allowed */
   MIN_SMART_TENURE: 2,
   /** Consecutive progress signals required before de-escalation */
   PROGRESS_GATE: 2,
 } as const;
 
-/** plan-then-act: smart model orients, then fast model executes */
+/** plan-then-act: planner model orients, then executor model executes */
 export const ORIENTATION = {
-  /** Turns the smart model runs before handing off to fast model */
+  /** Turns the planner model runs before handing off to executor model */
   PHASE_TURNS: 2,
 } as const;
 
-/** Tools that signal an investigation-type task (extend smart orientation phase when used) */
+/** Tools that signal an investigation-type task (extend planner orientation phase when used) */
 export const INVESTIGATION_TOOLS = new Set<string>([
-  "inspect_hidden", "execute_js", "xray_page", "read_element",
-  "inspect_react",
+  "inspect_hidden",
+  "execute_js",
+  "xray_page",
+  "read_element",
 ]);
 /** Additional turns to extend orientation when investigation tools are used */
 export const INVESTIGATION_EXTENSION = 3;
@@ -65,10 +67,14 @@ export const TOOL_FAILURE_THRESHOLDS = {
 export const DISCOVERY_BUDGET = { MAX_CONSECUTIVE: 3 } as const;
 
 export const DISCOVERY_ONLY_TOOLS = new Set<string>([
-  "read_page", "find_element", "inspect_hidden", "read_element",
-  "xray_page", "inspect_react", "inspect_react_tree", "memory_search",
-  "get_cookies", "read_pdf", "search_history", "get_bookmarks",
-  "recall_demo", "transcribe_audio",
+  "read_page",
+  "find_element",
+  "inspect_hidden",
+  "read_element",
+  "xray_page",
+  "get_cookies",
+  "search_history",
+  "recall_demo",
 ]);
 
 /** Redundant action detection (informational — nudges, never blocks) */
@@ -179,12 +185,6 @@ export const ACTION_EFFECT = {
   ZERO_THRESHOLD: 0.02,
   /** Consecutive zero-effect turns before injecting a strategy-change warning */
   WARNING_THRESHOLD: 3,
-} as const;
-
-/** Batch execution limits */
-export const BATCH_LIMITS = {
-  /** Maximum steps in a single batch_execute call */
-  MAX_STEPS: 10,
 } as const;
 
 /** Timing constants (milliseconds) */
@@ -392,17 +392,14 @@ export function reassessRuntimeLimits(
   ][]) {
     if (value == null || !(key in result)) continue;
     if (key === "maxDoneRejections") {
-      // Can tighten — smart model may judge task is simpler
+      // Can tighten — planner model may judge task is simpler
       result[key] = Math.max(
         MINIMUM_LIMITS[key],
         Math.min(MAXIMUM_LIMITS[key], value),
       );
     } else {
       // Can only widen (increase)
-      result[key] = Math.max(
-        result[key],
-        Math.min(MAXIMUM_LIMITS[key], value),
-      );
+      result[key] = Math.max(result[key], Math.min(MAXIMUM_LIMITS[key], value));
     }
   }
   return result;

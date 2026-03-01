@@ -6,7 +6,11 @@ interface EmptyStateProps {
   submessage?: string;
 }
 
-export default function EmptyState({ icon, message, submessage }: EmptyStateProps) {
+export default function EmptyState({
+  icon,
+  message,
+  submessage,
+}: EmptyStateProps) {
   return (
     <div className="flex items-center justify-center h-full text-trace-dim text-sm flex-col gap-2">
       {icon && <div className="text-4xl opacity-30">{icon}</div>}

@@ -16,9 +16,8 @@ import { extractPageContent, extractVisibleText } from "./readability";
 
 export function buildSnapshot(
   refresh: boolean,
-  showTags: boolean = false,
 ): DomSnapshot {
-  const elements = refresh ? tagElements(showTags) : getCachedElements();
+  const elements = refresh ? tagElements() : getCachedElements();
 
   const overflow = getOverflowMetadata();
 
@@ -34,6 +33,7 @@ export function buildSnapshot(
       x: window.scrollX,
       y: window.scrollY,
       maxY: document.documentElement.scrollHeight - window.innerHeight,
+      viewportHeight: window.innerHeight,
     },
   };
 

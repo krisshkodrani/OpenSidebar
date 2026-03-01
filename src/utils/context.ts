@@ -7,7 +7,6 @@ export type ExecutionContext =
   | "background"
   | "content"
   | "sidepanel"
-  | "offscreen"
   | "unknown";
 
 /**
@@ -38,14 +37,6 @@ export function getExecutionContext(): ExecutionContext {
     return "sidepanel";
   }
 
-  // Check for offscreen document
-  if (
-    typeof document !== "undefined" &&
-    document.location?.pathname?.includes("offscreen")
-  ) {
-    return "offscreen";
-  }
-
   return "unknown";
 }
 
@@ -70,9 +61,3 @@ export function isSidepanel(): boolean {
   return getExecutionContext() === "sidepanel";
 }
 
-/**
- * Check if running in offscreen document context
- */
-export function isOffscreen(): boolean {
-  return getExecutionContext() === "offscreen";
-}

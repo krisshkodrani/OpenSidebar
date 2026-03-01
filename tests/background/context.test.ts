@@ -396,15 +396,15 @@ describe("ContextManager", () => {
   });
 
   describe("Persona", () => {
-    test("fast persona appears by default", () => {
+    test("executor persona appears by default", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).toContain("You are the execution model");
       expect(systemContent).not.toContain("You are the reasoning model");
     });
 
-    test("smart persona appears after setModelTier('smart')", () => {
-      context.setModelTier("smart");
+    test("planner persona appears after setModelTier('planner')", () => {
+      context.setModelTier("planner");
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).toContain("You are the reasoning model");
@@ -447,21 +447,10 @@ describe("ContextManager", () => {
       expect(systemContent).toContain("read_element reads attributes");
     });
 
-    test("system prompt contains React toolkit guidance", () => {
-      const prompt = context.getPrompt();
-      const systemContent = prompt[0].content as string;
-      expect(systemContent).toContain("React:");
-      expect(systemContent).toContain("inspect_react");
-      expect(systemContent).toContain("react_set_input");
-      expect(systemContent).toContain("inspect_react_tree");
-    });
-
     test("system prompt contains page assist tool guidance", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).toContain("xray_page");
-      expect(systemContent).toContain("fast_forward");
-      expect(systemContent).toContain("countdown");
     });
   });
 
@@ -679,5 +668,82 @@ describe("ContextManager", () => {
       expect(planMsg!.content as string).toContain("Step A");
       expect(planMsg!.content as string).toContain("Step B");
     });
+  });
+});
+
+// --- Position hint tests (formatElementCompact) ---
+import {
+  formatElementCompact,
+  formatSnapshotElements,
+} from "../../src/background/agent/context";
+import { TaggedElement } from "../../src/types";
+
+function makeElement(
+  overrides: Partial<TaggedElement> = {},
+): TaggedElement {
+  return {
+    tag: 1,
+    tagName: "button",
+    role: "button",
+    text: "Submit",
+    attributes: {},
+    rect: { x: 100, y: 200, width: 80, height: 30 },
+    isVisible: true,
+    isDisabled: false,
+    ...overrides,
+  };
+}
+
+describe("formatElementCompact position hints", () => {
+  test("no annotation for elements in the viewport", () => {
+    const el = makeElement({ rect: { x: 10, y: 300, width: 80, height: 30 } });
+    const result = formatElementCompact(el, "Submit", null, 800);
+    expect(result).not.toContain("^above");
+    expect(result).not.toMatch(/v\d+px/);
+  });
+
+  test("^above for elements above viewport", () => {
+    const el = makeElement({ rect: { x: 10, y: -50, width: 80, height: 30 } });
+    const result = formatElementCompact(el, "Header", null, 800);
+    expect(result).toContain("^above");
+  });
+
+  test("v{N}px for elements below viewport", () => {
+    const el = makeElement({ rect: { x: 10, y: 920, width: 80, height: 30 } });
+    const result = formatElementCompact(el, "Footer", null, 800);
+    expect(result).toContain("v120px");
+  });
+
+  test("no annotation when viewportHeight is not provided", () => {
+    const el = makeElement({ rect: { x: 10, y: 920, width: 80, height: 30 } });
+    const result = formatElementCompact(el, "Footer", null);
+    expect(result).not.toContain("v120px");
+    expect(result).not.toContain("^above");
+  });
+
+  test("element exactly at viewport bottom gets v0px", () => {
+    const el = makeElement({ rect: { x: 10, y: 800, width: 80, height: 30 } });
+    const result = formatElementCompact(el, "Edge", null, 800);
+    expect(result).toContain("v0px");
+  });
+});
+
+describe("formatSnapshotElements with viewport", () => {
+  test("passes viewportHeight to each element", () => {
+    const elements: TaggedElement[] = [
+      makeElement({ tag: 1, rect: { x: 10, y: 100, width: 80, height: 30 } }),
+      makeElement({
+        tag: 2,
+        tagName: "input",
+        role: "textbox",
+        text: "Email",
+        rect: { x: 10, y: 900, width: 200, height: 30 },
+      }),
+    ];
+    const result = formatSnapshotElements(elements, 600);
+    // First element in viewport — no hint
+    expect(result).toContain('[1] button "Submit"');
+    // Second element 300px below viewport
+    expect(result).toContain("v300px");
   });
 });

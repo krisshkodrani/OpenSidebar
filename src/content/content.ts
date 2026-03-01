@@ -20,7 +20,6 @@ import {
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import { isElementVisible, addDynamicTag, resetStableIds } from "./tagging";
-import { detectFramework } from "./framework-detect";
 import {
   startRecording,
   stopRecording,
@@ -623,7 +622,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
           const snapshot = buildSnapshot(
             message.payload.refresh,
-            message.payload.showTags ?? false,
           );
 
           // Archivist: attach captured overlay text to snapshot for LLM context
@@ -639,9 +637,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
               coveragePercent: Math.round(s.coverage),
             }));
           }
-
-          // Detect front-end framework for on-demand toolkit injection
-          snapshot.framework = detectFramework();
 
           sendResponse({
             type: "DOM_SNAPSHOT_RESPONSE",

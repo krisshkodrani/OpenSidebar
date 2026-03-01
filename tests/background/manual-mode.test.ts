@@ -253,11 +253,7 @@ describe("ManualModeHandler", () => {
   });
 
   describe("tags command", () => {
-    test("toggles element tags on", async () => {
-      (chrome.storage.sync as any).get = vi.fn().mockResolvedValue({
-        userSettings: { showElementTags: false },
-      });
-
+    test("returns removal notice", async () => {
       const result = await handler.handleCommand(
         { command: "tags", tabId: 123 },
         "ws-1",
@@ -265,21 +261,7 @@ describe("ManualModeHandler", () => {
 
       expect(result.command).toBe("tags");
       expect(result.success).toBe(true);
-      expect(result.result).toContain("enabled");
-    });
-
-    test("toggles element tags off", async () => {
-      (chrome.storage.sync as any).get = vi.fn().mockResolvedValue({
-        userSettings: { showElementTags: true },
-      });
-
-      const result = await handler.handleCommand(
-        { command: "tags", tabId: 123 },
-        "ws-1",
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.result).toContain("disabled");
+      expect(result.result).toContain("removed");
     });
   });
 

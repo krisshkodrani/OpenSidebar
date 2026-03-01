@@ -94,128 +94,6 @@
   {
     "type": "function",
     "function": {
-      "name": "memory_add",
-      "description": "Save info to long-term memory.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "content": {
-            "type": "string",
-            "description": "Text to remember."
-          },
-          "category": {
-            "type": "string",
-            "description": "Category tag."
-          },
-          "type": {
-            "type": "string",
-            "enum": [
-              "fact",
-              "procedure",
-              "preference"
-            ],
-            "description": "Memory type: fact (information), procedure (how-to steps), preference (user preferences). Auto-classified if omitted."
-          }
-        },
-        "required": [
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "memory_search",
-      "description": "Search long-term memory.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search query."
-          },
-          "types": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "fact",
-                "procedure",
-                "preference"
-              ]
-            },
-            "description": "Filter by memory types. Omit to search all types."
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "memory_update",
-      "description": "Update an existing long-term memory entry by ID.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Memory ID to update."
-          },
-          "content": {
-            "type": "string",
-            "description": "Replacement memory text."
-          },
-          "category": {
-            "type": "string",
-            "description": "Optional replacement category tag."
-          }
-        },
-        "required": [
-          "id",
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "memory_delete",
-      "description": "Delete a long-term memory entry by ID.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Memory ID to delete."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "memory_list_categories",
-      "description": "List memory categories and how many entries each contains.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "create_tab",
       "description": "Open a new tab in this workspace. Returns the new tab's ID. Use switch_tab to make it active for subsequent tools.",
       "parameters": {
@@ -431,45 +309,6 @@
   {
     "type": "function",
     "function": {
-      "name": "draw_stroke",
-      "description": "Draw a stroke on a canvas. Coordinates are relative to the element's top-left corner (0,0 = top-left). Auto-scrolls to canvas.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "description": "Canvas tag ID."
-          },
-          "startX": {
-            "type": "number",
-            "description": "Start X (relative to element top-left)."
-          },
-          "startY": {
-            "type": "number",
-            "description": "Start Y (relative to element top-left)."
-          },
-          "endX": {
-            "type": "number",
-            "description": "End X (relative to element top-left)."
-          },
-          "endY": {
-            "type": "number",
-            "description": "End Y (relative to element top-left)."
-          }
-        },
-        "required": [
-          "id",
-          "startX",
-          "startY",
-          "endX",
-          "endY"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "hide_element",
       "description": "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead.",
       "parameters": {
@@ -501,18 +340,6 @@
   {
     "type": "function",
     "function": {
-      "name": "close_popups",
-      "description": "Close all visible popups, modals, banners, and dialogs by clicking their dismiss/close buttons. Triggers proper JS cleanup handlers. Falls back to hiding if no close button found. Preferred over dismiss_overlays.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "escalate",
       "description": "Switch to a smarter, slower model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
       "parameters": {
@@ -525,50 +352,6 @@
         },
         "required": [
           "reason"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "batch_execute",
-      "description": "Execute a pre-planned sequence of tool calls without LLM roundtrips. Use for deterministic sequences where all element IDs are known (form fills, multi-click flows). Stops on first error. Only non-navigating tools allowed inside steps.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "steps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "tool": {
-                  "type": "string",
-                  "description": "Tool name to call"
-                },
-                "args": {
-                  "type": "object",
-                  "description": "Tool arguments"
-                },
-                "expect": {
-                  "type": "string",
-                  "description": "Bail if result doesn't contain this substring"
-                }
-              },
-              "required": [
-                "tool",
-                "args"
-              ]
-            },
-            "description": "Ordered tool calls (max 10). Executed serially, no LLM between steps."
-          },
-          "verify": {
-            "type": "string",
-            "description": "What to check after all steps complete."
-          }
-        },
-        "required": [
-          "steps"
         ]
       }
     }
@@ -644,18 +427,6 @@
     "function": {
       "name": "go_back",
       "description": "Go back in browser history. Waits for page load to complete.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "go_forward",
-      "description": "Go forward in browser history. Waits for page load to complete.",
       "parameters": {
         "type": "object",
         "properties": {},
@@ -772,91 +543,6 @@
   {
     "type": "function",
     "function": {
-      "name": "transcribe_audio",
-      "description": "Transcribe speech from an <audio> or <video> element. Use when a challenge hides information in audio (spoken codes, instructions, passwords). Returns the full text transcript. Requires a Groq API key in settings.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "integer",
-            "description": "Tag ID of the audio/video element."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "group_tabs",
-      "description": "Group tabs into a tab group with a title and optional color.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "tabIds": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "description": "Tab ID."
-            },
-            "description": "Tab IDs to group."
-          },
-          "title": {
-            "type": "string",
-            "description": "Group title."
-          },
-          "color": {
-            "type": "string",
-            "enum": [
-              "grey",
-              "blue",
-              "red",
-              "yellow",
-              "green",
-              "pink",
-              "purple",
-              "cyan",
-              "orange"
-            ],
-            "description": "Group color."
-          }
-        },
-        "required": [
-          "tabIds",
-          "title"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "ungroup_tabs",
-      "description": "Remove tabs from their tab group.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "tabIds": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "description": "Tab ID."
-            },
-            "description": "Tab IDs to ungroup."
-          }
-        },
-        "required": [
-          "tabIds"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "get_cookies",
       "description": "Get cookies for a URL. Defaults to current tab.",
       "parameters": {
@@ -935,48 +621,6 @@
   {
     "type": "function",
     "function": {
-      "name": "copy_to_clipboard",
-      "description": "Copy text to the system clipboard.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string",
-            "description": "Text to copy."
-          }
-        },
-        "required": [
-          "text"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "read_pdf",
-      "description": "Extract text from a PDF URL. Returns page-by-page text.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "PDF URL."
-          },
-          "maxPages": {
-            "type": "integer",
-            "description": "Max pages to extract (default: 20)."
-          }
-        },
-        "required": [
-          "url"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "search_history",
       "description": "Search browser history by keyword.",
       "parameters": {
@@ -994,75 +638,6 @@
         "required": [
           "query"
         ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_bookmark",
-      "description": "Bookmark a page. Defaults to current tab.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Bookmark title."
-          },
-          "url": {
-            "type": "string",
-            "description": "URL to bookmark."
-          },
-          "parentId": {
-            "type": "string",
-            "description": "Parent folder ID."
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "get_bookmarks",
-      "description": "Search bookmarks by keyword.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Search keyword."
-          },
-          "maxResults": {
-            "type": "integer",
-            "description": "Max results (default: 20)."
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_window",
-      "description": "Open a new browser window. Optionally incognito.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "URL to open in the new window."
-          },
-          "incognito": {
-            "type": "boolean",
-            "description": "Open in incognito mode."
-          }
-        },
-        "required": []
       }
     }
   },
@@ -1102,18 +677,6 @@
   {
     "type": "function",
     "function": {
-      "name": "fast_forward",
-      "description": "Toggle fast-forward mode: accelerates all page timers (setTimeout/setInterval) to fire instantly. Use when content appears after a countdown or timed delay. Call again to restore normal timing.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "recall_demo",
       "description": "Retrieve a saved demonstration by name or description. Returns step-by-step instructions from a previously recorded workflow. Use when you recognize a matching demo from the catalog, or when stuck on a repetitive task.",
       "parameters": {
@@ -1126,30 +689,6 @@
         },
         "required": [
           "query"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "send_notification",
-      "description": "Show a desktop notification to the user.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Notification title."
-          },
-          "message": {
-            "type": "string",
-            "description": "Notification body."
-          }
-        },
-        "required": [
-          "title",
-          "message"
         ]
       }
     }

@@ -31,13 +31,10 @@ Scripts use `tsx` for TypeScript execution and `vitest` for testing. The `tsconf
 
 ## Architecture
 
-Chrome Manifest V3 extension with four isolated execution contexts communicating via `chrome.runtime.onMessage`:
+Chrome Manifest V3 extension with three isolated execution contexts communicating via `chrome.runtime.onMessage`:
 
 ```
 Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM)
-                                       ↕
-                               Offscreen Document
-                          (Memory: SQLite + Voy + Transformers.js)
 ```
 
 ### Service Worker (`src/background/`)
@@ -50,11 +47,10 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier. Fast pool: Cerebras (`gpt-oss-120b`) → Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Smart pool: Cerebras (`zai-glm-4.7`) → OpenRouter (`z-ai/glm-4.7`). Both pools use `PoolConfig` interface for generic configuration. `ProviderPool` manages cooldowns (60s on 429) and immediate failover. `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so callers know which provider served after failover. Streaming payload includes `stream_options: { include_usage: true }` to ensure Cerebras/Groq return token counts. `switchToSmart()` reads from smart pool, `switchToFast()` reads from fast pool. GLM-4.7 has native reasoning (no `reasoning` parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 53 tools and bridges to content script / memory.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier. Executor pool: Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Planner pool: OpenRouter (`deepseek/deepseek-v3.2`). Both pools use `PoolConfig` interface for generic configuration. `ProviderPool` manages cooldowns (60s on 429) and immediate failover. `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so callers know which provider served after failover. Streaming payload includes `stream_options: { include_usage: true }` to ensure Groq returns token counts. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 51 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
-- `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
 - `navigation.ts` — Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
@@ -80,39 +76,29 @@ React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 - `hooks/useSpeechToText.ts` — `useSpeechToText()` custom hook. Two providers: Browser (Web Speech API, real-time interim + final transcripts) and Groq (MediaRecorder → Whisper `whisper-large-v3-turbo` API). Returns `{ isRecording, isProcessing, error, toggle, stop, isSupported }`.
 - `components/` — `Header`, `MessageBubble`, `InputArea` (mic button for voice input), `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
-### Offscreen Document (`src/offscreen/`)
-
-Runs heavy memory operations outside the service worker.
-
-- `offscreen.ts` — Entry point. Initializes the offscreen document.
-- `memory/main.ts` — Message handler wrapping `VectorStore`.
-- `memory/storage.ts` — `VectorStore`. Hybrid search: Transformers.js embeddings (all-MiniLM-L6-v2) + Voy vector search + SQLite FTS5 keyword search, fused with Reciprocal Rank Fusion.
-- `memory/utils.ts` — `reciprocalRankFusion()`. RRF scoring algorithm (K=60) combining semantic and keyword result rankings.
-- `memory/worker.ts` — Web Worker for Transformers.js embedding pipeline. Loads `Xenova/all-MiniLM-L6-v2` model (fp32/wasm), handles `embed` requests via `postMessage`.
-
 ### Utilities (`src/utils/`)
 
 Shared utilities used across all execution contexts. Barrel-exported via `index.ts`.
 
-- `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel/offscreen). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
+- `logger.ts` — Structured `Logger` class. Auto-detects execution context (background/content/sidepanel). Color-coded DevTools output with collapsible groups. Persists to `chrome.storage.local` via `storage-logger.ts`.
 - `storage-logger.ts` — `StorageLogger` ring buffer (2000 entries) in `chrome.storage.local`. Batched writes (20 entries or 5s interval). Auto-redacts API keys/tokens. Also drains to local HTTP server (`127.0.0.1:7589`) for disk persistence when `npm run logs` is running.
-- `context.ts` — `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`, `isOffscreen()`.
+- `context.ts` — `getExecutionContext()` detects which Chrome extension context code is running in. Helpers: `isContentScript()`, `isBackground()`, `isSidepanel()`.
 
 ### Types (`src/types/index.ts`)
 
 Single source of truth for all interfaces. Key patterns:
 
-- `RuntimeMessage` — discriminated union (26 members, discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`.
-- `ToolName` enum (53 tools) → `ToolArgsMap` maps each tool to its typed arguments.
+- `RuntimeMessage` — discriminated union (discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`.
+- `ToolName` enum (47 tools) → `ToolArgsMap` maps each tool to its typed arguments.
 - `ToolDefinition` — OpenAI function-calling schema format, used by `ToolRegistry`.
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
 - `Result<T, E>` — discriminated union for fallible operations.
-- `UserSettings` — OpenRouter API key, Groq API key, Cerebras API key, maxTurns, contextWindowSize, memory/workspace toggles, theme, showElementTags, visionModel, confirmPlan, speechProvider (`"browser"` | `"groq"`).
+- `UserSettings` — OpenRouter API key, Groq API key, maxTurns, contextWindowSize, workspace toggle, theme, showElementTags, speechProvider (`"browser"` | `"groq"`).
 
 ### Messaging Protocol
 
-All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content, offscreen), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→offscreen memory uses `MEMORY_WORKER` / `MEMORY_WORKER_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
+All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
 
 ### Traces & Evals
 
@@ -122,7 +108,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 **Trace Query** (`scripts/trace-query.ts`): CLI for querying trace files. Commands: `list`, `show <id>`, `turns <id>`, `turn <id> <N>`, `filter --outcome <o>`, `stats`.
 
-**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, screenshots, skills, and memory. Start with `npm run logs` or `npm run dev`.
+**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, and screenshots. Start with `npm run logs` or `npm run dev`.
 
 **Eval Pipeline** (`evals/`): Trace-based evaluation system that replays recorded interactions offline.
 
@@ -148,7 +134,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 Tests use **Vitest** with `happy-dom` for DOM simulation. The global test setup (`tests/setup.ts`) mocks `chrome.*` APIs, `getBoundingClientRect`, `scrollIntoView`, etc. Tests live in `tests/` mirroring `src/` structure.
 
-Test files cover: agent loop, context manager, keepalive, navigation bridge, security, streaming, tools, content script (tagging, snapshot, shadow DOM), memory (RRF, storage), sidepanel store, and logger.
+Test files cover: agent loop, context manager, keepalive, navigation bridge, security, streaming, tools, content script (tagging, snapshot, shadow DOM), sidepanel store, and logger.
 
 ## Debugging
 
@@ -160,7 +146,7 @@ When investigating errors (build failures, runtime exceptions, unexpected behavi
 4. **Search for a keyword**: `npx tsx scripts/log-query.ts search <text>`
 5. **Log file location**: `logs/opensidebar.jsonl` (JSONL format, one structured entry per line)
 
-The extension's `StorageLogger` captures structured logs from all four execution contexts (background, content, sidepanel, offscreen) with auto-redacted secrets. When `npm run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
+The extension's `StorageLogger` captures structured logs from all three execution contexts (background, content, sidepanel) with auto-redacted secrets. When `npm run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
 
 For build errors, also check `npm run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
 
@@ -171,7 +157,7 @@ For build errors, also check `npm run build` output directly — Vite/Rollup sur
 All agent infrastructure (planning, progress tracking, completion judgment, stagnation detection) must be **task-agnostic**. Never hardcode logic for a specific website, challenge, or workflow. The agent should handle a complex multi-step workflow the same way it handles a multi-page checkout, a complex form, or a research task across multiple tabs.
 
 - **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong in the agent loop.
-- **The agent adapts through prompting and memory, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses `memory_add` / `memory_search` to learn and recall strategies across sessions.
+- **The agent adapts through prompting and demonstrations, not code.** If the user wants the agent to solve a specific challenge, they describe it in the input. The agent uses recorded demos to learn and recall strategies across sessions.
 - **Tools are generic primitives.** Click, type, scroll, navigate — not "solve step 5 of the challenge." Higher-level behavior emerges from the LLM's reasoning over these primitives.
 - **Plans are dynamic.** The planner decomposes any user query into subtasks based on context — it doesn't have a list of known task templates.
 

@@ -11,7 +11,6 @@ import {
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1/chat/completions";
 
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -31,16 +30,12 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Fast model tier — used for initial turns (OpenRouter fallback) */
-export const MODEL_FAST = "openai/gpt-oss-120b";
-/** Fast model tier — used for initial turns (Groq, when enabled) */
-export const MODEL_FAST_GROQ = "openai/gpt-oss-120b";
-/** Fast model tier — used for initial turns (Cerebras, highest priority) */
-export const MODEL_FAST_CEREBRAS = "gpt-oss-120b";
-/** Smart model tier — used after escalation (OpenRouter fallback) */
-export const MODEL_SMART = "z-ai/glm-4.7";
-/** Smart model tier — used after escalation (Cerebras, highest priority) */
-export const MODEL_SMART_CEREBRAS = "zai-glm-4.7";
+/** Executor model tier — used for initial turns (OpenRouter fallback) */
+export const MODEL_EXECUTOR = "openai/gpt-oss-120b";
+/** Executor model tier — used for initial turns (Groq, when enabled) */
+export const MODEL_EXECUTOR_GROQ = "openai/gpt-oss-120b";
+/** Planner model tier — used after escalation (OpenRouter) */
+export const MODEL_PLANNER = "deepseek/deepseek-v3.2";
 
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
@@ -60,15 +55,6 @@ function groqProvider(apiKey: string): ProviderConfig {
     apiKey,
     headers: {},
     providerId: "groq",
-  };
-}
-
-function cerebrasProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: CEREBRAS_BASE_URL,
-    apiKey,
-    headers: {},
-    providerId: "cerebras",
   };
 }
 
@@ -95,7 +81,7 @@ export function extractThinkContent(text: string): string | null {
 export function stripThinkTags(text: string): string {
   // XML think blocks
   let result = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  // Markdown Think/Observe/Verify sections (Cerebras/Groq pattern)
+  // Markdown Think/Observe/Verify sections
   result = result
     .replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "")
     .trim();
@@ -205,15 +191,14 @@ export interface ProviderSlot {
 
 /** Model identifiers per provider for a given tier. */
 export interface PoolConfig {
-  cerebrasModel?: string;
   groqModel?: string;
   openRouterModel: string;
 }
 
 /**
- * Priority-based provider pool. Cerebras → Groq → OpenRouter (fastest first).
+ * Priority-based provider pool. Groq → OpenRouter (fastest first).
  * On 429, the provider is placed on a 60s cooldown and the next provider is used.
- * Used for both fast and smart model tiers with different PoolConfig.
+ * Used for both executor and planner model tiers with different PoolConfig.
  */
 export class ProviderPool {
   private slots: ProviderSlot[];
@@ -222,17 +207,9 @@ export class ProviderPool {
     openRouterKey: string,
     config: PoolConfig,
     groqKey?: string,
-    cerebrasKey?: string,
   ) {
     this.slots = [];
     // Priority: fastest first
-    if (cerebrasKey && config.cerebrasModel) {
-      this.slots.push({
-        provider: cerebrasProvider(cerebrasKey),
-        cooldownUntil: 0,
-        model: config.cerebrasModel,
-      });
-    }
     if (groqKey && config.groqModel) {
       this.slots.push({
         provider: groqProvider(groqKey),
@@ -309,60 +286,53 @@ export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
   private openRouterApiKey: string;
-  /** Priority-based provider pool for fast model failover */
-  private fastPool: ProviderPool;
-  /** Priority-based provider pool for smart model failover */
-  private smartPool: ProviderPool;
-  /** Whether the client is currently in smart model tier */
-  private _isSmartTier = false;
+  /** Priority-based provider pool for executor model failover */
+  private executorPool: ProviderPool;
+  /** Priority-based provider pool for planner model failover */
+  private plannerPool: ProviderPool;
+  /** Whether the client is currently in planner model tier */
+  private _isPlannerTier = false;
 
   /**
    * Creates a new LLM client with priority-based provider failover.
-   * @param openRouterApiKey - OpenRouter key (always needed for smart model + fallback)
-   * @param groqApiKey - Groq key (optional; auto-joins fast pool when present)
-   * @param cerebrasApiKey - Cerebras key (optional; joins both pools at highest priority)
-   * @param model - Model ID override (defaults to fast pool's top-priority model)
+   * @param openRouterApiKey - OpenRouter key (always needed for planner model + fallback)
+   * @param groqApiKey - Groq key (optional; auto-joins executor pool when present)
+   * @param model - Model ID override (defaults to executor pool's top-priority model)
    */
   constructor(
     openRouterApiKey: string,
     groqApiKey?: string,
-    cerebrasApiKey?: string,
     model?: string,
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    // Build fast pool: Cerebras → Groq → OpenRouter
-    this.fastPool = new ProviderPool(
+    // Build executor pool: Groq → OpenRouter
+    this.executorPool = new ProviderPool(
       openRouterApiKey,
       {
-        cerebrasModel: MODEL_FAST_CEREBRAS,
-        groqModel: MODEL_FAST_GROQ,
-        openRouterModel: MODEL_FAST,
+        groqModel: MODEL_EXECUTOR_GROQ,
+        openRouterModel: MODEL_EXECUTOR,
       },
       groqApiKey,
-      cerebrasApiKey,
     );
 
-    // Build smart pool: Cerebras → OpenRouter (no Groq for smart tier)
-    this.smartPool = new ProviderPool(
+    // Build planner pool: OpenRouter only (DeepSeek V3.2 not on Groq)
+    this.plannerPool = new ProviderPool(
       openRouterApiKey,
       {
-        cerebrasModel: MODEL_SMART_CEREBRAS,
-        openRouterModel: MODEL_SMART,
+        openRouterModel: MODEL_PLANNER,
       },
-      undefined,
-      cerebrasApiKey,
     );
 
-    // Initialize from fast pool's top priority
-    const initialSlot = this.fastPool.getActive();
+    // Initialize from executor pool's top priority
+    const initialSlot = this.executorPool.getActive();
     this.model = model ?? initialSlot.model;
     this.provider = initialSlot.provider;
   }
 
-  /** Whether the client is currently using the smart model tier */
-  public isSmartTier(): boolean {
-    return this._isSmartTier;
+  /** Whether the client is currently using the planner model tier */
+  public isPlannerTier(): boolean {
+    return this._isPlannerTier;
   }
 
   /** Get the currently active model ID */
@@ -375,9 +345,9 @@ export class LLMClient {
     return this.provider.providerId;
   }
 
-  /** Get provider info for the currently active fast/smart slot */
+  /** Get provider info for the currently active executor/planner slot */
   public getActiveProviderInfo(): { providerId: string; model: string } {
-    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const slot = pool.getActive();
     return {
       providerId: slot.provider.providerId,
@@ -392,12 +362,12 @@ export class LLMClient {
   }
 
   /**
-   * Switch to smart model tier. Used during escalation.
-   * Reads from smart pool (Cerebras → OpenRouter) for best available provider.
+   * Switch to planner model tier. Used during escalation.
+   * Reads from planner pool for best available provider.
    */
-  public switchToSmart(): void {
-    const slot = this.smartPool.getActive();
-    logger.info("agent", "Switching to smart model", {
+  public switchToPlanner(): void {
+    const slot = this.plannerPool.getActive();
+    logger.info("agent", "Switching to planner model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
       toModel: slot.model,
@@ -405,16 +375,16 @@ export class LLMClient {
     });
     this.model = slot.model;
     this.provider = slot.provider;
-    this._isSmartTier = true;
+    this._isPlannerTier = true;
   }
 
   /**
-   * Switch back to fast model. Used during de-escalation when progress resumes.
-   * Reads from fast pool to get the fastest available provider (respects cooldowns).
+   * Switch back to executor model. Used during de-escalation when progress resumes.
+   * Reads from executor pool to get the fastest available provider (respects cooldowns).
    */
-  public switchToFast(): void {
-    const slot = this.fastPool.getActive();
-    logger.info("agent", "Switching back to fast model", {
+  public switchToExecutor(): void {
+    const slot = this.executorPool.getActive();
+    logger.info("agent", "Switching back to executor model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
       toModel: slot.model,
@@ -422,7 +392,7 @@ export class LLMClient {
     });
     this.model = slot.model;
     this.provider = slot.provider;
-    this._isSmartTier = false;
+    this._isPlannerTier = false;
   }
 
   /** Rebuild request for a different provider (swaps URL, headers, AND model in body) */
@@ -474,7 +444,7 @@ export class LLMClient {
 
         // Immediate provider failover on 429 (rate limit)
         if (response.status === 429 && providerId) {
-          const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+          const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
           pool.cooldown(providerId);
           const fallback = pool.getNextFallback(providerId);
           if (fallback) {
@@ -507,7 +477,7 @@ export class LLMClient {
 
         // Permanent provider disable on 402 (credit exhaustion)
         if (response.status === 402 && providerId) {
-          const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+          const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
           pool.disableForSession(providerId);
           logger.warn(
             "agent",
@@ -554,7 +524,7 @@ export class LLMClient {
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
-    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
     let activeModel = activeSlot.model;
@@ -563,9 +533,7 @@ export class LLMClient {
       const name =
         provider.providerId === "groq"
           ? "Groq"
-          : provider.providerId === "cerebras"
-            ? "Cerebras"
-            : "OpenRouter";
+          : "OpenRouter";
       throw new Error(
         `${name} API Key is missing. Please configure it in settings.`,
       );
@@ -600,7 +568,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter" | "groq" | "cerebras";
+      let actualProviderId: "openrouter" | "groq";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -620,8 +588,7 @@ export class LLMClient {
         response = fetchResult.response;
         actualProviderId = fetchResult.actualProviderId as
           | "openrouter"
-          | "groq"
-          | "cerebras";
+          | "groq";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -681,15 +648,11 @@ export class LLMClient {
           const providerName =
             provider.providerId === "groq"
               ? "Groq"
-              : provider.providerId === "cerebras"
-                ? "Cerebras"
-                : "OpenRouter";
+              : "OpenRouter";
           const creditsUrl =
             provider.providerId === "groq"
               ? "console.groq.com/settings/billing"
-              : provider.providerId === "cerebras"
-                ? "cloud.cerebras.ai"
-                : "openrouter.ai/credits";
+              : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
@@ -779,7 +742,7 @@ export class LLMClient {
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
-    const pool = this._isSmartTier ? this.smartPool : this.fastPool;
+    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
     let activeModel = activeSlot.model;
@@ -788,9 +751,7 @@ export class LLMClient {
       const name =
         provider.providerId === "groq"
           ? "Groq"
-          : provider.providerId === "cerebras"
-            ? "Cerebras"
-            : "OpenRouter";
+          : "OpenRouter";
       throw new Error(
         `${name} API Key is missing. Please configure it in settings.`,
       );
@@ -827,7 +788,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter" | "groq" | "cerebras";
+      let actualProviderId: "openrouter" | "groq";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -847,8 +808,7 @@ export class LLMClient {
         response = fetchResult.response;
         actualProviderId = fetchResult.actualProviderId as
           | "openrouter"
-          | "groq"
-          | "cerebras";
+          | "groq";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -908,15 +868,11 @@ export class LLMClient {
           const providerName =
             provider.providerId === "groq"
               ? "Groq"
-              : provider.providerId === "cerebras"
-                ? "Cerebras"
-                : "OpenRouter";
+              : "OpenRouter";
           const creditsUrl =
             provider.providerId === "groq"
               ? "console.groq.com/settings/billing"
-              : provider.providerId === "cerebras"
-                ? "cloud.cerebras.ai"
-                : "openrouter.ai/credits";
+              : "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(

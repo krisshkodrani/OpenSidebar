@@ -19,11 +19,10 @@ declare const __DEV__: boolean;
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
-export type LogSource = "background" | "content" | "sidepanel" | "offscreen";
+export type LogSource = "background" | "content" | "sidepanel";
 
 export type LogCategory =
   | "agent"
-  | "memory"
   | "tools"
   | "ui"
   | "system"
@@ -62,7 +61,6 @@ class Logger {
     if (typeof chrome !== "undefined" && chrome.runtime) {
       const url = typeof window !== "undefined" ? window.location.href : "";
       if (url.includes("sidepanel")) return "sidepanel";
-      if (url.includes("offscreen")) return "offscreen";
       if (url.startsWith("http")) return "content";
       if (typeof window === "undefined") return "background";
     }

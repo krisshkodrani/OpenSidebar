@@ -13,7 +13,7 @@ describe("trace role contract compliance", () => {
             type: "execution_contract",
             data: {
               role: "executor",
-              modelTier: "fast",
+              modelTier: "executor",
               initialModel: "openai/gpt-oss-120b",
               allowedTools: ["read_page", "done"],
             },
@@ -30,15 +30,15 @@ describe("trace role contract compliance", () => {
     const turns = [
       {
         turnNumber: 1,
-        llmRequest: { model: "z-ai/glm-4.7" },
+        llmRequest: { model: "deepseek/deepseek-v3.2" },
         toolExecutions: [{ toolName: "navigate" }],
         events: [
           {
             type: "execution_contract",
             data: {
               role: "executor",
-              modelTier: "fast",
-              initialModel: "z-ai/glm-4.7",
+              modelTier: "executor",
+              initialModel: "deepseek/deepseek-v3.2",
               allowedTools: ["read_page", "done"],
             },
           },

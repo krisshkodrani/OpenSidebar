@@ -1,7 +1,12 @@
 import React, { useCallback, useRef, useState } from "react";
 import { marked } from "marked";
 import { useStore } from "../../store";
-import { formatDuration, formatCost, formatTokens, truncate } from "../../utils";
+import {
+  formatDuration,
+  formatCost,
+  formatTokens,
+  truncate,
+} from "../../utils";
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -11,7 +16,8 @@ const STORAGE_KEY = "openrouter_api_key";
 const MODEL = "x-ai/grok-4.1-fast";
 
 function getApiKey(): string {
-  const buildKey = typeof __OPENROUTER_API_KEY__ !== "undefined" ? __OPENROUTER_API_KEY__ : "";
+  const buildKey =
+    typeof __OPENROUTER_API_KEY__ !== "undefined" ? __OPENROUTER_API_KEY__ : "";
   if (buildKey) return buildKey;
   return localStorage.getItem(STORAGE_KEY) ?? "";
 }
@@ -23,16 +29,19 @@ function buildPrompt(
   logs: { lvl: string; msg: string; cat?: string; ts?: string }[],
 ): string {
   const metrics = session.metrics as Record<string, unknown> | undefined;
-  const durationMs = ((session.endTime as number) || 0) - ((session.startTime as number) || 0);
+  const durationMs =
+    ((session.endTime as number) || 0) - ((session.startTime as number) || 0);
 
   let cost = "";
   let tokens = "";
   if (metrics) {
     if (metrics.totalCost) cost = formatCost(metrics.totalCost as number);
-    if (metrics.totalTokens) tokens = formatTokens(metrics.totalTokens as number);
+    if (metrics.totalTokens)
+      tokens = formatTokens(metrics.totalTokens as number);
   } else {
     if (session.totalCost) cost = formatCost(session.totalCost as number);
-    if (session.totalTokens) tokens = formatTokens(session.totalTokens as number);
+    if (session.totalTokens)
+      tokens = formatTokens(session.totalTokens as number);
   }
 
   const lines: string[] = [];
@@ -58,19 +67,31 @@ function buildPrompt(
     // LLM content
     const llmContent = (e.llmContent as string) || (e.content as string) || "";
     if (llmContent) {
-      const trimmed = llmContent.length > 2000 ? llmContent.slice(0, 2000) + "..." : llmContent;
+      const trimmed =
+        llmContent.length > 2000
+          ? llmContent.slice(0, 2000) + "..."
+          : llmContent;
       lines.push(`LLM: ${trimmed}`);
     }
     // Tool calls
-    const tools = (e.toolCalls as Record<string, unknown>[]) || (e.tools as Record<string, unknown>[]) || [];
+    const tools =
+      (e.toolCalls as Record<string, unknown>[]) ||
+      (e.tools as Record<string, unknown>[]) ||
+      [];
     for (const t of tools) {
       const name = t.name || t.toolName || "unknown";
       const args = t.args || t.arguments || {};
       const result = t.result ?? t.output ?? "";
-      const success = t.success !== undefined ? t.success : t.error ? false : true;
-      lines.push(`  Tool: ${name}(${typeof args === "string" ? args : JSON.stringify(args)})`);
-      const resStr = typeof result === "string" ? result : JSON.stringify(result);
-      lines.push(`  Result [${success ? "OK" : "ERROR"}]: ${truncate(resStr, 500)}`);
+      const success =
+        t.success !== undefined ? t.success : t.error ? false : true;
+      lines.push(
+        `  Tool: ${name}(${typeof args === "string" ? args : JSON.stringify(args)})`,
+      );
+      const resStr =
+        typeof result === "string" ? result : JSON.stringify(result);
+      lines.push(
+        `  Result [${success ? "OK" : "ERROR"}]: ${truncate(resStr, 500)}`,
+      );
     }
     // Events
     const events = (e.events as Record<string, unknown>[]) || [];
@@ -81,7 +102,13 @@ function buildPrompt(
   }
 
   // Warn/error logs only
-  const importantLogs = logs.filter((l) => l.lvl === "WARN" || l.lvl === "ERROR" || l.lvl === "warn" || l.lvl === "error");
+  const importantLogs = logs.filter(
+    (l) =>
+      l.lvl === "WARN" ||
+      l.lvl === "ERROR" ||
+      l.lvl === "warn" ||
+      l.lvl === "error",
+  );
   if (importantLogs.length > 0) {
     lines.push("## Logs (WARN/ERROR only)");
     for (const l of importantLogs.slice(0, 100)) {
@@ -126,8 +153,12 @@ export default function StoryPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef("");
 
-  const session = sessions.find((s) => (s.sessionId as string) === currentSessionId);
-  const cachedStory = currentSessionId ? storyCache[currentSessionId] : undefined;
+  const session = sessions.find(
+    (s) => (s.sessionId as string) === currentSessionId,
+  );
+  const cachedStory = currentSessionId
+    ? storyCache[currentSessionId]
+    : undefined;
 
   const generate = useCallback(async () => {
     if (!currentSessionId || !session) return;
@@ -148,23 +179,26 @@ export default function StoryPanel() {
     abortRef.current = new AbortController();
 
     try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            stream: true,
+            max_tokens: 4096,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: prompt },
+            ],
+          }),
+          signal: abortRef.current.signal,
         },
-        body: JSON.stringify({
-          model: MODEL,
-          stream: true,
-          max_tokens: 4096,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: prompt },
-          ],
-        }),
-        signal: abortRef.current.signal,
-      });
+      );
 
       if (!resp.ok) {
         const body = await resp.text();
@@ -225,7 +259,15 @@ export default function StoryPanel() {
       setStoryLoading(false);
       abortRef.current = null;
     }
-  }, [currentSessionId, session, currentEntries, sessionLogs, setStoryCache, setStoryLoading, setStoryError]);
+  }, [
+    currentSessionId,
+    session,
+    currentEntries,
+    sessionLogs,
+    setStoryCache,
+    setStoryLoading,
+    setStoryError,
+  ]);
 
   const handleSaveKey = () => {
     if (apiKeyInput.trim()) {
@@ -238,7 +280,9 @@ export default function StoryPanel() {
   if (!getApiKey()) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <div className="text-trace-muted text-sm">OpenRouter API key required to generate stories</div>
+        <div className="text-trace-muted text-sm">
+          OpenRouter API key required to generate stories
+        </div>
         <div className="flex gap-2">
           <input
             type="password"

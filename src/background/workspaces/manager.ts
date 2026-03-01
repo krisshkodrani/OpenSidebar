@@ -22,9 +22,9 @@ export class WorkspaceManager {
   private deps: Required<WorkspaceManagerDeps>;
 
   /**
-   * Tab IDs currently being ungrouped by the agent (via ungroup_tabs tool).
+   * Tab IDs currently being ungrouped by the agent.
    * The handleTabGroupChanged listener skips re-adding these tabs so the
-   * tool doesn't fight with the "locked workspace" behavior.
+   * agent doesn't fight with the "locked workspace" behavior.
    */
   private _bypassRegroup = new Set<number>();
 
@@ -158,7 +158,7 @@ export class WorkspaceManager {
     // Only care about group changes
     if (changeInfo.groupId === undefined) return;
 
-    // Skip agent-initiated ungroups (from ungroup_tabs / group_tabs tools)
+    // Skip agent-initiated ungroups
     if (this._bypassRegroup.has(tabId)) return;
 
     const workspace = this.getWorkspaceByTabId(tabId);
@@ -274,9 +274,7 @@ export class WorkspaceManager {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         if (attempt > 0) {
-          await new Promise((r) =>
-            setTimeout(r, 50 * Math.pow(2, attempt)),
-          );
+          await new Promise((r) => setTimeout(r, 50 * Math.pow(2, attempt)));
         }
         await chrome.tabGroups.update(groupId, { title, color });
         const verify = await chrome.tabGroups.get(groupId);

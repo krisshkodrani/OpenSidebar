@@ -5,7 +5,11 @@ import { useSpeechToText } from "../hooks/useSpeechToText";
 import { StatusLine } from "./StatusLine";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
-import { isSlashCommand, getCommandCompletions, CommandHint } from "../slash-commands";
+import {
+  isSlashCommand,
+  getCommandCompletions,
+  CommandHint,
+} from "../slash-commands";
 
 import { clsx } from "clsx";
 
@@ -221,7 +225,13 @@ export function InputArea({
           value={inputText}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder={demoRecording && !isAgentRunning ? "Add annotation..." : isAgentRunning ? "Send feedback..." : "Ask OpenSidebar..."}
+          placeholder={
+            demoRecording && !isAgentRunning
+              ? "Add annotation..."
+              : isAgentRunning
+                ? "Send feedback..."
+                : "Ask OpenSidebar..."
+          }
           className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-500"
           rows={1}
         />
@@ -275,7 +285,13 @@ export function InputArea({
                     ? "bg-amber-500 hover:bg-amber-600 text-white"
                     : "bg-primary-600 hover:bg-primary-700 text-white",
               )}
-              aria-label={demoRecording && !isAgentRunning ? "Send annotation" : isAgentRunning ? "Send feedback" : "Send message"}
+              aria-label={
+                demoRecording && !isAgentRunning
+                  ? "Send annotation"
+                  : isAgentRunning
+                    ? "Send feedback"
+                    : "Send message"
+              }
             >
               <ArrowUp size={16} />
             </button>

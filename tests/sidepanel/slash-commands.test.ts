@@ -22,7 +22,6 @@ describe("isSlashCommand", () => {
     expect(isSlashCommand("/scroll down")).toBe(true);
     expect(isSlashCommand("/navigate https://example.com")).toBe(true);
     expect(isSlashCommand("/back")).toBe(true);
-    expect(isSlashCommand("/forward")).toBe(true);
     expect(isSlashCommand("/tool click_element {}")).toBe(true);
   });
 
@@ -136,15 +135,6 @@ describe("parseSlashCommand", () => {
     expect(result).toEqual({
       command: "tool",
       toolName: ToolName.GO_BACK,
-      args: {},
-    });
-  });
-
-  test("parses /forward", () => {
-    const result = parseSlashCommand("/forward");
-    expect(result).toEqual({
-      command: "tool",
-      toolName: ToolName.GO_FORWARD,
       args: {},
     });
   });

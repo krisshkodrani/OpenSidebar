@@ -8,22 +8,14 @@ import type { UserSettings } from "../../src/types";
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-or-key",
   groqApiKey: "",
-  cerebrasApiKey: "test-cerebras-key",
   maxTurns: 10,
   contextWindowSize: 16000,
-  memoryEnabled: true,
   workspaceEnabled: true,
   theme: "system",
-  showElementTags: false,
-  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: false,
-  disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: true,
-  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
-  teachModeEnabled: false,
-  autoSkillReplayEnabled: false,
 };
 
 /** Mock fetch that intercepts API calls and passes through log server requests. */
@@ -159,7 +151,7 @@ describe("classifyRoute", () => {
         "Do something",
         "Page",
         "https://example.com",
-        { ...baseSettings, cerebrasApiKey: "key-only" , openRouterApiKey: "" },
+        { ...baseSettings, groqApiKey: "key-only" , openRouterApiKey: "" },
       );
       expect(result.route).toBe("agent");
       expect(result.reason).toBe("Router fallback");
@@ -171,23 +163,20 @@ describe("classifyRoute", () => {
   test("falls back to agent when no API keys available", async () => {
     const savedOR = (globalThis as any).__OPENROUTER_API_KEY__;
     const savedGroq = (globalThis as any).__GROQ_API_KEY__;
-    const savedCerebras = (globalThis as any).__CEREBRAS_API_KEY__;
     (globalThis as any).__OPENROUTER_API_KEY__ = "";
     (globalThis as any).__GROQ_API_KEY__ = "";
-    (globalThis as any).__CEREBRAS_API_KEY__ = "";
     try {
       const result = await classifyRoute(
         "What is this?",
         "Page",
         "https://example.com",
-        { ...baseSettings, cerebrasApiKey: "", openRouterApiKey: "", groqApiKey: "" },
+        { ...baseSettings, openRouterApiKey: "", groqApiKey: "" },
       );
       expect(result.route).toBe("agent");
       expect(result.reason).toBe("Router fallback");
     } finally {
       (globalThis as any).__OPENROUTER_API_KEY__ = savedOR;
       (globalThis as any).__GROQ_API_KEY__ = savedGroq;
-      (globalThis as any).__CEREBRAS_API_KEY__ = savedCerebras;
     }
   });
 
@@ -266,7 +255,7 @@ describe("classifyRoute", () => {
     let callCount = 0;
     globalThis.fetch = mockFetch((url) => {
       callCount++;
-      if (url.includes("cerebras")) {
+      if (url.includes("groq")) {
         return new Response("Rate limited", { status: 429 });
       }
       return jsonResponse('{"route": "agent", "confidence": 0.8, "reason": "Fallback provider"}');
@@ -276,7 +265,7 @@ describe("classifyRoute", () => {
         "Click something",
         "Page",
         "https://example.com",
-        { ...baseSettings, cerebrasApiKey: "key1", openRouterApiKey: "key2" },
+        { ...baseSettings, groqApiKey: "key1", openRouterApiKey: "key2" },
       );
       expect(result.route).toBe("agent");
       expect(callCount).toBeGreaterThan(1);

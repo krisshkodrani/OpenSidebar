@@ -56,6 +56,7 @@ export function extractJsonObjects(text: string): unknown[] {
  *   A: { "function": "tool_name", "arguments": {...} }
  *   B: { "tool": "tool_name", ...rest }
  *   C: { "to": "functions.tool_name", "args": {...} }
+ *   D: { "summary": "..." } — bare done() args (some models emit this)
  *
  * Returns recovered ToolCall[] or null if nothing valid was found.
  */
@@ -96,11 +97,27 @@ export function recoverToolCallsFromText(content: string): ToolCall[] | null {
           ? (o.args as Record<string, unknown>)
           : {};
     }
+    // Pattern D: { "summary": "..." } — bare done() args without wrapper.
+    // Some models emit the done() arguments directly as text.
+    else if (
+      typeof o.summary === "string" &&
+      o.summary.length > 0 &&
+      Object.keys(o).length === 1
+    ) {
+      name = "done";
+      args = { summary: o.summary };
+    }
 
     if (!name) continue;
 
     // Unwrap common nesting wrappers (e.g. { tool_input: { text: "foo" } } → { text: "foo" })
-    const WRAPPER_KEYS = ["tool_input", "input", "arguments", "params", "parameters"];
+    const WRAPPER_KEYS = [
+      "tool_input",
+      "input",
+      "arguments",
+      "params",
+      "parameters",
+    ];
     if (Object.keys(args).length === 1) {
       const key = Object.keys(args)[0];
       if (WRAPPER_KEYS.includes(key)) {

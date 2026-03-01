@@ -11,9 +11,9 @@ import {
 import type { RouteDecision } from "./router";
 
 export interface VerificationGate {
-  trigger: string;     // "text 'Code accepted' visible", "URL contains /step3"
+  trigger: string; // "text 'Code accepted' visible", "URL contains /step3"
   action: "call_done" | "advance_step";
-  pattern?: string;    // optional regex for precise matching
+  pattern?: string; // optional regex for precise matching
 }
 
 export interface PlannerAssignment {
@@ -151,12 +151,5 @@ export interface OrchestratorStartInput {
   settings: UserSettings;
   openRouterApiKey: string;
   groqApiKey?: string;
-  cerebrasApiKey?: string;
 }
 
-export interface BufferedMemory {
-  content: string;
-  category: string;
-  sourceUrl: string;
-  createdAt: number;
-}

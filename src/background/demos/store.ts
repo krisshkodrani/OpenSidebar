@@ -1,8 +1,8 @@
 /**
  * DemoStore — CRUD, matching, and persistence for user-recorded demonstrations.
  *
- * Mirrors the SkillStore pattern: chrome.storage.local, tokenized matching,
- * action cleanup pipeline before save.
+ * Persists to chrome.storage.local with tokenized matching
+ * and action cleanup pipeline before save.
  */
 
 import { DemoAction, DemoMatchResult, Demonstration } from "../../types";
@@ -13,7 +13,7 @@ const MAX_DEMOS = 100;
 const MAX_ACTIONS_PER_DEMO = 200;
 const MATCH_THRESHOLD = 0.4;
 
-// --- Text tokenization (shared pattern with SkillStore) ---
+// --- Text tokenization ---
 
 const STOP_WORDS = new Set([
   "the",
@@ -415,9 +415,7 @@ export class DemoStore {
       const goalScore = demo.goal
         ? overlapScore(queryTokens, tokenize(demo.goal))
         : 0;
-      const score = demo.goal
-        ? 0.6 * tokenScore + 0.4 * goalScore
-        : tokenScore;
+      const score = demo.goal ? 0.6 * tokenScore + 0.4 * goalScore : tokenScore;
 
       if (score > 0.2 && (!best || score > best.score)) {
         best = { demo, score };

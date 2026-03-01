@@ -25,19 +25,26 @@ export function initializeBridge(
   const listener = (message: RuntimeMessage) => {
     if (message.source !== MessageSource.BACKGROUND) return;
 
-    // Workspace filter: drop messages for other workspaces
+    // Workspace filter: drop messages for other workspaces.
+    // If the panel has no active workspace yet, also drop workspace-scoped
+    // messages to prevent cross-workspace bleed during startup/switch races.
     const activeWsId = store.getState().activeWorkspaceId;
-    if (
-      message.workspaceId != null &&
-      activeWsId != null &&
-      message.workspaceId !== activeWsId
-    ) {
-      logger.debug("ui", "Dropping message for different workspace", {
-        type: message.type,
-        messageWs: message.workspaceId,
-        activeWs: activeWsId,
-      });
-      return;
+    if (message.workspaceId != null) {
+      if (activeWsId == null) {
+        logger.debug("ui", "Dropping workspace-scoped message without active workspace", {
+          type: message.type,
+          messageWs: message.workspaceId,
+        });
+        return;
+      }
+      if (message.workspaceId !== activeWsId) {
+        logger.debug("ui", "Dropping message for different workspace", {
+          type: message.type,
+          messageWs: message.workspaceId,
+          activeWs: activeWsId,
+        });
+        return;
+      }
     }
 
     logger.debug("ui", "Received message", { type: message.type });
@@ -97,7 +104,8 @@ export function initializeBridge(
         break;
 
       case "STREAM_CHUNK": {
-        const { delta, done, citations, replaceContent, thinking } = message.payload;
+        const { delta, done, citations, replaceContent, thinking } =
+          message.payload;
         if (replaceContent !== undefined) {
           state.replaceStreamContent(replaceContent);
         }
@@ -268,8 +276,6 @@ export function initializeBridge(
       case "DOM_SNAPSHOT_REQUEST":
       case "DOM_SNAPSHOT_RESPONSE":
       case "NAVIGATION_RESUME":
-      case "MEMORY_WORKER":
-      case "MEMORY_WORKER_RESPONSE":
       case "DISMISS_MODALS":
       case "DISMISS_MODALS_RESPONSE":
       case "SKIP_SUBTASK":

@@ -5,7 +5,7 @@ import "../setup";
 vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
     private model = "google/gemini-2.5-flash-lite";
-    _isSmartTier = false;
+    _isPlannerTier = false;
     complete = vi.fn(() =>
       Promise.resolve({
         role: "assistant",
@@ -29,13 +29,13 @@ vi.mock("../../src/background/llm", () => ({
         finish_reason: "stop",
       });
     });
-    switchToSmart = vi.fn(() => {
-      this.model = "minimax/minimax-m2.5"; this._isSmartTier = true;
+    switchToPlanner = vi.fn(() => {
+      this.model = "minimax/minimax-m2.5"; this._isPlannerTier = true;
     });
-    switchToFast = vi.fn(() => {
-      this.model = "google/gemini-2.5-flash-lite"; this._isSmartTier = false;
+    switchToExecutor = vi.fn(() => {
+      this.model = "google/gemini-2.5-flash-lite"; this._isPlannerTier = false;
     });
-    isSmartTier = () => this._isSmartTier;
+    isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
     setFailoverCallback = vi.fn(() => {});
@@ -44,8 +44,8 @@ vi.mock("../../src/background/llm", () => ({
       model: this.model,
     });
   },
-  MODEL_FAST: "google/gemini-2.5-flash-lite",
-  MODEL_SMART: "minimax/minimax-m2.5",
+  MODEL_EXECUTOR: "google/gemini-2.5-flash-lite",
+  MODEL_PLANNER: "minimax/minimax-m2.5",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
   extractThinkContent: () => null,
@@ -67,7 +67,6 @@ function createLoop() {
   const onStep = vi.fn();
   const agent = new AgentLoop(
     "test-key",
-    undefined,
     undefined,
     {
       onStatusUpdate: onStatus,

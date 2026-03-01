@@ -18,12 +18,16 @@ export interface PlanStep {
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
-  verifyAfter?: { trigger: string; action: "call_done" | "advance_step"; pattern?: string };
+  verifyAfter?: {
+    trigger: string;
+    action: "call_done" | "advance_step";
+    pattern?: string;
+  };
   toolProfile?: "full" | "read_only" | "form_fill" | "navigate";
   expectedState?: {
-    description: string;       // what perception should show after step completion
-    urlPattern?: string;       // optional regex for expected URL
-    expectedPhrases?: string[];// key content that should appear in perception
+    description: string; // what perception should show after step completion
+    urlPattern?: string; // optional regex for expected URL
+    expectedPhrases?: string[]; // key content that should appear in perception
   };
 }
 
@@ -57,27 +61,25 @@ const MONITOR_STEP_SYSTEM = renderPrompt("planner.monitor_step.system");
 export class TaskPlanner {
   private llm: LLMClient;
   private openRouterApiKey: string;
-  private cerebrasApiKey?: string;
-  private fastLlm: LLMClient | null = null;
+  private executorLlm: LLMClient | null = null;
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
 
-  constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
+  constructor(openRouterApiKey: string) {
     this.openRouterApiKey = openRouterApiKey;
-    this.cerebrasApiKey = cerebrasApiKey;
-    this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
-    // Planner always uses the smart model tier
-    this.llm.switchToSmart();
+    this.llm = new LLMClient(openRouterApiKey);
+    // Planner always uses the planner model tier
+    this.llm.switchToPlanner();
   }
 
-  /** Lazy-initialized fast-tier LLM client for lightweight monitoring calls */
-  private getFastLlm(): LLMClient {
-    if (!this.fastLlm) {
-      this.fastLlm = new LLMClient(this.openRouterApiKey, undefined, this.cerebrasApiKey);
-      // Stay on fast tier — never switchToSmart
+  /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
+  private getExecutorLlm(): LLMClient {
+    if (!this.executorLlm) {
+      this.executorLlm = new LLMClient(this.openRouterApiKey);
+      // Stay on executor tier — never switchToPlanner
     }
-    return this.fastLlm;
+    return this.executorLlm;
   }
 
   setUsageCallback(
@@ -171,12 +173,21 @@ export class TaskPlanner {
       }
 
       if (!parsed.isMultiStep) {
-        // Simple task — still return difficulty assessment
-        return { subtasks: [], difficulty, limitOverrides };
+        // Simple task — extract single step if provided, otherwise empty
+        const singleSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
+        const singleSubtasks = singleSteps
+          .filter((s: any) => typeof s?.objective === "string")
+          .map((s: any) => s.objective.trim())
+          .filter((s: string) => s.length > 0);
+        return {
+          subtasks: singleSubtasks.slice(0, 1),
+          difficulty,
+          limitOverrides,
+        };
       }
 
       const parseSteps = (value: unknown): PlanStep[] | null => {
-        if (!Array.isArray(value) || value.length < 2) return null;
+        if (!Array.isArray(value) || value.length < 1) return null;
         const result: PlanStep[] = [];
         for (let i = 0; i < value.length; i++) {
           const raw = value[i];
@@ -222,12 +233,16 @@ export class TaskPlanner {
             !Array.isArray(obj.verifyAfter)
           ) {
             const va = obj.verifyAfter as Record<string, unknown>;
-            if (typeof va.trigger === "string" && va.trigger.trim().length > 0) {
+            if (
+              typeof va.trigger === "string" &&
+              va.trigger.trim().length > 0
+            ) {
               verifyAfter = {
                 trigger: va.trigger.trim(),
                 action:
                   va.action === "call_done" ? "call_done" : "advance_step",
-                ...(typeof va.pattern === "string" && va.pattern.trim().length > 0
+                ...(typeof va.pattern === "string" &&
+                va.pattern.trim().length > 0
                   ? { pattern: va.pattern.trim() }
                   : {}),
               };
@@ -235,9 +250,17 @@ export class TaskPlanner {
           }
 
           // Parse optional tool profile
-          const VALID_PROFILES = new Set(["full", "read_only", "form_fill", "navigate"]);
+          const VALID_PROFILES = new Set([
+            "full",
+            "read_only",
+            "form_fill",
+            "navigate",
+          ]);
           let toolProfile: PlanStep["toolProfile"];
-          if (typeof obj.toolProfile === "string" && VALID_PROFILES.has(obj.toolProfile)) {
+          if (
+            typeof obj.toolProfile === "string" &&
+            VALID_PROFILES.has(obj.toolProfile)
+          ) {
             toolProfile = obj.toolProfile as PlanStep["toolProfile"];
           }
 
@@ -249,16 +272,23 @@ export class TaskPlanner {
             !Array.isArray(obj.expectedState)
           ) {
             const es = obj.expectedState as Record<string, unknown>;
-            if (typeof es.description === "string" && es.description.trim().length > 0) {
+            if (
+              typeof es.description === "string" &&
+              es.description.trim().length > 0
+            ) {
               expectedState = {
                 description: es.description.trim(),
-                ...(typeof es.urlPattern === "string" && es.urlPattern.trim().length > 0
+                ...(typeof es.urlPattern === "string" &&
+                es.urlPattern.trim().length > 0
                   ? { urlPattern: es.urlPattern.trim() }
                   : {}),
                 ...(Array.isArray(es.expectedPhrases)
                   ? {
                       expectedPhrases: (es.expectedPhrases as unknown[])
-                        .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+                        .filter(
+                          (p): p is string =>
+                            typeof p === "string" && p.trim().length > 0,
+                        )
                         .map((p) => p.trim()),
                     }
                   : {}),
@@ -459,7 +489,9 @@ export class TaskPlanner {
       // --- Phase A: Heuristic checks (no LLM call) ---
 
       // Check for BLOCKERS in perception
-      const blockerMatch = perception.match(/BLOCKERS:[\s\S]*?(?=\n[A-Z]+:|$)/i);
+      const blockerMatch = perception.match(
+        /BLOCKERS:[\s\S]*?(?=\n[A-Z]+:|$)/i,
+      );
       if (blockerMatch) {
         const blockerText = blockerMatch[0];
         if (/PREREQ\b/i.test(blockerText)) {
@@ -471,7 +503,9 @@ export class TaskPlanner {
           };
         }
         if (/RELEVANT\b/i.test(blockerText) && !/None/i.test(blockerText)) {
-          const relevantMatch = blockerText.match(/RELEVANT\s+\[\d+\]\s+"?([^"\n]+)"?/i);
+          const relevantMatch = blockerText.match(
+            /RELEVANT\s+\[\d+\]\s+"?([^"\n]+)"?/i,
+          );
           return {
             alignment: "blocked",
             reason: "Relevant blocker detected in perception",
@@ -503,7 +537,11 @@ export class TaskPlanner {
       }
 
       // Heuristic decisions
-      if (urlMatches && phrases.length > 0 && matchedPhrases === phrases.length) {
+      if (
+        urlMatches &&
+        phrases.length > 0 &&
+        matchedPhrases === phrases.length
+      ) {
         return {
           alignment: "aligned",
           reason: `URL matches${expected.urlPattern ? " pattern" : ""} and all ${phrases.length} expected phrases found`,
@@ -519,10 +557,10 @@ export class TaskPlanner {
         // URL doesn't match — likely deviated, but confirm with LLM
       }
 
-      // --- Phase B: Fast LLM (heuristics inconclusive) ---
-      const fastLlm = this.getFastLlm();
+      // --- Phase B: Executor LLM (heuristics inconclusive) ---
+      const executorLlm = this.getExecutorLlm();
       const start = Date.now();
-      const response = await fastLlm.complete({
+      const response = await executorLlm.complete({
         messages: [
           {
             role: "system",
@@ -546,12 +584,15 @@ Current perception:\n${perception.slice(0, 800)}`,
         this.usageCallback?.(
           response.usage,
           llmMs,
-          response.actualModel ?? fastLlm.getCurrentModel(),
+          response.actualModel ?? executorLlm.getCurrentModel(),
         );
       }
 
       const text = (response.content || "").trim();
-      const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```(?:json)?\s*/g, "")
+        .replace(/```/g, "")
+        .trim();
       let parsed: any;
       try {
         parsed = JSON.parse(cleaned);
@@ -561,7 +602,12 @@ Current perception:\n${perception.slice(0, 800)}`,
         parsed = JSON.parse(match[0]);
       }
 
-      const VALID_ALIGNMENTS = new Set(["aligned", "progressing", "deviated", "blocked"]);
+      const VALID_ALIGNMENTS = new Set([
+        "aligned",
+        "progressing",
+        "deviated",
+        "blocked",
+      ]);
       const alignment: PlanAlignment = VALID_ALIGNMENTS.has(parsed.alignment)
         ? (parsed.alignment as PlanAlignment)
         : "progressing";
@@ -583,7 +629,7 @@ Current perception:\n${perception.slice(0, 800)}`,
 
   /**
    * Selective replan: replace steps from deviation point onward.
-   * Uses smart model for high-quality plan repair.
+   * Uses planner model for high-quality plan repair.
    */
   async replanFrom(
     originalQuery: string,
@@ -596,9 +642,15 @@ Current perception:\n${perception.slice(0, 800)}`,
     try {
       const REPLAN_SYSTEM = renderPrompt("planner.replan.system");
 
-      const completedText = completedSteps.length > 0
-        ? completedSteps.map((s) => `${s.index + 1}. [done] ${s.objective}${s.result ? ` → ${s.result.slice(0, 100)}` : ""}`).join("\n")
-        : "None completed yet.";
+      const completedText =
+        completedSteps.length > 0
+          ? completedSteps
+              .map(
+                (s) =>
+                  `${s.index + 1}. [done] ${s.objective}${s.result ? ` → ${s.result.slice(0, 100)}` : ""}`,
+              )
+              .join("\n")
+          : "None completed yet.";
 
       const start = Date.now();
       const response = await this.llm.complete({
@@ -624,13 +676,17 @@ Current perception:\n${perception.slice(0, 800)}`,
       }
 
       const text = (response.content || "").trim();
-      const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+      const cleaned = text
+        .replace(/```(?:json)?\s*/g, "")
+        .replace(/```/g, "")
+        .trim();
       let parsed: any;
       try {
         parsed = JSON.parse(cleaned);
       } catch {
         const match = cleaned.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error(`No JSON object found in: ${cleaned.slice(0, 100)}`);
+        if (!match)
+          throw new Error(`No JSON object found in: ${cleaned.slice(0, 100)}`);
         parsed = JSON.parse(match[0]);
       }
 
@@ -644,19 +700,35 @@ Current perception:\n${perception.slice(0, 800)}`,
       for (const raw of rawSteps) {
         if (!raw || typeof raw !== "object") continue;
         const obj = raw as Record<string, unknown>;
-        if (typeof obj.objective !== "string" || obj.objective.trim().length === 0) continue;
+        if (
+          typeof obj.objective !== "string" ||
+          obj.objective.trim().length === 0
+        )
+          continue;
 
         let expectedState: PlanStep["expectedState"];
-        if (obj.expectedState && typeof obj.expectedState === "object" && !Array.isArray(obj.expectedState)) {
+        if (
+          obj.expectedState &&
+          typeof obj.expectedState === "object" &&
+          !Array.isArray(obj.expectedState)
+        ) {
           const es = obj.expectedState as Record<string, unknown>;
-          if (typeof es.description === "string" && es.description.trim().length > 0) {
+          if (
+            typeof es.description === "string" &&
+            es.description.trim().length > 0
+          ) {
             expectedState = {
               description: es.description.trim(),
-              ...(typeof es.urlPattern === "string" && es.urlPattern.trim().length > 0
+              ...(typeof es.urlPattern === "string" &&
+              es.urlPattern.trim().length > 0
                 ? { urlPattern: es.urlPattern.trim() }
                 : {}),
               ...(Array.isArray(es.expectedPhrases)
-                ? { expectedPhrases: (es.expectedPhrases as unknown[]).filter((p): p is string => typeof p === "string").map((p) => p.trim()) }
+                ? {
+                    expectedPhrases: (es.expectedPhrases as unknown[])
+                      .filter((p): p is string => typeof p === "string")
+                      .map((p) => p.trim()),
+                  }
                 : {}),
             };
           }
@@ -664,10 +736,15 @@ Current perception:\n${perception.slice(0, 800)}`,
 
         newSteps.push({
           objective: (obj.objective as string).trim(),
-          successCriteria: typeof obj.successCriteria === "string" ? obj.successCriteria.trim() : `Step completed.`,
+          successCriteria:
+            typeof obj.successCriteria === "string"
+              ? obj.successCriteria.trim()
+              : `Step completed.`,
           dependencies: [],
           assumptions: Array.isArray(obj.assumptions)
-            ? (obj.assumptions as unknown[]).filter((a): a is string => typeof a === "string").map((a) => a.trim())
+            ? (obj.assumptions as unknown[])
+                .filter((a): a is string => typeof a === "string")
+                .map((a) => a.trim())
             : [],
           ...(expectedState ? { expectedState } : {}),
         });

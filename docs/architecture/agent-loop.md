@@ -217,7 +217,7 @@ This is critical because Chrome terminates service workers after ~30 seconds of 
 
 The system prompt provides instructions and context to the LLM. The agent receives instructions about:
 
-- **Capabilities** - 46 available tools for DOM manipulation, tab management, memory, etc.
+- **Capabilities** - 39 available tools for DOM manipulation, tab management, etc.
 - **Rules** - Always call read_page first, use exact numeric tags, call done when complete
 - **Vision** - Screenshot analysis via configurable vision LLM
 
@@ -287,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports **57 tools** across four categories:
+The agent supports **39 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -300,7 +300,6 @@ The agent supports **57 tools** across four categories:
 - `select_option` - Select dropdown option
 - `press_key` - Dispatch keyboard events (with optional modifiers)
 - `drag_and_drop` - Full drag sequence between elements
-- `draw_stroke` - Mouse stroke on canvas elements
 - `hide_element` - Hide element via `display: none`
 - `read_element` - Read specific attribute or text content
 - `execute_js` - Run JavaScript in page context
@@ -318,33 +317,20 @@ The agent supports **57 tools** across four categories:
 - `switch_tab` - Switch to tab
 - `list_tabs` - List open tabs in workspace
 - `go_back` - Go back in history
-- `go_forward` - Go forward in history
 - `wait` - Wait for duration
-
-- `group_tabs` - Group tabs into tab group
-- `ungroup_tabs` - Remove tabs from group
-- `create_window` - Open new browser window
 
 ### Browser API Tools
 
 - `get_cookies` - Get cookies for URL
 - `set_cookie` - Set a cookie
 - `delete_cookie` - Delete a cookie
-- `copy_to_clipboard` - Copy text to clipboard
-- `read_pdf` - Extract text from PDF
 - `search_history` - Search browser history
-- `create_bookmark` - Bookmark a page
-- `get_bookmarks` - Search bookmarks
 - `download_file` - Start file download
-- `transcribe_audio` - Transcribe audio/video element
-- `send_notification` - Show desktop notification
 
 ### Special Tools
 
-- `memory_add` - Save to memory
-- `memory_search` - Search memory
 - `done` - Task completion
-- `escalate` - Voluntary model upgrade (switch from fast to smart model)
+- `escalate` - Voluntary model upgrade (switch from executor to planner model)
 
 ## Safety & Limits
 
@@ -368,7 +354,7 @@ if (!isAllowed) {
 
 Tools classified by risk level (LOW/MEDIUM/HIGH):
 
-- LOW: Read-only (read_page, scroll_page, memory_search, list_tabs, etc.)
+- LOW: Read-only (read_page, scroll_page, list_tabs, etc.)
 - MEDIUM: Mutates state (click_element, type_text, hover_element, etc.)
 - HIGH: Navigation/tabs (navigate, create_tab, close_tab, escalate, etc.)
 
@@ -438,9 +424,9 @@ Users can send messages while the agent is running. These are treated as feedbac
 
 The agent loop operates in a single unified mode that combines the best behaviors:
 
-- **Parallel tool execution** — When no sequential tools (navigate, done, escalate, go_back, go_forward) are present, all tool calls execute via `Promise.all`.
+- **Parallel tool execution** — When no sequential tools (navigate, done, escalate, go_back) are present, all tool calls execute via `Promise.all`.
 - **Modal auto-dismiss** — Cookie banners and overlay modals are dismissed before the first LLM turn.
-- **Two-tier escalation** — Text-only responses trigger reflection→escalate→give-up. The system has two tiers (fast/smart) with a single escalation step. Context distillation compresses history before smart model handoff.
+- **Two-tier escalation** — Text-only responses trigger reflection→escalate→give-up. The system has two tiers (executor/planner) with a single escalation step. Context distillation compresses history before planner model handoff.
 - **Batch snapshot refresh** — A single DOM snapshot refresh runs after all tools complete (not per-tool).
 - **Real-time streaming** — Text deltas streamed to side panel during LLM generation.
 - **Dynamic compression** — Context compression adjusts dynamically (NONE→LIGHT→MEDIUM→HEAVY) based on token budget.
@@ -497,20 +483,18 @@ interface TraceEntry {
 
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
-### Fast Tier (observe→act cycles)
-- **Cerebras** (`gpt-oss-120b`) — Highest priority, ~3000 TPS, prefix caching
-- **Groq** (`openai/gpt-oss-120b`) — 250K TPM
-- **OpenRouter** (`openai/gpt-oss-120b`) — Absolute fallback
+### Executor Tier (observe→act cycles)
+- **Groq** (`openai/gpt-oss-120b`) — Highest priority, 250K TPM
+- **OpenRouter** (`openai/gpt-oss-120b`) — Fallback
 
-### Smart Tier (reasoning/escalation)
-- **Cerebras** (`zai-glm-4.7`) — Highest priority, native reasoning + prefix caching
-- **OpenRouter** (`z-ai/glm-4.7`) — Fallback
+### Planner Tier (reasoning/escalation)
+- **OpenRouter** (`deepseek/deepseek-v3.2`) — Single provider
 
-Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `TaskPlanner` also uses the smart pool.
+Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `TaskPlanner` also uses the planner pool.
 
 ### Context Distillation
 
-On escalation, `summarizeTrajectory()` compresses the full conversation history (potentially 40K+ tokens) into a ~1K token structured timeline before handing off to the smart model. This preserves Cerebras prefix caching and gives the smart model a cleaner signal than raw history.
+On escalation, `summarizeTrajectory()` compresses the full conversation history (potentially 40K+ tokens) into a ~1K token structured timeline before handing off to the planner model. This gives the planner model a cleaner signal than raw history.
 
 ## Testing
 
@@ -534,7 +518,7 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (57 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (39 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
 | `src/background/perception.ts`        | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |

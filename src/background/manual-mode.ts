@@ -75,7 +75,11 @@ export class ManualModeHandler {
     return this.traceRecorder !== null;
   }
 
-  getRecordingInfo(): { sessionId: string; turnCount: number; name: string } | null {
+  getRecordingInfo(): {
+    sessionId: string;
+    turnCount: number;
+    name: string;
+  } | null {
     if (!this.traceRecorder) return null;
     return {
       sessionId: this.traceRecorder.sessionId,
@@ -88,7 +92,13 @@ export class ManualModeHandler {
   async dispose(): Promise<void> {
     if (this.traceRecorder) {
       const metrics = this.buildSessionMetrics();
-      await this.traceRecorder.finalize("completed", "Manual session ended", this.turnCount, null, metrics);
+      await this.traceRecorder.finalize(
+        "completed",
+        "Manual session ended",
+        this.turnCount,
+        null,
+        metrics,
+      );
       this.traceRecorder = null;
       this.turnCount = 0;
     }
@@ -162,13 +172,7 @@ export class ManualModeHandler {
         "manual",
         "NONE",
       );
-      this.traceRecorder.recordLLMResponse(
-        null,
-        [toolCall],
-        "manual",
-        null,
-        0,
-      );
+      this.traceRecorder.recordLLMResponse(null, [toolCall], "manual", null, 0);
     }
 
     let result: string;
@@ -231,7 +235,10 @@ export class ManualModeHandler {
 
       let screenshotDataUrl: string;
       try {
-        screenshotDataUrl = await chrome.tabs.captureVisibleTab({ format: "jpeg", quality: 70 });
+        screenshotDataUrl = await chrome.tabs.captureVisibleTab({
+          format: "jpeg",
+          quality: 70,
+        });
       } catch {
         return {
           command: "perceive",
@@ -271,7 +278,10 @@ export class ManualModeHandler {
           "NONE",
         );
         this.traceRecorder.recordLLMResponse(null, [], "manual", null, 0);
-        await this.traceRecorder.recordPerception(perceptionResult, screenshotDataUrl);
+        await this.traceRecorder.recordPerception(
+          perceptionResult,
+          screenshotDataUrl,
+        );
         await this.traceRecorder.endTurn();
       }
 
@@ -334,7 +344,10 @@ export class ManualModeHandler {
 
   private async handleScreenshot(start: number): Promise<ManualCommandResult> {
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab({ format: "jpeg", quality: 80 });
+      const dataUrl = await chrome.tabs.captureVisibleTab({
+        format: "jpeg",
+        quality: 80,
+      });
       return {
         command: "screenshot",
         success: true,
@@ -362,7 +375,13 @@ export class ManualModeHandler {
       const sessionId = this.traceRecorder.sessionId;
       const turns = this.turnCount;
       const metrics = this.buildSessionMetrics();
-      await this.traceRecorder.finalize("completed", `Manual recording: ${this.recordingName}`, turns, null, metrics);
+      await this.traceRecorder.finalize(
+        "completed",
+        `Manual recording: ${this.recordingName}`,
+        turns,
+        null,
+        metrics,
+      );
       this.traceRecorder = null;
       this.turnCount = 0;
       const name = this.recordingName;
@@ -387,11 +406,16 @@ export class ManualModeHandler {
 
       // Try to get current URL for session info
       try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          currentWindow: true,
+        });
         if (tab?.url) {
           this.traceRecorder.setSessionInfo(name, tab.url);
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       return {
         command: "record",
@@ -404,35 +428,17 @@ export class ManualModeHandler {
 
   private async handleTags(start: number): Promise<ManualCommandResult> {
     try {
-      const stored = await chrome.storage.sync.get("userSettings");
-      const settings = stored.userSettings ?? {};
-      const current = settings.showElementTags ?? false;
-      const newValue = !current;
-      await chrome.storage.sync.set({
-        userSettings: { ...settings, showElementTags: newValue },
-      });
-
-      // Broadcast settings update
-      chrome.runtime
-        .sendMessage({
-          type: "SETTINGS_UPDATE",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          payload: { settings: { showElementTags: newValue } },
-        })
-        .catch(() => {});
-
       return {
         command: "tags",
         success: true,
-        result: newValue ? "Element tags enabled" : "Element tags disabled",
+        result: "Visual element tags have been removed. Element IDs are always available in the agent's element list.",
         durationMs: Date.now() - start,
       };
     } catch (e: any) {
       return {
         command: "tags",
         success: false,
-        result: `Failed to toggle tags: ${e.message}`,
+        result: `Failed: ${e.message}`,
         durationMs: Date.now() - start,
       };
     }
@@ -454,9 +460,10 @@ export class ManualModeHandler {
       return {
         command: "dismiss",
         success: true,
-        result: dismissed > 0
-          ? `Dismissed ${dismissed} modal(s)/overlay(s)`
-          : "No modals or overlays found to dismiss",
+        result:
+          dismissed > 0
+            ? `Dismissed ${dismissed} modal(s)/overlay(s)`
+            : "No modals or overlays found to dismiss",
         durationMs: Date.now() - start,
       };
     } catch (e: any) {
@@ -495,6 +502,8 @@ export class ManualModeHandler {
         source: MessageSource.BACKGROUND,
         payload: {},
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }

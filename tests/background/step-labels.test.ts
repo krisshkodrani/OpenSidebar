@@ -12,7 +12,7 @@ describe("formatStepLabel", () => {
 
     test("escalate without reason shows default label", () => {
         const label = formatStepLabel(ToolName.ESCALATE, {});
-        expect(label).toBe("Escalate to smarter model");
+        expect(label).toBe("Escalate to planner model");
     });
 
     test("find_element with text", () => {
@@ -27,18 +27,6 @@ describe("formatStepLabel", () => {
 
     test("done returns Task complete", () => {
         expect(formatStepLabel(ToolName.DONE, { summary: "all done" })).toBe("Task complete");
-    });
-
-    test("memory_update shows memory id", () => {
-        expect(formatStepLabel(ToolName.MEMORY_UPDATE, { id: "mem-1" })).toBe("Update memory [mem-1]");
-    });
-
-    test("memory_delete shows memory id", () => {
-        expect(formatStepLabel(ToolName.MEMORY_DELETE, { id: "mem-2" })).toBe("Delete memory [mem-2]");
-    });
-
-    test("memory_list_categories label", () => {
-        expect(formatStepLabel(ToolName.MEMORY_LIST_CATEGORIES, {})).toBe("List memory categories");
     });
 
     test("click_element shows tag ID", () => {
@@ -95,10 +83,6 @@ describe("formatStepLabel", () => {
         expect(formatStepLabel(ToolName.GO_BACK, {})).toBe("Go back");
     });
 
-    test("go_forward", () => {
-        expect(formatStepLabel(ToolName.GO_FORWARD, {})).toBe("Go forward");
-    });
-
     test("list_tabs", () => {
         expect(formatStepLabel(ToolName.LIST_TABS, {})).toBe("List tabs");
     });
@@ -133,45 +117,4 @@ describe("formatStepLabel", () => {
         expect(formatStepLabel(ToolName.XRAY_PAGE, {})).toBe("Toggle X-ray mode");
     });
 
-    test("fast_forward", () => {
-        expect(formatStepLabel(ToolName.FAST_FORWARD, {})).toBe("Toggle fast-forward");
-    });
-
-    // React toolkit tools
-    test("inspect_react shows tag ID", () => {
-        expect(formatStepLabel(ToolName.INSPECT_REACT, { id: 5 })).toBe("Inspect React state [5]");
-    });
-
-    test("inspect_react with missing id", () => {
-        expect(formatStepLabel(ToolName.INSPECT_REACT, {})).toBe("Inspect React state [?]");
-    });
-
-    test("react_set_input shows value and tag ID", () => {
-        const label = formatStepLabel(ToolName.REACT_SET_INPUT, { id: 3, value: "hello" });
-        expect(label).toContain('"hello"');
-        expect(label).toContain("[3]");
-        expect(label).toContain("React set input");
-    });
-
-    test("react_set_input truncates long value", () => {
-        const label = formatStepLabel(ToolName.REACT_SET_INPUT, { id: 1, value: "a".repeat(30) });
-        expect(label).toContain("...");
-    });
-
-    test("inspect_react_tree without filter", () => {
-        expect(formatStepLabel(ToolName.INSPECT_REACT_TREE, {})).toBe("Inspect React tree");
-    });
-
-    test("inspect_react_tree with filter", () => {
-        const label = formatStepLabel(ToolName.INSPECT_REACT_TREE, { filter: "Button" });
-        expect(label).toBe('React tree: "Button"');
-    });
-
-    test("wait_for_react shows default timeout", () => {
-        expect(formatStepLabel(ToolName.WAIT_FOR_REACT, {})).toBe("Wait for React (3000ms)");
-    });
-
-    test("wait_for_react shows custom timeout", () => {
-        expect(formatStepLabel(ToolName.WAIT_FOR_REACT, { timeout: 5000 })).toBe("Wait for React (5000ms)");
-    });
 });

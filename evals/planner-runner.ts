@@ -19,7 +19,8 @@ import { judgePlannerCase } from "./planner-judge";
 import { getPromptTemplate } from "../src/prompts";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const SMART_MODEL = "z-ai/glm-4.7";
+const PLANNER_MODEL = "deepseek/deepseek-v3.2";
+type PlannerReasoningEffort = "low" | "medium" | "high";
 
 /** Adaptive timeout based on case difficulty */
 function decomposeTimeout(difficulty: string): number {
@@ -36,6 +37,8 @@ function decomposeTimeout(difficulty: string): number {
 async function replayDecompose(
   keys: ApiKeys,
   evalCase: PlannerEvalCase,
+  modelOverride?: string,
+  reasoningEffort?: PlannerReasoningEffort,
   timeoutMs?: number,
 ): Promise<{ subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.decompose.system");
@@ -49,6 +52,24 @@ async function replayDecompose(
     .filter(Boolean)
     .join("\n");
 
+  const model = modelOverride ?? PLANNER_MODEL;
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0,
+    max_tokens: 4096,
+  };
+  if (
+    reasoningEffort &&
+    model.toLowerCase().includes("gpt-oss")
+  ) {
+    body.reasoning = { effort: reasoningEffort };
+  }
+
   const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
     headers: {
@@ -57,16 +78,7 @@ async function replayDecompose(
       "HTTP-Referer": "https://opensidebar.dev",
       "X-Title": "OpenSidebar Planner Evals",
     },
-    body: JSON.stringify({
-      model: SMART_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0,
-      max_tokens: 4096,
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs ?? 60_000),
   });
 
@@ -111,6 +123,8 @@ async function replayDecompose(
 async function replayValidateDone(
   keys: ApiKeys,
   evalCase: PlannerEvalCase,
+  modelOverride?: string,
+  reasoningEffort?: PlannerReasoningEffort,
 ): Promise<{ approved: boolean; reason?: string; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.validate_done.system");
 
@@ -127,6 +141,24 @@ async function replayValidateDone(
     `Agent summary: ${evalCase.input.doneSummary ?? "(none)"}`,
   ].join("\n");
 
+  const model = modelOverride ?? PLANNER_MODEL;
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0,
+    max_tokens: 1024,
+  };
+  if (
+    reasoningEffort &&
+    model.toLowerCase().includes("gpt-oss")
+  ) {
+    body.reasoning = { effort: reasoningEffort };
+  }
+
   const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
     headers: {
@@ -135,16 +167,7 @@ async function replayValidateDone(
       "HTTP-Referer": "https://opensidebar.dev",
       "X-Title": "OpenSidebar Planner Evals",
     },
-    body: JSON.stringify({
-      model: SMART_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0,
-      max_tokens: 1024,
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
 
@@ -190,6 +213,8 @@ export async function runPlannerEvals(options: {
   method?: string;
   judge?: boolean;
   outDir?: string;
+  model?: string;
+  reasoningEffort?: PlannerReasoningEffort;
 }): Promise<PlannerEvalResult[]> {
   const { keys, judge = false } = options;
 
@@ -230,7 +255,13 @@ export async function runPlannerEvals(options: {
 
     try {
       if (evalCase.method === "decompose") {
-        const actual = await replayDecompose(keys, evalCase, decomposeTimeout(evalCase.metadata.difficulty));
+        const actual = await replayDecompose(
+          keys,
+          evalCase,
+          options.model,
+          options.reasoningEffort,
+          decomposeTimeout(evalCase.metadata.difficulty),
+        );
         const durationMs = Date.now() - start;
         const scores = scorePlannerDecompose(evalCase, actual);
         const pass = isPlannerPass(scores, "decompose");
@@ -246,7 +277,12 @@ export async function runPlannerEvals(options: {
           scores,
         };
       } else {
-        const actual = await replayValidateDone(keys, evalCase);
+        const actual = await replayValidateDone(
+          keys,
+          evalCase,
+          options.model,
+          options.reasoningEffort,
+        );
         const durationMs = Date.now() - start;
         const scores = scorePlannerValidateDone(evalCase, actual);
         const pass = isPlannerPass(scores, "validateDone");

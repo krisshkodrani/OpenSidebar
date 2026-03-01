@@ -6,7 +6,11 @@ interface ToggleSwitchProps {
   onChange: (checked: boolean) => void;
 }
 
-export default function ToggleSwitch({ label, checked, onChange }: ToggleSwitchProps) {
+export default function ToggleSwitch({
+  label,
+  checked,
+  onChange,
+}: ToggleSwitchProps) {
   return (
     <div className="flex items-center gap-2.5 py-1.5">
       <span className="text-xs text-[#c0c0d8] min-w-[70px]">{label}</span>

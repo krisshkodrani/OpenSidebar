@@ -15,13 +15,15 @@ export default function TurnList() {
       const content = (llmResponse?.content as string) || "";
       if (content.toLowerCase().includes(q)) return true;
 
-      const toolExecutions = (e.toolExecutions as Array<Record<string, unknown>>) || [];
+      const toolExecutions =
+        (e.toolExecutions as Array<Record<string, unknown>>) || [];
       for (const te of toolExecutions) {
         if ((te.toolName as string)?.toLowerCase().includes(q)) return true;
         if ((te.result as string)?.toLowerCase().includes(q)) return true;
       }
 
-      const toolCalls = (llmResponse?.toolCalls as Array<Record<string, unknown>>) || [];
+      const toolCalls =
+        (llmResponse?.toolCalls as Array<Record<string, unknown>>) || [];
       for (const tc of toolCalls) {
         const fn = tc.function as Record<string, unknown> | undefined;
         if ((fn?.name as string)?.toLowerCase().includes(q)) return true;

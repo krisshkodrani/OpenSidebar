@@ -26,7 +26,6 @@ export enum MessageSource {
   SIDEPANEL = "sidepanel",
   BACKGROUND = "background",
   CONTENT = "content",
-  OFFSCREEN = "offscreen",
 }
 
 /** Role contract for orchestrator-managed agent collaboration */
@@ -40,11 +39,6 @@ export enum ToolName {
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
 
-  MEMORY_SEARCH = "memory_search",
-  MEMORY_ADD = "memory_add",
-  MEMORY_UPDATE = "memory_update",
-  MEMORY_DELETE = "memory_delete",
-  MEMORY_LIST_CATEGORIES = "memory_list_categories",
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",
   SWITCH_TAB = "switch_tab",
@@ -55,45 +49,25 @@ export enum ToolName {
   SELECT_OPTION = "select_option",
   PRESS_KEY = "press_key",
   DRAG_AND_DROP = "drag_and_drop",
-  DRAW_STROKE = "draw_stroke",
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
   READ_ELEMENT = "read_element",
   EXECUTE_JS = "execute_js",
   UPLOAD_FILE = "upload_file",
   GO_BACK = "go_back",
-  GO_FORWARD = "go_forward",
   LIST_TABS = "list_tabs",
   RIGHT_CLICK = "right_click",
   SET_CHECKBOX = "set_checkbox",
   CLICK_COORDINATES = "click_coordinates",
   DOWNLOAD_FILE = "download_file",
-  TRANSCRIBE_AUDIO = "transcribe_audio",
-  GROUP_TABS = "group_tabs",
-  UNGROUP_TABS = "ungroup_tabs",
   GET_COOKIES = "get_cookies",
   SET_COOKIE = "set_cookie",
   DELETE_COOKIE = "delete_cookie",
-  COPY_TO_CLIPBOARD = "copy_to_clipboard",
-  READ_PDF = "read_pdf",
   SEARCH_HISTORY = "search_history",
-  CREATE_BOOKMARK = "create_bookmark",
-  GET_BOOKMARKS = "get_bookmarks",
-  CREATE_WINDOW = "create_window",
-  SEND_NOTIFICATION = "send_notification",
   INSPECT_HIDDEN = "inspect_hidden",
   XRAY_PAGE = "xray_page",
-  FAST_FORWARD = "fast_forward",
   DISMISS_OVERLAYS = "dismiss_overlays",
-  CLOSE_POPUPS = "close_popups",
-  BATCH_EXECUTE = "batch_execute",
   RECALL_DEMO = "recall_demo",
-
-  // React toolkit (on-demand — enabled only when React is detected on the page)
-  INSPECT_REACT = "inspect_react",
-  REACT_SET_INPUT = "react_set_input",
-  INSPECT_REACT_TREE = "inspect_react_tree",
-  WAIT_FOR_REACT = "wait_for_react",
 }
 
 /** Risk classification for a tool invocation */
@@ -147,8 +121,6 @@ export type RuntimeMessage =
   | DomSnapshotRequest
   | DomSnapshotResponse
   | NavigationResumeMessage
-  | MemoryWorkerMessage
-  | MemoryWorkerResponse
   | StopAgentMessage
   | SettingsUpdateMessage
   | SidePanelOpenedMessage
@@ -578,7 +550,6 @@ export interface DataControlRequestMessage extends BaseMessage {
   source: MessageSource.SIDEPANEL;
   payload: {
     action:
-      | "clear_memory"
       | "clear_logs"
       | "clear_chat_history"
       | "clear_local_data";
@@ -812,41 +783,6 @@ export interface NavigateArgs {
   query?: string;
 }
 
-/** Arguments for memory_search */
-export interface MemorySearchArgs {
-  /** Natural language query */
-  query: string;
-  /** Maximum number of results (default: 5) */
-  limit?: number;
-}
-
-/** Arguments for memory_add */
-export interface MemoryAddArgs {
-  /** Content to store */
-  content: string;
-  /** Category tag for organization */
-  category?: string;
-}
-
-/** Arguments for memory_update */
-export interface MemoryUpdateArgs {
-  /** Memory entry ID to update */
-  id: string;
-  /** New memory content */
-  content: string;
-  /** Optional replacement category */
-  category?: string;
-}
-
-/** Arguments for memory_delete */
-export interface MemoryDeleteArgs {
-  /** Memory entry ID to delete */
-  id: string;
-}
-
-/** Arguments for memory_list_categories */
-export type MemoryListCategoriesArgs = Record<string, never>;
-
 /** Arguments for create_tab */
 export interface CreateTabArgs {
   /** URL to open in the new tab */
@@ -915,20 +851,6 @@ export interface DragAndDropArgs {
   targetId: number;
 }
 
-/** Arguments for draw_stroke */
-export interface DrawStrokeArgs {
-  /** Tag ID of the canvas element */
-  id: number;
-  /** Start X offset from element top-left */
-  startX: number;
-  /** Start Y offset from element top-left */
-  startY: number;
-  /** End X offset from element top-left */
-  endX: number;
-  /** End Y offset from element top-left */
-  endY: number;
-}
-
 /** Arguments for hide_element */
 export interface HideElementArgs {
   /** The numeric tag ID of the element to hide */
@@ -966,9 +888,6 @@ export interface UploadFileArgs {
 /** Arguments for go_back */
 export type GoBackArgs = Record<string, never>;
 
-/** Arguments for go_forward */
-export type GoForwardArgs = Record<string, never>;
-
 /** Arguments for list_tabs */
 export type ListTabsArgs = Record<string, never>;
 
@@ -1004,24 +923,6 @@ export interface DownloadFileArgs {
   filename?: string;
 }
 
-/** Arguments for transcribe_audio */
-export interface TranscribeAudioArgs {
-  /** The numeric tag ID of the <audio> or <video> element */
-  id: number;
-}
-
-/** Arguments for group_tabs */
-export interface GroupTabsArgs {
-  tabIds: number[];
-  title: string;
-  color?: string;
-}
-
-/** Arguments for ungroup_tabs */
-export interface UngroupTabsArgs {
-  tabIds: number[];
-}
-
 /** Arguments for get_cookies */
 export interface GetCookiesArgs {
   url?: string;
@@ -1042,46 +943,10 @@ export interface DeleteCookieArgs {
   name: string;
 }
 
-/** Arguments for copy_to_clipboard */
-export interface CopyToClipboardArgs {
-  text: string;
-}
-
-/** Arguments for read_pdf */
-export interface ReadPdfArgs {
-  url: string;
-  maxPages?: number;
-}
-
 /** Arguments for search_history */
 export interface SearchHistoryArgs {
   query: string;
   maxResults?: number;
-}
-
-/** Arguments for create_bookmark */
-export interface CreateBookmarkArgs {
-  title?: string;
-  url?: string;
-  parentId?: string;
-}
-
-/** Arguments for get_bookmarks */
-export interface GetBookmarksArgs {
-  query: string;
-  maxResults?: number;
-}
-
-/** Arguments for create_window */
-export interface CreateWindowArgs {
-  url?: string;
-  incognito?: boolean;
-}
-
-/** Arguments for send_notification */
-export interface SendNotificationArgs {
-  title: string;
-  message: string;
 }
 
 /** Arguments for inspect_hidden */
@@ -1095,71 +960,13 @@ export interface InspectHiddenArgs {
 /** Arguments for xray_page — no arguments, simple toggle */
 export type XrayPageArgs = Record<string, never>;
 
-/** Arguments for fast_forward — no arguments, simple toggle */
-export type FastForwardArgs = Record<string, never>;
-
 /** Arguments for dismiss_overlays — no arguments */
 export type DismissOverlaysArgs = Record<string, never>;
-
-/** Arguments for close_popups — no arguments */
-export type ClosePopupsArgs = Record<string, never>;
-
-/** A single step inside a batch_execute script */
-export interface BatchExecuteStep {
-  /** Tool name to execute */
-  tool: string;
-  /** Arguments for the tool */
-  args: Record<string, unknown>;
-  /** Optional expected outcome — bail if result doesn't contain this */
-  expect?: string;
-}
-
-/** Arguments for batch_execute */
-export interface BatchExecuteArgs {
-  /** Ordered list of tool calls to execute without LLM roundtrips */
-  steps: BatchExecuteStep[];
-  /** What to verify after all steps complete (informational, not enforced) */
-  verify?: string;
-}
 
 /** Arguments for recall_demo — retrieve a recorded demonstration by name or query */
 export interface RecallDemoArgs {
   /** Demo name or search query to find a relevant demonstration */
   query: string;
-}
-
-// --- React Toolkit Args ---
-
-/** Arguments for inspect_react — read component state/props for a tagged element */
-export interface InspectReactArgs {
-  /** Tag ID of the element to inspect */
-  id: number;
-  /** How many parent components to traverse (default 3, max 8) */
-  depth?: number;
-}
-
-/** Arguments for react_set_input — set a React controlled input value */
-export interface ReactSetInputArgs {
-  /** Tag ID of the input element */
-  id: number;
-  /** The value to set */
-  value: string;
-  /** Press Enter after setting value (default false) */
-  submit?: boolean;
-}
-
-/** Arguments for inspect_react_tree — component hierarchy overview */
-export interface InspectReactTreeArgs {
-  /** Max tree depth (default 5, max 10) */
-  depth?: number;
-  /** Only show components whose name contains this string (case-insensitive) */
-  filter?: string;
-}
-
-/** Arguments for wait_for_react — wait for React renders to settle */
-export interface WaitForReactArgs {
-  /** Max wait time in ms (default 3000, max 10000) */
-  timeout?: number;
 }
 
 /** Maps tool names to their execution handlers */
@@ -1175,11 +982,6 @@ export type ToolArgsMap = {
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
 
-  [ToolName.MEMORY_SEARCH]: MemorySearchArgs;
-  [ToolName.MEMORY_ADD]: MemoryAddArgs;
-  [ToolName.MEMORY_UPDATE]: MemoryUpdateArgs;
-  [ToolName.MEMORY_DELETE]: MemoryDeleteArgs;
-  [ToolName.MEMORY_LIST_CATEGORIES]: MemoryListCategoriesArgs;
   [ToolName.CREATE_TAB]: CreateTabArgs;
   [ToolName.CLOSE_TAB]: CloseTabArgs;
   [ToolName.SWITCH_TAB]: SwitchTabArgs;
@@ -1190,58 +992,30 @@ export type ToolArgsMap = {
   [ToolName.SELECT_OPTION]: SelectOptionArgs;
   [ToolName.PRESS_KEY]: PressKeyArgs;
   [ToolName.DRAG_AND_DROP]: DragAndDropArgs;
-  [ToolName.DRAW_STROKE]: DrawStrokeArgs;
   [ToolName.HIDE_ELEMENT]: HideElementArgs;
   [ToolName.ESCALATE]: EscalateArgs;
   [ToolName.READ_ELEMENT]: ReadElementArgs;
   [ToolName.EXECUTE_JS]: ExecuteJsArgs;
   [ToolName.UPLOAD_FILE]: UploadFileArgs;
   [ToolName.GO_BACK]: GoBackArgs;
-  [ToolName.GO_FORWARD]: GoForwardArgs;
   [ToolName.LIST_TABS]: ListTabsArgs;
   [ToolName.RIGHT_CLICK]: RightClickArgs;
   [ToolName.SET_CHECKBOX]: SetCheckboxArgs;
   [ToolName.CLICK_COORDINATES]: ClickCoordinatesArgs;
   [ToolName.DOWNLOAD_FILE]: DownloadFileArgs;
-  [ToolName.TRANSCRIBE_AUDIO]: TranscribeAudioArgs;
-  [ToolName.GROUP_TABS]: GroupTabsArgs;
-  [ToolName.UNGROUP_TABS]: UngroupTabsArgs;
   [ToolName.GET_COOKIES]: GetCookiesArgs;
   [ToolName.SET_COOKIE]: SetCookieArgs;
   [ToolName.DELETE_COOKIE]: DeleteCookieArgs;
-  [ToolName.COPY_TO_CLIPBOARD]: CopyToClipboardArgs;
-  [ToolName.READ_PDF]: ReadPdfArgs;
   [ToolName.SEARCH_HISTORY]: SearchHistoryArgs;
-  [ToolName.CREATE_BOOKMARK]: CreateBookmarkArgs;
-  [ToolName.GET_BOOKMARKS]: GetBookmarksArgs;
-  [ToolName.CREATE_WINDOW]: CreateWindowArgs;
-  [ToolName.SEND_NOTIFICATION]: SendNotificationArgs;
   [ToolName.INSPECT_HIDDEN]: InspectHiddenArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
-  [ToolName.FAST_FORWARD]: FastForwardArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
-  [ToolName.CLOSE_POPUPS]: ClosePopupsArgs;
-  [ToolName.BATCH_EXECUTE]: BatchExecuteArgs;
   [ToolName.RECALL_DEMO]: RecallDemoArgs;
-  [ToolName.INSPECT_REACT]: InspectReactArgs;
-  [ToolName.REACT_SET_INPUT]: ReactSetInputArgs;
-  [ToolName.INSPECT_REACT_TREE]: InspectReactTreeArgs;
-  [ToolName.WAIT_FOR_REACT]: WaitForReactArgs;
 };
 
 // --- Content Script Types ---
 
 /** The distilled DOM representation sent to the LLM */
-/** Detected front-end framework on the page (used for on-demand toolkit injection) */
-export interface FrameworkInfo {
-  /** Framework identifier (e.g. "react") */
-  name: string;
-  /** Semver version string, or "unknown" if undetectable */
-  version: string;
-  /** Internal key used to access the fiber tree (e.g. "__reactFiber$abc123") */
-  fiberKey: string;
-}
-
 export interface DomSnapshot {
   /** Page title */
   title: string;
@@ -1256,13 +1030,11 @@ export interface DomSnapshot {
   /** Viewport dimensions */
   viewport: { width: number; height: number };
   /** Scroll position */
-  scroll: { x: number; y: number; maxY: number };
+  scroll: { x: number; y: number; maxY: number; viewportHeight: number };
   /** Overlays that survived auto-dismissal (agent should handle manually) */
   survivingOverlays?: { tagId: number; coveragePercent: number }[];
   /** Text content extracted from overlays that were dismissed (deduplicated) */
   capturedTexts?: string[];
-  /** Front-end framework detected on the page (null if none) */
-  framework?: FrameworkInfo | null;
   /** Overflow info when element cap was hit or near-identical elements collapsed */
   overflow?: { shown: number; total: number; collapsedGroups?: string[] };
 }
@@ -1314,8 +1086,6 @@ export interface DomSnapshotRequest extends BaseMessage {
   payload: {
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
-    /** Whether to render visual [N] tag overlays on the page */
-    showTags?: boolean;
   };
 }
 
@@ -1506,91 +1276,6 @@ export interface SidePanelState {
   demoActionCount: number;
 }
 
-// --- Memory / Second Brain Types ---
-
-/** Classification of a memory entry for filtered retrieval */
-export type MemoryType = "fact" | "procedure" | "preference";
-
-/** A single entry stored in the Second Brain */
-export interface MemoryEntry {
-  /** UUID v4 */
-  id: string;
-  /** The stored text content */
-  content: string;
-  /** Embedding vector (384 dimensions for MiniLM-L6-v2) */
-  embedding: Float32Array;
-  /** User-defined category tag */
-  category: string;
-  /** Source URL where this was captured */
-  sourceUrl: string;
-  /** Unix timestamp of creation */
-  createdAt: number;
-  /** Semantic type classification */
-  type: MemoryType;
-}
-
-/** A single result from a memory search */
-export interface MemorySearchResult {
-  entry: MemoryEntry;
-  /** Combined RRF score (higher = more relevant) */
-  score: number;
-  /** Individual scores for debugging */
-  scores: {
-    semantic: number;
-    keyword: number;
-  };
-}
-
-/** Messages sent to the memory offscreen document / web worker */
-export interface MemoryWorkerMessage extends BaseMessage {
-  type: "MEMORY_WORKER";
-  source: MessageSource.BACKGROUND;
-  payload:
-    | { action: "init" }
-    | { action: "add"; content: string; category: string; sourceUrl: string; type?: MemoryType }
-    | {
-        action: "batch_add";
-        items: { content: string; category: string; sourceUrl: string }[];
-      }
-    | { action: "search"; query: string; limit: number; types?: MemoryType[] }
-    | { action: "update"; id: string; content: string; category?: string }
-    | { action: "delete"; id: string }
-    | { action: "list_categories" }
-    | { action: "clear" }
-    | { action: "extract_pdf"; url: string; maxPages?: number };
-}
-
-/** Responses from the memory worker back to the service worker */
-export interface MemoryWorkerResponse extends BaseMessage {
-  type: "MEMORY_WORKER_RESPONSE";
-  source: MessageSource.OFFSCREEN;
-  payload:
-    | { action: "init"; success: boolean; error?: string }
-    | { action: "add"; success: boolean; id: string; error?: string }
-    | { action: "batch_add"; success: boolean; count: number; error?: string }
-    | { action: "search"; results: MemorySearchResult[]; error?: string }
-    | { action: "update"; success: boolean; id: string; error?: string }
-    | { action: "delete"; success: boolean; error?: string }
-    | {
-        action: "list_categories";
-        categories: { name: string; count: number }[];
-        error?: string;
-      }
-    | { action: "clear"; success: boolean; error?: string }
-    | { action: "extract_pdf"; text: string; success: boolean; error?: string };
-}
-
-/** A row from the SQLite FTS5 table */
-export interface FTS5Row {
-  id: string;
-  content: string;
-  category: string;
-  source_url: string;
-  created_at: number;
-  /** BM25 relevance score (lower = more relevant in SQLite FTS5) */
-  rank: number;
-}
-
 // --- Workspace / Tab Group Types ---
 
 export interface Workspace {
@@ -1642,15 +1327,10 @@ export interface UserSettings {
   openRouterApiKey: string;
   /** Groq API key for fast model (GPT-OSS-120B) */
   groqApiKey: string;
-  /** Cerebras API key for fast model (highest priority when present) */
-  cerebrasApiKey: string;
   maxTurns: number;
   contextWindowSize: number;
-  memoryEnabled: boolean;
   workspaceEnabled: boolean;
   theme: "light" | "dark" | "system";
-  /** Show visual [N] tag overlays on page elements (debugging aid) */
-  showElementTags: boolean;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
   /** Expand step timeline + tool logs by default in each assistant message */
@@ -1659,28 +1339,14 @@ export interface UserSettings {
   siteAccessMode?: "allow_all" | "blocklist";
   /** Blocked domains when `siteAccessMode` is `blocklist` */
   siteAccessBlocklist?: string[];
-  /** @deprecated No-op — take_screenshot tool has been removed */
-  disableScreenshot: boolean;
   /** Hide navigate from tools */
   disableNavigation: boolean;
   /** Skip all user approval prompts (including high-risk tool approvals) */
   bypassApprovals: boolean;
-  /** @deprecated Voice input now always uses Groq Whisper when groqApiKey is set */
-  speechProvider?: "browser" | "groq";
   /** Max parallel workers for orchestrator task execution */
   orchestratorMaxWorkers?: number;
   /** Global token budget for one orchestrator task (planner + executor + verifier) */
   orchestratorMaxTotalTokens?: number;
-  /** Learn reusable skills from successful task executions */
-  teachModeEnabled?: boolean;
-  /** Attempt learned-skill replay before planner decomposition */
-  autoSkillReplayEnabled?: boolean;
-  /** Restrict skill replay to explicitly pinned skills */
-  skillReplayPinnedOnly?: boolean;
-  /** Evaluate skill matches without executing them (planner still runs) */
-  skillReplayDryRun?: boolean;
-  /** Master toggle for demonstration recording/injection system (default: true) */
-  demoEnabled?: boolean;
   /** Auto-inject matching demos into agent context (default: true) */
   demosAutoInject?: boolean;
 }
@@ -1689,7 +1355,15 @@ export interface UserSettings {
 
 /** A single recorded user action */
 export interface DemoAction {
-  type: "click" | "type" | "scroll" | "select" | "press_key" | "navigate" | "drag" | "annotate";
+  type:
+    | "click"
+    | "type"
+    | "scroll"
+    | "select"
+    | "press_key"
+    | "navigate"
+    | "drag"
+    | "annotate";
   timestamp: number;
   url: string;
   element?: ElementDescriptor;

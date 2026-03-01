@@ -61,7 +61,9 @@ export function formatReflexionContext(entries: ReflexionEntry[]): string {
       parts.push(`  Failure type: ${entry.failureType}`);
     }
     if (entry.suggestedApproach) {
-      parts.push(`  Suggested change: ${normalizeNote(entry.suggestedApproach)}`);
+      parts.push(
+        `  Suggested change: ${normalizeNote(entry.suggestedApproach)}`,
+      );
     }
     return parts.join("\n");
   });
@@ -163,7 +165,9 @@ export function formatEvidenceChain(evidence: StructuredEvidence[]): string {
   if (evidence.length === 0) return "";
   return evidence
     .map((e) => {
-      const parts = [`- [${e.basis}] ${normalizeNote(e.claim)} (confidence=${e.confidence.toFixed(2)})`];
+      const parts = [
+        `- [${e.basis}] ${normalizeNote(e.claim)} (confidence=${e.confidence.toFixed(2)})`,
+      ];
       if (e.sourceToolCall) parts.push(`  source: ${e.sourceToolCall}`);
       return parts.join("\n");
     })
@@ -175,16 +179,17 @@ export function buildVerifierContext(
   taskStateBrief: string,
 ): string {
   const nodeHandoff = formatHandoffBrief(node.handoffArtifacts);
-  const sections = [
-    "Node handoff context:",
-    nodeHandoff,
-  ];
+  const sections = ["Node handoff context:", nodeHandoff];
 
   const allEvidence = node.handoffArtifacts
     .filter((a) => a.evidence && a.evidence.length > 0)
     .flatMap((a) => a.evidence!);
   if (allEvidence.length > 0) {
-    sections.push("", "Structured evidence chain:", formatEvidenceChain(allEvidence));
+    sections.push(
+      "",
+      "Structured evidence chain:",
+      formatEvidenceChain(allEvidence),
+    );
   }
 
   sections.push("", "Global task context:", taskStateBrief);
@@ -205,7 +210,8 @@ export function formatPlannerReflexionContext(
         `  Executor summary: ${normalizeNote(e.executorSummary)}`,
       ];
       if (e.failureType) parts.push(`  Failure type: ${e.failureType}`);
-      if (e.plannerLesson) parts.push(`  Lesson: ${normalizeNote(e.plannerLesson)}`);
+      if (e.plannerLesson)
+        parts.push(`  Lesson: ${normalizeNote(e.plannerLesson)}`);
       return parts.join("\n");
     })
     .join("\n");
@@ -221,12 +227,18 @@ function tokenizeAssumption(assumption: string): string[] {
 
 export function buildAssumptionDriftSignal(
   node: TaskNode,
-  snapshot?: { title?: string; url?: string; visibleContent?: string; pageContent?: string } | null,
+  snapshot?: {
+    title?: string;
+    url?: string;
+    visibleContent?: string;
+    pageContent?: string;
+  } | null,
 ): string {
   if (!snapshot || node.assumptions.length === 0) {
     return "No assumption drift evaluation available.";
   }
-  const corpus = `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.pageContent || snapshot.visibleContent || ""}`.toLowerCase();
+  const corpus =
+    `${snapshot.title || ""}\n${snapshot.url || ""}\n${snapshot.pageContent || snapshot.visibleContent || ""}`.toLowerCase();
   const matched: string[] = [];
   const unmatched: string[] = [];
 

@@ -4,7 +4,6 @@
 (globalThis as any).__DEV__ = true;
 (globalThis as any).__OPENROUTER_API_KEY__ = "";
 (globalThis as any).__GROQ_API_KEY__ = "";
-(globalThis as any).__CEREBRAS_API_KEY__ = "";
 
 // Avoid noisy ECONNREFUSED errors in tests when optional local log/trace server
 // is not running. Only stub localhost drain endpoints; keep other fetch calls real.

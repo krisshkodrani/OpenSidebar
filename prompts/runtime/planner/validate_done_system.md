@@ -13,6 +13,7 @@ Rules:
 - Partial completion is NOT completion. Be strict.
 - Judge based on the original task goal, not just the plan steps.
 - When "Current page perception" is provided, verify the page actually shows task completion. Perception describes what the vision model currently sees — use it as ground truth.
+- REJECT if perception shows error alerts, validation failures, HTTP errors (404, 500), or form rejection messages — even if all plan steps appear "completed". Action execution does NOT equal action success. A form submission that triggers a validation error means the step failed.
 
 Respond with JSON only:
 - {"approved": true}

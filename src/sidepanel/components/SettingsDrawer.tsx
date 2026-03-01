@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { X, Save, Moon, Sun, Monitor, Trash2, Download } from "lucide-react";
+import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { storageLogger } from "../../utils/storage-logger";
-import { LearnedSkillsPanel } from "./LearnedSkillsPanel";
+
 import { DemoLibrary } from "./DemoLibrary";
 
 interface Props {
@@ -107,7 +107,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
   const handleDataControl = async (
     action:
-      | "clear_memory"
       | "clear_logs"
       | "clear_chat_history"
       | "clear_local_data",
@@ -198,7 +197,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <div className="space-y-1">
                   <label className="text-sm font-medium dark:text-warm-300">
                     OpenRouter API Key
-                    <span className="text-xs text-warm-400 ml-2">(required)</span>
+                    <span className="text-xs text-warm-400 ml-2">
+                      (required)
+                    </span>
                   </label>
                   <input
                     type="password"
@@ -224,18 +225,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Cerebras API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={formState.cerebrasApiKey}
-                    onChange={(e) => handleChange("cerebrasApiKey", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                    placeholder="csk-..."
-                  />
-                </div>
               </section>
 
               <section className="space-y-3">
@@ -271,7 +260,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <select
                     value={formState.contextWindowSize}
                     onChange={(e) =>
-                      handleChange("contextWindowSize", parseInt(e.target.value, 10))
+                      handleChange(
+                        "contextWindowSize",
+                        parseInt(e.target.value, 10),
+                      )
                     }
                     className="text-sm border border-warm-300 dark:border-warm-700 rounded px-2 py-1 bg-warm-50 dark:bg-warm-900 dark:text-warm-100 outline-none"
                   >
@@ -282,25 +274,20 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Enable Memory
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={formState.memoryEnabled}
-                    onChange={(e) => handleChange("memoryEnabled", e.target.checked)}
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Enable Workspaces
-                  </label>
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Enable Workspaces
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Group tabs into isolated workspaces
+                    </p>
+                  </div>
                   <input
                     type="checkbox"
                     checked={formState.workspaceEnabled}
-                    onChange={(e) => handleChange("workspaceEnabled", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("workspaceEnabled", e.target.checked)
+                    }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
@@ -317,7 +304,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={formState.showSessionMetrics}
-                    onChange={(e) => handleChange("showSessionMetrics", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("showSessionMetrics", e.target.checked)
+                    }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
@@ -335,7 +324,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     type="checkbox"
                     checked={Boolean(formState.showMessageDetailsByDefault)}
                     onChange={(e) =>
-                      handleChange("showMessageDetailsByDefault", e.target.checked)
+                      handleChange(
+                        "showMessageDetailsByDefault",
+                        e.target.checked,
+                      )
                     }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
@@ -382,30 +374,16 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       Require approvals for high-risk actions
                     </label>
                     <p className="text-xs text-warm-500 dark:text-warm-500">
-                      Recommended for payments, navigation changes, and external actions
+                      Recommended for payments, navigation changes, and external
+                      actions
                     </p>
                   </div>
                   <input
                     type="checkbox"
                     checked={!formState.bypassApprovals}
-                    onChange={(e) => handleChange("bypassApprovals", !e.target.checked)}
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Disable Screenshot Tool
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Saves cost and latency, but lowers visual reliability
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formState.disableScreenshot}
-                    onChange={(e) => handleChange("disableScreenshot", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("bypassApprovals", !e.target.checked)
+                    }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
@@ -422,7 +400,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={formState.disableNavigation}
-                    onChange={(e) => handleChange("disableNavigation", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("disableNavigation", e.target.checked)
+                    }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
@@ -465,74 +445,30 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Orchestrator & Skills
+                  Orchestrator
                 </h3>
 
-                <div className="space-y-1">
+                <div className="flex items-center justify-between">
                   <label className="text-sm font-medium dark:text-warm-300">
                     Orchestrator Token Budget
                   </label>
-                  <input
-                    type="number"
-                    min={50000}
-                    step={50000}
+                  <select
                     value={formState.orchestratorMaxTotalTokens ?? 1000000}
-                    onChange={(e) => {
-                      const parsed = Number.parseInt(e.target.value, 10);
+                    onChange={(e) =>
                       handleChange(
                         "orchestratorMaxTotalTokens",
-                        Number.isFinite(parsed) && parsed > 0 ? parsed : 1000000,
-                      );
-                    }}
-                    className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Teach Mode
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formState.teachModeEnabled)}
-                    onChange={(e) => handleChange("teachModeEnabled", e.target.checked)}
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Auto Skill Replay
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formState.autoSkillReplayEnabled)}
-                    onChange={(e) =>
-                      handleChange("autoSkillReplayEnabled", e.target.checked)
+                        parseInt(e.target.value, 10),
+                      )
                     }
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Skill Replay Dry-Run
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formState.skillReplayDryRun)}
-                    onChange={(e) => handleChange("skillReplayDryRun", e.target.checked)}
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
+                    className="text-sm border border-warm-300 dark:border-warm-700 rounded px-2 py-1 bg-warm-50 dark:bg-warm-900 dark:text-warm-100 outline-none"
+                  >
+                    <option value={500000}>500K</option>
+                    <option value={1000000}>1M</option>
+                    <option value={2000000}>2M</option>
+                    <option value={5000000}>5M</option>
+                  </select>
                 </div>
               </section>
-
-              <LearnedSkillsPanel
-                replayPinnedOnly={Boolean(formState.skillReplayPinnedOnly)}
-                onReplayPinnedOnlyChange={(value) =>
-                  handleChange("skillReplayPinnedOnly", value)
-                }
-              />
 
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
@@ -540,9 +476,14 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </h3>
 
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium dark:text-warm-300">
-                    Auto-inject Demos
-                  </label>
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Auto-inject Demos
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Match recorded demos to tasks automatically
+                    </p>
+                  </div>
                   <input
                     type="checkbox"
                     checked={formState.demosAutoInject !== false}
@@ -561,47 +502,12 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   Debugging & Data
                 </h3>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Show Element Tags
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Display [N] labels on interactive page elements
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formState.showElementTags}
-                    onChange={(e) => handleChange("showElementTags", e.target.checked)}
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <button
-                  onClick={() => {
-                    if (confirm("Are you sure you want to clear all chat history?")) {
-                      clearHistory();
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
-                >
-                  <Trash2 size={16} />
-                  Clear History
-                </button>
-
                 <div className="grid grid-cols-1 gap-2">
                   <button
                     onClick={() => void handleDataControl("clear_chat_history")}
                     className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
                   >
                     Clear Chat History (All)
-                  </button>
-                  <button
-                    onClick={() => void handleDataControl("clear_memory")}
-                    className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
-                  >
-                    Clear Long-Term Memory
                   </button>
                   <button
                     onClick={() => void handleDataControl("clear_logs")}
@@ -649,4 +555,3 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     </div>
   );
 }
-

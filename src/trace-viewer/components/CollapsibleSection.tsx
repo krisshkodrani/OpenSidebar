@@ -37,7 +37,9 @@ export default function CollapsibleSection({
           )}
         </span>
       </button>
-      <div className={`collapsible ${maxHeightClass === "sm" ? "collapsible-sm" : maxHeightClass === "xs" ? "collapsible-xs" : ""} ${open ? "open" : ""}`}>
+      <div
+        className={`collapsible ${maxHeightClass === "sm" ? "collapsible-sm" : maxHeightClass === "xs" ? "collapsible-xs" : ""} ${open ? "open" : ""}`}
+      >
         {children}
       </div>
     </div>
