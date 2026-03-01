@@ -14,10 +14,10 @@ The entire LLM pipeline runs through a single provider, **OpenRouter**, with two
 
 | Tier | Model | Role |
 |------|-------|------|
-| Fast | `openai/gpt-oss-120b` | Default for all turns — fast, cheap, good enough for most DOM interactions |
-| Smart | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
+| Executor | `openai/gpt-oss-120b` | Default for all turns — fast, cheap, good enough for most DOM interactions |
+| Planner | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
 
-Both share the same `LLMClient` class. Escalation is a one-way `switchModel()` call — once the smart model is active, it stays active for the remainder of the session.
+Both share the same `LLMClient` class. Escalation is a one-way `switchToPlanner()` call — once the planner model is active, it stays active for the remainder of the session.
 
 ---
 
@@ -171,7 +171,7 @@ When models emit JSON tool calls as plain text instead of using the `tool_calls`
 
 ### The TaskPlanner
 
-Before the first LLM turn, a `TaskPlanner` instance (always using `MODEL_SMART`) analyzes the user's query and page context. It decides:
+Before the first LLM turn, a `TaskPlanner` instance (always using `MODEL_PLANNER`) analyzes the user's query and page context. It decides:
 
 - **Simple task** (one click, one field, one navigation): returns `null`, no plan created
 - **Multi-step task**: decomposes into 2-8 subtasks, each expected to require 1-5 tool calls
@@ -208,7 +208,7 @@ When `currentIndex` exceeds the subtask count, the directive becomes: *"All N st
 
 When the agent calls `done()` and a plan exists, the planner validates:
 
-1. Sends the original query, plan subtasks, agent summary, and page context to `MODEL_SMART`
+1. Sends the original query, plan subtasks, agent summary, and page context to `MODEL_PLANNER`
 2. The validation prompt is strict: *"ALL planned subtasks must be reasonably covered by the summary to approve. Partial completion is NOT completion."*
 3. If rejected, the rejection reason is injected as a tool result: `"done() REJECTED: [reason]. Continue working."`
 4. **Safety valve**: After 3 rejections (`MAX_DONE_REJECTIONS`), the done is forced through regardless. This prevents infinite loops when the planner is overly strict.
@@ -269,7 +269,7 @@ If the fingerprint is identical across consecutive turns, the stale counter incr
 | Stale Turns | Action |
 |:-----------:|--------|
 | 6 | **Reflection**: Injects a structured prompt forcing the agent to apply the Verify step (expected vs. actual), then try ONE different approach from a specific list (screenshot, scroll, press_key, find_element) |
-| 12 | **Escalate**: Switches to `MODEL_SMART`, takes fresh screenshot, instructs agent to start fresh analysis |
+| 12 | **Escalate**: Switches to `MODEL_PLANNER`, takes fresh screenshot, instructs agent to start fresh analysis |
 | 18, 24, ... | **Repeat reflection** every 6 turns after escalation |
 
 On recovery (fingerprint changes after a stuck period), an `AGENT_STAGNATION` message with signal `"resolved"` is broadcast to the side panel, clearing the stuck banner.
@@ -278,13 +278,13 @@ On recovery (fingerprint changes after a stuck period), an `AGENT_STAGNATION` me
 
 ## 8. Model Escalation
 
-Escalation is a one-way upgrade from `MODEL_FAST` to `MODEL_SMART`. There are two paths:
+Escalation is a one-way upgrade from `MODEL_EXECUTOR` to `MODEL_PLANNER`. There are two paths:
 
 ### Voluntary Escalation
 
 The agent calls `escalate({reason: "..."})`. The loop intercepts this before the executor:
 
-1. Calls `llm.switchModel(MODEL_SMART)`
+1. Calls `llm.switchToPlanner()`
 2. Refreshes the DOM snapshot (with retry — critical that the new model sees current state)
 3. Injects `ESCALATION_REFLECTION` as the tool result
 
@@ -321,7 +321,7 @@ When the LLM returns text without any tool calls, the loop applies a graduated i
 
 2. **Regular reflection**: Refreshes the snapshot and injects the `REFLECTION_MESSAGE`, which reminds the agent to either call a tool or wrap its answer in `done()`.
 
-3. **Escalation gate (2 consecutive reflections)**: Switches to `MODEL_SMART`, refreshes snapshot, injects `ESCALATION_REFLECTION`.
+3. **Escalation gate (2 consecutive reflections)**: Switches to `MODEL_PLANNER`, refreshes snapshot, injects `ESCALATION_REFLECTION`.
 
 4. **Give-up (3 consecutive reflections)**: Stops the loop, surfaces the last text response to the user with a "send a follow-up to continue" message.
 

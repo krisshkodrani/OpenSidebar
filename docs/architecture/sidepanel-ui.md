@@ -37,7 +37,7 @@ App (Main container)
 │   ├── Status indicators (incl. PAUSED)
 │   ├── Pause / Resume buttons
 │   └── Turn counter (turn / maxTurns)
-├── ArchitectureStrip (fast/smart tier indicator)
+├── ArchitectureStrip (executor/planner tier indicator)
 ├── MetricsBar (token usage, cost tracking)
 ├── TaskProgressPanel (visible during decomposed tasks)
 └── Bottom Section

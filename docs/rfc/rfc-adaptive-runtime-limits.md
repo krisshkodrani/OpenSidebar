@@ -66,7 +66,7 @@ All three sources arrive at the same conclusion from different angles:
 
 ## Problem
 
-**P1: Over-persistence on simple tasks.** Static limits like `STUCK_THRESHOLDS.ESCALATE = 5` mean the agent spends 5 turns stuck on what should be a 1-turn task before even considering escalation. For "click the login button", 5 stale turns is 5 wasted turns. The smart model gets called in to diagnose what was fundamentally a wrong-element-ID problem that should have been caught immediately.
+**P1: Over-persistence on simple tasks.** Static limits like `STUCK_THRESHOLDS.ESCALATE = 5` mean the agent spends 5 turns stuck on what should be a 1-turn task before even considering escalation. For "click the login button", 5 stale turns is 5 wasted turns. The planner model gets called in to diagnose what was fundamentally a wrong-element-ID problem that should have been caught immediately.
 
 **P2: Under-persistence on complex tasks.** `TOOL_FAILURE_THRESHOLDS.EXIT = 6` and `STUCK_THRESHOLDS.GIVE_UP = 10` terminate the agent on complex multi-step workflows where failure-then-recovery is the *expected* pattern. A flight booking site that shows loading spinners, modal overlays, and dynamic content will naturally produce tool failures — but the circuit breaker doesn't distinguish "site is flaky" from "approach is fundamentally wrong."
 
@@ -80,7 +80,7 @@ All three sources arrive at the same conclusion from different angles:
 
 - Replacing the existing constants file (it remains the source of static defaults)
 - Making *all* constants adaptive (safety rails stay fixed — see Classification below)
-- Requiring the smart model for every task (fast-tier tasks use defaults)
+- Requiring the planner model for every task (executor-tier tasks use defaults)
 - Adding LLM calls solely to assess difficulty (piggyback on existing planner decomposition)
 - Runtime learning across sessions (future work — this RFC covers per-session adaptation only)
 
@@ -110,9 +110,9 @@ All three sources arrive at the same conclusion from different angles:
 
 **Book basis:** Dibia (2025): "Plan-based orchestration involves a dedicated planner agent that generates a sequence of actions before execution begins" (§2.3.1, p.36). The planner already analyzes the task — asking it to also rate difficulty adds near-zero marginal cost.
 
-**Behavior:** The planner's `decompose()` call already sends the user query + DOM snapshot to the smart model and gets back a structured plan. We extend the response schema to include a `difficulty` field and an optional `runtimeLimits` override object.
+**Behavior:** The planner's `decompose()` call already sends the user query + DOM snapshot to the planner model and gets back a structured plan. We extend the response schema to include a `difficulty` field and an optional `runtimeLimits` override object.
 
-The smart model assesses difficulty based on:
+The planner model assesses difficulty based on:
 - Number of steps in its own plan (more steps = harder)
 - Whether the task involves multiple pages/navigations
 - Whether the DOM is complex (many interactive elements, dynamic content)
@@ -142,7 +142,7 @@ export interface RuntimeLimits {
   // Stuck detection
   stuckEscalate: number;        // default: STUCK_THRESHOLDS.ESCALATE (5)
   stuckGiveUp: number;          // default: STUCK_THRESHOLDS.GIVE_UP (10)
-  stuckGiveUpSmart: number;     // default: STUCK_THRESHOLDS.GIVE_UP_SMART (8)
+  stuckGiveUpPlanner: number;     // default: STUCK_THRESHOLDS.GIVE_UP_PLANNER (8)
 
   // Escalation cycles
   maxEscalationCycles: number;  // default: ESCALATION_LIMITS.MAX_CYCLES (5)
@@ -182,7 +182,7 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   simple: {
     stuckEscalate: 3,          // escalate fast — shouldn't be stuck
     stuckGiveUp: 6,            // give up early — not worth persisting
-    stuckGiveUpSmart: 5,
+    stuckGiveUpPlanner: 5,
     maxEscalationCycles: 2,    // one retry at most
     toolFailureWarn: 2,        // warn early
     toolFailureExit: 4,        // exit early
@@ -202,7 +202,7 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   complex: {
     stuckEscalate: 6,
     stuckGiveUp: 14,
-    stuckGiveUpSmart: 10,
+    stuckGiveUpPlanner: 10,
     maxEscalationCycles: 4,
     toolFailureWarn: 5,
     toolFailureExit: 8,
@@ -217,7 +217,7 @@ const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   extreme: {
     stuckEscalate: 8,
     stuckGiveUp: 18,
-    stuckGiveUpSmart: 14,
+    stuckGiveUpPlanner: 14,
     maxEscalationCycles: 5,
     escalationCooldown: 2,     // shorter cooldown — let it re-escalate faster
     toolFailureWarn: 6,
@@ -265,21 +265,21 @@ reason (e.g., known flaky site from memory, unusually deep form).
 
 ### S5: Mid-Session Reassessment
 
-**Insight:** The initial difficulty assessment may be wrong. Allow the smart model to revise limits when it's escalated into the conversation.
+**Insight:** The initial difficulty assessment may be wrong. Allow the planner model to revise limits when it's escalated into the conversation.
 
-**Book basis:** Dibia (2025) on the handoff pattern: "The handoff pattern allows agents to transfer control when another agent is better suited to handle the next step. This creates flexible, adaptive workflows" (§2.3.2, p.38). Escalation is a handoff — the smart model arrives with fresh perspective and can reassess.
+**Book basis:** Dibia (2025) on the handoff pattern: "The handoff pattern allows agents to transfer control when another agent is better suited to handle the next step. This creates flexible, adaptive workflows" (§2.3.2, p.38). Escalation is a handoff — the planner model arrives with fresh perspective and can reassess.
 
 Rothman (2025) lesson #1: "Treat context as an engineered system, not a long prompt." The difficulty assessment is part of the context — it should evolve with the conversation.
 
-**Behavior:** When the smart model is escalated (either via stuck detection or voluntary `escalate` tool), it receives the current `RuntimeLimits` in the escalation context alongside the distilled history. It may return a `limit_overrides` adjustment in its first response.
+**Behavior:** When the planner model is escalated (either via stuck detection or voluntary `escalate` tool), it receives the current `RuntimeLimits` in the escalation context alongside the distilled history. It may return a `limit_overrides` adjustment in its first response.
 
 This covers two important cases:
-1. **Underrated difficulty:** Agent assessed `simple`, but the page turned out to have dynamic content, overlays, and multi-step auth. Smart model bumps to `complex` limits.
-2. **Overrated difficulty:** Agent assessed `complex`, but the task is actually straightforward — the agent was just using the wrong approach. Smart model can tighten limits to prevent further waste.
+1. **Underrated difficulty:** Agent assessed `simple`, but the page turned out to have dynamic content, overlays, and multi-step auth. Planner model bumps to `complex` limits.
+2. **Overrated difficulty:** Agent assessed `complex`, but the task is actually straightforward — the agent was just using the wrong approach. Planner model can tighten limits to prevent further waste.
 
-**Guard:** Mid-session reassessment can only **widen** limits (increase thresholds), never tighten below the `simple` profile minimums. This prevents the smart model from inadvertently creating a death spiral where it tightens limits, gets terminated, escalates, tightens again.
+**Guard:** Mid-session reassessment can only **widen** limits (increase thresholds), never tighten below the `simple` profile minimums. This prevents the planner model from inadvertently creating a death spiral where it tightens limits, gets terminated, escalates, tightens again.
 
-**Exception:** `maxDoneRejections` can be tightened (reduced) — if the smart model believes the task is simpler than initially assessed, it should be allowed to let `done()` through more easily.
+**Exception:** `maxDoneRejections` can be tightened (reduced) — if the planner model believes the task is simpler than initially assessed, it should be allowed to let `done()` through more easily.
 
 ### S6: Trace Integration
 
@@ -324,7 +324,7 @@ export type Difficulty = 'simple' | 'moderate' | 'complex' | 'extreme';
 export interface RuntimeLimits {
   stuckEscalate: number;
   stuckGiveUp: number;
-  stuckGiveUpSmart: number;
+  stuckGiveUpPlanner: number;
   maxEscalationCycles: number;
   escalationCooldown: number;
   toolFailureWarn: number;
@@ -341,7 +341,7 @@ export interface RuntimeLimits {
 export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
   stuckEscalate: STUCK_THRESHOLDS.ESCALATE,
   stuckGiveUp: STUCK_THRESHOLDS.GIVE_UP,
-  stuckGiveUpSmart: STUCK_THRESHOLDS.GIVE_UP_SMART,
+  stuckGiveUpPlanner: STUCK_THRESHOLDS.GIVE_UP_PLANNER,
   maxEscalationCycles: ESCALATION_LIMITS.MAX_CYCLES,
   escalationCooldown: ESCALATION_LIMITS.COOLDOWN_TURNS,
   toolFailureWarn: TOOL_FAILURE_THRESHOLDS.WARN,
@@ -359,7 +359,7 @@ export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
 const MINIMUM_LIMITS: RuntimeLimits = {
   stuckEscalate: 2,
   stuckGiveUp: 4,
-  stuckGiveUpSmart: 3,
+  stuckGiveUpPlanner: 3,
   maxEscalationCycles: 1,
   escalationCooldown: 1,
   toolFailureWarn: 2,
@@ -377,7 +377,7 @@ const MINIMUM_LIMITS: RuntimeLimits = {
 const MAXIMUM_LIMITS: RuntimeLimits = {
   stuckEscalate: 12,
   stuckGiveUp: 25,
-  stuckGiveUpSmart: 20,
+  stuckGiveUpPlanner: 20,
   maxEscalationCycles: 8,
   escalationCooldown: 6,
   toolFailureWarn: 10,
@@ -431,7 +431,7 @@ class AgentLoop {
     const previous = { ...this.limits };
     for (const [key, value] of Object.entries(overrides) as [keyof RuntimeLimits, number][]) {
       if (key === 'maxDoneRejections') {
-        // Can tighten — smart model may judge task is simpler
+        // Can tighten — planner model may judge task is simpler
         this.limits[key] = Math.max(MINIMUM_LIMITS[key], Math.min(MAXIMUM_LIMITS[key], value));
       } else {
         // Can only widen (increase)
@@ -545,7 +545,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 ### Reliability
 - **Reduced false terminations.** Complex tasks get the patience they need, per Dibia's multi-dimensional termination principle (§2.5.1).
 - **Reduced wasted computation.** Simple tasks fail fast, per Rothman's "engineer for production reality" principle.
-- **Better escalation calibration.** The smart model is called less often for simple tasks (tighter escalation threshold), more strategically for complex ones.
+- **Better escalation calibration.** The planner model is called less often for simple tasks (tighter escalation threshold), more strategically for complex ones.
 
 ### Observability
 - **Difficulty labels in traces** enable segmented analysis: "what's our success rate on `complex` vs `simple` tasks?"
@@ -557,7 +557,7 @@ Export `Difficulty` and `RuntimeLimits` from the central types.
 | Risk | Mitigation |
 |---|---|
 | Planner produces wrong difficulty | Fallback to `moderate` (current behavior). Floor/ceiling clamps prevent extreme values. |
-| Smart model games limits to extend its own tenure | Mid-session can only widen, not tighten (except `maxDoneRejections`). Safety rails (`MAX_SESSION_MS`, cost caps) are never adaptive. |
+| Planner model games limits to extend its own tenure | Mid-session can only widen, not tighten (except `maxDoneRejections`). Safety rails (`MAX_SESSION_MS`, cost caps) are never adaptive. |
 | Profile presets are miscalibrated | Trace data enables empirical tuning. Initial profiles are conservative (close to current defaults for `moderate`). |
 | Added complexity in loop.ts | `this.limits.X` is a direct replacement for `CONSTANT.X` — same read pattern, different source. |
 

@@ -196,7 +196,7 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 | **Fast (primary)**    | Cerebras   | `gpt-oss-120b`                     | ~3000 TPS | Default — fastest provider               |
 | **Fast (fallback 1)** | Groq       | `openai/gpt-oss-120b`              | ~250K TPM | Automatic failover on 429                |
 | **Fast (fallback 2)** | OpenRouter | `openai/gpt-oss-120b`              | Variable  | Always-available fallback                |
-| **Smart**             | OpenRouter | `x-ai/grok-4.1-fast:nitro`         | Moderate  | Complex reasoning (escalation)           |
+| **Planner**           | OpenRouter | `x-ai/grok-4.1-fast:nitro`         | Moderate  | Complex reasoning (escalation)           |
 | **Vision**            | OpenRouter | `qwen/qwen3-vl-235b-a22b-instruct` | Moderate  | Screenshot analysis (GUI grounding, OCR) |
 | **Audio**             | Groq       | `whisper-large-v3-turbo`           | Very High | Speech-to-text & Video transcription     |
 
@@ -272,7 +272,7 @@ interface UserSettings {
 #### API Usage Assumptions
 
 - 10 sessions/day × 30 days = 300 sessions/month
-- 5% escalation rate to smart model
+- 5% escalation rate to planner model
 - 20% screenshot usage
 
 #### OpenRouter Costs

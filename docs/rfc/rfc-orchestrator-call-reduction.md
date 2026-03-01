@@ -17,20 +17,20 @@ The orchestrator was designed to provide reliable multi-step task execution. But
 
 | Phase | Method | Calls | Tier | When |
 |-------|--------|-------|------|------|
-| **Planning** | `planner.decompose()` | 1 | Smart | Always — initial decomposition |
-| | `runPlanDeliberation()` | 0–2 | Smart | When plan has ≥3 steps or dependencies |
-| | `reviewPlan()` | 1 | Smart | Always — preflight review |
-| **Per-Node** | `advise()` | 1 | Smart | Always — per-node advisory |
-| | `verifyNode()` | 1 | Smart | Always — per-node verification |
-| | `runDialogue()` | 0–2 | Smart | When verification ≠ accept |
-| | `reflectDecision()` | 0–1 | Smart | When drift/staleness detected |
-| | `advocateChallenge()` | 0–1 | Smart | When verifier rejects |
-| **Post-Run** | `retrospective()` | 1 | Smart | Always — post-mortem |
-| | Summarization | 1 | Smart | Always — final summary |
+| **Planning** | `planner.decompose()` | 1 | Planner | Always — initial decomposition |
+| | `runPlanDeliberation()` | 0–2 | Planner | When plan has ≥3 steps or dependencies |
+| | `reviewPlan()` | 1 | Planner | Always — preflight review |
+| **Per-Node** | `advise()` | 1 | Planner | Always — per-node advisory |
+| | `verifyNode()` | 1 | Planner | Always — per-node verification |
+| | `runDialogue()` | 0–2 | Planner | When verification ≠ accept |
+| | `reflectDecision()` | 0–1 | Planner | When drift/staleness detected |
+| | `advocateChallenge()` | 0–1 | Planner | When verifier rejects |
+| **Post-Run** | `retrospective()` | 1 | Planner | Always — post-mortem |
+| | Summarization | 1 | Planner | Always — final summary |
 
 **For a simple 3-node task:**
-- Minimum: 1 (decompose) + 1 (review) + 3×2 (advise+verify) + 1 (retrospective) + 1 (summary) = **10 smart calls**
-- Typical: Add deliberation + some debate rounds = **14-18 smart calls**
+- Minimum: 1 (decompose) + 1 (review) + 3×2 (advise+verify) + 1 (retrospective) + 1 (summary) = **10 planner calls**
+- Typical: Add deliberation + some debate rounds = **14-18 planner calls**
 - Of these, only the 3 executor loops do actual work. The rest is coordination.
 
 The orchestrator's overhead is **3-6x the executor cost** in LLM calls.
@@ -43,11 +43,11 @@ The orchestrator's overhead is **3-6x the executor cost** in LLM calls.
 
 **Dibia (Ch 2 §2.3.3)** on conversation-driven coordination: "AI-driven conversation patterns require an additional LLM call per turn just for speaker selection. Combined with the growing conversation context that all agents share, this makes conversation-driven coordination the most expensive pattern." The verifier dialogue is exactly this pattern — multiple LLM "speakers" debating each node.
 
-**Dibia (Ch 2 §2.4.2)** recommends handoff patterns for resource-constrained systems: "Among autonomous patterns, handoff patterns have the lowest coordination overhead. Agents make local decisions about delegation without requiring a centralized orchestrator." The existing fast→smart escalation is already a handoff pattern — the orchestrator adds an expensive layer on top.
+**Dibia (Ch 2 §2.4.2)** recommends handoff patterns for resource-constrained systems: "Among autonomous patterns, handoff patterns have the lowest coordination overhead. Agents make local decisions about delegation without requiring a centralized orchestrator." The existing executor→planner escalation is already a handoff pattern — the orchestrator adds an expensive layer on top.
 
 **Gulli (Ch 7, lines 1245-1247)** warns about supervisors: "Managing communication overhead and ensuring coherent decision-making can be challenging. The Supervisor model introduces a single point of failure and can become a bottleneck if overwhelmed." The orchestrator is exactly this bottleneck.
 
-**Gulli (Ch 17, lines 2888-2904)** on the MASS framework: "Optimize individual agents with high-quality prompts before composing them." The implication is clear: invest in making the executor (fast model with good prompts) work well on its own before adding orchestration layers.
+**Gulli (Ch 17, lines 2888-2904)** on the MASS framework: "Optimize individual agents with high-quality prompts before composing them." The implication is clear: invest in making the executor (executor model with good prompts) work well on its own before adding orchestration layers.
 
 **Rothman (Ch 4, lines 2450-2509)** on planning: "The Planner makes ONE call to the LLM. The Executor then follows this plan mechanically without consulting the LLM again for planning decisions." The deliberation loop (up to 2 additional planning calls) contradicts this principle.
 
@@ -59,7 +59,7 @@ Five specific sources of wasted calls:
 
 **P1: Plan deliberation (0–2 calls).** `runPlanDeliberation()` re-runs `planner.decompose()` up to 2 additional times to "refine" the plan. In practice, the first decomposition is usually good enough — the deliberation often just shuffles step ordering or adds minor wording changes. The convergence check (`planSignature`) shows plans often converge after 0-1 rounds.
 
-**P2: Plan review (1 call).** `reviewPlan()` makes a smart-tier call to validate the plan structure. But the plan was just generated by the same smart model — reviewing the model's own output with the same model is circular. Structural issues (missing dependencies, invalid tool names) are already caught by `validatePlannerAssignments()` programmatically.
+**P2: Plan review (1 call).** `reviewPlan()` makes a planner-tier call to validate the plan structure. But the plan was just generated by the same planner model — reviewing the model's own output with the same model is circular. Structural issues (missing dependencies, invalid tool names) are already caught by `validatePlannerAssignments()` programmatically.
 
 **P3: Per-node advisory (1 call each).** `advise()` generates hints before each node execution. For simple nodes ("navigate to URL", "click the submit button"), the hint adds no information beyond what's already in the node description and executor instruction. The advisory is most useful for complex or previously-failed nodes — the minority case.
 
@@ -77,7 +77,7 @@ Delete `runPlanDeliberation()` and `shouldRunDeliberation()`. The initial `plann
 
 **Fallback:** If the initial plan is structurally invalid (caught by `validatePlannerAssignments()`), the executor still adapts at runtime — replanning happens only when a node actually fails, not as a scheduled pre-check.
 
-**Savings: 0–2 smart calls per session.**
+**Savings: 0–2 planner calls per session.**
 
 ### S2: Remove Plan Review
 
@@ -85,19 +85,19 @@ Delete `reviewPlan()`. Structural validation is already handled by `validatePlan
 
 **Rationale from Rothman (Ch 8):** Two-stage gate — the programmatic validation (stage 1) catches structural issues. If the plan passes structural validation, it's good enough to execute. Failures are caught at node execution time, where they can be addressed with concrete evidence (not hypothetical concerns from a preflight check).
 
-**Savings: 1 smart call per session.**
+**Savings: 1 planner call per session.**
 
 ### S3: Gate Advisory (Covered by RFC: Programmatic Verification S3)
 
 Already specified in the Programmatic Verification RFC. Only call `advise()` for complex/retried nodes.
 
-**Savings: 2–4 smart calls per 5-node task.**
+**Savings: 2–4 planner calls per 5-node task.**
 
 ### S4: Replace Verification Debate with Programmatic Gate + Single LLM Fallback (Covered by RFC: Programmatic Verification S1+S2)
 
 Already specified in the Programmatic Verification RFC. Programmatic gate first, single `verifyNode()` for ambiguous cases, no debate.
 
-**Savings: 5–15 smart calls per 5-node task.**
+**Savings: 5–15 planner calls per 5-node task.**
 
 ### S5: Replace Retrospective with Memory Write
 
@@ -125,7 +125,7 @@ This is zero LLM calls (memory_add uses the embedding model, not the LLM), makes
 
 **Rationale from Rothman (Ch 3):** "Procedural RAG — Store *how-to-act* instructions in a vector store." Failure lessons are procedural knowledge ("don't try approach X on this site") and belong in the procedural memory, not in a transient reflexion log.
 
-**Savings: 1 smart call per session.**
+**Savings: 1 planner call per session.**
 
 ### S6: Remove End-of-Run LLM Summarization
 
@@ -152,7 +152,7 @@ function buildProgrammaticSummary(
 }
 ```
 
-**Savings: 1 smart call per session.**
+**Savings: 1 planner call per session.**
 
 ## Implementation
 
@@ -238,7 +238,7 @@ Remove the `LlmLike` type dependency if it was only used for summarization.
 ### Eval Pipeline
 
 Run existing eval suite before/after, compare:
-- **Total smart-tier LLM calls per session** (primary metric)
+- **Total planner-tier LLM calls per session** (primary metric)
 - **Task completion rate** (must not regress)
 - **Time to completion** (should improve from fewer round trips)
 - **Cost per session** (should drop 50-70%)
@@ -258,7 +258,7 @@ Run existing eval suite before/after, compare:
 | Verification (5 nodes) | 5–20 | 1–3 | 4–17 |
 | Retrospective | 1 | 0 | 1 |
 | Summarization | 1 | 0 | 1 |
-| **Total smart-tier calls** | **14–30** | **3–6** | **10–24 (70-80%)** |
+| **Total planner-tier calls** | **14–30** | **3–6** | **10–24 (70-80%)** |
 
 ### Reliability
 
@@ -284,10 +284,10 @@ Run existing eval suite before/after, compare:
 
 | Decision | Chosen | Rejected Alternative | Rationale |
 |----------|--------|---------------------|-----------|
-| Deliberation | Remove entirely | Keep 1 round | Even 1 round is an expensive smart call that rarely improves the plan. Rothman: "Planner makes ONE call." |
+| Deliberation | Remove entirely | Keep 1 round | Even 1 round is an expensive planner call that rarely improves the plan. Rothman: "Planner makes ONE call." |
 | Plan review | Remove | Replace with programmatic structural check | `validatePlannerAssignments()` already does the structural check. Semantic review by the same model is circular. |
 | Retrospective | Replace with memory writes | Keep but reduce scope | The retrospective's output has no consumer. Memory writes have a consumer (`memory_search`). Zero LLM cost. |
-| Summarization | Programmatic | Keep LLM but use fast tier | Fast-tier call is cheaper but still unnecessary. Node statuses + executor done message already contain all the information. |
+| Summarization | Programmatic | Keep LLM but use executor tier | Executor-tier call is cheaper but still unnecessary. Node statuses + executor done message already contain all the information. |
 | Advisory | Gate behind heuristic | Remove entirely | Advisory helps for complex/retried nodes. Full removal is too aggressive — keeps the escape hatch for hard cases. |
 
 ## Cross-References

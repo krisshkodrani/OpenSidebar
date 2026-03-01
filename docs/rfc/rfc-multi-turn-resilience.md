@@ -134,7 +134,7 @@ Stay focused on this goal. Do not deviate unless the user explicitly changes dir
    - `currentPage`: URL + title + element summary
 2. **Clear** the conversation history entirely
 3. Rebuild with: system prompt + serialized brief as a single user message + current DOM snapshot
-4. Resume on the smart tier with a fresh context window
+4. Resume on the planner tier with a fresh context window
 
 This is stronger than escalation — it eliminates the accumulated noise, anchoring effects, and attention-diluting history that the paper shows compounds with each turn. By structuring the brief as a typed artifact (not a text blob), we preserve the book's principle of verifiable handoffs.
 
@@ -401,7 +401,7 @@ if (
   consecutiveTextOnly = 0;
   stagnationWindow.length = 0;
 
-  // Stay on smart tier
+  // Stay on planner tier
   if (escalationTier === 0) {
     await escalateModel(tabId, prevElementCount);
   }

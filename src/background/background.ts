@@ -892,8 +892,8 @@ async function handleUserChat(
   // 1. Get Settings (API Keys)
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
-  const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
-  const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
+  const openRouterApiKey = settings.openRouterApiKey;
+  const groqApiKey = settings.groqApiKey || undefined;
 
   if (!openRouterApiKey) {
     chrome.runtime.sendMessage({

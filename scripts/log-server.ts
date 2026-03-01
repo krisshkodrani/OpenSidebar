@@ -50,6 +50,12 @@ function parseJsonBody(req: IncomingMessage): Promise<any> {
   });
 }
 
+/**
+ * CORS headers — permissive for local development only.
+ * This server binds to 127.0.0.1 and is not intended for production or public exposure.
+ * The wildcard origin allows the Chrome extension (which runs from a chrome-extension:// origin)
+ * to send log/trace data to this local server during development.
+ */
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",

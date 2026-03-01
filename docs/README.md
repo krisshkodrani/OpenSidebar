@@ -26,7 +26,7 @@ docs/
 │   ├── types-reference.md       # TypeScript type reference
 │   ├── tools.md                 # Tool system architecture
 │   ├── project-setup.md         # Build configuration
-│   └── fast-smart-collaboration.md # Two-tier LLM system
+│   └── fast-smart-collaboration.md # Two-tier LLM system (executor-planner)
 ├── features/                    # Feature documentation
 │   ├── agent-capabilities.md    # LLM tiers, orchestrator, skills
 │   ├── browser-automation.md    # Browser automation features

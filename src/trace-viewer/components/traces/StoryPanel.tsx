@@ -10,15 +10,10 @@ import {
 
 marked.setOptions({ breaks: true, gfm: true });
 
-declare const __OPENROUTER_API_KEY__: string;
-
 const STORAGE_KEY = "openrouter_api_key";
 const MODEL = "x-ai/grok-4.1-fast";
 
 function getApiKey(): string {
-  const buildKey =
-    typeof __OPENROUTER_API_KEY__ !== "undefined" ? __OPENROUTER_API_KEY__ : "";
-  if (buildKey) return buildKey;
   return localStorage.getItem(STORAGE_KEY) ?? "";
 }
 

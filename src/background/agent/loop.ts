@@ -75,8 +75,8 @@ import {
   INVESTIGATION_TOOLS,
   INVESTIGATION_EXTENSION,
   MAX_ORIENTATION_TURNS,
-  DISCOVERY_BUDGET,
-  DISCOVERY_ONLY_TOOLS,
+  EXPLORATION_BUDGET,
+  EXPLORATION_ONLY_TOOLS,
 } from "./constants";
 import type { Difficulty, RuntimeLimits } from "./constants";
 // reassessRuntimeLimits is available from "./constants" for mid-session S5 reassessment
@@ -353,7 +353,7 @@ function buildHandoffBriefing(
     }
   }
   if (reasoning) {
-    parts.push(`Smart model observations:\n${reasoning}`);
+    parts.push(`Planner model observations:\n${reasoning}`);
   }
 
   // 2. Extract all element IDs referenced in the last few assistant tool calls
@@ -2540,7 +2540,7 @@ export class AgentLoop {
     }
     let escalationCycles = 0;
     let cooldownRemaining = 0;
-    let smartModelStartTurn = 0; // turn when auto-escalation fired
+    let plannerModelStartTurn = 0; // turn when auto-escalation fired
     let consecutiveProgressSignals = 0; // progress gate for de-escalation
     let freshStartCount = 0; // S3: fresh-start recovery counter
 
@@ -2561,8 +2561,8 @@ export class AgentLoop {
     const blockedActions: BlockedAction[] = [];
     let turnsSinceStepEscalation = -1; // -1 = no step escalation active
 
-    // Discovery budget: nudge after N consecutive discovery-only turns
-    let consecutiveDiscoveryTurns = 0;
+    // Exploration budget: nudge after N consecutive exploration-only turns
+    let consecutiveExplorationTurns = 0;
 
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
@@ -3791,7 +3791,7 @@ export class AgentLoop {
               if (escalationTier < 1) {
                 this.escalateModel();
                 escalationTier = 1;
-                smartModelStartTurn = this.turnCount;
+                plannerModelStartTurn = this.turnCount;
                 orientationPhase = false; // Cancel plan-then-act handoff
                 prevElementCount = await this.refreshSnapshotWithRetry(
                   tabId,
@@ -4600,23 +4600,23 @@ export class AgentLoop {
             }
           }
 
-          // B2. Discovery budget: nudge after N consecutive turns of only reading/inspecting
+          // B2. Exploration budget: nudge after N consecutive turns of only reading/inspecting
           {
             const allDiscovery = response.tool_calls!.every((tc) =>
-              DISCOVERY_ONLY_TOOLS.has(tc.function.name),
+              EXPLORATION_ONLY_TOOLS.has(tc.function.name),
             );
             if (allDiscovery) {
-              consecutiveDiscoveryTurns++;
+              consecutiveExplorationTurns++;
               if (
-                consecutiveDiscoveryTurns >= DISCOVERY_BUDGET.MAX_CONSECUTIVE
+                consecutiveExplorationTurns >= EXPLORATION_BUDGET.MAX_CONSECUTIVE
               ) {
                 this.context.addMessage({
                   role: "user",
-                  content: `You've spent ${consecutiveDiscoveryTurns} consecutive turns only reading/inspecting without acting. Use what you've gathered — click, type, scroll, navigate — or escalate if stuck.`,
+                  content: `You've spent ${consecutiveExplorationTurns} consecutive turns only reading/inspecting without acting. Use what you've gathered — click, type, scroll, navigate — or escalate if stuck.`,
                 });
               }
             } else {
-              consecutiveDiscoveryTurns = 0;
+              consecutiveExplorationTurns = 0;
             }
           }
 
@@ -4845,7 +4845,7 @@ export class AgentLoop {
               this.escalateModel();
               escalationTier = 1;
               orientationPhase = false;
-              smartModelStartTurn = this.turnCount;
+              plannerModelStartTurn = this.turnCount;
               turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
               await this.strategyPivot(tabId, stepAttemptSummary);
               this.stagnation.resetEscalation();
@@ -4903,7 +4903,7 @@ export class AgentLoop {
           this.escalateModel();
           escalationTier = 1;
           orientationPhase = false;
-          smartModelStartTurn = this.turnCount;
+          plannerModelStartTurn = this.turnCount;
           await this.strategyPivot(tabId, urlAttemptSummary);
           this.stagnation.resetEscalation();
           this.context.addMessage({
@@ -5247,7 +5247,7 @@ export class AgentLoop {
                     this.escalateModel();
                     escalationTier = 1;
                   }
-                  smartModelStartTurn = this.turnCount;
+                  plannerModelStartTurn = this.turnCount;
 
                   // Refresh snapshot
                   try {
@@ -5290,7 +5290,7 @@ export class AgentLoop {
                   this.escalateModel();
                   escalationTier = 1;
                   orientationPhase = false;
-                  smartModelStartTurn = this.turnCount;
+                  plannerModelStartTurn = this.turnCount;
                   await this.strategyPivot(tabId, attemptSummary);
                   this.stagnation.resetEscalation();
                   this.context.addMessage({
@@ -5341,11 +5341,11 @@ export class AgentLoop {
 
                   // De-escalate if on planner model, under cycle limit,
                   // and the planner model has had enough turns to actually work
-                  const smartTenure = this.turnCount - smartModelStartTurn;
+                  const plannerTenure = this.turnCount - plannerModelStartTurn;
                   if (
                     escalationTier > 0 &&
                     escalationCycles < this.limits.maxEscalationCycles &&
-                    smartTenure >= ESCALATION_LIMITS.MIN_SMART_TENURE
+                    plannerTenure >= ESCALATION_LIMITS.MIN_PLANNER_TENURE
                   ) {
                     prevElementCount = await this.deescalateModel(
                       tabId,
@@ -5496,7 +5496,7 @@ export class AgentLoop {
           this.escalateModel();
           escalationTier = 1;
           orientationPhase = false;
-          smartModelStartTurn = this.turnCount;
+          plannerModelStartTurn = this.turnCount;
           await this.strategyPivot(tabId, textOnlyAttemptSummary);
           this.stagnation.resetEscalation();
           this.context.addMessage({
@@ -5551,17 +5551,17 @@ export class AgentLoop {
           break;
         }
 
-        // Smart model turn-based give-up
-        const smartTurns =
-          escalationTier > 0 ? this.turnCount - smartModelStartTurn : 0;
+        // Planner model turn-based give-up
+        const plannerTurns =
+          escalationTier > 0 ? this.turnCount - plannerModelStartTurn : 0;
         if (
           escalationTier > 0 &&
-          smartTurns >= this.limits.stuckGiveUpSmart &&
+          plannerTurns >= this.limits.stuckGiveUpPlanner &&
           totalTextOnly >= 3
         ) {
           this.log.warn("agent", "Loop ended: planner model turn limit", {
             turns: this.turnCount,
-            smartTurns,
+            plannerTurns,
             totalTextOnly,
             tier: escalationTier,
           });

@@ -739,10 +739,10 @@ OpenSidebar uses two LLM tiers with priority-based provider failover:
 
 | Model Tier | Model ID                           | Provider                              | Use Case                           |
 | ---------- | ---------------------------------- | ------------------------------------- | ---------------------------------- |
-| **Fast**   | `gpt-oss-120b`                     | Cerebras (3000 TPS, highest priority) | Fast, everyday tasks (default)     |
-| **Fast**   | `openai/gpt-oss-120b`              | Groq (250K TPM)                       | Fast fallback                      |
-| **Fast**   | `openai/gpt-oss-120b`              | OpenRouter                            | Fast fallback                      |
-| **Smart**      | `zai-glm-4.7` / `z-ai/glm-4.7`          | Cerebras → OpenRouter                 | Complex reasoning, escalated tasks |
+| **Executor** | `gpt-oss-120b`                     | Cerebras (3000 TPS, highest priority) | Executor, everyday tasks (default) |
+| **Executor** | `openai/gpt-oss-120b`              | Groq (250K TPM)                       | Executor fallback                  |
+| **Executor** | `openai/gpt-oss-120b`              | OpenRouter                            | Executor fallback                  |
+| **Planner**  | `zai-glm-4.7` / `z-ai/glm-4.7`          | Cerebras → OpenRouter                 | Complex reasoning, escalated tasks |
 | **Perception** | Llama 4 Scout / GPT-4o-mini              | Groq → OpenRouter                     | Vision-based page understanding    |
 
 The `escalate` tool switches to GLM-4.7 (native reasoning) when needed.

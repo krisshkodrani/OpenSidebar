@@ -115,14 +115,14 @@
     "id": "agent.reflection.deescalation",
     "version": "v2",
     "hash": "6589db1e",
-    "description": "De-escalation reflection when returning from smart to fast model.",
+    "description": "De-escalation reflection when returning from planner to executor model.",
     "sourcePath": "prompts/runtime/reflections/deescalation.md"
   },
   {
     "id": "agent.reflection.escalation",
     "version": "v2",
     "hash": "395707d7",
-    "description": "Escalation reflection for smart-model takeover when stalled.",
+    "description": "Escalation reflection for planner-model takeover when stalled.",
     "sourcePath": "prompts/runtime/reflections/escalation.md"
   },
   {

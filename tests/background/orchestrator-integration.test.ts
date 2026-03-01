@@ -116,7 +116,6 @@ describe("Orchestrator integration join tests", () => {
     chromeAny.scripting ??= {};
     chromeAny.scripting.executeScript ??= vi.fn(async () => undefined);
 
-    (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
     // Mock fetch so the router classifier returns "plan" (tests exercise the planner pipeline)
     const _origFetch = globalThis.fetch;

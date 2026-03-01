@@ -24,7 +24,7 @@ describe("resolveRuntimeLimits", () => {
     const result = resolveRuntimeLimits("simple");
     expect(result.stuckEscalate).toBe(3);
     expect(result.stuckGiveUp).toBe(6);
-    expect(result.stuckGiveUpSmart).toBe(5);
+    expect(result.stuckGiveUpPlanner).toBe(5);
     expect(result.maxEscalationCycles).toBe(2);
     expect(result.toolFailureWarn).toBe(2);
     expect(result.toolFailureExit).toBe(4);
@@ -41,7 +41,7 @@ describe("resolveRuntimeLimits", () => {
     const result = resolveRuntimeLimits("extreme");
     expect(result.stuckEscalate).toBe(8);
     expect(result.stuckGiveUp).toBe(18);
-    expect(result.stuckGiveUpSmart).toBe(14);
+    expect(result.stuckGiveUpPlanner).toBe(14);
     expect(result.maxEscalationCycles).toBe(5);
     expect(result.escalationCooldown).toBe(2);
     expect(result.toolFailureExit).toBe(10);

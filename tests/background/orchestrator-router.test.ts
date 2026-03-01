@@ -161,23 +161,14 @@ describe("classifyRoute", () => {
   });
 
   test("falls back to agent when no API keys available", async () => {
-    const savedOR = (globalThis as any).__OPENROUTER_API_KEY__;
-    const savedGroq = (globalThis as any).__GROQ_API_KEY__;
-    (globalThis as any).__OPENROUTER_API_KEY__ = "";
-    (globalThis as any).__GROQ_API_KEY__ = "";
-    try {
-      const result = await classifyRoute(
-        "What is this?",
-        "Page",
-        "https://example.com",
-        { ...baseSettings, openRouterApiKey: "", groqApiKey: "" },
-      );
-      expect(result.route).toBe("agent");
-      expect(result.reason).toBe("Router fallback");
-    } finally {
-      (globalThis as any).__OPENROUTER_API_KEY__ = savedOR;
-      (globalThis as any).__GROQ_API_KEY__ = savedGroq;
-    }
+    const result = await classifyRoute(
+      "What is this?",
+      "Page",
+      "https://example.com",
+      { ...baseSettings, openRouterApiKey: "", groqApiKey: "" },
+    );
+    expect(result.route).toBe("agent");
+    expect(result.reason).toBe("Router fallback");
   });
 
   test("handles response with think tags", async () => {

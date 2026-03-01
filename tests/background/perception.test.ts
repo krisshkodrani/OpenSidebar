@@ -52,19 +52,18 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response | Prom
     }) as typeof fetch;
 }
 
-/** Set API keys and storage mock; returns cleanup function. */
+/** Set API keys via storage mock; returns cleanup function. */
 function setKeys(opts: { groq?: string; openRouter?: string }): () => void {
-    const savedOR = (globalThis as any).__OPENROUTER_API_KEY__;
-    const savedGroq = (globalThis as any).__GROQ_API_KEY__;
     const origGet = chrome.storage.sync.get;
 
-    (globalThis as any).__OPENROUTER_API_KEY__ = opts.openRouter ?? "";
-    (globalThis as any).__GROQ_API_KEY__ = opts.groq ?? "";
-    chrome.storage.sync.get = (async () => ({})) as any;
+    chrome.storage.sync.get = (async () => ({
+        userSettings: {
+            openRouterApiKey: opts.openRouter ?? "",
+            groqApiKey: opts.groq ?? "",
+        },
+    })) as any;
 
     return () => {
-        (globalThis as any).__OPENROUTER_API_KEY__ = savedOR;
-        (globalThis as any).__GROQ_API_KEY__ = savedGroq;
         chrome.storage.sync.get = origGet;
     };
 }

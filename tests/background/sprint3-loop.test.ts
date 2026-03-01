@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { STAGNATION_DETECTION, DISCOVERY_BUDGET, DISCOVERY_ONLY_TOOLS } from "../../src/background/agent/constants";
+import { STAGNATION_DETECTION, EXPLORATION_BUDGET, EXPLORATION_ONLY_TOOLS } from "../../src/background/agent/constants";
 import { buildFailureRecovery } from "../../src/background/agent/loop";
 import { computeSnapshotFingerprint } from "../../src/background/agent/stagnation";
 
@@ -226,28 +226,28 @@ describe("buildFailureRecovery", () => {
 
 // ─── Discovery Budget Constants ──────────────────────────────────────────
 
-describe("DISCOVERY_BUDGET", () => {
+describe("EXPLORATION_BUDGET", () => {
   test("MAX_CONSECUTIVE is 3", () => {
-    expect(DISCOVERY_BUDGET.MAX_CONSECUTIVE).toBe(3);
+    expect(EXPLORATION_BUDGET.MAX_CONSECUTIVE).toBe(3);
   });
 });
 
-describe("DISCOVERY_ONLY_TOOLS", () => {
+describe("EXPLORATION_ONLY_TOOLS", () => {
   test("contains read_page and find_element", () => {
-    expect(DISCOVERY_ONLY_TOOLS.has("read_page")).toBe(true);
-    expect(DISCOVERY_ONLY_TOOLS.has("find_element")).toBe(true);
+    expect(EXPLORATION_ONLY_TOOLS.has("read_page")).toBe(true);
+    expect(EXPLORATION_ONLY_TOOLS.has("find_element")).toBe(true);
   });
 
   test("does not contain action tools", () => {
-    expect(DISCOVERY_ONLY_TOOLS.has("click_element")).toBe(false);
-    expect(DISCOVERY_ONLY_TOOLS.has("type_text")).toBe(false);
-    expect(DISCOVERY_ONLY_TOOLS.has("scroll_page")).toBe(false);
-    expect(DISCOVERY_ONLY_TOOLS.has("navigate")).toBe(false);
+    expect(EXPLORATION_ONLY_TOOLS.has("click_element")).toBe(false);
+    expect(EXPLORATION_ONLY_TOOLS.has("type_text")).toBe(false);
+    expect(EXPLORATION_ONLY_TOOLS.has("scroll_page")).toBe(false);
+    expect(EXPLORATION_ONLY_TOOLS.has("navigate")).toBe(false);
   });
 
   test("contains investigation tools", () => {
-    expect(DISCOVERY_ONLY_TOOLS.has("inspect_hidden")).toBe(true);
-    expect(DISCOVERY_ONLY_TOOLS.has("xray_page")).toBe(true);
-    expect(DISCOVERY_ONLY_TOOLS.has("get_cookies")).toBe(true);
+    expect(EXPLORATION_ONLY_TOOLS.has("inspect_hidden")).toBe(true);
+    expect(EXPLORATION_ONLY_TOOLS.has("xray_page")).toBe(true);
+    expect(EXPLORATION_ONLY_TOOLS.has("get_cookies")).toBe(true);
   });
 });

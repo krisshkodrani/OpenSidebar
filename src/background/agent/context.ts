@@ -66,14 +66,16 @@ export function formatSnapshotElements(
     .join("\n");
 }
 
-const FAST_PERSONA =
+/** Persona injected when the executor model is active (speed-optimised, action-biased). */
+const EXECUTOR_PERSONA =
   "You are the execution model. Keep Think blocks to 2-3 lines. Prefer the most obvious action. Call one tool per turn unless batching independent fills. If an action fails twice, call escalate() instead of retrying.";
 
-const SMART_PERSONA =
-  "You are the reasoning model, called when the fast model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
+/** Persona injected when the planner model is active (reasoning-heavy, investigation-biased). */
+const PLANNER_PERSONA =
+  "You are the reasoning model, called when the executor model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
 
-/** Tools whose results carry reference data worth preserving longer in history. */
-const DISCOVERY_TOOLS: ReadonlySet<string> = new Set([
+/** Tools whose results carry reference data worth preserving longer in history compression. */
+const REFERENCE_VALUE_TOOLS: ReadonlySet<string> = new Set([
   "inspect_hidden",
   "execute_js",
   "get_cookies",
@@ -500,7 +502,7 @@ export class ContextManager {
     // Persona: executor vs planner model framing (placed after static rules for prefix caching)
     content = content.replace(
       "{{persona}}",
-      `## Persona\n${this.modelTier === "planner" ? SMART_PERSONA : FAST_PERSONA}`,
+      `## Persona\n${this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA}`,
     );
 
     // Multi-Step Planning: only include when a plan is active
@@ -976,9 +978,9 @@ Do NOT call done() until every planned step is complete.
           continue;
         }
         const toolName = this.findToolNameForResult(msg.tool_call_id);
-        const isDiscovery = toolName !== null && DISCOVERY_TOOLS.has(toolName);
-        const maxLen = isDiscovery ? DISCOVERY_MAX : ACTION_MAX;
-        const snippetLen = isDiscovery ? DISCOVERY_SNIPPET : ACTION_SNIPPET;
+        const isReferenceValue = toolName !== null && REFERENCE_VALUE_TOOLS.has(toolName);
+        const maxLen = isReferenceValue ? DISCOVERY_MAX : ACTION_MAX;
+        const snippetLen = isReferenceValue ? DISCOVERY_SNIPPET : ACTION_SNIPPET;
 
         if (typeof msg.content === "string" && msg.content.length > maxLen) {
           const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);

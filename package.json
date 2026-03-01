@@ -8,6 +8,22 @@
     "url": "https://github.com/OpenSidebar/OpenSidebar.git"
   },
   "license": "MIT",
+  "homepage": "https://github.com/OpenSidebar/OpenSidebar#readme",
+  "bugs": {
+    "url": "https://github.com/OpenSidebar/OpenSidebar/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "browser-agent",
+    "ai-agent",
+    "browser-automation",
+    "llm",
+    "web-agent",
+    "manifest-v3"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "tsx scripts/dev-stack.ts",
     "build": "npm run prompts:build && npm run prompts:check && tsx scripts/vite-clean.ts build",

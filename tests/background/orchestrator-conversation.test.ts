@@ -104,7 +104,6 @@ describe("Orchestrator conversation collaboration", () => {
     chromeAny.tabs ??= {};
     chromeAny.scripting ??= {};
     chromeAny.scripting.executeScript ??= vi.fn(async () => undefined);
-    (globalThis as any).__OPENROUTER_API_KEY__ = "fallback-openrouter-key";
 
     // Mock fetch so the router classifier returns "plan" (tests exercise the planner pipeline)
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

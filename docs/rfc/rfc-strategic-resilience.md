@@ -16,11 +16,11 @@ Proposed (Phase 2 — depends on Phase 1: `rfc-post-action-verification.md`)
 
 Phase 1 (Post-Action Verification) addresses the feedback gap at the *action* level: did this click work? Was the element interactable? Are we stuck in a zero-effect loop?
 
-Phase 2 addresses the *strategic* level: what happens when the entire approach fails? Currently, `replanFrom()` makes an expensive smart-model call on every deviation. And when a plan step fails after multiple retries, the only options are "continue from here" or "full fresh start" — there's no middle ground of rolling back to a known-good checkpoint.
+Phase 2 addresses the *strategic* level: what happens when the entire approach fails? Currently, `replanFrom()` makes an expensive planner-model call on every deviation. And when a plan step fails after multiple retries, the only options are "continue from here" or "full fresh start" — there's no middle ground of rolling back to a known-good checkpoint.
 
 ### Two Gaps
 
-**Gap 4 (P2a): No alternative strategy.** The planner decomposes tasks into a single sequence of steps. When deviation is detected, `replanFrom()` calls the smart model to replan — an expensive LLM call. If the planner had generated an alternative approach during initial decomposition, we could try it immediately before falling back to an LLM replan call. The study's ToT (Tree of Thoughts) branching and Plan-MCTS patterns both maintain multiple candidate paths.
+**Gap 4 (P2a): No alternative strategy.** The planner decomposes tasks into a single sequence of steps. When deviation is detected, `replanFrom()` calls the planner model to replan — an expensive LLM call. If the planner had generated an alternative approach during initial decomposition, we could try it immediately before falling back to an LLM replan call. The study's ToT (Tree of Thoughts) branching and Plan-MCTS patterns both maintain multiple candidate paths.
 
 **Gap 5 (P2b): No state checkpointing.** The agent has no middle ground between "continue from current state" and "full fresh start" (which resets all context). The navigation bridge already demonstrates per-navigation state persistence. The same pattern applied at plan step boundaries would enable targeted rollback — go back to the state where step N-1 succeeded, rather than starting from scratch. Dibia identifies this as a gap in DMAS evaluation (Ch 6).
 
@@ -54,12 +54,12 @@ Omit for simple tasks or when there's only one sensible approach.
 handlePlanDeviation():
   1. If alternativeStrategy exists AND not yet used:
      → Swap plan steps, inject context message, set alternativeStrategyUsed = true
-     → Skip replanFrom() call (saves ~2s + smart model tokens)
+     → Skip replanFrom() call (saves ~2s + planner model tokens)
   2. Else:
      → Fall through to existing replanFrom() logic
 ```
 
-**Cost**: Zero additional LLM calls at plan time (the alternative is requested in the same decomposition prompt). Saves one smart-model call when deviation triggers and alternative exists.
+**Cost**: Zero additional LLM calls at plan time (the alternative is requested in the same decomposition prompt). Saves one planner-model call when deviation triggers and alternative exists.
 
 ### P2b: State Checkpointing at Plan Step Boundaries
 

@@ -254,7 +254,7 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
 
-  const groqKey = settings.groqApiKey || __GROQ_API_KEY__;
+  const groqKey = settings.groqApiKey;
   if (groqKey) {
     providers.push({
       baseUrl: GROQ_API_URL,
@@ -265,7 +265,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
     });
   }
 
-  const openRouterKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
     providers.push({
       baseUrl: OPENROUTER_API_URL,

@@ -177,9 +177,9 @@ The `refreshPerception()` method is called at 6 points in the agent loop:
 |---|----------|---------|---------|
 | 1 | Initial setup | Session start | First page interpretation before any action |
 | 2 | Tool result processing | After DOM-modifying tools | Page changed, need fresh interpretation |
-| 3 | De-escalation | Smart → fast tier switch | Fresh context after model change |
+| 3 | De-escalation | Planner → executor tier switch | Fresh context after model change |
 | 4 | Strategy pivot | History cleared for retry | Clean slate interpretation |
-| 5 | Escalation | Fast → smart tier switch | Smart model gets visual context |
+| 5 | Escalation | Executor → planner tier switch | Planner model gets visual context |
 | 6 | Text-only nudge | Agent stuck emitting text | Refresh context to unstick |
 
 **Fingerprint caching means most of these calls are free.** In a typical 10-turn session:

@@ -56,7 +56,7 @@ This is the most common failure mode. The agent has been trained on patterns whe
 
 ### 2. Post-escalation repetition
 
-When the fast model (GPT-oss-120B) fails, it escalates to the smart model (GLM-4.7). The smart model receives a distilled context summary of what happened. And then it repeats the exact same failing tool call. Same tool, same arguments, same result. The escalation bought a more capable model but the model didn't *read* the context telling it what already failed.
+When the executor model (GPT-oss-120B) fails, it escalates to the planner model (DeepSeek V3.2). The planner model receives a distilled context summary of what happened. And then it repeats the exact same failing tool call. Same tool, same arguments, same result. The escalation bought a more capable model but the model didn't *read* the context telling it what already failed.
 
 ### 3. Disabled button clicking
 

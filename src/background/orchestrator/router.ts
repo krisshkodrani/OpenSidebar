@@ -6,7 +6,7 @@
  *   - agent:  Clear single objective, skip planner
  *   - plan:   Multi-step / ambiguous, use full planner pipeline
  *
- * Provider failover: Groq → OpenRouter (fast models).
+ * Provider failover: Groq → OpenRouter (executor model providers).
  * Follows the perception.ts pattern: standalone fetch, no LLMClient dependency.
  */
 
@@ -51,7 +51,7 @@ const VALID_ROUTES = new Set<Route>(["direct", "agent", "plan"]);
 function buildProviders(settings: UserSettings): RouterProvider[] {
   const providers: RouterProvider[] = [];
 
-  const groqKey = settings.groqApiKey || __GROQ_API_KEY__;
+  const groqKey = settings.groqApiKey;
   if (groqKey) {
     providers.push({
       baseUrl: GROQ_API_URL,
@@ -62,7 +62,7 @@ function buildProviders(settings: UserSettings): RouterProvider[] {
     });
   }
 
-  const openRouterKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+  const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
     providers.push({
       baseUrl: OPENROUTER_API_URL,

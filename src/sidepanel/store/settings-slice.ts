@@ -3,8 +3,8 @@ import { logger } from "../../utils";
 import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  openRouterApiKey: __OPENROUTER_API_KEY__,
-  groqApiKey: __GROQ_API_KEY__,
+  openRouterApiKey: "",
+  groqApiKey: "",
   maxTurns: 500,
   contextWindowSize: 128000,
   workspaceEnabled: true,

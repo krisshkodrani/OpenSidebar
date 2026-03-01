@@ -859,7 +859,7 @@ export interface HideElementArgs {
 
 /** Arguments for escalate — voluntary model upgrade */
 export interface EscalateArgs {
-  /** Why the fast model can't handle this (e.g. "riddle requires multi-step reasoning") */
+  /** Why the executor model can't handle this (e.g. "riddle requires multi-step reasoning") */
   reason: string;
 }
 
@@ -1325,7 +1325,7 @@ export interface NavigationState {
 
 export interface UserSettings {
   openRouterApiKey: string;
-  /** Groq API key for fast model (GPT-OSS-120B) */
+  /** Groq API key for executor model (GPT-OSS-120B) */
   groqApiKey: string;
   maxTurns: number;
   contextWindowSize: number;

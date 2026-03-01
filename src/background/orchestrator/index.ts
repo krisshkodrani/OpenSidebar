@@ -1713,8 +1713,7 @@ export class Orchestrator {
     const stored = await chrome.storage.sync.get("userSettings");
     const settings = (stored.userSettings ?? {}) as UserSettings;
 
-    const openRouterApiKey =
-      settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+    const openRouterApiKey = settings.openRouterApiKey;
     if (!openRouterApiKey) {
       logger.warn(
         "orchestrator",
@@ -1732,7 +1731,7 @@ export class Orchestrator {
       workspaceId: task.workspaceId,
       settings,
       openRouterApiKey,
-      groqApiKey: settings.groqApiKey || __GROQ_API_KEY__ || undefined,
+      groqApiKey: settings.groqApiKey || undefined,
     };
   }
 

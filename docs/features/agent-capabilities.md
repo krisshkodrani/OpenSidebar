@@ -17,8 +17,8 @@ OpenSidebar uses a single **Unified Mode** that combines the speed of parallel e
 
 | Tier | Model | Providers | Purpose |
 |------|-------|-----------|---------|
-| **Fast** (tier 0) | GPT-OSS-120B | Cerebras → Groq → OpenRouter | Default execution |
-| **Smart** (tier 1) | GLM-4.7 | Cerebras → OpenRouter | Planning, verification, escalation |
+| **Executor** (tier 0) | GPT-OSS-120B | Groq → OpenRouter | Default execution |
+| **Planner** (tier 1) | DeepSeek V3.2 | OpenRouter | Planning, verification, escalation |
 
 - GLM-4.7 has **native reasoning** (no reasoning parameter needed)
 - Automatic failover with 60s cooldown per provider on 429 errors
@@ -28,10 +28,10 @@ OpenSidebar uses a single **Unified Mode** that combines the speed of parallel e
 
 For complex tasks, the orchestrator decomposes into a **planner→executor→verifier** pipeline:
 
-1. **Planner** (smart model) decomposes the user query into a `TaskNode` graph
+1. **Planner** (planner model) decomposes the user query into a `TaskNode` graph
 2. **Pre-flight Review** — verifier validates plans with 3+ nodes before execution
-3. **Executor** (fast model) runs each node via the agent loop
-4. **Verifier** (smart model) validates results against success criteria
+3. **Executor** (executor model) runs each node via the agent loop
+4. **Verifier** (planner model) validates results against success criteria
 5. **Retry/Reroute** — failed nodes get retried or sent back to planner
 
 ### Conversation Collaboration
@@ -50,9 +50,9 @@ Sophisticated **Stuck Detection System** monitoring agent progress:
 
 ### Intervention Levels
 
-1. **Escalate (3 stale turns)**: Switches to the smart model (GLM-4.7) with distilled context and escalation screenshot.
-2. **Give Up — Smart (8 stale turns)**: Stops if already on smart tier with 3+ text-only responses.
-3. **Give Up — Fast (10 stale turns)**: Stops if on fast tier and no progress.
+1. **Escalate (3 stale turns)**: Switches to the planner model with distilled context and escalation screenshot.
+2. **Give Up — Planner (8 stale turns)**: Stops if already on planner tier with 3+ text-only responses.
+3. **Give Up — Executor (10 stale turns)**: Stops if on executor tier and no progress.
 
 Additional watchdogs:
 - **Step Watchdog**: Warns at 5 turns on a single plan step, force-escalates at 10.

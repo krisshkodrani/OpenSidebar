@@ -39,7 +39,7 @@ If stuck for 5+ actions, try execute_js to inspect hidden elements or read_page 
 
 - The agent will auto-dismiss cookie banners and modals before starting.
 - Tasks include: clicking buttons, filling forms, selecting dropdowns, drag-and-drop, drawing strokes, keyboard shortcuts, and reading page content.
-- If the agent stalls on a task, the stagnation monitor injects a reflection after 6 unchanged turns, escalates to the smart model at 12, and gives up on that subtask after repeated failure.
+- If the agent stalls on a task, the stagnation monitor injects a reflection after 6 unchanged turns, escalates to the planner model at 12, and gives up on that subtask after repeated failure.
 - You can send feedback at any time via the input area (it switches to feedback mode during a run).
 - Pause/resume via the control bar if you need to intervene.
 
@@ -72,7 +72,7 @@ When a run fails or stalls, check logs for:
 4. **Modal blocked?** — Check `DISMISS_MODALS` count and whether the agent tried to dismiss manually
 5. **Turn budget blown?** — Check turn count vs tasks completed ratio
 6. **Timer expired?** — Check total elapsed time from first to last log entry
-7. **Escalation triggered?** — Look for `switchModel` in logs; if the agent escalated, the fast model was stuck
+7. **Escalation triggered?** — Look for `switchToPlanner` in logs; if the agent escalated, the executor model was stuck
 8. **Redundant actions?** — Search for "Redundant action detected" to see where the agent looped on the same tool call
 9. **Filler text?** — Search for "filler" to see text-only responses that were fast-tracked
 
@@ -89,7 +89,7 @@ Turn 87:    find_element({"text":"Enter 6-character code"}) → OK, found [269] 
 **Fix applied:** Redundant action detection ring buffer (window=6, threshold=3). Injects a corrective "ACT on what you found" message.
 
 ### Pattern: Low-Information Filler Text (~30 turns wasted)
-The fast model emitted text-only responses like "I'm ready...", "We need to resolve the current step.", "We have..............." — with no tool calls and no useful reasoning.
+The executor model emitted text-only responses like "I'm ready...", "We need to resolve the current step.", "We have..............." — with no tool calls and no useful reasoning.
 **Fix applied:** Filler text fast-track. Responses under 60 chars, matching filler prefixes, or with >40% non-alphanumeric characters skip the normal 2-turn tolerance and immediately trigger a strategy pivot.
 
 ### Pattern: No Plan Tracking
