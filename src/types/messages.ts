@@ -1,0 +1,775 @@
+/**
+ * OpenSidebar — All RuntimeMessage types (discriminated union + every message interface)
+ */
+
+import type { AgentStatus, MessageSource, AgentRole, RiskLevel, ToolName } from "./enums";
+import type { OverlayDescriptor, DomSnapshot, TaggedElement } from "./dom";
+import type { UserSettings } from "./settings";
+import type { DemoAction, Demonstration, GoldenAction } from "./demos";
+import type {
+  AgentStep,
+  Citation,
+  ToolCallSummary,
+} from "./agent";
+
+// --- Core Message Types ---
+
+/** Base shape shared by every runtime message */
+export interface BaseMessage {
+  /** Unique request ID for correlating async responses */
+  requestId: string;
+  /** Where this message originated */
+  source: MessageSource | string;
+  /** Workspace this message belongs to (null = global / unscoped) */
+  workspaceId?: string | null;
+}
+
+/**
+ * Discriminated union of all message types.
+ * The `type` field is the discriminant.
+ */
+export type RuntimeMessage =
+  | UserChatMessage
+  | AgentResponseMessage
+  | AgentStatusMessage
+  | TaskRecoveryMessage
+  | EscalationRequestMessage
+  | EscalationDecisionMessage
+  | ApprovalRequestMessage
+  | ApprovalResponseMessage
+  | AgentStepMessage
+  | AgentActivityMessage
+  | StreamChunkMessage
+  | ToolExecuteMessage
+  | ToolResultMessage
+  | DomSnapshotRequest
+  | DomSnapshotResponse
+  | NavigationResumeMessage
+  | StopAgentMessage
+  | SettingsUpdateMessage
+  | SidePanelOpenedMessage
+  | CloseSidePanelMessage
+  | ScreenshotCapturedMessage
+  | DismissModalsMessage
+  | DismissModalsResponse
+  | AgentStagnationMessage
+  | AgentTurnMessage
+  | TaskProgressMessage
+  | TaskCompletionMessage
+  | SkipSubtaskMessage
+  | PauseAgentMessage
+  | ResumeAgentMessage
+  | SessionMetricsMessage
+  | DataControlRequestMessage
+  | DataControlResultMessage
+  | ContentScriptReadyMessage
+  | DomReadyProbeMessage
+  | DomReadyAckMessage
+  | DemoRecordStartMessage
+  | DemoRecordStopMessage
+  | DemoActionCapturedMessage
+  | DemoRecordStatusMessage
+  | DemoSavedMessage
+  | GoldenActionMessage
+  | RecordingSavedMessage
+  | GoldenAnnotationMessage
+  | ManualToolExecuteMessage
+  | ManualToolResultMessage
+  | PlanConfirmationRequestMessage
+  | PlanConfirmationResponseMessage
+  | ClarificationRequestMessage
+  | ClarificationResponseMessage;
+
+// --- Chat Messages ---
+
+/** User sends a new chat message from the side panel */
+export interface UserChatMessage extends BaseMessage {
+  type: "USER_CHAT";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    text: string;
+    /** Active tab ID at time of sending */
+    tabId: number;
+    /** Active workspace ID, if any */
+    workspaceId: string | null;
+    /** When true, inject as feedback into running agent context (don't start new loop) */
+    isFeedback?: boolean;
+  };
+}
+
+/** Background sends a completed agent response to the side panel */
+export interface AgentResponseMessage extends BaseMessage {
+  type: "AGENT_RESPONSE";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    text: string;
+    /** Whether the agent loop is still running (more messages may follow) */
+    isStreaming: boolean;
+    /** Tool calls that were executed during this turn */
+    toolCalls: ToolCallSummary[];
+    /** Source citations collected during the session */
+    citations?: Citation[];
+  };
+}
+
+/** Background broadcasts status changes to the side panel */
+export interface AgentStatusMessage extends BaseMessage {
+  type: "AGENT_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    status: AgentStatus;
+    /** Human-readable description (e.g. "Clicking button [12]") */
+    detail: string;
+  };
+}
+
+/** Background requests user approval before executing a high-risk tool */
+export interface ApprovalRequestMessage extends BaseMessage {
+  type: "APPROVAL_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    approvalId: string;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    risk: RiskLevel.HIGH;
+    context: string;
+    timeoutMs: number;
+  };
+}
+
+/** Side panel responds to a pending approval request */
+export interface ApprovalResponseMessage extends BaseMessage {
+  type: "APPROVAL_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    approvalId: string;
+    approved: boolean;
+  };
+}
+
+/** A single SSE chunk from the LLM stream, forwarded to side panel */
+export interface StreamChunkMessage extends BaseMessage {
+  type: "STREAM_CHUNK";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    /** Incremental text delta */
+    delta: string;
+    /** True when this is the final chunk */
+    done: boolean;
+    /** Source citations collected during the session (only present on done=true) */
+    citations?: Citation[];
+    /** When set, replaces the entire content of the current streaming message */
+    replaceContent?: string;
+    /** Extracted LLM thinking/reasoning content */
+    thinking?: string;
+  };
+}
+
+/** User requests the agent loop to stop */
+export interface StopAgentMessage extends BaseMessage {
+  type: "STOP_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    workspaceId?: string | null;
+  };
+}
+
+/** Settings changed — broadcast to all contexts */
+export interface SettingsUpdateMessage extends BaseMessage {
+  type: "SETTINGS_UPDATE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    settings: Partial<UserSettings>;
+  };
+}
+
+/** Side panel reports it has been opened/mounted */
+export interface SidePanelOpenedMessage extends BaseMessage {
+  type: "SIDE_PANEL_OPENED";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    windowId: number;
+  };
+}
+
+/** Background instructs the side panel to close itself */
+export interface CloseSidePanelMessage extends BaseMessage {
+  type: "CLOSE_SIDE_PANEL";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    tabId: number;
+    windowId: number;
+  };
+}
+
+/** Background sends a debug screenshot to the side panel for display */
+export interface ScreenshotCapturedMessage extends BaseMessage {
+  type: "SCREENSHOT_CAPTURED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    dataUrl: string;
+    context: string;
+    timestamp: number;
+  };
+}
+
+/** Background asks the content script to auto-dismiss modals/banners */
+export interface DismissModalsMessage extends BaseMessage {
+  type: "DISMISS_MODALS";
+  source: MessageSource.BACKGROUND;
+  payload: Record<string, never>;
+}
+
+/** Content script reports how many modals were dismissed */
+export interface DismissModalsResponse extends BaseMessage {
+  type: "DISMISS_MODALS_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: {
+    dismissed: number;
+    /** Non-null if heuristics couldn't dismiss a viewport-covering overlay */
+    remainingOverlay: OverlayDescriptor | null;
+    /** Text content extracted from dismissed overlays (deduplicated) */
+    capturedTexts: string[];
+  };
+}
+
+/** Content script announces it's initialized and ready to receive messages */
+export interface ContentScriptReadyMessage extends BaseMessage {
+  type: "CONTENT_SCRIPT_READY";
+  source: MessageSource.CONTENT;
+  payload: { tabId: number };
+}
+
+/** Background asks content script to signal when DOM has settled (no mutations) */
+export interface DomReadyProbeMessage extends BaseMessage {
+  type: "DOM_READY_PROBE";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    /** Hard cap in ms — respond even if DOM hasn't fully settled */
+    timeoutMs: number;
+    /** If true, wait until at least one element is present before responding */
+    waitForElements?: boolean;
+  };
+}
+
+/** Content script responds when DOM quiescence is reached */
+export interface DomReadyAckMessage extends BaseMessage {
+  type: "DOM_READY_ACK";
+  source: MessageSource.CONTENT;
+  payload: {
+    /** How long the content script waited before responding (ms) */
+    waitedMs: number;
+    /** Number of elements currently in DOM (0 = page still loading) */
+    elementCount: number;
+  };
+}
+
+/** Background sends a step update to the side panel for the timeline */
+export interface AgentStepMessage extends BaseMessage {
+  type: "AGENT_STEP";
+  source: MessageSource.BACKGROUND;
+  payload: { step: AgentStep; update: boolean };
+}
+
+/** Background tells the content script whether the agent is actively running */
+export interface AgentActivityMessage extends BaseMessage {
+  type: "AGENT_ACTIVITY";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    active: boolean;
+    laneTelemetry?: LaneTelemetrySnapshot;
+  };
+}
+
+export interface LaneTelemetry {
+  activeCalls: number;
+  queueDepth: number;
+  restartCount: number;
+  consecutiveCrashes: number;
+  circuitOpenUntilMs: number;
+  lastCrashError?: string;
+}
+
+export interface LaneTelemetrySnapshot {
+  timestamp: number;
+  lanes: Record<AgentRole, LaneTelemetry>;
+}
+
+// --- Agent Feedback & Control Messages ---
+
+/** Background broadcasts stagnation detection signals to the side panel */
+export interface AgentStagnationMessage extends BaseMessage {
+  type: "AGENT_STAGNATION";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    signal: "escalate" | "resolved";
+    stagnantTurns: number;
+    url: string;
+    /** Human-readable explanation */
+    message: string;
+  };
+}
+
+/** Background broadcasts turn progress to the side panel */
+export interface AgentTurnMessage extends BaseMessage {
+  type: "AGENT_TURN";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    turn: number;
+    maxTurns: number;
+    provider?: string;
+  };
+}
+
+/** Background broadcasts subtask progress to the side panel */
+export interface TaskProgressMessage extends BaseMessage {
+  type: "TASK_PROGRESS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    subtasks: SubtaskSummary[];
+    currentIndex: number;
+    /** Turns used so far across all subtasks */
+    totalTurnsUsed: number;
+  };
+}
+
+/** Background informs the side panel that an unfinished task was recovered from checkpoint */
+export interface TaskRecoveryMessage extends BaseMessage {
+  type: "TASK_RECOVERY";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    totalSubtasks: number;
+    completedSubtasks: number;
+    pendingSubtasks: number;
+  };
+}
+
+export type EscalationRisk = "medium" | "high" | "critical";
+
+export type EscalationOptionId =
+  | "approve_continue"
+  | "reroute_with_option"
+  | "skip_node"
+  | "stop_task";
+
+export interface EscalationOption {
+  id: EscalationOptionId;
+  label: string;
+  impact: string;
+  rerouteObjective?: string;
+}
+
+export interface EscalationPacket {
+  escalationId: string;
+  taskId: string;
+  workspaceId: string;
+  nodeId: string;
+  risk: EscalationRisk;
+  confidence: number;
+  reason: string;
+  options: EscalationOption[];
+  recommendedOption: EscalationOptionId;
+  snapshotSummary: string;
+  lastActions: string[];
+  budgetState: {
+    elapsedMs: number;
+    maxSessionTimeMs: number;
+    totalTokens: number;
+    maxTotalTokens: number;
+    totalCostUsd: number;
+    maxTotalCostUsd: number;
+  };
+  timeoutMs: number;
+  timestamp: number;
+}
+
+export interface EscalationRequestMessage extends BaseMessage {
+  type: "ESCALATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: EscalationPacket;
+}
+
+export interface EscalationDecisionMessage extends BaseMessage {
+  type: "ESCALATION_DECISION";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    escalationId: string;
+    optionId: EscalationOptionId;
+    rerouteObjective?: string;
+  };
+}
+
+/** Summary of a single subtask within a decomposed task */
+export interface SubtaskSummary {
+  description: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  turnBudget: number;
+  result?: string;
+  /** URL (origin+pathname) where this step was completed — used by navigate guard */
+  completedAtUrl?: string;
+}
+
+/** Background sends structured completion report when a task finishes */
+export interface TaskCompletionMessage extends BaseMessage {
+  type: "TASK_COMPLETION";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    taskId: string;
+    status: "completed" | "partial" | "failed";
+    totalTurnsUsed: number;
+    totalTimeMs: number;
+    summary: string;
+    subtaskResults: SubtaskResult[];
+    urlHistory: string[];
+    /** Session metrics (token usage, cost, timing) */
+    metrics?: SessionMetrics;
+    /** Explicit termination reason for budget/guardrail stops */
+    terminationReason?: string;
+  };
+}
+
+/** Outcome of a single subtask within a completion report */
+export interface SubtaskResult {
+  description: string;
+  status: "completed" | "failed" | "skipped";
+  turnsUsed: number;
+  result: string;
+}
+
+/** Side panel requests skipping the current subtask */
+export interface SkipSubtaskMessage extends BaseMessage {
+  type: "SKIP_SUBTASK";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    taskId: string;
+  };
+}
+
+/** Side panel requests pausing the agent loop */
+export interface PauseAgentMessage extends BaseMessage {
+  type: "PAUSE_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    workspaceId?: string | null;
+  };
+}
+
+/** Side panel requests resuming the paused agent loop */
+export interface ResumeAgentMessage extends BaseMessage {
+  type: "RESUME_AGENT";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    workspaceId?: string | null;
+  };
+}
+
+/** Background broadcasts session token/cost metrics to the side panel */
+export interface SessionMetricsMessage extends BaseMessage {
+  type: "SESSION_METRICS";
+  source: MessageSource.BACKGROUND;
+  payload: SessionMetrics;
+}
+
+/** Side panel requests a scoped privacy/data cleanup action. */
+export interface DataControlRequestMessage extends BaseMessage {
+  type: "DATA_CONTROL_REQUEST";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    action:
+      | "clear_logs"
+      | "clear_chat_history"
+      | "clear_local_data";
+  };
+}
+
+/** Background reports result of a data cleanup action. */
+export interface DataControlResultMessage extends BaseMessage {
+  type: "DATA_CONTROL_RESULT";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    action: DataControlRequestMessage["payload"]["action"];
+    ok: boolean;
+    detail: string;
+  };
+}
+
+/** Accumulated token usage, cost, and timing for an agent session */
+export interface SessionMetrics {
+  /** Total prompt tokens across all LLM calls this session */
+  totalPromptTokens: number;
+  /** Total completion tokens across all LLM calls this session */
+  totalCompletionTokens: number;
+  /** Total tokens (prompt + completion) */
+  totalTokens: number;
+  /** Cumulative cost in USD from OpenRouter */
+  totalCost: number;
+  /** Cost returned directly by provider responses (`usage.cost`) */
+  totalCostActual?: number;
+  /** Cost estimated locally from token counts + pricing table when provider cost is missing */
+  totalCostEstimated?: number;
+  /** Provenance of `totalCost` */
+  costMode?: "none" | "actual" | "estimated" | "mixed";
+  /** Total LLM call time in ms (wall clock, not including tool execution) */
+  totalLlmTimeMs: number;
+  /** Total session wall clock time in ms */
+  totalSessionTimeMs: number;
+  /** Number of LLM calls made (including vision) */
+  llmCallCount: number;
+  /** Total prompt tokens served from cache (prefix caching) */
+  totalCachedTokens: number;
+  /** Per-model breakdown */
+  modelBreakdown: Record<
+    string,
+    {
+      promptTokens: number;
+      completionTokens: number;
+      cost: number;
+      actualCost?: number;
+      estimatedCost?: number;
+      costMode?: "none" | "actual" | "estimated" | "mixed";
+      calls: number;
+    }
+  >;
+}
+
+// --- DOM Snapshot Request/Response Messages ---
+
+/** Background requests a DOM snapshot from the content script */
+export interface DomSnapshotRequest extends BaseMessage {
+  type: "DOM_SNAPSHOT_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    /** Whether to re-tag elements or use cached tags */
+    refresh: boolean;
+  };
+}
+
+/** Content script returns the DOM snapshot */
+export interface DomSnapshotResponse extends BaseMessage {
+  type: "DOM_SNAPSHOT_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: {
+    snapshot: DomSnapshot;
+    /** Time in ms to generate the snapshot */
+    durationMs: number;
+  };
+}
+
+/** Background tells the content script to execute a DOM action */
+export interface ToolExecuteMessage extends BaseMessage {
+  type: "TOOL_EXECUTE";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    toolCallId: string;
+  };
+}
+
+/** Content script returns the result of a tool execution */
+export interface ToolResultMessage extends BaseMessage {
+  type: "TOOL_RESULT";
+  source: MessageSource.CONTENT;
+  payload: {
+    toolCallId: string;
+    success: boolean;
+    result: string;
+    /** If the action triggered a navigation */
+    navigated: boolean;
+  };
+}
+
+// --- Navigation Resume Message ---
+
+export interface NavigationResumeMessage extends BaseMessage {
+  type: "NAVIGATION_RESUME";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    success: boolean;
+    url: string;
+    error?: string;
+  };
+}
+
+// --- Demo RuntimeMessage Types ---
+
+/** Side panel → Background: begin recording user actions */
+export interface DemoRecordStartMessage extends BaseMessage {
+  type: "DEMO_RECORD_START";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    /** When true, capture enriched golden data (snapshots + tag IDs) for eval pipeline */
+    golden?: boolean;
+  };
+}
+
+/** Side panel → Background: stop recording, return captured actions */
+export interface DemoRecordStopMessage extends BaseMessage {
+  type: "DEMO_RECORD_STOP";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    tabId: number;
+    /** User-provided name for the demo */
+    name: string;
+    description?: string;
+    goal?: string;
+    preconditions?: string[];
+    outcomeSignal?: string;
+    /** When true, build golden eval cases from this recording */
+    golden?: boolean;
+  };
+}
+
+/** Content script → Background: individual action captured during recording */
+export interface DemoActionCapturedMessage extends BaseMessage {
+  type: "DEMO_ACTION_CAPTURED";
+  source: MessageSource.CONTENT;
+  payload: {
+    action: DemoAction;
+  };
+}
+
+/** Background → Side panel: recording state updates */
+export interface DemoRecordStatusMessage extends BaseMessage {
+  type: "DEMO_RECORD_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    active: boolean;
+    actionCount: number;
+    sessionId?: string;
+  };
+}
+
+/** Background → Side panel: confirmation after demo persisted */
+export interface DemoSavedMessage extends BaseMessage {
+  type: "DEMO_SAVED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    demo: Demonstration;
+  };
+}
+
+// --- Golden Dataset Recording Types ---
+
+/** Content script → Background: enriched action during golden recording */
+export interface GoldenActionMessage extends BaseMessage {
+  type: "GOLDEN_ACTION";
+  source: MessageSource.CONTENT;
+  payload: {
+    goldenAction: GoldenAction;
+  };
+}
+
+/** Background → Side panel: recording saved via TraceRecorder */
+export interface RecordingSavedMessage extends BaseMessage {
+  type: "RECORDING_SAVED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    sessionId: string;
+    turnCount: number;
+    name: string;
+  };
+}
+
+/** Side panel → Background: text annotation during golden recording */
+export interface GoldenAnnotationMessage extends BaseMessage {
+  type: "GOLDEN_ANNOTATION";
+  source: MessageSource.SIDEPANEL;
+  payload: { text: string };
+}
+
+// --- Manual Mode Message Types ---
+
+/** Manual command type for slash commands */
+export type ManualCommand =
+  | "tool"
+  | "perceive"
+  | "snapshot"
+  | "screenshot"
+  | "record"
+  | "tags"
+  | "dismiss"
+  | "help";
+
+/** Side panel → Background: execute a manual slash command */
+export interface ManualToolExecuteMessage extends BaseMessage {
+  type: "MANUAL_TOOL_EXECUTE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    command: ManualCommand;
+    toolName?: ToolName;
+    args?: Record<string, unknown>;
+    objective?: string;
+    recordName?: string;
+    tabId: number;
+  };
+}
+
+/** Background → Side panel: result of a manual slash command */
+export interface ManualToolResultMessage extends BaseMessage {
+  type: "MANUAL_TOOL_RESULT";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    command: string;
+    success: boolean;
+    result: string;
+    toolName?: ToolName;
+    args?: Record<string, unknown>;
+    durationMs: number;
+    elements?: TaggedElement[];
+    interpretation?: string;
+    screenshotUrl?: string;
+  };
+}
+
+// --- Plan Confirmation & Clarification Messages ---
+
+/** Background sends a plan to the side panel for user review before execution */
+export interface PlanConfirmationRequestMessage extends BaseMessage {
+  type: "PLAN_CONFIRMATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    confirmationId: string;
+    nodes: { description: string; successCriteria: string }[];
+    difficulty?: string;
+    query: string;
+  };
+}
+
+/** Side panel responds to a pending plan confirmation */
+export interface PlanConfirmationResponseMessage extends BaseMessage {
+  type: "PLAN_CONFIRMATION_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    confirmationId: string;
+    decision: "approve" | "cancel";
+    feedback?: string;
+  };
+}
+
+/** Background asks the user a clarifying question mid-execution */
+export interface ClarificationRequestMessage extends BaseMessage {
+  type: "CLARIFICATION_REQUEST";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    clarificationId: string;
+    question: string;
+    suggestions?: string[];
+    timeoutMs: number;
+  };
+}
+
+/** Side panel responds to a pending clarification request */
+export interface ClarificationResponseMessage extends BaseMessage {
+  type: "CLARIFICATION_RESPONSE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    clarificationId: string;
+    answer: string;
+  };
+}
