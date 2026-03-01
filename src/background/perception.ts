@@ -81,14 +81,13 @@ export interface PerceptionInput {
 export function buildElementSummary(elements: TaggedElement[]): string {
   const counts: Record<string, number> = {};
   for (const el of elements) {
-    const category =
-      ["input", "textarea", "select"].includes(el.tagName)
-        ? "input"
-        : el.tagName === "button" || el.role === "button"
-          ? "button"
-          : el.tagName === "a" || el.role === "link"
-            ? "link"
-            : "other";
+    const category = ["input", "textarea", "select"].includes(el.tagName)
+      ? "input"
+      : el.tagName === "button" || el.role === "button"
+        ? "button"
+        : el.tagName === "a" || el.role === "link"
+          ? "link"
+          : "other";
     counts[category] = (counts[category] || 0) + 1;
   }
 
@@ -100,14 +99,18 @@ export function buildElementSummary(elements: TaggedElement[]): string {
 
   // Include elements with IDs: inputs, buttons, and a sample of others (cap ~50 lines)
   const lines: string[] = [];
-  const VAGUE_CTA = /^(click\s*(me|here)|press\s*(me|here)|go|submit|ok|yes|no)$/i;
+  const VAGUE_CTA =
+    /^(click\s*(me|here)|press\s*(me|here)|go|submit|ok|yes|no)$/i;
   const textCounts: Record<string, number> = {};
 
   for (const el of elements) {
     if (lines.length >= 50) break;
     const text = el.text.slice(0, 40);
     const isInput = ["input", "textarea", "select"].includes(el.tagName);
-    const isButton = el.tagName === "button" || el.role === "button" || el.attributes.type === "submit";
+    const isButton =
+      el.tagName === "button" ||
+      el.role === "button" ||
+      el.attributes.type === "submit";
 
     if (isInput || isButton || lines.length < 30) {
       lines.push(`[${el.tag}] ${el.tagName} "${text}"`);
@@ -195,15 +198,15 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       "",
       "Report (use exact numbered format — no bold, no markdown):",
       `1. SUBTASK_STATE: Current progress toward "${input.subtask}". Only what you observe relevant to this subtask. Cite element [N] IDs.`,
-      "2. ACTIONABLE: Elements to interact with next. List as: [tagId] brief reason. If done: \"None — subtask complete.\"",
+      '2. ACTIONABLE: Elements to interact with next. List as: [tagId] brief reason. If done: "None — subtask complete."',
       "3. BLOCKERS: Anything preventing subtask progress. Classify each on its own line:",
-      "   NUISANCE [tagId] \"element text\" → click [dismissId]",
-      "   RELEVANT [tagId] \"element text\" → reason to keep",
-      "   PREREQ \"what must happen first\" → e.g. \"solve puzzle to reveal code\", \"fill [tagId] input before submit\"",
+      '   NUISANCE [tagId] "element text" → click [dismissId]',
+      '   RELEVANT [tagId] "element text" → reason to keep',
+      '   PREREQ "what must happen first" → e.g. "solve puzzle to reveal code", "fill [tagId] input before submit"',
       "   NUISANCE = cookie/consent/promo/ad popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button.",
       "   RELEVANT = login/checkout/consent dialog with Accept/Decline — requires user decision.",
       "   PREREQ = action/challenge that must complete before objective can proceed. Always list when an unfilled input gates progress.",
-      "   If none: \"None.\"",
+      '   If none: "None."',
       "4. VISUAL-ONLY: Task-relevant text in images/canvas/charts/SVGs the DOM misses. Not page text already in elements.",
       "5. COMPLETION_SIGNAL: Is this subtask visually complete? Answer exactly one:",
       "   DONE — evidence from element metadata (not inferred from screenshot)",
@@ -221,16 +224,16 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       "1. LAYOUT: Page type and visible structure (1 fragment).",
       "2. STATE: Active controls, open menus, focused inputs, loading indicators, toggle states. Cite [tagId] for key elements.",
       "3. BLOCKERS: Overlays/modals/dialogs/banners blocking interaction OR logical prerequisites gating progress. For each on its own line:",
-      "   NUISANCE [tagId] \"element text\" → click [dismissTagId]",
-      "   RELEVANT [tagId] \"element text\" → reason to keep",
-      "   PREREQ \"what must happen first\" → e.g. \"complete challenge to reveal code\", \"fill [tagId] input before submit\"",
+      '   NUISANCE [tagId] "element text" → click [dismissTagId]',
+      '   RELEVANT [tagId] "element text" → reason to keep',
+      '   PREREQ "what must happen first" → e.g. "complete challenge to reveal code", "fill [tagId] input before submit"',
       "   NUISANCE = cookie/consent/promo/newsletter/ad/notification/survey popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button from the element list.",
       "   RELEVANT = login/checkout/consent dialog with Accept/Decline — user must choose. NOT auto-dismissible.",
       "   PREREQ = content gated behind a step, timer, puzzle, or unfilled input. Always list when a required input field is empty or a challenge must be completed before proceeding.",
-      "   Vague-CTA divs (\"Click Me\", \"Try This!\", \"Nope!\") = NUISANCE with their actual [tagId] as dismiss target.",
-      "   If no blockers: \"None.\"",
+      '   Vague-CTA divs ("Click Me", "Try This!", "Nope!") = NUISANCE with their actual [tagId] as dismiss target.',
+      '   If no blockers: "None."',
       "4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements.",
-      "5. HAZARDS: Genuinely dangerous or deceptive elements only — invisible text (text-color = bg-color), decoy buttons that navigate away, fake close buttons. For each: [tagId] \"specific risk\". Do not list elements already classified as BLOCKERS. If none: \"None.\"",
+      '5. HAZARDS: Genuinely dangerous or deceptive elements only — invisible text (text-color = bg-color), decoy buttons that navigate away, fake close buttons. For each: [tagId] "specific risk". Do not list elements already classified as BLOCKERS. If none: "None."',
       objectiveCheck,
     ].join("\n");
   }
@@ -387,9 +390,7 @@ export async function perceive(
           }
 
           // 5xx: retry same provider
-          throw new Error(
-            `Perception API error ${response.status}: ${body}`,
-          );
+          throw new Error(`Perception API error ${response.status}: ${body}`);
         }
 
         const json = await response.json();
@@ -435,7 +436,7 @@ export async function perceive(
           ? !!input.subtask
           : !!input.objective;
         const completionSignal = hasSignalTarget
-          ? parseCompletionSignal(cleaned, signalScope) ?? undefined
+          ? (parseCompletionSignal(cleaned, signalScope) ?? undefined)
           : undefined;
 
         return {

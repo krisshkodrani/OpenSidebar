@@ -6,7 +6,7 @@
  *   - agent:  Clear single objective, skip planner
  *   - plan:   Multi-step / ambiguous, use full planner pipeline
  *
- * Provider failover: Cerebras → Groq → OpenRouter (fast models).
+ * Provider failover: Groq → OpenRouter (fast models).
  * Follows the perception.ts pattern: standalone fetch, no LLMClient dependency.
  */
 
@@ -31,11 +31,9 @@ interface RouterProvider {
   providerId: string;
 }
 
-const CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const MODEL_CEREBRAS = "gpt-oss-120b";
 const MODEL_GROQ = "openai/gpt-oss-120b";
 const MODEL_OPENROUTER = "openai/gpt-oss-120b";
 
@@ -52,17 +50,6 @@ const VALID_ROUTES = new Set<Route>(["direct", "agent", "plan"]);
 /** Build ordered list of router providers from available API keys. */
 function buildProviders(settings: UserSettings): RouterProvider[] {
   const providers: RouterProvider[] = [];
-
-  const cerebrasKey = settings.cerebrasApiKey || __CEREBRAS_API_KEY__;
-  if (cerebrasKey) {
-    providers.push({
-      baseUrl: CEREBRAS_API_URL,
-      apiKey: cerebrasKey,
-      headers: {},
-      model: MODEL_CEREBRAS,
-      providerId: "cerebras",
-    });
-  }
 
   const groqKey = settings.groqApiKey || __GROQ_API_KEY__;
   if (groqKey) {
@@ -105,9 +92,10 @@ function parseRouteResponse(raw: string): RouteDecision | null {
 
     return {
       route: parsed.route,
-      confidence: typeof parsed.confidence === "number"
-        ? Math.max(0, Math.min(1, parsed.confidence))
-        : 0.7,
+      confidence:
+        typeof parsed.confidence === "number"
+          ? Math.max(0, Math.min(1, parsed.confidence))
+          : 0.7,
       reason: typeof parsed.reason === "string" ? parsed.reason : "",
     };
   } catch {
@@ -118,7 +106,7 @@ function parseRouteResponse(raw: string): RouteDecision | null {
 /**
  * Classify a user query into a routing tier.
  *
- * Returns quickly (~100-150ms on Cerebras). On any failure,
+ * Returns quickly (~100-200ms). On any failure,
  * defaults to "agent" (safe middle ground).
  */
 export async function classifyRoute(
@@ -162,7 +150,10 @@ export async function classifyRoute(
       });
 
       if (!response.ok) {
-        logger.warn("router", `${provider.providerId} returned ${response.status}`);
+        logger.warn(
+          "router",
+          `${provider.providerId} returned ${response.status}`,
+        );
         // 429 or 4xx: try next provider
         if (response.status >= 400 && response.status < 500) continue;
         // 5xx: also try next provider (no retries — speed is paramount)
@@ -178,9 +169,13 @@ export async function classifyRoute(
 
       const decision = parseRouteResponse(text);
       if (!decision) {
-        logger.warn("router", `${provider.providerId} returned unparseable response`, {
-          raw: text.slice(0, 200),
-        });
+        logger.warn(
+          "router",
+          `${provider.providerId} returned unparseable response`,
+          {
+            raw: text.slice(0, 200),
+          },
+        );
         continue;
       }
 

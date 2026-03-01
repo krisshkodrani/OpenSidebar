@@ -26,18 +26,9 @@ function loadToolDefinitions(): any[] {
 }
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const CEREBRAS_API = "https://api.cerebras.ai/v1/chat/completions";
+const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
 
-export type EvalProvider = "cerebras" | "openrouter";
-
-const CEREBRAS_MODEL_MAP: Record<string, string> = {
-  "openai/gpt-oss-120b": "gpt-oss-120b",
-  "z-ai/glm-4.7": "zai-glm-4.7",
-};
-
-function toCerebrasModel(openRouterModel: string): string {
-  return CEREBRAS_MODEL_MAP[openRouterModel] ?? openRouterModel;
-}
+export type EvalProvider = "groq" | "openrouter";
 
 /**
  * Run eval cases and return results.
@@ -54,7 +45,7 @@ export async function runEvals(options: {
   provider?: EvalProvider;
 }): Promise<EvalResult[]> {
   const keys = options.keys ?? loadApiKeys();
-  const provider = options.provider ?? (keys.cerebras ? "cerebras" : "openrouter");
+  const provider = options.provider ?? (keys.groq ? "groq" : "openrouter");
   let cases = readEvalCases();
 
   if (cases.length === 0) {
@@ -251,7 +242,7 @@ export async function replayCase(
   promptOverride?: string,
   provider?: EvalProvider,
 ): Promise<{ toolCalls: { toolName: string; args: Record<string, unknown> }[]; text: string | null }> {
-  const useCerebras = provider === "cerebras" && !!keys.cerebras;
+  const useGroq = provider === "groq" && !!keys.groq;
 
   const messages = evalCase.input.conversationHistory.length > 0
     ? evalCase.input.conversationHistory
@@ -259,10 +250,8 @@ export async function replayCase(
 
   const resolvedMessages = applyPromptOverride(messages, promptOverride);
 
-  const resolvedModel = useCerebras ? toCerebrasModel(model) : model;
-
   const body: Record<string, unknown> = {
-    model: resolvedModel,
+    model,
     messages: resolvedMessages,
     max_tokens: 4096,
     temperature: 0,
@@ -278,12 +267,12 @@ export async function replayCase(
     body.tool_choice = "auto";
   }
 
-  const apiUrl = useCerebras ? CEREBRAS_API : OPENROUTER_API;
+  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useCerebras ? keys.cerebras! : keys.openrouter}`,
+    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
     "Content-Type": "application/json",
   };
-  if (!useCerebras) {
+  if (!useGroq) {
     headers["HTTP-Referer"] = "https://opensidebar.dev";
     headers["X-Title"] = "OpenSidebar Evals";
   }

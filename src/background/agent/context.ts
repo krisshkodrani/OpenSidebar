@@ -7,12 +7,18 @@ import { getPromptTemplate } from "../../prompts";
 
 /**
  * Format a single element in compact notation.
- * [N] tagName#id key=val key="multi word" "text" (role)
+ * [N] tagName#id key=val key="multi word" "text" (role) [position hint]
+ *
+ * Position hints (when viewportHeight is provided):
+ * - No annotation: element is in the current viewport
+ * - `^above`: element is above the viewport
+ * - `v{N}px`: element is below the viewport by N pixels
  */
 export function formatElementCompact(
   el: TaggedElement,
   text: string,
   attrFilter: ((k: string) => boolean) | null,
+  viewportHeight?: number,
 ): string {
   const idVal = el.attributes.id;
   const head = idVal ? `${el.tagName}#${idVal}` : el.tagName;
@@ -31,37 +37,48 @@ export function formatElementCompact(
   // Flag elements where text color matches background color (invisible text)
   const textColor = el.attributes["text-color"];
   const bgColor = el.attributes["bg-color"];
-  const invisible = textColor && bgColor && textColor === bgColor ? " [invisible-text]" : "";
+  const invisible =
+    textColor && bgColor && textColor === bgColor ? " [invisible-text]" : "";
 
-  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}`;
+  // Position hint: indicate if element is above or below the viewport
+  let posHint = "";
+  if (viewportHeight !== undefined && el.rect) {
+    if (el.rect.y < 0) {
+      posHint = " ^above";
+    } else if (el.rect.y >= viewportHeight) {
+      posHint = ` v${Math.round(el.rect.y - viewportHeight)}px`;
+    }
+  }
+
+  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}${posHint}`;
 }
 
 /**
  * Format all tagged elements from a snapshot into the compact text the agent sees.
+ * Includes position hints when viewport height is available.
  */
-export function formatSnapshotElements(elements: TaggedElement[]): string {
+export function formatSnapshotElements(
+  elements: TaggedElement[],
+  viewportHeight?: number,
+): string {
   return elements
-    .map((el) => formatElementCompact(el, el.text, null))
+    .map((el) => formatElementCompact(el, el.text, null, viewportHeight))
     .join("\n");
 }
 
-const FAST_PERSONA = "You are the execution model. Keep Think blocks to 2-3 lines. Prefer the most obvious action. Call one tool per turn unless batching independent fills. If an action fails twice, call escalate() instead of retrying.";
+const FAST_PERSONA =
+  "You are the execution model. Keep Think blocks to 2-3 lines. Prefer the most obvious action. Call one tool per turn unless batching independent fills. If an action fails twice, call escalate() instead of retrying.";
 
-const SMART_PERSONA = "You are the reasoning model, called when the fast model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
+const SMART_PERSONA =
+  "You are the reasoning model, called when the fast model gets stuck. Before acting: (1) Analyze why previous attempts failed using the conversation history. (2) Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information. (3) Formulate a strategy that differs from what was already tried. Make each turn count.";
 
 /** Tools whose results carry reference data worth preserving longer in history. */
 const DISCOVERY_TOOLS: ReadonlySet<string> = new Set([
   "inspect_hidden",
   "execute_js",
-  "memory_search",
-  "transcribe_audio",
   "get_cookies",
-  "read_pdf",
   "search_history",
-  "get_bookmarks",
   "read_element",
-  "inspect_react",
-  "inspect_react_tree",
   "recall_demo",
 ]);
 
@@ -89,7 +106,14 @@ export interface PlanStatusGate {
 }
 
 export interface PlanStatus {
-  subtasks: { description: string; status: string; completedAtUrl?: string; result?: string; verificationGate?: PlanStatusGate; toolProfile?: string }[];
+  subtasks: {
+    description: string;
+    status: string;
+    completedAtUrl?: string;
+    result?: string;
+    verificationGate?: PlanStatusGate;
+    toolProfile?: string;
+  }[];
   currentIndex: number;
 }
 
@@ -108,12 +132,12 @@ export class ContextManager {
   private demonstrations: string | null = null;
   private demoCatalog: string | null = null;
   private storageKey: string;
-  private modelTier: "fast" | "smart" = "fast";
+  private modelTier: "executor" | "planner" = "executor";
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
   private pageContent: string | null = null;
 
-  public setModelTier(tier: "fast" | "smart"): void {
+  public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
   }
 
@@ -216,7 +240,10 @@ export class ContextManager {
       }
     };
 
-    const formatDoneItem = (s: PlanStatus["subtasks"][number], i: number): string => {
+    const formatDoneItem = (
+      s: PlanStatus["subtasks"][number],
+      i: number,
+    ): string => {
       const url = s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : "";
       const result = s.result ? ` → ${s.result.slice(0, 150)}` : "";
       return `${i + 1}-${s.description}${url}${result}`;
@@ -233,9 +260,7 @@ export class ContextManager {
     // Compact done list (only completed steps)
     const doneSteps = subtasks.slice(0, currentIndex);
     const doneList =
-      doneSteps.length > 0
-        ? doneSteps.map(formatDoneItem).join(", ")
-        : "";
+      doneSteps.length > 0 ? doneSteps.map(formatDoneItem).join(", ") : "";
 
     const nextStep =
       currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
@@ -252,7 +277,8 @@ export class ContextManager {
     const currentSubtask = subtasks[currentIndex];
     if (currentSubtask?.verificationGate) {
       const gate = currentSubtask.verificationGate;
-      const actionLabel = gate.action === "call_done" ? "call done()" : "advance to next step";
+      const actionLabel =
+        gate.action === "call_done" ? "call done()" : "advance to next step";
       block += `\nVERIFY: ${gate.trigger} → ${actionLabel}`;
     }
 
@@ -298,7 +324,9 @@ export class ContextManager {
       len === COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT ||
       len === COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT ||
       (len > COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT &&
-       (len - COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) % COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL === 0)
+        (len - COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) %
+          COMPRESSION_TRIGGERS.HEAVY_RECOMPRESS_INTERVAL ===
+          0)
     ) {
       const level = this.getCompressionLevel();
       this.compressHistoryByLevel(level);
@@ -469,10 +497,10 @@ export class ContextManager {
   private constructSystemMessage(): LLMMessage {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
-    // Persona: fast vs smart model framing (placed after static rules for prefix caching)
+    // Persona: executor vs planner model framing (placed after static rules for prefix caching)
     content = content.replace(
       "{{persona}}",
-      `## Persona\n${this.modelTier === "smart" ? SMART_PERSONA : FAST_PERSONA}`,
+      `## Persona\n${this.modelTier === "planner" ? SMART_PERSONA : FAST_PERSONA}`,
     );
 
     // Multi-Step Planning: only include when a plan is active
@@ -515,7 +543,10 @@ Do NOT call done() until every planned step is complete.
     }
 
     if (this.snapshot) {
-      content = content.replace("{{title}}", sanitizeForPrompt(this.snapshot.title || "Unknown"));
+      content = content.replace(
+        "{{title}}",
+        sanitizeForPrompt(this.snapshot.title || "Unknown"),
+      );
       content = content.replace("{{url}}", this.snapshot.url || "Unknown");
 
       // Scroll position indicator
@@ -541,9 +572,15 @@ Do NOT call done() until every planned step is complete.
         this.snapshot.elements,
         level,
       );
-      if (this.snapshot.overflow && this.snapshot.overflow.total > this.snapshot.overflow.shown) {
+      if (
+        this.snapshot.overflow &&
+        this.snapshot.overflow.total > this.snapshot.overflow.shown
+      ) {
         const note = `Note: Showing ${this.snapshot.overflow.shown}/${this.snapshot.overflow.total} elements (${this.snapshot.overflow.collapsedGroups?.join(", ") || "similar elements collapsed"}).`;
-        content = content.replace("{{elements}}", (elementsList || "No interactive elements found.") + "\n" + note);
+        content = content.replace(
+          "{{elements}}",
+          (elementsList || "No interactive elements found.") + "\n" + note,
+        );
       } else {
         content = content.replace(
           "{{elements}}",
@@ -562,11 +599,16 @@ Do NOT call done() until every planned step is complete.
         const charLimit = pageContentCharLimits[level];
         let truncated = this.pageContent;
         if (truncated.length > charLimit) {
-          truncated = truncated.slice(0, charLimit) + "\n\n[Content truncated — use scroll_page to see more]";
+          truncated =
+            truncated.slice(0, charLimit) +
+            "\n\n[Content truncated — use scroll_page to see more]";
         }
         content = content.replace("{{pageContent}}", truncated);
       } else {
-        content = content.replace("{{pageContent}}", "No page content extracted.");
+        content = content.replace(
+          "{{pageContent}}",
+          "No page content extracted.",
+        );
       }
 
       // Surviving overlay warnings (overlays that auto-dismissal couldn't remove)
@@ -598,7 +640,9 @@ Do NOT call done() until every planned step is complete.
       // Archivist: surface text from persisted captured overlays
       if (this.capturedOverlays.length > 0) {
         const archived = this.capturedOverlays
-          .map((t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`)
+          .map(
+            (t, i) => `[Dismissed Overlay ${i + 1}]: ${sanitizeForPrompt(t)}`,
+          )
           .join("\n\n");
         content = content.replace(
           "## Page Content",
@@ -620,14 +664,17 @@ Do NOT call done() until every planned step is complete.
 
       // Valid element IDs — helps LLM avoid hallucinating non-existent IDs
       if (this.snapshot.elements.length > 0) {
-        const idList = this.snapshot.elements.map(e => e.tag).join(",");
-        content = content.replace("## Page Interpretation",
-          `Valid element IDs: [${idList}]\n\n## Page Interpretation`);
+        const idList = this.snapshot.elements.map((e) => e.tag).join(",");
+        content = content.replace(
+          "## Page Interpretation",
+          `Valid element IDs: [${idList}]\n\n## Page Interpretation`,
+        );
       }
 
       // Page interpretation from the perception layer (replaces raw visibleContent)
-      const interpretation = this.pageInterpretation
-        || "No visual interpretation available. Use element list above.";
+      const interpretation =
+        this.pageInterpretation ||
+        "No visual interpretation available. Use element list above.";
       content = content.replace("{{pageInterpretation}}", interpretation);
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     } else {
@@ -685,9 +732,12 @@ Do NOT call done() until every planned step is complete.
 
     // Turn-count override: guarantees compression regardless of context window size
     const historyLen = this.history.length;
-    if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) return CompressionLevel.HEAVY;
-    if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT) return CompressionLevel.MEDIUM;
-    if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT) return CompressionLevel.LIGHT;
+    if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT)
+      return CompressionLevel.HEAVY;
+    if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT)
+      return CompressionLevel.MEDIUM;
+    if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT)
+      return CompressionLevel.LIGHT;
 
     // Estimate tokens from elements + viewport text without building the full message
     const elemTokens = this.snapshot.elements.reduce((sum, el) => {
@@ -702,7 +752,9 @@ Do NOT call done() until every planned step is complete.
       return sum + Math.ceil(line.length / 4);
     }, 0);
     const perceptionTokens = this.pageInterpretation ? 200 : 0; // Perception output is compact (~150 tokens)
-    const pageContentTokens = this.pageContent ? Math.ceil(Math.min(this.pageContent.length, 60000) / 4) : 0;
+    const pageContentTokens = this.pageContent
+      ? Math.ceil(Math.min(this.pageContent.length, 60000) / 4)
+      : 0;
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)
       : 0;
@@ -712,7 +764,12 @@ Do NOT call done() until every planned step is complete.
       0,
     );
 
-    const totalEstimate = baseTokens + elemTokens + perceptionTokens + pageContentTokens + historyTokens;
+    const totalEstimate =
+      baseTokens +
+      elemTokens +
+      perceptionTokens +
+      pageContentTokens +
+      historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
     if (utilization < 0.5) return CompressionLevel.NONE;
@@ -770,7 +827,11 @@ Do NOT call done() until every planned step is complete.
       const formatted = items.map((el) => {
         const rawText =
           textLimit === Infinity ? el.text : el.text.slice(0, textLimit);
-        return this.formatElementCompactLocal(el, sanitizeForPrompt(rawText), attrFilter);
+        return this.formatElementCompactLocal(
+          el,
+          sanitizeForPrompt(rawText),
+          attrFilter,
+        );
       });
 
       // Collapse large groups: show first N items + summary of the rest
@@ -843,7 +904,8 @@ Do NOT call done() until every planned step is complete.
     text: string,
     attrFilter: ((k: string) => boolean) | null,
   ): string {
-    return formatElementCompact(el, text, attrFilter);
+    const vh = this.snapshot?.scroll?.viewportHeight;
+    return formatElementCompact(el, text, attrFilter, vh);
   }
 
   /**
@@ -939,8 +1001,9 @@ Do NOT call done() until every planned step is complete.
       if (this.history.length <= keepRecent + 2) return; // nothing to compress
 
       // Preserve first user message
-      const firstUserIdx = this.history.findIndex(m => m.role === "user");
-      const firstUserMsg = firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
+      const firstUserIdx = this.history.findIndex((m) => m.role === "user");
+      const firstUserMsg =
+        firstUserIdx >= 0 ? this.history[firstUserIdx] : null;
 
       // Summarize old messages
       const oldMessages = this.history.slice(0, -keepRecent);
@@ -968,9 +1031,10 @@ Do NOT call done() until every planned step is complete.
     }
 
     // LIGHT and MEDIUM: truncate old tool results
-    const limit = level === CompressionLevel.MEDIUM
-      ? COMPRESSION_TRIGGERS.MEDIUM_TOOL_RESULT_LIMIT
-      : COMPRESSION_TRIGGERS.LIGHT_TOOL_RESULT_LIMIT;
+    const limit =
+      level === CompressionLevel.MEDIUM
+        ? COMPRESSION_TRIGGERS.MEDIUM_TOOL_RESULT_LIMIT
+        : COMPRESSION_TRIGGERS.LIGHT_TOOL_RESULT_LIMIT;
     const preserveRecent = 4; // keep last 4 tool results verbatim
 
     let toolResultCount = 0;
@@ -1010,7 +1074,11 @@ Do NOT call done() until every planned step is complete.
     let i = 0;
     while (i < this.history.length) {
       const msg = this.history[i];
-      if (msg.role !== "assistant" || !msg.tool_calls || msg.tool_calls.length !== 1) {
+      if (
+        msg.role !== "assistant" ||
+        !msg.tool_calls ||
+        msg.tool_calls.length !== 1
+      ) {
         i++;
         continue;
       }
@@ -1037,7 +1105,10 @@ Do NOT call done() until every planned step is complete.
       // Count distinct assistant messages in this run
       const runMessages: number[] = [];
       for (let j = i; j <= runEnd; j++) {
-        if (this.history[j].role === "assistant" && this.history[j].tool_calls) {
+        if (
+          this.history[j].role === "assistant" &&
+          this.history[j].tool_calls
+        ) {
           runMessages.push(j);
         }
       }
@@ -1050,7 +1121,10 @@ Do NOT call done() until every planned step is complete.
         const removeStart = middleStart;
         let removeEnd = middleEnd;
         // Extend removeEnd to include the tool result after the last collapsed assistant
-        if (removeEnd + 1 < this.history.length && this.history[removeEnd + 1].role === "tool") {
+        if (
+          removeEnd + 1 < this.history.length &&
+          this.history[removeEnd + 1].role === "tool"
+        ) {
           removeEnd += 1;
         }
         const collapsedCount = runMessages.length - 2;
@@ -1063,11 +1137,19 @@ Do NOT call done() until every planned step is complete.
           const tcId = this.history[assistIdx]?.tool_calls?.[0]?.id;
           if (!tcId) continue;
           // Look for paired tool result right after
-          for (let r = assistIdx + 1; r < this.history.length && r <= assistIdx + 2; r++) {
-            if (this.history[r].role === "tool" && this.history[r].tool_call_id === tcId) {
-              const content = typeof this.history[r].content === "string"
-                ? (this.history[r].content ?? "").slice(0, 50)
-                : "[non-text]";
+          for (
+            let r = assistIdx + 1;
+            r < this.history.length && r <= assistIdx + 2;
+            r++
+          ) {
+            if (
+              this.history[r].role === "tool" &&
+              this.history[r].tool_call_id === tcId
+            ) {
+              const content =
+                typeof this.history[r].content === "string"
+                  ? (this.history[r].content ?? "").slice(0, 50)
+                  : "[non-text]";
               if (totalLen + content.length <= 200) {
                 resultSnippets.push(`"${content}"`);
                 totalLen += content.length;
@@ -1077,14 +1159,19 @@ Do NOT call done() until every planned step is complete.
           }
         }
 
-        const resultSuffix = resultSnippets.length > 0
-          ? ` — results: ${resultSnippets.join(", ")}`
-          : "";
+        const resultSuffix =
+          resultSnippets.length > 0
+            ? ` — results: ${resultSnippets.join(", ")}`
+            : "";
         const summaryMsg: LLMMessage = {
           role: "user",
           content: `[${collapsedCount} collapsed ${toolName} calls${resultSuffix}]`,
         };
-        this.history.splice(removeStart, removeEnd - removeStart + 1, summaryMsg);
+        this.history.splice(
+          removeStart,
+          removeEnd - removeStart + 1,
+          summaryMsg,
+        );
       }
 
       i = runEnd + 1;
@@ -1203,7 +1290,10 @@ Do NOT call done() until every planned step is complete.
    * Rolling distillation: compress old history while keeping recent messages verbatim.
    * Returns true if distillation was applied, false if history is too short.
    */
-  public rollingDistill(keepRecent: number, maxSummaryEntries: number): boolean {
+  public rollingDistill(
+    keepRecent: number,
+    maxSummaryEntries: number,
+  ): boolean {
     if (this.history.length <= keepRecent + 2) return false;
 
     // Preserve first user message
@@ -1277,23 +1367,25 @@ export function summarizeHistory(
       let outcome = "no result";
       let isFailure = false;
       for (let j = i + 1; j < messages.length; j++) {
-        if (
-          messages[j].role === "tool" &&
-          messages[j].tool_call_id === tc.id
-        ) {
+        if (messages[j].role === "tool" && messages[j].tool_call_id === tc.id) {
           const content =
             typeof messages[j].content === "string"
-              ? messages[j].content ?? ""
+              ? (messages[j].content ?? "")
               : "";
-          isFailure = content.startsWith("Error:") || content.includes("Click intercepted")
-            || content.includes("No element with tag") || content.includes("does not appear to be");
+          isFailure =
+            content.startsWith("Error:") ||
+            content.includes("Click intercepted") ||
+            content.includes("No element with tag") ||
+            content.includes("does not appear to be");
           outcome = content.split("\n")[0].slice(0, isFailure ? 160 : 80);
           break;
         }
       }
 
       turnNum++;
-      entries.push(`${isFailure ? "\u26A0 " : ""}T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`);
+      entries.push(
+        `${isFailure ? "\u26A0 " : ""}T${turnNum}: ${toolName} ${argSnippet} → ${outcome}`,
+      );
       if (entries.length >= maxEntries) return entries;
     }
   }
@@ -1303,5 +1395,3 @@ export function summarizeHistory(
 
 /** Alias for backward compatibility */
 export const summarizeCausalChain = summarizeHistory;
-
-

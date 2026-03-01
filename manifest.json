@@ -11,14 +11,11 @@
     "tabs",
     "tabGroups",
     "webNavigation",
-    "offscreen",
     "alarms",
     "search",
     "downloads",
     "cookies",
-    "history",
-    "bookmarks",
-    "notifications"
+    "history"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

@@ -3,8 +3,6 @@ import { useStore } from "../store";
 
 const TABS = [
   { key: "traces" as const, label: "Traces" },
-  { key: "skills" as const, label: "Skills" },
-  { key: "memory" as const, label: "Memory" },
 ];
 
 export default function TabBar() {

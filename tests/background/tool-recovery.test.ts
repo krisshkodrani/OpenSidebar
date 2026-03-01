@@ -268,4 +268,43 @@ describe("recoverToolCallsFromText", () => {
         // Array should NOT be unwrapped — kept as-is
         expect(args.arguments).toEqual([1, 2, 3]);
     });
+
+    // Test 24: Pattern D — bare done() args
+    it("recovers Pattern D: bare done() summary as text", () => {
+        const result = recoverToolCallsFromText(
+            '{"summary": "Task completed successfully. All items saved."}'
+        );
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result![0].function.name).toBe("done");
+        const args = JSON.parse(result![0].function.arguments);
+        expect(args.summary).toBe("Task completed successfully. All items saved.");
+    });
+
+    // Test 25: Pattern D — ignores multi-key objects (not bare done args)
+    it("does not match Pattern D when object has extra keys", () => {
+        const result = recoverToolCallsFromText(
+            '{"summary": "Done", "extra": true}'
+        );
+        // Should return null — this doesn't match any pattern
+        expect(result).toBeNull();
+    });
+
+    // Test 26: Pattern D — ignores empty summary
+    it("does not match Pattern D with empty summary", () => {
+        const result = recoverToolCallsFromText(
+            '{"summary": ""}'
+        );
+        expect(result).toBeNull();
+    });
+
+    // Test 27: Pattern D with surrounding text
+    it("recovers Pattern D with surrounding text", () => {
+        const result = recoverToolCallsFromText(
+            'I have completed all the requested changes.\n{"summary": "Updated settings and saved."}'
+        );
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result![0].function.name).toBe("done");
+    });
 });

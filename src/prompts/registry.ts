@@ -1,8 +1,5 @@
 import { PromptDefinition, PromptDescriptor, PromptId } from "./types";
-import {
-  GENERATED_PROMPTS,
-  GENERATED_PROMPT_DESCRIPTORS,
-} from "./generated";
+import { GENERATED_PROMPTS, GENERATED_PROMPT_DESCRIPTORS } from "./generated";
 
 const PROMPTS = GENERATED_PROMPTS as Record<PromptId, PromptDefinition>;
 const PROMPT_DESCRIPTORS = GENERATED_PROMPT_DESCRIPTORS as Record<

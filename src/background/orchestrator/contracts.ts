@@ -1,7 +1,7 @@
 import { AgentRole, ToolName, UserSettings } from "../../types";
 import { TaskNode } from "./types";
 
-export type ModelTier = "fast" | "smart";
+export type ModelTier = "executor" | "planner";
 
 export interface RoleExecutionContract {
   role: AgentRole;
@@ -40,7 +40,7 @@ export function buildRoleExecutionContract(
   if (role === "planner" || role === "verifier") {
     return {
       role,
-      modelTier: "smart",
+      modelTier: "planner",
       allowedTools: [],
       disabledTools: new Set<ToolName>(ALL_TOOLS),
       disableInternalPlanning: true,
@@ -58,7 +58,7 @@ export function buildRoleExecutionContract(
 
   return {
     role: "executor",
-    modelTier: "fast",
+    modelTier: "executor",
     allowedTools: Array.from(allowed),
     disabledTools: buildDisabledFromAllowed(allowed),
     disableInternalPlanning: true,

@@ -17,22 +17,38 @@ import {
 import { logger, SessionScopedLogger } from "../../utils";
 import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
-import { DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS, CACHEABLE_TOOLS, resolveToolProfile } from "../tools/metadata";
+import {
+  DOM_MODIFYING_TOOLS,
+  SEQUENTIAL_TOOLS,
+  CACHEABLE_TOOLS,
+  resolveToolProfile,
+} from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
-import { REACT_TOOL_NAMES } from "../tools/react";
 import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
-import { waitForContentScriptReady, waitForDomReady, ensureContentScript } from "../tab-ready";
+import {
+  waitForContentScriptReady,
+  waitForDomReady,
+  ensureContentScript,
+} from "../tab-ready";
 import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import { checkVerificationGate, detectAdmission } from "./verification";
-import { StagnationMonitor, computeSnapshotFingerprint, ActionEffect } from "./stagnation";
+import {
+  StagnationMonitor,
+  computeSnapshotFingerprint,
+  ActionEffect,
+} from "./stagnation";
 import { perceive, PerceptionResult, buildElementSummary } from "../perception";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
 import { estimateCostUsd } from "../llm/pricing";
-import { formatStepLabel, buildElementResolver, ElementResolver } from "./step-labels";
+import {
+  formatStepLabel,
+  buildElementResolver,
+  ElementResolver,
+} from "./step-labels";
 import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { parseNuisanceBlockers } from "./popup-triage";
@@ -42,7 +58,6 @@ import { DemoStore, formatDemoForContext } from "../demos/store";
 import { renderPrompt } from "../../prompts";
 import {
   AGENT_LIMITS,
-  BATCH_LIMITS,
   BROADCAST_INTERVALS,
   LLM_CONFIG,
   STRING_LIMITS,
@@ -75,14 +90,11 @@ const ELEMENT_ID_TOOLS = new Set<string>([
   ToolName.TYPE_TEXT,
   ToolName.HOVER_ELEMENT,
   ToolName.SELECT_OPTION,
-  ToolName.DRAW_STROKE,
   ToolName.HIDE_ELEMENT,
   ToolName.READ_ELEMENT,
   ToolName.UPLOAD_FILE,
   ToolName.RIGHT_CLICK,
   ToolName.SET_CHECKBOX,
-  ToolName.INSPECT_REACT,
-  ToolName.REACT_SET_INPUT,
 ]);
 /** Tools with dual element ID params (sourceId + targetId). */
 const ELEMENT_DUAL_ID_TOOLS = new Set<string>([ToolName.DRAG_AND_DROP]);
@@ -133,7 +145,10 @@ function validateElementIds(
  * Returns null if no message should be injected (e.g., first snapshot).
  */
 export function formatActionEffect(effect: ActionEffect): string | null {
-  if (effect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD && !effect.urlChanged) {
+  if (
+    effect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
+    !effect.urlChanged
+  ) {
     return "[Action effect: No observable DOM change — page state appears unchanged.]";
   }
   const parts: string[] = [];
@@ -141,7 +156,8 @@ export function formatActionEffect(effect: ActionEffect): string | null {
   parts.push(`${pct}% elements changed`);
   if (effect.urlChanged) parts.push("URL changed");
   if (effect.elementsAdded > 0) parts.push(`+${effect.elementsAdded} new`);
-  if (effect.elementsRemoved > 0) parts.push(`-${effect.elementsRemoved} removed`);
+  if (effect.elementsRemoved > 0)
+    parts.push(`-${effect.elementsRemoved} removed`);
   return `[Action effect: ${parts.join(", ")}]`;
 }
 
@@ -152,11 +168,9 @@ const PREFLIGHT_CHECK_TOOLS = new Set<string>([
   ToolName.HOVER_ELEMENT,
   ToolName.SELECT_OPTION,
   ToolName.DRAG_AND_DROP,
-  ToolName.DRAW_STROKE,
   ToolName.UPLOAD_FILE,
   ToolName.RIGHT_CLICK,
   ToolName.SET_CHECKBOX,
-  ToolName.REACT_SET_INPUT,
 ]);
 
 /**
@@ -175,8 +189,10 @@ function preflightElementCheck(
   // Resolve the element ID(s) to check
   const ids: Array<{ id: number; param: string }> = [];
   if (args.id != null) ids.push({ id: Number(args.id), param: "id" });
-  if (args.sourceId != null) ids.push({ id: Number(args.sourceId), param: "sourceId" });
-  if (args.targetId != null) ids.push({ id: Number(args.targetId), param: "targetId" });
+  if (args.sourceId != null)
+    ids.push({ id: Number(args.sourceId), param: "sourceId" });
+  if (args.targetId != null)
+    ids.push({ id: Number(args.targetId), param: "targetId" });
 
   for (const { id, param } of ids) {
     if (isNaN(id)) continue;
@@ -205,27 +221,16 @@ function preflightElementCheck(
   return { error: null, warning: null };
 }
 
-/** Tools that cannot appear inside a batch_execute step. */
-const BATCH_BLOCKED_TOOLS = new Set<string>([
-  ToolName.NAVIGATE,
-  ToolName.DONE,
-  ToolName.ESCALATE,
-  ToolName.BATCH_EXECUTE,
-  ToolName.CREATE_TAB,
-  ToolName.CLOSE_TAB,
-  ToolName.SWITCH_TAB,
-  ToolName.CREATE_WINDOW,
-  ToolName.EXECUTE_JS,
-]);
-
 /** Format correction when LLM emits text instead of tool calls. */
-const TEXT_ONLY_CORRECTION = renderPrompt("agent.reflection.text_only_correction");
+const TEXT_ONLY_CORRECTION = renderPrompt(
+  "agent.reflection.text_only_correction",
+);
 
-/** Reflection injected when escalating to the smart model — orients it on the situation. */
+/** Reflection injected when escalating to the planner model — orients it on the situation. */
 const ESCALATION_REFLECTION = (reason: string = "repeated failures") =>
   renderPrompt("agent.reflection.escalation", { escalationReason: reason });
 
-/** Reflection injected when de-escalating back to the fast model. */
+/** Reflection injected when de-escalating back to the executor model. */
 const DEESCALATION_REFLECTION = renderPrompt("agent.reflection.deescalation");
 
 /** Reflection injected when plan-then-act handoff completes (orientation phase ends). */
@@ -270,7 +275,10 @@ export function buildFailureRecovery(error: string): string {
   if (coverMatch) {
     return `Suggestions: hide_element(${coverMatch[1]}) to remove covering element, execute_js to click programmatically, or scroll_page.`;
   }
-  if (error.includes("No element with tag") || error.includes("does not exist")) {
+  if (
+    error.includes("No element with tag") ||
+    error.includes("does not exist")
+  ) {
     return `Suggestions: read_page to refresh element IDs, or find_element to locate by text.`;
   }
   return `Choose a different approach — try a different element ID, different tool, or read_page to reassess.`;
@@ -312,14 +320,18 @@ function getSnapshotFingerprint(
   } | null,
 ): string {
   if (!snapshot) return "none|0|0";
-  const textSample = (snapshot.pageContent ?? snapshot.visibleContent ?? "").slice(0, 300);
+  const textSample = (
+    snapshot.pageContent ??
+    snapshot.visibleContent ??
+    ""
+  ).slice(0, 300);
   return `${snapshot.url}|${snapshot.elements.length}|${djb2(textSample)}`;
 }
 
 /**
- * Build a clear, selector-based briefing for the fast model at plan-then-act handoff.
- * Extracts element references from the smart model's tool calls and resolves them
- * to human-readable selectors so the fast model knows exactly which elements matter.
+ * Build a clear, selector-based briefing for the executor model at plan-then-act handoff.
+ * Extracts element references from the planner model's tool calls and resolves them
+ * to human-readable selectors so the executor model knows exactly which elements matter.
  */
 function buildHandoffBriefing(
   history: LLMMessage[],
@@ -327,7 +339,7 @@ function buildHandoffBriefing(
 ): string {
   const parts: string[] = [];
 
-  // 1. Extract the smart model's reasoning text (last assistant text content)
+  // 1. Extract the planner model's reasoning text (last assistant text content)
   let reasoning = "";
   for (let i = history.length - 1; i >= 0; i--) {
     const msg = history[i];
@@ -349,7 +361,7 @@ function buildHandoffBriefing(
     const elementMap = new Map(snapshot.elements.map((el) => [el.tag, el]));
     const referencedIds = new Map<number, string>(); // id → action taken
 
-    // Walk the last several messages to find tool calls from the smart model
+    // Walk the last several messages to find tool calls from the planner model
     const recentAssistants = history
       .filter(
         (m) =>
@@ -608,28 +620,26 @@ export class AgentLoop {
   private limits: RuntimeLimits = { ...DEFAULT_RUNTIME_LIMITS };
   /** Planner-assessed task difficulty */
   private difficulty: Difficulty = "moderate";
-  private showElementTags: boolean;
   private showSessionMetrics: boolean;
-  private preferredModelTier: "fast" | "smart" | "default";
+  private preferredModelTier: "executor" | "planner" | "default";
   private executionContract: {
     role: string;
-    modelTier: "fast" | "smart";
+    modelTier: "executor" | "planner";
     allowedTools: ToolName[];
   } | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
-  private onStreamChunk: ((delta: string, done: boolean, replaceContent?: string, thinking?: string) => void) | null;
+  private onStreamChunk:
+    | ((
+        delta: string,
+        done: boolean,
+        replaceContent?: string,
+        thinking?: string,
+      ) => void)
+    | null;
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
-  private onMemoryAdd:
-    | ((item: {
-        content: string;
-        category: string;
-        sourceUrl: string;
-        createdAt: number;
-      }) => void)
-    | null;
   private middleware: AgentMiddleware;
 
   /** Workspace ID for session isolation */
@@ -664,7 +674,7 @@ export class AgentLoop {
   private pauseGate: { promise: Promise<void>; resolve: () => void } | null =
     null;
 
-  /** Task planner — smart model for decomposition and done validation */
+  /** Task planner — planner model for decomposition and done validation */
   private planner: TaskPlanner;
   /** Number of times done() has been rejected by the planner */
   private doneRejections = 0;
@@ -740,7 +750,7 @@ export class AgentLoop {
 
   private resolveCost(
     usage: TokenUsage,
-    providerId: "openrouter" | "groq" | "cerebras",
+    providerId: "openrouter" | "groq",
     model: string,
   ): { total: number; actual: number; estimated: number } {
     // Always use static pricing table for consistent cost across all providers
@@ -871,7 +881,12 @@ export class AgentLoop {
       const normalized = new URL(url).origin + new URL(url).pathname;
       if (this.citationUrls.has(normalized)) return;
       this.citationUrls.add(normalized);
-      this.citations.push({ url, title: title || url, tool, turn: this.turnCount });
+      this.citations.push({
+        url,
+        title: title || url,
+        tool,
+        turn: this.turnCount,
+      });
     } catch {
       // Ignore malformed URLs
     }
@@ -902,7 +917,6 @@ export class AgentLoop {
   constructor(
     openRouterApiKey: string,
     groqApiKey: string | undefined,
-    cerebrasApiKey: string | undefined,
     callbacks: {
       onStatusUpdate: (status: AgentStatus, detail: string) => void;
       onMessage: (text: string, toolCalls: ToolCall[]) => void;
@@ -911,12 +925,11 @@ export class AgentLoop {
     options?: {
       maxContextTokens?: number;
       maxTurns?: number;
-      showElementTags?: boolean;
       showSessionMetrics?: boolean;
-      preferredModelTier?: "fast" | "smart";
+      preferredModelTier?: "executor" | "planner";
       executionContract?: {
         role: string;
-        modelTier: "fast" | "smart";
+        modelTier: "executor" | "planner";
         allowedTools: ToolName[];
       };
       disabledTools?: Set<ToolName>;
@@ -929,26 +942,21 @@ export class AgentLoop {
       suppressUiBroadcast?: boolean;
       /** Called for STREAM_CHUNK even when suppressUiBroadcast is true.
        *  Allows orchestrator to forward content for single-node tasks. */
-      onStreamChunk?: (delta: string, done: boolean, replaceContent?: string, thinking?: string) => void;
+      onStreamChunk?: (
+        delta: string,
+        done: boolean,
+        replaceContent?: string,
+        thinking?: string,
+      ) => void;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
-      onMemoryAdd?: (item: {
-        content: string;
-        category: string;
-        sourceUrl: string;
-        createdAt: number;
-      }) => void;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
-    // React toolkit gated by default — enabled when React is detected on the page
-    for (const tool of REACT_TOOL_NAMES) {
-      this.disabledTools.add(tool);
-    }
     this.workspaceId = options?.workspaceId ?? null;
     this.workerId = options?.workerId ?? null;
     this.taskIdRef = options?.taskId ?? null;
@@ -960,7 +968,6 @@ export class AgentLoop {
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
-    this.onMemoryAdd = options?.onMemoryAdd ?? null;
     this.middleware = new AgentMiddleware({
       disabledTools: this.disabledTools,
       bypassApprovals: this.bypassApprovals,
@@ -968,11 +975,11 @@ export class AgentLoop {
       workerId: this.workerId,
       maxSessionMs: MAX_SESSION_MS,
     });
-    this.llm = new LLMClient(openRouterApiKey, groqApiKey, cerebrasApiKey);
-    if (this.preferredModelTier === "smart") {
-      this.llm.switchToSmart();
-    } else if (this.preferredModelTier === "fast") {
-      this.llm.switchToFast();
+    this.llm = new LLMClient(openRouterApiKey, groqApiKey);
+    if (this.preferredModelTier === "planner") {
+      this.llm.switchToPlanner();
+    } else if (this.preferredModelTier === "executor") {
+      this.llm.switchToExecutor();
     }
     this.log.debug("policy", "Initial model tier selected", {
       preferredModelTier: this.preferredModelTier,
@@ -983,7 +990,6 @@ export class AgentLoop {
     });
     this.llm.setFailoverCallback((from, to) => {
       const names: Record<string, string> = {
-        cerebras: "Cerebras",
         groq: "Groq",
         openrouter: "OpenRouter",
       };
@@ -998,7 +1004,7 @@ export class AgentLoop {
         false,
       );
     });
-    this.planner = new TaskPlanner(openRouterApiKey, cerebrasApiKey);
+    this.planner = new TaskPlanner(openRouterApiKey);
     this.baseContextTokens = options?.maxContextTokens ?? 32000;
     this.context = new ContextManager(
       this.baseContextTokens,
@@ -1009,7 +1015,6 @@ export class AgentLoop {
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});
     this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
-    this.showElementTags = options?.showElementTags ?? false;
   }
 
   /**
@@ -1023,7 +1028,12 @@ export class AgentLoop {
     if (this.suppressUiBroadcast) {
       // Forward STREAM_CHUNK to callback even when UI broadcasts are suppressed
       if (msg.type === "STREAM_CHUNK" && this.onStreamChunk) {
-        this.onStreamChunk(msg.payload.delta, msg.payload.done, msg.payload.replaceContent, msg.payload.thinking);
+        this.onStreamChunk(
+          msg.payload.delta,
+          msg.payload.done,
+          msg.payload.replaceContent,
+          msg.payload.thinking,
+        );
       }
       return;
     }
@@ -1224,7 +1234,11 @@ export class AgentLoop {
   ): Promise<boolean> {
     if (riskLevel !== RiskLevel.HIGH) return true;
     if (this.bypassApprovals) {
-      const bypassContext = formatStepLabel(toolName, args, this.elementResolver);
+      const bypassContext = formatStepLabel(
+        toolName,
+        args,
+        this.elementResolver,
+      );
       this.stepHandler(
         {
           id: crypto.randomUUID(),
@@ -1324,9 +1338,9 @@ export class AgentLoop {
       modelTier:
         this.executionContract?.modelTier ||
         (this.preferredModelTier === "default"
-          ? this.llm.isSmartTier()
-            ? "smart"
-            : "fast"
+          ? this.llm.isPlannerTier()
+            ? "planner"
+            : "executor"
           : this.preferredModelTier),
       initialModel: this.llm.getCurrentModel(),
       allowedTools,
@@ -1351,7 +1365,11 @@ export class AgentLoop {
     let warmupScreenshot: string | null = null;
 
     if (!snapshot) {
-      this.log.warn("agent", "No initial snapshot from orchestrator, checking warmup", { tabId });
+      this.log.warn(
+        "agent",
+        "No initial snapshot from orchestrator, checking warmup",
+        { tabId },
+      );
 
       // Check if warmup has a cached or in-progress result for this tab
       const pending = perceptionWarmup.getPending(tabId);
@@ -1385,12 +1403,18 @@ export class AgentLoop {
 
       // Still no snapshot — ensure content script is injected (handles SW restart), then fetch
       if (!snapshot) {
-        this.log.warn("agent", "No warmup available, ensuring content script and fetching snapshot", { tabId });
+        this.log.warn(
+          "agent",
+          "No warmup available, ensuring content script and fetching snapshot",
+          { tabId },
+        );
         await ensureContentScript(tabId, 5000);
         const count = await this.refreshSnapshot(tabId);
         if (count >= 0) {
           snapshot = this.context.getSnapshot() ?? undefined;
-          this.log.info("agent", "Fetched snapshot fallback", { elementCount: count });
+          this.log.info("agent", "Fetched snapshot fallback", {
+            elementCount: count,
+          });
         }
       }
     }
@@ -1413,7 +1437,11 @@ export class AgentLoop {
           /* */
         }
         // Record initial page as citation
-        this.recordCitation(snapshot.url, snapshot.title || "", ToolName.READ_PAGE);
+        this.recordCitation(
+          snapshot.url,
+          snapshot.title || "",
+          ToolName.READ_PAGE,
+        );
       }
 
       if (warmupPerception) {
@@ -1433,7 +1461,11 @@ export class AgentLoop {
         await this.refreshPerceptionAndTriage(tabId);
       }
     } else {
-      this.log.warn("agent", "Starting without snapshot — content script unreachable", { tabId });
+      this.log.warn(
+        "agent",
+        "Starting without snapshot — content script unreachable",
+        { tabId },
+      );
     }
 
     // 2. Add User Message
@@ -1537,7 +1569,9 @@ export class AgentLoop {
                     assumptions: s.assumptions,
                     ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
                     ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
-                    ...(s.expectedState ? { expectedState: s.expectedState } : {}),
+                    ...(s.expectedState
+                      ? { expectedState: s.expectedState }
+                      : {}),
                   })),
                 }
               : {}),
@@ -1675,13 +1709,23 @@ export class AgentLoop {
         };
       }
     } finally {
-      if (result.outcome !== "completed" && this.taskId && this.planSubtasks.length > 0) {
-        this.broadcastPlanTermination(result.outcome as "stopped" | "max_turns" | "error", result.summary);
+      if (
+        result.outcome !== "completed" &&
+        this.taskId &&
+        this.planSubtasks.length > 0
+      ) {
+        this.broadcastPlanTermination(
+          result.outcome as "stopped" | "max_turns" | "error",
+          result.summary,
+        );
       }
       this.isRunning = false;
       // Finalize trace recording (fire-and-forget)
       if (this.traceRecorder) {
-        this.traceRecorder.recordEvent("tool_cache_stats", this.toolCache.getStats());
+        this.traceRecorder.recordEvent(
+          "tool_cache_stats",
+          this.toolCache.getStats(),
+        );
         await this.traceRecorder.finalize(
           result.outcome,
           result.summary,
@@ -1751,15 +1795,15 @@ export class AgentLoop {
     return this.pauseGate !== null;
   }
 
-  /** Escalate to smart model when stuck. Distills context, then switches model via smart pool. */
+  /** Escalate to planner model when stuck. Distills context, then switches model via planner pool. */
   private escalateModel(): void {
     // Distill verbose history into compact situation report (unless orientation phase — no history yet)
     if (this.turnCount > 1) {
       this.context.summarizeTrajectory(this.originalQuery);
     }
-    this.llm.switchToSmart();
-    this.context.setModelTier("smart");
-    this.log.info("agent", "Escalating to smart model", {
+    this.llm.switchToPlanner();
+    this.context.setModelTier("planner");
+    this.log.info("agent", "Escalating to planner model", {
       model: this.llm.getCurrentModel(),
       provider: this.llm.getCurrentProvider(),
     });
@@ -1776,15 +1820,15 @@ export class AgentLoop {
     return !userExplicitlyRequestedTabManagement(this.originalQuery);
   }
 
-  /** De-escalate back to fast model when progress resumes after automatic escalation. */
+  /** De-escalate back to executor model when progress resumes after automatic escalation. */
   private async deescalateModel(
     tabId?: number,
     prevElementCount?: number,
   ): Promise<number> {
-    this.llm.switchToFast();
-    this.context.setModelTier("fast");
+    this.llm.switchToExecutor();
+    this.context.setModelTier("executor");
     let newCount = prevElementCount ?? -1;
-    // Refresh snapshot so fast model gets fresh element IDs
+    // Refresh snapshot so executor model gets fresh element IDs
     if (tabId != null) {
       newCount = await this.refreshSnapshotWithRetry(
         tabId,
@@ -1792,7 +1836,7 @@ export class AgentLoop {
       );
       await this.refreshPerceptionAndTriage(tabId);
     }
-    this.log.info("agent", "De-escalating to fast model", {
+    this.log.info("agent", "De-escalating to executor model", {
       model: this.llm.getCurrentModel(),
       provider: this.llm.getCurrentProvider(),
       snapshotRefreshed: tabId != null,
@@ -1805,9 +1849,13 @@ export class AgentLoop {
    * refresh DOM snapshot, and reset progress tracking. Gives the agent a fresh
    * start without changing models.
    */
-  private async strategyPivot(tabId: number, precomputedSummary?: string): Promise<void> {
+  private async strategyPivot(
+    tabId: number,
+    precomputedSummary?: string,
+  ): Promise<void> {
     // 1. Extract what was tried before clearing (use precomputed if available — history may already be distilled)
-    const attemptSummary = precomputedSummary ?? extractAttemptSummary(this.context.getMessages());
+    const attemptSummary =
+      precomputedSummary ?? extractAttemptSummary(this.context.getMessages());
 
     // 2. Clear history (keeps DOM snapshot)
     this.context.clearHistory();
@@ -1858,12 +1906,13 @@ export class AgentLoop {
         source: MessageSource.BACKGROUND,
         payload: {
           refresh: true,
-          showTags: this.showElementTags,
         },
       });
       if (snapResponse?.payload?.snapshot) {
         this.context.setSnapshot(snapResponse.payload.snapshot);
-        this.elementResolver = buildElementResolver(snapResponse.payload.snapshot.elements);
+        this.elementResolver = buildElementResolver(
+          snapResponse.payload.snapshot.elements,
+        );
         return snapResponse.payload.snapshot.elements.length;
       }
     } catch {
@@ -1881,10 +1930,14 @@ export class AgentLoop {
     const planStatus = this.context.getPlanStatusRaw();
     if (!planStatus) return tools;
 
-    const currentSubtask = planStatus.subtasks.find(s => s.status === "running");
+    const currentSubtask = planStatus.subtasks.find(
+      (s) => s.status === "running",
+    );
     if (!currentSubtask?.toolProfile) return tools;
 
-    const allowedNames = resolveToolProfile(currentSubtask.toolProfile as ToolProfile);
+    const allowedNames = resolveToolProfile(
+      currentSubtask.toolProfile as ToolProfile,
+    );
     if (!allowedNames) return tools; // "full" or unknown → no filtering
 
     const allowedSet = new Set<string>(allowedNames);
@@ -1892,7 +1945,7 @@ export class AgentLoop {
     allowedSet.add(ToolName.DONE);
     allowedSet.add(ToolName.ESCALATE);
 
-    return tools.filter(t => allowedSet.has(t.function.name));
+    return tools.filter((t) => allowedSet.has(t.function.name));
   }
 
   /**
@@ -1911,9 +1964,13 @@ export class AgentLoop {
       if (this.perceptionFingerprintAge < 4) {
         return;
       }
-      this.log.info("agent", "Perception cache: forced re-interpret after stale fingerprint", {
-        age: this.perceptionFingerprintAge,
-      });
+      this.log.info(
+        "agent",
+        "Perception cache: forced re-interpret after stale fingerprint",
+        {
+          age: this.perceptionFingerprintAge,
+        },
+      );
     } else {
       this.perceptionFingerprintAge = 0;
     }
@@ -1931,7 +1988,9 @@ export class AgentLoop {
         elemDescs.length > 0 ? `ELEMENTS: ${elemDescs.join("; ")}` : "",
         `BLOCKERS: None visible.`,
         `SPATIAL: Page appears empty — check if navigation succeeded or if a 404/error occurred.`,
-      ].filter(Boolean).join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
 
       this.lastPerception = {
         interpretation,
@@ -1943,11 +2002,19 @@ export class AgentLoop {
       this.lastScreenshotUrl = null;
       this.context.setPageInterpretation(interpretation);
       const elSummary = buildElementSummary(snapshot.elements);
-      await this.traceRecorder?.recordPerception(this.lastPerception, undefined, elSummary);
-      this.log.info("agent", "Perception: near-empty DOM, skipping vision model", {
-        elementCount: snapshot.elements.length,
-        url: snapshot.url,
-      });
+      await this.traceRecorder?.recordPerception(
+        this.lastPerception,
+        undefined,
+        elSummary,
+      );
+      this.log.info(
+        "agent",
+        "Perception: near-empty DOM, skipping vision model",
+        {
+          elementCount: snapshot.elements.length,
+          url: snapshot.url,
+        },
+      );
       return;
     }
 
@@ -2028,7 +2095,10 @@ export class AgentLoop {
             toolCallId: "popup-triage",
           },
         });
-        if (response?.payload?.result && !response.payload.result.startsWith("Error")) {
+        if (
+          response?.payload?.result &&
+          !response.payload.result.startsWith("Error")
+        ) {
           dismissed++;
         }
       } catch {
@@ -2047,7 +2117,9 @@ export class AgentLoop {
       // Invalidate perception fingerprint so next perception re-interprets
       this.lastPerceptionFingerprint = "";
       // Record what was dismissed for LLM context
-      this.context.addTriagedPopups(targets.slice(0, dismissed).map((b) => b.description));
+      this.context.addTriagedPopups(
+        targets.slice(0, dismissed).map((b) => b.description),
+      );
 
       this.log.info("agent", `Auto-dismissed ${dismissed} nuisance popup(s)`, {
         blockers: targets.map((b) => `[${b.dismissTagId}] ${b.description}`),
@@ -2121,11 +2193,15 @@ export class AgentLoop {
    * Run plan monitor: compare current perception against expected state for the active step.
    * Only runs when a plan is active, perception is available, and enough turns have passed.
    */
-  private async runPlanMonitor(signal?: AbortSignal): Promise<PlanMonitorResult | null> {
+  private async runPlanMonitor(
+    signal?: AbortSignal,
+  ): Promise<PlanMonitorResult | null> {
     if (this.planSteps.length === 0 || !this.lastPerception) return null;
 
     // Find the currently running step
-    const runningIdx = this.planSubtasks.findIndex((s) => s.status === "running");
+    const runningIdx = this.planSubtasks.findIndex(
+      (s) => s.status === "running",
+    );
     if (runningIdx < 0 || runningIdx >= this.planSteps.length) return null;
 
     const step = this.planSteps[runningIdx];
@@ -2181,7 +2257,9 @@ export class AgentLoop {
       .map((s, i) => ({ index: i, objective: s.description, result: s.result }))
       .filter((s) => this.planSubtasks[s.index].status === "completed");
 
-    const runningIdx = this.planSubtasks.findIndex((s) => s.status === "running");
+    const runningIdx = this.planSubtasks.findIndex(
+      (s) => s.status === "running",
+    );
     if (runningIdx < 0) return;
 
     const failedStep = {
@@ -2218,12 +2296,14 @@ export class AgentLoop {
 
     // Replace steps from deviation point onward
     const keptSubtasks = this.planSubtasks.slice(0, runningIdx);
-    const newSubtasks: SubtaskSummary[] = replanResult.newSteps.map((step, i) => ({
-      description: step.objective,
-      status: i === 0 ? ("running" as const) : ("pending" as const),
-      turnsUsed: 0,
-      turnBudget: 0,
-    }));
+    const newSubtasks: SubtaskSummary[] = replanResult.newSteps.map(
+      (step, i) => ({
+        description: step.objective,
+        status: i === 0 ? ("running" as const) : ("pending" as const),
+        turnsUsed: 0,
+        turnBudget: 0,
+      }),
+    );
 
     this.planSubtasks = [...keptSubtasks, ...newSubtasks];
     this.planSteps = [
@@ -2254,7 +2334,9 @@ export class AgentLoop {
       content:
         `[Plan Monitor]: Plan deviated at step ${runningIdx + 1}. Reason: ${monitorResult.reason}\n` +
         `Replanned from step ${runningIdx + 1}:\n` +
-        replanResult.newSteps.map((s, i) => `${runningIdx + i + 1}. ${s.objective}`).join("\n") +
+        replanResult.newSteps
+          .map((s, i) => `${runningIdx + i + 1}. ${s.objective}`)
+          .join("\n") +
         `\n\nExecute step ${runningIdx + 1} now.`,
     });
 
@@ -2309,35 +2391,11 @@ export class AgentLoop {
     return prevCount; // Keep existing count if both attempts fail
   }
 
-  /** Execute a tool call with optional orchestration hooks (e.g. buffered memory). */
+  /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
     tabId: number,
   ): Promise<string> {
-    const toolName = toolCall.function.name as ToolName;
-    if (toolName === ToolName.MEMORY_ADD && this.onMemoryAdd) {
-      let args: Record<string, unknown> = {};
-      try {
-        args = JSON.parse(toolCall.function.arguments || "{}");
-      } catch {
-        return "Error: Invalid memory_add arguments.";
-      }
-
-      const content = String(args.content ?? "").trim();
-      if (!content) return "Error: memory_add requires non-empty content.";
-      const category = String(args.category ?? "general");
-      const sourceUrl = this.context.getCurrentUrl() || "unknown";
-
-      this.onMemoryAdd({
-        content,
-        category,
-        sourceUrl,
-        createdAt: Date.now(),
-      });
-      this.toolCache.invalidateMemory();
-      return `Buffered memory entry in category "${category}".`;
-    }
-
     return await toolRegistry.execute(
       toolCall,
       tabId,
@@ -2467,18 +2525,18 @@ export class AgentLoop {
     let doneSummary = "";
     let wasStuck = false; // Track stuck state for "resolved" signal
 
-    // Two-tier escalation: 0=fast, 1=smart (GLM-4.7 with native reasoning)
-    // plan-then-act: start at tier 1 (smart) for orientation, then hand off to tier 0 (fast)
-    // Exception: when orchestrator sets preferredModelTier="fast", skip orientation entirely
+    // Two-tier escalation: 0=executor, 1=planner
+    // plan-then-act: start at tier 1 (planner) for orientation, then hand off to tier 0 (executor)
+    // Exception: when orchestrator sets preferredModelTier="executor", skip orientation entirely
     let escalationTier: number;
     let orientationPhase: boolean;
-    if (this.preferredModelTier === "fast") {
+    if (this.preferredModelTier === "executor") {
       escalationTier = 0;
       orientationPhase = false;
     } else {
       escalationTier = 1;
-      this.escalateModel(); // Start with smart model (plan phase)
-      orientationPhase = true; // true during initial smart model orientation
+      this.escalateModel(); // Start with planner model (plan phase)
+      orientationPhase = true; // true during initial planner model orientation
     }
     let escalationCycles = 0;
     let cooldownRemaining = 0;
@@ -2486,7 +2544,7 @@ export class AgentLoop {
     let consecutiveProgressSignals = 0; // progress gate for de-escalation
     let freshStartCount = 0; // S3: fresh-start recovery counter
 
-    // Complexity-adaptive orientation: extend smart phase when investigation tools are used
+    // Complexity-adaptive orientation: extend planner phase when investigation tools are used
     let effectiveOrientationTurns = ORIENTATION.PHASE_TURNS;
     const orientationToolsUsed = new Set<string>();
 
@@ -2509,9 +2567,6 @@ export class AgentLoop {
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
     const recentOutcomes: { fingerprint: string; snapshotFp: string }[] = [];
-
-    // React toolkit: enable on first snapshot that detects React
-    let reactToolsEnabled = false;
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
@@ -2554,7 +2609,7 @@ export class AgentLoop {
       // Decrement de-escalation cooldown
       if (cooldownRemaining > 0) cooldownRemaining--;
 
-      // plan-then-act handoff: smart model has oriented, hand off to fast model
+      // plan-then-act handoff: planner model has oriented, hand off to executor model
       // Complexity-adaptive: extend orientation when investigation tools are used
       if (
         orientationPhase &&
@@ -2566,11 +2621,15 @@ export class AgentLoop {
           ORIENTATION.PHASE_TURNS + INVESTIGATION_EXTENSION,
           MAX_ORIENTATION_TURNS,
         );
-        this.log.info("agent", "Investigation detected, extending orientation", {
-          turn: this.turnCount,
-          tools: [...orientationToolsUsed],
-          effectiveOrientationTurns,
-        });
+        this.log.info(
+          "agent",
+          "Investigation detected, extending orientation",
+          {
+            turn: this.turnCount,
+            tools: [...orientationToolsUsed],
+            effectiveOrientationTurns,
+          },
+        );
       }
       if (
         orientationPhase &&
@@ -2593,7 +2652,7 @@ export class AgentLoop {
           {
             id: crypto.randomUUID(),
             type: "info",
-            label: "Handing off to fast model",
+            label: "Handing off to executor model",
             status: "done",
             timestamp: Date.now(),
           },
@@ -2607,7 +2666,9 @@ export class AgentLoop {
 
       // Inject pending hint from user before LLM call
       if (this.pendingFeedback) {
-        this.traceRecorder?.recordEvent("feedback", { text: this.pendingFeedback });
+        this.traceRecorder?.recordEvent("feedback", {
+          text: this.pendingFeedback,
+        });
         this.context.addMessage({
           role: "user",
           content: `[User feedback]: ${this.pendingFeedback}`,
@@ -2627,26 +2688,6 @@ export class AgentLoop {
             maxTurns: this.maxTurns,
             provider: this.llm.getActiveProviderInfo().providerId,
           },
-        });
-      }
-
-      // React toolkit gating follows current page framework.
-      const fw = this.context.getSnapshot()?.framework;
-      if (!reactToolsEnabled && fw?.name === "react") {
-        reactToolsEnabled = true;
-        for (const tool of REACT_TOOL_NAMES) {
-          this.disabledTools.delete(tool);
-        }
-        this.log.info("agent", "React detected -> toolkit enabled", {
-          version: fw.version,
-        });
-      } else if (reactToolsEnabled && fw?.name !== "react") {
-        reactToolsEnabled = false;
-        for (const tool of REACT_TOOL_NAMES) {
-          this.disabledTools.add(tool);
-        }
-        this.log.info("agent", "React not detected -> toolkit disabled", {
-          url: this.context.getCurrentUrl(),
         });
       }
 
@@ -2675,12 +2716,17 @@ export class AgentLoop {
         const snap = this.context.getSnapshot();
 
         // Compute context metrics for trace
-        const systemContent = messages.length > 0 && messages[0].role === "system"
-          ? (typeof messages[0].content === "string" ? messages[0].content : "")
-          : "";
+        const systemContent =
+          messages.length > 0 && messages[0].role === "system"
+            ? typeof messages[0].content === "string"
+              ? messages[0].content
+              : ""
+            : "";
         const cachedPrefixLength = systemContent.indexOf("## Page Context");
-        const droppedMessageCount = Math.max(0,
-          this.context.getHistoryLength() - (messages.length - 1));
+        const droppedMessageCount = Math.max(
+          0,
+          this.context.getHistoryLength() - (messages.length - 1),
+        );
 
         this.traceRecorder.startTurn(
           this.turnCount,
@@ -2706,13 +2752,16 @@ export class AgentLoop {
             utilization: metrics.utilization,
             droppedMessageCount,
             compressionLevel: metrics.compressionLevel,
-            cachedPrefixLength: cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
+            cachedPrefixLength:
+              cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
           },
         );
 
         // Record initial perception on T1 (retroactive — perception ran before first startTurn)
         if (this.turnCount === 1 && this.lastPerception) {
-          const elSummary = snap ? buildElementSummary(snap.elements) : undefined;
+          const elSummary = snap
+            ? buildElementSummary(snap.elements)
+            : undefined;
           await this.traceRecorder.recordPerception(
             this.lastPerception,
             this.lastScreenshotUrl || undefined,
@@ -2751,10 +2800,14 @@ export class AgentLoop {
           isHallucinatedToolCall(streamedTextAccumulator)
         ) {
           hallucinationDetected = true;
-          this.log.warn("agent", "Hallucinated tool call detected, aborting stream", {
-            turn: this.turnCount,
-            textLen: streamedTextAccumulator.length,
-          });
+          this.log.warn(
+            "agent",
+            "Hallucinated tool call detected, aborting stream",
+            {
+              turn: this.turnCount,
+              textLen: streamedTextAccumulator.length,
+            },
+          );
           turnAbortController.abort();
         }
       };
@@ -2830,12 +2883,12 @@ export class AgentLoop {
       // Derive clean content (no <think> blocks) for logging and logic,
       // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
       const rawContent = response.content;
-      let cleanContent = rawContent
-        ? stripThinkTags(rawContent) || null
-        : null;
+      let cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
 
       // Extract thinking content and broadcast to UI before any done:true
-      const thinkingContent = rawContent ? extractThinkContent(rawContent) : null;
+      const thinkingContent = rawContent
+        ? extractThinkContent(rawContent)
+        : null;
       if (thinkingContent) {
         this.broadcast({
           type: "STREAM_CHUNK",
@@ -2957,21 +3010,11 @@ export class AgentLoop {
           .filter((v) => !v.blocked)
           .map((v) => v.original);
 
-        // Batch cap: limit parallel tool calls to prevent mega-turns
-        if (allowedToolCalls.length > BATCH_LIMITS.MAX_STEPS) {
-          this.log.warn("agent", "Parallel batch capped", {
-            requested: allowedToolCalls.length,
-            capped: BATCH_LIMITS.MAX_STEPS,
-          });
-          this.traceRecorder?.recordEvent("batch_cap_enforced", {
-            requested: allowedToolCalls.length,
-          });
-        }
-        response.tool_calls = allowedToolCalls.slice(0, BATCH_LIMITS.MAX_STEPS);
+        response.tool_calls = allowedToolCalls;
 
         // Deferred assistant message: only includes tool_calls that will have
-        // corresponding results (blocked + batch-capped allowed). Prevents 422
-        // errors from orphaned tool_call IDs when batch cap discards excess calls.
+        // corresponding results (blocked calls + allowed). Prevents 422
+        // errors from orphaned tool_call IDs.
         const finalToolCalls = [
           ...blockedCalls.map((b) => b.original),
           ...response.tool_calls,
@@ -3085,11 +3128,17 @@ export class AgentLoop {
               {
                 const fp = getSnapshotFingerprint(this.context.getSnapshot());
                 const sameCount = recentSuccesses.filter(
-                  (e) => e.tool === toolName && e.args === argsKey && e.snapshotFingerprint === fp,
+                  (e) =>
+                    e.tool === toolName &&
+                    e.args === argsKey &&
+                    e.snapshotFingerprint === fp,
                 ).length;
                 if (sameCount >= TOOL_CACHE.BLOCK_THRESHOLD) {
                   const lastMatch = recentSuccesses.findLast(
-                    (e) => e.tool === toolName && e.args === argsKey && e.snapshotFingerprint === fp,
+                    (e) =>
+                      e.tool === toolName &&
+                      e.args === argsKey &&
+                      e.snapshotFingerprint === fp,
                   );
                   if (lastMatch) {
                     this.log.info("agent", "Redundant action blocked", {
@@ -3098,11 +3147,14 @@ export class AgentLoop {
                       count: sameCount,
                       mode: "parallel",
                     });
-                    this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                      tool: toolName,
-                      count: sameCount,
-                      mode: "parallel",
-                    });
+                    this.traceRecorder?.recordEvent(
+                      "redundant_action_blocked",
+                      {
+                        tool: toolName,
+                        count: sameCount,
+                        mode: "parallel",
+                      },
+                    );
                     return { toolCall, result: lastMatch.result, error: null };
                   }
                 }
@@ -3224,18 +3276,22 @@ export class AgentLoop {
                   if (toolName !== ToolName.READ_PAGE) {
                     visuallyModified = true;
                   }
-                  this.lastDomStep = { ...toolStep, status: "done", durationMs: toolMs };
+                  this.lastDomStep = {
+                    ...toolStep,
+                    status: "done",
+                    durationMs: toolMs,
+                  };
                 }
 
                 // Cache store (Feature 1): cache successful results for cacheable tools
                 if (cacheType && !result.startsWith("Error:")) {
                   const fp = getSnapshotFingerprint(this.context.getSnapshot());
-                  this.toolCache.set(ToolResultCache.key(toolName, args), result, fp, cacheType);
-                }
-
-                // Memory cache invalidation: memory mutation tools
-                if (toolName === ToolName.MEMORY_UPDATE || toolName === ToolName.MEMORY_DELETE) {
-                  this.toolCache.invalidateMemory();
+                  this.toolCache.set(
+                    ToolResultCache.key(toolName, args),
+                    result,
+                    fp,
+                    cacheType,
+                  );
                 }
 
                 // Track investigation tools during orientation for adaptive tier allocation
@@ -3301,22 +3357,31 @@ export class AgentLoop {
           // Post-batch verification gate check
           const planAfterParallel = this.context.getPlanStatusRaw();
           if (planAfterParallel) {
-            const currentSub = planAfterParallel.subtasks[planAfterParallel.currentIndex];
+            const currentSub =
+              planAfterParallel.subtasks[planAfterParallel.currentIndex];
             if (currentSub?.verificationGate) {
-              const toolResultStrings = results.map(
-                (r) => r.error ? `Error: ${r.error}` : r.result!,
+              const toolResultStrings = results.map((r) =>
+                r.error ? `Error: ${r.error}` : r.result!,
               );
-              const gateResult = checkVerificationGate(toolResultStrings, currentSub.verificationGate);
+              const gateResult = checkVerificationGate(
+                toolResultStrings,
+                currentSub.verificationGate,
+              );
               if (gateResult.matched) {
-                const actionLabel = currentSub.verificationGate.action === "call_done"
-                  ? `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`
-                  : `CHECKPOINT: Step complete. Evidence: '${gateResult.evidence}'. Advance to next step.`;
+                const actionLabel =
+                  currentSub.verificationGate.action === "call_done"
+                    ? `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`
+                    : `CHECKPOINT: Step complete. Evidence: '${gateResult.evidence}'. Advance to next step.`;
                 this.context.addMessage({ role: "user", content: actionLabel });
-                this.log.info("agent", "Verification gate triggered (parallel)", {
-                  turn: this.turnCount,
-                  action: currentSub.verificationGate.action,
-                  evidence: gateResult.evidence,
-                });
+                this.log.info(
+                  "agent",
+                  "Verification gate triggered (parallel)",
+                  {
+                    turn: this.turnCount,
+                    action: currentSub.verificationGate.action,
+                    evidence: gateResult.evidence,
+                  },
+                );
                 this.traceRecorder?.recordEvent("verification_gate_triggered", {
                   action: currentSub.verificationGate.action,
                   evidence: gateResult.evidence,
@@ -3393,11 +3458,17 @@ export class AgentLoop {
             {
               const fp = getSnapshotFingerprint(this.context.getSnapshot());
               const sameCount = recentSuccesses.filter(
-                (e) => e.tool === toolName && e.args === argsKey && e.snapshotFingerprint === fp,
+                (e) =>
+                  e.tool === toolName &&
+                  e.args === argsKey &&
+                  e.snapshotFingerprint === fp,
               ).length;
               if (sameCount >= TOOL_CACHE.BLOCK_THRESHOLD) {
                 const lastMatch = recentSuccesses.findLast(
-                  (e) => e.tool === toolName && e.args === argsKey && e.snapshotFingerprint === fp,
+                  (e) =>
+                    e.tool === toolName &&
+                    e.args === argsKey &&
+                    e.snapshotFingerprint === fp,
                 );
                 if (lastMatch) {
                   this.log.info("agent", "Redundant action blocked", {
@@ -3574,7 +3645,8 @@ export class AgentLoop {
                         status: s.status,
                         completedAtUrl: s.completedAtUrl,
                         result: s.result,
-                        verificationGate: existingPlan?.subtasks[idx]?.verificationGate,
+                        verificationGate:
+                          existingPlan?.subtasks[idx]?.verificationGate,
                       })),
                       newIdx,
                     );
@@ -3741,7 +3813,9 @@ export class AgentLoop {
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: ESCALATION_REFLECTION(reason || "voluntary escalation"),
+                  content: ESCALATION_REFLECTION(
+                    reason || "voluntary escalation",
+                  ),
                 });
               } else {
                 this.context.addMessage({
@@ -3760,153 +3834,6 @@ export class AgentLoop {
                 voluntary: true,
               });
               continue;
-            }
-
-            // BATCH_EXECUTE tool — execute pre-planned tool sequence without LLM roundtrips
-            if (toolName === ToolName.BATCH_EXECUTE) {
-              const rawSteps =
-                (args.steps as Array<{
-                  tool: string;
-                  args: Record<string, unknown>;
-                  expect?: string;
-                }>) || [];
-              const verify = (args.verify as string) || "";
-              const maxSteps = Math.min(
-                rawSteps.length,
-                BATCH_LIMITS.MAX_STEPS,
-              );
-              const completedResults: string[] = [];
-              let bailReason = "";
-
-              this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "tool",
-                  label: `Batch: ${maxSteps} steps`,
-                  toolName: ToolName.BATCH_EXECUTE,
-                  status: "running",
-                  timestamp: Date.now(),
-                },
-                false,
-              );
-
-              const batchStartTime = Date.now();
-
-              for (let i = 0; i < maxSteps; i++) {
-                if (!this.isRunning) {
-                  bailReason = "Agent stopped";
-                  break;
-                }
-                const step = rawSteps[i];
-
-                // Validate tool name
-                if (BATCH_BLOCKED_TOOLS.has(step.tool)) {
-                  bailReason = `Step ${i}: "${step.tool}" is not allowed in batch`;
-                  break;
-                }
-                const stepRisk = classifyRisk(
-                  step.tool as ToolName,
-                  step.args || {},
-                );
-                if (stepRisk === RiskLevel.HIGH) {
-                  bailReason = `Step ${i}: "${step.tool}" requires explicit user approval and cannot run in batch`;
-                  break;
-                }
-
-                // Execute via toolRegistry
-                const syntheticToolCall: ToolCall = {
-                  id: `batch_${toolCall.id}_${i}`,
-                  type: "function",
-                  function: {
-                    name: step.tool as ToolName,
-                    arguments: JSON.stringify(step.args),
-                  },
-                };
-
-                let result: string;
-                try {
-                  result = await this.executeToolCall(syntheticToolCall, tabId);
-                } catch (e: any) {
-                  if (e.name === "AbortError") throw e;
-                  bailReason = `Step ${i} ("${step.tool}"): ${e.message}`;
-                  break;
-                }
-
-                // Check for error results
-                if (result.startsWith("Error")) {
-                  bailReason = `Step ${i} ("${step.tool}"): ${result}`;
-                  break;
-                }
-
-                // Check expect condition
-                if (
-                  step.expect &&
-                  !result.toLowerCase().includes(step.expect.toLowerCase())
-                ) {
-                  bailReason = `Step ${i} ("${step.tool}"): expected "${step.expect}" not found in result`;
-                  break;
-                }
-
-                completedResults.push(`[${i}] ${step.tool}: ${result}`);
-
-                // Track DOM modifications
-                if (DOM_MODIFYING_TOOLS.has(step.tool as ToolName)) {
-                  domModified = true;
-                }
-              }
-
-              // Build consolidated result
-              const header = bailReason
-                ? `Batch BAILED after ${completedResults.length}/${maxSteps} steps: ${bailReason}`
-                : `Batch OK: ${completedResults.length}/${maxSteps} steps completed`;
-              const body = completedResults.join("\n");
-              const footer = verify ? `\nVerify: ${verify}` : "";
-              const batchResult = `${header}\n${body}${footer}`;
-
-              const batchDurationMs = Date.now() - batchStartTime;
-
-              // Update step
-              const batchStep: AgentStep = {
-                id: crypto.randomUUID(),
-                type: "tool",
-                label: bailReason
-                  ? `Batch: ${completedResults.length}/${maxSteps} (bailed)`
-                  : `Batch: ${maxSteps} steps OK`,
-                toolName: ToolName.BATCH_EXECUTE,
-                status: bailReason ? "error" : "done",
-                timestamp: Date.now(),
-                durationMs: batchDurationMs,
-              };
-              this.stepHandler(batchStep, true);
-              if (domModified) {
-                this.lastDomStep = batchStep;
-              }
-
-              // Log + trace
-              this.log.info("tools", "batch_execute", {
-                turn: this.turnCount,
-                stepsPlanned: maxSteps,
-                stepsCompleted: completedResults.length,
-                bailed: !!bailReason,
-                bailReason: bailReason || undefined,
-                durationMs: batchDurationMs,
-              });
-              this.traceRecorder?.recordToolExecution(
-                toolCall.id,
-                ToolName.BATCH_EXECUTE,
-                args,
-                batchResult,
-                !bailReason,
-                batchDurationMs,
-                classifyRisk(ToolName.BATCH_EXECUTE, args),
-              );
-
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: batchResult,
-              });
-              continue; // Skip normal executor
             }
 
             // WAIT tool — re-orientation mechanism
@@ -4101,11 +4028,15 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
                 });
-                this.log.warn("agent", "switch_tab blocked — outside workspace", {
-                  turn: this.turnCount,
-                  targetTabId,
-                  workspaceTabs: wsTabIds,
-                });
+                this.log.warn(
+                  "agent",
+                  "switch_tab blocked — outside workspace",
+                  {
+                    turn: this.turnCount,
+                    targetTabId,
+                    workspaceTabs: wsTabIds,
+                  },
+                );
                 continue;
               }
 
@@ -4190,11 +4121,15 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
                 });
-                this.log.warn("agent", "close_tab blocked — outside workspace", {
-                  turn: this.turnCount,
-                  targetTabId,
-                  workspaceTabs: wsTabIds,
-                });
+                this.log.warn(
+                  "agent",
+                  "close_tab blocked — outside workspace",
+                  {
+                    turn: this.turnCount,
+                    targetTabId,
+                    workspaceTabs: wsTabIds,
+                  },
+                );
                 continue;
               }
 
@@ -4403,18 +4338,22 @@ export class AgentLoop {
               if (toolName !== ToolName.READ_PAGE) {
                 visuallyModified = true;
               }
-              this.lastDomStep = { ...toolStep, status: "done", durationMs: Date.now() - toolStep.timestamp };
+              this.lastDomStep = {
+                ...toolStep,
+                status: "done",
+                durationMs: Date.now() - toolStep.timestamp,
+              };
             }
 
             // Cache store (Feature 1): cache successful results for cacheable tools
             if (cacheType && !result.startsWith("Error:")) {
               const fp = getSnapshotFingerprint(this.context.getSnapshot());
-              this.toolCache.set(ToolResultCache.key(toolName, args), result, fp, cacheType);
-            }
-
-            // Memory cache invalidation: memory mutation tools
-            if (toolName === ToolName.MEMORY_UPDATE || toolName === ToolName.MEMORY_DELETE) {
-              this.toolCache.invalidateMemory();
+              this.toolCache.set(
+                ToolResultCache.key(toolName, args),
+                result,
+                fp,
+                cacheType,
+              );
             }
 
             // Track investigation tools during orientation for adaptive tier allocation
@@ -4434,18 +4373,30 @@ export class AgentLoop {
               const typedValue = String(args.text || "");
               if (typedValue.length > 3) {
                 const snap = this.context.getSnapshot();
-                const pageText = snap?.pageContent || snap?.visibleContent || "";
+                const pageText =
+                  snap?.pageContent || snap?.visibleContent || "";
                 const originalQuery = this.originalQuery || "";
                 // Check if typed value appears in any recent tool result
                 let hasEvidence = false;
-                if (pageText.includes(typedValue) || originalQuery.includes(typedValue)) {
+                if (
+                  pageText.includes(typedValue) ||
+                  originalQuery.includes(typedValue)
+                ) {
                   hasEvidence = true;
                 } else {
                   const recentMsgs = this.context.getMessages();
                   const lookback = Math.min(20, recentMsgs.length);
-                  for (let ri = recentMsgs.length - 1; ri >= recentMsgs.length - lookback && ri >= 0; ri--) {
+                  for (
+                    let ri = recentMsgs.length - 1;
+                    ri >= recentMsgs.length - lookback && ri >= 0;
+                    ri--
+                  ) {
                     const m = recentMsgs[ri];
-                    if (m.role === "tool" && typeof m.content === "string" && m.content.includes(typedValue)) {
+                    if (
+                      m.role === "tool" &&
+                      typeof m.content === "string" &&
+                      m.content.includes(typedValue)
+                    ) {
                       hasEvidence = true;
                       break;
                     }
@@ -4471,7 +4422,8 @@ export class AgentLoop {
           // Post-sequential verification gate check
           const planAfterSeq = this.context.getPlanStatusRaw();
           if (planAfterSeq && !doneSignaled) {
-            const currentSubSeq = planAfterSeq.subtasks[planAfterSeq.currentIndex];
+            const currentSubSeq =
+              planAfterSeq.subtasks[planAfterSeq.currentIndex];
             if (currentSubSeq?.verificationGate) {
               // Collect recent tool result messages from this turn
               const seqMessages = this.context.getMessages();
@@ -4479,19 +4431,31 @@ export class AgentLoop {
               for (let ri = seqMessages.length - 1; ri >= 0; ri--) {
                 const msg = seqMessages[ri];
                 if (msg.role !== "tool") break;
-                if (typeof msg.content === "string") seqToolResults.push(msg.content);
+                if (typeof msg.content === "string")
+                  seqToolResults.push(msg.content);
               }
-              const seqGateResult = checkVerificationGate(seqToolResults, currentSubSeq.verificationGate);
+              const seqGateResult = checkVerificationGate(
+                seqToolResults,
+                currentSubSeq.verificationGate,
+              );
               if (seqGateResult.matched) {
-                const seqActionLabel = currentSubSeq.verificationGate.action === "call_done"
-                  ? `CHECKPOINT: Gate triggered. Evidence: '${seqGateResult.evidence}'. Call done() now.`
-                  : `CHECKPOINT: Step complete. Evidence: '${seqGateResult.evidence}'. Advance to next step.`;
-                this.context.addMessage({ role: "user", content: seqActionLabel });
-                this.log.info("agent", "Verification gate triggered (sequential)", {
-                  turn: this.turnCount,
-                  action: currentSubSeq.verificationGate.action,
-                  evidence: seqGateResult.evidence,
+                const seqActionLabel =
+                  currentSubSeq.verificationGate.action === "call_done"
+                    ? `CHECKPOINT: Gate triggered. Evidence: '${seqGateResult.evidence}'. Call done() now.`
+                    : `CHECKPOINT: Step complete. Evidence: '${seqGateResult.evidence}'. Advance to next step.`;
+                this.context.addMessage({
+                  role: "user",
+                  content: seqActionLabel,
                 });
+                this.log.info(
+                  "agent",
+                  "Verification gate triggered (sequential)",
+                  {
+                    turn: this.turnCount,
+                    action: currentSubSeq.verificationGate.action,
+                    evidence: seqGateResult.evidence,
+                  },
+                );
                 this.traceRecorder?.recordEvent("verification_gate_triggered", {
                   action: currentSubSeq.verificationGate.action,
                   evidence: seqGateResult.evidence,
@@ -4532,9 +4496,7 @@ export class AgentLoop {
             consecutiveAllFailTurns = 0;
           }
 
-          if (
-            consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail
-          ) {
+          if (consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail) {
             this.log.warn(
               "agent",
               "Circuit breaker: consecutive all-fail turns",
@@ -4640,12 +4602,14 @@ export class AgentLoop {
 
           // B2. Discovery budget: nudge after N consecutive turns of only reading/inspecting
           {
-            const allDiscovery = response.tool_calls!.every(
-              (tc) => DISCOVERY_ONLY_TOOLS.has(tc.function.name),
+            const allDiscovery = response.tool_calls!.every((tc) =>
+              DISCOVERY_ONLY_TOOLS.has(tc.function.name),
             );
             if (allDiscovery) {
               consecutiveDiscoveryTurns++;
-              if (consecutiveDiscoveryTurns >= DISCOVERY_BUDGET.MAX_CONSECUTIVE) {
+              if (
+                consecutiveDiscoveryTurns >= DISCOVERY_BUDGET.MAX_CONSECUTIVE
+              ) {
                 this.context.addMessage({
                   role: "user",
                   content: `You've spent ${consecutiveDiscoveryTurns} consecutive turns only reading/inspecting without acting. Use what you've gathered — click, type, scroll, navigate — or escalate if stuck.`,
@@ -4779,9 +4743,7 @@ export class AgentLoop {
           }
           // Check for dead-end pattern (all recent outcomes identical AND same page state)
           {
-            const lastN = recentOutcomes.slice(
-              -this.limits.stagnationPivot,
-            );
+            const lastN = recentOutcomes.slice(-this.limits.stagnationPivot);
             const allSame =
               lastN.length >= this.limits.stagnationReflection &&
               lastN.every(
@@ -4812,11 +4774,15 @@ export class AgentLoop {
               await this.strategyPivot(tabId);
               recentOutcomes.length = 0;
             } else if (allSame) {
-              this.log.info("agent", "Dead-end nudge: repeated outcome pattern", {
-                turn: this.turnCount,
-                pattern: lastN[0].fingerprint.slice(0, 80),
-                count: lastN.length,
-              });
+              this.log.info(
+                "agent",
+                "Dead-end nudge: repeated outcome pattern",
+                {
+                  turn: this.turnCount,
+                  pattern: lastN[0].fingerprint.slice(0, 80),
+                  count: lastN.length,
+                },
+              );
               this.traceRecorder?.recordEvent("dead_end_nudge", {
                 pattern: lastN[0].fingerprint.slice(0, 80),
                 count: lastN.length,
@@ -4873,7 +4839,9 @@ export class AgentLoop {
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
               });
-              const stepAttemptSummary = extractAttemptSummary(this.context.getMessages());
+              const stepAttemptSummary = extractAttemptSummary(
+                this.context.getMessages(),
+              );
               this.escalateModel();
               escalationTier = 1;
               orientationPhase = false;
@@ -4889,7 +4857,7 @@ export class AgentLoop {
                 {
                   id: crypto.randomUUID(),
                   type: "info",
-                  label: `Stuck on step ${this.lastPlanIndex + 1} — escalating to smart model`,
+                  label: `Stuck on step ${this.lastPlanIndex + 1} — escalating to planner model`,
                   status: "done",
                   timestamp: Date.now(),
                 },
@@ -4929,7 +4897,9 @@ export class AgentLoop {
             sameUrlTurns: this.stagnation.sameUrlTurns,
             threshold: this.limits.sameUrlEscalate,
           });
-          const urlAttemptSummary = extractAttemptSummary(this.context.getMessages());
+          const urlAttemptSummary = extractAttemptSummary(
+            this.context.getMessages(),
+          );
           this.escalateModel();
           escalationTier = 1;
           orientationPhase = false;
@@ -4999,8 +4969,7 @@ export class AgentLoop {
               source: MessageSource.BACKGROUND,
               payload: {
                 refresh: true,
-                showTags: this.showElementTags,
-              },
+                              },
             });
             let snap = snapResponse?.payload?.snapshot;
 
@@ -5025,8 +4994,7 @@ export class AgentLoop {
                 source: MessageSource.BACKGROUND,
                 payload: {
                   refresh: true,
-                  showTags: this.showElementTags,
-                },
+                                  },
               });
               snap = snapResponse?.payload?.snapshot;
             }
@@ -5062,7 +5030,11 @@ export class AgentLoop {
 
               // Record citation for visited page
               if (currentUrl) {
-                this.recordCitation(currentUrl, snap.title || "", ToolName.READ_PAGE);
+                this.recordCitation(
+                  currentUrl,
+                  snap.title || "",
+                  ToolName.READ_PAGE,
+                );
               }
 
               // Off-domain navigation detection
@@ -5098,7 +5070,13 @@ export class AgentLoop {
 
               // Retroactive screenshot attachment: update the last DOM-modifying step with the screenshot
               if (this.lastScreenshotUrl && this.lastDomStep) {
-                this.stepHandler({ ...this.lastDomStep, screenshotUrl: this.lastScreenshotUrl }, true);
+                this.stepHandler(
+                  {
+                    ...this.lastDomStep,
+                    screenshotUrl: this.lastScreenshotUrl,
+                  },
+                  true,
+                );
                 this.lastDomStep = null;
               }
 
@@ -5112,11 +5090,23 @@ export class AgentLoop {
                 !this.abortController?.signal.aborted
               ) {
                 this.turnsSinceLastMonitor = 0;
-                const monitorResult = await this.runPlanMonitor(this.abortController?.signal);
+                const monitorResult = await this.runPlanMonitor(
+                  this.abortController?.signal,
+                );
                 if (monitorResult) {
-                  if (monitorResult.alignment === "deviated" && this.replanCount < 3) {
-                    await this.handlePlanDeviation(monitorResult, tabId, this.abortController?.signal);
-                  } else if (monitorResult.alignment === "blocked" && monitorResult.blocker) {
+                  if (
+                    monitorResult.alignment === "deviated" &&
+                    this.replanCount < 3
+                  ) {
+                    await this.handlePlanDeviation(
+                      monitorResult,
+                      tabId,
+                      this.abortController?.signal,
+                    );
+                  } else if (
+                    monitorResult.alignment === "blocked" &&
+                    monitorResult.blocker
+                  ) {
                     this.context.addMessage({
                       role: "user",
                       content: `[Plan Monitor]: Blocker detected — ${monitorResult.blocker}. Address this before continuing with the current step.`,
@@ -5134,7 +5124,10 @@ export class AgentLoop {
               if (actionEffect && domModified) {
                 const effectLine = formatActionEffect(actionEffect);
                 if (effectLine) {
-                  this.context.addMessage({ role: "user", content: effectLine });
+                  this.context.addMessage({
+                    role: "user",
+                    content: effectLine,
+                  });
                   this.traceRecorder?.recordEvent("action_effect", {
                     deltaPercent: actionEffect.deltaPercent,
                     urlChanged: actionEffect.urlChanged,
@@ -5143,9 +5136,15 @@ export class AgentLoop {
                   });
                 }
                 // P1b: Track consecutive zero-effect turns for dual-gating
-                if (actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD && !actionEffect.urlChanged) {
+                if (
+                  actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
+                  !actionEffect.urlChanged
+                ) {
                   this.consecutiveZeroEffectTurns++;
-                  if (this.consecutiveZeroEffectTurns >= ACTION_EFFECT.WARNING_THRESHOLD) {
+                  if (
+                    this.consecutiveZeroEffectTurns >=
+                    ACTION_EFFECT.WARNING_THRESHOLD
+                  ) {
                     this.context.addMessage({
                       role: "user",
                       content: `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect on the page. Your current approach is not working — try a fundamentally different strategy (different element, different tool, or different page area).]`,
@@ -5243,7 +5242,7 @@ export class AgentLoop {
                   escalationCycles = 0;
                   cooldownRemaining = 0;
 
-                  // Ensure smart tier
+                  // Ensure planner tier
                   if (escalationTier === 0) {
                     this.escalateModel();
                     escalationTier = 1;
@@ -5280,12 +5279,14 @@ export class AgentLoop {
                   continue;
                 }
 
-                // Escalate: fast → smart
+                // Escalate: executor → planner
                 else if (escalationTier === 0 && cooldownRemaining <= 0) {
-                  // Invalidate perception cache so the smart model gets a fresh interpretation
+                  // Invalidate perception cache so the planner model gets a fresh interpretation
                   this.lastPerceptionFingerprint = "";
                   this.perceptionFingerprintAge = 0;
-                  const attemptSummary = extractAttemptSummary(this.context.getMessages());
+                  const attemptSummary = extractAttemptSummary(
+                    this.context.getMessages(),
+                  );
                   this.escalateModel();
                   escalationTier = 1;
                   orientationPhase = false;
@@ -5294,7 +5295,9 @@ export class AgentLoop {
                   this.stagnation.resetEscalation();
                   this.context.addMessage({
                     role: "user",
-                    content: ESCALATION_REFLECTION("no DOM progress detected by stagnation monitor"),
+                    content: ESCALATION_REFLECTION(
+                      "no DOM progress detected by stagnation monitor",
+                    ),
                   });
                   consecutiveTextOnly = 0;
                   recentSuccesses.length = 0;
@@ -5336,8 +5339,8 @@ export class AgentLoop {
                   wasStuck = false;
                   consecutiveProgressSignals = 0;
 
-                  // De-escalate if on smart model, under cycle limit,
-                  // and the smart model has had enough turns to actually work
+                  // De-escalate if on planner model, under cycle limit,
+                  // and the planner model has had enough turns to actually work
                   const smartTenure = this.turnCount - smartModelStartTurn;
                   if (
                     escalationTier > 0 &&
@@ -5363,7 +5366,7 @@ export class AgentLoop {
                       {
                         id: crypto.randomUUID(),
                         type: "info",
-                        label: "Progress made — switching back to fast model",
+                        label: "Progress made — switching back to executor model",
                         status: "done",
                         timestamp: Date.now(),
                       },
@@ -5441,9 +5444,10 @@ export class AgentLoop {
               type: admission.type,
               match: admission.match,
             });
-            const nudge = admission.type === "success"
-              ? `You stated: "${admission.match}". Call done() to deliver the result.`
-              : `You stated: "${admission.match}". Call done() to report inability, or call escalate() for help.`;
+            const nudge =
+              admission.type === "success"
+                ? `You stated: "${admission.match}". Call done() to deliver the result.`
+                : `You stated: "${admission.match}". Call done() to report inability, or call escalate() for help.`;
             this.context.addMessage({ role: "user", content: nudge });
             this.broadcast({
               type: "STREAM_CHUNK",
@@ -5486,7 +5490,9 @@ export class AgentLoop {
           escalationTier < 1 &&
           cooldownRemaining <= 0
         ) {
-          const textOnlyAttemptSummary = extractAttemptSummary(this.context.getMessages());
+          const textOnlyAttemptSummary = extractAttemptSummary(
+            this.context.getMessages(),
+          );
           this.escalateModel();
           escalationTier = 1;
           orientationPhase = false;
@@ -5495,7 +5501,9 @@ export class AgentLoop {
           this.stagnation.resetEscalation();
           this.context.addMessage({
             role: "user",
-            content: ESCALATION_REFLECTION("consecutive text-only responses without tool calls"),
+            content: ESCALATION_REFLECTION(
+              "consecutive text-only responses without tool calls",
+            ),
           });
           consecutiveTextOnly = 0;
           recentSuccesses.length = 0;
@@ -5551,7 +5559,7 @@ export class AgentLoop {
           smartTurns >= this.limits.stuckGiveUpSmart &&
           totalTextOnly >= 3
         ) {
-          this.log.warn("agent", "Loop ended: smart model turn limit", {
+          this.log.warn("agent", "Loop ended: planner model turn limit", {
             turns: this.turnCount,
             smartTurns,
             totalTextOnly,
@@ -5708,5 +5716,3 @@ export class AgentLoop {
     };
   }
 }
-
-

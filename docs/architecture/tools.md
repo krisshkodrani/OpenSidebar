@@ -1,6 +1,6 @@
 # Tool System
 
-OpenSidebar implements **57 tools** across five categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
+OpenSidebar implements **39 tools** across four categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
 
 ## Tool Categories
 
@@ -19,7 +19,6 @@ These tools operate in the page context and manipulate the DOM directly.
 | `select_option`     | Select a dropdown option          | `{ id: number, value: string }`                                              |
 | `press_key`         | Press a keyboard key              | `{ key: string, modifiers?: string[] }`                                      |
 | `drag_and_drop`     | Drag an element to a target       | `{ sourceId: number, targetId: number }`                                     |
-| `draw_stroke`       | Draw a stroke on a canvas         | `{ id: number, startX: number, startY: number, endX: number, endY: number }` |
 | `hide_element`      | Hide an element by ID             | `{ id: number }`                                                             |
 | `read_element`      | Read specific attribute or text   | `{ id: number, attribute?: string }`                                         |
 | `execute_js`        | Run JavaScript in page context    | `{ code: string }`                                                           |
@@ -31,16 +30,13 @@ These tools operate in the page context and manipulate the DOM directly.
 
 ### Page Assist Tools (Service Worker → MAIN world)
 
-These tools inject scripts into the page's MAIN world via `chrome.scripting.executeScript` to modify page behavior. Both are toggles — call once to enable, again to disable.
+These tools inject scripts into the page's MAIN world via `chrome.scripting.executeScript` to modify page behavior. Toggle — call once to enable, again to disable.
 
 | Tool           | Description                                     | Arguments |
 | -------------- | ----------------------------------------------- | --------- |
 | `xray_page`    | Force all hidden elements visible (CSS override) | `{}`      |
-| `fast_forward` | Accelerate page timers to fire instantly         | `{}`      |
 
 **`xray_page`** injects a `<style data-osb-xray>` that overrides `display:none`, `opacity:0`, `visibility:hidden`, and `aria-hidden`. Marked `domModifying: true` so the agent loop refreshes the DOM snapshot after toggling, allowing newly revealed elements to get tagged. Does not persist across navigations.
-
-**`fast_forward`** monkey-patches `setTimeout` and `setInterval` to fire at 10ms max delay. Saves originals on `globalThis.__osb_origTimers` for clean restore on second call. Does not persist across navigations.
 
 ### Tab Tools (Service Worker)
 
@@ -54,12 +50,7 @@ These tools use Chrome APIs to manage tabs and navigation.
 | `switch_tab`      | Switch to a tab by ID           | `{ tabId: number }`                                   |
 | `list_tabs`       | List open tabs in workspace     | `{}`                                                  |
 | `go_back`         | Go back in browser history      | `{}`                                                  |
-| `go_forward`      | Go forward in browser history   | `{}`                                                  |
 | `wait`            | Wait for dynamic content        | `{ seconds: number, reason?: string }`                |
-
-| `group_tabs`      | Group tabs into a tab group     | `{ tabIds: number[], title: string, color?: string }` |
-| `ungroup_tabs`    | Remove tabs from a group        | `{ tabIds: number[] }`                                |
-| `create_window`   | Open a new browser window       | `{ url?: string, incognito?: boolean }`               |
 
 ### Browser API Tools
 
@@ -70,25 +61,17 @@ These tools interact with browser features like cookies, history, bookmarks, and
 | `get_cookies`       | Get cookies for a URL          | `{ url?: string }`                                                             |
 | `set_cookie`        | Set a cookie                   | `{ url: string, name: string, value: string, domain?: string, path?: string }` |
 | `delete_cookie`     | Delete a cookie                | `{ url: string, name: string }`                                                |
-| `copy_to_clipboard` | Copy text to clipboard         | `{ text: string }`                                                             |
-| `read_pdf`          | Extract text from a PDF        | `{ url: string, maxPages?: number }`                                           |
 | `search_history`    | Search browser history         | `{ query: string, maxResults?: number }`                                       |
-| `create_bookmark`   | Bookmark a page                | `{ title?: string, url?: string, parentId?: string }`                          |
-| `get_bookmarks`     | Search bookmarks               | `{ query: string, maxResults?: number }`                                       |
 | `download_file`     | Start a file download          | `{ url: string, filename?: string }`                                           |
-| `transcribe_audio`  | Transcribe audio/video element | `{ id: number }`                                                               |
-| `send_notification` | Show a desktop notification    | `{ title: string, message: string }`                                           |
 
 ### Special Tools
 
-These tools control the agent itself or provide memory capabilities.
+These tools control the agent itself.
 
 | Tool            | Description             | Arguments                                                                               |
 | --------------- | ----------------------- | --------------------------------------------------------------------------------------- |
 | `done`          | Mark task as complete   | `{ summary: string }`                                                                   |
 | `escalate`      | Switch to smarter model | `{ reason: string }`                                                                    |
-| `memory_add`    | Save to memory          | `{ content: string, category?: string }`                                                |
-| `memory_search` | Search memory           | `{ query: string }`                                                                     |
 
 ## Tool Execution Flow
 
@@ -188,12 +171,10 @@ Tools that modify the DOM and trigger a snapshot refresh after execution:
 - `hover_element`
 - `select_option`
 - `drag_and_drop`
-- `draw_stroke`
 - `hide_element`
 - `xray_page`
 - `navigate`
 - `go_back`
-- `go_forward`
 
 ### SEQUENTIAL_TOOLS
 
@@ -204,19 +185,18 @@ Tools that must execute alone (not in parallel with others):
 
 - `escalate` - Changes model
 - `go_back` - Changes page context
-- `go_forward` - Changes page context
 
 ## Risk Classification
 
 Tools are classified by risk level (informational, not enforced):
 
 - **LOW**: Read-only operations or reversible toggles
-  - `read_page`, `memory_search`, `scroll_page`, `list_tabs`, `get_cookies`, `search_history`, `get_bookmarks`, `read_element`, `inspect_hidden`, `xray_page`, `fast_forward`
+  - `read_page`, `scroll_page`, `list_tabs`, `get_cookies`, `search_history`, `read_element`, `inspect_hidden`, `xray_page`
 - **MEDIUM**: Mutates page state
   - `click_element`, `type_text`, `hover_element`, `hide_element`, `select_option`, `set_checkbox`, `right_click`, `click_coordinates`
-  - `memory_add`, `set_cookie`, `delete_cookie`, `copy_to_clipboard`, `create_bookmark`, `upload_file`
+  - `set_cookie`, `delete_cookie`, `upload_file`
 - **HIGH**: Navigation and browser management
-  - `navigate`, `create_tab`, `close_tab`, `switch_tab`, `create_window`, `download_file`, `group_tabs`, `ungroup_tabs`, `escalate`
+  - `navigate`, `create_tab`, `close_tab`, `switch_tab`, `download_file`, `escalate`
 
 ## Tool Result Format
 

@@ -90,7 +90,11 @@ class PerceptionWarmup {
       if (!isTabReady(tabId)) {
         const ready = await ensureContentScript(tabId, 5000);
         if (!ready) {
-          logger.warn("warmup", "Content script not ready after injection attempt", { tabId });
+          logger.warn(
+            "warmup",
+            "Content script not ready after injection attempt",
+            { tabId },
+          );
           return null;
         }
       }
@@ -100,7 +104,7 @@ class PerceptionWarmup {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { refresh: true, showTags: false },
+        payload: { refresh: true },
       });
 
       const snapshot: DomSnapshot | undefined = snapResponse?.payload?.snapshot;

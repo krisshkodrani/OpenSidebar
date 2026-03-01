@@ -20,9 +20,9 @@ import {
 
 const ELEMENT_ID_TOOLS = new Set<string>([
   ToolName.CLICK_ELEMENT, ToolName.TYPE_TEXT, ToolName.HOVER_ELEMENT,
-  ToolName.SELECT_OPTION, ToolName.DRAW_STROKE, ToolName.HIDE_ELEMENT,
+  ToolName.SELECT_OPTION, ToolName.HIDE_ELEMENT,
   ToolName.READ_ELEMENT, ToolName.UPLOAD_FILE, ToolName.RIGHT_CLICK,
-  ToolName.SET_CHECKBOX, ToolName.INSPECT_REACT, ToolName.REACT_SET_INPUT,
+  ToolName.SET_CHECKBOX,
 ]);
 const ELEMENT_DUAL_ID_TOOLS = new Set<string>([ToolName.DRAG_AND_DROP]);
 
@@ -239,26 +239,24 @@ describe("Failed Action Memory", () => {
 // ─── Tab Tool Taboo (constants + logic verification) ────────────────────
 
 describe("Tab Tool Taboo", () => {
-  test("all 4 tab tools are in the ToolName enum", () => {
+  test("all 3 tab tools are in the ToolName enum", () => {
     expect(ToolName.CREATE_TAB).toBe("create_tab");
     expect(ToolName.SWITCH_TAB).toBe("switch_tab");
     expect(ToolName.CLOSE_TAB).toBe("close_tab");
-    expect(ToolName.CREATE_WINDOW).toBe("create_window");
   });
 
   test("tab tools can be added to a Set (simulating disabledTools)", () => {
     const disabledTools = new Set<ToolName>();
-    const tabTools = [ToolName.CREATE_TAB, ToolName.SWITCH_TAB, ToolName.CLOSE_TAB, ToolName.CREATE_WINDOW];
+    const tabTools = [ToolName.CREATE_TAB, ToolName.SWITCH_TAB, ToolName.CLOSE_TAB];
 
     for (const tabTool of tabTools) {
       disabledTools.add(tabTool);
     }
 
-    expect(disabledTools.size).toBe(4);
+    expect(disabledTools.size).toBe(3);
     expect(disabledTools.has(ToolName.CREATE_TAB)).toBe(true);
     expect(disabledTools.has(ToolName.SWITCH_TAB)).toBe(true);
     expect(disabledTools.has(ToolName.CLOSE_TAB)).toBe(true);
-    expect(disabledTools.has(ToolName.CREATE_WINDOW)).toBe(true);
     // Other tools should NOT be disabled
     expect(disabledTools.has(ToolName.CLICK_ELEMENT)).toBe(false);
   });

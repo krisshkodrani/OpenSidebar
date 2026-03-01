@@ -12,8 +12,6 @@ describe("classifyRisk", () => {
     test("read-only tools are LOW risk", () => {
         expect(classifyRisk(ToolName.READ_PAGE, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.SCROLL_PAGE, {})).toBe(RiskLevel.LOW);
-        expect(classifyRisk(ToolName.MEMORY_SEARCH, {})).toBe(RiskLevel.LOW);
-        expect(classifyRisk(ToolName.MEMORY_LIST_CATEGORIES, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.WAIT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.HOVER_ELEMENT, {})).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.FIND_ELEMENT, {})).toBe(RiskLevel.LOW);
@@ -26,9 +24,6 @@ describe("classifyRisk", () => {
     test("mutation tools are MEDIUM risk", () => {
         expect(classifyRisk(ToolName.CLICK_ELEMENT, { id: 5 })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.TYPE_TEXT, { id: 1, text: "hello" })).toBe(RiskLevel.MEDIUM);
-        expect(classifyRisk(ToolName.MEMORY_ADD, { content: "test" })).toBe(RiskLevel.MEDIUM);
-        expect(classifyRisk(ToolName.MEMORY_UPDATE, { id: "1", content: "updated" })).toBe(RiskLevel.MEDIUM);
-        expect(classifyRisk(ToolName.MEMORY_DELETE, { id: "1" })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.SWITCH_TAB, { tabId: 1 })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.RIGHT_CLICK, { id: 1 })).toBe(RiskLevel.MEDIUM);
         expect(classifyRisk(ToolName.SET_CHECKBOX, { id: 1, checked: true })).toBe(RiskLevel.MEDIUM);
@@ -41,7 +36,6 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.CREATE_TAB, { url: "https://example.com" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.CLOSE_TAB, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.GO_BACK, {})).toBe(RiskLevel.HIGH);
-        expect(classifyRisk(ToolName.GO_FORWARD, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.EXECUTE_JS, { code: "alert(1)" })).toBe(RiskLevel.HIGH);
     });
 

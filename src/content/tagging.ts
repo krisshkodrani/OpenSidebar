@@ -23,7 +23,7 @@ const dynamicTagEntries = new Map<
   { el: Element; cyclesRemaining: number }
 >();
 
-/** CSS class for the injected label overlay */
+/** CSS class for the injected label overlay (legacy — kept for cleanup of old labels) */
 const LABEL_CLASS = "qsidebar-tag";
 
 /** Safety backstop — cap tagged elements to prevent runaway DOMs from eating context */
@@ -292,7 +292,7 @@ function detectClickableElements(): Element[] {
     {
       acceptNode(node) {
         const el = node as Element;
-        // Skip our own labels
+        // Skip our own labels (legacy cleanup)
         if ((el as HTMLElement).classList?.contains(LABEL_CLASS))
           return NodeFilter.FILTER_REJECT;
         // Skip if already captured by interactive selectors
@@ -338,32 +338,6 @@ function detectClickableElements(): Element[] {
     }
   }
   return found;
-}
-
-/** Map inferred role → short hint abbreviation for visual labels */
-const ROLE_HINTS: Record<string, string> = {
-  link: "link",
-  button: "btn",
-  textbox: "txt",
-  combobox: "sel",
-  checkbox: "chk",
-  radio: "radio",
-  tab: "tab",
-  menuitem: "menu",
-  switch: "sw",
-};
-
-/** Get abbreviated hint for a visual tag label */
-function shortHint(el: Element): string {
-  const role = el.getAttribute("role") || inferRole(el);
-  if (ROLE_HINTS[role]) return ROLE_HINTS[role];
-
-  const tag = el.tagName.toLowerCase();
-  if (tag === "input") return "input";
-  if (tag === "textarea") return "txt";
-  if (tag === "select") return "sel";
-  if (tag === "a") return "link";
-  return role.slice(0, 4);
 }
 
 // --- Overflow metadata ---
@@ -514,7 +488,7 @@ function scoreElement(el: Element): number {
   return score;
 }
 
-export function tagElements(showTags: boolean = false): TaggedElement[] {
+export function tagElements(): TaggedElement[] {
   // 1. Remove old visual labels and MAIN-world bridge attributes
   document.querySelectorAll(`.${LABEL_CLASS}`).forEach((el) => el.remove());
   document
@@ -590,30 +564,7 @@ export function tagElements(showTags: boolean = false): TaggedElement[] {
 
     const rect = el.getBoundingClientRect();
 
-    // 6. Inject visual label (only when showTags is true)
-    if (showTags) {
-      const hint = shortHint(el);
-      const label = document.createElement("span");
-      label.className = LABEL_CLASS;
-      label.textContent = `[${tag}:${hint}]`;
-      label.style.cssText = `
-        position: absolute;
-        z-index: 2147483647;
-        background: #fbbf24;
-        color: #000;
-        font: bold 11px/1 monospace;
-        padding: 1px 3px;
-        border-radius: 2px;
-        pointer-events: none;
-        white-space: nowrap;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-      `;
-      label.style.top = `${rect.top + window.scrollY}px`;
-      label.style.left = `${Math.max(0, rect.left + window.scrollX - 20)}px`;
-      document.body.appendChild(label);
-    }
-
-    // 7. Build TaggedElement
+    // 6. Build TaggedElement
     results.push({
       tag,
       tagName: el.tagName.toLowerCase(),
@@ -908,6 +859,10 @@ function extractAttributes(el: Element): Record<string, string> {
  * still catching Webpack/Vite chunk hashes and CSS-module suffixes.
  */
 export function isRandomHash(value: string): boolean {
+  // Purely numeric HTML IDs (e.g., id="76", id="3") are auto-generated noise
+  // that confuse the LLM into passing them as tool `id` parameters
+  if (/^\d+$/.test(value)) return true;
+
   // Double-underscore suffixes are almost always CSS-module / build-tool noise
   if (/__[a-zA-Z0-9]{2,}$/.test(value)) return true;
 

@@ -98,7 +98,10 @@ export class TraceRecorder {
       if (msg.tool_calls && msg.tool_calls.length > 0) {
         result.tool_calls = msg.tool_calls.map((tc) => ({
           id: tc.id,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
         }));
       }
       if (msg.tool_call_id) {
@@ -231,12 +234,8 @@ export class TraceRecorder {
       providerId: perception.providerId,
       durationMs: perception.durationMs,
       cached: perception.cached,
-      ...(screenshotDataUrl
-        ? { screenshotDataUrl }
-        : {}),
-      ...(elementSummary
-        ? { elementSummary }
-        : {}),
+      ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
+      ...(elementSummary ? { elementSummary } : {}),
     };
   }
 
@@ -419,10 +418,14 @@ export class TraceRecorder {
       if (this.pendingQueue.length > MAX_PENDING) {
         this.pendingQueue.shift(); // Drop oldest
       }
-      logger.debug("trace", "Trace flush queued for retry (server not running?)", {
-        path,
-        pending: this.pendingQueue.length,
-      });
+      logger.debug(
+        "trace",
+        "Trace flush queued for retry (server not running?)",
+        {
+          path,
+          pending: this.pendingQueue.length,
+        },
+      );
     }
   }
 }

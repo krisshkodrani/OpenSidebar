@@ -6,5 +6,5 @@ export * from "./StepTimeline";
 export * from "./ApprovalOverlay";
 export * from "./EscalationOverlay";
 export * from "./PlanSheet";
-export * from "./LearnedSkillsPanel";
+
 export * from "./SavedPromptsDrawer";

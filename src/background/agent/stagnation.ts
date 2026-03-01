@@ -43,9 +43,7 @@ export function computeElementSignatures(snap: DomSnapshot): Set<string> {
     const attrSig = STATE_ATTRS.filter((a) => a in e.attributes)
       .map((a) => `${a}=${e.attributes[a]}`)
       .join(",");
-    sigs.add(
-      `${e.tagName}:${e.text.slice(0, 30)}:${attrSig}`,
-    );
+    sigs.add(`${e.tagName}:${e.text.slice(0, 30)}:${attrSig}`);
   }
   return sigs;
 }
@@ -158,7 +156,10 @@ export class StagnationMonitor {
     // Same content, same URL — stagnant
     this.stagnantTurns++;
 
-    if (this.stagnantTurns >= STUCK_THRESHOLDS.ESCALATE && !this.escalationFired) {
+    if (
+      this.stagnantTurns >= STUCK_THRESHOLDS.ESCALATE &&
+      !this.escalationFired
+    ) {
       this.escalationFired = true;
       return {
         type: "escalate",

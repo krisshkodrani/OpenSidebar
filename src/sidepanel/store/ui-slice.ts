@@ -45,8 +45,10 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.taskRecovery = null;
       state.laneTelemetry = null;
     });
-    // Load messages for the new workspace
-    get().loadMessagesFromStorage();
+    // Load messages only for real workspace IDs.
+    if (id != null) {
+      get().loadMessagesFromStorage();
+    }
   },
 
   setDemoRecording: (active, actionCount) =>

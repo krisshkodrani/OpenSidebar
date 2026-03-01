@@ -248,6 +248,6 @@ describe("DISCOVERY_ONLY_TOOLS", () => {
   test("contains investigation tools", () => {
     expect(DISCOVERY_ONLY_TOOLS.has("inspect_hidden")).toBe(true);
     expect(DISCOVERY_ONLY_TOOLS.has("xray_page")).toBe(true);
-    expect(DISCOVERY_ONLY_TOOLS.has("inspect_react")).toBe(true);
+    expect(DISCOVERY_ONLY_TOOLS.has("get_cookies")).toBe(true);
   });
 });

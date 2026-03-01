@@ -1,7 +1,13 @@
 import React from "react";
 import Badge from "../Badge";
 import CollapsibleSection from "../CollapsibleSection";
-import { outcomeClass, formatDuration, formatCost, formatTokens, truncate } from "../../utils";
+import {
+  outcomeClass,
+  formatDuration,
+  formatCost,
+  formatTokens,
+  truncate,
+} from "../../utils";
 
 interface TraceDetailHeaderProps {
   session: Record<string, unknown>;
@@ -18,10 +24,12 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   let tokens = "";
   if (metrics) {
     if (metrics.totalCost) cost = formatCost(metrics.totalCost as number);
-    if (metrics.totalTokens) tokens = `${formatTokens(metrics.totalTokens as number)} tokens`;
+    if (metrics.totalTokens)
+      tokens = `${formatTokens(metrics.totalTokens as number)} tokens`;
   } else {
     if (session.totalCost) cost = formatCost(session.totalCost as number);
-    if (session.totalTokens) tokens = `${formatTokens(session.totalTokens as number)} tokens`;
+    if (session.totalTokens)
+      tokens = `${formatTokens(session.totalTokens as number)} tokens`;
   }
 
   return (
@@ -38,15 +46,34 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
             const btn = document.activeElement as HTMLButtonElement;
             const orig = btn.innerHTML;
             btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
-            setTimeout(() => { btn.innerHTML = orig; }, 1200);
+            setTimeout(() => {
+              btn.innerHTML = orig;
+            }, 1200);
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
         </button>
-        <Badge variant={outcomeClass(outcome) as "completed" | "stopped" | "error" | "max_turns"}>
+        <Badge
+          variant={
+            outcomeClass(outcome) as
+              | "completed"
+              | "stopped"
+              | "error"
+              | "max_turns"
+          }
+        >
           {outcome}
         </Badge>
       </div>
@@ -71,19 +98,26 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
 
 function PlanSection({ session }: { session: Record<string, unknown> }) {
   const plan = session.planDecomposition as
-    | { subtasks?: string[]; steps?: Array<Record<string, unknown>>; difficulty?: string }
+    | {
+        subtasks?: string[];
+        steps?: Array<Record<string, unknown>>;
+        difficulty?: string;
+      }
     | undefined;
-  const difficulty = (session.difficultyAssessment as string) ?? plan?.difficulty;
+  const difficulty =
+    (session.difficultyAssessment as string) ?? plan?.difficulty;
 
   if (!plan && !difficulty) return null;
 
   const subtasks = plan?.subtasks ?? [];
-  const steps = plan?.steps as Array<{
-    objective?: string;
-    successCriteria?: string;
-    dependencies?: number[];
-    toolProfile?: string;
-  }> | undefined;
+  const steps = plan?.steps as
+    | Array<{
+        objective?: string;
+        successCriteria?: string;
+        dependencies?: number[];
+        toolProfile?: string;
+      }>
+    | undefined;
 
   const difficultyVariant = difficulty
     ? (`difficulty-${difficulty.toLowerCase()}` as const)
@@ -108,7 +142,9 @@ function PlanSection({ session }: { session: Record<string, unknown> }) {
       )}
       {steps && steps.length > 0 && (
         <CollapsibleSection
-          label={<span className="text-[11px]">Step details ({steps.length})</span>}
+          label={
+            <span className="text-[11px]">Step details ({steps.length})</span>
+          }
           className="mt-1"
         >
           <div className="pl-3 pt-1.5 space-y-2 text-[11px] text-trace-muted">
@@ -128,9 +164,7 @@ function PlanSection({ session }: { session: Record<string, unknown> }) {
                   </div>
                 )}
                 {step.toolProfile && (
-                  <div className="text-[10px]">
-                    Tools: {step.toolProfile}
-                  </div>
+                  <div className="text-[10px]">Tools: {step.toolProfile}</div>
                 )}
               </div>
             ))}

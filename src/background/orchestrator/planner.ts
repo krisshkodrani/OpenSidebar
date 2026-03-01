@@ -3,11 +3,7 @@ import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { resolveToolProfile } from "../tools/metadata";
-import {
-  BuildNodesResult,
-  PlannerAssignment,
-  TaskNode,
-} from "./types";
+import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_ELEMENT,
@@ -24,10 +20,8 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.SELECT_OPTION,
   ToolName.PRESS_KEY,
   ToolName.DRAG_AND_DROP,
-  ToolName.DRAW_STROKE,
   ToolName.HIDE_ELEMENT,
   ToolName.GO_BACK,
-  ToolName.GO_FORWARD,
   ToolName.LIST_TABS,
   ToolName.RIGHT_CLICK,
   ToolName.SET_CHECKBOX,
@@ -35,13 +29,7 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.READ_ELEMENT,
   ToolName.INSPECT_HIDDEN,
   ToolName.XRAY_PAGE,
-  ToolName.FAST_FORWARD,
   ToolName.DISMISS_OVERLAYS,
-  ToolName.MEMORY_SEARCH,
-  ToolName.MEMORY_ADD,
-  ToolName.MEMORY_UPDATE,
-  ToolName.MEMORY_DELETE,
-  ToolName.MEMORY_LIST_CATEGORIES,
   ToolName.ESCALATE,
   ToolName.DONE,
 ];
@@ -118,8 +106,8 @@ export function validatePlannerAssignments(raw: unknown): PlannerAssignment[] {
 export class OrchestratorPlanner {
   private planner: TaskPlanner;
 
-  constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
-    this.planner = new TaskPlanner(openRouterApiKey, cerebrasApiKey);
+  constructor(openRouterApiKey: string) {
+    this.planner = new TaskPlanner(openRouterApiKey);
   }
 
   async buildNodes(
@@ -147,7 +135,9 @@ export class OrchestratorPlanner {
         successCriteria:
           step.successCriteria ||
           `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-        allowedTools: resolveToolProfile(step.toolProfile) ?? [...EXECUTOR_DEFAULT_TOOLS],
+        allowedTools: resolveToolProfile(step.toolProfile) ?? [
+          ...EXECUTOR_DEFAULT_TOOLS,
+        ],
         dependencies: (step.dependencies || [])
           .filter(
             (depIndex) =>
@@ -155,7 +145,9 @@ export class OrchestratorPlanner {
           )
           .map((depIndex) => nodeIds[depIndex]),
         assumptions: step.assumptions || [],
-        verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
+        verificationGate: step.verifyAfter
+          ? { ...step.verifyAfter }
+          : undefined,
       }));
       logger.info(
         "orchestrator",
@@ -214,7 +206,8 @@ export class OrchestratorPlanner {
     }));
 
     // Simple task: decomposition had no subtasks (empty array)
-    const isSingleNode = nodes.length === 1 &&
+    const isSingleNode =
+      nodes.length === 1 &&
       (!decomposition?.subtasks?.length || decomposition.subtasks.length === 0);
 
     return { nodes, isSingleNode, difficulty };
@@ -253,7 +246,9 @@ export class OrchestratorPlanner {
       successCriteria:
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: resolveToolProfile(step.toolProfile) ?? [...node.allowedTools],
+      allowedTools: resolveToolProfile(step.toolProfile) ?? [
+        ...node.allowedTools,
+      ],
       dependencies: [
         ...(index === 0 ? node.dependencies : []),
         ...(step.dependencies || [])
@@ -286,5 +281,4 @@ export class OrchestratorPlanner {
     });
     return expanded;
   }
-
 }

@@ -11,7 +11,7 @@ The content script is OpenSidebar's "eyes and hands" — it runs in every tab an
 - `content.ts` - Main entry, message handling, Janitor for cookie banner auto-dismiss
 - `snapshot.ts` - DOM snapshot generation
 - `tagging.ts` - Element discovery, tagging, label association, dynamic tagging
-- `actions.ts` - Tool execution (click, type, scroll, select, press_key, drag, draw, hide, etc.)
+- `actions.ts` - Tool execution (click, type, scroll, select, press_key, drag, hide, etc.)
 
 ## DOM Snapshot
 
@@ -67,7 +67,7 @@ const INTERACTIVE_SELECTORS = [
   "details", // Details elements
   "[onclick]", // Click handlers
   "[tabindex]:not([tabindex='-1'])", // Focusable elements
-  "canvas", // Canvas elements (for draw_stroke)
+  "canvas", // Canvas elements
   "[draggable='true']", // Draggable elements (for drag_and_drop)
 ];
 ```
@@ -193,10 +193,6 @@ Dispatches `keydown` + `keyup` events on `window` for the specified key. Support
 ### drag_and_drop
 
 Full drag sequence between two tagged elements: `dragstart` → `dragover` → `drop` → `dragend` with a `DataTransfer` object.
-
-### draw_stroke
-
-Performs a mouse stroke on a canvas element: `mousedown` at start coordinates, 10 interpolated `mousemove` events, then `mouseup` at end coordinates.
 
 ### hide_element
 

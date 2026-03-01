@@ -6,7 +6,12 @@
  * Each GoldenAction is written as a trace turn via TraceRecorder.
  */
 
-import type { GoldenAction, ToolName, RiskLevel, SessionMetrics } from "../types";
+import type {
+  GoldenAction,
+  ToolName,
+  RiskLevel,
+  SessionMetrics,
+} from "../types";
 import { TraceRecorder } from "./agent/trace";
 import { actionToToolCall } from "./golden/builder";
 import { logger } from "../utils";
@@ -64,7 +69,9 @@ export class RecordingSession {
 
     const toolCall = actionToToolCall(action, tagId);
     if (!toolCall) {
-      logger.debug("recording", "Skipping unmappable action", { type: action.type });
+      logger.debug("recording", "Skipping unmappable action", {
+        type: action.type,
+      });
       return;
     }
 

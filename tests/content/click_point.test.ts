@@ -9,7 +9,7 @@ describe("Content Actions - Click Robustness", () => {
     beforeEach(() => {
         document.body.innerHTML = "";
         resetStableIds();
-        tagElements(false);
+        tagElements();
     });
 
     test("clicks element when center is occluded but corner is visible", async () => {
@@ -49,7 +49,7 @@ describe("Content Actions - Click Robustness", () => {
             return document.body;
         };
 
-        tagElements(false);
+        tagElements();
         const tagMap = getTagMap();
         let targetTag = -1;
         for (const [tag, el] of tagMap) {
@@ -94,7 +94,7 @@ describe("Content Actions - Click Robustness", () => {
         const originalElementFromPoint = document.elementFromPoint;
         document.elementFromPoint = (x, y) => overlay;
 
-        tagElements(false);
+        tagElements();
         const tagMap = getTagMap();
         let targetTag = -1;
         for (const [tag, el] of tagMap) {

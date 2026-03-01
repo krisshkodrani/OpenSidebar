@@ -25,7 +25,6 @@ import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
 import {
-  BufferedMemory,
   NodeHandoffArtifact,
   OrchestratorCheckpoint,
   OrchestratorStartInput,
@@ -36,7 +35,6 @@ import {
   TaskNode,
   WorkerInstance,
 } from "./types";
-import { MemoryBuffer } from "./memory-buffer";
 import {
   NodeVerificationResult,
   OrchestratorVerifier,
@@ -55,7 +53,6 @@ import { buildRoleExecutionContract } from "./contracts";
 import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
-import { LearnedSkill, SkillStore } from "../skills/store";
 import { classifyRoute, RouteDecision } from "./router";
 
 const DEFAULT_MAX_WORKERS = 3;
@@ -73,15 +70,6 @@ type AgentLoopCallbacksArg = ConstructorParameters<typeof AgentLoop>[3];
 type AgentLoopOptionsArg = ConstructorParameters<typeof AgentLoop>[4];
 type RuntimeLane = "planner" | "executor" | "verifier";
 type EscalationDecisionPayload = EscalationDecisionMessage["payload"];
-type ReplayMatchContext = {
-  skillId: string;
-  skillName: string;
-  score: number;
-  baselineDurationMs: number;
-  baselineTokens: number;
-  dryRun: boolean;
-};
-
 type LaneBudgetPolicy = {
   maxConcurrent: number;
   maxFailuresBeforeIsolation: number;
@@ -177,7 +165,6 @@ type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
 type CreateAgentLoopInput = {
   openRouterApiKey: string;
   groqApiKey?: string;
-  cerebrasApiKey?: string;
   callbacks?: AgentLoopCallbacksArg;
   options?: AgentLoopOptionsArg;
 };
@@ -185,11 +172,9 @@ type CreateAgentLoopInput = {
 export type OrchestratorDeps = {
   createPlanner?: (
     openRouterApiKey: string,
-    cerebrasApiKey?: string,
   ) => PlannerLike;
   createVerifier?: (
     openRouterApiKey: string,
-    cerebrasApiKey?: string,
   ) => VerifierLike;
   createAgentLoop?: (input: CreateAgentLoopInput) => AgentLoop;
   workspaceManager?: Pick<
@@ -256,7 +241,8 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || raw.id.length === 0) return null;
   if (raw.role !== "executor") return null;
-  if (typeof raw.description !== "string" || raw.description.length === 0) return null;
+  if (typeof raw.description !== "string" || raw.description.length === 0)
+    return null;
   if (
     typeof raw.successCriteria !== "string" ||
     raw.successCriteria.length === 0
@@ -268,17 +254,16 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
   }
   const allowedTools = raw.allowedTools.filter(
     (tool): tool is ToolName =>
-      typeof tool === "string" &&
-      TOOL_NAME_VALUES.has(tool),
+      typeof tool === "string" && TOOL_NAME_VALUES.has(tool),
   );
   if (allowedTools.length === 0) return null;
   if (!Array.isArray(raw.handoffArtifacts)) return null;
   const handoffArtifacts = raw.handoffArtifacts.filter(
-      (artifact): artifact is NodeHandoffArtifact =>
-        isRecord(artifact) &&
-        (artifact.role === "planner" ||
-          artifact.role === "executor" ||
-          artifact.role === "verifier") &&
+    (artifact): artifact is NodeHandoffArtifact =>
+      isRecord(artifact) &&
+      (artifact.role === "planner" ||
+        artifact.role === "executor" ||
+        artifact.role === "verifier") &&
       (artifact.phase === "planned" ||
         artifact.phase === "planner_replan" ||
         artifact.phase === "executor_started" ||
@@ -307,7 +292,8 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
   const assumptions: string[] = [];
   if (Array.isArray(raw.assumptions)) {
     const parsedAssumptions = raw.assumptions.filter(
-      (item): item is string => typeof item === "string" && item.trim().length > 0,
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
     );
     if (parsedAssumptions.length !== raw.assumptions.length) return null;
     for (const assumption of parsedAssumptions) {
@@ -323,7 +309,8 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
         isRecord(entry) &&
         isNonNegativeInteger(entry.attempt) &&
         typeof entry.executorSummary === "string" &&
-        (entry.verifierDecision === "retry" || entry.verifierDecision === "reroute") &&
+        (entry.verifierDecision === "retry" ||
+          entry.verifierDecision === "reroute") &&
         typeof entry.verifierReason === "string" &&
         typeof entry.confidence === "number" &&
         isNonNegativeInteger(entry.timestamp)
@@ -333,9 +320,15 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
           executorSummary: entry.executorSummary,
           verifierDecision: entry.verifierDecision,
           verifierReason: entry.verifierReason,
-          failureType: typeof entry.failureType === "string" ? entry.failureType : undefined,
+          failureType:
+            typeof entry.failureType === "string"
+              ? entry.failureType
+              : undefined,
           confidence: entry.confidence as number,
-          suggestedApproach: typeof entry.suggestedApproach === "string" ? entry.suggestedApproach : undefined,
+          suggestedApproach:
+            typeof entry.suggestedApproach === "string"
+              ? entry.suggestedApproach
+              : undefined,
           timestamp: entry.timestamp as number,
         });
       }
@@ -356,7 +349,10 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
     status: raw.status,
     retries: raw.retries,
   };
-  if (typeof raw.handoffFromNodeId === "string" && raw.handoffFromNodeId.length > 0) {
+  if (
+    typeof raw.handoffFromNodeId === "string" &&
+    raw.handoffFromNodeId.length > 0
+  ) {
     node.handoffFromNodeId = raw.handoffFromNodeId;
   }
   if (typeof raw.result === "string") node.result = raw.result;
@@ -367,13 +363,18 @@ function sanitizeTaskNode(raw: unknown): TaskNode | null {
 function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || raw.id.length === 0) return null;
-  if (typeof raw.workspaceId !== "string" || raw.workspaceId.length === 0) return null;
+  if (typeof raw.workspaceId !== "string" || raw.workspaceId.length === 0)
+    return null;
   if (!isNonNegativeInteger(raw.rootTabId)) return null;
   if (typeof raw.query !== "string") return null;
   if (!isTaskStatus(raw.status)) return null;
   if (!isNonNegativeInteger(raw.createdAt)) return null;
   if (!Array.isArray(raw.nodes)) return null;
-  if (!isNonNegativeInteger(raw.maxWorkers) || raw.maxWorkers < 1 || raw.maxWorkers > 8) {
+  if (
+    !isNonNegativeInteger(raw.maxWorkers) ||
+    raw.maxWorkers < 1 ||
+    raw.maxWorkers > 8
+  ) {
     return null;
   }
   const maxReplans =
@@ -396,7 +397,8 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (nodes.some((node) => node === null)) return null;
 
   const sessionMetrics =
-    isRecord(raw.sessionMetrics) && typeof raw.sessionMetrics.totalTokens === "number"
+    isRecord(raw.sessionMetrics) &&
+    typeof raw.sessionMetrics.totalTokens === "number"
       ? sanitizeSessionMetrics(raw.sessionMetrics)
       : emptySessionMetrics();
   if (!sessionMetrics) return null;
@@ -411,7 +413,10 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (!budget) return null;
 
   const task: OrchestratorTask = {
-    runId: typeof raw.runId === "string" && raw.runId.length > 0 ? raw.runId : undefined,
+    runId:
+      typeof raw.runId === "string" && raw.runId.length > 0
+        ? raw.runId
+        : undefined,
     id: raw.id,
     workspaceId: raw.workspaceId,
     rootTabId: raw.rootTabId,
@@ -450,7 +455,8 @@ function sanitizeTask(raw: unknown): OrchestratorTask | null {
         escalationId: raw.pendingEscalation.selectedOption.escalationId,
         optionId,
         rerouteObjective:
-          typeof raw.pendingEscalation.selectedOption.rerouteObjective === "string"
+          typeof raw.pendingEscalation.selectedOption.rerouteObjective ===
+          "string"
             ? raw.pendingEscalation.selectedOption.rerouteObjective
             : undefined,
       };
@@ -491,7 +497,9 @@ function emptySessionMetrics(): SessionMetrics {
   };
 }
 
-function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | null {
+function sanitizeSessionMetrics(
+  raw: Record<string, unknown>,
+): SessionMetrics | null {
   const numericKeys: Array<keyof SessionMetrics> = [
     "totalPromptTokens",
     "totalCompletionTokens",
@@ -504,7 +512,8 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
   ];
   for (const key of numericKeys) {
     const value = raw[key];
-    if (typeof value !== "number" || Number.isNaN(value) || value < 0) return null;
+    if (typeof value !== "number" || Number.isNaN(value) || value < 0)
+      return null;
   }
   const modelBreakdown: SessionMetrics["modelBreakdown"] = {};
   if (isRecord(raw.modelBreakdown)) {
@@ -527,7 +536,9 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
       }
       if (
         actualCost !== undefined &&
-        (typeof actualCost !== "number" || Number.isNaN(actualCost) || actualCost < 0)
+        (typeof actualCost !== "number" ||
+          Number.isNaN(actualCost) ||
+          actualCost < 0)
       ) {
         return null;
       }
@@ -549,7 +560,8 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
         return null;
       }
       const normalizedActualCost = (actualCost as number | undefined) ?? 0;
-      const normalizedEstimatedCost = (estimatedCost as number | undefined) ?? 0;
+      const normalizedEstimatedCost =
+        (estimatedCost as number | undefined) ?? 0;
       const normalizedCostMode =
         (costMode as "none" | "actual" | "estimated" | "mixed" | undefined) ??
         (normalizedActualCost > 0 && normalizedEstimatedCost > 0
@@ -615,7 +627,11 @@ function sanitizeSessionMetrics(raw: Record<string, unknown>): SessionMetrics | 
 
 function sanitizeBudget(
   raw: Record<string, unknown>,
-): { maxSessionTimeMs: number; maxTotalTokens: number; maxTotalCostUsd: number } | null {
+): {
+  maxSessionTimeMs: number;
+  maxTotalTokens: number;
+  maxTotalCostUsd: number;
+} | null {
   const maxSessionTimeMs = raw.maxSessionTimeMs;
   const maxTotalTokens = raw.maxTotalTokens;
   const maxTotalCostUsd = raw.maxTotalCostUsd;
@@ -673,7 +689,8 @@ function mergeSessionMetrics(
     existing.promptTokens += metrics.promptTokens;
     existing.completionTokens += metrics.completionTokens;
     existing.cost += metrics.cost;
-    existing.actualCost = (existing.actualCost ?? 0) + (metrics.actualCost ?? 0);
+    existing.actualCost =
+      (existing.actualCost ?? 0) + (metrics.actualCost ?? 0);
     existing.estimatedCost =
       (existing.estimatedCost ?? 0) + (metrics.estimatedCost ?? 0);
     existing.costMode =
@@ -714,15 +731,16 @@ function sanitizeCheckpoint(raw: unknown): OrchestratorCheckpoint | null {
 function toSubtasks(nodes: TaskNode[]): SubtaskSummary[] {
   return nodes.map((node) => ({
     description: node.description,
-    status: node.status === "completed"
-      ? "completed"
-      : isUserSkippedNode(node)
-        ? "skipped"
-        : node.status === "failed"
-          ? "failed"
-          : node.status === "running"
-            ? "running"
-            : "pending",
+    status:
+      node.status === "completed"
+        ? "completed"
+        : isUserSkippedNode(node)
+          ? "skipped"
+          : node.status === "failed"
+            ? "failed"
+            : node.status === "running"
+              ? "running"
+              : "pending",
     turnsUsed: 0,
     turnBudget: 0,
     result: node.result || node.error,
@@ -774,7 +792,9 @@ function clampConfidence(value: number | undefined): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function normalizeEscalationOptionId(value: unknown): EscalationOptionId | null {
+function normalizeEscalationOptionId(
+  value: unknown,
+): EscalationOptionId | null {
   if (
     value === "approve_continue" ||
     value === "reroute_with_option" ||
@@ -788,11 +808,14 @@ function normalizeEscalationOptionId(value: unknown): EscalationOptionId | null 
 
 function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
   if (!isRecord(raw)) return null;
-  if (typeof raw.escalationId !== "string" || raw.escalationId.length === 0) return null;
+  if (typeof raw.escalationId !== "string" || raw.escalationId.length === 0)
+    return null;
   if (typeof raw.taskId !== "string" || raw.taskId.length === 0) return null;
-  if (typeof raw.workspaceId !== "string" || raw.workspaceId.length === 0) return null;
+  if (typeof raw.workspaceId !== "string" || raw.workspaceId.length === 0)
+    return null;
   if (typeof raw.nodeId !== "string" || raw.nodeId.length === 0) return null;
-  if (raw.risk !== "medium" && raw.risk !== "high" && raw.risk !== "critical") return null;
+  if (raw.risk !== "medium" && raw.risk !== "high" && raw.risk !== "critical")
+    return null;
   if (typeof raw.reason !== "string") return null;
   if (typeof raw.snapshotSummary !== "string") return null;
   if (!Array.isArray(raw.options) || raw.options.length === 0) return null;
@@ -801,9 +824,17 @@ function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
       if (!isRecord(option)) return null;
       const id = normalizeEscalationOptionId(option.id);
       if (!id) return null;
-      if (typeof option.label !== "string" || typeof option.impact !== "string") return null;
-      const parsed: EscalationOption = { id, label: option.label, impact: option.impact };
-      if (typeof option.rerouteObjective === "string" && option.rerouteObjective.length > 0) {
+      if (typeof option.label !== "string" || typeof option.impact !== "string")
+        return null;
+      const parsed: EscalationOption = {
+        id,
+        label: option.label,
+        impact: option.impact,
+      };
+      if (
+        typeof option.rerouteObjective === "string" &&
+        option.rerouteObjective.length > 0
+      ) {
         parsed.rerouteObjective = option.rerouteObjective;
       }
       return parsed;
@@ -825,7 +856,8 @@ function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
     "maxTotalCostUsd",
   ] as const;
   for (const key of keys) {
-    if (typeof budgetState[key] !== "number" || Number.isNaN(budgetState[key])) return null;
+    if (typeof budgetState[key] !== "number" || Number.isNaN(budgetState[key]))
+      return null;
   }
   if (typeof raw.timeoutMs !== "number" || raw.timeoutMs < 0) return null;
   if (typeof raw.timestamp !== "number" || raw.timestamp < 0) return null;
@@ -860,7 +892,6 @@ function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
-  private memoryBuffer = new MemoryBuffer();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
   private laneRuntimeByWorkspace = new Map<
     string,
@@ -875,7 +906,6 @@ export class Orchestrator {
     Record<RuntimeLane, LaneSupervisorState>
   >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
-  private skillStore = new SkillStore();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       logger.debug("trace", "Run trace manifest", {
@@ -901,19 +931,18 @@ export class Orchestrator {
     this.deps = {
       createPlanner:
         deps.createPlanner ??
-        ((openRouterApiKey: string, cerebrasApiKey?: string) =>
-          new OrchestratorPlanner(openRouterApiKey, cerebrasApiKey)),
+        ((openRouterApiKey: string) =>
+          new OrchestratorPlanner(openRouterApiKey)),
       createVerifier:
         deps.createVerifier ??
-        ((openRouterApiKey: string, cerebrasApiKey?: string) =>
-          new OrchestratorVerifier(openRouterApiKey, cerebrasApiKey)),
+        ((openRouterApiKey: string) =>
+          new OrchestratorVerifier(openRouterApiKey)),
       createAgentLoop:
         deps.createAgentLoop ??
         ((input: CreateAgentLoopInput) =>
           new AgentLoop(
             input.openRouterApiKey,
             input.groqApiKey,
-            input.cerebrasApiKey,
             input.callbacks,
             input.options,
           )),
@@ -1045,7 +1074,10 @@ export class Orchestrator {
     return pools;
   }
 
-  private initializeWorkspaceRuntime(workspaceId: string, maxWorkers: number): void {
+  private initializeWorkspaceRuntime(
+    workspaceId: string,
+    maxWorkers: number,
+  ): void {
     this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
     this.laneSupervisorsByWorkspace.set(workspaceId, {
@@ -1162,7 +1194,7 @@ export class Orchestrator {
         consecutiveCrashes: supervisor?.consecutiveCrashes ?? 0,
         circuitOpenUntilMs:
           (supervisor?.circuitOpenUntilMs ?? 0) > now
-            ? supervisor?.circuitOpenUntilMs ?? 0
+            ? (supervisor?.circuitOpenUntilMs ?? 0)
             : 0,
         lastCrashError: supervisor?.lastCrashError,
       };
@@ -1181,7 +1213,8 @@ export class Orchestrator {
   private emitLaneSupervisorActivity(workspaceId: string): void {
     const task = this.tasksByWorkspace.get(workspaceId);
     const telemetry = this.buildLaneTelemetrySnapshot(workspaceId);
-    const activeFromTask = task?.status === "running" || task?.status === "planning";
+    const activeFromTask =
+      task?.status === "running" || task?.status === "planning";
     const activeFromLanes = Object.values(telemetry.lanes).some(
       (lane) => lane.activeCalls > 0 || lane.queueDepth > 0,
     );
@@ -1259,17 +1292,12 @@ export class Orchestrator {
     }
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
-      const timeout = new Promise<never>((_, reject) =>
-        (timeoutId = setTimeout(
-          () =>
-            reject(
-              new LaneTimeoutError(
-                lane,
-                state.policy.maxCallMs,
-              ),
-            ),
-          state.policy.maxCallMs,
-        )),
+      const timeout = new Promise<never>(
+        (_, reject) =>
+          (timeoutId = setTimeout(
+            () => reject(new LaneTimeoutError(lane, state.policy.maxCallMs)),
+            state.policy.maxCallMs,
+          )),
       );
       const result = (await Promise.race([queued.operation(), timeout])) as T;
       state.totalDurationMs += Date.now() - startedAt;
@@ -1280,7 +1308,11 @@ export class Orchestrator {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof LaneTimeoutError && lane === "executor" && queued.nodeId) {
+      if (
+        error instanceof LaneTimeoutError &&
+        lane === "executor" &&
+        queued.nodeId
+      ) {
         this.stopExecutorWorkerForNode(
           task.workspaceId,
           queued.nodeId,
@@ -1374,7 +1406,10 @@ export class Orchestrator {
     }
   }
 
-  private async drainLaneQueue(workspaceId: string, lane: RuntimeLane): Promise<void> {
+  private async drainLaneQueue(
+    workspaceId: string,
+    lane: RuntimeLane,
+  ): Promise<void> {
     const supervisor = this.getLaneSupervisorState(workspaceId, lane);
     const runtimeState = this.getLaneRuntimeState(workspaceId, lane);
     if (supervisor.draining) return;
@@ -1402,12 +1437,16 @@ export class Orchestrator {
               supervisor.resumeTimer = null;
               void this.drainLaneQueue(workspaceId, lane);
             }, waitMs);
-            logger.debug("orchestrator", "Lane supervisor waiting for backoff", {
-              workspaceId,
-              lane,
-              waitMs,
-              queueDepth: supervisor.queue.length,
-            });
+            logger.debug(
+              "orchestrator",
+              "Lane supervisor waiting for backoff",
+              {
+                workspaceId,
+                lane,
+                waitMs,
+                queueDepth: supervisor.queue.length,
+              },
+            );
           }
           shouldContinue = false;
           continue;
@@ -1451,7 +1490,9 @@ export class Orchestrator {
     const now = Date.now();
     if (this.isLaneIsolated(state)) {
       const remainingMs = state.isolatedUntilMs - now;
-      return Promise.reject(new LaneIsolationError(lane, remainingMs, state.lastError));
+      return Promise.reject(
+        new LaneIsolationError(lane, remainingMs, state.lastError),
+      );
     }
 
     const operationId = `${lane}-queued-${crypto.randomUUID()}`;
@@ -1493,7 +1534,6 @@ export class Orchestrator {
     for (const worker of workers.values()) {
       if (worker.nodeId !== nodeId) continue;
       worker.loop.stop();
-      this.memoryBuffer.discardWorker(worker.workerId);
       workers.delete(worker.workerId);
       stopped = true;
       logger.warn("orchestrator", "Executor worker stopped", {
@@ -1523,7 +1563,9 @@ export class Orchestrator {
     });
   }
 
-  private async loadCheckpoints(): Promise<Record<string, OrchestratorCheckpoint>> {
+  private async loadCheckpoints(): Promise<
+    Record<string, OrchestratorCheckpoint>
+  > {
     try {
       const stored = await chrome.storage.local.get(CHECKPOINTS_STORAGE_KEY);
       const raw = stored[CHECKPOINTS_STORAGE_KEY];
@@ -1531,17 +1573,24 @@ export class Orchestrator {
 
       const parsed: Record<string, OrchestratorCheckpoint> = {};
       for (const [workspaceId, value] of Object.entries(raw)) {
-        if (typeof workspaceId !== "string" || workspaceId.length === 0) continue;
+        if (typeof workspaceId !== "string" || workspaceId.length === 0)
+          continue;
         const cp = sanitizeCheckpoint(value);
         if (!cp) {
-          logger.warn("orchestrator", "Dropping malformed checkpoint", { workspaceId });
+          logger.warn("orchestrator", "Dropping malformed checkpoint", {
+            workspaceId,
+          });
           continue;
         }
         if (cp.task.workspaceId !== workspaceId) {
-          logger.warn("orchestrator", "Dropping checkpoint with mismatched workspace", {
-            keyWorkspaceId: workspaceId,
-            taskWorkspaceId: cp.task.workspaceId,
-          });
+          logger.warn(
+            "orchestrator",
+            "Dropping checkpoint with mismatched workspace",
+            {
+              keyWorkspaceId: workspaceId,
+              taskWorkspaceId: cp.task.workspaceId,
+            },
+          );
           continue;
         }
         parsed[workspaceId] = cp;
@@ -1570,11 +1619,15 @@ export class Orchestrator {
     for (const [workspaceId, cp] of Object.entries(checkpoints)) {
       if (!this.isCheckpointCompatible(cp)) {
         mutated = true;
-        logger.warn("orchestrator", "Dropping incompatible checkpoint version", {
-          workspaceId,
-          foundVersion: cp.version,
-          expectedVersion: CHECKPOINT_VERSION,
-        });
+        logger.warn(
+          "orchestrator",
+          "Dropping incompatible checkpoint version",
+          {
+            workspaceId,
+            foundVersion: cp.version,
+            expectedVersion: CHECKPOINT_VERSION,
+          },
+        );
         continue;
       }
       if (!this.isCheckpointFresh(cp)) {
@@ -1599,7 +1652,9 @@ export class Orchestrator {
     checkpoints: Record<string, OrchestratorCheckpoint>,
   ): Promise<void> {
     try {
-      await chrome.storage.local.set({ [CHECKPOINTS_STORAGE_KEY]: checkpoints });
+      await chrome.storage.local.set({
+        [CHECKPOINTS_STORAGE_KEY]: checkpoints,
+      });
     } catch (error) {
       logger.warn("orchestrator", "Failed to save checkpoints", { error });
     }
@@ -1658,11 +1713,16 @@ export class Orchestrator {
     const stored = await chrome.storage.sync.get("userSettings");
     const settings = (stored.userSettings ?? {}) as UserSettings;
 
-    const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
+    const openRouterApiKey =
+      settings.openRouterApiKey || __OPENROUTER_API_KEY__;
     if (!openRouterApiKey) {
-      logger.warn("orchestrator", "Cannot resume task without OpenRouter API key", {
-        workspaceId: task.workspaceId,
-      });
+      logger.warn(
+        "orchestrator",
+        "Cannot resume task without OpenRouter API key",
+        {
+          workspaceId: task.workspaceId,
+        },
+      );
       return null;
     }
 
@@ -1673,12 +1733,13 @@ export class Orchestrator {
       settings,
       openRouterApiKey,
       groqApiKey: settings.groqApiKey || __GROQ_API_KEY__ || undefined,
-      cerebrasApiKey: settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined,
     };
   }
 
   public async restoreFromCheckpoints(): Promise<void> {
-    const checkpoints = await this.pruneCheckpoints(await this.loadCheckpoints());
+    const checkpoints = await this.pruneCheckpoints(
+      await this.loadCheckpoints(),
+    );
     const entries = Object.values(checkpoints);
     if (entries.length === 0) return;
 
@@ -1702,10 +1763,14 @@ export class Orchestrator {
         task.rootTabId,
       );
       if (!resumeTabId) {
-        logger.warn("orchestrator", "Cannot resume checkpoint, no live workspace tab", {
-          workspaceId: task.workspaceId,
-          taskId: task.id,
-        });
+        logger.warn(
+          "orchestrator",
+          "Cannot resume checkpoint, no live workspace tab",
+          {
+            workspaceId: task.workspaceId,
+            taskId: task.id,
+          },
+        );
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
@@ -1759,7 +1824,11 @@ export class Orchestrator {
           pendingSubtasks,
         },
       });
-      this.sendStatus(task.workspaceId, AgentStatus.ACTING, "Recovered task, resuming...");
+      this.sendStatus(
+        task.workspaceId,
+        AgentStatus.ACTING,
+        "Recovered task, resuming...",
+      );
       this.sendProgress(task);
 
       // Fire-and-forget: each task resumes independently.
@@ -1775,7 +1844,11 @@ export class Orchestrator {
         await this.clearTaskCheckpoint(task.workspaceId);
         this.tasksByWorkspace.delete(task.workspaceId);
         this.cleanupWorkspaceRuntime(task.workspaceId);
-        this.sendStatus(task.workspaceId, AgentStatus.ERROR, "Recovered task failed");
+        this.sendStatus(
+          task.workspaceId,
+          AgentStatus.ERROR,
+          "Recovered task failed",
+        );
       });
     }
   }
@@ -1788,13 +1861,17 @@ export class Orchestrator {
     const estimator = this.getBudgetEstimator(task.workspaceId);
     const capacity = estimator.estimateCapacity(task.budget);
     const estimate = estimator.getEstimate();
-    const originalPending = task.nodes.filter((node) => node.status === "pending");
+    const originalPending = task.nodes.filter(
+      (node) => node.status === "pending",
+    );
     if (originalPending.length <= capacity.maxNodesOverall) return;
 
     const selectedIds = new Set<string>();
     const deferred: TaskNode[] = [];
     for (const node of originalPending) {
-      const depsSatisfied = node.dependencies.every((dep) => selectedIds.has(dep));
+      const depsSatisfied = node.dependencies.every((dep) =>
+        selectedIds.has(dep),
+      );
       if (selectedIds.size < capacity.maxNodesOverall && depsSatisfied) {
         selectedIds.add(node.id);
         continue;
@@ -1820,15 +1897,19 @@ export class Orchestrator {
       });
     }
 
-    logger.warn("orchestrator", "Planner preflight deferred nodes due to budget", {
-      taskId: task.id,
-      originalNodeCount: originalPending.length,
-      keptNodeCount: selectedIds.size,
-      deferredNodeCount: deferred.length,
-      capacity,
-      estimate,
-      deferredNodeIds: deferred.map((n) => n.id),
-    });
+    logger.warn(
+      "orchestrator",
+      "Planner preflight deferred nodes due to budget",
+      {
+        taskId: task.id,
+        originalNodeCount: originalPending.length,
+        keptNodeCount: selectedIds.size,
+        deferredNodeCount: deferred.length,
+        capacity,
+        estimate,
+        deferredNodeIds: deferred.map((n) => n.id),
+      },
+    );
 
     this.sendMessage({
       type: "AGENT_STEP",
@@ -1866,7 +1947,10 @@ export class Orchestrator {
       plannerReflexionLog: [],
       maxWorkers: Math.max(
         1,
-        Math.min(8, input.settings.orchestratorMaxWorkers || DEFAULT_MAX_WORKERS),
+        Math.min(
+          8,
+          input.settings.orchestratorMaxWorkers || DEFAULT_MAX_WORKERS,
+        ),
       ),
       maxReplans: DEFAULT_MAX_REPLANS,
       replansUsed: 0,
@@ -1885,13 +1969,22 @@ export class Orchestrator {
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
     await this.emitTraceManifest(this.buildTaskManifest(task, input));
-    this.emitTraceEvent(task, "task_started", {
-      query: input.query,
-      tabId: input.tabId,
-      maxWorkers: task.maxWorkers,
-    }, "system");
+    this.emitTraceEvent(
+      task,
+      "task_started",
+      {
+        query: input.query,
+        tabId: input.tabId,
+        maxWorkers: task.maxWorkers,
+      },
+      "system",
+    );
 
-    this.sendStatus(input.workspaceId, AgentStatus.THINKING, "Planning task...");
+    this.sendStatus(
+      input.workspaceId,
+      AgentStatus.THINKING,
+      "Planning task...",
+    );
 
     // ─── Route classification ───
     let routeDecision: RouteDecision | undefined;
@@ -1904,11 +1997,16 @@ export class Orchestrator {
         input.settings,
       );
       task.routeDecision = routeDecision;
-      this.emitTraceEvent(task, "route_classified", {
-        route: routeDecision.route,
-        confidence: routeDecision.confidence,
-        reason: routeDecision.reason,
-      }, "system");
+      this.emitTraceEvent(
+        task,
+        "route_classified",
+        {
+          route: routeDecision.route,
+          confidence: routeDecision.confidence,
+          reason: routeDecision.reason,
+        },
+        "system",
+      );
     } catch {
       // Router failure → fall through to existing pipeline
     }
@@ -1917,32 +2015,41 @@ export class Orchestrator {
 
     // ─── Direct / Agent fast-path: skip planner ───
     if (routeDecision && routeDecision.route !== "plan") {
-      nodes = [{
-        id: crypto.randomUUID(),
-        role: "executor",
-        description: input.query,
-        successCriteria: "The user goal is completed.",
-        allowedTools: Object.values(ToolName),
-        dependencies: [],
-        assumptions: [],
-        handoffArtifacts: [{
-          role: "planner",
-          phase: "planned",
-          note: `Router: ${routeDecision.route} (${routeDecision.reason})`,
-          timestamp: Date.now(),
-        }],
-        reflexionLog: [],
-        handoffDepth: 0,
-        status: "pending",
-        retries: 0,
-      }];
+      nodes = [
+        {
+          id: crypto.randomUUID(),
+          role: "executor",
+          description: input.query,
+          successCriteria: "The user goal is completed.",
+          allowedTools: Object.values(ToolName),
+          dependencies: [],
+          assumptions: [],
+          handoffArtifacts: [
+            {
+              role: "planner",
+              phase: "planned",
+              note: `Router: ${routeDecision.route} (${routeDecision.reason})`,
+              timestamp: Date.now(),
+            },
+          ],
+          reflexionLog: [],
+          handoffDepth: 0,
+          status: "pending",
+          retries: 0,
+        },
+      ];
       task.planClassification = { isSingleNode: true, difficulty: "simple" };
-      this.emitTraceEvent(task, "plan_decomposed", {
-        nodeCount: 1,
-        structured: false,
-        routerFastPath: true,
-        route: routeDecision.route,
-      }, "planner");
+      this.emitTraceEvent(
+        task,
+        "plan_decomposed",
+        {
+          nodeCount: 1,
+          structured: false,
+          routerFastPath: true,
+          route: routeDecision.route,
+        },
+        "planner",
+      );
       this.sendMessage({
         type: "AGENT_STEP",
         workspaceId: input.workspaceId,
@@ -1959,188 +2066,115 @@ export class Orchestrator {
       });
     }
 
-    let replaySkillId: string | null = null;
-    let replayMatchContext: ReplayMatchContext | null = null;
-    const replayAttempted = Boolean(input.settings.autoSkillReplayEnabled);
-    if (nodes.length === 0 && input.settings.autoSkillReplayEnabled) {
-      this.emitTraceEvent(
-        task,
-        "skill_replay_attempted",
-        {
-          pinnedOnly: Boolean(input.settings.skillReplayPinnedOnly),
-          dryRun: Boolean(input.settings.skillReplayDryRun),
-        },
-        "planner",
-      );
-      const matched = await this.skillStore.matchSkill(input.query, {
-        pinnedOnly: input.settings.skillReplayPinnedOnly,
-      });
-      if (matched) {
-        replayMatchContext = {
-          skillId: matched.skill.id,
-          skillName: matched.skill.name,
-          score: matched.score,
-          baselineDurationMs: matched.skill.avgDurationMs,
-          baselineTokens: matched.skill.avgTokens,
-          dryRun: Boolean(input.settings.skillReplayDryRun),
+    if (nodes.length === 0) {
+      try {
+        const plannerContract = buildRoleExecutionContract(
+          "planner",
+          input.settings,
+        );
+        logger.debug("policy", "Role execution contract resolved", {
+          role: plannerContract.role,
+          modelTier: plannerContract.modelTier,
+          allowedToolCount: plannerContract.allowedTools.length,
+        });
+        const planner = this.deps.createPlanner(
+          input.openRouterApiKey,
+        );
+        const tab = await chrome.tabs.get(input.tabId);
+        const buildResult = await this.runInLane(task, "planner", async () =>
+          planner.buildNodes(
+            input.query,
+            tab.title || "Untitled",
+            tab.url || "",
+          ),
+        );
+        nodes = buildResult.nodes;
+        task.planClassification = {
+          isSingleNode: buildResult.isSingleNode,
+          difficulty: buildResult.difficulty,
         };
-        if (input.settings.skillReplayDryRun) {
-          this.sendMessage({
-            type: "AGENT_STEP",
-            workspaceId: input.workspaceId,
-            payload: {
-              step: {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: `Skill dry-run match: ${matched.skill.name}`,
-                detail: `Would replay learned skill (${matched.score.toFixed(2)} confidence), planner path continues`,
-                status: "done",
-                timestamp: Date.now(),
-              },
-              update: false,
-            },
-          });
-          this.emitTraceEvent(
-            task,
-            "skill_replay_dry_run_match",
-            {
-              skillId: matched.skill.id,
-              skillName: matched.skill.name,
-              score: matched.score,
-              stepCount: matched.skill.steps.length,
-            },
-            "planner",
-          );
-        } else {
-          replaySkillId = matched.skill.id;
-          await this.skillStore.recordSkillSelection(matched.skill.id);
-          nodes = this.buildNodesFromSkill(matched.skill);
-          task.planClassification = {
-            isSingleNode: nodes.length === 1,
-            difficulty: "moderate",
-          };
-          // Skill replay is internal bookkeeping — log + trace only, not in chat
-          logger.info("orchestrator", `Skill replay: ${matched.skill.name}`, {
-            skillId: matched.skill.id,
-            score: matched.score,
-            stepCount: matched.skill.steps.length,
-          });
-        }
         this.emitTraceEvent(
           task,
-          "skill_replay_selected",
+          "plan_decomposed",
           {
-            skillId: matched.skill.id,
-            skillName: matched.skill.name,
-            score: matched.score,
-            stepCount: matched.skill.steps.length,
+            nodeCount: nodes.length,
+            structured: true,
+            isSingleNode: buildResult.isSingleNode,
+            difficulty: buildResult.difficulty,
           },
           "planner",
         );
-      } else {
-        this.emitTraceEvent(task, "skill_replay_miss", {
-          pinnedOnly: Boolean(input.settings.skillReplayPinnedOnly),
-        }, "planner");
-      }
-    }
-
-    if (nodes.length === 0) {
-    try {
-      const plannerContract = buildRoleExecutionContract(
-        "planner",
-        input.settings,
-      );
-      logger.debug("policy", "Role execution contract resolved", {
-        role: plannerContract.role,
-        modelTier: plannerContract.modelTier,
-        allowedToolCount: plannerContract.allowedTools.length,
-      });
-      const planner = this.deps.createPlanner(
-        input.openRouterApiKey,
-        input.cerebrasApiKey,
-      );
-      const tab = await chrome.tabs.get(input.tabId);
-      const buildResult = await this.runInLane(task, "planner", async () =>
-        planner.buildNodes(
-          input.query,
-          tab.title || "Untitled",
-          tab.url || "",
-        ),
-      );
-      nodes = buildResult.nodes;
-      task.planClassification = {
-        isSingleNode: buildResult.isSingleNode,
-        difficulty: buildResult.difficulty,
-      };
-      this.emitTraceEvent(task, "plan_decomposed", {
-        nodeCount: nodes.length,
-        structured: true,
-        isSingleNode: buildResult.isSingleNode,
-        difficulty: buildResult.difficulty,
-      }, "planner");
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: input.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
-            status: "done",
-            timestamp: Date.now(),
-          },
-          update: false,
-        },
-      });
-    } catch (error: any) {
-      logger.warn("orchestrator", "Planner failed, using single node", {
-        error: error?.message,
-      });
-      nodes = [
-        {
-          id: crypto.randomUUID(),
-          role: "executor",
-          description: input.query,
-          successCriteria: "The user goal is completed and verified.",
-          allowedTools: Object.values(ToolName),
-          dependencies: [],
-          assumptions: [],
-          handoffArtifacts: [
-            {
-              role: "planner",
-              phase: "planned",
-              note: "Planner fallback: single executor objective from original query.",
+        this.sendMessage({
+          type: "AGENT_STEP",
+          workspaceId: input.workspaceId,
+          payload: {
+            step: {
+              id: crypto.randomUUID(),
+              type: "info",
+              label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
+              status: "done",
               timestamp: Date.now(),
             },
-          ],
-          reflexionLog: [],
-          handoffDepth: 0,
-          status: "pending",
-          retries: 0,
-        },
-      ];
-      task.planClassification = { isSingleNode: true, difficulty: "moderate" };
-      this.emitTraceEvent(task, "plan_decomposed", {
-        nodeCount: 1,
-        structured: false,
-        fallback: true,
-      }, "planner");
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: input.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: "Planning approach",
-            detail: error?.message || "Unknown planner error",
-            status: "done",
-            timestamp: Date.now(),
+            update: false,
           },
-          update: false,
-        },
-      });
-    }
+        });
+      } catch (error: any) {
+        logger.warn("orchestrator", "Planner failed, using single node", {
+          error: error?.message,
+        });
+        nodes = [
+          {
+            id: crypto.randomUUID(),
+            role: "executor",
+            description: input.query,
+            successCriteria: "The user goal is completed and verified.",
+            allowedTools: Object.values(ToolName),
+            dependencies: [],
+            assumptions: [],
+            handoffArtifacts: [
+              {
+                role: "planner",
+                phase: "planned",
+                note: "Planner fallback: single executor objective from original query.",
+                timestamp: Date.now(),
+              },
+            ],
+            reflexionLog: [],
+            handoffDepth: 0,
+            status: "pending",
+            retries: 0,
+          },
+        ];
+        task.planClassification = {
+          isSingleNode: true,
+          difficulty: "moderate",
+        };
+        this.emitTraceEvent(
+          task,
+          "plan_decomposed",
+          {
+            nodeCount: 1,
+            structured: false,
+            fallback: true,
+          },
+          "planner",
+        );
+        this.sendMessage({
+          type: "AGENT_STEP",
+          workspaceId: input.workspaceId,
+          payload: {
+            step: {
+              id: crypto.randomUUID(),
+              type: "info",
+              label: "Planning approach",
+              detail: error?.message || "Unknown planner error",
+              status: "done",
+              timestamp: Date.now(),
+            },
+            update: false,
+          },
+        });
+      }
     }
 
     if (task.status === "stopped") {
@@ -2169,22 +2203,26 @@ export class Orchestrator {
     await this.persistTaskCheckpoint(task);
 
     this.sendProgress(task);
-    this.sendStatus(input.workspaceId, AgentStatus.ACTING, "Executing subtasks...");
+    this.sendStatus(
+      input.workspaceId,
+      AgentStatus.ACTING,
+      "Executing subtasks...",
+    );
 
-    await this.runTask(task, input, replaySkillId, replayMatchContext, replayAttempted);
+    await this.runTask(task, input);
   }
 
   private async runTask(
     task: OrchestratorTask,
     input: OrchestratorStartInput,
-    replaySkillId?: string | null,
-    replayMatchContext?: ReplayMatchContext | null,
-    replayAttempted = false,
   ): Promise<void> {
     const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
     const budgetWarningsEmitted = new Set<string>();
-    const verifierContract = buildRoleExecutionContract("verifier", input.settings);
+    const verifierContract = buildRoleExecutionContract(
+      "verifier",
+      input.settings,
+    );
     logger.debug("policy", "Role execution contract resolved", {
       role: verifierContract.role,
       modelTier: verifierContract.modelTier,
@@ -2192,11 +2230,9 @@ export class Orchestrator {
     });
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
-      input.cerebrasApiKey,
     );
     const replanner = this.deps.createPlanner(
       input.openRouterApiKey,
-      input.cerebrasApiKey,
     );
     const nodeTabMap = new Map<string, number>();
     let initialTabUrl = "about:blank";
@@ -2258,13 +2294,18 @@ export class Orchestrator {
       const nodeStartMs = Date.now();
 
       node.status = "running";
-      this.emitTraceEvent(task, "node_started", {
-        nodeId: node.id,
-        retries: node.retries,
-        handoffDepth: node.handoffDepth,
-        hasReflexion: node.reflexionLog.length > 0,
-        dependencyCount: node.dependencies.length,
-      }, "executor");
+      this.emitTraceEvent(
+        task,
+        "node_started",
+        {
+          nodeId: node.id,
+          retries: node.retries,
+          handoffDepth: node.handoffDepth,
+          hasReflexion: node.reflexionLog.length > 0,
+          dependencyCount: node.dependencies.length,
+        },
+        "executor",
+      );
       this.appendHandoffArtifact(node, {
         role: "executor",
         phase: "executor_started",
@@ -2294,9 +2335,11 @@ export class Orchestrator {
       }
       nodeTabMap.set(node.id, tabId);
 
-      const snapshot = await this.getSnapshot(tabId, input.settings.showElementTags ?? false);
+      const snapshot = await this.getSnapshot(tabId);
       const driftSignal = buildAssumptionDriftSignal(node, snapshot);
-      const driftDetected = driftSignal.startsWith("Potential plan-reality drift");
+      const driftDetected = driftSignal.startsWith(
+        "Potential plan-reality drift",
+      );
       if (driftSignal.startsWith("Potential plan-reality drift")) {
         logger.warn("orchestrator", "Planner assumption drift detected", {
           taskId: task.id,
@@ -2324,7 +2367,6 @@ export class Orchestrator {
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
         groqApiKey: input.groqApiKey,
-        cerebrasApiKey: input.cerebrasApiKey,
         callbacks: {
           onStatusUpdate: (_status, _detail) => {
             // Task-level status is emitted by orchestrator.
@@ -2344,13 +2386,17 @@ export class Orchestrator {
               lowerDetail.includes("escalat")
             ) {
               staleSignalCount += 1;
-              logger.warn("orchestrator", "Worker emitted stale-progress signal", {
-                taskId: task.id,
-                nodeId: node.id,
-                staleSignalCount,
-                stepLabel: step.label,
-                stepDetail: step.detail,
-              });
+              logger.warn(
+                "orchestrator",
+                "Worker emitted stale-progress signal",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  staleSignalCount,
+                  stepLabel: step.label,
+                  stepDetail: step.detail,
+                },
+              );
             }
             const isSingleNode = task.planClassification?.isSingleNode === true;
             this.sendMessage({
@@ -2370,7 +2416,6 @@ export class Orchestrator {
         options: {
           maxContextTokens: input.settings.contextWindowSize || 32000,
           maxTurns: input.settings.maxTurns || 30,
-          showElementTags: input.settings.showElementTags ?? false,
           showSessionMetrics: false,
           preferredModelTier: executorContract.modelTier,
           executionContract: {
@@ -2389,7 +2434,12 @@ export class Orchestrator {
           // For single-node tasks, forward stream chunks directly to the side panel
           // so the user sees real-time content instead of just "Task completed."
           onStreamChunk: task.planClassification?.isSingleNode
-            ? (delta: string, done: boolean, replaceContent?: string, thinking?: string) => {
+            ? (
+                delta: string,
+                done: boolean,
+                replaceContent?: string,
+                thinking?: string,
+              ) => {
                 if (delta || done || replaceContent !== undefined || thinking) {
                   this.sendMessage({
                     type: "STREAM_CHUNK",
@@ -2397,7 +2447,9 @@ export class Orchestrator {
                     payload: {
                       delta,
                       done,
-                      ...(replaceContent !== undefined ? { replaceContent } : {}),
+                      ...(replaceContent !== undefined
+                        ? { replaceContent }
+                        : {}),
                       ...(thinking ? { thinking } : {}),
                     },
                   });
@@ -2412,14 +2464,16 @@ export class Orchestrator {
             : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: input.settings.bypassApprovals ?? false,
-          onMemoryAdd: (item: BufferedMemory) => {
-            this.memoryBuffer.add(workerId, item);
-          },
         },
       });
 
       const wsPools = this.getWorkspaceLanePools(task.workspaceId);
-      wsPools.executor.set(workerId, { workerId, nodeId: node.id, tabId, loop });
+      wsPools.executor.set(workerId, {
+        workerId,
+        nodeId: node.id,
+        tabId,
+        loop,
+      });
       logger.debug("orchestrator", "Executor worker registered in lane pool", {
         taskId: task.id,
         workspaceId: task.workspaceId,
@@ -2447,7 +2501,8 @@ export class Orchestrator {
                 executorInstruction,
                 pageTitle: snapshot.title || "",
                 pageUrl: snapshot.url || "",
-                visibleContent: snapshot.pageContent || snapshot.visibleContent || "",
+                visibleContent:
+                  snapshot.pageContent || snapshot.visibleContent || "",
               }),
             );
             if (advisory) {
@@ -2457,27 +2512,40 @@ export class Orchestrator {
                 phase: "verifier_advisory",
                 note: advisory.slice(0, 200),
               });
-              logger.debug("orchestrator", "Advisory appended to executor instruction", {
-                taskId: task.id,
-                nodeId: node.id,
-                advisoryChars: advisory.length,
-              });
-              this.emitTraceEvent(task, "advisory_issued", {
-                nodeId: node.id,
-                advisoryChars: advisory.length,
-                retries: node.retries,
-                hasHandoff: Boolean(node.handoffFromNodeId),
-              }, "verifier");
+              logger.debug(
+                "orchestrator",
+                "Advisory appended to executor instruction",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  advisoryChars: advisory.length,
+                },
+              );
+              this.emitTraceEvent(
+                task,
+                "advisory_issued",
+                {
+                  nodeId: node.id,
+                  advisoryChars: advisory.length,
+                  retries: node.retries,
+                  hasHandoff: Boolean(node.handoffFromNodeId),
+                },
+                "verifier",
+              );
             }
           } catch (error) {
             if (isLaneIsolationError(error, "verifier")) {
               throw error;
             }
-            logger.warn("orchestrator", "Advisory call failed, continuing without", {
-              taskId: task.id,
-              nodeId: node.id,
-              error,
-            });
+            logger.warn(
+              "orchestrator",
+              "Advisory call failed, continuing without",
+              {
+                taskId: task.id,
+                nodeId: node.id,
+                error,
+              },
+            );
           }
         }
 
@@ -2500,7 +2568,10 @@ export class Orchestrator {
             nodeId: node.id,
           },
         );
-        task.sessionMetrics = mergeSessionMetrics(task.sessionMetrics, result.metrics);
+        task.sessionMetrics = mergeSessionMetrics(
+          task.sessionMetrics,
+          result.metrics,
+        );
         budgetEstimator.recordObservation({
           tokens: result.metrics?.totalTokens ?? 0,
           costUsd: result.metrics?.totalCost ?? 0,
@@ -2519,7 +2590,6 @@ export class Orchestrator {
           budgetEstimate: budgetEstimator.getEstimate(),
         });
         if (node.status !== "running") {
-          this.memoryBuffer.discardWorker(workerId);
           return;
         }
         const executorEvidence: StructuredEvidence[] = [
@@ -2535,13 +2605,19 @@ export class Orchestrator {
           note: result.summary || "Executor finished without summary.",
           evidence: executorEvidence,
         });
-        this.emitTraceEvent(task, "evidence_attached", {
-          nodeId: node.id,
-          entryCount: executorEvidence.length,
-        }, "executor");
+        this.emitTraceEvent(
+          task,
+          "evidence_attached",
+          {
+            nodeId: node.id,
+            entryCount: executorEvidence.length,
+          },
+          "executor",
+        );
         if (result.outcome === "completed") {
           // Fast-path: single-node tasks skip the entire verification pipeline
-          const isSingleNodeTask = task.planClassification?.isSingleNode === true;
+          const isSingleNodeTask =
+            task.planClassification?.isSingleNode === true;
           if (isSingleNodeTask) {
             this.appendHandoffArtifact(node, {
               role: "verifier",
@@ -2550,257 +2626,219 @@ export class Orchestrator {
             });
             node.status = "completed";
             node.result = result.summary;
-            await this.memoryBuffer.commitWorker(workerId);
-            this.emitTraceEvent(task, "verification_skipped", {
-              nodeId: node.id,
-              reason: "single_node_task",
-            }, "verifier");
+            this.emitTraceEvent(
+              task,
+              "verification_skipped",
+              {
+                nodeId: node.id,
+                reason: "single_node_task",
+              },
+              "verifier",
+            );
           } else {
-          const verifierHandoffContext = buildVerifierContext(node, taskStateBrief);
-          // Capture post-execution URL/title for programmatic verification
-          let currentUrl: string | undefined;
-          let currentTitle: string | undefined;
-          try {
-            const postTab = await chrome.tabs.get(tabId);
-            currentUrl = postTab.url;
-            currentTitle = postTab.title;
-          } catch {
-            // Tab may have closed; proceed without post-execution tab info
-          }
-          const programmaticResult = programmaticVerify({
-            output: result.summary,
-            successCriteria: node.successCriteria,
-            previousUrl: snapshot?.url,
-            currentUrl,
-            previousTitle: snapshot?.title,
-            currentTitle,
-            executorOutcome: result.outcome,
-          });
-          let verification: NodeVerificationResult;
-          if (programmaticResult) {
-            verification = programmaticResult;
-            logger.debug("orchestrator", "Programmatic verification resolved", {
+            const verifierHandoffContext = buildVerifierContext(
+              node,
+              taskStateBrief,
+            );
+            // Capture post-execution URL/title for programmatic verification
+            let currentUrl: string | undefined;
+            let currentTitle: string | undefined;
+            try {
+              const postTab = await chrome.tabs.get(tabId);
+              currentUrl = postTab.url;
+              currentTitle = postTab.title;
+            } catch {
+              // Tab may have closed; proceed without post-execution tab info
+            }
+            const programmaticResult = programmaticVerify({
+              output: result.summary,
+              successCriteria: node.successCriteria,
+              previousUrl: snapshot?.url,
+              currentUrl,
+              previousTitle: snapshot?.title,
+              currentTitle,
+              executorOutcome: result.outcome,
+            });
+            let verification: NodeVerificationResult;
+            if (programmaticResult) {
+              verification = programmaticResult;
+              logger.debug(
+                "orchestrator",
+                "Programmatic verification resolved",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  decision: verification.decision,
+                  confidence: verification.confidence,
+                },
+              );
+            } else {
+              verification = await this.runInLane(task, "verifier", async () =>
+                verifier.verifyNode({
+                  taskQuery: task.query,
+                  objective: node.description,
+                  successCriteria: node.successCriteria,
+                  output: result.summary,
+                  handoffContext: verifierHandoffContext,
+                  executorOutcome: result.outcome,
+                }),
+              );
+            }
+            const verificationConfidence =
+              typeof verification.confidence === "number"
+                ? verification.confidence
+                : 0.5;
+            const verificationFailureType = verification.failureType;
+            logger.info("orchestrator", "Verifier decision", {
               taskId: task.id,
               nodeId: node.id,
               decision: verification.decision,
-              confidence: verification.confidence,
+              reason: verification.reason,
+              confidence: verificationConfidence,
+              failureType: verificationFailureType,
+              rerouteObjective: verification.rerouteObjective,
+              handoffContextChars: verifierHandoffContext.length,
             });
-          } else {
-            verification = await this.runInLane(task, "verifier", async () =>
-              verifier.verifyNode({
-                taskQuery: task.query,
-                objective: node.description,
-                successCriteria: node.successCriteria,
-                output: result.summary,
-                handoffContext: verifierHandoffContext,
-                executorOutcome: result.outcome,
-              }),
-            );
-          }
-          const verificationConfidence =
-            typeof verification.confidence === "number"
-              ? verification.confidence
-              : 0.5;
-          const verificationFailureType = verification.failureType;
-          logger.info("orchestrator", "Verifier decision", {
-            taskId: task.id,
-            nodeId: node.id,
-            decision: verification.decision,
-            reason: verification.reason,
-            confidence: verificationConfidence,
-            failureType: verificationFailureType,
-            rerouteObjective: verification.rerouteObjective,
-            handoffContextChars: verifierHandoffContext.length,
-          });
-          this.emitVerifierStep(task.workspaceId, node.id, verification.reason);
-          this.emitTraceEvent(task, "node_verified", {
-            nodeId: node.id,
-            decision: verification.decision,
-            confidence: verificationConfidence,
-            failureType: verificationFailureType,
-            rerouteObjective: verification.rerouteObjective,
-            reason: (verification.reason || "").slice(0, 300),
-          }, "verifier");
-
-          if (task.status === "running" && this.shouldEscalateForDecision(task, node, verification)) {
-            const escalationPacket =
-              task.pendingEscalation?.packet.nodeId === node.id
-                ? task.pendingEscalation.packet
-                : this.buildEscalationPacket({
-                    task,
-                    node,
-                    verification,
-                    snapshot,
-                  });
-            const escalationDecision = await this.requestEscalationDecision(
-              task,
-              escalationPacket,
-            );
-            task.pendingEscalation = {
-              packet: escalationPacket,
-              selectedOption: escalationDecision,
-            };
-            await this.persistTaskCheckpoint(task);
-            logger.info("orchestrator", "Escalation decision received", {
-              taskId: task.id,
-              nodeId: node.id,
-              escalationId: escalationPacket.escalationId,
-              optionId: escalationDecision.optionId,
-            });
-
-            if (escalationDecision.optionId === "stop_task") {
-              task.status = "stopped";
-              node.status = "failed";
-              node.error = "Stopped by operator escalation decision.";
-              this.memoryBuffer.discardWorker(workerId);
-              await this.clearPendingEscalation(task);
-              return;
-            }
-            if (escalationDecision.optionId === "skip_node") {
-              node.status = "skipped";
-              node.error = "Skipped by operator escalation decision.";
-              this.memoryBuffer.discardWorker(workerId);
-              await this.clearPendingEscalation(task);
-              return;
-            }
-            if (escalationDecision.optionId === "reroute_with_option") {
-              verification.decision = "reroute";
-              verification.rerouteObjective =
-                escalationDecision.rerouteObjective ||
-                escalationPacket.options.find((o) => o.id === "reroute_with_option")
-                  ?.rerouteObjective ||
-                verification.rerouteObjective ||
-                `Use an alternate path for: ${node.description}`;
-              verification.reason = `Operator reroute decision: ${verification.rerouteObjective}`;
-            }
-            await this.clearPendingEscalation(task);
-          }
-
-          if (verification.decision === "accept") {
-            this.appendHandoffArtifact(node, {
-              role: "verifier",
-              phase: "verifier_accept",
-              note: verification.reason,
-            });
-            node.status = "completed";
-            node.result = result.summary;
-            await this.memoryBuffer.commitWorker(workerId);
-          } else if (
-            verification.decision === "reroute" &&
-            verification.rerouteObjective &&
-            task.status === "running" &&
-            node.handoffDepth < MAX_HANDOFF_DEPTH
-          ) {
-            this.appendHandoffArtifact(node, {
-              role: "verifier",
-              phase: "verifier_reroute",
-              note: `${verification.reason} Reroute: ${verification.rerouteObjective}`,
-            });
-            const reroutedNode = createRerouteNode(
-              node,
-              verification.rerouteObjective,
+            this.emitVerifierStep(
+              task.workspaceId,
+              node.id,
               verification.reason,
             );
-            node.status = "completed";
-            node.result = `Handed off to ${reroutedNode.id}: ${verification.reason}`;
-            task.nodes.push(reroutedNode);
-            this.memoryBuffer.discardWorker(workerId);
-            logger.info("orchestrator", "Verifier handoff created reroute node", {
-              taskId: task.id,
-              fromNodeId: node.id,
-              toNodeId: reroutedNode.id,
-              handoffDepth: reroutedNode.handoffDepth,
-              rerouteObjective: verification.rerouteObjective,
-            });
-          } else if (task.status === "running") {
-            let replanned = false;
+            this.emitTraceEvent(
+              task,
+              "node_verified",
+              {
+                nodeId: node.id,
+                decision: verification.decision,
+                confidence: verificationConfidence,
+                failureType: verificationFailureType,
+                rerouteObjective: verification.rerouteObjective,
+                reason: (verification.reason || "").slice(0, 300),
+              },
+              "verifier",
+            );
+
             if (
-              verification.decision === "retry" &&
-              (driftDetected || staleSignalCount > 0)
+              task.status === "running" &&
+              this.shouldEscalateForDecision(task, node, verification)
             ) {
-              if (task.replansUsed >= task.maxReplans) {
-                const reason = `Replan budget exhausted (${task.replansUsed}/${task.maxReplans}). ${verification.reason}`;
-                this.appendHandoffArtifact(node, {
-                  role: "planner",
-                  phase: "planner_replan",
-                  note: reason,
-                });
+              const escalationPacket =
+                task.pendingEscalation?.packet.nodeId === node.id
+                  ? task.pendingEscalation.packet
+                  : this.buildEscalationPacket({
+                      task,
+                      node,
+                      verification,
+                      snapshot,
+                    });
+              const escalationDecision = await this.requestEscalationDecision(
+                task,
+                escalationPacket,
+              );
+              task.pendingEscalation = {
+                packet: escalationPacket,
+                selectedOption: escalationDecision,
+              };
+              await this.persistTaskCheckpoint(task);
+              logger.info("orchestrator", "Escalation decision received", {
+                taskId: task.id,
+                nodeId: node.id,
+                escalationId: escalationPacket.escalationId,
+                optionId: escalationDecision.optionId,
+              });
+
+              if (escalationDecision.optionId === "stop_task") {
+                task.status = "stopped";
                 node.status = "failed";
-                node.error = reason;
-                this.memoryBuffer.discardWorker(workerId);
-                logger.warn("orchestrator", "Replan budget exhausted; failing node", {
+                node.error = "Stopped by operator escalation decision.";
+  
+                await this.clearPendingEscalation(task);
+                return;
+              }
+              if (escalationDecision.optionId === "skip_node") {
+                node.status = "skipped";
+                node.error = "Skipped by operator escalation decision.";
+  
+                await this.clearPendingEscalation(task);
+                return;
+              }
+              if (escalationDecision.optionId === "reroute_with_option") {
+                verification.decision = "reroute";
+                verification.rerouteObjective =
+                  escalationDecision.rerouteObjective ||
+                  escalationPacket.options.find(
+                    (o) => o.id === "reroute_with_option",
+                  )?.rerouteObjective ||
+                  verification.rerouteObjective ||
+                  `Use an alternate path for: ${node.description}`;
+                verification.reason = `Operator reroute decision: ${verification.rerouteObjective}`;
+              }
+              await this.clearPendingEscalation(task);
+            }
+
+            if (verification.decision === "accept") {
+              this.appendHandoffArtifact(node, {
+                role: "verifier",
+                phase: "verifier_accept",
+                note: verification.reason,
+              });
+              node.status = "completed";
+              node.result = result.summary;
+            } else if (
+              verification.decision === "reroute" &&
+              verification.rerouteObjective &&
+              task.status === "running" &&
+              node.handoffDepth < MAX_HANDOFF_DEPTH
+            ) {
+              this.appendHandoffArtifact(node, {
+                role: "verifier",
+                phase: "verifier_reroute",
+                note: `${verification.reason} Reroute: ${verification.rerouteObjective}`,
+              });
+              const reroutedNode = createRerouteNode(
+                node,
+                verification.rerouteObjective,
+                verification.reason,
+              );
+              node.status = "completed";
+              node.result = `Handed off to ${reroutedNode.id}: ${verification.reason}`;
+              task.nodes.push(reroutedNode);
+
+              logger.info(
+                "orchestrator",
+                "Verifier handoff created reroute node",
+                {
                   taskId: task.id,
-                  nodeId: node.id,
-                  replansUsed: task.replansUsed,
-                  maxReplans: task.maxReplans,
-                });
-                this.sendMessage({
-                  type: "AGENT_STEP",
-                  workspaceId: task.workspaceId,
-                  payload: {
-                    step: {
-                      id: crypto.randomUUID(),
-                      type: "warning",
-                      label: `Planner: replan budget exhausted for node ${node.id}`,
-                      detail: reason,
-                      status: "done",
-                      timestamp: Date.now(),
-                    },
-                    update: false,
-                  },
-                });
-                replanned = true;
-              } else {
-              try {
-                const reflexionContext = formatPlannerReflexionContext(task.plannerReflexionLog);
-                const replanReason = reflexionContext
-                  ? `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})\n\nPrior failure lessons:\n${reflexionContext}`
-                  : `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`;
-                const expandedNodes = await this.runInLane(task, "planner", async () =>
-                  replanner.expandNode(
-                    node,
-                    snapshot?.title || "",
-                    snapshot?.url || "",
-                    replanReason,
-                  ),
-                );
-                if (expandedNodes && expandedNodes.length > 0) {
+                  fromNodeId: node.id,
+                  toNodeId: reroutedNode.id,
+                  handoffDepth: reroutedNode.handoffDepth,
+                  rerouteObjective: verification.rerouteObjective,
+                },
+              );
+            } else if (task.status === "running") {
+              let replanned = false;
+              if (
+                verification.decision === "retry" &&
+                (driftDetected || staleSignalCount > 0)
+              ) {
+                if (task.replansUsed >= task.maxReplans) {
+                  const reason = `Replan budget exhausted (${task.replansUsed}/${task.maxReplans}). ${verification.reason}`;
                   this.appendHandoffArtifact(node, {
                     role: "planner",
                     phase: "planner_replan",
-                    note:
-                      staleSignalCount > 0
-                        ? `Planner expanded node due to stale-signal retry: ${verification.reason}`
-                        : `Planner expanded node due to drift/retry: ${verification.reason}`,
+                    note: reason,
                   });
-                  node.status = "completed";
-                  node.result = `Replanned into ${expandedNodes.length} node(s): ${verification.reason}`;
-                  task.nodes.push(...expandedNodes);
-                  task.replansUsed += 1;
-                  this.memoryBuffer.discardWorker(workerId);
-                  replanned = true;
-                  logger.info("orchestrator", "Node replanned after drift retry", {
-                    taskId: task.id,
-                    nodeId: node.id,
-                    expandedCount: expandedNodes.length,
-                    replansUsed: task.replansUsed,
-                    maxReplans: task.maxReplans,
-                  });
-                }
-              } catch (error) {
-                if (isLaneIsolationError(error, "planner")) {
                   node.status = "failed";
-                  node.error =
-                    `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`;
-                  this.memoryBuffer.discardWorker(workerId);
-                  replanned = true;
+                  node.error = reason;
+    
                   logger.warn(
                     "orchestrator",
-                    "Planner lane isolated, failing node without retry",
+                    "Replan budget exhausted; failing node",
                     {
                       taskId: task.id,
                       nodeId: node.id,
-                      error,
+                      replansUsed: task.replansUsed,
+                      maxReplans: task.maxReplans,
                     },
                   );
                   this.sendMessage({
@@ -2810,123 +2848,223 @@ export class Orchestrator {
                       step: {
                         id: crypto.randomUUID(),
                         type: "warning",
-                        label: `Planner lane isolated for node ${node.id.slice(0, 6)}`,
-                        detail: node.error,
+                        label: `Planner: replan budget exhausted for node ${node.id}`,
+                        detail: reason,
                         status: "done",
                         timestamp: Date.now(),
                       },
                       update: false,
                     },
                   });
-                }
-                if (!replanned) {
-                  logger.warn(
-                    "orchestrator",
-                    "Dynamic replanning failed; falling back to retry",
-                    {
-                      taskId: task.id,
-                      nodeId: node.id,
-                      error,
-                    },
-                  );
+                  replanned = true;
+                } else {
+                  try {
+                    const reflexionContext = formatPlannerReflexionContext(
+                      task.plannerReflexionLog,
+                    );
+                    const replanReason = reflexionContext
+                      ? `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})\n\nPrior failure lessons:\n${reflexionContext}`
+                      : `${verification.reason} (driftDetected=${driftDetected}; staleSignalCount=${staleSignalCount})`;
+                    const expandedNodes = await this.runInLane(
+                      task,
+                      "planner",
+                      async () =>
+                        replanner.expandNode(
+                          node,
+                          snapshot?.title || "",
+                          snapshot?.url || "",
+                          replanReason,
+                        ),
+                    );
+                    if (expandedNodes && expandedNodes.length > 0) {
+                      this.appendHandoffArtifact(node, {
+                        role: "planner",
+                        phase: "planner_replan",
+                        note:
+                          staleSignalCount > 0
+                            ? `Planner expanded node due to stale-signal retry: ${verification.reason}`
+                            : `Planner expanded node due to drift/retry: ${verification.reason}`,
+                      });
+                      node.status = "completed";
+                      node.result = `Replanned into ${expandedNodes.length} node(s): ${verification.reason}`;
+                      task.nodes.push(...expandedNodes);
+                      task.replansUsed += 1;
+        
+                      replanned = true;
+                      logger.info(
+                        "orchestrator",
+                        "Node replanned after drift retry",
+                        {
+                          taskId: task.id,
+                          nodeId: node.id,
+                          expandedCount: expandedNodes.length,
+                          replansUsed: task.replansUsed,
+                          maxReplans: task.maxReplans,
+                        },
+                      );
+                    }
+                  } catch (error) {
+                    if (isLaneIsolationError(error, "planner")) {
+                      node.status = "failed";
+                      node.error = `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`;
+        
+                      replanned = true;
+                      logger.warn(
+                        "orchestrator",
+                        "Planner lane isolated, failing node without retry",
+                        {
+                          taskId: task.id,
+                          nodeId: node.id,
+                          error,
+                        },
+                      );
+                      this.sendMessage({
+                        type: "AGENT_STEP",
+                        workspaceId: task.workspaceId,
+                        payload: {
+                          step: {
+                            id: crypto.randomUUID(),
+                            type: "warning",
+                            label: `Planner lane isolated for node ${node.id.slice(0, 6)}`,
+                            detail: node.error,
+                            status: "done",
+                            timestamp: Date.now(),
+                          },
+                          update: false,
+                        },
+                      });
+                    }
+                    if (!replanned) {
+                      logger.warn(
+                        "orchestrator",
+                        "Dynamic replanning failed; falling back to retry",
+                        {
+                          taskId: task.id,
+                          nodeId: node.id,
+                          error,
+                        },
+                      );
+                    }
+                  }
                 }
               }
-              }
-            }
-            if (replanned) {
-              // Replacement nodes are now pending and scheduler will pick them up.
-            } else {
-              const retryDecision = decideRetryPolicy(
-                {
-                  source: "verifier",
-                  reason: verification.reason,
-                  confidence: verificationConfidence,
-                  failureType: verificationFailureType,
-                  driftDetected,
-                  staleSignalCount,
-                },
-                node.retries,
-              );
+              if (replanned) {
+                // Replacement nodes are now pending and scheduler will pick them up.
+              } else {
+                const retryDecision = decideRetryPolicy(
+                  {
+                    source: "verifier",
+                    reason: verification.reason,
+                    confidence: verificationConfidence,
+                    failureType: verificationFailureType,
+                    driftDetected,
+                    staleSignalCount,
+                  },
+                  node.retries,
+                );
 
+                this.appendHandoffArtifact(node, {
+                  role: "verifier",
+                  phase:
+                    verification.decision === "reroute"
+                      ? "verifier_reroute"
+                      : "verifier_retry",
+                  note:
+                    verification.decision === "reroute" &&
+                    verification.rerouteObjective
+                      ? `${verification.reason} Reroute: ${verification.rerouteObjective}`
+                      : `${verification.reason} (${retryDecision.rationale})`,
+                });
+
+                if (retryDecision.shouldRetry) {
+                  node.reflexionLog.push({
+                    attempt: node.retries + 1,
+                    executorSummary: result.summary || "No executor summary.",
+                    verifierDecision:
+                      verification.decision === "reroute" ? "reroute" : "retry",
+                    verifierReason: verification.reason,
+                    failureType: verification.failureType,
+                    confidence: verification.confidence,
+                    suggestedApproach: deriveSuggestedApproach(verification),
+                    timestamp: Date.now(),
+                  });
+                  this.emitTraceEvent(
+                    task,
+                    "reflexion_recorded",
+                    {
+                      nodeId: node.id,
+                      attempt: node.retries + 1,
+                      verifierDecision:
+                        verification.decision === "reroute"
+                          ? "reroute"
+                          : "retry",
+                      failureType: verification.failureType,
+                      confidence: verification.confidence,
+                      reflexionCount: node.reflexionLog.length,
+                    },
+                    "verifier",
+                  );
+                  task.plannerReflexionLog.push({
+                    nodeId: node.id,
+                    verifierDecision:
+                      verification.decision === "reroute" ? "reroute" : "retry",
+                    failureType: verification.failureType,
+                    executorSummary: result.summary || "No executor summary.",
+                    plannerLesson: "",
+                    timestamp: Date.now(),
+                  });
+                  this.emitTraceEvent(
+                    task,
+                    "cross_role_reflexion",
+                    {
+                      nodeId: node.id,
+                      verifierDecision:
+                        verification.decision === "reroute"
+                          ? "reroute"
+                          : "retry",
+                    },
+                    "verifier",
+                  );
+                  node.status = "pending";
+                  node.retries += 1;
+                  node.error = verification.reason;
+                  if (
+                    verification.decision === "reroute" &&
+                    verification.rerouteObjective
+                  ) {
+                    node.description = verification.rerouteObjective;
+                    if (node.handoffDepth >= MAX_HANDOFF_DEPTH) {
+                      logger.warn(
+                        "orchestrator",
+                        "Reroute depth limit reached, falling back to retry",
+                        {
+                          taskId: task.id,
+                          nodeId: node.id,
+                          handoffDepth: node.handoffDepth,
+                          maxHandoffDepth: MAX_HANDOFF_DEPTH,
+                        },
+                      );
+                    }
+                  }
+                } else {
+                  node.status = "failed";
+                  node.error = `Verifier ${verification.decision}: ${verification.reason} (${retryDecision.rationale})`;
+                }
+  
+              }
+            } else {
               this.appendHandoffArtifact(node, {
                 role: "verifier",
                 phase:
                   verification.decision === "reroute"
                     ? "verifier_reroute"
                     : "verifier_retry",
-                note:
-                  verification.decision === "reroute" && verification.rerouteObjective
-                    ? `${verification.reason} Reroute: ${verification.rerouteObjective}`
-                    : `${verification.reason} (${retryDecision.rationale})`,
+                note: verification.reason,
               });
+              node.status = "failed";
+              node.error = `Verifier ${verification.decision}: ${verification.reason}`;
 
-              if (retryDecision.shouldRetry) {
-                node.reflexionLog.push({
-                  attempt: node.retries + 1,
-                  executorSummary: result.summary || "No executor summary.",
-                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
-                  verifierReason: verification.reason,
-                  failureType: verification.failureType,
-                  confidence: verification.confidence,
-                  suggestedApproach: deriveSuggestedApproach(verification),
-                  timestamp: Date.now(),
-                });
-                this.emitTraceEvent(task, "reflexion_recorded", {
-                  nodeId: node.id,
-                  attempt: node.retries + 1,
-                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
-                  failureType: verification.failureType,
-                  confidence: verification.confidence,
-                  reflexionCount: node.reflexionLog.length,
-                }, "verifier");
-                task.plannerReflexionLog.push({
-                  nodeId: node.id,
-                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
-                  failureType: verification.failureType,
-                  executorSummary: result.summary || "No executor summary.",
-                  plannerLesson: "",
-                  timestamp: Date.now(),
-                });
-                this.emitTraceEvent(task, "cross_role_reflexion", {
-                  nodeId: node.id,
-                  verifierDecision: verification.decision === "reroute" ? "reroute" : "retry",
-                }, "verifier");
-                node.status = "pending";
-                node.retries += 1;
-                node.error = verification.reason;
-                if (
-                  verification.decision === "reroute" &&
-                  verification.rerouteObjective
-                ) {
-                  node.description = verification.rerouteObjective;
-                  if (node.handoffDepth >= MAX_HANDOFF_DEPTH) {
-                    logger.warn("orchestrator", "Reroute depth limit reached, falling back to retry", {
-                      taskId: task.id,
-                      nodeId: node.id,
-                      handoffDepth: node.handoffDepth,
-                      maxHandoffDepth: MAX_HANDOFF_DEPTH,
-                    });
-                  }
-                }
-              } else {
-                node.status = "failed";
-                node.error = `Verifier ${verification.decision}: ${verification.reason} (${retryDecision.rationale})`;
-              }
-              this.memoryBuffer.discardWorker(workerId);
             }
-          } else {
-            this.appendHandoffArtifact(node, {
-              role: "verifier",
-              phase:
-                verification.decision === "reroute"
-                  ? "verifier_reroute"
-                  : "verifier_retry",
-              note: verification.reason,
-            });
-            node.status = "failed";
-            node.error = `Verifier ${verification.decision}: ${verification.reason}`;
-            this.memoryBuffer.discardWorker(workerId);
-          }
           } // end else (multi-node verification)
         } else {
           const retryDecision = decideRetryPolicy(
@@ -2943,7 +3081,6 @@ export class Orchestrator {
           } else {
             node.status = "failed";
             node.error = `${result.summary} (${retryDecision.rationale})`;
-            this.memoryBuffer.discardWorker(workerId);
           }
         }
       } catch (error: any) {
@@ -2953,9 +3090,7 @@ export class Orchestrator {
           isLaneIsolationError(error, "planner")
         ) {
           node.status = "failed";
-          node.error =
-            `Critical lane isolation while executing node: ${error?.message || String(error)}`;
-          this.memoryBuffer.discardWorker(workerId);
+          node.error = `Critical lane isolation while executing node: ${error?.message || String(error)}`;
           logger.warn("orchestrator", "Failing node due to lane isolation", {
             taskId: task.id,
             nodeId: node.id,
@@ -2977,26 +3112,34 @@ export class Orchestrator {
         } else {
           node.status = "failed";
           node.error = `${error?.message || String(error)} (${retryDecision.rationale})`;
-          this.memoryBuffer.discardWorker(workerId);
         }
       } finally {
-        this.emitTraceEvent(task, "node_completed", {
-          nodeId: node.id,
-          outcome: node.status,
-          summary: (node.result || node.error || "").slice(0, 300),
-          retries: node.retries,
-          durationMs: Date.now() - nodeStartMs,
-        }, "executor");
+        this.emitTraceEvent(
+          task,
+          "node_completed",
+          {
+            nodeId: node.id,
+            outcome: node.status,
+            summary: (node.result || node.error || "").slice(0, 300),
+            retries: node.retries,
+            durationMs: Date.now() - nodeStartMs,
+          },
+          "executor",
+        );
         const wsPools = this.getWorkspaceLanePools(task.workspaceId);
         wsPools.executor.delete(workerId);
-        logger.debug("orchestrator", "Executor worker released from lane pool", {
-          taskId: task.id,
-          workspaceId: task.workspaceId,
-          workerId,
-          nodeId: node.id,
-          lane: "executor",
-          activeExecutorWorkers: wsPools.executor.size,
-        });
+        logger.debug(
+          "orchestrator",
+          "Executor worker released from lane pool",
+          {
+            taskId: task.id,
+            workspaceId: task.workspaceId,
+            workerId,
+            nodeId: node.id,
+            lane: "executor",
+            activeExecutorWorkers: wsPools.executor.size,
+          },
+        );
         task.currentIndex = currentIndex(task.nodes);
         this.sendProgress(task);
         await this.persistTaskCheckpoint(task);
@@ -3026,37 +3169,54 @@ export class Orchestrator {
       // Emit budget_warning at 80% thresholds (at most once per metric)
       const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
       const timeRatio = elapsedMs / task.budget.maxSessionTimeMs;
-      const tokenRatio = task.sessionMetrics.totalTokens / task.budget.maxTotalTokens;
-      const costRatio = task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd;
+      const tokenRatio =
+        task.sessionMetrics.totalTokens / task.budget.maxTotalTokens;
+      const costRatio =
+        task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd;
       if (timeRatio >= 0.8 && !budgetWarningsEmitted.has("time")) {
         budgetWarningsEmitted.add("time");
-        this.emitTraceEvent(task, "budget_warning", {
-          metric: "time",
-          ratio: timeRatio,
-          totalTokens: task.sessionMetrics.totalTokens,
-          totalCost: task.sessionMetrics.totalCost,
-          elapsedMs,
-        }, "system");
+        this.emitTraceEvent(
+          task,
+          "budget_warning",
+          {
+            metric: "time",
+            ratio: timeRatio,
+            totalTokens: task.sessionMetrics.totalTokens,
+            totalCost: task.sessionMetrics.totalCost,
+            elapsedMs,
+          },
+          "system",
+        );
       }
       if (tokenRatio >= 0.8 && !budgetWarningsEmitted.has("tokens")) {
         budgetWarningsEmitted.add("tokens");
-        this.emitTraceEvent(task, "budget_warning", {
-          metric: "tokens",
-          ratio: tokenRatio,
-          totalTokens: task.sessionMetrics.totalTokens,
-          totalCost: task.sessionMetrics.totalCost,
-          elapsedMs,
-        }, "system");
+        this.emitTraceEvent(
+          task,
+          "budget_warning",
+          {
+            metric: "tokens",
+            ratio: tokenRatio,
+            totalTokens: task.sessionMetrics.totalTokens,
+            totalCost: task.sessionMetrics.totalCost,
+            elapsedMs,
+          },
+          "system",
+        );
       }
       if (costRatio >= 0.8 && !budgetWarningsEmitted.has("cost")) {
         budgetWarningsEmitted.add("cost");
-        this.emitTraceEvent(task, "budget_warning", {
-          metric: "cost",
-          ratio: costRatio,
-          totalTokens: task.sessionMetrics.totalTokens,
-          totalCost: task.sessionMetrics.totalCost,
-          elapsedMs,
-        }, "system");
+        this.emitTraceEvent(
+          task,
+          "budget_warning",
+          {
+            metric: "cost",
+            ratio: costRatio,
+            totalTokens: task.sessionMetrics.totalTokens,
+            totalCost: task.sessionMetrics.totalCost,
+            elapsedMs,
+          },
+          "system",
+        );
       }
 
       const budgetReason = getBudgetExhaustionReason();
@@ -3068,18 +3228,27 @@ export class Orchestrator {
       if (
         running.size === 0 &&
         runnable.length > 0 &&
-        this.isLaneIsolated(this.getLaneRuntimeState(task.workspaceId, "executor"))
+        this.isLaneIsolated(
+          this.getLaneRuntimeState(task.workspaceId, "executor"),
+        )
       ) {
-        const executorLaneState = this.getLaneRuntimeState(task.workspaceId, "executor");
+        const executorLaneState = this.getLaneRuntimeState(
+          task.workspaceId,
+          "executor",
+        );
         const reason =
           `Executor lane isolated until ${new Date(executorLaneState.isolatedUntilMs).toISOString()} ` +
           `(lastError=${executorLaneState.lastError || "unknown"})`;
-        logger.warn("orchestrator", "Executor lane isolation blocked scheduler", {
-          taskId: task.id,
-          workspaceId: task.workspaceId,
-          reason,
-          runnableNodeIds: runnable.map((node) => node.id),
-        });
+        logger.warn(
+          "orchestrator",
+          "Executor lane isolation blocked scheduler",
+          {
+            taskId: task.id,
+            workspaceId: task.workspaceId,
+            reason,
+            runnableNodeIds: runnable.map((node) => node.id),
+          },
+        );
         for (const node of runnable) {
           node.status = "failed";
           node.error = reason;
@@ -3102,7 +3271,9 @@ export class Orchestrator {
       const pendingNodes = task.nodes.filter((n) => n.status === "pending");
       if (pendingNodes.length === 0) break;
 
-      const nodesById = new Map<string, TaskNode>(task.nodes.map((n) => [n.id, n]));
+      const nodesById = new Map<string, TaskNode>(
+        task.nodes.map((n) => [n.id, n]),
+      );
       for (const blockedNode of pendingNodes) {
         const depState = getDependencyState(blockedNode, nodesById);
         if (depState.ready || depState.waitingOn.length > 0) continue;
@@ -3111,13 +3282,17 @@ export class Orchestrator {
           depState.failedDeps.length > 0
             ? `Blocked by failed dependencies: ${depState.failedDeps.join(", ")}`
             : `Blocked by missing dependencies: ${depState.missingDeps.join(", ")}`;
-        logger.warn("orchestrator", "Node failed due to unsatisfiable dependencies", {
-          taskId: task.id,
-          nodeId: blockedNode.id,
-          failedDeps: depState.failedDeps,
-          missingDeps: depState.missingDeps,
-          dependencies: blockedNode.dependencies,
-        });
+        logger.warn(
+          "orchestrator",
+          "Node failed due to unsatisfiable dependencies",
+          {
+            taskId: task.id,
+            nodeId: blockedNode.id,
+            failedDeps: depState.failedDeps,
+            missingDeps: depState.missingDeps,
+            dependencies: blockedNode.dependencies,
+          },
+        );
       }
 
       if (task.nodes.some((n) => n.status === "failed")) {
@@ -3153,41 +3328,15 @@ export class Orchestrator {
       (n) => n.status === "failed" && !isUserSkippedNode(n),
     ).length;
     task.finishedAt = Date.now();
-    task.sessionMetrics.totalSessionTimeMs = task.finishedAt - (task.startedAt || task.createdAt);
+    task.sessionMetrics.totalSessionTimeMs =
+      task.finishedAt - (task.startedAt || task.createdAt);
     task.status = failed > 0 ? "failed" : "completed";
-
-    // WS4: Write failure lessons to memory (replaces LLM retrospective)
-    const hasFailures = task.plannerReflexionLog.length > 0 ||
-      task.nodes.some((n) => n.status === "failed");
-    if (hasFailures && task.plannerReflexionLog.length > 0) {
-      try {
-        let domain = "unknown";
-        try {
-          const tab = await chrome.tabs.get(input.tabId);
-          domain = tab.url ? new URL(tab.url).hostname : "unknown";
-        } catch { /* tab may be closed */ }
-        const retroWorkerId = `retrospective-${task.id}`;
-        for (const entry of task.plannerReflexionLog) {
-          this.memoryBuffer.add(retroWorkerId, {
-            content: `[${domain}] ${entry.executorSummary.slice(0, 200)}. Failure: ${entry.failureType || "unknown"}. Verifier: ${entry.verifierDecision}.`,
-            category: "procedure",
-            sourceUrl: domain,
-            createdAt: Date.now(),
-          });
-        }
-        await this.memoryBuffer.commitWorker(retroWorkerId);
-        logger.info("orchestrator", "Wrote failure lessons to memory", {
-          taskId: task.id, count: task.plannerReflexionLog.length,
-        });
-      } catch (error) {
-        logger.warn("orchestrator", "Memory retrospective write failed", { error });
-      }
-    }
 
     // Build summary from executor results. For single-node tasks this is the
     // done() summary; for multi-node tasks it's an aggregated result.
     // Skip for single-node tasks that already streamed content to avoid duplicate bubbles.
-    const alreadyStreamed = task.planClassification?.isSingleNode && task._streamHasContent;
+    const alreadyStreamed =
+      task.planClassification?.isSingleNode && task._streamHasContent;
     const summary = alreadyStreamed ? "" : this.buildProgrammaticSummary(task);
     if (summary) {
       this.sendMessage({
@@ -3238,7 +3387,8 @@ export class Orchestrator {
         terminationReason: task.terminationReason,
       },
     });
-    const totalDurationMs = task.finishedAt - (task.startedAt || task.createdAt);
+    const totalDurationMs =
+      task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
       task,
       "task_completed",
@@ -3251,129 +3401,15 @@ export class Orchestrator {
         totalDurationMs,
         totalTokens: task.sessionMetrics.totalTokens,
         totalCostUsd: task.sessionMetrics.totalCost,
-        replayAttempted,
-        replayHit: Boolean(replaySkillId),
         terminationReason: task.terminationReason ?? null,
       },
       "system",
     );
 
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
-    await this.maybeLearnOrUpdateSkill(
-      task,
-      input,
-      completionStatus,
-      replaySkillId,
-      replayMatchContext,
-    );
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
-  }
-
-  private buildNodesFromSkill(skill: LearnedSkill): TaskNode[] {
-    return skill.steps.map((step, index) => ({
-      id: crypto.randomUUID(),
-      role: "executor",
-      description: step.objective,
-      successCriteria: step.successCriteria,
-      allowedTools: step.allowedTools,
-      dependencies: index === 0 ? [] : [`skill-step-${index - 1}`],
-      assumptions: step.assumptions,
-      handoffArtifacts: [
-        {
-          role: "planner",
-          phase: "planned",
-          note: `Skill replay from ${skill.name} (${skill.id})`,
-          timestamp: Date.now(),
-        },
-      ],
-      reflexionLog: [],
-      handoffDepth: 0,
-      handoffFromNodeId: index > 0 ? `skill-step-${index - 1}` : undefined,
-      status: "pending",
-      retries: 0,
-    })).map((node, index) => ({
-      ...node,
-      id: `skill-step-${index}`,
-    }));
-  }
-
-  private async maybeLearnOrUpdateSkill(
-    task: OrchestratorTask,
-    input: OrchestratorStartInput,
-    completionStatus: "completed" | "partial" | "failed",
-    replaySkillId?: string | null,
-    replayMatchContext?: ReplayMatchContext | null,
-  ): Promise<void> {
-    try {
-      const durationMs = task.finishedAt
-        ? task.finishedAt - (task.startedAt || task.createdAt)
-        : Date.now() - (task.startedAt || task.createdAt);
-      const totalTokens = task.sessionMetrics.totalTokens;
-
-      if (replaySkillId) {
-        const replaySuccess = completionStatus !== "failed";
-        await this.skillStore.recordSkillOutcome(
-          replaySkillId,
-          replaySuccess,
-          durationMs,
-          totalTokens,
-        );
-        this.emitTraceEvent(
-          task,
-          "skill_replay_outcome",
-          {
-            skillId: replaySkillId,
-            skillName: replayMatchContext?.skillName ?? null,
-            score: replayMatchContext?.score ?? null,
-            success: replaySuccess,
-            durationMs,
-            totalTokens,
-            baselineDurationMs: replayMatchContext?.baselineDurationMs ?? null,
-            baselineTokens: replayMatchContext?.baselineTokens ?? null,
-            durationDeltaMs:
-              replayMatchContext && replayMatchContext.baselineDurationMs > 0
-                ? replayMatchContext.baselineDurationMs - durationMs
-                : null,
-            tokenDelta:
-              replayMatchContext && replayMatchContext.baselineTokens > 0
-                ? replayMatchContext.baselineTokens - totalTokens
-                : null,
-          },
-          "executor",
-        );
-      }
-
-      if (!input.settings.teachModeEnabled) return;
-      if (completionStatus === "failed") return;
-
-      const learned = await this.skillStore.learnFromTask({
-        query: input.query,
-        nodes: task.nodes,
-        totalDurationMs: durationMs,
-        totalTokens,
-      });
-      if (!learned) return;
-
-      logger.info("skills", `Teach mode: updated skill "${learned.name}"`, {
-        skillId: learned.id,
-        stepCount: learned.steps.length,
-      });
-      this.emitTraceEvent(
-        task,
-        "skill_learned",
-        {
-          skillId: learned.id,
-          skillName: learned.name,
-          stepCount: learned.steps.length,
-          completionStatus,
-        },
-        "planner",
-      );
-    } catch (error) {
-      logger.warn("skills", "Failed skill learn/replay bookkeeping", { error });
-    }
   }
 
   async stopTask(workspaceId?: string): Promise<void> {
@@ -3438,7 +3474,6 @@ export class Orchestrator {
     for (const worker of workers?.values() ?? []) {
       if (worker.nodeId !== targetNode.id) continue;
       worker.loop.stop();
-      this.memoryBuffer.discardWorker(worker.workerId);
       workers?.delete(worker.workerId);
     }
 
@@ -3474,10 +3509,15 @@ export class Orchestrator {
   private stopWorkspace(workspaceId: string): void {
     const task = this.tasksByWorkspace.get(workspaceId);
     if (!task) return;
-    this.emitTraceEvent(task, "task_stop_requested", {
-      taskId: task.id,
-      workspaceId,
-    }, "system");
+    this.emitTraceEvent(
+      task,
+      "task_stop_requested",
+      {
+        taskId: task.id,
+        workspaceId,
+      },
+      "system",
+    );
     task.status = "stopped";
     task.finishedAt = Date.now();
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
@@ -3493,7 +3533,6 @@ export class Orchestrator {
     const workers = pools?.executor;
     for (const worker of workers?.values() || []) {
       worker.loop.stop();
-      this.memoryBuffer.discardWorker(worker.workerId);
     }
     workers?.clear();
     pools?.planner.clear();
@@ -3514,14 +3553,19 @@ export class Orchestrator {
     }
   }
 
-  private async createWorkerTab(url: string, workspaceId: string): Promise<number> {
+  private async createWorkerTab(
+    url: string,
+    workspaceId: string,
+  ): Promise<number> {
     const tab = await chrome.tabs.create({ url, active: false });
     if (!tab.id) throw new Error("Failed to create worker tab");
     await this.deps.workspaceManager.addTabToWorkspace(tab.id, workspaceId);
     return tab.id;
   }
 
-  private async getSnapshot(tabId: number, showTags: boolean): Promise<any | undefined> {
+  private async getSnapshot(
+    tabId: number,
+  ): Promise<any | undefined> {
     try {
       try {
         const manifest = chrome.runtime.getManifest();
@@ -3540,25 +3584,35 @@ export class Orchestrator {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { refresh: true, showTags },
+        payload: { refresh: true },
       });
       return response.payload.snapshot;
     } catch (err) {
-      logger.warn("orchestrator", "getSnapshot failed — executor will fetch its own", {
-        tabId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.warn(
+        "orchestrator",
+        "getSnapshot failed — executor will fetch its own",
+        {
+          tabId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
       return undefined;
     }
   }
 
   private buildProgrammaticSummary(task: OrchestratorTask): string {
-    const completed = task.nodes.filter(n => n.status === "completed").length;
-    const failed = task.nodes.filter(n => n.status === "failed").length;
-    const lastCompleted = [...task.nodes].reverse().find(n => n.status === "completed");
+    const completed = task.nodes.filter((n) => n.status === "completed").length;
+    const failed = task.nodes.filter((n) => n.status === "failed").length;
+    const lastCompleted = [...task.nodes]
+      .reverse()
+      .find((n) => n.status === "completed");
 
     // Single-node completed: show executor's actual output directly
-    if (task.planClassification?.isSingleNode && failed === 0 && lastCompleted?.result) {
+    if (
+      task.planClassification?.isSingleNode &&
+      failed === 0 &&
+      lastCompleted?.result
+    ) {
       return lastCompleted.result;
     }
 
@@ -3585,7 +3639,10 @@ export class Orchestrator {
     });
   }
 
-  private sendTerminationCompletion(task: OrchestratorTask, terminationReason: string): void {
+  private sendTerminationCompletion(
+    task: OrchestratorTask,
+    terminationReason: string,
+  ): void {
     const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
       description: node.description,
       status:
@@ -3597,7 +3654,9 @@ export class Orchestrator {
       turnsUsed: 0,
       result: node.result || node.error || "",
     }));
-    const completed = subtaskResults.filter((r) => r.status === "completed").length;
+    const completed = subtaskResults.filter(
+      (r) => r.status === "completed",
+    ).length;
 
     this.sendMessage({
       type: "TASK_COMPLETION",
@@ -3606,7 +3665,8 @@ export class Orchestrator {
         taskId: task.id,
         status: completed > 0 ? "partial" : "failed",
         totalTurnsUsed: 0,
-        totalTimeMs: (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
+        totalTimeMs:
+          (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
         summary: terminationReason,
         subtaskResults,
         urlHistory: [],
@@ -3663,7 +3723,10 @@ export class Orchestrator {
     if (verification.failureType === "blocked") return true;
     if (verification.decision !== "accept" && confidence < 0.45) return true;
     if (verification.decision !== "accept" && node.retries >= 2) return true;
-    if (verification.decision !== "accept" && (tokenRatio >= 0.85 || costRatio >= 0.85)) {
+    if (
+      verification.decision !== "accept" &&
+      (tokenRatio >= 0.85 || costRatio >= 0.85)
+    ) {
       return true;
     }
     return false;
@@ -3858,7 +3921,9 @@ export class Orchestrator {
     await this.persistTaskCheckpoint(task);
   }
 
-  public resolveEscalationDecision(payload: EscalationDecisionPayload): boolean {
+  public resolveEscalationDecision(
+    payload: EscalationDecisionPayload,
+  ): boolean {
     const optionId = normalizeEscalationOptionId(payload.optionId);
     if (!optionId) return false;
     const resolver = this.pendingEscalationResolvers.get(payload.escalationId);
@@ -3883,13 +3948,11 @@ export class Orchestrator {
     });
   }
 
-  private sendMessage(
-    message: {
-      type: string;
-      payload: any;
-      workspaceId?: string | null;
-    },
-  ): void {
+  private sendMessage(message: {
+    type: string;
+    payload: any;
+    workspaceId?: string | null;
+  }): void {
     chrome.runtime
       .sendMessage({
         ...message,
@@ -3897,7 +3960,9 @@ export class Orchestrator {
         source: MessageSource.BACKGROUND,
       } as any)
       .catch((error) => {
-        logger.debug("orchestrator", "Failed to send runtime message", { error });
+        logger.debug("orchestrator", "Failed to send runtime message", {
+          error,
+        });
       });
   }
 }

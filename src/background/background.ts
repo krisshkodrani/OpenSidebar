@@ -6,9 +6,7 @@ import {
   AgentStatus,
   UserSettings,
 } from "../types";
-import { sendMessageToMemory } from "./memory/bridge";
 import { storageLogger } from "../utils/storage-logger";
-import { SKILLS_STORAGE_KEY } from "../skills/types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import { AgentLoop } from "./agent";
 import { workspaceManager } from "./workspaces/manager";
@@ -63,7 +61,9 @@ registerAlarmListener();
 chrome.webNavigation?.onCommitted.addListener((details) => {
   if (details.frameId === 0) perceptionWarmup.invalidate(details.tabId);
 });
-chrome.tabs.onRemoved.addListener((tabId) => perceptionWarmup.invalidate(tabId));
+chrome.tabs.onRemoved.addListener((tabId) =>
+  perceptionWarmup.invalidate(tabId),
+);
 
 // 4. Initialize Side Panel Behavior
 // We handle panel opening manually to support toggle/auto-close behavior
@@ -504,7 +504,8 @@ chrome.runtime.onMessage.addListener(
                 payload: {
                   command: message.payload.command,
                   success: false,
-                  result: "Cannot use manual commands while agent is running. Stop the agent first.",
+                  result:
+                    "Cannot use manual commands while agent is running. Stop the agent first.",
                   durationMs: 0,
                 },
               })
@@ -524,7 +525,10 @@ chrome.runtime.onMessage.addListener(
             manualHandlers.set(resolvedWsId, handler);
           }
 
-          const result = await handler.handleCommand(message.payload, resolvedWsId);
+          const result = await handler.handleCommand(
+            message.payload,
+            resolvedWsId,
+          );
 
           chrome.runtime
             .sendMessage({
@@ -668,7 +672,10 @@ chrome.runtime.onMessage.addListener(
             // Finalize via TraceRecorder (resilient queueing)
             if (activeRecording) {
               try {
-                const result = await activeRecording.finalize(demoName, demoGoal);
+                const result = await activeRecording.finalize(
+                  demoName,
+                  demoGoal,
+                );
                 logger.info("recording", "Recording saved via TraceRecorder", {
                   sessionId: result.sessionId,
                   turnCount: result.turnCount,
@@ -822,14 +829,6 @@ chrome.runtime.onMessage.addListener(
       (async () => {
         try {
           const action = message.payload.action;
-          if (action === "clear_memory") {
-            await sendMessageToMemory({ action: "clear" });
-            sendResponse({
-              ok: true,
-              detail: "Long-term memory cleared.",
-            });
-            return;
-          }
           if (action === "clear_logs") {
             await storageLogger.clear();
             sendResponse({
@@ -855,7 +854,6 @@ chrome.runtime.onMessage.addListener(
               "opensidebar:savedPrompts",
               "opensidebar:savedPromptsSeeded",
               "opensidebar:savedPromptsVersion",
-              SKILLS_STORAGE_KEY,
               "opensidebar:demos:v1",
               "opensidebar_logs",
               "opensidebar:workspaces",
@@ -896,8 +894,6 @@ async function handleUserChat(
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const openRouterApiKey = settings.openRouterApiKey || __OPENROUTER_API_KEY__;
   const groqApiKey = settings.groqApiKey || __GROQ_API_KEY__ || undefined;
-  const cerebrasApiKey =
-    settings.cerebrasApiKey || __CEREBRAS_API_KEY__ || undefined;
 
   if (!openRouterApiKey) {
     chrome.runtime.sendMessage({
@@ -946,7 +942,6 @@ async function handleUserChat(
       settings,
       openRouterApiKey,
       groqApiKey,
-      cerebrasApiKey,
     });
   } finally {
     sendAgentActivity(tabId, false);
@@ -1000,4 +995,3 @@ async function restoreWorkspacesFromExistingGroups() {
     });
   }
 }
-

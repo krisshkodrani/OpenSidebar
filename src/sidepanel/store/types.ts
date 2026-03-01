@@ -96,13 +96,19 @@ export interface UiSlice {
   activeWorkspaceId: string | null;
   demoRecording: boolean;
   demoActionCount: number;
-  manualRecording: { sessionId: string; turnCount: number; name: string } | null;
+  manualRecording: {
+    sessionId: string;
+    turnCount: number;
+    name: string;
+  } | null;
   setReady: () => void;
   togglePlanBoard: () => void;
   setError: (error: string | null) => void;
   setActiveWorkspaceId: (id: string | null) => void;
   setDemoRecording: (active: boolean, actionCount?: number) => void;
-  setManualRecording: (r: { sessionId: string; turnCount: number; name: string } | null) => void;
+  setManualRecording: (
+    r: { sessionId: string; turnCount: number; name: string } | null,
+  ) => void;
 }
 
 // --- Combined Store ---

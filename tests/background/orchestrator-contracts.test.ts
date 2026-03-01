@@ -7,19 +7,15 @@ import { buildRoleExecutionContract } from "../../src/background/orchestrator/co
 const baseSettings: UserSettings = {
   openRouterApiKey: "test",
   groqApiKey: "",
-  cerebrasApiKey: "",
   maxTurns: 30,
   contextWindowSize: 32000,
   memoryEnabled: true,
   workspaceEnabled: true,
   theme: "system",
-  showElementTags: false,
   visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: false,
-  disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: false,
-  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
 };
 
@@ -41,21 +37,21 @@ function makeNode(allowedTools: ToolName[]): TaskNode {
 }
 
 describe("Orchestrator role contracts", () => {
-  test("planner and verifier use smart tier with no tool access", () => {
+  test("planner and verifier use planner tier with no tool access", () => {
     const planner = buildRoleExecutionContract("planner", baseSettings);
     const verifier = buildRoleExecutionContract("verifier", baseSettings);
 
-    expect(planner.modelTier).toBe("smart");
-    expect(verifier.modelTier).toBe("smart");
+    expect(planner.modelTier).toBe("planner");
+    expect(verifier.modelTier).toBe("planner");
     expect(planner.allowedTools).toHaveLength(0);
     expect(verifier.allowedTools).toHaveLength(0);
   });
 
-  test("executor uses fast tier with node-scoped tools", () => {
+  test("executor uses executor tier with node-scoped tools", () => {
     const node = makeNode([ToolName.READ_PAGE, ToolName.CLICK_ELEMENT]);
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
-    expect(contract.modelTier).toBe("fast");
+    expect(contract.modelTier).toBe("executor");
     expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);

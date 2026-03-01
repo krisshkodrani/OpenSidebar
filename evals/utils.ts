@@ -105,11 +105,10 @@ export function readEvalResults(): EvalResult[] {
 
 export interface ApiKeys {
   openrouter: string;
-  cerebras?: string;
   groq?: string;
 }
 
-/** Load API keys from .env / .env.local. OpenRouter is required; Cerebras is optional. */
+/** Load API keys from .env / .env.local. OpenRouter is required; Groq is optional. */
 export function loadApiKeys(): ApiKeys {
   const envFile = join(PROJECT_ROOT, ".env");
   const localEnv = join(PROJECT_ROOT, ".env.local");
@@ -133,10 +132,9 @@ export function loadApiKeys(): ApiKeys {
     throw new Error("OPENROUTER_API_KEY not found in .env file");
   }
 
-  const cerebras = extractEnvVar(content, "CEREBRAS_API_KEY") || undefined;
   const groq = extractEnvVar(content, "GROQ_API_KEY") || undefined;
 
-  return { openrouter, cerebras, groq };
+  return { openrouter, groq };
 }
 
 /** Load OPENROUTER_API_KEY from .env file (backward compat wrapper) */

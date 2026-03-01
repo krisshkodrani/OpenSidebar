@@ -58,12 +58,12 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Per-workspace `AgentLoop` instances via `agentLoops = Map<workspaceId, AgentLoop>`.
 - `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data. Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline before smart model handoff.
+- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data. Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline before planner model handoff.
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text.
 - `agent/trace.ts` — `TraceRecorder`. Full-fidelity session recording (DOM snapshots, LLM requests/responses, tool executions, events). Drains to `traces/` via log server.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s. Fast pool: Cerebras (`gpt-oss-120b`) → Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Smart pool: Cerebras (`zai-glm-4.7`) → OpenRouter (`z-ai/glm-4.7`). `switchToSmart()` / `switchToFast()` for tier switching. GLM-4.7 has native reasoning (no reasoning parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution). Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s. Executor pool: Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Planner pool: OpenRouter (`deepseek/deepseek-v3.2`). `switchToPlanner()` / `switchToExecutor()` for tier switching. DeepSeek V3.2 has native reasoning (no reasoning parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution). Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 57 tools and bridges to content script / memory.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential).
 - `tools/react.ts` — React Toolkit: 4 on-demand tools (`inspect_react`, `react_set_input`, `inspect_react_tree`, `wait_for_react`) gated behind framework detection.
@@ -144,12 +144,12 @@ Two-tier model system with independent provider pools and automatic failover:
 
 | Tier | Models | Purpose |
 |------|--------|---------|
-| **Fast** (tier 0) | `gpt-oss-120b` (Cerebras → Groq → OpenRouter) | Default execution, most turns |
-| **Smart** (tier 1) | `zai-glm-4.7` / `z-ai/glm-4.7` (Cerebras → OpenRouter) | Escalation, planning, GLM-4.7 with native reasoning |
+| **Executor** (tier 0) | `openai/gpt-oss-120b` (Groq → OpenRouter) | Default execution, most turns |
+| **Planner** (tier 1) | `deepseek/deepseek-v3.2` (OpenRouter) | Escalation, planning, DeepSeek V3.2 with native reasoning |
 
 - `ProviderPool` manages cooldowns (60s on 429) and immediate failover
 - `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` for failover attribution
-- `stream_options: { include_usage: true }` ensures Cerebras/Groq return token counts
+- `stream_options: { include_usage: true }` ensures Groq returns token counts
 - `tool_choice: "auto"` sent when tools are present
 - Think-tag stripping: `stripThinkTags()` + `createThinkFilter()` in client.ts
 - Think blocks preserved raw in conversation history for reasoning chain continuity
@@ -161,13 +161,13 @@ For complex tasks, the orchestrator decomposes into a planner→executor→verif
 ```
 User Query
     ↓
-Planner (smart model)
+Planner (planner model)
     ↓ TaskNode graph
 [Pre-flight Review] ← Verifier reviews plan (≥3 nodes)
     ↓
-Executor (fast model) ← runs each node via AgentLoop
+Executor (executor model) ← runs each node via AgentLoop
     ↓ result + StructuredEvidence
-Verifier (smart model) ← validates against success criteria
+Verifier (planner model) ← validates against success criteria
     ↓
   ┌─accept──→ next node
   ├─retry───→ executor (with reflexion context)
@@ -193,10 +193,10 @@ Task Complete → [Skill Learning] (if teach mode ON)
 
 ### Escalation
 
-Two-tier escalation: tier 0 (fast) → tier 1 (smart):
+Two-tier escalation: tier 0 (executor) → tier 1 (planner):
 - Screenshots unlock at tier 1
 - Context distillation on escalation: `summarizeTrajectory()` replaces raw history with compact timeline
-- plan-then-act pattern: start smart (tier 1) for 2 turns, hand off to fast (tier 0)
+- plan-then-act pattern: start planner (tier 1) for 2 turns, hand off to executor (tier 0)
 - Text-only response: reflection → escalate (at 2, tier 0→1 only) → give-up (at 3)
 
 ## Skills System
@@ -314,7 +314,7 @@ src/
 │   ├── skills/
 │   │   └── store.ts      # SkillStore (learn + replay)
 │   ├── llm/
-│   │   ├── client.ts     # Multi-provider LLM client (Cerebras/Groq/OpenRouter)
+│   │   ├── client.ts     # Multi-provider LLM client (Groq/OpenRouter)
 │   │   └── types.ts      # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
 │   │   ├── index.ts      # 53 core tool definitions + registration
@@ -407,7 +407,6 @@ logs/                     # Application logs
 interface UserSettings {
   openRouterApiKey: string;
   groqApiKey: string;
-  cerebrasApiKey: string;
   maxTurns: number;
   contextWindowSize: number;
   enableMemory: boolean;
@@ -416,7 +415,6 @@ interface UserSettings {
   showElementTags: boolean;
   visionModel: string;
   confirmPlan: boolean;
-  speechProvider: "browser" | "groq";
   showSessionMetrics: boolean;
   teachModeEnabled: boolean;
   autoSkillReplay: boolean;
@@ -441,7 +439,7 @@ interface UserSettings {
 
 **Agent Control (4):** escalate, done, update_plan, pause_agent
 
-**Special:** escalate switches to smart model (GLM-4.7), update_plan broadcasts progress
+**Special:** escalate switches to planner model (DeepSeek V3.2), update_plan broadcasts progress
 
 ## Logging System
 

@@ -39,7 +39,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     parse: (tokens) => {
       const id = parseInt(tokens[0], 10);
       if (isNaN(id)) return "Usage: /click <id> — element tag ID required";
-      return { command: "tool", toolName: ToolName.CLICK_ELEMENT, args: { id } };
+      return {
+        command: "tool",
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id },
+      };
     },
   },
   type: {
@@ -51,7 +55,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
       if (isNaN(id)) return "Usage: /type <id> <text>";
       const text = tokens.slice(1).join(" ");
       if (!text) return "Usage: /type <id> <text> — text required";
-      return { command: "tool", toolName: ToolName.TYPE_TEXT, args: { id, text } };
+      return {
+        command: "tool",
+        toolName: ToolName.TYPE_TEXT,
+        args: { id, text },
+      };
     },
   },
   scroll: {
@@ -78,7 +86,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
       if (isNaN(id)) return "Usage: /select <id> <value>";
       const value = tokens.slice(1).join(" ");
       if (!value) return "Usage: /select <id> <value> — value required";
-      return { command: "tool", toolName: ToolName.SELECT_OPTION, args: { id, value } };
+      return {
+        command: "tool",
+        toolName: ToolName.SELECT_OPTION,
+        args: { id, value },
+      };
     },
   },
   hover: {
@@ -88,7 +100,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     parse: (tokens) => {
       const id = parseInt(tokens[0], 10);
       if (isNaN(id)) return "Usage: /hover <id>";
-      return { command: "tool", toolName: ToolName.HOVER_ELEMENT, args: { id } };
+      return {
+        command: "tool",
+        toolName: ToolName.HOVER_ELEMENT,
+        args: { id },
+      };
     },
   },
   key: {
@@ -97,7 +113,10 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     description: "Press a keyboard key",
     parse: (tokens) => {
       if (!tokens[0]) return "Usage: /key <key> [+modifier]";
-      const parts = tokens.join(" ").split("+").map((s) => s.trim());
+      const parts = tokens
+        .join(" ")
+        .split("+")
+        .map((s) => s.trim());
       const key = parts[0];
       const args: Record<string, unknown> = { key };
       if (parts.length > 1) args.modifiers = parts.slice(1);
@@ -111,7 +130,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     parse: (tokens) => {
       const text = tokens.join(" ");
       if (!text) return "Usage: /find <text>";
-      return { command: "tool", toolName: ToolName.FIND_ELEMENT, args: { text } };
+      return {
+        command: "tool",
+        toolName: ToolName.FIND_ELEMENT,
+        args: { text },
+      };
     },
   },
   navigate: {
@@ -130,12 +153,6 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     description: "Go back in history",
     parse: () => ({ command: "tool", toolName: ToolName.GO_BACK, args: {} }),
   },
-  forward: {
-    command: "tool",
-    syntax: "/forward",
-    description: "Go forward in history",
-    parse: () => ({ command: "tool", toolName: ToolName.GO_FORWARD, args: {} }),
-  },
   read: {
     command: "tool",
     syntax: "/read [id]",
@@ -143,7 +160,11 @@ const COMMAND_TABLE: Record<string, CommandDef> = {
     parse: (tokens) => {
       const id = parseInt(tokens[0], 10);
       if (!isNaN(id)) {
-        return { command: "tool", toolName: ToolName.READ_ELEMENT, args: { id } };
+        return {
+          command: "tool",
+          toolName: ToolName.READ_ELEMENT,
+          args: { id },
+        };
       }
       return { command: "tool", toolName: ToolName.READ_PAGE, args: {} };
     },
@@ -255,7 +276,8 @@ export function parseSlashCommand(input: string): ParsedCommand | string {
   const tokens = parts.slice(1);
 
   const def = COMMAND_TABLE[name];
-  if (!def) return `Unknown command: /${name}. Type /help for available commands.`;
+  if (!def)
+    return `Unknown command: /${name}. Type /help for available commands.`;
 
   return def.parse(tokens);
 }

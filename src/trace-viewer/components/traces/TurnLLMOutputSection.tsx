@@ -112,7 +112,11 @@ function ToolCallRequest({ tc }: { tc: ToolCall }) {
   const name = tc.function?.name || "unknown";
   let argsStr = "";
   try {
-    argsStr = JSON.stringify(JSON.parse(tc.function?.arguments || "{}"), null, 2);
+    argsStr = JSON.stringify(
+      JSON.parse(tc.function?.arguments || "{}"),
+      null,
+      2,
+    );
   } catch {
     argsStr = tc.function?.arguments || "";
   }

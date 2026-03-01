@@ -19,10 +19,11 @@ let persistTimeout: ReturnType<typeof setTimeout> | null = null;
 const MAX_PERSISTED_MESSAGES = 200;
 
 function chatStorageKey(wsId: string | null): string {
-  return wsId ? `chatMessages:${wsId}` : "chatMessages";
+  return `chatMessages:${wsId}`;
 }
 
 function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
+  if (wsId == null) return;
   if (persistTimeout) clearTimeout(persistTimeout);
   const key = chatStorageKey(wsId);
   persistTimeout = setTimeout(() => {
@@ -38,6 +39,7 @@ function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
 
 /** Flush pending debounced messages to storage immediately. */
 export function flushPersist(messages: ChatEntry[], wsId: string | null) {
+  if (wsId == null) return;
   if (persistTimeout) {
     clearTimeout(persistTimeout);
     persistTimeout = null;
@@ -166,13 +168,18 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
     set((state) => {
       state.messages = [];
       logger.info("ui", "Chat history cleared");
-      const key = chatStorageKey(get().activeWorkspaceId);
-      chrome.storage.local.set({ [key]: [] }).catch(() => {});
+      const wsId = get().activeWorkspaceId;
+      if (wsId != null) {
+        const key = chatStorageKey(wsId);
+        chrome.storage.local.set({ [key]: [] }).catch(() => {});
+      }
     }),
 
   loadMessagesFromStorage: async () => {
     try {
-      const key = chatStorageKey(get().activeWorkspaceId);
+      const wsId = get().activeWorkspaceId;
+      if (wsId == null) return;
+      const key = chatStorageKey(wsId);
       const result = await chrome.storage.local.get(key);
       if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
         const messages = (result[key] as ChatEntry[]).map((msg) =>

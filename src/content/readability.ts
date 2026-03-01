@@ -116,5 +116,8 @@ export function extractVisibleText(maxLength: number = 15000): string {
   }
 
   // Join and collapse whitespace
-  return chunks.join(" ").replace(/\s{2,}/g, " ").trim();
+  return chunks
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }

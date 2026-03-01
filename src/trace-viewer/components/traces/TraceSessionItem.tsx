@@ -1,6 +1,12 @@
 import React from "react";
 import Badge from "../Badge";
-import { outcomeClass, shortModel, formatTime, formatCost, truncate } from "../../utils";
+import {
+  outcomeClass,
+  shortModel,
+  formatTime,
+  formatCost,
+  truncate,
+} from "../../utils";
 
 interface TraceSessionItemProps {
   session: Record<string, unknown>;
@@ -34,7 +40,15 @@ export default function TraceSessionItem({
         <span className="text-[11px] text-trace-muted shrink-0">
           {formatTime(session.startTime as number)}
         </span>
-        <Badge variant={outcomeClass(session.outcome as string) as "completed" | "stopped" | "error" | "max_turns"}>
+        <Badge
+          variant={
+            outcomeClass(session.outcome as string) as
+              | "completed"
+              | "stopped"
+              | "error"
+              | "max_turns"
+          }
+        >
           {session.outcome as string}
         </Badge>
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
@@ -42,7 +56,9 @@ export default function TraceSessionItem({
             {(session.turnCount as number) || 0} turns
           </span>
           {cost && (
-            <span className="text-[11px] text-trace-subtle font-mono">{cost}</span>
+            <span className="text-[11px] text-trace-subtle font-mono">
+              {cost}
+            </span>
           )}
         </div>
       </div>
@@ -52,7 +68,16 @@ export default function TraceSessionItem({
       {models.length > 0 && (
         <div className="flex gap-1 mt-1 flex-wrap">
           {models.map((m, i) => (
-            <Badge key={i} variant={m === "manual" ? "manual" : m === "recording" ? "recording" : "model"}>
+            <Badge
+              key={i}
+              variant={
+                m === "manual"
+                  ? "manual"
+                  : m === "recording"
+                    ? "recording"
+                    : "model"
+              }
+            >
               {shortModel(m)}
             </Badge>
           ))}

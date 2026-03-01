@@ -28,7 +28,7 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │                  Orchestrator                         │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │ Planner  │  │ Executor │  │    Verifier       │   │   │
-│  │  │ (smart)  │  │  (fast)  │  │  (smart+critic)  │   │   │
+│  │  │(planner) │  │(executor)│  │ (planner+critic) │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │ Retry    │  │ Handoff  │  │   Skills Store    │   │   │
@@ -40,7 +40,7 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │                  Agent Loop                           │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │  LLM     │  │ Context  │  │   Tool Registry   │   │   │
-│  │  │ Client   │  │ Manager  │  │   (57 tools)      │   │   │
+│  │  │ Client   │  │ Manager  │  │   (39 tools)      │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │ Progress │  │  Prompt  │  │   Trace           │   │   │
@@ -73,10 +73,9 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │  Element    │  │   DOM       │  │   Action          │   │
 │  │  Tagging    │  │  Snapshot   │  │   Execution       │   │
 │  └─────────────┘  └─────────────┘  └──────────────────┘   │
-│  ┌─────────────┐  ┌──────────────────────────────────┐     │
-│  │  Framework  │  │  Auto-dismiss (modals/banners)   │     │
-│  │  Detection  │  └──────────────────────────────────┘     │
-│  └─────────────┘                                            │
+│  ┌──────────────────────────────────┐                       │
+│  │  Auto-dismiss (modals/banners)   │                       │
+│  └──────────────────────────────────┘                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -105,10 +104,10 @@ Background → LLM: Include result in next prompt
 ### 3. Orchestrator Pipeline
 
 ```
-Planner (smart LLM) → TaskNode graph
+Planner (planner LLM) → TaskNode graph
   [Pre-flight Review] ← Verifier validates plan (≥3 nodes)
-Executor (fast LLM via AgentLoop) → result + StructuredEvidence
-Verifier (smart LLM) → accept / retry / reroute
+Executor (executor LLM via AgentLoop) → result + StructuredEvidence
+Verifier (planner LLM) → accept / retry / reroute
   [Advocate] challenges retries (low confidence)
   [Retrospective] planner learns from failures
   [Skill Learning] on success with teach mode
@@ -150,8 +149,8 @@ Background → Side Panel: TASK_COMPLETION (with metrics summary)
 | **Package Manager** | npm                                             |
 | **UI**              | React 18 + Tailwind CSS 3.4                     |
 | **State**           | Zustand + Immer                                 |
-| **Fast LLM**        | GPT-OSS-120B (Cerebras → Groq → OpenRouter)     |
-| **Smart LLM**       | GLM-4.7 (Cerebras → OpenRouter), native reasoning |
+| **Executor LLM**    | GPT-OSS-120B (Groq → OpenRouter)                 |
+| **Planner LLM**     | DeepSeek V3.2 (OpenRouter), native reasoning      |
 | **Perception**      | Groq Llama 4 Scout → OpenRouter GPT-4o-mini      |
 | **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)              |
 | **Vector Search**   | Voy (WASM)                                      |
@@ -185,13 +184,12 @@ src/
 │   ├── skills/
 │   │   └── store.ts     # SkillStore (learn + replay)
 │   ├── llm/
-│   │   ├── client.ts    # Multi-provider client (Cerebras/Groq/OpenRouter)
+│   │   ├── client.ts    # Multi-provider client (Groq/OpenRouter)
 │   │   └── types.ts     # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
-│   │   ├── index.ts     # 57 tool definitions
+│   │   ├── index.ts     # 39 tool definitions
 │   │   ├── registry.ts  # ToolRegistry
-│   │   ├── metadata.ts  # ToolMeta, pre-computed sets
-│   │   └── react.ts     # React Toolkit (4 on-demand tools)
+│   │   └── metadata.ts  # ToolMeta, pre-computed sets
 │   ├── memory/          # Offscreen document bridge
 │   ├── workspaces/      # Workspace/Tab Group management
 │   ├── perception.ts    # Perception layer (vision-based page understanding)
@@ -203,8 +201,7 @@ src/
 │   ├── content.ts       # Message listener + auto-dismiss
 │   ├── snapshot.ts      # DOM distillation
 │   ├── tagging.ts       # Element tagging (stable hash IDs)
-│   ├── actions.ts       # Tool execution (DOM actions)
-│   └── framework-detect.ts # React detection
+│   └── actions.ts       # Tool execution (DOM actions)
 ├── prompts/             # Prompt registry
 │   ├── registry.ts      # Versioned prompt templates
 │   ├── types.ts         # PromptId union type
@@ -237,7 +234,7 @@ All inter-context communication uses typed discriminated unions (`RuntimeMessage
 
 ### 2. Two-Tier LLM Architecture
 
-Independent provider pools for fast (GPT-OSS-120B) and smart (GLM-4.7) tiers. Automatic failover across Cerebras → Groq → OpenRouter. Smart tier uses native reasoning (no reasoning parameter).
+Independent provider pools for executor (GPT-OSS-120B) and planner (DeepSeek V3.2) tiers. Automatic failover across Groq → OpenRouter. Planner tier uses native reasoning (no reasoning parameter).
 
 ### 3. Orchestrator Pipeline
 
@@ -298,8 +295,8 @@ Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the 
 - [Agent Loop](./agent-loop.md) - Core execution engine
 - [Navigation Bridge](./navigation-bridge.md) - State persistence
 - [Memory System](./memory-system.md) - RAG implementation
-- [Tools](./tools.md) - 57 tool definitions
+- [Tools](./tools.md) - 39 tool definitions
 - [Types Reference](./types-reference.md) - TypeScript types
 - [Message Protocol](./message-protocol.md) - Message passing
 - [Side Panel UI](./sidepanel-ui.md) - React UI
-- [Fast-Smart Collaboration](./fast-smart-collaboration.md) - Two-tier LLM system
+- [Executor-Planner Collaboration](./fast-smart-collaboration.md) - Two-tier LLM system

@@ -26,12 +26,24 @@ function StepIcon({ step }: { step: AgentStep }) {
   }
   // Contextual done icons
   if (step.type === "thinking") {
-    return <Brain size={12} className="text-warm-400 dark:text-warm-500 shrink-0" />;
+    return (
+      <Brain size={12} className="text-warm-400 dark:text-warm-500 shrink-0" />
+    );
   }
   if (step.type === "tool") {
-    return <MousePointerClick size={12} className="text-warm-400 dark:text-warm-500 shrink-0" />;
+    return (
+      <MousePointerClick
+        size={12}
+        className="text-warm-400 dark:text-warm-500 shrink-0"
+      />
+    );
   }
-  return <CheckCircle size={12} className="text-warm-400 dark:text-warm-500 shrink-0" />;
+  return (
+    <CheckCircle
+      size={12}
+      className="text-warm-400 dark:text-warm-500 shrink-0"
+    />
+  );
 }
 
 function formatDuration(ms: number): string {
@@ -45,10 +57,9 @@ function StepRow({ step }: { step: AgentStep }) {
   const isRunning = step.status === "running";
 
   return (
-    <div className={clsx(
-      "transition-all duration-200",
-      isRunning && "step-enter",
-    )}>
+    <div
+      className={clsx("transition-all duration-200", isRunning && "step-enter")}
+    >
       <button
         onClick={() => step.detail && setExpanded(!expanded)}
         className={clsx(

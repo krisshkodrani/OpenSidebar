@@ -4,7 +4,7 @@
  * Implements all DOM-manipulating tools:
  * - click_element, type_text, scroll_page
  * - hover_element, find_element, select_option
- * - press_key, drag_and_drop, draw_stroke
+ * - press_key, drag_and_drop
  * - hide_element
  *
  * Each function receives arguments from the tool call and performs
@@ -21,7 +21,6 @@ import {
   SelectOptionArgs,
   PressKeyArgs,
   DragAndDropArgs,
-  DrawStrokeArgs,
   HideElementArgs,
   ReadElementArgs,
   RightClickArgs,
@@ -54,6 +53,18 @@ function staleIdError(id: number): {
     result: `No element with tag [${id}]${hint}`,
     navigated: false,
   };
+}
+
+/** Build a compact semantic description of an element for tool result strings. */
+function describeElement(el: Element, id: number): string {
+  const tag = el.tagName.toLowerCase();
+  const text = getVisibleText(el).slice(0, 40);
+  const label =
+    el.getAttribute("aria-label") || el.getAttribute("name") || "";
+  const parts = [`[${id}] <${tag}>`];
+  if (label) parts.push(`"${label}"`);
+  else if (text) parts.push(`"${text}"`);
+  return parts.join(" ");
 }
 
 /** Overlay detection selectors (matches semantic overlay CSS classes/roles) */
@@ -166,8 +177,6 @@ export async function executeAction(
       return executePressKey(args as unknown as PressKeyArgs);
     case ToolName.DRAG_AND_DROP:
       return executeDragAndDrop(args as unknown as DragAndDropArgs);
-    case ToolName.DRAW_STROKE:
-      return executeDrawStroke(args as unknown as DrawStrokeArgs);
     case ToolName.HIDE_ELEMENT:
       return executeHideElement(args as unknown as HideElementArgs);
     case ToolName.READ_ELEMENT:
@@ -358,8 +367,11 @@ function executeType(args: TypeTextArgs): {
     };
   }
 
-  // Focus the element
-  if (el instanceof HTMLElement) el.focus();
+  // Scroll into view and focus the element
+  if (el instanceof HTMLElement) {
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    el.focus();
+  }
 
   // Clear existing value using native setter
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
@@ -432,7 +444,7 @@ function executeType(args: TypeTextArgs): {
 
   return {
     success: true,
-    result: `Typed "${args.text}" into [${args.id}]${args.pressEnter ? " and pressed Enter" : ""}`,
+    result: `Typed "${args.text}" into ${describeElement(el, args.id)}${args.pressEnter ? " and pressed Enter" : ""}`,
     navigated,
   };
 }
@@ -562,7 +574,7 @@ function executeHover(args: { id: number }): {
 
   return {
     success: true,
-    result: `Hovered over element [${args.id}]`,
+    result: `Hovered over ${describeElement(el, args.id)}`,
     navigated: false,
   };
 }
@@ -751,14 +763,15 @@ function executeSelectOption(args: SelectOptionArgs): {
     };
   }
 
-  // Set the value and dispatch change event
+  // Scroll into view, set the value and dispatch change event
+  el.scrollIntoView({ behavior: "instant", block: "center" });
   el.value = match.value;
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.dispatchEvent(new Event("input", { bubbles: true }));
 
   return {
     success: true,
-    result: `Selected "${match.textContent?.trim()}" in [${args.id}]`,
+    result: `Selected "${match.textContent?.trim()}" in ${describeElement(el, args.id)}`,
     navigated: false,
   };
 }
@@ -910,55 +923,6 @@ function executeDragAndDrop(args: DragAndDropArgs): {
   };
 }
 
-function executeDrawStroke(args: DrawStrokeArgs): {
-  success: boolean;
-  result: string;
-  navigated: boolean;
-} {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
-  if (!el) {
-    return staleIdError(args.id);
-  }
-
-  el.scrollIntoView({ behavior: "instant", block: "center" });
-  const rect = el.getBoundingClientRect();
-
-  const toClient = (offX: number, offY: number) => ({
-    clientX: rect.left + offX,
-    clientY: rect.top + offY,
-  });
-
-  const STEPS = 10;
-  const start = toClient(args.startX, args.startY);
-
-  el.dispatchEvent(
-    new MouseEvent("mousedown", { ...start, bubbles: true, cancelable: true }),
-  );
-
-  for (let i = 1; i <= STEPS; i++) {
-    const t = i / STEPS;
-    const pt = toClient(
-      args.startX + (args.endX - args.startX) * t,
-      args.startY + (args.endY - args.startY) * t,
-    );
-    el.dispatchEvent(
-      new MouseEvent("mousemove", { ...pt, bubbles: true, cancelable: true }),
-    );
-  }
-
-  const end = toClient(args.endX, args.endY);
-  el.dispatchEvent(
-    new MouseEvent("mouseup", { ...end, bubbles: true, cancelable: true }),
-  );
-
-  return {
-    success: true,
-    result: `Drew stroke on [${args.id}] from (${args.startX},${args.startY}) to (${args.endX},${args.endY})`,
-    navigated: false,
-  };
-}
-
 /**
  * Walk up from an element to find the nearest overlay ancestor.
  * Used by executeHideElement to support hiding modals via their child elements.
@@ -1026,9 +990,11 @@ function executeHideElement(args: HideElementArgs): {
   }
 
   const targetTag = ancestorUsed ? addDynamicTag(target) : args.id;
+  const targetText = getVisibleText(target).slice(0, 40);
+  const textSnippet = targetText ? ` "${targetText}"` : "";
   const msg = ancestorUsed
-    ? `Hidden overlay ancestor [${targetTag}] <${target.tagName.toLowerCase()}> (parent of [${args.id}])`
-    : `Hidden element [${args.id}] <${target.tagName.toLowerCase()}>`;
+    ? `Hidden overlay ancestor [${targetTag}] <${target.tagName.toLowerCase()}>${textSnippet} (parent of [${args.id}])`
+    : `Hidden element [${args.id}] <${target.tagName.toLowerCase()}>${textSnippet}`;
 
   return { success: true, result: msg, navigated: false };
 }
@@ -1044,6 +1010,10 @@ function executeReadElement(args: ReadElementArgs): {
     return staleIdError(args.id);
   }
 
+  if (el instanceof HTMLElement) {
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+  }
+
   if (args.attribute) {
     const value = el.getAttribute(args.attribute);
     if (value === null) {
@@ -1056,17 +1026,19 @@ function executeReadElement(args: ReadElementArgs): {
         navigated: false,
       };
     }
+    const desc = describeElement(el, args.id);
     return {
       success: true,
-      result: truncateText(value, 2000),
+      result: `${desc} ${args.attribute}="${truncateText(value, 2000)}"`,
       navigated: false,
     };
   }
 
+  const desc = describeElement(el, args.id);
   const text = el.textContent || "";
   return {
     success: true,
-    result: truncateText(text, 2000),
+    result: `${desc}: ${truncateText(text, 2000)}`,
     navigated: false,
   };
 }
@@ -1089,7 +1061,7 @@ function executeRightClick(args: RightClickArgs): {
 
   return {
     success: true,
-    result: `Right-clicked element [${args.id}]`,
+    result: `Right-clicked ${describeElement(el, args.id)}`,
     navigated: false,
   };
 }
@@ -1116,13 +1088,14 @@ function executeSetCheckbox(args: SetCheckboxArgs): {
     };
   }
 
+  el.scrollIntoView({ behavior: "instant", block: "center" });
   el.checked = args.checked;
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
 
   return {
     success: true,
-    result: `Set [${args.id}] checked=${args.checked}`,
+    result: `Set ${describeElement(el, args.id)} checked=${args.checked}`,
     navigated: false,
   };
 }
@@ -1193,6 +1166,8 @@ function executeUploadFile(args: Record<string, unknown>): {
     };
   }
 
+  el.scrollIntoView({ behavior: "instant", block: "center" });
+
   // Args contain pre-processed file data from the service worker
   const data = args.data as string; // base64-encoded
   const filename = args.filename as string;
@@ -1214,7 +1189,7 @@ function executeUploadFile(args: Record<string, unknown>): {
 
     return {
       success: true,
-      result: `Uploaded "${filename}" (${byteArray.length} bytes) to [${args.id}]`,
+      result: `Uploaded "${filename}" (${byteArray.length} bytes) to ${describeElement(el, args.id as number)}`,
       navigated: false,
     };
   } catch (e: any) {

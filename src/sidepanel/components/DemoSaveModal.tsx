@@ -104,8 +104,7 @@ export function DemoSaveModal({
           {/* Goal */}
           <div>
             <label className="block text-[11px] font-medium text-warm-600 dark:text-warm-400 mb-1">
-              Goal{" "}
-              <span className="text-warm-400 font-normal">optional</span>
+              Goal <span className="text-warm-400 font-normal">optional</span>
             </label>
             <input
               type="text"
@@ -126,11 +125,10 @@ export function DemoSaveModal({
               type="text"
               value={outcomeSignal}
               onChange={(e) => setOutcomeSignal(e.target.value)}
-              placeholder='e.g. URL contains /dashboard'
+              placeholder="e.g. URL contains /dashboard"
               className={inputClass}
             />
           </div>
-
         </div>
 
         {/* Footer */}

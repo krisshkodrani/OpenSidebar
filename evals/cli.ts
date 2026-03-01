@@ -64,7 +64,7 @@ import {
 } from "./stagnation-extractor";
 import { runStagnationEvals } from "./stagnation-runner";
 import { buildStagnationReport } from "./stagnation-report";
-import { runEscalationEvals, type SmartModel } from "./escalation-runner";
+import { runEscalationEvals, type PlannerModel } from "./escalation-runner";
 import { buildEscalationReport } from "./escalation-report";
 import { runCompletionTimingEvals, type CompletionTimingProvider } from "./completion-timing-runner";
 import { buildCompletionTimingReport } from "./completion-timing-report";
@@ -1204,8 +1204,8 @@ async function cmdE2ECritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EProvider : undefined;
-  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
     process.exit(1);
   }
   const stepIdx = args.indexOf("--step");
@@ -1327,8 +1327,8 @@ async function cmdE2EValidate() {
 async function cmdE2EMultiturn(args: string[]) {
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EMultiturnProvider : undefined;
-  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
     process.exit(1);
   }
   const stepIdx = args.indexOf("--step");
@@ -1417,7 +1417,7 @@ Commands:
       --model <m>           Override replay model
       --tag <p>             Filter by pathology tag
       --out <dir>           Output directory (default: evals/reports)
-      --provider <p>        Force provider: cerebras or openrouter (auto-selects cerebras if key present)
+      --provider <p>        Force provider: groq or openrouter (auto-selects groq if key present)
 
   perception-extract <session-id> <turn> [options]
     Extract a perception eval case from a trace turn
@@ -1485,8 +1485,8 @@ Planner eval commands:
     --judge           Enable LLM-as-judge
     --dimension <d>   Filter by dimension
     --method <m>      Filter by method
-    --model <m>       Override planner model (default: z-ai/glm-4.7)
-    --reasoning <e>   Reasoning effort for GPT-OSS models: low|medium|high
+    --model <m>       Override planner model (default: deepseek/deepseek-v3.2-speciale)
+    --reasoning <e>   Reasoning effort: low|medium|high (model-dependent)
     --out <dir>       Output directory
 
 Context eval commands:
@@ -1515,7 +1515,7 @@ Stagnation eval commands:
 
 E2E eval commands:
   e2e-critique [options]                 Replay E2E golden cases, score, judge, report
-    --provider <p>    Force provider: cerebras or openrouter
+    --provider <p>    Force provider: groq or openrouter
     --judge           Enable LLM-as-judge
     --step <n>        Filter by step number
     --out <dir>       Output directory (default: evals/reports)
@@ -1523,13 +1523,13 @@ E2E eval commands:
   e2e-validate                           Structural validation of E2E golden cases (offline)
 
   e2e-multiturn [options]                Oracle-guided multi-turn replay eval
-    --provider <p>    Force provider: cerebras or openrouter
+    --provider <p>    Force provider: groq or openrouter
     --step <n>        Filter by step number
     --out <dir>       Output directory (default: evals/reports)
 
 Completion-timing eval commands:
   completion-timing-critique [options]   Replay completion-timing cases, score, judge, report
-    --provider <p>    Force provider: cerebras or openrouter
+    --provider <p>    Force provider: groq or openrouter
     --judge           Enable LLM-as-judge
     --scenario <s>    Filter by scenario
     --out <dir>       Output directory (default: evals/reports)
@@ -1608,8 +1608,8 @@ async function cmdCritique(args: string[]) {
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as EvalProvider : undefined;
-  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
     process.exit(1);
   }
 
@@ -1675,7 +1675,7 @@ async function cmdCritique(args: string[]) {
     process.exit(1);
   }
 
-  const provider: EvalProvider = providerArg ?? (keys.cerebras ? "cerebras" : "openrouter");
+  const provider: EvalProvider = providerArg ?? (keys.groq ? "groq" : "openrouter");
 
   console.log(`${c.bold}Running critique on ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
@@ -1837,10 +1837,10 @@ function pct(n: number, total: number): string {
 
 async function cmdEscalationCritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
-  const smartModelIdx = args.indexOf("--smart-model");
-  const smartModelArg = smartModelIdx !== -1 ? args[smartModelIdx + 1] : "reasoning";
-  if (smartModelArg !== "reasoning" && smartModelArg !== "glm") {
-    console.error(`${c.red}Invalid --smart-model: ${smartModelArg}. Use "reasoning" or "glm".${c.reset}`);
+  const plannerModelIdx = args.indexOf("--planner-model");
+  const plannerModelArg = plannerModelIdx !== -1 ? args[plannerModelIdx + 1] : "deepseek";
+  if (plannerModelArg !== "deepseek" && plannerModelArg !== "deepseek-base") {
+    console.error(`${c.red}Invalid --planner-model: ${plannerModelArg}. Use "deepseek" or "deepseek-base".${c.reset}`);
     process.exit(1);
   }
   const scenarioIdx = args.indexOf("--scenario");
@@ -1864,12 +1864,12 @@ async function cmdEscalationCritique(args: string[]) {
     process.exit(1);
   }
 
-  const smartLabel = smartModelArg === "reasoning" ? "gpt-oss+reasoning" : "glm-4.7";
-  console.log(`${c.bold}Escalation Critique: ${cases.length} golden case(s) [smart: ${smartLabel}]${c.reset}\n`);
+  const plannerLabel = "deepseek-v3.2";
+  console.log(`${c.bold}Escalation Critique: ${cases.length} golden case(s) [planner: ${plannerLabel}]${c.reset}\n`);
 
   const results = await runEscalationEvals({
     keys,
-    smartModel: smartModelArg as SmartModel,
+    plannerModel: plannerModelArg as PlannerModel,
     judge: judgeFlag,
     scenarioFilter,
   });
@@ -1949,7 +1949,7 @@ async function cmdEscalationValidate() {
         `  ${c.green}VALID${c.reset}   ${goldenCase.id} ` +
         `(${goldenCase.scenario}, ${goldenCase.difficulty}, ` +
         `${goldenCase.fastPhase.stagnantHistory.length} stagnant turns, ` +
-        `smart: ${goldenCase.expectedSmartAction.toolName}${altCount > 0 ? ` +${altCount} alt` : ""})`,
+        `planner: ${goldenCase.expectedSmartAction.toolName}${altCount > 0 ? ` +${altCount} alt` : ""})`,
       );
       valid++;
     }
@@ -1965,8 +1965,8 @@ async function cmdCompletionTimingCritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
-  if (providerArg && providerArg !== "cerebras" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "cerebras" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
     process.exit(1);
   }
   const scenarioIdx = args.indexOf("--scenario");
@@ -1990,7 +1990,7 @@ async function cmdCompletionTimingCritique(args: string[]) {
     process.exit(1);
   }
 
-  const provider: CompletionTimingProvider = (providerArg as CompletionTimingProvider) ?? (keys.cerebras ? "cerebras" : "openrouter");
+  const provider: CompletionTimingProvider = (providerArg as CompletionTimingProvider) ?? (keys.groq ? "groq" : "openrouter");
   console.log(`${c.bold}Completion-Timing Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
   const results = await runCompletionTimingEvals({

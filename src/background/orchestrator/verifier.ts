@@ -1,9 +1,7 @@
 import { LLMClient } from "../llm";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
-import {
-  StructuredEvidence,
-} from "./types";
+import { StructuredEvidence } from "./types";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -52,12 +50,7 @@ const BLOCKED_MARKERS = [
   "timeout",
 ];
 
-const SUCCESS_MARKERS = [
-  "completed",
-  "success",
-  "done",
-  "verified",
-];
+const SUCCESS_MARKERS = ["completed", "success", "done", "verified"];
 
 const ERROR_MARKERS = [
   "error",
@@ -80,7 +73,10 @@ export function programmaticVerify(
   if (!text) return null;
 
   // Blocked markers → reroute (skip when executor completed — markers may be page content)
-  if (input.executorOutcome !== "completed" && BLOCKED_MARKERS.some((m) => text.includes(m))) {
+  if (
+    input.executorOutcome !== "completed" &&
+    BLOCKED_MARKERS.some((m) => text.includes(m))
+  ) {
     return {
       decision: "reroute",
       reason: "Execution appears blocked by page constraints.",
@@ -144,10 +140,15 @@ export function programmaticVerify(
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
-  const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "").trim();
+  const cleaned = text
+    .replace(/```(?:json)?\s*/g, "")
+    .replace(/```/g, "")
+    .trim();
   try {
     const parsed = JSON.parse(cleaned);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) return null;
@@ -162,8 +163,11 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-function normalizeDecision(value: unknown): NodeVerificationResult["decision"] | null {
-  if (value === "accept" || value === "retry" || value === "reroute") return value;
+function normalizeDecision(
+  value: unknown,
+): NodeVerificationResult["decision"] | null {
+  if (value === "accept" || value === "retry" || value === "reroute")
+    return value;
   return null;
 }
 
@@ -199,7 +203,10 @@ export function deriveVerifierFallbackDecision(
     };
   }
 
-  if (input.executorOutcome !== "completed" && BLOCKED_MARKERS.some((m) => text.includes(m))) {
+  if (
+    input.executorOutcome !== "completed" &&
+    BLOCKED_MARKERS.some((m) => text.includes(m))
+  ) {
     return {
       decision: "reroute",
       reason: "Execution appears blocked by page constraints.",
@@ -213,7 +220,8 @@ export function deriveVerifierFallbackDecision(
   if (input.executorOutcome === "completed") {
     return {
       decision: "accept",
-      reason: "Executor completed; verifier parse failed, accepting on executor signal.",
+      reason:
+        "Executor completed; verifier parse failed, accepting on executor signal.",
       confidence: 0.7,
     };
   }
@@ -242,9 +250,9 @@ export function deriveVerifierFallbackDecision(
 export class OrchestratorVerifier {
   private llm: LLMClient;
 
-  constructor(openRouterApiKey: string, cerebrasApiKey?: string) {
-    this.llm = new LLMClient(openRouterApiKey, undefined, cerebrasApiKey);
-    this.llm.switchToSmart();
+  constructor(openRouterApiKey: string) {
+    this.llm = new LLMClient(openRouterApiKey);
+    this.llm.switchToPlanner();
   }
 
   async advise(
@@ -320,7 +328,8 @@ export class OrchestratorVerifier {
       }
 
       if (decision === "reroute") {
-        const failureType = normalizeFailureType(parsed?.failureType) ?? "blocked";
+        const failureType =
+          normalizeFailureType(parsed?.failureType) ?? "blocked";
         const rerouteObjective =
           typeof parsed?.rerouteObjective === "string" &&
           parsed.rerouteObjective.trim().length > 0
@@ -339,7 +348,8 @@ export class OrchestratorVerifier {
       const failureType =
         decision === "accept"
           ? undefined
-          : normalizeFailureType(parsed?.failureType) ?? "insufficient_evidence";
+          : (normalizeFailureType(parsed?.failureType) ??
+            "insufficient_evidence");
 
       logger.debug("orchestrator", "Verifier parsed decision", {
         objective: input.objective,
@@ -356,5 +366,4 @@ export class OrchestratorVerifier {
       return deriveVerifierFallbackDecision(input);
     }
   }
-
 }

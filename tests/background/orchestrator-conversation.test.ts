@@ -33,27 +33,17 @@ let loopStartImpl: (
 let loopEmitStaleSignal: boolean;
 let orchestratorDeps: OrchestratorDeps;
 let activeOrchestrator: Orchestrator | null = null;
-let skillStoreSnapshot: any[] = [];
-
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-openrouter",
   groqApiKey: "",
-  cerebrasApiKey: "",
   maxTurns: 10,
   contextWindowSize: 16000,
-  memoryEnabled: true,
   workspaceEnabled: true,
   theme: "system",
-  showElementTags: false,
-  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: false,
-  disableScreenshot: false,
   disableNavigation: false,
   bypassApprovals: true,
-  speechProvider: "groq",
   orchestratorMaxWorkers: 3,
-  teachModeEnabled: false,
-  autoSkillReplayEnabled: false,
 };
 
 function makeNode(
@@ -105,7 +95,6 @@ describe("Orchestrator conversation collaboration", () => {
 
     const runtimeMessages: any[] = [];
     const checkpointStore: Record<string, unknown> = {};
-    skillStoreSnapshot = [];
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -138,9 +127,6 @@ describe("Orchestrator conversation collaboration", () => {
       if (key === "opensidebar:orchestrator:checkpoints") {
         return { [key]: checkpointStore };
       }
-      if (key === "opensidebar:skills:v1") {
-        return { [key]: skillStoreSnapshot };
-      }
       return {};
     });
     (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
@@ -151,10 +137,6 @@ describe("Orchestrator conversation collaboration", () => {
         for (const k of Object.keys(checkpointStore)) {
           if (!(k in value)) delete checkpointStore[k];
         }
-      }
-      const skillKey = "opensidebar:skills:v1";
-      if (Array.isArray(payload[skillKey])) {
-        skillStoreSnapshot = payload[skillKey] as any[];
       }
     });
 

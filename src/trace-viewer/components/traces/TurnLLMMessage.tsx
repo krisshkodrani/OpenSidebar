@@ -16,7 +16,9 @@ export default function TurnLLMMessage({
   const [open, setOpen] = useState(false);
   const role = (msg.role as string) || "unknown";
   const contentText = (msg.content as string) || "";
-  const toolCalls = msg.tool_calls as Array<{ function?: { name?: string } }> | undefined;
+  const toolCalls = msg.tool_calls as
+    | Array<{ function?: { name?: string } }>
+    | undefined;
 
   let tokEst = Math.ceil(contentText.length / 4);
   if (toolCalls) tokEst += Math.ceil(JSON.stringify(toolCalls).length / 4);
@@ -41,7 +43,10 @@ export default function TurnLLMMessage({
   }
 
   const hasCachedSplit =
-    role === "system" && cachedPrefixLength && cachedPrefixLength > 0 && contentText.length > cachedPrefixLength;
+    role === "system" &&
+    cachedPrefixLength &&
+    cachedPrefixLength > 0 &&
+    contentText.length > cachedPrefixLength;
 
   return (
     <div className="border border-[rgba(15,52,96,0.3)] rounded mb-1 overflow-hidden">

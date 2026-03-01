@@ -143,7 +143,7 @@ function emitAction(action: DemoAction, targetEl?: Element): void {
     }
 
     // Re-tag after DOM changes from the action
-    requestAnimationFrame(() => tagElements(false));
+    requestAnimationFrame(() => tagElements());
   } else {
     // Normal mode: emit simple DEMO_ACTION_CAPTURED
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
@@ -433,7 +433,7 @@ export function stopRecording(): DemoAction[] {
 export function startGoldenRecording(): void {
   goldenMode = true;
   // Tag the page so elements have data-os-tag attributes
-  tagElements(false);
+  tagElements();
   startRecording();
 }
 

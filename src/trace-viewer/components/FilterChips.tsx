@@ -11,7 +11,11 @@ interface FilterChipsProps {
   onClearAll: () => void;
 }
 
-export default function FilterChips({ chips, onRemove, onClearAll }: FilterChipsProps) {
+export default function FilterChips({
+  chips,
+  onRemove,
+  onClearAll,
+}: FilterChipsProps) {
   if (chips.length === 0) return null;
 
   return (

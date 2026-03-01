@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 import { executeAction, isLikelyOverlay } from "../../src/content/actions";
@@ -8,14 +8,14 @@ describe("Content Actions", () => {
     beforeEach(() => {
         document.body.innerHTML = "";
         resetStableIds();
-        tagElements(false);
+        tagElements();
     });
 
     describe("executeFindElement", () => {
         test("returns not-found when text doesn't exist", async () => {
             document.body.innerHTML = "<p>Hello world</p>";
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = () => false;
@@ -38,7 +38,7 @@ describe("Content Actions", () => {
                 </div>
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = (text: string) => {
@@ -73,7 +73,7 @@ describe("Content Actions", () => {
                 </div>
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = (text: string) => {
@@ -103,7 +103,7 @@ describe("Content Actions", () => {
                 <p id="container">Click <a href="/action" id="inner-link">here</a> to continue</p>
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = (text: string) => {
@@ -134,7 +134,7 @@ describe("Content Actions", () => {
         test("clears selection after tagging", async () => {
             document.body.innerHTML = "<p>Some text here</p>";
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = (text: string) => {
@@ -161,7 +161,7 @@ describe("Content Actions", () => {
         test("dynamic tag persists in tagMap for interaction", async () => {
             document.body.innerHTML = "<p>Target paragraph</p>";
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const origFind = (window as any).find;
             (window as any).find = (text: string) => {
@@ -198,7 +198,7 @@ describe("Content Actions", () => {
                 <input type="text" placeholder="Name" />
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
 
             const result = await executeAction(ToolName.READ_PAGE, {});
             expect(result.success).toBe(true);
@@ -285,7 +285,7 @@ describe("Content Actions", () => {
         test("hides an overlay element (role=dialog)", async () => {
             document.body.innerHTML = '<div role="dialog" id="overlay"><button>Close</button></div>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let overlayTag = -1;
             for (const [tag, el] of tagMap) {
@@ -309,7 +309,7 @@ describe("Content Actions", () => {
         test("hides a fixed + high z-index overlay", async () => {
             document.body.innerHTML = '<div id="popup" style="position: fixed; z-index: 9999;">Popup</div>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const el = document.getElementById("popup")!;
             const tag = addDynamicTag(el);
 
@@ -322,7 +322,7 @@ describe("Content Actions", () => {
         test("rejects non-overlay element", async () => {
             document.body.innerHTML = '<p id="content">Important content</p>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const el = document.getElementById("content")!;
             const tag = addDynamicTag(el);
 
@@ -336,7 +336,7 @@ describe("Content Actions", () => {
         test("rejects normal button element", async () => {
             document.body.innerHTML = '<button id="btn">Submit</button>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -352,7 +352,7 @@ describe("Content Actions", () => {
         test("rejects normal input element", async () => {
             document.body.innerHTML = '<input id="inp" type="text" />';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let inpTag = -1;
             for (const [tag, el] of tagMap) {
@@ -373,7 +373,7 @@ describe("Content Actions", () => {
                 </div>
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -398,7 +398,7 @@ describe("Content Actions", () => {
                 </div>
             `;
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -430,7 +430,7 @@ describe("Content Actions", () => {
         test("dispatches multiple click sequences when count > 1", async () => {
             document.body.innerHTML = '<button id="btn">Click me 3 times</button>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -452,7 +452,7 @@ describe("Content Actions", () => {
         test("defaults to 1 click when count is omitted", async () => {
             document.body.innerHTML = '<button id="btn">Click me</button>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -472,7 +472,7 @@ describe("Content Actions", () => {
         test("clamps count to max 10", async () => {
             document.body.innerHTML = '<button id="btn">Click</button>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let btnTag = -1;
             for (const [tag, el] of tagMap) {
@@ -494,7 +494,7 @@ describe("Content Actions", () => {
         test("fires InputEvent with data and inputType properties", async () => {
             document.body.innerHTML = '<input id="inp" type="text" />';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let inpTag = -1;
             for (const [tag, el] of tagMap) {
@@ -525,7 +525,7 @@ describe("Content Actions", () => {
         test("final value is correct after typing", async () => {
             document.body.innerHTML = '<input id="inp" type="text" />';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let inpTag = -1;
             for (const [tag, el] of tagMap) {
@@ -539,7 +539,7 @@ describe("Content Actions", () => {
         test("contenteditable uses textContent approach", async () => {
             document.body.innerHTML = '<div id="editable" contenteditable="true"></div>';
             resetStableIds();
-            tagElements(false);
+            tagElements();
             const tagMap = getTagMap();
             let editTag = -1;
             for (const [tag, el] of tagMap) {
@@ -550,6 +550,141 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.TYPE_TEXT, { id: editTag, text: "hi" });
             expect(result.success).toBe(true);
             expect(document.getElementById("editable")!.textContent).toBe("hi");
+        });
+    });
+
+    describe("enriched tool results", () => {
+        test("type_text result includes element description", async () => {
+            document.body.innerHTML = '<input id="email" type="email" aria-label="Email address" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let inputTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "email") { inputTag = tag; break; }
+            }
+            expect(inputTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.TYPE_TEXT, { id: inputTag, text: "user@test.com" });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("<input>");
+            expect(result.result).toContain('"Email address"');
+        });
+
+        test("hover result includes element description", async () => {
+            document.body.innerHTML = '<button id="submit-btn">Submit</button>';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let btnTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "submit-btn") { btnTag = tag; break; }
+            }
+            expect(btnTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.HOVER_ELEMENT, { id: btnTag });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("<button>");
+            expect(result.result).toContain('"Submit"');
+        });
+
+        test("select_option result includes element description", async () => {
+            document.body.innerHTML = `
+                <select id="shipping" name="shipping">
+                    <option value="standard">Standard</option>
+                    <option value="express">Express</option>
+                </select>`;
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let selectTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "shipping") { selectTag = tag; break; }
+            }
+            expect(selectTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.SELECT_OPTION, { id: selectTag, value: "Express" });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("<select>");
+            expect(result.result).toContain('"shipping"');
+        });
+
+        test("set_checkbox result includes element description", async () => {
+            document.body.innerHTML = '<input type="checkbox" id="remember" aria-label="Remember me" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let cbTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "remember") { cbTag = tag; break; }
+            }
+            expect(cbTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("<input>");
+            expect(result.result).toContain('"Remember me"');
+            expect(result.result).toContain("checked=true");
+        });
+    });
+
+    describe("auto-scroll on input tools", () => {
+        test("type_text calls scrollIntoView on the element", async () => {
+            document.body.innerHTML = '<input id="field" type="text" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let fieldTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "field") { fieldTag = tag; break; }
+            }
+            expect(fieldTag).toBeGreaterThan(0);
+
+            const el = tagMap.get(fieldTag) as HTMLElement;
+            const spy = vi.spyOn(el, "scrollIntoView");
+
+            await executeAction(ToolName.TYPE_TEXT, { id: fieldTag, text: "test" });
+            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
+        });
+
+        test("select_option calls scrollIntoView on the element", async () => {
+            document.body.innerHTML = `
+                <select id="sel">
+                    <option value="a">A</option>
+                    <option value="b">B</option>
+                </select>`;
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let selTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "sel") { selTag = tag; break; }
+            }
+            expect(selTag).toBeGreaterThan(0);
+
+            const el = tagMap.get(selTag) as HTMLElement;
+            const spy = vi.spyOn(el, "scrollIntoView");
+
+            await executeAction(ToolName.SELECT_OPTION, { id: selTag, value: "B" });
+            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
+        });
+
+        test("set_checkbox calls scrollIntoView on the element", async () => {
+            document.body.innerHTML = '<input type="checkbox" id="cb" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let cbTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "cb") { cbTag = tag; break; }
+            }
+            expect(cbTag).toBeGreaterThan(0);
+
+            const el = tagMap.get(cbTag) as HTMLElement;
+            const spy = vi.spyOn(el, "scrollIntoView");
+
+            await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
+            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
         });
     });
 });

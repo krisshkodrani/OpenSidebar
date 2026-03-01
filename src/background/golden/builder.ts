@@ -101,9 +101,19 @@ export function toolCallToGoldenAction(
       type: actionType,
       timestamp: Date.now(),
       url: snapshot.url,
-      value: typeof args.text === "string" ? args.text : typeof args.value === "string" ? args.value : undefined,
+      value:
+        typeof args.text === "string"
+          ? args.text
+          : typeof args.value === "string"
+            ? args.value
+            : undefined,
       key: typeof args.key === "string" ? args.key : undefined,
-      scrollDelta: actionType === "scroll" ? (args.direction === "down" ? (args.amount as number ?? 500) : -(args.amount as number ?? 500)) : undefined,
+      scrollDelta:
+        actionType === "scroll"
+          ? args.direction === "down"
+            ? ((args.amount as number) ?? 500)
+            : -((args.amount as number) ?? 500)
+          : undefined,
     },
     tagId,
     snapshot,

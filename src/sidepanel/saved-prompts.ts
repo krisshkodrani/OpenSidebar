@@ -59,7 +59,7 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
 
     // v2 -> v3: Remove challenge prompts (no longer part of product)
     if (currentVersion < 3) {
-      next = next.filter(p => p.title !== "Browser Navigation Challenge");
+      next = next.filter((p) => p.title !== "Browser Navigation Challenge");
     }
 
     await chrome.storage.local.set({

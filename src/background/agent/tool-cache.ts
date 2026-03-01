@@ -31,7 +31,12 @@ export interface CacheStats {
  */
 export class ToolResultCache {
   private cache = new Map<string, CacheEntry>();
-  private stats: CacheStats = { hits: 0, misses: 0, invalidations: 0, evictions: 0 };
+  private stats: CacheStats = {
+    hits: 0,
+    misses: 0,
+    invalidations: 0,
+    evictions: 0,
+  };
 
   constructor(private readonly maxSize: number = 64) {}
 
@@ -68,7 +73,12 @@ export class ToolResultCache {
 
     // If key already exists, update in-place (no eviction needed)
     if (this.cache.has(key)) {
-      this.cache.set(key, { result, timestamp: Date.now(), fingerprint, cacheType });
+      this.cache.set(key, {
+        result,
+        timestamp: Date.now(),
+        fingerprint,
+        cacheType,
+      });
       return;
     }
 
@@ -81,7 +91,12 @@ export class ToolResultCache {
       }
     }
 
-    this.cache.set(key, { result, timestamp: Date.now(), fingerprint, cacheType });
+    this.cache.set(key, {
+      result,
+      timestamp: Date.now(),
+      fingerprint,
+      cacheType,
+    });
   }
 
   /** Invalidate all DOM-type entries (called after DOM-modifying tool execution) */

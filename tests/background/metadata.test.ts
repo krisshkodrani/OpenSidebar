@@ -43,24 +43,21 @@ describe("Tool Metadata", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.LIST_TABS)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.DOWNLOAD_FILE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.INSPECT_HIDDEN)).toBe(false);
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.FAST_FORWARD)).toBe(false);
     });
   });
 
   describe("SEQUENTIAL_TOOLS", () => {
-    test("contains navigate, done, escalate, execute_js, upload_file, go_back, go_forward, transcribe_audio", () => {
+    test("contains navigate, done, escalate, execute_js, upload_file, go_back", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.NAVIGATE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.DONE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.ESCALATE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.EXECUTE_JS)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.UPLOAD_FILE)).toBe(true);
       expect(SEQUENTIAL_TOOLS.has(ToolName.GO_BACK)).toBe(true);
-      expect(SEQUENTIAL_TOOLS.has(ToolName.GO_FORWARD)).toBe(true);
-      expect(SEQUENTIAL_TOOLS.has(ToolName.TRANSCRIBE_AUDIO)).toBe(true);
     });
 
-    test("has exactly 20 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(19);
+    test("has exactly 11 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(11);
     });
   });
 
@@ -101,9 +98,6 @@ describe("Tool Metadata", () => {
       expect(classifyRisk(ToolName.XRAY_PAGE, {})).toBe(RiskLevel.LOW);
     });
 
-    test("fast_forward is LOW risk", () => {
-      expect(classifyRisk(ToolName.FAST_FORWARD, {})).toBe(RiskLevel.LOW);
-    });
   });
 
   describe("page assist tools metadata", () => {
@@ -113,56 +107,6 @@ describe("Tool Metadata", () => {
       expect(meta.domModifying).toBe(true);
       expect(meta.sequential).toBe(false);
     });
-
-    test("fast_forward is not domModifying and not sequential", () => {
-      const meta = getToolMeta(ToolName.FAST_FORWARD);
-      expect(meta.risk).toBe(RiskLevel.LOW);
-      expect(meta.domModifying).toBe(false);
-      expect(meta.sequential).toBe(false);
-    });
-  });
-
-  describe("React toolkit metadata", () => {
-    test("inspect_react is LOW risk, not domModifying, not sequential", () => {
-      const meta = getToolMeta(ToolName.INSPECT_REACT);
-      expect(meta.risk).toBe(RiskLevel.LOW);
-      expect(meta.domModifying).toBe(false);
-      expect(meta.sequential).toBe(false);
-    });
-
-    test("react_set_input is MEDIUM risk, domModifying, not sequential", () => {
-      const meta = getToolMeta(ToolName.REACT_SET_INPUT);
-      expect(meta.risk).toBe(RiskLevel.MEDIUM);
-      expect(meta.domModifying).toBe(true);
-      expect(meta.sequential).toBe(false);
-    });
-
-    test("inspect_react_tree is LOW risk, not domModifying, not sequential", () => {
-      const meta = getToolMeta(ToolName.INSPECT_REACT_TREE);
-      expect(meta.risk).toBe(RiskLevel.LOW);
-      expect(meta.domModifying).toBe(false);
-      expect(meta.sequential).toBe(false);
-    });
-
-    test("wait_for_react is LOW risk, not domModifying, sequential", () => {
-      const meta = getToolMeta(ToolName.WAIT_FOR_REACT);
-      expect(meta.risk).toBe(RiskLevel.LOW);
-      expect(meta.domModifying).toBe(false);
-      expect(meta.sequential).toBe(true);
-    });
-
-    test("react_set_input is in DOM_MODIFYING_TOOLS", () => {
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.REACT_SET_INPUT)).toBe(true);
-    });
-
-    test("wait_for_react is in SEQUENTIAL_TOOLS", () => {
-      expect(SEQUENTIAL_TOOLS.has(ToolName.WAIT_FOR_REACT)).toBe(true);
-    });
-
-    test("inspect_react is not in DOM_MODIFYING_TOOLS or SEQUENTIAL_TOOLS", () => {
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
-      expect(SEQUENTIAL_TOOLS.has(ToolName.INSPECT_REACT)).toBe(false);
-    });
   });
 
   describe("CACHEABLE_TOOLS", () => {
@@ -170,13 +114,9 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.READ_ELEMENT)).toBe("dom");
       expect(CACHEABLE_TOOLS.get(ToolName.FIND_ELEMENT)).toBe("dom");
       expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_HIDDEN)).toBe("dom");
-      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_REACT)).toBe("dom");
-      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_REACT_TREE)).toBe("dom");
     });
 
     test("contains expected memory-cacheable tools", () => {
-      expect(CACHEABLE_TOOLS.get(ToolName.MEMORY_SEARCH)).toBe("memory");
-      expect(CACHEABLE_TOOLS.get(ToolName.MEMORY_LIST_CATEGORIES)).toBe("memory");
       expect(CACHEABLE_TOOLS.get(ToolName.RECALL_DEMO)).toBe("memory");
     });
 
@@ -184,7 +124,6 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.GET_COOKIES)).toBe("static");
       expect(CACHEABLE_TOOLS.get(ToolName.LIST_TABS)).toBe("static");
       expect(CACHEABLE_TOOLS.get(ToolName.SEARCH_HISTORY)).toBe("static");
-      expect(CACHEABLE_TOOLS.get(ToolName.GET_BOOKMARKS)).toBe("static");
     });
 
     test("does not include DOM-modifying tools (except read_page which is not cacheable)", () => {
@@ -202,8 +141,8 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.has(ToolName.ESCALATE)).toBe(false);
     });
 
-    test("has exactly 12 entries", () => {
-      expect(CACHEABLE_TOOLS.size).toBe(12);
+    test("has exactly 7 entries", () => {
+      expect(CACHEABLE_TOOLS.size).toBe(7);
     });
   });
 
@@ -244,7 +183,6 @@ describe("Tool Metadata", () => {
       expect(tools).not.toBeNull();
       expect(tools).toContain(ToolName.NAVIGATE);
       expect(tools).toContain(ToolName.GO_BACK);
-      expect(tools).toContain(ToolName.GO_FORWARD);
       expect(tools).toContain(ToolName.CREATE_TAB);
       expect(tools).toContain(ToolName.SWITCH_TAB);
       expect(tools).toContain(ToolName.CLICK_ELEMENT);
