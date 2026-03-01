@@ -369,6 +369,7 @@ describe("Bridge Message Routing", () => {
     });
 
     test("TASK_RECOVERY keeps message workspace for stop targeting", () => {
+        useStore.setState({ activeWorkspaceId: "ws-recovered" });
         setupBridge();
         capturedListener!({
             type: "TASK_RECOVERY",

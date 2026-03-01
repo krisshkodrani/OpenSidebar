@@ -184,9 +184,9 @@ When `done()` is called, the planner — a separate LLM invocation — inspects 
 The `StagnationMonitor` hashes the page state every turn: URL, page title, element count, and a sorted set of element signatures (tag name + truncated text + state attributes like `checked`, `disabled`, `aria-expanded`). If fewer than 10% of elements change between turns, the turn is "stagnant."
 
 The graduated response:
-- **5 stagnant turns**: Escalate from the fast model to the smart model. The reasoning: if the fast model can't make progress, maybe a more capable model can find a different approach.
+- **5 stagnant turns**: Escalate from the executor model to the planner model. The reasoning: if the executor model can't make progress, maybe a more capable model can find a different approach.
 - **8 turns on the same URL**: Independent escalation trigger. Even if the DOM changes slightly (animations, dynamic content), staying on the same page for 8 turns suggests the agent isn't navigating toward its goal.
-- **10 stagnant turns**: The loop is eligible for termination (though other mechanisms — text-only give-up, smart model give-up — usually trigger first).
+- **10 stagnant turns**: The loop is eligible for termination (though other mechanisms — text-only give-up, planner model give-up — usually trigger first).
 
 URL changes get partial credit: if the URL changes but the content barely differs (e.g., a hash change on a single-page app), the stagnant counter is halved rather than reset.
 
@@ -195,24 +195,24 @@ URL changes get partial credit: if the URL changes but the content barely differ
 When the LLM returns text without any tool calls, it's usually stuck — narrating what it sees instead of acting. The graduated response:
 
 1. **First text-only turn**: Inject a correction message reminding the agent it must use tools. Refresh the page snapshot to give it updated context.
-2. **Second consecutive text-only turn**: Escalate to the smart model. The fast model has demonstrated it can't formulate a tool call for this situation.
+2. **Second consecutive text-only turn**: Escalate to the planner model. The executor model has demonstrated it can't formulate a tool call for this situation.
 3. **Third consecutive text-only turn**: Give up. Terminate the loop with a "stopped" outcome and a message suggesting the user provide more specific instructions.
 
 Filler detection accelerates this: if the text-only response is low-effort narration ("I can see the page has loaded..."), it counts double, fast-tracking to escalation.
 
-### De-escalation: recovering from smart model
+### De-escalation: recovering from planner model
 
-Escalation is expensive — the smart model costs more tokens and has higher latency. So we de-escalate when the situation improves. After a minimum of 2 turns on the smart model, if 2 consecutive turns show progress (DOM changes, successful tool calls), the system hands control back to the fast model with a briefing summarizing what the smart model figured out.
+Escalation is expensive — the planner model costs more tokens and has higher latency. So we de-escalate when the situation improves. After a minimum of 2 turns on the planner model, if 2 consecutive turns show progress (DOM changes, successful tool calls), the system hands control back to the executor model with a briefing summarizing what the planner model figured out.
 
 A cooldown of 3 turns prevents rapid oscillation between tiers, and a maximum of 5 escalation cycles per session prevents the system from ping-ponging indefinitely.
 
-### Smart model give-up
+### Planner model give-up
 
-Even the smart model has limits. If it's been running for 8+ turns and has accumulated 3+ text-only responses across the session, the loop terminates. The message is honest: "The agent is struggling to make progress. Send a follow-up with more specific instructions."
+Even the planner model has limits. If it's been running for 8+ turns and has accumulated 3+ text-only responses across the session, the loop terminates. The message is honest: "The agent is struggling to make progress. Send a follow-up with more specific instructions."
 
 ### All of it runs simultaneously
 
-This is the composable termination principle in practice. Every turn, the system checks: turn limit, `done()` call, stagnation monitor, text-only counter, smart model tenure, and escalation cycle count. These aren't sequential gates — they're independent monitors running in parallel, any one of which can trigger termination or escalation. The first condition to fire wins.
+This is the composable termination principle in practice. Every turn, the system checks: turn limit, `done()` call, stagnation monitor, text-only counter, planner model tenure, and escalation cycle count. These aren't sequential gates — they're independent monitors running in parallel, any one of which can trigger termination or escalation. The first condition to fire wins.
 
 ---
 

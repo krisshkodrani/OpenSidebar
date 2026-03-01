@@ -20,7 +20,7 @@ export const STUCK_THRESHOLDS = {
   /** Maximum turns before giving up entirely */
   GIVE_UP: 10,
   /** Tighter give-up when already on the planner model (saves wasted turns) */
-  GIVE_UP_SMART: 8,
+  GIVE_UP_PLANNER: 8,
   /** Same-URL turns before forced escalation (independent of DOM delta) */
   SAME_URL_ESCALATE: 8,
 } as const;
@@ -32,7 +32,7 @@ export const ESCALATION_LIMITS = {
   /** Turns of cooldown after de-escalation before re-escalation is allowed */
   COOLDOWN_TURNS: 3,
   /** Minimum turns the planner model must run before de-escalation is allowed */
-  MIN_SMART_TENURE: 2,
+  MIN_PLANNER_TENURE: 2,
   /** Consecutive progress signals required before de-escalation */
   PROGRESS_GATE: 2,
 } as const;
@@ -63,10 +63,11 @@ export const TOOL_FAILURE_THRESHOLDS = {
   EXIT: 6,
 } as const;
 
-/** Discovery budget: nudge after consecutive turns of only reading/inspecting */
-export const DISCOVERY_BUDGET = { MAX_CONSECUTIVE: 3 } as const;
+/** Exploration budget: nudge after consecutive turns of only reading/inspecting */
+export const EXPLORATION_BUDGET = { MAX_CONSECUTIVE: 3 } as const;
 
-export const DISCOVERY_ONLY_TOOLS = new Set<string>([
+/** Tools classified as exploration-only (read/inspect, no side-effects on the page) */
+export const EXPLORATION_ONLY_TOOLS = new Set<string>([
   "read_page",
   "find_element",
   "inspect_hidden",
@@ -226,7 +227,7 @@ export type Difficulty = "simple" | "moderate" | "complex" | "extreme";
 export interface RuntimeLimits {
   stuckEscalate: number;
   stuckGiveUp: number;
-  stuckGiveUpSmart: number;
+  stuckGiveUpPlanner: number;
   maxEscalationCycles: number;
   escalationCooldown: number;
   toolFailureWarn: number;
@@ -245,7 +246,7 @@ export interface RuntimeLimits {
 export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
   stuckEscalate: STUCK_THRESHOLDS.ESCALATE,
   stuckGiveUp: STUCK_THRESHOLDS.GIVE_UP,
-  stuckGiveUpSmart: STUCK_THRESHOLDS.GIVE_UP_SMART,
+  stuckGiveUpPlanner: STUCK_THRESHOLDS.GIVE_UP_PLANNER,
   maxEscalationCycles: ESCALATION_LIMITS.MAX_CYCLES,
   escalationCooldown: ESCALATION_LIMITS.COOLDOWN_TURNS,
   toolFailureWarn: TOOL_FAILURE_THRESHOLDS.WARN,
@@ -264,7 +265,7 @@ export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
 const MINIMUM_LIMITS: RuntimeLimits = {
   stuckEscalate: 2,
   stuckGiveUp: 4,
-  stuckGiveUpSmart: 3,
+  stuckGiveUpPlanner: 3,
   maxEscalationCycles: 1,
   escalationCooldown: 1,
   toolFailureWarn: 2,
@@ -283,7 +284,7 @@ const MINIMUM_LIMITS: RuntimeLimits = {
 const MAXIMUM_LIMITS: RuntimeLimits = {
   stuckEscalate: 12,
   stuckGiveUp: 25,
-  stuckGiveUpSmart: 20,
+  stuckGiveUpPlanner: 20,
   maxEscalationCycles: 8,
   escalationCooldown: 6,
   toolFailureWarn: 10,
@@ -303,7 +304,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   simple: {
     stuckEscalate: 3,
     stuckGiveUp: 6,
-    stuckGiveUpSmart: 5,
+    stuckGiveUpPlanner: 5,
     maxEscalationCycles: 2,
     toolFailureWarn: 2,
     toolFailureExit: 4,
@@ -324,7 +325,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   complex: {
     stuckEscalate: 6,
     stuckGiveUp: 14,
-    stuckGiveUpSmart: 10,
+    stuckGiveUpPlanner: 10,
     maxEscalationCycles: 4,
     toolFailureWarn: 5,
     toolFailureExit: 8,
@@ -340,7 +341,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   extreme: {
     stuckEscalate: 8,
     stuckGiveUp: 18,
-    stuckGiveUpSmart: 14,
+    stuckGiveUpPlanner: 14,
     maxEscalationCycles: 5,
     escalationCooldown: 2,
     toolFailureWarn: 6,

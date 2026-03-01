@@ -41,7 +41,7 @@ interface TaskPlan {
 
 ## The New Planner
 
-The Planner (Smart Model) will be prompted to produce this graph structure.
+The Planner (Planner Model) will be prompted to produce this graph structure.
 
 ### Prompt Strategy
 

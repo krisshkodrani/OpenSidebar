@@ -67,7 +67,7 @@ npx tsx evals/cli.ts ab --prompt-a ... --prompt-b ...  # A/B prompt comparison
 | Pathology | Cases | What Goes Wrong |
 |-----------|-------|-----------------|
 | `find_element_loop` | 2 | Agent calls `find_element` 5+ times when `[N]` tag IDs are already visible |
-| `escalation_repeat` | 2 | After escalating to smart model, repeats the exact same failing tool call |
+| `escalation_repeat` | 2 | After escalating to planner model, repeats the exact same failing tool call |
 | `disabled_button` | 2 | Clicks disabled submit button repeatedly, ignores need to find correct input |
 | `text_as_toolcall` | 2 | LLM outputs tool call JSON as plain text instead of using the `tool_calls` API |
 | `marathon_no_done` | 2 | 100+ turns cycling without calling `done()` or `escalate()` |

@@ -1,7 +1,7 @@
 ---
 id: agent.reflection.escalation
 version: v2
-description: Escalation reflection for smart-model takeover when stalled.
+description: Escalation reflection for planner-model takeover when stalled.
 ---
 You are the reasoning model. Escalation reason: {{escalationReason}}
 

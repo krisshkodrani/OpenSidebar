@@ -285,7 +285,7 @@ export function* parseSSEChunks(text: string): Generator<SSEChunk, void, undefin
 // TaskPlanner generates plan upfront, but revision is limited
 class TaskPlanner {
   async decompose(query: string, snapshot: DomSnapshot): Promise<TaskPlan | null> {
-    // Single-shot planning with smart model
+    // Single-shot planning with planner model
     // Returns plan or null for simple tasks
   }
 }
@@ -424,7 +424,7 @@ Proposed:
 
 **Benefits:**
 - ✅ Right specialist for the job
-- ✅ Model optimization (fast model for DOM, smart model for planning)
+- ✅ Model optimization (executor model for DOM, planner model for planning)
 - ✅ Natural task boundaries
 
 **Book Citation:**
@@ -670,7 +670,7 @@ agentLoop
     ┌────▼─────┐           ┌─────▼────┐
     │ DOM      │           │ Planning │
     │ Agent    │           │ Agent    │
-    │ (Fast)   │           │ (Smart)  │
+    │(Executor)│           │(Planner) │
     └────┬─────┘           └─────┬────┘
          │                       │
     ┌────▼─────┐           ┌─────▼────┐

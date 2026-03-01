@@ -265,8 +265,8 @@ describe("Tab Tool Taboo", () => {
 // ─── Escalation Constants ───────────────────────────────────────────────
 
 describe("Escalation Constants", () => {
-  test("MIN_SMART_TENURE is 2", () => {
-    expect(ESCALATION_LIMITS.MIN_SMART_TENURE).toBe(2);
+  test("MIN_PLANNER_TENURE is 2", () => {
+    expect(ESCALATION_LIMITS.MIN_PLANNER_TENURE).toBe(2);
   });
 
   test("PROGRESS_GATE is 2", () => {

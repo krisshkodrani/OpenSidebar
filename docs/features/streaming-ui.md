@@ -63,9 +63,9 @@ When the AI performs actions, you see:
 
 ### OpenRouter Models
 
-- **Fast Tier (gpt-oss-120b)** - Fast model via Cerebras (~3000 TPS), Groq fallback, or OpenRouter fallback
-- **Smart Tier (Grok 4.1 Fast)** - Smart model, activated via automatic escalation when stuck
-- **Automatic switching** - Agent starts fast, escalates to smart model if needed
+- **Executor Tier (gpt-oss-120b)** - Executor model via Groq, or OpenRouter fallback
+- **Planner Tier (DeepSeek V3.2)** - Planner model, activated via automatic escalation when stuck
+- **Automatic switching** - Agent starts on executor, escalates to planner model if needed
 
 ## Streaming Architecture
 

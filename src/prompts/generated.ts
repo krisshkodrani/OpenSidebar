@@ -104,13 +104,13 @@ export const GENERATED_PROMPTS = {
   "agent.reflection.deescalation": {
     id: "agent.reflection.deescalation",
     version: "v2",
-    description: "De-escalation reflection when returning from smart to fast model.",
-    template: "The smarter model made progress and you're back in control.\nOlder history may have been compressed — rely on recent messages and current page state, not specific old details.\nReview the recent history to understand what was accomplished. Continue from where it left off.\nFollow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?",
+    description: "De-escalation reflection when returning from planner to executor model.",
+    template: "The planner model made progress and you're back in control.\nOlder history may have been compressed — rely on recent messages and current page state, not specific old details.\nReview the recent history to understand what was accomplished. Continue from where it left off.\nFollow the Think step: 1) What do I see? 2) What tool advances the task? 3) What should change?",
   }, // prompts/runtime/reflections/deescalation.md
   "agent.reflection.escalation": {
     id: "agent.reflection.escalation",
     version: "v2",
-    description: "Escalation reflection for smart-model takeover when stalled.",
+    description: "Escalation reflection for planner-model takeover when stalled.",
     template: "You are the reasoning model. Escalation reason: {{escalationReason}}\n\nContext was distilled — you are seeing a compact timeline, not raw history. Do not reference specific earlier messages.\n\nBefore acting:\n1. Analyze the attempt log above: what was tried and why it failed?\n2. Use investigation tools (inspect_hidden, xray_page, execute_js, read_element) to gather missing information.\n3. Formulate a strategy that differs from what was already tried.\n4. You have at least 2 turns before de-escalation. Make each count.\n\nIf the page state is unclear, start with read_page.",
   }, // prompts/runtime/reflections/escalation.md
   "agent.reflection.handoff": {

@@ -13,16 +13,16 @@ Proposed
 
 ### The Problem: Verification is the Biggest LLM Cost Multiplier
 
-The orchestrator currently makes **1–4 smart-tier LLM calls per node** just for verification:
+The orchestrator currently makes **1–4 planner-tier LLM calls per node** just for verification:
 
 | Call | File | Method | When | Cost |
 |------|------|--------|------|------|
-| Node verify | `verifier.ts:210` | `verifyNode()` | Every node completion | 1 smart call |
-| Critic challenge | `verifier.ts:325` | `criticChallenge()` | Up to `MAX_VERIFIER_REFLECTION_ROUNDS` (2) rounds when verify ≠ accept | 0–2 smart calls |
-| Reflection | `verifier.ts:391` | `reflectDecision()` | When drift/staleness detected | 0–1 smart call |
-| Advocate | `verifier.ts:501` | `advocateChallenge()` | When verifier rejects | 0–1 smart call |
+| Node verify | `verifier.ts:210` | `verifyNode()` | Every node completion | 1 planner call |
+| Critic challenge | `verifier.ts:325` | `criticChallenge()` | Up to `MAX_VERIFIER_REFLECTION_ROUNDS` (2) rounds when verify ≠ accept | 0–2 planner calls |
+| Reflection | `verifier.ts:391` | `reflectDecision()` | When drift/staleness detected | 0–1 planner call |
+| Advocate | `verifier.ts:501` | `advocateChallenge()` | When verifier rejects | 0–1 planner call |
 
-For a 5-node orchestrated task, this means **5–20 smart-tier LLM calls** for verification alone — often more than the executor uses.
+For a 5-node orchestrated task, this means **5–20 planner-tier LLM calls** for verification alone — often more than the executor uses.
 
 ### What the Literature Says
 
@@ -56,9 +56,9 @@ Three specific waste patterns:
 
 **P1: LLM verification of obvious successes.** When the executor navigates to a new URL and the success criteria is "navigate to the search results page," the URL change is sufficient proof. The LLM verifier call is wasted.
 
-**P2: Multi-round debate on clear failures.** When the executor output contains "Error: element not found," the failure type is programmatically determinable (`state_mismatch`). Running 2 rounds of critic/advocate debate to arrive at the same conclusion wastes 2–3 smart-tier calls.
+**P2: Multi-round debate on clear failures.** When the executor output contains "Error: element not found," the failure type is programmatically determinable (`state_mismatch`). Running 2 rounds of critic/advocate debate to arrive at the same conclusion wastes 2–3 planner-tier calls.
 
-**P3: Advisory calls for straightforward nodes.** The `advise()` method makes a smart-tier LLM call before each node's execution to generate hints. For simple nodes ("click the login button"), this advice adds no value.
+**P3: Advisory calls for straightforward nodes.** The `advise()` method makes a planner-tier LLM call before each node's execution to generate hints. For simple nodes ("click the login button"), this advice adds no value.
 
 ## Solution
 
@@ -126,7 +126,7 @@ Gate `advise()` behind a complexity heuristic. Only call it when:
 
 For simple nodes with no dependencies and no assumptions, skip the advisory call entirely.
 
-**Expected impact:** ~60% of nodes in typical plans are simple (single-action, no dependencies). Skipping advisory for these saves ~3 smart-tier calls per 5-node task.
+**Expected impact:** ~60% of nodes in typical plans are simple (single-action, no dependencies). Skipping advisory for these saves ~3 planner-tier calls per 5-node task.
 
 ### S4: Structured Executor Evidence
 
@@ -345,7 +345,7 @@ In `buildVerifierContext()`, extract structured evidence from the executor's fin
 |--------|---------------------|-------|---------|
 | Verifier LLM calls | 5-20 | 1-3 | 70-85% |
 | Advisory LLM calls | 5 | 1-2 | 60-80% |
-| Smart-tier calls total | 10-25 | 2-5 | 75-80% |
+| Planner-tier calls total | 10-25 | 2-5 | 75-80% |
 | Estimated cost savings | — | — | $0.02-0.08 per task |
 
 ### Reliability
