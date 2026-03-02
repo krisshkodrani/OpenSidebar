@@ -63,8 +63,17 @@ export interface PerceptionResult {
   mode: "orientation" | "focused";
 }
 
+/** Additional viewport screenshot captured at a different scroll position */
+export interface PanoramicShot {
+  dataUrl: string;
+  scrollY: number;
+  label: string; // "top", "middle", "bottom"
+}
+
 export interface PerceptionInput {
   screenshotDataUrl: string;
+  /** Additional viewport screenshots for first-turn panoramic perception */
+  panoramicScreenshots?: PanoramicShot[];
   elements: TaggedElement[];
   url: string;
   title: string;
@@ -242,6 +251,21 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
     ].join("\n");
   }
 
+  // Build panoramic note when additional viewport screenshots are present
+  let panoramicNote = "";
+  if (input.panoramicScreenshots?.length) {
+    const imageLabels = input.panoramicScreenshots
+      .map((s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`)
+      .join("\n");
+    panoramicNote = [
+      "",
+      "NOTE: Multiple screenshots are provided showing different scroll positions.",
+      `Image 1: current viewport at scroll Y=${input.scroll.y}.`,
+      imageLabels,
+      "Report LAYOUT covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., \"logo visible in Image 2 (top)\").",
+    ].join("\n");
+  }
+
   const promptText = renderPrompt("perception.interpret_page", {
     title: input.title || "Unknown",
     url: input.url || "Unknown",
@@ -249,6 +273,7 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
     elementSummary: buildElementSummary(input.elements),
     focusSection,
     orientationSection,
+    panoramicNote,
   });
 
   return { promptText, mode };
@@ -343,6 +368,23 @@ export async function perceive(
             ])
           : AbortSignal.timeout(PERCEPTION_TIMEOUT_MS);
 
+        // Build content parts: text + primary screenshot + optional panoramic shots
+        const contentParts: Array<
+          | { type: "text"; text: string }
+          | { type: "image_url"; image_url: { url: string } }
+        > = [
+          { type: "text", text: promptText },
+          { type: "image_url", image_url: { url: input.screenshotDataUrl } },
+        ];
+        if (input.panoramicScreenshots?.length) {
+          for (const shot of input.panoramicScreenshots) {
+            contentParts.push({
+              type: "image_url",
+              image_url: { url: shot.dataUrl },
+            });
+          }
+        }
+
         const response = await fetch(provider.baseUrl, {
           method: "POST",
           headers: {
@@ -355,16 +397,10 @@ export async function perceive(
             messages: [
               {
                 role: "user",
-                content: [
-                  { type: "text", text: promptText },
-                  {
-                    type: "image_url",
-                    image_url: { url: input.screenshotDataUrl },
-                  },
-                ],
+                content: contentParts,
               },
             ],
-            max_tokens: 600,
+            max_tokens: input.panoramicScreenshots?.length ? 800 : 600,
             temperature: 0.1,
           }),
           signal: fetchSignal,

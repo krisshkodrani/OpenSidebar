@@ -36,7 +36,7 @@ import {
   StagnationMonitor,
   computeSnapshotFingerprint,
 } from "./stagnation";
-import { perceive, PerceptionResult, buildElementSummary } from "../perception";
+import { perceive, PerceptionResult, buildElementSummary, PanoramicShot } from "../perception";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, TokenUsage } from "../llm/types";
@@ -224,6 +224,8 @@ export class AgentLoop {
   private lastScreenshotUrl: string | null = null;
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
+  /** Whether panoramic (multi-viewport) perception has been run this session */
+  private hasRunPanoramicPerception = false;
   /** Promise-based gate for pause/resume */
   private pauseGate: { promise: Promise<void>; resolve: () => void } | null =
     null;
@@ -965,6 +967,7 @@ export class AgentLoop {
     this.replanCount = 0;
     this.startingOrigin = null;
     this.offDomainWarned = false;
+    this.hasRunPanoramicPerception = false;
     this.metrics = AgentLoop.emptyMetrics();
     this.sessionStartTime = Date.now();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
@@ -1616,6 +1619,71 @@ export class AgentLoop {
   }
 
   /**
+   * Send a scroll-to-position message to the content script and return
+   * the actual scroll Y after the browser settles.
+   */
+  private async scrollContentScript(tabId: number, y: number): Promise<number> {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "SCROLL_TO_POSITION",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { y },
+    });
+    return response?.payload?.actualY ?? y;
+  }
+
+  /**
+   * Capture additional viewport screenshots at different scroll positions
+   * for first-turn panoramic perception. Returns empty array for short pages.
+   */
+  private async capturePanoramicScreenshots(
+    tabId: number,
+  ): Promise<PanoramicShot[]> {
+    const snapshot = this.context.getSnapshot();
+    if (!snapshot) return [];
+
+    const maxY = snapshot.scroll?.maxY ?? 0;
+    const viewportH = snapshot.scroll?.viewportHeight ?? snapshot.viewport?.height ?? 720;
+
+    // Short pages (< 1.5 viewports): no panoramic needed
+    if (maxY < viewportH * 0.5) return [];
+
+    const originalY = snapshot.scroll?.y ?? 0;
+    const shots: PanoramicShot[] = [];
+
+    // Calculate positions: top, middle, bottom
+    const positions: Array<{ y: number; label: string }> = [
+      { y: 0, label: "top" },
+    ];
+    if (maxY > viewportH * 1.5) {
+      positions.push({ y: Math.floor(maxY / 2), label: "middle" });
+    }
+    positions.push({ y: maxY, label: "bottom" });
+
+    // Filter out positions close to current viewport (already captured as primary)
+    const filteredPositions = positions.filter(
+      (p) => Math.abs(p.y - originalY) > viewportH * 0.3,
+    );
+
+    const tab = await chrome.tabs.get(tabId);
+    for (const pos of filteredPositions) {
+      if (this.abortController?.signal.aborted) break;
+      await this.scrollContentScript(tabId, pos.y);
+      // Brief settle time for rendering
+      await new Promise((r) => setTimeout(r, 150));
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality: 50, // Lower quality for context shots
+      });
+      shots.push({ dataUrl, scrollY: pos.y, label: pos.label });
+    }
+
+    // Restore original scroll position
+    await this.scrollContentScript(tabId, originalY);
+    return shots;
+  }
+
+  /**
    * Refresh perception: take a screenshot and send to the vision model
    * for structured page interpretation. Skips if the page fingerprint
    * hasn't changed since the last interpretation (cache hit).
@@ -1693,6 +1761,25 @@ export class AgentLoop {
       });
       this.lastScreenshotUrl = dataUrl;
 
+      // First-turn panoramic: capture additional viewports for page-level context
+      let panoramicScreenshots: PanoramicShot[] | undefined;
+      if (!this.hasRunPanoramicPerception) {
+        this.hasRunPanoramicPerception = true;
+        panoramicScreenshots = await this.capturePanoramicScreenshots(tabId);
+        if (panoramicScreenshots.length > 0) {
+          this.log.info(
+            "agent",
+            "Panoramic perception: captured additional viewports",
+            {
+              count: panoramicScreenshots.length,
+              labels: panoramicScreenshots.map((s) => s.label),
+            },
+          );
+        } else {
+          panoramicScreenshots = undefined;
+        }
+      }
+
       // Resolve current subtask for goal-conditioned perception (focused mode)
       const planStatus = this.context.getPlanStatusRaw();
       const runningSubtask = planStatus?.subtasks.find(
@@ -1702,6 +1789,7 @@ export class AgentLoop {
       const result = await perceive(
         {
           screenshotDataUrl: dataUrl,
+          panoramicScreenshots,
           elements: snapshot.elements,
           url: snapshot.url,
           title: snapshot.title,

@@ -1,6 +1,6 @@
 import "../setup";
 import { describe, test, expect, beforeEach } from "vitest";
-import { perceive, parseCompletionSignal, type PerceptionInput } from "../../src/background/perception";
+import { perceive, parseCompletionSignal, buildPerceptionPrompt, type PerceptionInput, type PanoramicShot } from "../../src/background/perception";
 import { computeSnapshotFingerprint, computeElementSignatures } from "../../src/background/agent/stagnation";
 import type { DomSnapshot, TaggedElement } from "../../src/types";
 
@@ -489,5 +489,124 @@ describe("computeElementSignatures()", () => {
         const sigs = computeElementSignatures(snap);
         const sigArr = [...sigs];
         expect(sigArr[0]).toContain("disabled=true");
+    });
+});
+
+// ----- Panoramic Perception Tests -----
+
+const makePanoramicShots = (): PanoramicShot[] => [
+    { dataUrl: "data:image/jpeg;base64,TOP", scrollY: 0, label: "top" },
+    { dataUrl: "data:image/jpeg;base64,BOTTOM", scrollY: 2000, label: "bottom" },
+];
+
+describe("panoramic perception", () => {
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+        originalFetch = globalThis.fetch;
+    });
+
+    test("perceive() with panoramic screenshots sends multi-image content", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LAYOUT: Full page overview.");
+        });
+        try {
+            const result = await perceive(makeInput({
+                panoramicScreenshots: makePanoramicShots(),
+            }));
+            expect(result.interpretation).toContain("LAYOUT:");
+            const parsed = JSON.parse(sentBody);
+            const content = parsed.messages[0].content;
+            // Should have: text + primary image + 2 panoramic images = 4 parts
+            expect(content.length).toBe(4);
+            expect(content[0].type).toBe("text");
+            expect(content[1].type).toBe("image_url");
+            expect(content[2].type).toBe("image_url");
+            expect(content[3].type).toBe("image_url");
+            // Verify panoramic image URLs
+            expect(content[2].image_url.url).toBe("data:image/jpeg;base64,TOP");
+            expect(content[3].image_url.url).toBe("data:image/jpeg;base64,BOTTOM");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("perceive() without panoramic uses single image", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LAYOUT: Single viewport.");
+        });
+        try {
+            await perceive(makeInput());
+            const parsed = JSON.parse(sentBody);
+            const content = parsed.messages[0].content;
+            // Should have: text + primary image = 2 parts
+            expect(content.length).toBe(2);
+            expect(content[0].type).toBe("text");
+            expect(content[1].type).toBe("image_url");
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("panoramic max_tokens is 800", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LAYOUT: Panoramic.");
+        });
+        try {
+            await perceive(makeInput({
+                panoramicScreenshots: makePanoramicShots(),
+            }));
+            const parsed = JSON.parse(sentBody);
+            expect(parsed.max_tokens).toBe(800);
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("non-panoramic max_tokens is 600", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LAYOUT: Normal.");
+        });
+        try {
+            await perceive(makeInput());
+            const parsed = JSON.parse(sentBody);
+            expect(parsed.max_tokens).toBe(600);
+        } finally {
+            cleanup();
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    test("buildPerceptionPrompt() includes panoramic note when shots provided", () => {
+        const input = makeInput({
+            panoramicScreenshots: makePanoramicShots(),
+        });
+        const { promptText } = buildPerceptionPrompt(input);
+        expect(promptText).toContain("Multiple screenshots are provided");
+        expect(promptText).toContain("Image 1: current viewport");
+        expect(promptText).toContain("Image 2: top view at scroll Y=0");
+        expect(promptText).toContain("Image 3: bottom view at scroll Y=2000");
+    });
+
+    test("buildPerceptionPrompt() omits panoramic note without shots", () => {
+        const input = makeInput();
+        const { promptText } = buildPerceptionPrompt(input);
+        expect(promptText).not.toContain("Multiple screenshots");
+        expect(promptText).not.toContain("panoramic");
     });
 });

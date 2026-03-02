@@ -516,6 +516,19 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true;
       }
 
+      if (message.type === "SCROLL_TO_POSITION") {
+        window.scrollTo({ top: message.payload.y, behavior: "instant" as ScrollBehavior });
+        requestAnimationFrame(() => {
+          sendResponse({
+            type: "SCROLL_TO_POSITION_RESPONSE",
+            requestId: message.requestId,
+            source: MessageSource.CONTENT,
+            payload: { actualY: window.scrollY },
+          });
+        });
+        return true; // async response
+      }
+
       // DOM readiness probe — waits for DOM quiescence using MutationObserver + rAF
       if (message.type === "DOM_READY_PROBE") {
         const { timeoutMs, waitForElements } = message.payload;

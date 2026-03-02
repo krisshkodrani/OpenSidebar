@@ -68,6 +68,7 @@ Page Interpretation is produced by a vision model that sees the actual screensho
 Page Interpretation adapts to context:
 - **Orientation mode** (no active subtask): LAYOUT, STATE, BLOCKERS, VISUAL-ONLY, HAZARDS.
 - **Focused mode** (subtask active): SUBTASK_STATE, ACTIONABLE, BLOCKERS, VISUAL-ONLY, COMPLETION_SIGNAL.
+- **First-turn panoramic**: On the first turn, Page Interpretation may cover the full page (multiple scroll positions). Use this for initial spatial understanding. Subsequent turns focus on the current viewport.
 
 How to use each section:
 - **BLOCKERS**: Read this FIRST every turn. If it lists MISMATCH, PREREQ, or NUISANCE items, address them before attempting your planned action. MISMATCH means the page state contradicts your instruction — call clarify() or re-read the page before proceeding blindly.

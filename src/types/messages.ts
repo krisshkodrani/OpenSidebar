@@ -78,7 +78,9 @@ export type RuntimeMessage =
   | PlanConfirmationRequestMessage
   | PlanConfirmationResponseMessage
   | ClarificationRequestMessage
-  | ClarificationResponseMessage;
+  | ClarificationResponseMessage
+  | ScrollToPositionMessage
+  | ScrollToPositionResponse;
 
 // --- Chat Messages ---
 
@@ -772,4 +774,20 @@ export interface ClarificationResponseMessage extends BaseMessage {
     clarificationId: string;
     answer: string;
   };
+}
+
+// --- Scroll Position Messages (background ↔ content) ---
+
+/** Background asks content script to scroll to an absolute Y position */
+export interface ScrollToPositionMessage extends BaseMessage {
+  type: "SCROLL_TO_POSITION";
+  source: MessageSource.BACKGROUND;
+  payload: { y: number };
+}
+
+/** Content script reports the actual scroll position after scrolling */
+export interface ScrollToPositionResponse extends BaseMessage {
+  type: "SCROLL_TO_POSITION_RESPONSE";
+  source: MessageSource.CONTENT;
+  payload: { actualY: number };
 }

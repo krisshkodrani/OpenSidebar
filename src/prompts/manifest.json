@@ -51,7 +51,7 @@
   {
     "id": "agent.system",
     "version": "v3",
-    "hash": "a513f709",
+    "hash": "a05f12f1",
     "description": "Core executor system prompt for browser automation turns. v3: perception-grounded guidance.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -78,9 +78,9 @@
   },
   {
     "id": "perception.interpret_page",
-    "version": "v4",
-    "hash": "e7c8b8ab",
-    "description": "Purpose-driven perception prompt — explains WHY the output matters to the agent, enforces grounding assertions, dual-mode (orientation/focused).",
+    "version": "v5",
+    "hash": "455660f5",
+    "description": "Purpose-driven perception prompt — explains WHY the output matters to the agent, enforces grounding assertions, dual-mode (orientation/focused), panoramic multi-image support.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {
