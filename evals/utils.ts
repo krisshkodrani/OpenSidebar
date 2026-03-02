@@ -16,6 +16,7 @@ import type {
 import type { E2EGoldenCase } from "./e2e-types";
 import type { EscalationGoldenCase } from "./escalation-types";
 import type { CompletionTimingGoldenCase } from "./completion-timing-types";
+import type { GroundingGoldenCase } from "./grounding-types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -323,6 +324,25 @@ export function readCompletionTimingGoldenCases(): CompletionTimingGoldenCase[] 
   for (const file of files.sort()) {
     try {
       const content = readFileSync(join(COMPLETION_TIMING_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Grounding eval I/O ────────────────────────────────────────────────
+
+export const GROUNDING_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "grounding");
+export const GROUNDING_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "grounding");
+
+/** Read all grounding golden cases from the grounding golden dir */
+export function readGroundingGoldenCases(): GroundingGoldenCase[] {
+  if (!existsSync(GROUNDING_GOLDEN_DIR)) return [];
+  const files = readdirSync(GROUNDING_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: GroundingGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(GROUNDING_GOLDEN_DIR, file), "utf-8");
       cases.push(JSON.parse(content));
     } catch { /* skip malformed */ }
   }
