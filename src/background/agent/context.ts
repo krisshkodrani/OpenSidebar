@@ -474,6 +474,7 @@ Do NOT call done() until every planned step is complete.
       groundingBlock +=
         "Your FIRST tool call this turn MUST be an observation tool: read_page, find_element, or read_element.\n" +
         "Do NOT call click_element, type_text, scroll_page, or any action tool until you have observed the page.\n" +
+        "Check Page Interpretation BLOCKERS for MISMATCH entries — if present, the page does not match your task.\n" +
         "Even though elements and content are shown above, verify the page state matches your task before acting.\n";
       content = content.replace(
         "## Page Context",

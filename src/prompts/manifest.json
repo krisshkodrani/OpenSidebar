@@ -50,9 +50,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v2",
-    "hash": "848824d0",
-    "description": "Core executor system prompt for browser automation turns.",
+    "version": "v3",
+    "hash": "a513f709",
+    "description": "Core executor system prompt for browser automation turns. v3: perception-grounded guidance.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
@@ -78,9 +78,9 @@
   },
   {
     "id": "perception.interpret_page",
-    "version": "v3",
-    "hash": "b88b4097",
-    "description": "Dual-mode perception prompt — orientation (generic) when no subtask, focused (goal-conditioned) when subtask active. Sent with screenshot + element metadata to vision model.",
+    "version": "v4",
+    "hash": "e7c8b8ab",
+    "description": "Purpose-driven perception prompt — explains WHY the output matters to the agent, enforces grounding assertions, dual-mode (orientation/focused).",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {
