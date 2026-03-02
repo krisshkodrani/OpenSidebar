@@ -1,0 +1,35 @@
+{
+  "id": "planner-length-bias-001",
+  "sourceSessionId": "manual-length-bias-001",
+  "method": "decompose",
+  "input": {
+    "query": "Click the 'Accept cookies' button",
+    "pageTitle": "Welcome - News Site",
+    "pageUrl": "https://news.example.com/",
+    "perception": "LAYOUT: News homepage with a cookie consent banner overlaying the bottom. STATE: Cookie banner visible, blocking some content. CONTENT: [1] button \"Accept cookies\", [2] button \"Manage preferences\", [3] a \"Privacy policy\". BLOCKERS: Cookie consent banner covering bottom 20% of viewport. SPATIAL: Banner fixed at bottom, two buttons centered."
+  },
+  "expected": {
+    "difficulty": "simple",
+    "isMultiStep": false,
+    "stepCountRange": { "min": 1, "max": 1 },
+    "mustCoverTopics": ["accept", "cookies"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"],
+    "maxSteps": 2
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": ["Click the 'Accept cookies' button to dismiss the cookie consent banner"],
+      "difficulty": "simple"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 1,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://news.example.com/",
+    "query": "Click the 'Accept cookies' button",
+    "difficulty": "easy",
+    "tags": ["planner", "decompose", "length-bias", "single-action", "bloat-detection"],
+    "dimension": "length_bias"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "id": "planner-plan-extreme-001",
+  "sourceSessionId": "manual-plan-extreme-001",
+  "method": "decompose",
+  "input": {
+    "query": "Navigate through the multi-step wizard: login, fill profile, upload document, and submit for review",
+    "pageTitle": "Application Wizard - GovPortal",
+    "pageUrl": "https://portal.example.gov/application/start",
+    "perception": "LAYOUT: Multi-step wizard with progress indicator showing 4 steps. STATE: Step 1 (Login) active. CONTENT: [1] input#username, [2] input#password, [3] button \"Sign In\". Progress bar: Login > Profile > Upload > Submit. BLOCKERS: Must authenticate first. SPATIAL: Progress bar top, form center, navigation buttons bottom."
+  },
+  "expected": {
+    "difficulty": "complex",
+    "isMultiStep": true,
+    "stepCountRange": { "min": 4, "max": 7 },
+    "mustCoverTopics": ["wizard", "login", "profile", "submit"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"]
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Log in with the provided credentials",
+        "Fill in the profile information on step 2",
+        "Upload the required document on step 3",
+        "Review the application and submit on step 4",
+        "Verify the submission confirmation"
+      ],
+      "difficulty": "complex"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 30,
+    "escalationCount": 1
+  },
+  "metadata": {
+    "url": "https://portal.example.gov/application/start",
+    "query": "Navigate through the multi-step wizard: login, fill profile, upload document, and submit for review",
+    "difficulty": "hard",
+    "tags": ["planner", "decompose", "wizard", "multi-step"],
+    "dimension": "difficulty_accuracy"
+  }
+}

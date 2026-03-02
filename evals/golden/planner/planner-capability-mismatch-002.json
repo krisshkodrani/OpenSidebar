@@ -1,0 +1,38 @@
+{
+  "id": "planner-capability-mismatch-002",
+  "sourceSessionId": "manual-capability-mismatch-002",
+  "method": "decompose",
+  "input": {
+    "query": "Download the PDF report and upload it to my Google Drive",
+    "pageTitle": "Q4 Financial Report - CorpDocs",
+    "pageUrl": "https://docs.example.com/reports/q4-2025",
+    "perception": "LAYOUT: Document page with download link and preview. STATE: PDF preview loaded. CONTENT: [1] a \"Download PDF\" href='/reports/q4-2025.pdf', [2] div.preview showing first page of financial report. BLOCKERS: None. SPATIAL: Download button top-right, preview center."
+  },
+  "expected": {
+    "difficulty": "simple",
+    "isMultiStep": false,
+    "stepCountRange": { "min": 1, "max": 3 },
+    "mustCoverTopics": ["pdf", "report"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives", "upload_file", "google_drive", "file_system"],
+    "forbiddenToolRefs": ["upload_file", "download_file", "google_drive", "file_system", "save_to_disk"]
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Read the PDF content using read_pdf",
+        "Report to the user that the agent cannot upload files to Google Drive"
+      ],
+      "difficulty": "simple"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 3,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://docs.example.com/reports/q4-2025",
+    "query": "Download the PDF report and upload it to my Google Drive",
+    "difficulty": "easy",
+    "tags": ["planner", "decompose", "capability-mismatch", "phantom-tool"],
+    "dimension": "capability_mismatch"
+  }
+}

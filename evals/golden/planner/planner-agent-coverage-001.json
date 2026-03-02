@@ -1,0 +1,34 @@
+{
+  "id": "planner-agent-coverage-001",
+  "sourceSessionId": "manual-agent-coverage-001",
+  "method": "decompose",
+  "input": {
+    "query": "Click the submit button for the code",
+    "pageTitle": "Step 1 - Hidden DOM Challenge",
+    "pageUrl": "https://browserbench.example.com/challenges/step/1",
+    "perception": "LAYOUT: Challenge page with code input and submit button. STATE: Input field has code 'ABC123' already entered. CONTENT: [1] input#code value='ABC123', [2] button#submit \"Submit\". BLOCKERS: None. SPATIAL: Input and button centered vertically."
+  },
+  "expected": {
+    "difficulty": "simple",
+    "isMultiStep": false,
+    "stepCountRange": { "min": 1, "max": 2 },
+    "mustCoverTopics": ["submit", "button", "code"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"]
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": ["Click the submit button to submit the entered code"],
+      "difficulty": "simple"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 2,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://browserbench.example.com/challenges/step/1",
+    "query": "Click the submit button for the code",
+    "difficulty": "easy",
+    "tags": ["planner", "decompose", "single-action"],
+    "dimension": "coverage"
+  }
+}
