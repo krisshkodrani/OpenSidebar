@@ -130,5 +130,83 @@ export function summarizeHistory(
   return entries;
 }
 
+/**
+ * Deduplicate invisible-text elements by grouping 3+ same-tagName elements
+ * whose text-color matches bg-color into summary lines.
+ */
+export function deduplicateInvisibleElements(elements: TaggedElement[]): {
+  visible: TaggedElement[];
+  groups: string[];
+} {
+  const visible: TaggedElement[] = [];
+  const invisibleByTag = new Map<string, TaggedElement[]>();
+
+  for (const el of elements) {
+    const textColor = el.attributes["text-color"];
+    const bgColor = el.attributes["bg-color"];
+    if (textColor && bgColor && textColor === bgColor) {
+      const bucket = invisibleByTag.get(el.tagName) || [];
+      bucket.push(el);
+      invisibleByTag.set(el.tagName, bucket);
+    } else {
+      visible.push(el);
+    }
+  }
+
+  const groups: string[] = [];
+  for (const [tagName, items] of invisibleByTag) {
+    if (items.length < 3) {
+      // Too few to group — return as individual visible elements
+      visible.push(...items);
+    } else {
+      const ids = items.map((e) => e.tag).join(",");
+      const uniqueTexts = [...new Set(items.map((e) => e.text).filter(Boolean))];
+      const sampleTexts =
+        uniqueTexts.length > 0
+          ? uniqueTexts.slice(0, 5).map((t) => `"${t.slice(0, 30)}"`).join(",")
+          : "(no text)";
+      groups.push(
+        `[invisible-text group] ${items.length}× ${tagName} (IDs: ${ids}): ${sampleTexts}`,
+      );
+    }
+  }
+
+  return { visible, groups };
+}
+
+/**
+ * Compress repetitive content lines by normalizing digit runs and
+ * suppressing duplicates beyond a threshold.
+ */
+export function compressRepetitiveContent(
+  content: string,
+  maxRepetitions: number = 3,
+): string {
+  if (!content) return content;
+
+  const lines = content.split("\n");
+  const counts = new Map<string, number>();
+  const suppressed = new Map<string, number>();
+  const result: string[] = [];
+
+  for (const line of lines) {
+    const normalized = line.replace(/\d+/g, "N");
+    const seen = counts.get(normalized) || 0;
+    counts.set(normalized, seen + 1);
+
+    if (seen < maxRepetitions) {
+      result.push(line);
+    } else {
+      suppressed.set(normalized, (suppressed.get(normalized) || 0) + 1);
+    }
+  }
+
+  for (const [pattern, count] of suppressed) {
+    result.push(`[... "${pattern}" repeated — omitting ${count} instances]`);
+  }
+
+  return result.join("\n");
+}
+
 /** Alias for backward compatibility */
 export const summarizeCausalChain = summarizeHistory;
