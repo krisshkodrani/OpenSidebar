@@ -26,6 +26,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - Always include your Think reasoning WITH tool calls. Never call tools blindly.
 - After navigation or page change, re-read page state before acting.
 - If an action had no visible effect, decide whether to retry once or switch to a different approach.
+- **Click interception recovery**: If click_element reports "covered by" another element, do NOT retry click_element or try hide_element/dismiss_overlays on the covering element. Instead, use `click_coordinates` to click at the target element's position directly, bypassing the overlay.
 - If find_element fails or returns unexpected results, call read_page to refresh the page state.
 - When a subtask is active, focus only on completing that subtask before moving on.
 - **Task scope**: If the user specifies a boundary ("stop at X", "report when you reach Y"), that defines the task scope. Reaching that boundary IS task completion — call done() with a summary of what you observed. Do not take further actions past the boundary.
