@@ -82,6 +82,7 @@ import {
   BlockedAction,
   buildFailureRecovery,
   buildHandoffBriefing,
+  detectInstructionContradiction,
   extractAttemptSummary,
   findPriorFailure,
   formatActionEffect,
@@ -1122,6 +1123,21 @@ export class AgentLoop {
       role: "user",
       content: userContent,
     });
+
+    // 2b. Grounding: detect instruction-vs-page contradictions on turn 1
+    const currentSnapshot = this.context.getSnapshot();
+    if (currentSnapshot) {
+      const contradiction = detectInstructionContradiction(
+        userContent,
+        currentSnapshot,
+      );
+      if (contradiction?.mismatch) {
+        this.context.setContradiction(contradiction.details);
+        this.log.warn("grounding", "Instruction-page contradiction detected", {
+          details: contradiction.details,
+        });
+      }
+    }
 
     // --- Demo catalog + matching: inject reference demonstrations ---
     try {
@@ -2574,6 +2590,11 @@ export class AgentLoop {
           turn: this.turnCount,
           text: cleanContent,
         });
+      }
+
+      // Grounding: mark first turn done so the observe-first prompt is only injected once
+      if (this.context.getIsFirstTurn()) {
+        this.context.setFirstTurnDone();
       }
 
       // Recover tool calls from text output (models sometimes emit JSON as text)
