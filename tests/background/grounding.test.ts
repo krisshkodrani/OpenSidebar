@@ -3,7 +3,9 @@ import {
   extractStepIndicator,
   detectInstructionContradiction,
   GROUNDING_OBSERVATION_TOOLS,
+  buildFailureBrief,
   type ContradictionResult,
+  type SubgoalAttempt,
 } from "../../src/background/agent/loop-helpers";
 import type { DomSnapshot } from "../../src/types";
 
@@ -171,5 +173,134 @@ describe("detectInstructionContradiction", () => {
       );
       expect(result).toBeNull();
     });
+  });
+});
+
+// ─── buildFailureBrief tests ──────────────────────────────────────────
+
+function makeAttempt(overrides: Partial<SubgoalAttempt> = {}): SubgoalAttempt {
+  return {
+    turn: 1,
+    tool: "click_element",
+    args: '{"id":5}',
+    outcome: "Clicked element [5]",
+    wasFailure: false,
+    snapshotFp: "https://example.com|10|12345",
+    ...overrides,
+  };
+}
+
+describe("buildFailureBrief", () => {
+  it("returns empty string for fewer than 3 attempts", () => {
+    expect(buildFailureBrief([])).toBe("");
+    expect(buildFailureBrief([makeAttempt()])).toBe("");
+    expect(buildFailureBrief([makeAttempt(), makeAttempt()])).toBe("");
+  });
+
+  it("formats attempts with turn numbers and outcomes", () => {
+    const attempts = [
+      makeAttempt({ turn: 1, tool: "click_element", args: '{"id":5}', outcome: "Clicked [5]" }),
+      makeAttempt({ turn: 2, tool: "scroll_page", args: '{"dir":"down"}', outcome: "Scrolled down" }),
+      makeAttempt({ turn: 3, tool: "type_text", args: '{"id":3,"text":"hi"}', outcome: "Typed" }),
+    ];
+    const brief = buildFailureBrief(attempts);
+    expect(brief).toContain("T1: click_element");
+    expect(brief).toContain("T2: scroll_page");
+    expect(brief).toContain("T3: type_text");
+    expect(brief).toContain("Attempts (3):");
+  });
+
+  it("marks failures with FAIL: prefix", () => {
+    const attempts = [
+      makeAttempt({ turn: 1, wasFailure: true, outcome: "Error: not found" }),
+      makeAttempt({ turn: 2, wasFailure: false, outcome: "OK" }),
+      makeAttempt({ turn: 3, wasFailure: true, outcome: "Click intercepted" }),
+    ];
+    const brief = buildFailureBrief(attempts);
+    expect(brief).toContain("FAIL: Error: not found");
+    expect(brief).not.toContain("FAIL: OK");
+    expect(brief).toContain("FAIL: Click intercepted");
+  });
+
+  describe("synthesis heuristics", () => {
+    it("detects covered-by pattern", () => {
+      const attempts = [
+        makeAttempt({ turn: 1, outcome: "Click intercepted: covered by [12]", wasFailure: true }),
+        makeAttempt({ turn: 2 }),
+        makeAttempt({ turn: 3 }),
+      ];
+      const brief = buildFailureBrief(attempts);
+      expect(brief).toContain("Element is covered by another element");
+    });
+
+    it("detects dismiss_overlays with no overlays", () => {
+      const attempts = [
+        makeAttempt({ turn: 1, tool: "dismiss_overlays", outcome: "No overlays found", wasFailure: false }),
+        makeAttempt({ turn: 2 }),
+        makeAttempt({ turn: 3 }),
+      ];
+      const brief = buildFailureBrief(attempts);
+      expect(brief).toContain("Covering element is NOT an overlay");
+    });
+
+    it("detects hide_element failure", () => {
+      const attempts = [
+        makeAttempt({ turn: 1, tool: "hide_element", outcome: "Error: cannot hide", wasFailure: true }),
+        makeAttempt({ turn: 2 }),
+        makeAttempt({ turn: 3 }),
+      ];
+      const brief = buildFailureBrief(attempts);
+      expect(brief).toContain("Covering element cannot be hidden");
+    });
+
+    it("detects execute_js undefined result", () => {
+      const attempts = [
+        makeAttempt({ turn: 1, tool: "execute_js", outcome: "Result: undefined", wasFailure: false }),
+        makeAttempt({ turn: 2 }),
+        makeAttempt({ turn: 3 }),
+      ];
+      const brief = buildFailureBrief(attempts);
+      expect(brief).toContain("JS approach returned undefined");
+    });
+  });
+
+  it("suggests untried tools", () => {
+    const attempts = [
+      makeAttempt({ turn: 1, tool: "click_element" }),
+      makeAttempt({ turn: 2, tool: "type_text" }),
+      makeAttempt({ turn: 3, tool: "scroll_page" }),
+    ];
+    const brief = buildFailureBrief(attempts);
+    expect(brief).toContain("Untried tools:");
+    expect(brief).toContain("click_coordinates");
+    expect(brief).toContain("press_key");
+    expect(brief).toContain("navigate");
+    expect(brief).toContain("execute_js");
+    expect(brief).toContain("find_element");
+    // scroll_page was tried, should not appear
+    expect(brief).not.toMatch(/Untried tools:.*scroll_page/);
+  });
+
+  it("omits untried tools section when all alternatives were tried", () => {
+    const tools = ["click_coordinates", "scroll_page", "press_key", "navigate", "execute_js", "find_element"];
+    const attempts = tools.map((tool, i) =>
+      makeAttempt({ turn: i + 1, tool }),
+    );
+    const brief = buildFailureBrief(attempts);
+    expect(brief).not.toContain("Untried tools:");
+  });
+
+  it("truncates output to 600 chars", () => {
+    // Create many attempts with long args/outcomes
+    const attempts = Array.from({ length: 15 }, (_, i) =>
+      makeAttempt({
+        turn: i + 1,
+        tool: "click_element",
+        args: `{"id":${i},"longparam":"${"x".repeat(80)}"}`,
+        outcome: `Result with long description ${"y".repeat(80)}`,
+      }),
+    );
+    const brief = buildFailureBrief(attempts);
+    expect(brief.length).toBeLessThanOrEqual(600);
   });
 });

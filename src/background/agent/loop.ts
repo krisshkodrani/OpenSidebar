@@ -80,6 +80,7 @@ import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
 import {
   BlockedAction,
+  buildFailureBrief,
   buildFailureRecovery,
   buildHandoffBriefing,
   detectInstructionContradiction,
@@ -92,6 +93,7 @@ import {
   normalizeOutcome,
   preflightElementCheck,
   RecentAction,
+  SubgoalAttempt,
   userExplicitlyRequestedTabManagement,
   validateElementIds,
 } from "./loop-helpers";
@@ -2232,6 +2234,9 @@ export class AgentLoop {
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
     const recentOutcomes: { fingerprint: string; snapshotFp: string }[] = [];
+
+    // Cumulative failure brief: tracks tool attempts for failure synthesis
+    const subgoalAttempts: SubgoalAttempt[] = [];
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
@@ -4430,6 +4435,28 @@ export class AgentLoop {
                 if (recentOutcomes.length > STAGNATION_DETECTION.WINDOW)
                   recentOutcomes.shift();
               }
+
+              // Accumulate subgoal attempts for cumulative failure brief
+              const toolName = toolCall.function.name;
+              const firstLine = resultContent.split("\n")[0].slice(0, 120);
+              const wasFailure =
+                firstLine.startsWith("Error:") ||
+                firstLine.includes("does not appear") ||
+                firstLine.includes("No element with tag") ||
+                firstLine.includes("Click intercepted") ||
+                firstLine.includes("REJECTED");
+              let argSnippet = "";
+              try {
+                argSnippet = toolCall.function.arguments.slice(0, 100);
+              } catch { /* */ }
+              subgoalAttempts.push({
+                turn: this.turnCount,
+                tool: toolName,
+                args: argSnippet,
+                outcome: firstLine,
+                wasFailure,
+                snapshotFp: currentSnapshotFp,
+              });
             }
           }
           // Check for dead-end pattern (all recent outcomes identical AND same page state)
@@ -4836,17 +4863,25 @@ export class AgentLoop {
                     this.consecutiveZeroEffectTurns >=
                     ACTION_EFFECT.WARNING_THRESHOLD
                   ) {
+                    // Use cumulative failure brief if we have enough data
+                    const failureBrief = buildFailureBrief(subgoalAttempts);
+                    const warningContent = failureBrief
+                      ? `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect. Here is what was tried:\n${failureBrief}\nTry a fundamentally different strategy.]`
+                      : `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect on the page. Your current approach is not working — try a fundamentally different strategy (different element, different tool, or different page area).]`;
                     this.context.addMessage({
                       role: "user",
-                      content: `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect on the page. Your current approach is not working — try a fundamentally different strategy (different element, different tool, or different page area).]`,
+                      content: warningContent,
                     });
                     this.traceRecorder?.recordEvent("zero_effect_warning", {
                       consecutiveTurns: this.consecutiveZeroEffectTurns,
+                      hasFailureBrief: !!failureBrief,
                     });
                     this.consecutiveZeroEffectTurns = 0; // reset after warning
+                    subgoalAttempts.length = 0; // reset after injection
                   }
                 } else {
                   this.consecutiveZeroEffectTurns = 0;
+                  subgoalAttempts.length = 0; // reset on progress
                 }
               }
 
@@ -5148,25 +5183,37 @@ export class AgentLoop {
           }
         }
 
-        // Text-only escalation: 1st → format correction, 2nd → escalate, 3rd → give-up
+        // Text-only escalation: uniform counting, progress-aware
         const filler = cleanContent ? isFillerText(cleanContent) : true;
         // Hallucination fast-tracks: bypass nudge, go straight to escalation
         if (hallucinationDetected) {
-          consecutiveTextOnly = Math.max(consecutiveTextOnly, 2);
+          consecutiveTextOnly = Math.max(consecutiveTextOnly, 3);
         } else {
-          consecutiveTextOnly += filler ? 2 : 1; // Filler fast-tracks
+          consecutiveTextOnly += 1; // Uniform counting — no filler fast-track
         }
+
+        // Progress immunity: if the last action changed the page, don't escalate yet
+        const lastEffect = this.stagnation.lastActionEffect;
+        const recentProgress = lastEffect && (
+          lastEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD ||
+          lastEffect.urlChanged
+        );
+        if (recentProgress) {
+          consecutiveTextOnly = Math.max(0, consecutiveTextOnly - 1);
+        }
+
         totalTextOnly++;
         this.log.warn("agent", "LLM emitted text instead of tools", {
           turn: this.turnCount,
           consecutiveTextOnly,
           tier: escalationTier,
           filler,
+          recentProgress: !!recentProgress,
           text: cleanContent?.slice(0, 80),
         });
 
         // S6: Record pathology for text-only responses
-        if (consecutiveTextOnly >= 2) {
+        if (consecutiveTextOnly >= 3) {
           this.traceRecorder?.recordEvent("multi_turn_pathology", {
             pathology: filler ? "verbosity" : "premature_generation",
             trigger: "text_only_response",
@@ -5175,11 +5222,12 @@ export class AgentLoop {
           });
         }
 
-        // Escalate to next tier on 2nd consecutive text-only
+        // Escalate to next tier on 3rd consecutive text-only (with minimum turn gate)
         if (
-          consecutiveTextOnly >= 2 &&
+          consecutiveTextOnly >= 3 &&
           escalationTier < 1 &&
-          cooldownRemaining <= 0
+          cooldownRemaining <= 0 &&
+          this.turnCount >= 4
         ) {
           const textOnlyAttemptSummary = extractAttemptSummary(
             this.context.getMessages(),
@@ -5216,8 +5264,8 @@ export class AgentLoop {
           continue;
         }
 
-        // Give-up: 3 consecutive text-only at max tier
-        if (consecutiveTextOnly >= 3) {
+        // Give-up: 4 consecutive text-only at max tier
+        if (consecutiveTextOnly >= 4) {
           this.log.warn("agent", "Loop ended: consecutive text-only limit", {
             turns: this.turnCount,
             consecutiveTextOnly,
