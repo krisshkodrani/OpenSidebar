@@ -4,35 +4,10 @@
  */
 
 import type { E2EGoldenCase, E2EJudgeScore } from "./e2e-types";
+import { renderPrompt } from "../src/prompts";
 
 const JUDGE_MODEL = "anthropic/claude-sonnet-4.6";
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-
-const SYSTEM_PROMPT = `You are an expert evaluator for a browser automation agent.
-You assess how well the agent solved a step of a browser navigation challenge.
-
-Each step has a hidden code that must be found and submitted via a form.
-The agent receives a DOM snapshot with tagged interactive elements and must
-produce the correct sequence of tool calls (click, type, scroll, etc.).
-
-Score each dimension 1-5:
-- puzzleSolving: Overall comprehension of the puzzle and strategy
-- codeIdentification: Did it find and correctly extract the hidden code?
-- actionPrecision: Correct sequence of actions (type into right input, click submit)
-- distractorAvoidance: Avoided clicking trap/decoy buttons and unnecessary elements
-
-Return ONLY a JSON object (no markdown fences):
-{
-  "puzzleSolving": <1-5>,
-  "codeIdentification": <1-5>,
-  "actionPrecision": <1-5>,
-  "distractorAvoidance": <1-5>,
-  "reasoning": "<brief explanation>",
-  "promptFixSuggestion": "<optional suggestion to improve the agent prompt>",
-  "pass": <true/false>
-}
-
-pass = true if puzzleSolving >= 3 AND codeIdentification >= 3 AND actionPrecision >= 3`;
 
 /**
  * Run LLM-as-judge on a single E2E eval case.
@@ -56,7 +31,7 @@ export async function judgeE2ECase(
     body: JSON.stringify({
       model: JUDGE_MODEL,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: renderPrompt("evals.e2e_judge.system") },
         { role: "user", content: prompt },
       ],
       max_tokens: 1024,
