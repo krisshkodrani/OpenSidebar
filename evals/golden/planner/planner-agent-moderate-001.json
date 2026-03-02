@@ -1,0 +1,38 @@
+{
+  "id": "planner-agent-moderate-001",
+  "sourceSessionId": "manual-agent-moderate-001",
+  "method": "decompose",
+  "input": {
+    "query": "Fill the checkout form and submit",
+    "pageTitle": "Checkout - ShopNow",
+    "pageUrl": "https://www.example.com/checkout",
+    "perception": "LAYOUT: Multi-section checkout form with shipping, billing, and payment sections. STATE: Cart has 2 items, subtotal $47.99. Shipping section active, others collapsed. CONTENT: [1] input#firstName, [2] input#lastName, [3] input#email, [4] input#address, [5] input#city, [6] select#state, [7] input#zip, [8] input#cardNumber, [9] input#expiry, [10] input#cvv, [11] button \"Place Order\". BLOCKERS: None. SPATIAL: Form stacked vertically, order summary sidebar right."
+  },
+  "expected": {
+    "difficulty": "moderate",
+    "isMultiStep": true,
+    "stepCountRange": { "min": 2, "max": 4 },
+    "mustCoverTopics": ["checkout", "form", "submit"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"]
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Fill in the shipping information fields (name, email, address)",
+        "Fill in the payment details (card number, expiry, CVV)",
+        "Review the order and click Place Order to submit"
+      ],
+      "difficulty": "moderate"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 12,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://www.example.com/checkout",
+    "query": "Fill the checkout form and submit",
+    "difficulty": "medium",
+    "tags": ["planner", "decompose", "form-filling"],
+    "dimension": "step_quality"
+  }
+}

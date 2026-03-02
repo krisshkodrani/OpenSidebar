@@ -1,0 +1,32 @@
+{
+  "id": "planner-validate-overdone-002",
+  "sourceSessionId": "manual-validate-overdone-002",
+  "method": "validateDone",
+  "input": {
+    "query": "Solve the drag-and-drop puzzle and submit the answer",
+    "pageTitle": "Step 5 - Drag Challenge Complete",
+    "pageUrl": "https://browserbench.example.com/challenges/step/6",
+    "perception": "LAYOUT: Challenge page showing step 6 content, indicating step 5 was passed. STATE: Previous step (drag puzzle) was completed, page advanced. CONTENT: 'Step 5 Complete! Moving to Step 6...' [1] div.step-indicator '6/20', [2] div.new-challenge-instructions. BLOCKERS: None. SPATIAL: Completion message top, new challenge instructions loading below.",
+    "plan": [
+      { "description": "Identify the drag-and-drop elements on the puzzle", "status": "completed" },
+      { "description": "Drag each piece to its correct target position", "status": "completed" },
+      { "description": "Submit the completed puzzle", "status": "completed" }
+    ],
+    "doneSummary": "The drag-and-drop puzzle has been solved. All pieces were moved to their correct positions and the answer was submitted. The page has advanced from step 5 to step 6, with the step indicator now showing '6/20' and the step 5 completion message visible. The agent is still on the page and could continue interacting, but the original task (solve the drag puzzle and submit) is fully complete."
+  },
+  "expected": {
+    "approved": true
+  },
+  "reference": {
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 15,
+    "escalationCount": 1
+  },
+  "metadata": {
+    "url": "https://browserbench.example.com/challenges/step/6",
+    "query": "Solve the drag-and-drop puzzle and submit the answer",
+    "difficulty": "hard",
+    "tags": ["planner", "validateDone", "overdone-pathology", "not-stopping", "step-advancement"],
+    "dimension": "done_validation"
+  }
+}

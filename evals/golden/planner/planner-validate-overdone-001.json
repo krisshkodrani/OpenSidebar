@@ -1,0 +1,32 @@
+{
+  "id": "planner-validate-overdone-001",
+  "sourceSessionId": "manual-validate-overdone-001",
+  "method": "validateDone",
+  "input": {
+    "query": "Submit the hidden code on the challenge page",
+    "pageTitle": "Congratulations! - BrowserBench",
+    "pageUrl": "https://browserbench.example.com/challenges/step/2",
+    "perception": "LAYOUT: Success page with congratulations banner and next step button. STATE: Code was accepted, page shows success confirmation. CONTENT: 'Congratulations! Code accepted. You have advanced to Step 2.' [1] button \"Continue to Step 2\". BLOCKERS: None. SPATIAL: Success banner top-center, continue button below.",
+    "plan": [
+      { "description": "Find the hidden code in the page DOM", "status": "completed" },
+      { "description": "Enter the code into the input field", "status": "completed" },
+      { "description": "Click submit to verify the code", "status": "completed" }
+    ],
+    "doneSummary": "The hidden code was found, entered, and submitted. The page now shows a success confirmation message 'Congratulations! Code accepted' and the URL has changed to step 2, confirming the challenge was completed."
+  },
+  "expected": {
+    "approved": true
+  },
+  "reference": {
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 8,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://browserbench.example.com/challenges/step/2",
+    "query": "Submit the hidden code on the challenge page",
+    "difficulty": "medium",
+    "tags": ["planner", "validateDone", "overdone-pathology", "not-stopping"],
+    "dimension": "done_validation"
+  }
+}

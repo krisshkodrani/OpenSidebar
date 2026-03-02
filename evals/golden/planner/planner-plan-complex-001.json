@@ -1,0 +1,40 @@
+{
+  "id": "planner-plan-complex-001",
+  "sourceSessionId": "manual-plan-complex-001",
+  "method": "decompose",
+  "input": {
+    "query": "Solve the 20-step navigation challenge on this page",
+    "pageTitle": "Navigation Challenge - BrowserBench",
+    "pageUrl": "https://browserbench.example.com/challenges/nav-20",
+    "perception": "LAYOUT: Challenge page with step counter (Step 1/20), instructions panel, and interactive area. STATE: Step 1 active, timer not started. CONTENT: Instructions say to navigate through 20 sequential steps, each requiring different DOM interactions. [1] button \"Start\", [2] div.instruction-panel. BLOCKERS: None. SPATIAL: Instructions top, interactive area center, progress bar bottom."
+  },
+  "expected": {
+    "difficulty": "complex",
+    "isMultiStep": true,
+    "stepCountRange": { "min": 4, "max": 8 },
+    "mustCoverTopics": ["solve", "step", "navigation", "challenge"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"]
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": [
+        "Start the challenge and read the first step instructions",
+        "Solve steps 1-5 by following each step's DOM interaction requirements",
+        "Solve steps 6-10, adapting to changing interaction patterns",
+        "Solve steps 11-15, handling any escalation in complexity",
+        "Solve steps 16-20 and verify challenge completion"
+      ],
+      "difficulty": "complex"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 45,
+    "escalationCount": 2
+  },
+  "metadata": {
+    "url": "https://browserbench.example.com/challenges/nav-20",
+    "query": "Solve the 20-step navigation challenge on this page",
+    "difficulty": "hard",
+    "tags": ["planner", "decompose", "multi-step"],
+    "dimension": "step_quality"
+  }
+}

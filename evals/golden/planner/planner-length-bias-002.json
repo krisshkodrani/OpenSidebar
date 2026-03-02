@@ -1,0 +1,35 @@
+{
+  "id": "planner-length-bias-002",
+  "sourceSessionId": "manual-length-bias-002",
+  "method": "decompose",
+  "input": {
+    "query": "What is the current price shown on this page?",
+    "pageTitle": "Bitcoin Price - CoinTracker",
+    "pageUrl": "https://cointracker.example.com/btc",
+    "perception": "LAYOUT: Cryptocurrency price page with large price display, chart, and market stats. STATE: Live price updating. CONTENT: Large text '$67,432.18' with green arrow +2.3%. [1] span.price '$67,432.18', [2] canvas#price-chart, [3] div.market-cap '$1.32T'. BLOCKERS: None. SPATIAL: Price top-center, chart below, stats sidebar right."
+  },
+  "expected": {
+    "difficulty": "simple",
+    "isMultiStep": false,
+    "stepCountRange": { "min": 1, "max": 1 },
+    "mustCoverTopics": ["price"],
+    "antiPatterns": ["site-specific heuristics", "empty objectives"],
+    "maxSteps": 2
+  },
+  "reference": {
+    "decomposition": {
+      "subtasks": ["Read the current price displayed on the page and report it to the user"],
+      "difficulty": "simple"
+    },
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 1,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://cointracker.example.com/btc",
+    "query": "What is the current price shown on this page?",
+    "difficulty": "easy",
+    "tags": ["planner", "decompose", "length-bias", "observation", "bloat-detection"],
+    "dimension": "length_bias"
+  }
+}

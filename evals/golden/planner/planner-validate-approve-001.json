@@ -1,0 +1,30 @@
+{
+  "id": "planner-validate-approve-001",
+  "sourceSessionId": "manual-validate-approve-001",
+  "method": "validateDone",
+  "input": {
+    "query": "Click the login button and verify the dashboard loads",
+    "pageTitle": "Dashboard - MyApp",
+    "pageUrl": "https://myapp.example.com/dashboard",
+    "plan": [
+      { "description": "Click the login button on the login page", "status": "completed" },
+      { "description": "Verify the dashboard page has loaded with user data visible", "status": "completed" }
+    ],
+    "doneSummary": "Successfully logged in. The dashboard is now showing with the user's name, recent activity, and notifications panel all visible."
+  },
+  "expected": {
+    "approved": true
+  },
+  "reference": {
+    "sessionOutcome": "completed",
+    "sessionTurnCount": 5,
+    "escalationCount": 0
+  },
+  "metadata": {
+    "url": "https://myapp.example.com/dashboard",
+    "query": "Click the login button and verify the dashboard loads",
+    "difficulty": "easy",
+    "tags": ["planner", "validateDone", "correct-done"],
+    "dimension": "done_validation"
+  }
+}
