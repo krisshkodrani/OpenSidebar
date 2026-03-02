@@ -1,0 +1,54 @@
+{
+  "id": "escalation-stuck-click-001",
+  "scenario": "click_intercepted_overlay",
+  "difficulty": "easy",
+  "fastPhase": {
+    "snapshot": {
+      "url": "https://shop.example.com/checkout",
+      "title": "Checkout - Complete Your Order",
+      "elementCount": 32,
+      "scrollY": 0
+    },
+    "elements": [
+      { "tag": 1, "tagName": "h1", "role": "heading", "text": "Complete Your Order", "attributes": {}, "rect": { "x": 50, "y": 20, "width": 500, "height": 36 }, "isVisible": true, "isDisabled": false },
+      { "tag": 2, "tagName": "button", "role": "button", "text": "Place Order", "attributes": { "type": "submit", "class": "btn-primary" }, "rect": { "x": 300, "y": 400, "width": 200, "height": 48 }, "isVisible": true, "isDisabled": false },
+      { "tag": 3, "tagName": "div", "role": "dialog", "text": "We value your privacy. This site uses cookies for analytics.", "attributes": { "class": "cookie-banner overlay", "style": "position:fixed;z-index:9999" }, "rect": { "x": 0, "y": 0, "width": 1200, "height": 800 }, "isVisible": true, "isDisabled": false },
+      { "tag": 4, "tagName": "button", "role": "button", "text": "Accept All Cookies", "attributes": { "class": "cookie-accept" }, "rect": { "x": 500, "y": 450, "width": 200, "height": 40 }, "isVisible": true, "isDisabled": false },
+      { "tag": 5, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Card number" }, "rect": { "x": 50, "y": 200, "width": 400, "height": 36 }, "isVisible": true, "isDisabled": false }
+    ],
+    "objective": "Click the 'Place Order' button to complete the checkout.",
+    "stagnantHistory": [
+      { "tool": "click_element", "args": { "id": 2 }, "result": "Click intercepted by overlay element. The target element [2] is behind an overlay." },
+      { "tool": "scroll_page", "args": { "direction": "down", "amount": 500 }, "result": "Scrolled down 500px. New scroll position: 500px" },
+      { "tool": "click_element", "args": { "id": 2 }, "result": "Click intercepted by overlay element. The target element [2] is behind an overlay." },
+      { "tool": "click_element", "args": { "id": 2 }, "result": "Click intercepted by overlay element. The target element [2] is behind an overlay." },
+      { "tool": "scroll_page", "args": { "direction": "up", "amount": 500 }, "result": "Scrolled up 500px. New scroll position: 0px" },
+      { "tool": "click_element", "args": { "id": 2 }, "result": "Click intercepted by overlay element. The target element [2] is behind an overlay." }
+    ]
+  },
+  "expectedFastAction": "escalate",
+  "smartPhase": {
+    "snapshot": {
+      "url": "https://shop.example.com/checkout",
+      "title": "Checkout - Complete Your Order",
+      "elementCount": 32,
+      "scrollY": 0
+    },
+    "elements": [
+      { "tag": 1, "tagName": "h1", "role": "heading", "text": "Complete Your Order", "attributes": {}, "rect": { "x": 50, "y": 20, "width": 500, "height": 36 }, "isVisible": true, "isDisabled": false },
+      { "tag": 2, "tagName": "button", "role": "button", "text": "Place Order", "attributes": { "type": "submit", "class": "btn-primary" }, "rect": { "x": 300, "y": 400, "width": 200, "height": 48 }, "isVisible": true, "isDisabled": false },
+      { "tag": 3, "tagName": "div", "role": "dialog", "text": "We value your privacy. This site uses cookies for analytics.", "attributes": { "class": "cookie-banner overlay", "style": "position:fixed;z-index:9999" }, "rect": { "x": 0, "y": 0, "width": 1200, "height": 800 }, "isVisible": true, "isDisabled": false },
+      { "tag": 4, "tagName": "button", "role": "button", "text": "Accept All Cookies", "attributes": { "class": "cookie-accept" }, "rect": { "x": 500, "y": 450, "width": 200, "height": 40 }, "isVisible": true, "isDisabled": false }
+    ],
+    "escalationReason": "click_element [2] intercepted by overlay 4 times — scrolling does not help, the overlay is position:fixed and covers the entire page"
+  },
+  "expectedSmartAction": {
+    "toolName": "click_element",
+    "args": { "id": 4 },
+    "acceptAlternatives": ["dismiss_overlays", "hide_element"]
+  },
+  "metadata": {
+    "curatedAt": "2026-02-28",
+    "notes": "Cookie overlay blocks click on Place Order. Executor model clicks [2] four times with scrolling between — all intercepted. Planner model should dismiss the overlay or click Accept [4]."
+  }
+}
