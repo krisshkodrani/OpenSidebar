@@ -1627,8 +1627,8 @@ export class AgentLoop {
     const fingerprint = computeSnapshotFingerprint(snapshot);
     if (fingerprint === this.lastPerceptionFingerprint && this.lastPerception) {
       this.perceptionFingerprintAge++;
-      // Force re-interpret after 4 stale turns (visual changes DOM fingerprint misses)
-      if (this.perceptionFingerprintAge < 4) {
+      // Force re-interpret after 2 stale turns (visual changes DOM fingerprint misses)
+      if (this.perceptionFingerprintAge < 2) {
         return;
       }
       this.log.info(

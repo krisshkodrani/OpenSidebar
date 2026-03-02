@@ -90,7 +90,7 @@ describe("perceive()", () => {
             const result = await perceive(makeInput());
             expect(result.cached).toBe(false);
             expect(result.interpretation).toContain("No API key");
-            expect(result.model).toBe("openai/gpt-4o-mini");
+            expect(result.model).toBe("google/gemini-2.5-flash");
         } finally {
             cleanup();
         }
@@ -107,7 +107,7 @@ describe("perceive()", () => {
             const result = await perceive(makeInput());
             expect(result.interpretation).toContain("LAYOUT:");
             expect(result.providerId).toBe("openrouter");
-            expect(result.model).toBe("openai/gpt-4o-mini");
+            expect(result.model).toBe("google/gemini-2.5-flash");
             expect(calledUrl).toContain("openrouter.ai");
         } finally {
             cleanup();

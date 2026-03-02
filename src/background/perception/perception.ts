@@ -19,7 +19,7 @@ import { TokenUsage } from "../llm/types";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const OPENROUTER_PERCEPTION_MODEL = "openai/gpt-4o-mini";
+const OPENROUTER_PERCEPTION_MODEL = "google/gemini-2.5-flash";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -203,9 +203,11 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       '   NUISANCE [tagId] "element text" → click [dismissId]',
       '   RELEVANT [tagId] "element text" → reason to keep',
       '   PREREQ "what must happen first" → e.g. "solve puzzle to reveal code", "fill [tagId] input before submit"',
+      '   MISMATCH "screenshot shows X but elements/instruction say Y" → describe what you actually see',
       "   NUISANCE = cookie/consent/promo/ad popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button.",
       "   RELEVANT = login/checkout/consent dialog with Accept/Decline — requires user decision.",
       "   PREREQ = action/challenge that must complete before objective can proceed. Always list when an unfilled input gates progress.",
+      "   MISMATCH = screenshot contradicts element list or expected page state. Always report when visual state differs from metadata.",
       '   If none: "None."',
       "4. VISUAL-ONLY: Task-relevant text in images/canvas/charts/SVGs the DOM misses. Not page text already in elements.",
       "5. COMPLETION_SIGNAL: Is this subtask visually complete? Answer exactly one:",
@@ -227,9 +229,11 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       '   NUISANCE [tagId] "element text" → click [dismissTagId]',
       '   RELEVANT [tagId] "element text" → reason to keep',
       '   PREREQ "what must happen first" → e.g. "complete challenge to reveal code", "fill [tagId] input before submit"',
+      '   MISMATCH "screenshot shows X but elements/instruction say Y" → describe what you actually see',
       "   NUISANCE = cookie/consent/promo/newsletter/ad/notification/survey popup — safe to auto-dismiss. Dismiss target must be a valid [tagId] button from the element list.",
       "   RELEVANT = login/checkout/consent dialog with Accept/Decline — user must choose. NOT auto-dismissible.",
       "   PREREQ = content gated behind a step, timer, puzzle, or unfilled input. Always list when a required input field is empty or a challenge must be completed before proceeding.",
+      "   MISMATCH = screenshot contradicts element list or expected page state (e.g., page shows Step 5 but instruction says Step 2). Always report visual/metadata disagreements.",
       '   Vague-CTA divs ("Click Me", "Try This!", "Nope!") = NUISANCE with their actual [tagId] as dismiss target.',
       '   If no blockers: "None."',
       "4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements.",
