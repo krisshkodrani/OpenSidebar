@@ -465,12 +465,16 @@ Do NOT call done() until every planned step is complete.
 
     // Grounding check: first-turn only prompt injection
     if (this.isFirstTurn) {
-      let groundingBlock = "## Grounding Check\n";
+      let groundingBlock = "## Grounding Check — First-Turn Protocol\n";
       if (this.contradictionDetails) {
-        groundingBlock += `⚠ CONTRADICTION DETECTED: ${this.contradictionDetails}\nBefore acting, address this mismatch between your instructions and the current page state.\n`;
+        groundingBlock +=
+          `⚠ CONTRADICTION DETECTED: ${this.contradictionDetails}\n` +
+          "You MUST call clarify() to resolve this mismatch before taking any other action. Do NOT proceed with the instruction as given.\n\n";
       }
       groundingBlock +=
-        "IMPORTANT: Before interacting with any element, use read_page or find_element to observe the current page state. Do not act blindly.\n";
+        "Your FIRST tool call this turn MUST be an observation tool: read_page, find_element, or read_element.\n" +
+        "Do NOT call click_element, type_text, scroll_page, or any action tool until you have observed the page.\n" +
+        "Even though elements and content are shown above, verify the page state matches your task before acting.\n";
       content = content.replace(
         "## Page Context",
         `${groundingBlock}\n## Page Context`,

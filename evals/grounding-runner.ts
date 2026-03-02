@@ -16,7 +16,8 @@ import { judgeGroundingCase } from "./grounding-judge";
 import { formatSnapshotElements } from "../src/background/agent/context";
 import { getPromptTemplate } from "../src/prompts";
 import { recoverToolCallsFromText } from "../src/background/agent/tool-recovery";
-import type { TaggedElement } from "../src/types";
+import { detectInstructionContradiction } from "../src/background/agent/loop-helpers";
+import type { TaggedElement, DomSnapshot } from "../src/types";
 
 export type GroundingProvider = "groq" | "openrouter";
 
@@ -44,9 +45,36 @@ function buildGroundingSystemPrompt(goldenCase: GroundingGoldenCase): string {
   const elementList = formatSnapshotElements(elements);
   const snap = goldenCase.snapshot;
 
+  // Replicate the production grounding check (first-turn injection from context.ts)
+  let groundingBlock = "## Grounding Check — First-Turn Protocol\n";
+
+  // Run contradiction detection against a synthesized snapshot
+  const synthSnapshot: Partial<DomSnapshot> = {
+    url: snap.url,
+    title: snap.title,
+    pageContent: goldenCase.pageContent ?? undefined,
+    elements: [],
+  };
+  const contradiction = detectInstructionContradiction(
+    goldenCase.instruction,
+    synthSnapshot as DomSnapshot,
+  );
+  if (contradiction?.mismatch) {
+    groundingBlock +=
+      `⚠ CONTRADICTION DETECTED: ${contradiction.details}\n` +
+      "You MUST call clarify() to resolve this mismatch before taking any other action. Do NOT proceed with the instruction as given.\n\n";
+  }
+
+  groundingBlock +=
+    "Your FIRST tool call this turn MUST be an observation tool: read_page, find_element, or read_element.\n" +
+    "Do NOT call click_element, type_text, scroll_page, or any action tool until you have observed the page.\n" +
+    "Even though elements and content are shown above, verify the page state matches your task before acting.\n";
+
   let prompt =
     template +
-    "\n\n## Page Context\n\n" +
+    "\n\n" +
+    groundingBlock +
+    "\n## Page Context\n\n" +
     `URL: ${snap.url}\n` +
     `Title: ${snap.title}\n` +
     `Scroll: ${snap.scrollY}px\n` +
