@@ -467,3 +467,96 @@ export function userExplicitlyRequestedTabManagement(query: string): boolean {
     /\b(multiple tabs|multi-tab|compare tabs)\b/.test(normalized)
   );
 }
+
+// ─── Grounding helpers ───────────────────────────────────────────────
+
+/** Tools that count as "observing the page" — used by the blind-action gate. */
+export const GROUNDING_OBSERVATION_TOOLS = new Set<string>([
+  ToolName.READ_PAGE,
+  ToolName.FIND_ELEMENT,
+  ToolName.READ_ELEMENT,
+  ToolName.XRAY_PAGE,
+  ToolName.SCROLL_PAGE,
+]);
+
+const STEP_PATTERNS = [
+  /\/step(\d+)/i, // URL path: /step3
+  /step\s+(\d+)/i, // prose: "step 3", "Step 5"
+  /on step\s+(\d+)/i, // "You are on step 5"
+];
+
+/**
+ * Extract a step number from a string (URL, title, or page content).
+ * Returns the first match or null.
+ */
+export function extractStepIndicator(source: string): { step: number } | null {
+  for (const re of STEP_PATTERNS) {
+    const m = source.match(re);
+    if (m) return { step: parseInt(m[1], 10) };
+  }
+  return null;
+}
+
+/** Keyword groups for page-type mismatch detection. */
+const PAGE_TYPE_RULES: Array<{
+  instructionKeywords: RegExp;
+  pageKeywords: RegExp;
+  pageExclude?: RegExp;
+}> = [
+  {
+    // instruction says checkout/form, but page is a cart
+    instructionKeywords: /\b(checkout|check out|fill out|complete the form|payment)\b/i,
+    pageKeywords: /\b(cart|shopping cart|your cart|bag)\b/i,
+    pageExclude: /\bcheckout\b/i,
+  },
+  {
+    // instruction says search, but page is a product/article
+    instructionKeywords: /\b(search for|search the|find results|search results)\b/i,
+    pageKeywords: /\b(product|article|item detail|order confirmation)\b/i,
+  },
+];
+
+export interface ContradictionResult {
+  mismatch: boolean;
+  details: string;
+}
+
+/**
+ * Deterministic contradiction detector.
+ * Compares instruction claims against actual page state from the snapshot.
+ * Returns null when no contradiction is found (conservative — avoids false positives).
+ */
+export function detectInstructionContradiction(
+  instruction: string,
+  snapshot: DomSnapshot,
+): ContradictionResult | null {
+  const pageText = [snapshot.url, snapshot.title, snapshot.pageContent ?? ""].join(" ");
+
+  // 1. Step mismatch: instruction says step N, page says step M
+  const instrStep = extractStepIndicator(instruction);
+  const pageStep = extractStepIndicator(pageText);
+  if (instrStep && pageStep && instrStep.step !== pageStep.step) {
+    return {
+      mismatch: true,
+      details: `Instruction references step ${instrStep.step}, but the page is on step ${pageStep.step} (URL: ${snapshot.url}, title: "${snapshot.title}").`,
+    };
+  }
+
+  // 2. Page-type mismatch: instruction expects one page type, snapshot shows another
+  for (const rule of PAGE_TYPE_RULES) {
+    if (rule.instructionKeywords.test(instruction)) {
+      const combinedPage = `${snapshot.title} ${snapshot.url}`;
+      if (
+        rule.pageKeywords.test(combinedPage) &&
+        (!rule.pageExclude || !rule.pageExclude.test(combinedPage))
+      ) {
+        return {
+          mismatch: true,
+          details: `Instruction expects "${instruction.slice(0, 80)}", but the current page appears to be a different type (title: "${snapshot.title}", URL: ${snapshot.url}).`,
+        };
+      }
+    }
+  }
+
+  return null;
+}

@@ -39,6 +39,8 @@ export class ContextManager {
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
   private pageContent: string | null = null;
+  private isFirstTurn = true;
+  private contradictionDetails: string | null = null;
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -52,6 +54,20 @@ export class ContextManager {
   /** Set the page interpretation from the perception layer. */
   public setPageInterpretation(interpretation: string | null): void {
     this.pageInterpretation = interpretation;
+  }
+
+  /** Mark that the first turn is complete (grounding check only fires on turn 1). */
+  public setFirstTurnDone(): void {
+    this.isFirstTurn = false;
+  }
+
+  public getIsFirstTurn(): boolean {
+    return this.isFirstTurn;
+  }
+
+  /** Store a detected instruction-vs-page contradiction for the grounding check. */
+  public setContradiction(details: string | null): void {
+    this.contradictionDetails = details;
   }
 
   /** Inject a formatted demonstration into the system prompt context. */
@@ -442,6 +458,20 @@ Do NOT call done() until every planned step is complete.
       content = content.replace(
         "## Page Context",
         `## Current Task\n${this.originalQuery}\nStay focused on this goal.\n\n## Page Context`,
+      );
+    }
+
+    // Grounding check: first-turn only prompt injection
+    if (this.isFirstTurn) {
+      let groundingBlock = "## Grounding Check\n";
+      if (this.contradictionDetails) {
+        groundingBlock += `⚠ CONTRADICTION DETECTED: ${this.contradictionDetails}\nBefore acting, address this mismatch between your instructions and the current page state.\n`;
+      }
+      groundingBlock +=
+        "IMPORTANT: Before interacting with any element, use read_page or find_element to observe the current page state. Do not act blindly.\n";
+      content = content.replace(
+        "## Page Context",
+        `${groundingBlock}\n## Page Context`,
       );
     }
 
@@ -1121,6 +1151,8 @@ Do NOT call done() until every planned step is complete.
     this.triagedPopups = [];
     this.pageInterpretation = null;
     this.pageContent = null;
+    this.isFirstTurn = true;
+    this.contradictionDetails = null;
     this.saveState().catch(() => {});
   }
 
