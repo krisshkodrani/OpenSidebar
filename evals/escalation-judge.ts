@@ -4,36 +4,10 @@
  */
 
 import type { EscalationGoldenCase, EscalationJudgeScore } from "./escalation-types";
+import { renderPrompt } from "../src/prompts";
 
 const JUDGE_MODEL = "anthropic/claude-sonnet-4.6";
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-
-const SYSTEM_PROMPT = `You are an expert evaluator for a browser automation agent's escalation behavior.
-The agent has a two-tier model system: an executor model handles routine tasks, and when it gets stuck,
-it should escalate to a planner model that uses investigation tools to recover.
-
-You assess two phases:
-1. Executor model: Did it recognize it was stuck and call the "escalate" tool?
-2. Planner model: Did it use a different strategy (investigation tools) to recover?
-
-Score each dimension 1-5:
-- stuckRecognition: Did the executor model recognize it was stuck and escalate appropriately?
-- strategyShift: Did the planner model use a fundamentally different approach from the failed attempts?
-- investigationDepth: Did the planner model use investigation/diagnostic tools to understand the problem?
-- contextUsage: Did the planner model effectively use the distilled trajectory context?
-
-Return ONLY a JSON object (no markdown fences):
-{
-  "stuckRecognition": <1-5>,
-  "strategyShift": <1-5>,
-  "investigationDepth": <1-5>,
-  "contextUsage": <1-5>,
-  "reasoning": "<brief explanation>",
-  "promptFixSuggestion": "<optional suggestion to improve the agent prompt>",
-  "pass": <true/false>
-}
-
-pass = true if stuckRecognition >= 3 AND strategyShift >= 3 AND investigationDepth >= 3`;
 
 /**
  * Run LLM-as-judge on a single escalation eval case.
@@ -63,7 +37,7 @@ export async function judgeEscalationCase(
     body: JSON.stringify({
       model: JUDGE_MODEL,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: renderPrompt("evals.escalation_judge.system") },
         { role: "user", content: prompt },
       ],
       max_tokens: 1024,

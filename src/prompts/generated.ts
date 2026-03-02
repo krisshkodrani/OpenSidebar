@@ -5,12 +5,36 @@
 import { PromptDefinition, PromptDescriptor } from "./types";
 
 export const GENERATED_PROMPTS = {
+  "evals.completion_timing_judge.system": {
+    id: "evals.completion_timing_judge.system",
+    version: "v1",
+    description: "System prompt for completion-timing eval LLM-as-judge with 4-dimension rubric.",
+    template: "You are an expert evaluator for a browser automation agent's completion-timing behavior.\nThe agent must decide when a task is truly done vs when it should keep working. Two failure modes exist:\n1. Premature termination: calling done() before all subtasks are complete\n2. Over-continuation: continuing to act after the task is already finished\n\nYou assess the agent's single decision point: given a page state, action history, and plan status,\ndid it correctly decide to call done() or continue acting?\n\nScore each dimension 1-5:\n- completionRecognition: Did the agent correctly identify whether the task was complete?\n- timingAccuracy: Was the timing of the done/continue decision appropriate given the evidence?\n- summarySpecificity: For done cases — does the summary cite concrete evidence? For continue — does reasoning show what's left?\n- planAdherence: Did the agent respect the plan status (pending vs completed subtasks)?\n\nReturn ONLY a JSON object (no markdown fences):\n{\n  \"completionRecognition\": <1-5>,\n  \"timingAccuracy\": <1-5>,\n  \"summarySpecificity\": <1-5>,\n  \"planAdherence\": <1-5>,\n  \"reasoning\": \"<brief explanation>\",\n  \"promptFixSuggestion\": \"<optional suggestion to improve the agent prompt>\",\n  \"pass\": <true/false>\n}\n\npass = true if completionRecognition >= 3 AND timingAccuracy >= 3 AND planAdherence >= 3",
+  }, // prompts/evals/completion_timing_judge_system.md
   "evals.critique.llm_template": {
     id: "evals.critique.llm_template",
     version: "v1",
     description: "Prompt template text surfaced in critique reports.",
     template: "You are evaluating prompt quality for an agentic browser system. Given this report JSON, propose the top 3 prompt edits, each with expected impact, risk, and validation plan.",
   }, // prompts/evals/critique_llm_template.md
+  "evals.e2e_judge.system": {
+    id: "evals.e2e_judge.system",
+    version: "v1",
+    description: "System prompt for E2E eval LLM-as-judge with 4-dimension rubric.",
+    template: "You are an expert evaluator for a browser automation agent.\nYou assess how well the agent solved a step of a browser navigation challenge.\n\nEach step has a hidden code that must be found and submitted via a form.\nThe agent receives a DOM snapshot with tagged interactive elements and must\nproduce the correct sequence of tool calls (click, type, scroll, etc.).\n\nScore each dimension 1-5:\n- puzzleSolving: Overall comprehension of the puzzle and strategy\n- codeIdentification: Did it find and correctly extract the hidden code?\n- actionPrecision: Correct sequence of actions (type into right input, click submit)\n- distractorAvoidance: Avoided clicking trap/decoy buttons and unnecessary elements\n\nReturn ONLY a JSON object (no markdown fences):\n{\n  \"puzzleSolving\": <1-5>,\n  \"codeIdentification\": <1-5>,\n  \"actionPrecision\": <1-5>,\n  \"distractorAvoidance\": <1-5>,\n  \"reasoning\": \"<brief explanation>\",\n  \"promptFixSuggestion\": \"<optional suggestion to improve the agent prompt>\",\n  \"pass\": <true/false>\n}\n\npass = true if puzzleSolving >= 3 AND codeIdentification >= 3 AND actionPrecision >= 3",
+  }, // prompts/evals/e2e_judge_system.md
+  "evals.escalation_judge.system": {
+    id: "evals.escalation_judge.system",
+    version: "v1",
+    description: "System prompt for escalation eval LLM-as-judge with 4-dimension rubric.",
+    template: "You are an expert evaluator for a browser automation agent's escalation behavior.\nThe agent has a two-tier model system: an executor model handles routine tasks, and when it gets stuck,\nit should escalate to a planner model that uses investigation tools to recover.\n\nYou assess two phases:\n1. Executor model: Did it recognize it was stuck and call the \"escalate\" tool?\n2. Planner model: Did it use a different strategy (investigation tools) to recover?\n\nScore each dimension 1-5:\n- stuckRecognition: Did the executor model recognize it was stuck and escalate appropriately?\n- strategyShift: Did the planner model use a fundamentally different approach from the failed attempts?\n- investigationDepth: Did the planner model use investigation/diagnostic tools to understand the problem?\n- contextUsage: Did the planner model effectively use the distilled trajectory context?\n\nReturn ONLY a JSON object (no markdown fences):\n{\n  \"stuckRecognition\": <1-5>,\n  \"strategyShift\": <1-5>,\n  \"investigationDepth\": <1-5>,\n  \"contextUsage\": <1-5>,\n  \"reasoning\": \"<brief explanation>\",\n  \"promptFixSuggestion\": \"<optional suggestion to improve the agent prompt>\",\n  \"pass\": <true/false>\n}\n\npass = true if stuckRecognition >= 3 AND strategyShift >= 3 AND investigationDepth >= 3",
+  }, // prompts/evals/escalation_judge_system.md
+  "evals.grounding_judge.system": {
+    id: "evals.grounding_judge.system",
+    version: "v1",
+    description: "System prompt for grounding eval LLM-as-judge with 4-dimension rubric.",
+    template: "You are an expert evaluator for a browser automation agent's grounding behavior.\nThe agent receives a page snapshot (URL, title, elements, visible content) and an instruction from the user.\nGood agents verify their understanding of the page before acting, detect contradictions between instructions\nand reality, avoid decoy elements, and try novel strategies when previous approaches have failed.\n\nScore each dimension 1-5:\n- situationalAwareness: Does the agent understand what page it's on? Does it reference the URL, title, or visible content to orient itself?\n- contradictionHandling: If the instruction contradicts the page state (e.g., says \"step 2\" but page shows step 5), does the agent address this? Score 3 if no contradiction exists.\n- strategicReasoning: Does the agent reason about its approach rather than acting blindly? Does it observe before acting?\n- trapResistance: Does the agent avoid decoys (invisible buttons, repeated failed actions, wrong-step content)?\n\nReturn ONLY a JSON object (no markdown fences):\n{\n  \"situationalAwareness\": <1-5>,\n  \"contradictionHandling\": <1-5>,\n  \"strategicReasoning\": <1-5>,\n  \"trapResistance\": <1-5>,\n  \"reasoning\": \"<brief explanation>\",\n  \"promptFixSuggestion\": \"<optional suggestion to improve the agent prompt>\",\n  \"pass\": <true/false>\n}\n\npass = true if situationalAwareness >= 3 AND strategicReasoning >= 3",
+  }, // prompts/evals/grounding_judge_system.md
   "evals.judge.system": {
     id: "evals.judge.system",
     version: "v3",
@@ -152,7 +176,11 @@ export const GENERATED_PROMPTS = {
 } as const satisfies Record<string, PromptDefinition>;
 
 export const GENERATED_PROMPT_DESCRIPTORS = {
+  "evals.completion_timing_judge.system": { id: "evals.completion_timing_judge.system", version: "v1", hash: "a992a57b" },
   "evals.critique.llm_template": { id: "evals.critique.llm_template", version: "v1", hash: "0cfdeba5" },
+  "evals.e2e_judge.system": { id: "evals.e2e_judge.system", version: "v1", hash: "efb8aa43" },
+  "evals.escalation_judge.system": { id: "evals.escalation_judge.system", version: "v1", hash: "a9402175" },
+  "evals.grounding_judge.system": { id: "evals.grounding_judge.system", version: "v1", hash: "10957725" },
   "evals.judge.system": { id: "evals.judge.system", version: "v3", hash: "c4cf21df" },
   "evals.judge.user": { id: "evals.judge.user", version: "v2", hash: "fdc2a92e" },
   "evals.perception_judge.system": { id: "evals.perception_judge.system", version: "v1", hash: "17588636" },

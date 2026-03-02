@@ -18,6 +18,10 @@ export type PromptId =
   | "evals.critique.llm_template"
   | "evals.perception_judge.system"
   | "evals.perception_judge.user"
+  | "evals.completion_timing_judge.system"
+  | "evals.e2e_judge.system"
+  | "evals.escalation_judge.system"
+  | "evals.grounding_judge.system"
   | "ui.saved_prompt.summarize_page"
   | "ui.saved_prompt.extract_links"
   | "ui.saved_prompt.fill_form";

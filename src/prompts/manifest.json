@@ -1,10 +1,38 @@
 [
   {
+    "id": "evals.completion_timing_judge.system",
+    "version": "v1",
+    "hash": "a992a57b",
+    "description": "System prompt for completion-timing eval LLM-as-judge with 4-dimension rubric.",
+    "sourcePath": "prompts/evals/completion_timing_judge_system.md"
+  },
+  {
     "id": "evals.critique.llm_template",
     "version": "v1",
     "hash": "0cfdeba5",
     "description": "Prompt template text surfaced in critique reports.",
     "sourcePath": "prompts/evals/critique_llm_template.md"
+  },
+  {
+    "id": "evals.e2e_judge.system",
+    "version": "v1",
+    "hash": "efb8aa43",
+    "description": "System prompt for E2E eval LLM-as-judge with 4-dimension rubric.",
+    "sourcePath": "prompts/evals/e2e_judge_system.md"
+  },
+  {
+    "id": "evals.escalation_judge.system",
+    "version": "v1",
+    "hash": "a9402175",
+    "description": "System prompt for escalation eval LLM-as-judge with 4-dimension rubric.",
+    "sourcePath": "prompts/evals/escalation_judge_system.md"
+  },
+  {
+    "id": "evals.grounding_judge.system",
+    "version": "v1",
+    "hash": "10957725",
+    "description": "System prompt for grounding eval LLM-as-judge with 4-dimension rubric.",
+    "sourcePath": "prompts/evals/grounding_judge_system.md"
   },
   {
     "id": "evals.judge.system",
