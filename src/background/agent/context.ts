@@ -7,6 +7,8 @@ import { getPromptTemplate } from "../../prompts";
 import {
   formatElementCompact,
   summarizeHistory,
+  deduplicateInvisibleElements,
+  compressRepetitiveContent,
 } from "./context-formatting";
 import {
   EXECUTOR_PERSONA,
@@ -499,12 +501,18 @@ Do NOT call done() until every planned step is complete.
         content = content.replace("{{scrollIndicator}}", "");
       }
 
-      // Format elements with progressive compression
+      // Deduplicate invisible-text elements before formatting
       const level = this.getCompressionLevel();
+      const { visible: visibleElements, groups: invisibleGroups } =
+        deduplicateInvisibleElements(this.snapshot.elements);
+
+      // Format elements with progressive compression
       const elementsList = this.formatElementsWithCompression(
-        this.snapshot.elements,
+        visibleElements,
         level,
       );
+      const groupSuffix =
+        invisibleGroups.length > 0 ? "\n" + invisibleGroups.join("\n") : "";
       if (
         this.snapshot.overflow &&
         this.snapshot.overflow.total > this.snapshot.overflow.shown
@@ -512,12 +520,15 @@ Do NOT call done() until every planned step is complete.
         const note = `Note: Showing ${this.snapshot.overflow.shown}/${this.snapshot.overflow.total} elements (${this.snapshot.overflow.collapsedGroups?.join(", ") || "similar elements collapsed"}).`;
         content = content.replace(
           "{{elements}}",
-          (elementsList || "No interactive elements found.") + "\n" + note,
+          (elementsList || "No interactive elements found.") +
+            groupSuffix +
+            "\n" +
+            note,
         );
       } else {
         content = content.replace(
           "{{elements}}",
-          elementsList || "No interactive elements found.",
+          (elementsList || "No interactive elements found.") + groupSuffix,
         );
       }
 
@@ -536,6 +547,7 @@ Do NOT call done() until every planned step is complete.
             truncated.slice(0, charLimit) +
             "\n\n[Content truncated — use scroll_page to see more]";
         }
+        truncated = compressRepetitiveContent(truncated);
         content = content.replace("{{pageContent}}", truncated);
       } else {
         content = content.replace(
