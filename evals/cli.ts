@@ -68,6 +68,8 @@ import { runEscalationEvals, type PlannerModel } from "./escalation-runner";
 import { buildEscalationReport } from "./escalation-report";
 import { runCompletionTimingEvals, type CompletionTimingProvider } from "./completion-timing-runner";
 import { buildCompletionTimingReport } from "./completion-timing-report";
+import { runGroundingEvals, type GroundingProvider } from "./grounding-runner";
+import { buildGroundingReport } from "./grounding-report";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -197,6 +199,12 @@ async function main() {
       break;
     case "completion-timing-validate":
       await cmdCompletionTimingValidate();
+      break;
+    case "grounding-critique":
+      await cmdGroundingCritique(args.slice(1));
+      break;
+    case "grounding-validate":
+      await cmdGroundingValidate();
       break;
     case "help":
     default:
@@ -1535,6 +1543,15 @@ Completion-timing eval commands:
     --out <dir>       Output directory (default: evals/reports)
 
   completion-timing-validate             Structural validation of completion-timing golden cases (offline)
+
+Grounding eval commands:
+  grounding-critique [options]           Replay grounding cases, score, judge, report
+    --provider <p>    Force provider: groq or openrouter
+    --judge           Enable LLM-as-judge
+    --scenario <s>    Filter by scenario
+    --out <dir>       Output directory (default: evals/reports)
+
+  grounding-validate                     Structural validation of grounding golden cases (offline)
 `);
 }
 
@@ -2086,6 +2103,140 @@ async function cmdCompletionTimingValidate() {
         `expected: ${goldenCase.expectedAction}, ` +
         `plan: ${completedSteps} done / ${pendingSteps} pending, ` +
         `${goldenCase.actionHistory.length} actions)`,
+      );
+      valid++;
+    }
+  }
+
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
+}
+
+// ── Grounding commands ────────────────────────────────────────────────
+
+async function cmdGroundingCritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
+  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+  const scenarioIdx = args.indexOf("--scenario");
+  const scenarioFilter = scenarioIdx !== -1 ? args[scenarioIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readGroundingGoldenCases } = await import("./utils");
+  const cases = readGroundingGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No grounding golden cases found in evals/golden/grounding/${c.reset}`);
+    process.exit(1);
+  }
+
+  const provider: GroundingProvider = (providerArg as GroundingProvider) ?? (keys.groq ? "groq" : "openrouter");
+  console.log(`${c.bold}Grounding Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
+
+  const results = await runGroundingEvals({
+    keys,
+    provider,
+    judge: judgeFlag,
+    scenarioFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildGroundingReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `grounding-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Grounding: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+async function cmdGroundingValidate() {
+  const { readGroundingGoldenCases } = await import("./utils");
+  const cases = readGroundingGoldenCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No grounding golden cases found in evals/golden/grounding/${c.reset}`);
+    return;
+  }
+
+  console.log(`${c.bold}Validating ${cases.length} grounding golden case(s)...${c.reset}\n`);
+
+  let valid = 0;
+  let invalid = 0;
+
+  for (const goldenCase of cases) {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!goldenCase.id) errors.push("missing id");
+    if (!goldenCase.scenario) errors.push("missing scenario");
+    if (!["easy", "medium", "hard"].includes(goldenCase.difficulty)) errors.push("invalid difficulty");
+
+    // Snapshot
+    if (!goldenCase.snapshot?.url) errors.push("missing snapshot.url");
+    if (!goldenCase.snapshot?.title) errors.push("missing snapshot.title");
+
+    // Elements
+    if (!Array.isArray(goldenCase.elements) || goldenCase.elements.length === 0) {
+      errors.push("empty or missing elements");
+    }
+
+    // Page content
+    if (!goldenCase.pageContent) errors.push("missing pageContent");
+
+    // Instruction
+    if (!goldenCase.instruction) errors.push("missing instruction");
+
+    // Expected
+    if (goldenCase.expected == null) {
+      errors.push("missing expected");
+    } else {
+      if (typeof goldenCase.expected.shouldDetectMismatch !== "boolean") {
+        errors.push("missing expected.shouldDetectMismatch");
+      }
+      if (!goldenCase.expected.expectedTool) errors.push("missing expected.expectedTool");
+      if (!Array.isArray(goldenCase.expected.trapActions)) errors.push("missing expected.trapActions");
+    }
+
+    // Prior history (optional but if present must be array)
+    if (goldenCase.priorHistory !== null && !Array.isArray(goldenCase.priorHistory)) {
+      errors.push("priorHistory must be null or array");
+    }
+
+    // Metadata
+    if (!goldenCase.metadata?.curatedAt) errors.push("missing metadata.curatedAt");
+
+    if (errors.length > 0) {
+      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
+      invalid++;
+    } else {
+      const altCount = goldenCase.expected?.acceptAlternatives?.length ?? 0;
+      const histCount = goldenCase.priorHistory?.length ?? 0;
+      console.log(
+        `  ${c.green}VALID${c.reset}   ${goldenCase.id} ` +
+        `(${goldenCase.scenario}, ${goldenCase.difficulty}, ` +
+        `mismatch: ${goldenCase.expected.shouldDetectMismatch}, ` +
+        `tool: ${goldenCase.expected.expectedTool}${altCount > 0 ? ` +${altCount} alt` : ""}, ` +
+        `${histCount} prior turns)`,
       );
       valid++;
     }

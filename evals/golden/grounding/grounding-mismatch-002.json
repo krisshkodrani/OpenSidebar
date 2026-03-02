@@ -1,0 +1,37 @@
+{
+  "id": "grounding-mismatch-002",
+  "scenario": "instruction_mismatch",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://example-store.com/cart",
+    "title": "Shopping Cart - Example Store",
+    "elementCount": 18,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 10, "tagName": "h1", "role": "heading", "text": "Shopping Cart", "attributes": {}, "rect": { "x": 50, "y": 20, "width": 400, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 11, "tagName": "div", "role": "", "text": "2 items in cart", "attributes": {}, "rect": { "x": 50, "y": 80, "width": 200, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 12, "tagName": "span", "role": "", "text": "Wireless Headphones - $49.99", "attributes": {}, "rect": { "x": 50, "y": 120, "width": 300, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 13, "tagName": "span", "role": "", "text": "USB-C Cable - $12.99", "attributes": {}, "rect": { "x": 50, "y": 160, "width": 250, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 14, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Promo code" }, "rect": { "x": 50, "y": 220, "width": 200, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 15, "tagName": "button", "role": "button", "text": "Apply", "attributes": { "bg-color": "rgb(59, 130, 246)" }, "rect": { "x": 260, "y": 220, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 16, "tagName": "button", "role": "button", "text": "Proceed to Checkout", "attributes": { "bg-color": "rgb(34, 197, 94)", "text-color": "rgb(255, 255, 255)" }, "rect": { "x": 50, "y": 300, "width": 200, "height": 44 }, "isVisible": true, "isDisabled": false },
+    { "tag": 17, "tagName": "button", "role": "button", "text": "Remove", "attributes": {}, "rect": { "x": 370, "y": 120, "width": 80, "height": 28 }, "isVisible": true, "isDisabled": false },
+    { "tag": 18, "tagName": "button", "role": "button", "text": "Remove", "attributes": {}, "rect": { "x": 370, "y": 160, "width": 80, "height": 28 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Shopping Cart 2 items in cart Wireless Headphones - $49.99 Qty: 1 Remove USB-C Cable - $12.99 Qty: 1 Remove Subtotal: $62.98 Promo code Apply Proceed to Checkout",
+  "instruction": "Fill out the checkout form with my shipping address: 123 Main St, Springfield, IL 62701.",
+  "priorHistory": null,
+  "expected": {
+    "shouldDetectMismatch": true,
+    "expectedFirstAction": "observe",
+    "expectedTool": "clarify",
+    "acceptAlternatives": ["read_page"],
+    "trapActions": ["type_text", "click_element"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-01",
+    "sourceTrace": null,
+    "notes": "Soft mismatch: instruction says 'fill out the checkout form' but the page is /cart (Shopping Cart), not the checkout page. There is no shipping address form visible. The agent should recognize the page doesn't have a checkout form and clarify or navigate to checkout first, NOT attempt to type into the promo code field."
+  }
+}
