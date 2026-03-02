@@ -1,0 +1,1202 @@
+{
+  "id": "e2e-challenge-step14",
+  "sourceSessionId": "875873f9-277d-4685-94b7-bf19be2f2f5e",
+  "sourceType": "manual-recording",
+  "stepNumber": 14,
+  "challengeUrl": "https://serene-frangipane-7fd25b.netlify.app/step14?version=2",
+  "entrySnapshot": {
+    "url": "https://serene-frangipane-7fd25b.netlify.app/step14?version=2",
+    "title": "Browser Navigation Challenge - The Ultimate Test",
+    "elementCount": 38,
+    "scrollY": 2237
+  },
+  "entryElements": [
+    {
+      "tag": 43,
+      "tagName": "input",
+      "role": "text",
+      "text": "Enter 6-character code",
+      "attributes": {
+        "type": "text",
+        "placeholder": "Enter 6-character code",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 207.5,
+        "y": 203,
+        "width": 320,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 44,
+      "tagName": "button",
+      "role": "button",
+      "text": "Submit Code",
+      "attributes": {
+        "type": "submit",
+        "disabled": "true",
+        "bg-color": "rgb(34, 197, 94)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 539.5,
+        "y": 197,
+        "width": 172.84375,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": true
+    },
+    {
+      "tag": 486,
+      "tagName": "button",
+      "role": "button",
+      "text": "Keep Going",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 396.109375,
+        "y": -1060.640625,
+        "width": 109.9375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 734,
+      "tagName": "button",
+      "role": "button",
+      "text": "Keep Going",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 806,
+        "y": 311,
+        "width": 109.9375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 628,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 301.421875,
+        "y": -955.703125,
+        "width": 87.5,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 841,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 570.109375,
+        "y": 367,
+        "width": 87.5,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 411,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Reading",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 864.421875,
+        "y": -429.859375,
+        "width": 149.359375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 842,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Reading",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 677.609375,
+        "y": 367,
+        "width": 149.359375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 307,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Journey",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 760.1875,
+        "y": -264.6875,
+        "width": 147.5625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 63,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Journey",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 968.03125,
+        "y": 367,
+        "width": 147.5625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 58,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 944.734375,
+        "y": -1441.234375,
+        "width": 66.25,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 732,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 240.875,
+        "y": 311,
+        "width": 66.25,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 480,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 901.578125,
+        "y": -1482.59375,
+        "width": 143.84375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 726,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 1050.28125,
+        "y": 311,
+        "width": 143.84375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 337,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Section",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 428.046875,
+        "y": -1392.265625,
+        "width": 117,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 239,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Section",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 319.390625,
+        "y": 367,
+        "width": 117,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 587,
+      "tagName": "button",
+      "role": "button",
+      "text": "Advance",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 241.78125,
+        "y": -408.921875,
+        "width": 90.203125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 65,
+      "tagName": "button",
+      "role": "button",
+      "text": "Advance",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 695.796875,
+        "y": 311,
+        "width": 90.203125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 574,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Step",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 756.359375,
+        "y": -481.21875,
+        "width": 98.171875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 237,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Step",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 447.15625,
+        "y": 311,
+        "width": 98.171875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 57,
+      "tagName": "button",
+      "role": "button",
+      "text": "Click Here",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 327.125,
+        "y": 311,
+        "width": 100.03125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 843,
+      "tagName": "button",
+      "role": "button",
+      "text": "Go Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 565.328125,
+        "y": 311,
+        "width": 110.46875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 730,
+      "tagName": "button",
+      "role": "button",
+      "text": "Move On",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 935.9375,
+        "y": 311,
+        "width": 94.34375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 341,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 456.390625,
+        "y": 367,
+        "width": 93.71875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 844,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Page",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 846.96875,
+        "y": 367,
+        "width": 101.0625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 845,
+      "tagName": "div",
+      "role": "div",
+      "text": "Part 1:9W",
+      "attributes": {
+        "bg-color": "rgb(219, 234, 254)",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 199.09375,
+        "y": -1897,
+        "width": 80.828125,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 846,
+      "tagName": "span",
+      "role": "span",
+      "text": "Part 1:",
+      "attributes": {
+        "text-color": "rgb(75, 85, 99)"
+      },
+      "rect": {
+        "x": 209.09375,
+        "y": -1880,
+        "width": 33.03125,
+        "height": 16
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 847,
+      "tagName": "span",
+      "role": "span",
+      "text": "9W",
+      "attributes": {
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 250.125,
+        "y": -1884,
+        "width": 19.796875,
+        "height": 22
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 848,
+      "tagName": "div",
+      "role": "div",
+      "text": "Part 2:QB",
+      "attributes": {
+        "bg-color": "rgb(219, 234, 254)",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 1097.484375,
+        "y": -1637,
+        "width": 80.828125,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 849,
+      "tagName": "span",
+      "role": "span",
+      "text": "Part 2:",
+      "attributes": {
+        "text-color": "rgb(75, 85, 99)"
+      },
+      "rect": {
+        "x": 1107.484375,
+        "y": -1620,
+        "width": 33.03125,
+        "height": 16
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 850,
+      "tagName": "span",
+      "role": "span",
+      "text": "QB",
+      "attributes": {
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 1148.515625,
+        "y": -1624,
+        "width": 19.796875,
+        "height": 22
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 851,
+      "tagName": "div",
+      "role": "div",
+      "text": "Part 3:VE",
+      "attributes": {
+        "bg-color": "rgb(219, 234, 254)",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 314.296875,
+        "y": -597,
+        "width": 80.828125,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 852,
+      "tagName": "span",
+      "role": "span",
+      "text": "Part 3:",
+      "attributes": {
+        "text-color": "rgb(75, 85, 99)"
+      },
+      "rect": {
+        "x": 324.296875,
+        "y": -580,
+        "width": 33.03125,
+        "height": 16
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 853,
+      "tagName": "span",
+      "role": "span",
+      "text": "VE",
+      "attributes": {
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 365.328125,
+        "y": -584,
+        "width": 19.796875,
+        "height": 22
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 854,
+      "tagName": "div",
+      "role": "div",
+      "text": "Part 4:Y2",
+      "attributes": {
+        "bg-color": "rgb(219, 234, 254)",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 982.28125,
+        "y": -337,
+        "width": 80.828125,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 855,
+      "tagName": "span",
+      "role": "span",
+      "text": "Part 4:",
+      "attributes": {
+        "text-color": "rgb(75, 85, 99)"
+      },
+      "rect": {
+        "x": 992.28125,
+        "y": -320,
+        "width": 33.03125,
+        "height": 16
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 856,
+      "tagName": "span",
+      "role": "span",
+      "text": "Y2",
+      "attributes": {
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 1033.3125,
+        "y": -324,
+        "width": 19.796875,
+        "height": 22
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 33,
+      "tagName": "div",
+      "role": "div",
+      "text": "Moving!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 0,
+        "y": -2237,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    }
+  ],
+  "solution": {
+    "code": "FQAZ9D",
+    "codeInputId": 857,
+    "submitButtonId": 858
+  },
+  "actions": {
+    "total": 48,
+    "exploration": 46,
+    "solutionPhase": 2,
+    "sequence": [
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 430
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Escape"
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 575
+        },
+        "elementContext": {
+          "tag": 575,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 428
+        },
+        "elementContext": {
+          "tag": 428,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 534
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 1600
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 103
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 900
+        },
+        "elementContext": {
+          "tag": 900,
+          "tagName": "span",
+          "role": "span",
+          "text": "VM"
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 575
+        },
+        "elementContext": {
+          "tag": 575,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 898
+        },
+        "elementContext": {
+          "tag": 898,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 898
+        },
+        "elementContext": {
+          "tag": 898,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 290
+        },
+        "elementContext": {
+          "tag": 290,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 945
+        },
+        "elementContext": {
+          "tag": 945,
+          "tagName": "div",
+          "role": "div",
+          "text": "Part 2:HT",
+          "attributes": {
+            "bg-color": "rgb(219, 234, 254)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 874
+        },
+        "elementContext": {
+          "tag": 874,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 962
+        },
+        "elementContext": {
+          "tag": 962,
+          "tagName": "button",
+          "role": "button",
+          "text": "Accept",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 533
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 980
+        },
+        "elementContext": {
+          "tag": 980,
+          "tagName": "div",
+          "role": "div",
+          "text": "Part 3:ZJ",
+          "attributes": {
+            "bg-color": "rgb(219, 234, 254)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 992
+        },
+        "elementContext": {
+          "tag": 992,
+          "tagName": "div",
+          "role": "div",
+          "text": "Part 4:RY",
+          "attributes": {
+            "bg-color": "rgb(219, 234, 254)"
+          }
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 48
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 533
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 857
+        },
+        "elementContext": {
+          "tag": 857,
+          "tagName": "input",
+          "role": "text",
+          "text": "Enter 6-character code",
+          "attributes": {
+            "type": "text",
+            "placeholder": "Enter 6-character code"
+          }
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 266
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 533
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 1600
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 533
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 533
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 315
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1011
+        },
+        "elementContext": {
+          "tag": 1011,
+          "tagName": "div",
+          "role": "div",
+          "text": "All parts found! The code is:FQAZ9D",
+          "attributes": {
+            "bg-color": "rgb(255, 255, 255)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1011
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 1600
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 800
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 534
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 857
+        },
+        "elementContext": {
+          "tag": 857,
+          "tagName": "input",
+          "role": "text",
+          "text": "Enter 6-character code",
+          "attributes": {
+            "type": "text",
+            "placeholder": "Enter 6-character code"
+          }
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "type_text",
+        "args": {
+          "id": 857,
+          "text": "FQAZ9D"
+        },
+        "elementContext": {
+          "tag": 857,
+          "tagName": "input",
+          "role": "text",
+          "text": "FQAZ9D",
+          "attributes": {
+            "type": "text",
+            "placeholder": "Enter 6-character code"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 858
+        },
+        "elementContext": {
+          "tag": 858,
+          "tagName": "button",
+          "role": "button",
+          "text": "Submit Code",
+          "attributes": {
+            "type": "submit",
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      }
+    ]
+  },
+  "metrics": {
+    "turnRange": [
+      271,
+      319
+    ],
+    "turnCount": 48,
+    "actionCount": 48
+  },
+  "metadata": {
+    "curatedAt": "2026-02-27T10:41:08.397Z",
+    "curatedFrom": "traces/875873f9-277d-4685-94b7-bf19be2f2f5e.jsonl",
+    "notes": null
+  }
+}
