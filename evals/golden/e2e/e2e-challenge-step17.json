@@ -1,0 +1,1132 @@
+{
+  "id": "e2e-challenge-step17",
+  "sourceSessionId": "875873f9-277d-4685-94b7-bf19be2f2f5e",
+  "sourceType": "manual-recording",
+  "stepNumber": 17,
+  "challengeUrl": "https://serene-frangipane-7fd25b.netlify.app/step17?version=2",
+  "entrySnapshot": {
+    "url": "https://serene-frangipane-7fd25b.netlify.app/step17?version=2",
+    "title": "Browser Navigation Challenge - The Ultimate Test",
+    "elementCount": 43,
+    "scrollY": 2400
+  },
+  "entryElements": [
+    {
+      "tag": 1167,
+      "tagName": "input",
+      "role": "text",
+      "text": "Click/type here",
+      "attributes": {
+        "placeholder": "Click/type here",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 217.5,
+        "y": -1916,
+        "width": 1000,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 43,
+      "tagName": "input",
+      "role": "text",
+      "text": "Enter 6-character code",
+      "attributes": {
+        "type": "text",
+        "placeholder": "Enter 6-character code",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 207.5,
+        "y": 432,
+        "width": 320,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 44,
+      "tagName": "button",
+      "role": "button",
+      "text": "Submit Code",
+      "attributes": {
+        "type": "submit",
+        "disabled": "true",
+        "bg-color": "rgb(34, 197, 94)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 539.5,
+        "y": 426,
+        "width": 172.84375,
+        "height": 48
+      },
+      "isVisible": true,
+      "isDisabled": true
+    },
+    {
+      "tag": 1168,
+      "tagName": "button",
+      "role": "button",
+      "text": "Click Me",
+      "attributes": {
+        "bg-color": "rgb(139, 92, 246)",
+        "text-color": "rgb(250, 250, 250)"
+      },
+      "rect": {
+        "x": 217.5,
+        "y": -2028,
+        "width": 86.171875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1169,
+      "tagName": "button",
+      "role": "button",
+      "text": "Complete (0/4)",
+      "attributes": {
+        "disabled": "true",
+        "bg-color": "rgb(124, 58, 237)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 199.5,
+        "y": -1758,
+        "width": 128.1875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": true
+    },
+    {
+      "tag": 82,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Step",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 819.859375,
+        "y": -8.71875,
+        "width": 98.171875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1170,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Step",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 190.359375,
+        "y": 540,
+        "width": 98.171875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 200,
+      "tagName": "button",
+      "role": "button",
+      "text": "Advance",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 610.21875,
+        "y": -665.546875,
+        "width": 90.203125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1171,
+      "tagName": "button",
+      "role": "button",
+      "text": "Advance",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 844.9375,
+        "y": 596,
+        "width": 90.203125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 97,
+      "tagName": "button",
+      "role": "button",
+      "text": "Move On",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 393.765625,
+        "y": -1405.875,
+        "width": 94.34375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 68,
+      "tagName": "button",
+      "role": "button",
+      "text": "Move On",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 429.59375,
+        "y": 540,
+        "width": 94.34375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 486,
+      "tagName": "button",
+      "role": "button",
+      "text": "Keep Going",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 489,
+        "y": -804.84375,
+        "width": 109.9375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 227,
+      "tagName": "button",
+      "role": "button",
+      "text": "Keep Going",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 955.140625,
+        "y": 596,
+        "width": 109.9375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 494,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Journey",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 464.625,
+        "y": -138.21875,
+        "width": 147.5625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1172,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Journey",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 591.125,
+        "y": 596,
+        "width": 147.5625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 203,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Section",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 431.28125,
+        "y": -351.109375,
+        "width": 117,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 832,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Section",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 1127.640625,
+        "y": 540,
+        "width": 117,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 210,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Page",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 596.40625,
+        "y": -1101.953125,
+        "width": 101.0625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 329,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next Page",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 308.53125,
+        "y": 540,
+        "width": 101.0625,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 390,
+      "tagName": "button",
+      "role": "button",
+      "text": "Go Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 257.59375,
+        "y": -466.28125,
+        "width": 110.46875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1173,
+      "tagName": "button",
+      "role": "button",
+      "text": "Go Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 997.171875,
+        "y": 540,
+        "width": 110.46875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 481,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 659.3125,
+        "y": -745.90625,
+        "width": 87.5,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 53,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 369.90625,
+        "y": 596,
+        "width": 87.5,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 412,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 929.96875,
+        "y": -923.75,
+        "width": 93.71875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 341,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 477.40625,
+        "y": 596,
+        "width": 93.71875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 234,
+      "tagName": "button",
+      "role": "button",
+      "text": "Click Here",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 543.9375,
+        "y": 540,
+        "width": 100.03125,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1174,
+      "tagName": "button",
+      "role": "button",
+      "text": "Proceed Forward",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 663.96875,
+        "y": 540,
+        "width": 143.84375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 137,
+      "tagName": "button",
+      "role": "button",
+      "text": "Continue Reading",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 827.8125,
+        "y": 540,
+        "width": 149.359375,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1175,
+      "tagName": "button",
+      "role": "button",
+      "text": "Next",
+      "attributes": {
+        "bg-color": "rgb(255, 255, 255)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 758.6875,
+        "y": 596,
+        "width": 66.25,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 266,
+      "tagName": "button",
+      "role": "button",
+      "text": "",
+      "attributes": {
+        "bg-color": "rgb(156, 163, 175)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 629,
+        "y": 192.1875,
+        "width": 32,
+        "height": 32
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 169,
+      "tagName": "button",
+      "role": "button",
+      "text": "",
+      "attributes": {
+        "bg-color": "rgb(156, 163, 175)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 772.5,
+        "y": 534.8125,
+        "width": 32,
+        "height": 32
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 268,
+      "tagName": "button",
+      "role": "button",
+      "text": "Dismiss",
+      "attributes": {
+        "bg-color": "rgb(34, 197, 94)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 319,
+        "y": 318.1875,
+        "width": 79.875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 170,
+      "tagName": "button",
+      "role": "button",
+      "text": "Dismiss",
+      "attributes": {
+        "bg-color": "rgb(34, 197, 94)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 462.5,
+        "y": 660.8125,
+        "width": 79.875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 576,
+      "tagName": "button",
+      "role": "button",
+      "text": "Close",
+      "attributes": {
+        "bg-color": "rgb(34, 197, 94)",
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 319,
+        "y": 294.1875,
+        "width": 66.1875,
+        "height": 36
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 1176,
+      "tagName": "div",
+      "role": "div",
+      "text": "Hover over this area",
+      "attributes": {
+        "bg-color": "rgb(237, 233, 254)",
+        "text-color": "rgb(0, 0, 0)"
+      },
+      "rect": {
+        "x": 217.5,
+        "y": -1980,
+        "width": 1000,
+        "height": 52
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 33,
+      "tagName": "div",
+      "role": "div",
+      "text": "Moving!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 0,
+        "y": -2367.3125,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 972,
+      "tagName": "div",
+      "role": "div",
+      "text": "Click Me!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 952.53125,
+        "y": -242.109375,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 37,
+      "tagName": "div",
+      "role": "div",
+      "text": "Link!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 299.8125,
+        "y": -2086.21875,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 613,
+      "tagName": "div",
+      "role": "div",
+      "text": "Link!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 641.7168579101562,
+        "y": -147.423828125,
+        "width": 121.0037841796875,
+        "height": 121.00390625
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 275,
+      "tagName": "div",
+      "role": "div",
+      "text": "Here!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 999.75,
+        "y": -1842.18896484375,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 250,
+      "tagName": "div",
+      "role": "div",
+      "text": "Click Here!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 276.68634033203125,
+        "y": -582.469970703125,
+        "width": 105.5648193359375,
+        "height": 105.56494140625
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 619,
+      "tagName": "div",
+      "role": "div",
+      "text": "Button!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 434.296875,
+        "y": -568.14306640625,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    },
+    {
+      "tag": 615,
+      "tagName": "div",
+      "role": "div",
+      "text": "Button!",
+      "attributes": {
+        "text-color": "rgb(255, 255, 255)"
+      },
+      "rect": {
+        "x": 480.25,
+        "y": -497.8970947265625,
+        "width": 96,
+        "height": 96
+      },
+      "isVisible": true,
+      "isDisabled": false
+    }
+  ],
+  "solution": {
+    "code": "JL4FHZ",
+    "codeInputId": 43,
+    "submitButtonId": 44
+  },
+  "puzzleInputs": [
+    {
+      "text": "s",
+      "targetId": 1167,
+      "turn": 416,
+      "elementContext": {
+        "tag": 1167,
+        "tagName": "input",
+        "role": "text",
+        "text": "s",
+        "attributes": {
+          "placeholder": "Click/type here"
+        }
+      }
+    }
+  ],
+  "actions": {
+    "total": 27,
+    "exploration": 25,
+    "solutionPhase": 2,
+    "sequence": [
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Escape"
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 1333
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "up",
+          "amount": 800
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 576
+        },
+        "elementContext": {
+          "tag": 576,
+          "tagName": "button",
+          "role": "button",
+          "text": "Close",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 268
+        },
+        "elementContext": {
+          "tag": 268,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 157
+        },
+        "elementContext": {
+          "tag": 157,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 157
+        },
+        "elementContext": {
+          "tag": 157,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 269
+        },
+        "elementContext": {
+          "tag": 269,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 291
+        },
+        "elementContext": {
+          "tag": 291,
+          "tagName": "button",
+          "role": "button",
+          "text": "Dismiss",
+          "attributes": {
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 246
+        },
+        "elementContext": {
+          "tag": 246,
+          "tagName": "div",
+          "role": "div",
+          "text": "Link!"
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1168
+        },
+        "elementContext": {
+          "tag": 1168,
+          "tagName": "button",
+          "role": "button",
+          "text": "Click Me",
+          "attributes": {
+            "bg-color": "rgb(124, 58, 237)"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1167
+        },
+        "elementContext": {
+          "tag": 1167,
+          "tagName": "input",
+          "role": "text",
+          "text": "Click/type here",
+          "attributes": {
+            "placeholder": "Click/type here"
+          }
+        }
+      },
+      {
+        "tool": "type_text",
+        "args": {
+          "id": 1167,
+          "text": "s"
+        },
+        "elementContext": {
+          "tag": 1167,
+          "tagName": "input",
+          "role": "text",
+          "text": "s",
+          "attributes": {
+            "placeholder": "Click/type here"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1185
+        },
+        "elementContext": {
+          "tag": 1185,
+          "tagName": "div",
+          "role": "div",
+          "text": "Scroll inside this boxKeep scrolling...Almost there!"
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1184
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1187
+        },
+        "elementContext": {
+          "tag": 1187,
+          "tagName": "span",
+          "role": "span",
+          "text": "JL4FHZ"
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 1187
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 267
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 800
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 1066
+        }
+      },
+      {
+        "tool": "scroll_page",
+        "args": {
+          "direction": "down",
+          "amount": 534
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 43
+        },
+        "elementContext": {
+          "tag": 43,
+          "tagName": "input",
+          "role": "text",
+          "text": "Enter 6-character code",
+          "attributes": {
+            "type": "text",
+            "placeholder": "Enter 6-character code"
+          }
+        }
+      },
+      {
+        "tool": "press_key",
+        "args": {
+          "key": "Control",
+          "modifiers": [
+            "ctrl"
+          ]
+        }
+      },
+      {
+        "tool": "type_text",
+        "args": {
+          "id": 43,
+          "text": "JL4FHZ"
+        },
+        "elementContext": {
+          "tag": 43,
+          "tagName": "input",
+          "role": "text",
+          "text": "JL4FHZ",
+          "attributes": {
+            "type": "text",
+            "placeholder": "Enter 6-character code"
+          }
+        }
+      },
+      {
+        "tool": "click_element",
+        "args": {
+          "id": 44
+        },
+        "elementContext": {
+          "tag": 44,
+          "tagName": "button",
+          "role": "button",
+          "text": "Submit Code",
+          "attributes": {
+            "type": "submit",
+            "bg-color": "rgb(22, 163, 74)"
+          }
+        }
+      }
+    ]
+  },
+  "metrics": {
+    "turnRange": [
+      403,
+      429
+    ],
+    "turnCount": 27,
+    "actionCount": 27
+  },
+  "metadata": {
+    "curatedAt": "2026-02-27T10:41:08.398Z",
+    "curatedFrom": "traces/875873f9-277d-4685-94b7-bf19be2f2f5e.jsonl",
+    "notes": "Puzzle interaction: typed \"s\" into puzzle input [1167] at T416 as part of challenge."
+  }
+}
