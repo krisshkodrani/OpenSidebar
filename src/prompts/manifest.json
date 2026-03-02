@@ -51,7 +51,7 @@
   {
     "id": "agent.system",
     "version": "v2",
-    "hash": "c0c87a06",
+    "hash": "848824d0",
     "description": "Core executor system prompt for browser automation turns.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
