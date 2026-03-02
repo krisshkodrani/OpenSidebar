@@ -310,6 +310,8 @@ export function initializeBridge(
       case "GOLDEN_ACTION":
       case "GOLDEN_ANNOTATION":
       case "MANUAL_TOOL_EXECUTE":
+      case "SCROLL_TO_POSITION":
+      case "SCROLL_TO_POSITION_RESPONSE":
         break;
 
       default: {
