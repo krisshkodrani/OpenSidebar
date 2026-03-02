@@ -118,14 +118,17 @@ describe("AgentLoop", () => {
 
     await agent.start("Hello", 123);
 
-    // Guardian decompose step + Filler-accelerated text-only give-up:
-    // "Final answer" (12 chars) is detected as filler → consecutiveTextOnly += 2 each time
-    // BRAINS→HANDS: starts at tier 1 (planner model, max tier in 2-tier system)
+    // Guardian decompose step + uniform text-only counting with give-up at >= 4:
+    // "Final answer" (12 chars) is detected as filler → consecutiveTextOnly += 1 each time
+    // BRAINS→HANDS: starts at tier 1 (planner model)
     // Pre-loop: guardian thinking(running) "Analyzing task scope..."
-    // Turn 1: thinking(running) + thinking(done) → filler, textOnly=2 → already at tier 1, can't escalate
-    // Turn 2: thinking(running) + thinking(done) → filler, textOnly=4 → give-up (>= 3)
-    // = 1 guardian + 2 turns × 2 thinking = 5
-    expect(onStep).toHaveBeenCalledTimes(5);
+    // Turn 1: tier 1, orientation, thinking(running) + thinking(done) → filler, textOnly=1
+    // Turn 2: tier 1, orientation, thinking(running) + thinking(done) → filler, textOnly=2
+    // Turn 3: orientation ends → info step "Handing off", deescalate to tier 0, cooldown=3
+    //         thinking(running) + thinking(done) → filler, textOnly=3 (cooldown blocks escalation)
+    // Turn 4: cooldown=2, thinking(running) + thinking(done) → filler, textOnly=4 → give-up (>= 4)
+    // = 1 guardian + 4 turns × 2 thinking + 1 handoff info = 10
+    expect(onStep).toHaveBeenCalledTimes(10);
 
     // First call: guardian decompose thinking step
     const guardianCall = onStep.mock.calls[0];
@@ -146,13 +149,26 @@ describe("AgentLoop", () => {
     expect(secondCall[0].durationMs).toBeDefined();
     expect(secondCall[1]).toBe(true); // update = true
 
-    // Index 3-4: turn 2 thinking step (running + done), then give-up (consecutiveTextOnly >= 3)
+    // Index 3-4: turn 2 thinking step (running + done)
     const turn2Start = onStep.mock.calls[3];
     expect(turn2Start[0].type).toBe("thinking");
     expect(turn2Start[0].status).toBe("running");
     const turn2Done = onStep.mock.calls[4];
     expect(turn2Done[0].type).toBe("thinking");
     expect(turn2Done[0].status).toBe("done");
+
+    // Index 5: handoff info step "Handing off to executor model"
+    const handoffStep = onStep.mock.calls[5];
+    expect(handoffStep[0].type).toBe("info");
+    expect(handoffStep[0].status).toBe("done");
+
+    // Index 6-9: turns 3-4 thinking (running + done each), give-up at turn 4 (cTO >= 4)
+    const turn3Start = onStep.mock.calls[6];
+    expect(turn3Start[0].type).toBe("thinking");
+    expect(turn3Start[0].status).toBe("running");
+    const turn4Done = onStep.mock.calls[9];
+    expect(turn4Done[0].type).toBe("thinking");
+    expect(turn4Done[0].status).toBe("done");
   });
 });
 

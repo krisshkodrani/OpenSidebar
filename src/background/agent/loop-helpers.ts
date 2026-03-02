@@ -560,3 +560,91 @@ export function detectInstructionContradiction(
 
   return null;
 }
+
+// ─── Cumulative Failure Brief (§3.4) ────────────────────────────────
+
+/** A single tool attempt tracked for the cumulative failure brief. */
+export interface SubgoalAttempt {
+  turn: number;
+  tool: string;
+  args: string; // truncated JSON args (first 100 chars)
+  outcome: string; // first line of tool result
+  wasFailure: boolean; // error, intercepted, no effect
+  snapshotFp: string; // page state fingerprint at time of action
+}
+
+/** Failure-pattern keywords → human-readable insights. */
+const FAILURE_SYNTHESIS_RULES: Array<{
+  test: (a: SubgoalAttempt) => boolean;
+  note: string;
+}> = [
+  {
+    test: (a) => a.outcome.includes("covered by"),
+    note: "Element is covered by another element",
+  },
+  {
+    test: (a) =>
+      a.tool === "dismiss_overlays" && /no overlays/i.test(a.outcome),
+    note: "Covering element is NOT an overlay",
+  },
+  {
+    test: (a) => a.tool === "hide_element" && a.wasFailure,
+    note: "Covering element cannot be hidden",
+  },
+  {
+    test: (a) => a.tool === "execute_js" && /undefined/i.test(a.outcome),
+    note: "JS approach returned undefined",
+  },
+];
+
+/** Alternative tools to suggest when the agent is stuck. */
+const ALTERNATIVE_TOOLS = [
+  "click_coordinates",
+  "scroll_page",
+  "press_key",
+  "navigate",
+  "execute_js",
+  "find_element",
+];
+
+/**
+ * Build a cumulative failure brief from tracked subgoal attempts.
+ * Synthesizes what was tried, what failed, and suggests untried alternatives.
+ * Returns empty string if fewer than 3 attempts (not enough data to synthesize).
+ * Max output: 600 chars.
+ */
+export function buildFailureBrief(attempts: SubgoalAttempt[]): string {
+  if (attempts.length < 3) return "";
+
+  const lines: string[] = [];
+
+  // 1. Format each attempt
+  for (const a of attempts.slice(-10)) {
+    const outcome = a.wasFailure ? `FAIL: ${a.outcome}` : a.outcome;
+    lines.push(`T${a.turn}: ${a.tool} ${a.args} → ${outcome}`);
+  }
+
+  // 2. Deterministic synthesis: extract insights from failure patterns
+  const insights = new Set<string>();
+  for (const rule of FAILURE_SYNTHESIS_RULES) {
+    if (attempts.some(rule.test)) {
+      insights.add(rule.note);
+    }
+  }
+
+  // 3. List untried alternative tools
+  const triedTools = new Set(attempts.map((a) => a.tool));
+  const untried = ALTERNATIVE_TOOLS.filter((t) => !triedTools.has(t));
+
+  // 4. Assemble the brief
+  const sections: string[] = [];
+  sections.push(`Attempts (${attempts.length}):\n${lines.join("\n")}`);
+  if (insights.size > 0) {
+    sections.push(`Insights: ${[...insights].join("; ")}`);
+  }
+  if (untried.length > 0) {
+    sections.push(`Untried tools: ${untried.join(", ")}`);
+  }
+
+  return sections.join("\n").slice(0, 600);
+}
