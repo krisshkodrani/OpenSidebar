@@ -5,7 +5,7 @@
  * - **Orientation** (no subtask): Generic page understanding for situational awareness.
  * - **Focused** (subtask active): Goal-conditioned interpretation scoped to current subtask.
  *
- * Provider failover: Groq (Llama 4 Scout, fastest) → OpenRouter (GPT-4o-mini, fallback).
+ * Provider: OpenRouter (Gemini 2.5 Flash).
  * Fingerprint-based caching: only re-interprets when the page
  * has meaningfully changed (URL + element count + signature hash).
  */
@@ -16,9 +16,7 @@ import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
 import { TokenUsage } from "../llm/types";
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const OPENROUTER_PERCEPTION_MODEL = "google/gemini-2.5-flash";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
@@ -279,20 +277,9 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
   return { promptText, mode };
 }
 
-/** Build ordered list of perception providers from available API keys. */
+/** Build perception provider list — OpenRouter (Gemini) only. */
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
-
-  const groqKey = settings.groqApiKey;
-  if (groqKey) {
-    providers.push({
-      baseUrl: GROQ_API_URL,
-      apiKey: groqKey,
-      headers: {},
-      model: GROQ_PERCEPTION_MODEL,
-      providerId: "groq",
-    });
-  }
 
   const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
@@ -315,7 +302,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
  * Perceive the current page state by sending a screenshot + element metadata
  * to a vision model for structured interpretation.
  *
- * Provider priority: Groq (Llama 4 Scout) → OpenRouter (GPT-4o-mini).
+ * Provider: OpenRouter (Gemini 2.5 Flash).
  */
 export async function perceive(
   input: PerceptionInput,
