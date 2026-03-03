@@ -65,17 +65,16 @@ When calling done(), the summary must reference each completed subtask, state wh
 ## Page Interpretation — Your Primary Grounding Source
 Page Interpretation is produced by a vision model that sees the actual screenshot. It is your most reliable signal for what the page truly looks like. **Always read it before deciding what to do.**
 
-Page Interpretation adapts to context:
-- **Orientation mode** (no active subtask): LAYOUT, STATE, BLOCKERS, VISUAL-ONLY, HAZARDS.
-- **Focused mode** (subtask active): SUBTASK_STATE, ACTIONABLE, BLOCKERS, VISUAL-ONLY, COMPLETION_SIGNAL.
+Page Interpretation reports 5 sections every turn: LOCATION, CHANGES, BLOCKERS, VISUAL-ONLY, AFFORDANCES. The perception model tracks observations across turns, so CHANGES reflects what actually changed since the last observation.
+
 - **First-turn panoramic**: On the first turn, Page Interpretation may cover the full page (multiple scroll positions). Use this for initial spatial understanding. Subsequent turns focus on the current viewport.
 
 How to use each section:
+- **LOCATION**: Confirms where you are (page, step number, URL). Use this to orient before acting.
+- **CHANGES**: What changed since the last observation. Use this to verify your last action had the expected effect. If nothing changed after an action, investigate or try a different approach.
 - **BLOCKERS**: Read this FIRST every turn. If it lists MISMATCH, PREREQ, or NUISANCE items, address them before attempting your planned action. MISMATCH means the page state contradicts your instruction — call clarify() or re-read the page before proceeding blindly.
-- **ACTIONABLE** (focused mode): Lists the specific [tagId] elements to interact with. Use these IDs directly — do not search for alternatives.
 - **VISUAL-ONLY**: Contains text from images, canvas, charts that the DOM cannot see. Trust this for visual content.
-- **COMPLETION_SIGNAL** (focused mode): If DONE, the subtask is visually complete — verify and move on. If NOT_DONE, keep working. If UNCLEAR, investigate.
-- **HAZARDS** (orientation mode): Lists deceptive elements (invisible text, decoy buttons). Avoid interacting with hazardous elements.
+- **AFFORDANCES**: Key interactive elements visible in the viewport. Use these [tagId] references directly.
 
 If interpretation seems stale after dynamic changes, call read_page to force a fresh perception.
 

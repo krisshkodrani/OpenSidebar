@@ -1,16 +1,14 @@
 /**
- * Perception Layer — Vision-based page interpretation
+ * Perception Layer — Vision-based page interpretation (legacy)
  *
- * Dual-mode perception:
- * - **Orientation** (no subtask): Generic page understanding for situational awareness.
- * - **Focused** (subtask active): Goal-conditioned interpretation scoped to current subtask.
+ * @deprecated The stateless `perceive()` function and dual-mode prompt are superseded
+ * by `PerceptionAgent` (perception-agent.ts) which accumulates observations across turns.
+ * This file is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
  *
  * Provider: OpenRouter (Gemini 2.5 Flash).
- * Fingerprint-based caching: only re-interprets when the page
- * has meaningfully changed (URL + element count + signature hash).
  */
 
-import { TaggedElement, UserSettings } from "../../types";
+import { TaggedElement, PageSkeletonNode, UserSettings } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
@@ -46,7 +44,11 @@ export interface CompletionSignal {
 export type ObjectiveCheckStatus = CompletionSignalStatus;
 export type ObjectiveCheck = CompletionSignal;
 
-export interface PerceptionResult {
+/**
+ * @deprecated Use PerceptionResult from ./types.ts (via PerceptionAgent) for new code.
+ * Kept for backward compat with warmup.ts and eval pipeline.
+ */
+export interface LegacyPerceptionResult {
   interpretation: string;
   usage?: TokenUsage;
   model: string;
@@ -61,17 +63,13 @@ export interface PerceptionResult {
   mode: "orientation" | "focused";
 }
 
-/** Additional viewport screenshot captured at a different scroll position */
-export interface PanoramicShot {
-  dataUrl: string;
-  scrollY: number;
-  label: string; // "top", "middle", "bottom"
-}
+/** @deprecated Import PanoramicShot from ./types.ts for new code. */
+export type { PanoramicShot } from "./types";
 
 export interface PerceptionInput {
   screenshotDataUrl: string;
   /** Additional viewport screenshots for first-turn panoramic perception */
-  panoramicScreenshots?: PanoramicShot[];
+  panoramicScreenshots?: import("./types").PanoramicShot[];
   elements: TaggedElement[];
   url: string;
   title: string;
@@ -82,10 +80,25 @@ export interface PerceptionInput {
   subtask?: string;
   /** Tool profile hint for focused mode (read_only, form_fill, navigate, full) */
   toolProfile?: string;
+  /** Lightweight page skeleton (headings, landmarks, status, text) */
+  skeleton?: PageSkeletonNode[];
+}
+
+/** Format skeleton nodes into a compact "Page structure:" block. */
+function formatSkeletonForPerception(skeleton: PageSkeletonNode[]): string {
+  const lines = skeleton.map((n) => {
+    const indent = "  ".repeat(Math.min(n.depth, 4));
+    const tag = n.level ? `${n.tagName}` : n.tagName;
+    return `${indent}${tag} "${n.text}"`;
+  });
+  return "Page structure:\n" + lines.join("\n");
 }
 
 /** Build a compact element summary for the perception prompt. */
-export function buildElementSummary(elements: TaggedElement[]): string {
+export function buildElementSummary(
+  elements: TaggedElement[],
+  skeleton?: PageSkeletonNode[],
+): string {
   const counts: Record<string, number> = {};
   for (const el of elements) {
     const category = ["input", "textarea", "select"].includes(el.tagName)
@@ -112,7 +125,7 @@ export function buildElementSummary(elements: TaggedElement[]): string {
 
   for (const el of elements) {
     if (lines.length >= 50) break;
-    const text = el.text.slice(0, 40);
+    const text = el.text;
     const isInput = ["input", "textarea", "select"].includes(el.tagName);
     const isButton =
       el.tagName === "button" ||
@@ -136,7 +149,14 @@ export function buildElementSummary(elements: TaggedElement[]): string {
     if (count >= 3) suspicious.push(`${count}x "${text}"`);
   }
 
-  let summary = `${elements.length} total (${parts.join(", ")})`;
+  let summary = "";
+
+  // Prepend page skeleton when available
+  if (skeleton && skeleton.length > 0) {
+    summary += formatSkeletonForPerception(skeleton) + "\n\n";
+  }
+
+  summary += `${elements.length} interactive (${parts.join(", ")})`;
   if (lines.length > 0) {
     summary += `\nElements:\n${lines.join("\n")}`;
   }
@@ -151,8 +171,8 @@ export function buildElementSummary(elements: TaggedElement[]): string {
  * Matches both focused mode (COMPLETION_SIGNAL) and orientation mode (OBJECTIVE_CHECK).
  *
  * Expected formats:
- *   "5. COMPLETION_SIGNAL: DONE — Evidence sentence."
- *   "6. OBJECTIVE_CHECK: NOT_DONE — Still on login page."
+ *   "6. COMPLETION_SIGNAL: DONE — Evidence sentence."
+ *   "7. OBJECTIVE_CHECK: NOT_DONE — Still on login page."
  */
 export function parseCompletionSignal(
   text: string,
@@ -204,9 +224,10 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       `\nCURRENT SUBTASK: ${input.subtask}${toolHint}`,
       "",
       "Report (use exact numbered format — no bold, no markdown):",
-      `1. SUBTASK_STATE: Current progress toward "${input.subtask}". Only what you observe relevant to this subtask. Cite element [N] IDs.`,
-      '2. ACTIONABLE: Elements to interact with next. List as: [tagId] brief reason. If done: "None — subtask complete."',
-      "3. BLOCKERS: Anything preventing subtask progress. Classify each on its own line:",
+      '1. LOCATION: Current page identity — read the page title, heading, and URL. Report step/page number if visible (e.g., "Step 4 of 30"). Always state where the agent is.',
+      `2. SUBTASK_STATE: Current progress toward "${input.subtask}". Only what you observe relevant to this subtask. Cite element [N] IDs.`,
+      '3. ACTIONABLE: Elements to interact with next. List as: [tagId] brief reason. If done: "None — subtask complete."',
+      "4. BLOCKERS: Anything preventing subtask progress. Classify each on its own line:",
       '   NUISANCE [tagId] "element text" → click [dismissId]',
       '   RELEVANT [tagId] "element text" → reason to keep',
       '   PREREQ "what must happen first" → e.g. "solve puzzle to reveal code", "fill [tagId] input before submit"',
@@ -216,23 +237,24 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       "   PREREQ = action/challenge that must complete before objective can proceed. Always list when an unfilled input gates progress.",
       "   MISMATCH = screenshot contradicts element list or expected page state. Always report when visual state differs from metadata.",
       '   If none: "None."',
-      "4. VISUAL-ONLY: Task-relevant text in images/canvas/charts/SVGs the DOM misses. Not page text already in elements.",
-      "5. COMPLETION_SIGNAL: Is this subtask visually complete? Answer exactly one:",
+      "5. VISUAL-ONLY: Task-relevant text in images/canvas/charts/SVGs the DOM misses. Not page text already in elements.",
+      "6. COMPLETION_SIGNAL: Is this subtask visually complete? Answer exactly one:",
       "   DONE — evidence from element metadata (not inferred from screenshot)",
       "   NOT_DONE — what remains",
       "   UNCLEAR — why you cannot determine",
     ].join("\n");
   } else {
     const objectiveCheck = input.objective
-      ? `\n6. OBJECTIVE_CHECK: The agent's objective is: "${input.objective}". Does the visible page state suggest this objective has been accomplished? Answer exactly: DONE / NOT_DONE / UNCLEAR, followed by one evidence fragment grounded in element metadata.`
+      ? `\n7. OBJECTIVE_CHECK: The agent's objective is: "${input.objective}". Does the visible page state suggest this objective has been accomplished? Answer exactly: DONE / NOT_DONE / UNCLEAR, followed by one evidence fragment grounded in element metadata.`
       : "";
     orientationSection = [
       "\nThe agent needs situational awareness of this page.",
       "",
       "Report (use exact numbered format — no bold, no markdown):",
-      "1. LAYOUT: Page type and visible structure (1 fragment).",
-      "2. STATE: Active controls, open menus, focused inputs, loading indicators, toggle states. Cite [tagId] for key elements.",
-      "3. BLOCKERS: Overlays/modals/dialogs/banners blocking interaction OR logical prerequisites gating progress. For each on its own line:",
+      '1. LOCATION: Current page identity — read the page title, heading, and URL. Report step/page number if visible (e.g., "Step 4 of 30"). Always state where the agent is.',
+      "2. LAYOUT: Page type and visible structure (1 fragment).",
+      "3. STATE: Active controls, open menus, focused inputs, loading indicators, toggle states. Cite [tagId] for key elements.",
+      "4. BLOCKERS: Overlays/modals/dialogs/banners blocking interaction OR logical prerequisites gating progress. For each on its own line:",
       '   NUISANCE [tagId] "element text" → click [dismissTagId]',
       '   RELEVANT [tagId] "element text" → reason to keep',
       '   PREREQ "what must happen first" → e.g. "complete challenge to reveal code", "fill [tagId] input before submit"',
@@ -243,8 +265,8 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
       "   MISMATCH = screenshot contradicts element list or expected page state (e.g., page shows Step 5 but instruction says Step 2). Always report visual/metadata disagreements.",
       '   Vague-CTA divs ("Click Me", "Try This!", "Nope!") = NUISANCE with their actual [tagId] as dismiss target.',
       '   If no blockers: "None."',
-      "4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements.",
-      '5. HAZARDS: Genuinely dangerous or deceptive elements only — invisible text (text-color = bg-color), decoy buttons that navigate away, fake close buttons. For each: [tagId] "specific risk". Do not list elements already classified as BLOCKERS. If none: "None."',
+      "5. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements.",
+      '6. HAZARDS: Genuinely dangerous or deceptive elements only — invisible text (text-color = bg-color), decoy buttons that navigate away, fake close buttons. For each: [tagId] "specific risk". Do not list elements already classified as BLOCKERS. If none: "None."',
       objectiveCheck,
     ].join("\n");
   }
@@ -268,7 +290,7 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
     title: input.title || "Unknown",
     url: input.url || "Unknown",
     scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
-    elementSummary: buildElementSummary(input.elements),
+    elementSummary: buildElementSummary(input.elements, input.skeleton),
     focusSection,
     orientationSection,
     panoramicNote,
@@ -299,6 +321,9 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
 }
 
 /**
+ * @deprecated Use `PerceptionAgent.observe()` for new code. This stateless function
+ * is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
+ *
  * Perceive the current page state by sending a screenshot + element metadata
  * to a vision model for structured interpretation.
  *
@@ -307,7 +332,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
 export async function perceive(
   input: PerceptionInput,
   signal?: AbortSignal,
-): Promise<PerceptionResult> {
+): Promise<LegacyPerceptionResult> {
   const stored = await chrome.storage.sync.get("userSettings");
   const settings = (stored.userSettings ?? {}) as UserSettings;
   const providers = buildProviders(settings);

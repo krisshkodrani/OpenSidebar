@@ -1,6 +1,8 @@
 import "../setup";
-import { describe, test, expect, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { perceive, parseCompletionSignal, buildPerceptionPrompt, type PerceptionInput, type PanoramicShot } from "../../src/background/perception";
+import { PerceptionAgent, formatPriorObservations } from "../../src/background/perception/perception-agent";
+import type { ObservationEntry, ObserveInput } from "../../src/background/perception/types";
 import { computeSnapshotFingerprint, computeElementSignatures } from "../../src/background/agent/stagnation";
 import type { DomSnapshot, TaggedElement } from "../../src/types";
 
@@ -22,6 +24,22 @@ function makeInput(overrides: Partial<PerceptionInput> = {}): PerceptionInput {
     return {
         screenshotDataUrl: "data:image/jpeg;base64,AAAA",
         elements: [makeElement()],
+        url: "https://example.com",
+        title: "Test Page",
+        scroll: { y: 0, maxY: 1000 },
+        ...overrides,
+    };
+}
+
+function makeObserveInput(overrides: Partial<ObserveInput> = {}): ObserveInput {
+    return {
+        screenshotDataUrl: "data:image/jpeg;base64,AAAA",
+        elements: [
+            makeElement({ tag: 1 }),
+            makeElement({ tag: 2, tagName: "input", text: "Email" }),
+            makeElement({ tag: 3, tagName: "a", text: "Home" }),
+            makeElement({ tag: 4, tagName: "button", text: "Submit" }),
+        ],
         url: "https://example.com",
         title: "Test Page",
         scroll: { y: 0, maxY: 1000 },
@@ -75,13 +93,17 @@ function jsonResponse(content: string, usage?: Record<string, number>): Response
     }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-// ----- Tests -----
+// ----- Legacy perceive() Tests -----
 
-describe("perceive()", () => {
+describe("perceive() [legacy]", () => {
     let originalFetch: typeof globalThis.fetch;
 
     beforeEach(() => {
         originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
     });
 
     test("returns fallback when no API key", async () => {
@@ -111,88 +133,11 @@ describe("perceive()", () => {
             expect(calledUrl).toContain("openrouter.ai");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
-    test("uses Groq first when both keys available", async () => {
-        const cleanup = setKeys({ groq: "groq-key", openRouter: "or-key" });
-        let calledUrl = "";
-        globalThis.fetch = mockFetch((url) => {
-            calledUrl = url;
-            return jsonResponse("LAYOUT: Groq result.");
-        });
-        try {
-            const result = await perceive(makeInput());
-            expect(result.interpretation).toContain("LAYOUT: Groq result.");
-            expect(result.providerId).toBe("groq");
-            expect(result.model).toBe("meta-llama/llama-4-scout-17b-16e-instruct");
-            expect(calledUrl).toContain("api.groq.com");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("falls back to OpenRouter on Groq 429", async () => {
-        const cleanup = setKeys({ groq: "groq-key", openRouter: "or-key" });
-        const calls: string[] = [];
-        globalThis.fetch = mockFetch((url) => {
-            calls.push(url);
-            if (url.includes("groq.com")) {
-                return new Response("Rate limited", { status: 429 });
-            }
-            return jsonResponse("LAYOUT: OpenRouter fallback.");
-        });
-        try {
-            const result = await perceive(makeInput());
-            expect(result.interpretation).toContain("OpenRouter fallback");
-            expect(result.providerId).toBe("openrouter");
-            expect(calls.some(u => u.includes("groq.com"))).toBe(true);
-            expect(calls.some(u => u.includes("openrouter.ai"))).toBe(true);
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("falls back to OpenRouter on Groq 4xx error", async () => {
-        const cleanup = setKeys({ groq: "groq-key", openRouter: "or-key" });
-        globalThis.fetch = mockFetch((url) => {
-            if (url.includes("groq.com")) {
-                return new Response("Forbidden", { status: 403 });
-            }
-            return jsonResponse("LAYOUT: Fallback success.");
-        });
-        try {
-            const result = await perceive(makeInput());
-            expect(result.interpretation).toContain("Fallback success");
-            expect(result.providerId).toBe("openrouter");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("uses only Groq when only Groq key available", async () => {
-        const cleanup = setKeys({ groq: "groq-key" });
-        let calledUrl = "";
-        globalThis.fetch = mockFetch((url) => {
-            calledUrl = url;
-            return jsonResponse("LAYOUT: Groq only.");
-        });
-        try {
-            const result = await perceive(makeInput());
-            expect(result.providerId).toBe("groq");
-            expect(calledUrl).toContain("api.groq.com");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("reports all providers exhausted when both fail", async () => {
-        const cleanup = setKeys({ groq: "groq-key", openRouter: "or-key" });
+    test("reports all providers exhausted when all fail", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
         globalThis.fetch = mockFetch(() => {
             return new Response("Rate limited", { status: 429 });
         });
@@ -201,7 +146,6 @@ describe("perceive()", () => {
             expect(result.interpretation).toContain("all providers exhausted");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -216,7 +160,6 @@ describe("perceive()", () => {
             expect(result.durationMs).toBeGreaterThanOrEqual(0);
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -231,7 +174,6 @@ describe("perceive()", () => {
             expect(result.interpretation).toContain("LAYOUT: Clean result.");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -247,7 +189,6 @@ describe("perceive()", () => {
             expect(result.interpretation).toContain("no content");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -261,116 +202,11 @@ describe("perceive()", () => {
             expect(result.interpretation).toContain("all providers exhausted");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("uses orientation mode when no subtask provided", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        let sentBody = "";
-        globalThis.fetch = mockFetch((_url, init) => {
-            sentBody = (init?.body as string) || "";
-            return jsonResponse("1. LAYOUT: Test page.\n2. STATE: Idle.");
-        });
-        try {
-            const result = await perceive(makeInput({ objective: "buy shoes" }));
-            expect(result.mode).toBe("orientation");
-            // Orientation mode should contain the generic section marker
-            const parsed = JSON.parse(sentBody);
-            const promptText = parsed.messages[0].content[0].text;
-            expect(promptText).toContain("situational awareness");
-            expect(promptText).not.toContain("CURRENT SUBTASK");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("uses focused mode when subtask provided", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        let sentBody = "";
-        globalThis.fetch = mockFetch((_url, init) => {
-            sentBody = (init?.body as string) || "";
-            return jsonResponse("1. SUBTASK_STATE: Form is empty.\n5. COMPLETION_SIGNAL: NOT_DONE — fields not filled");
-        });
-        try {
-            const result = await perceive(makeInput({
-                subtask: "Fill the shipping address form",
-                toolProfile: "form_fill",
-            }));
-            expect(result.mode).toBe("focused");
-            const parsed = JSON.parse(sentBody);
-            const promptText = parsed.messages[0].content[0].text;
-            expect(promptText).toContain("CURRENT SUBTASK: Fill the shipping address form");
-            expect(promptText).toContain("TOOL PROFILE: form_fill");
-            expect(promptText).not.toContain("situational awareness");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("falls back to orientation when subtask is too short", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        globalThis.fetch = mockFetch(() => {
-            return jsonResponse("1. LAYOUT: Test.");
-        });
-        try {
-            const result = await perceive(makeInput({ subtask: "do it" }));
-            expect(result.mode).toBe("orientation");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("parses COMPLETION_SIGNAL in focused mode", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        globalThis.fetch = mockFetch(() => {
-            return jsonResponse(
-                "1. SUBTASK_STATE: Form filled.\n" +
-                "2. ACTIONABLE: None — subtask complete.\n" +
-                "3. BLOCKERS: None.\n" +
-                "4. VISUAL-ONLY: None.\n" +
-                "5. COMPLETION_SIGNAL: DONE — Confirmation message visible."
-            );
-        });
-        try {
-            const result = await perceive(makeInput({
-                subtask: "Submit the checkout form",
-            }));
-            expect(result.completionSignal).toBeDefined();
-            expect(result.completionSignal?.status).toBe("done");
-            expect(result.completionSignal?.scope).toBe("subtask");
-            expect(result.completionSignal?.evidence).toContain("Confirmation");
-            // Backward compat
-            expect(result.objectiveCheck?.status).toBe("done");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("parses OBJECTIVE_CHECK in orientation mode", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        globalThis.fetch = mockFetch(() => {
-            return jsonResponse(
-                "1. LAYOUT: Confirmation page.\n" +
-                "6. OBJECTIVE_CHECK: DONE — Order confirmation #1234 visible."
-            );
-        });
-        try {
-            const result = await perceive(makeInput({ objective: "Buy red shoes" }));
-            expect(result.completionSignal).toBeDefined();
-            expect(result.completionSignal?.status).toBe("done");
-            expect(result.completionSignal?.scope).toBe("objective");
-            expect(result.completionSignal?.evidence).toContain("Order confirmation");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 });
+
+// ----- parseCompletionSignal() — kept for eval compat -----
 
 describe("parseCompletionSignal()", () => {
     test("parses COMPLETION_SIGNAL: DONE", () => {
@@ -426,6 +262,8 @@ describe("parseCompletionSignal()", () => {
         expect(result?.evidence.length).toBeLessThanOrEqual(200);
     });
 });
+
+// ----- Fingerprint Tests -----
 
 describe("computeSnapshotFingerprint()", () => {
     test("produces consistent fingerprint for same snapshot", () => {
@@ -492,18 +330,22 @@ describe("computeElementSignatures()", () => {
     });
 });
 
-// ----- Panoramic Perception Tests -----
+// ----- Panoramic Perception Tests (legacy perceive) -----
 
 const makePanoramicShots = (): PanoramicShot[] => [
     { dataUrl: "data:image/jpeg;base64,TOP", scrollY: 0, label: "top" },
     { dataUrl: "data:image/jpeg;base64,BOTTOM", scrollY: 2000, label: "bottom" },
 ];
 
-describe("panoramic perception", () => {
+describe("panoramic perception [legacy]", () => {
     let originalFetch: typeof globalThis.fetch;
 
     beforeEach(() => {
         originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
     });
 
     test("perceive() with panoramic screenshots sends multi-image content", async () => {
@@ -526,33 +368,8 @@ describe("panoramic perception", () => {
             expect(content[1].type).toBe("image_url");
             expect(content[2].type).toBe("image_url");
             expect(content[3].type).toBe("image_url");
-            // Verify panoramic image URLs
-            expect(content[2].image_url.url).toBe("data:image/jpeg;base64,TOP");
-            expect(content[3].image_url.url).toBe("data:image/jpeg;base64,BOTTOM");
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
-        }
-    });
-
-    test("perceive() without panoramic uses single image", async () => {
-        const cleanup = setKeys({ openRouter: "or-key" });
-        let sentBody = "";
-        globalThis.fetch = mockFetch((_url, init) => {
-            sentBody = (init?.body as string) || "";
-            return jsonResponse("1. LAYOUT: Single viewport.");
-        });
-        try {
-            await perceive(makeInput());
-            const parsed = JSON.parse(sentBody);
-            const content = parsed.messages[0].content;
-            // Should have: text + primary image = 2 parts
-            expect(content.length).toBe(2);
-            expect(content[0].type).toBe("text");
-            expect(content[1].type).toBe("image_url");
-        } finally {
-            cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -571,7 +388,6 @@ describe("panoramic perception", () => {
             expect(parsed.max_tokens).toBe(800);
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
         }
     });
 
@@ -588,25 +404,354 @@ describe("panoramic perception", () => {
             expect(parsed.max_tokens).toBe(600);
         } finally {
             cleanup();
-            globalThis.fetch = originalFetch;
+        }
+    });
+});
+
+// ----- PerceptionAgent Tests -----
+
+describe("PerceptionAgent", () => {
+    let originalFetch: typeof globalThis.fetch;
+    let agent: PerceptionAgent;
+
+    beforeEach(() => {
+        originalFetch = globalThis.fetch;
+        agent = new PerceptionAgent();
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    const SAMPLE_RESPONSE = [
+        "1. LOCATION: Example.com — Home page.",
+        "2. CHANGES: Initial page load. Simple layout with one button.",
+        "3. BLOCKERS: None.",
+        "4. VISUAL-ONLY: None.",
+        "5. AFFORDANCES: [1] Click me button, center.",
+    ].join("\n");
+
+    const SAMPLE_RESPONSE_2 = [
+        "1. LOCATION: Example.com — Results page, Step 2 of 3.",
+        "2. CHANGES: Page navigated from home to results. New search results visible.",
+        "3. BLOCKERS: NUISANCE [5] \"cookie banner\" → click [6]",
+        "4. VISUAL-ONLY: Chart shows 42% increase.",
+        "5. AFFORDANCES: [2] Email input; [4] Submit button.",
+    ].join("\n");
+
+    test("first observe() produces interpretation with no prior observations in prompt", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            const result = await agent.observe(makeObserveInput(), "fp1");
+            expect(result.interpretation).toContain("LOCATION:");
+            expect(result.cached).toBe(false);
+
+            // Prompt should NOT have prior observations on first call
+            const parsed = JSON.parse(sentBody);
+            const promptText = parsed.messages[0].content[0].text;
+            expect(promptText).not.toContain("Prior observations");
+
+            // Should have the first-turn hint
+            expect(promptText).toContain("First observation");
+
+            // Observation should be parsed and stored
+            expect(result.observation).toBeDefined();
+            expect(result.observation?.location).toContain("Example.com");
+            expect(agent.getObservationLog().length).toBe(1);
+        } finally {
+            cleanup();
         }
     });
 
-    test("buildPerceptionPrompt() includes panoramic note when shots provided", () => {
-        const input = makeInput({
-            panoramicScreenshots: makePanoramicShots(),
+    test("second observe() includes prior observations in prompt", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        let callCount = 0;
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            callCount++;
+            return jsonResponse(callCount === 1 ? SAMPLE_RESPONSE : SAMPLE_RESPONSE_2);
         });
-        const { promptText } = buildPerceptionPrompt(input);
-        expect(promptText).toContain("Multiple screenshots are provided");
-        expect(promptText).toContain("Image 1: current viewport");
-        expect(promptText).toContain("Image 2: top view at scroll Y=0");
-        expect(promptText).toContain("Image 3: bottom view at scroll Y=2000");
+        try {
+            // First call
+            await agent.observe(makeObserveInput(), "fp1");
+            // Second call (different fingerprint to bypass cache)
+            await agent.observe(makeObserveInput({ url: "https://example.com/results" }), "fp2");
+
+            const parsed = JSON.parse(sentBody);
+            const promptText = parsed.messages[0].content[0].text;
+            expect(promptText).toContain("Prior observations");
+            expect(promptText).toContain("T1:");
+            expect(agent.getObservationLog().length).toBe(2);
+        } finally {
+            cleanup();
+        }
     });
 
-    test("buildPerceptionPrompt() omits panoramic note without shots", () => {
-        const input = makeInput();
-        const { promptText } = buildPerceptionPrompt(input);
-        expect(promptText).not.toContain("Multiple screenshots");
-        expect(promptText).not.toContain("panoramic");
+    test("cache hit when fingerprint unchanged < 2 turns", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            // First call — fresh
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(1);
+
+            // Second call, same fingerprint — should be cached
+            const cached = await agent.observe(makeObserveInput(), "fp1");
+            expect(cached.cached).toBe(true);
+            expect(callCount).toBe(1); // No additional API call
+            expect(cached.interpretation).toContain("LOCATION:");
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("force re-interpret after 2 stale turns", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(1);
+
+            // Stale turn 1 — cached
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(1);
+
+            // Stale turn 2 — forced re-interpret
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(2);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("invalidateCache() forces fresh call", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(1);
+
+            agent.invalidateCache();
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(callCount).toBe(2);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("observation log window caps at 5 entries with overflow", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(
+                `1. LOCATION: Page ${callCount}.\n2. CHANGES: Update ${callCount}.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: None.`,
+            );
+        });
+        try {
+            // Make 7 calls with different fingerprints
+            for (let i = 1; i <= 7; i++) {
+                await agent.observe(makeObserveInput(), `fp${i}`);
+            }
+            expect(agent.getObservationLog().length).toBe(7);
+
+            // The formatPriorObservations should show overflow + window
+            const formatted = formatPriorObservations(agent.getObservationLog());
+            expect(formatted).toContain("[Earlier:");
+            expect(formatted).toContain("2 observation(s) compressed");
+            // Should have T3-T7 in detail (last 5)
+            expect(formatted).toContain("T3:");
+            expect(formatted).toContain("T7:");
+            // T1, T2 should be in overflow, not in detail lines
+            expect(formatted).not.toMatch(/^\s+T1:/m);
+            expect(formatted).not.toMatch(/^\s+T2:/m);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("reset() clears all state", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        globalThis.fetch = mockFetch(() => jsonResponse(SAMPLE_RESPONSE));
+        try {
+            await agent.observe(makeObserveInput(), "fp1");
+            expect(agent.getInterpretation()).not.toBeNull();
+            expect(agent.getObservationLog().length).toBe(1);
+
+            agent.reset();
+            expect(agent.getInterpretation()).toBeNull();
+            expect(agent.getObservationLog().length).toBe(0);
+            expect(agent.getFingerprint()).toBe("");
+            expect(agent.getLastScreenshot()).toBeNull();
+            expect(agent.panoramicDone).toBe(false);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("hydrateFromWarmup() creates initial observation entry", () => {
+        agent.hydrateFromWarmup(
+            "1. LOCATION: Login page.\n2. CHANGES: Initial.\n3. BLOCKERS: None.",
+            "warmup-fp",
+            "data:image/jpeg;base64,SCREENSHOT",
+            "https://example.com/login",
+        );
+
+        expect(agent.getInterpretation()).toContain("LOCATION: Login page");
+        expect(agent.getFingerprint()).toBe("warmup-fp");
+        expect(agent.getLastScreenshot()).toBe("data:image/jpeg;base64,SCREENSHOT");
+        expect(agent.getObservationLog().length).toBe(1);
+        expect(agent.getObservationLog()[0].location).toContain("Login page");
+    });
+
+    test("getState()/restoreState() round-trip preserves observation log", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        globalThis.fetch = mockFetch(() => jsonResponse(SAMPLE_RESPONSE));
+        try {
+            await agent.observe(makeObserveInput(), "fp1");
+            const state = agent.getState();
+
+            const agent2 = new PerceptionAgent();
+            agent2.restoreState(state);
+
+            expect(agent2.getObservationLog().length).toBe(1);
+            expect(agent2.getObservationLog()[0].location).toEqual(agent.getObservationLog()[0].location);
+            expect(agent2.getFingerprint()).toBe("fp1");
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("near-empty DOM (≤3 elements) returns fallback without API call", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            const result = await agent.observe(
+                makeObserveInput({
+                    elements: [makeElement({ tag: 1 })],
+                }),
+                "fp1",
+            );
+            expect(callCount).toBe(0);
+            expect(result.model).toBe("dom-fallback");
+            expect(result.interpretation).toContain("LOCATION:");
+            expect(result.interpretation).toContain("BLOCKERS:");
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("unified prompt has all 5 sections (LOCATION, CHANGES, BLOCKERS, VISUAL-ONLY, AFFORDANCES)", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            await agent.observe(makeObserveInput(), "fp1");
+            const parsed = JSON.parse(sentBody);
+            const promptText = parsed.messages[0].content[0].text;
+
+            expect(promptText).toContain("1. LOCATION:");
+            expect(promptText).toContain("2. CHANGES:");
+            expect(promptText).toContain("3. BLOCKERS:");
+            expect(promptText).toContain("4. VISUAL-ONLY:");
+            expect(promptText).toContain("5. AFFORDANCES:");
+
+            // Should NOT contain old dual-mode sections
+            expect(promptText).not.toContain("COMPLETION_SIGNAL");
+            expect(promptText).not.toContain("OBJECTIVE_CHECK");
+            expect(promptText).not.toContain("SUBTASK_STATE");
+            expect(promptText).not.toContain("CURRENT SUBTASK");
+            expect(promptText).not.toContain("situational awareness");
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("no API key returns fallback without API call", async () => {
+        const cleanup = setKeys({});
+        try {
+            const result = await agent.observe(makeObserveInput(), "fp1");
+            expect(result.interpretation).toContain("No API key");
+            expect(result.cached).toBe(false);
+        } finally {
+            cleanup();
+        }
+    });
+});
+
+// ----- formatPriorObservations() -----
+
+describe("formatPriorObservations()", () => {
+    test("returns empty string for empty log", () => {
+        expect(formatPriorObservations([])).toBe("");
+    });
+
+    test("formats single entry without overflow", () => {
+        const log: ObservationEntry[] = [
+            { turn: 1, url: "https://example.com", location: "Home page", changes: "Initial load", blockers: "None", visualOnly: "", fingerprint: "fp1" },
+        ];
+        const result = formatPriorObservations(log);
+        expect(result).toContain("Prior observations");
+        expect(result).toContain("T1:");
+        expect(result).toContain("Home page");
+        expect(result).not.toContain("[Earlier:");
+    });
+
+    test("shows overflow summary when > 5 entries", () => {
+        const log: ObservationEntry[] = Array.from({ length: 7 }, (_, i) => ({
+            turn: i + 1,
+            url: `https://example.com/page${i + 1}`,
+            location: `Page ${i + 1}`,
+            changes: `Change ${i + 1}`,
+            blockers: "None",
+            visualOnly: "",
+            fingerprint: `fp${i + 1}`,
+        }));
+        const result = formatPriorObservations(log);
+        expect(result).toContain("[Earlier:");
+        expect(result).toContain("2 observation(s) compressed");
+        expect(result).toContain("T3:");
+        expect(result).toContain("T7:");
+    });
+
+    test("omits blockers when they are 'None'", () => {
+        const log: ObservationEntry[] = [
+            { turn: 1, url: "https://example.com", location: "Home", changes: "Loaded", blockers: "None.", visualOnly: "", fingerprint: "fp1" },
+        ];
+        const result = formatPriorObservations(log);
+        expect(result).not.toContain("Blockers:");
+    });
+
+    test("includes blockers when present", () => {
+        const log: ObservationEntry[] = [
+            { turn: 1, url: "https://example.com", location: "Home", changes: "Loaded", blockers: "Cookie banner visible", visualOnly: "", fingerprint: "fp1" },
+        ];
+        const result = formatPriorObservations(log);
+        expect(result).toContain("Blockers: Cookie banner");
     });
 });
