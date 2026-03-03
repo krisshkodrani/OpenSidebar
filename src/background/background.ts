@@ -179,8 +179,11 @@ chrome.action.onClicked.addListener(async (tab) => {
 // We also rely on the side panel sending a "SIDE_PANEL_OPENED" message to trigger workspace creation
 // because openPanelOnActionClick swallows the click event here.
 
-async function handleSidePanelOpened(tabId: number, windowId: number) {
-  if (pendingSidePanelOpens.has(tabId)) return; // already processing
+async function handleSidePanelOpened(
+  tabId: number,
+  windowId: number,
+): Promise<string | null> {
+  if (pendingSidePanelOpens.has(tabId)) return null; // already processing
   pendingSidePanelOpens.add(tabId);
 
   logger.info("sidebar", "Side Panel opened - checking workspace", {
@@ -191,7 +194,7 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
   if (!tabId) {
     pendingSidePanelOpens.delete(tabId);
     logger.error("workspace", "No tab ID in side panel open handler");
-    return;
+    return null;
   }
 
   try {
@@ -206,6 +209,7 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
       });
       // Fire-and-forget: proactively warm perception cache for this tab
       perceptionWarmup.warmup(tabId);
+      return existingWorkspace.id;
     } else {
       // ONLY create if user explicitly opened it
       if (await hasUserOpenedPanel(tabId)) {
@@ -230,6 +234,9 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
           });
           // Fire-and-forget: proactively warm perception cache for this tab
           perceptionWarmup.warmup(tabId);
+          // Consumed the flag
+          await removeUserOpenedPanel(tabId);
+          return workspace.id;
         } catch (createError) {
           logger.error("workspace", "Failed to create workspace", {
             tabId,
@@ -269,6 +276,7 @@ async function handleSidePanelOpened(tabId: number, windowId: number) {
   } finally {
     pendingSidePanelOpens.delete(tabId);
   }
+  return null;
 }
 
 // Handle tab activation - show/hide panel based on workspace status
@@ -834,13 +842,15 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
-    // 4. Side Panel Opened (Mount)
+    // 4. Side Panel Opened (Mount) — returns workspace ID so side panel can set it
     if (
       message.source === MessageSource.SIDEPANEL &&
       message.type === "SIDE_PANEL_OPENED"
     ) {
-      handleSidePanelOpened(message.payload.tabId, message.payload.windowId);
-      return false;
+      handleSidePanelOpened(message.payload.tabId, message.payload.windowId)
+        .then((wsId) => sendResponse({ workspaceId: wsId }))
+        .catch(() => sendResponse({ workspaceId: null }));
+      return true; // keep message channel open for async response
     }
 
     if (

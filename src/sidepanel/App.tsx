@@ -110,19 +110,23 @@ export default function App() {
             useStore.getState().setActiveWorkspaceId(ws.id);
           }
 
-          // 3. Notify background that panel is open
-          chrome.runtime
-            .sendMessage({
+          // 3. Notify background that panel is open — response carries workspace ID
+          //    (workspace may be created by background if this is a first open)
+          try {
+            const resp = await chrome.runtime.sendMessage({
               type: "SIDE_PANEL_OPENED",
               requestId: crypto.randomUUID(),
               source: MessageSource.SIDEPANEL,
               payload: { tabId: tab.id, windowId: tab.windowId },
-            })
-            .catch((e) =>
-              logger.error("ui", "Failed to notify background of panel open", {
-                error: e,
-              }),
-            );
+            });
+            if (resp?.workspaceId && !useStore.getState().activeWorkspaceId) {
+              useStore.getState().setActiveWorkspaceId(resp.workspaceId);
+            }
+          } catch (e) {
+            logger.error("ui", "Failed to notify background of panel open", {
+              error: e,
+            });
+          }
         }
       } catch (e) {
         logger.warn("ui", "Failed to resolve workspace on mount", { error: e });
