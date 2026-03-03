@@ -1,5 +1,5 @@
 import { LLMMessage } from "../llm/types";
-import { DomSnapshot, TaggedElement } from "../../types";
+import { DomSnapshot, PageSkeletonNode, TaggedElement } from "../../types";
 import { logger } from "../../utils";
 import { COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
@@ -27,6 +27,16 @@ export * from "./context-formatting";
 // Block 1 (static rules) MUST come first so the prefix is stable across turns.
 // Do NOT move persona or dynamic content above the static rules.
 const SYSTEM_PROMPT_TEMPLATE = getPromptTemplate("agent.system");
+
+/** Format skeleton nodes into indented hierarchy for the agent system prompt. */
+function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
+  return skeleton
+    .map((n) => {
+      const indent = "  ".repeat(Math.min(n.depth, 4));
+      return `${indent}${n.tagName}: "${n.text}"`;
+    })
+    .join("\n");
+}
 
 export class ContextManager {
   private history: LLMMessage[] = [];
@@ -518,6 +528,20 @@ Do NOT call done() until every planned step is complete.
       );
       const groupSuffix =
         invisibleGroups.length > 0 ? "\n" + invisibleGroups.join("\n") : "";
+
+      // Page skeleton: prepend structural nodes at NONE/LIGHT compression only
+      let skeletonBlock = "";
+      if (
+        this.snapshot.skeleton &&
+        this.snapshot.skeleton.length > 0 &&
+        (level === CompressionLevel.NONE || level === CompressionLevel.LIGHT)
+      ) {
+        skeletonBlock =
+          "Page Structure:\n" +
+          formatPageSkeleton(this.snapshot.skeleton) +
+          "\n\n";
+      }
+
       if (
         this.snapshot.overflow &&
         this.snapshot.overflow.total > this.snapshot.overflow.shown
@@ -525,7 +549,8 @@ Do NOT call done() until every planned step is complete.
         const note = `Note: Showing ${this.snapshot.overflow.shown}/${this.snapshot.overflow.total} elements (${this.snapshot.overflow.collapsedGroups?.join(", ") || "similar elements collapsed"}).`;
         content = content.replace(
           "{{elements}}",
-          (elementsList || "No interactive elements found.") +
+          skeletonBlock +
+            (elementsList || "No interactive elements found.") +
             groupSuffix +
             "\n" +
             note,
@@ -533,7 +558,9 @@ Do NOT call done() until every planned step is complete.
       } else {
         content = content.replace(
           "{{elements}}",
-          (elementsList || "No interactive elements found.") + groupSuffix,
+          skeletonBlock +
+            (elementsList || "No interactive elements found.") +
+            groupSuffix,
         );
       }
 
@@ -701,7 +728,7 @@ Do NOT call done() until every planned step is complete.
       const line = `[${el.tag}] ${el.tagName}${hasId} ${otherAttrs} "${el.text}"${role}`;
       return sum + Math.ceil(line.length / 4);
     }, 0);
-    const perceptionTokens = this.pageInterpretation ? 200 : 0; // Perception output is compact (~150 tokens)
+    const perceptionTokens = this.pageInterpretation ? 250 : 0; // Perception output (~200 tokens + prior observations)
     const pageContentTokens = this.pageContent
       ? Math.ceil(Math.min(this.pageContent.length, 60000) / 4)
       : 0;

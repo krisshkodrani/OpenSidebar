@@ -36,7 +36,9 @@ import {
   StagnationMonitor,
   computeSnapshotFingerprint,
 } from "./stagnation";
-import { perceive, PerceptionResult, buildElementSummary, PanoramicShot } from "../perception";
+import { buildElementSummary } from "../perception";
+import { PerceptionAgent } from "../perception/perception-agent";
+import type { PanoramicShot } from "../perception/types";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, TokenUsage } from "../llm/types";
@@ -212,20 +214,10 @@ export class AgentLoop {
   private stagnation = new StagnationMonitor();
   /** Pending hint from the user, picked up on the next turn */
   private pendingFeedback: string | null = null;
-  /** Cached perception result from the vision model */
-  private lastPerception: PerceptionResult | null = null;
-  /** Perception fingerprint for cache invalidation */
-  private lastPerceptionFingerprint: string = "";
-  /** Consecutive turns the perception fingerprint has been unchanged */
-  private perceptionFingerprintAge: number = 0;
-  /** Fingerprint at which the last objective checkpoint was injected (prevents spam) */
-  private objectiveCheckpointFingerprint: string = "";
-  /** Last screenshot data URL from perception (for step thumbnails) */
-  private lastScreenshotUrl: string | null = null;
+  /** Stateful perception agent — accumulates observations across turns */
+  private perception = new PerceptionAgent();
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
-  /** Whether panoramic (multi-viewport) perception has been run this session */
-  private hasRunPanoramicPerception = false;
   /** Promise-based gate for pause/resume */
   private pauseGate: { promise: Promise<void>; resolve: () => void } | null =
     null;
@@ -957,7 +949,6 @@ export class AgentLoop {
     this.taskId = null;
     this.planSubtasks = [];
     this.planSteps = [];
-    this.objectiveCheckpointFingerprint = "";
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
@@ -967,7 +958,7 @@ export class AgentLoop {
     this.replanCount = 0;
     this.startingOrigin = null;
     this.offDomainWarned = false;
-    this.hasRunPanoramicPerception = false;
+    this.perception.reset();
     this.metrics = AgentLoop.emptyMetrics();
     this.sessionStartTime = Date.now();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
@@ -1015,7 +1006,7 @@ export class AgentLoop {
 
     // Ensure we have a snapshot — either from the orchestrator, warmup cache, or by fetching our own
     let snapshot = initialSnapshot;
-    let warmupPerception: PerceptionResult | null = null;
+    let warmupPerception: { interpretation: string; providerId?: string; durationMs: number } | null = null;
     let warmupScreenshot: string | null = null;
 
     if (!snapshot) {
@@ -1099,10 +1090,14 @@ export class AgentLoop {
       }
 
       if (warmupPerception) {
-        // Use pre-computed perception — skip the 1-2s vision API call
-        this.lastPerception = warmupPerception;
-        this.lastPerceptionFingerprint = computeSnapshotFingerprint(snapshot);
-        this.lastScreenshotUrl = warmupScreenshot;
+        // Use pre-computed perception — hydrate PerceptionAgent with warmup result
+        const warmupFingerprint = computeSnapshotFingerprint(snapshot);
+        this.perception.hydrateFromWarmup(
+          warmupPerception.interpretation,
+          warmupFingerprint,
+          warmupScreenshot,
+          snapshot.url,
+        );
         this.context.setPageInterpretation(warmupPerception.interpretation);
         this.log.info("agent", "Perception from warmup (skipped vision API)", {
           provider: warmupPerception.providerId,
@@ -1205,7 +1200,7 @@ export class AgentLoop {
           this.context.getSnapshot()?.title || "",
           this.context.getSnapshot()?.url || "",
           this.abortController!.signal,
-          this.lastPerception?.interpretation,
+          this.perception.getInterpretation() ?? undefined,
         );
 
         if (decomposition) {
@@ -1684,138 +1679,100 @@ export class AgentLoop {
   }
 
   /**
-   * Refresh perception: take a screenshot and send to the vision model
-   * for structured page interpretation. Skips if the page fingerprint
-   * hasn't changed since the last interpretation (cache hit).
+   * Refresh perception: take a screenshot and send to the PerceptionAgent
+   * for structured page interpretation. The agent handles fingerprint caching,
+   * near-empty DOM fallback, and observation history internally.
    */
   private async refreshPerception(tabId: number): Promise<void> {
     const snapshot = this.context.getSnapshot();
     if (!snapshot) return;
 
     const fingerprint = computeSnapshotFingerprint(snapshot);
-    if (fingerprint === this.lastPerceptionFingerprint && this.lastPerception) {
-      this.perceptionFingerprintAge++;
-      // Force re-interpret after 2 stale turns (visual changes DOM fingerprint misses)
-      if (this.perceptionFingerprintAge < 2) {
-        return;
-      }
-      this.log.info(
-        "agent",
-        "Perception cache: forced re-interpret after stale fingerprint",
-        {
-          age: this.perceptionFingerprintAge,
-        },
-      );
-    } else {
-      this.perceptionFingerprintAge = 0;
-    }
-
-    // Near-empty DOM: skip vision model (screenshot may be stale while DOM shows error/404).
-    // Generate interpretation directly from DOM state.
-    if (snapshot.elements.length <= 3) {
-      const elemDescs = snapshot.elements.map(
-        (el) => `[${el.tag}] ${el.tagName} "${el.text.slice(0, 60)}"`,
-      );
-      const interpretation = [
-        `LAYOUT: Mostly empty page — only ${snapshot.elements.length} interactive element(s).`,
-        `STATE: Page may have failed to load, returned an error, or navigated to a minimal page.`,
-        `CONTENT: Title: "${snapshot.title}" | URL: ${snapshot.url}`,
-        elemDescs.length > 0 ? `ELEMENTS: ${elemDescs.join("; ")}` : "",
-        `BLOCKERS: None visible.`,
-        `SPATIAL: Page appears empty — check if navigation succeeded or if a 404/error occurred.`,
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      this.lastPerception = {
-        interpretation,
-        model: "dom-fallback",
-        durationMs: 0,
-        cached: false,
-      };
-      this.lastPerceptionFingerprint = fingerprint;
-      this.lastScreenshotUrl = null;
-      this.context.setPageInterpretation(interpretation);
-      const elSummary = buildElementSummary(snapshot.elements);
-      await this.traceRecorder?.recordPerception(
-        this.lastPerception,
-        undefined,
-        elSummary,
-      );
-      this.log.info(
-        "agent",
-        "Perception: near-empty DOM, skipping vision model",
-        {
-          elementCount: snapshot.elements.length,
-          url: snapshot.url,
-        },
-      );
-      return;
-    }
 
     try {
-      const tab = await chrome.tabs.get(tabId);
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality: 70,
-      });
-      this.lastScreenshotUrl = dataUrl;
+      // Take screenshot (unless near-empty — agent handles fallback)
+      let dataUrl: string | undefined;
+      if (snapshot.elements.length > 3) {
+        const tab = await chrome.tabs.get(tabId);
+        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: "jpeg",
+          quality: 70,
+        });
+        this.perception.setScreenshotUrl(dataUrl);
 
-      // First-turn panoramic: capture additional viewports for page-level context
-      let panoramicScreenshots: PanoramicShot[] | undefined;
-      if (!this.hasRunPanoramicPerception) {
-        this.hasRunPanoramicPerception = true;
-        panoramicScreenshots = await this.capturePanoramicScreenshots(tabId);
-        if (panoramicScreenshots.length > 0) {
-          this.log.info(
-            "agent",
-            "Panoramic perception: captured additional viewports",
-            {
-              count: panoramicScreenshots.length,
-              labels: panoramicScreenshots.map((s) => s.label),
-            },
-          );
-        } else {
-          panoramicScreenshots = undefined;
+        // First-turn panoramic: capture additional viewports for page-level context
+        let panoramicScreenshots: PanoramicShot[] | undefined;
+        if (!this.perception.panoramicDone) {
+          this.perception.markPanoramicDone();
+          panoramicScreenshots = await this.capturePanoramicScreenshots(tabId);
+          if (panoramicScreenshots.length > 0) {
+            this.log.info(
+              "agent",
+              "Panoramic perception: captured additional viewports",
+              {
+                count: panoramicScreenshots.length,
+                labels: panoramicScreenshots.map((s) => s.label),
+              },
+            );
+          } else {
+            panoramicScreenshots = undefined;
+          }
         }
-      }
 
-      // Resolve current subtask for goal-conditioned perception (focused mode)
-      const planStatus = this.context.getPlanStatusRaw();
-      const runningSubtask = planStatus?.subtasks.find(
-        (s: { status: string }) => s.status === "running",
-      );
+        const result = await this.perception.observe(
+          {
+            screenshotDataUrl: dataUrl,
+            panoramicScreenshots,
+            elements: snapshot.elements,
+            url: snapshot.url,
+            title: snapshot.title,
+            scroll: snapshot.scroll,
+            skeleton: snapshot.skeleton,
+          },
+          fingerprint,
+          this.abortController?.signal,
+        );
 
-      const result = await perceive(
-        {
-          screenshotDataUrl: dataUrl,
-          panoramicScreenshots,
-          elements: snapshot.elements,
-          url: snapshot.url,
-          title: snapshot.title,
-          scroll: snapshot.scroll,
-          objective: this.originalQuery || undefined,
-          subtask: runningSubtask?.description,
-          toolProfile: runningSubtask?.toolProfile,
-        },
-        this.abortController?.signal,
-      );
+        this.context.setPageInterpretation(result.interpretation);
+        const elSummary = buildElementSummary(snapshot.elements, snapshot.skeleton);
+        await this.traceRecorder?.recordPerception(result, dataUrl, elSummary);
 
-      this.lastPerception = result;
-      this.lastPerceptionFingerprint = fingerprint;
-      this.context.setPageInterpretation(result.interpretation);
-      const elSummary = buildElementSummary(snapshot.elements);
-      await this.traceRecorder?.recordPerception(result, dataUrl, elSummary);
+        // Track usage for non-cached calls
+        if (result.usage && !result.cached) {
+          this.recordVisionUsage(result.usage, result.durationMs, result.model);
+        }
+      } else {
+        // Near-empty DOM: let agent handle fallback
+        const result = await this.perception.observe(
+          {
+            screenshotDataUrl: "",
+            elements: snapshot.elements,
+            url: snapshot.url,
+            title: snapshot.title,
+            scroll: snapshot.scroll,
+            skeleton: snapshot.skeleton,
+          },
+          fingerprint,
+          this.abortController?.signal,
+        );
 
-      // Track usage for non-cached calls
-      if (result.usage && !result.cached) {
-        this.recordVisionUsage(result.usage, result.durationMs, result.model);
+        this.context.setPageInterpretation(result.interpretation);
+        const elSummary = buildElementSummary(snapshot.elements);
+        await this.traceRecorder?.recordPerception(result, undefined, elSummary);
+        this.log.info(
+          "agent",
+          "Perception: near-empty DOM, skipping vision model",
+          {
+            elementCount: snapshot.elements.length,
+            url: snapshot.url,
+          },
+        );
       }
     } catch (e: any) {
       this.log.warn("agent", "Perception failed, using element-only mode", {
         error: e?.message,
       });
-      this.lastScreenshotUrl = null;
+      this.perception.setScreenshotUrl(null);
       this.context.setPageInterpretation(null);
     }
   }
@@ -1826,10 +1783,11 @@ export class AgentLoop {
    * and re-snapshot so the LLM sees a clean page.
    */
   private async triagePopups(tabId: number): Promise<number> {
-    if (!this.lastPerception) return 0;
+    const interpretation = this.perception.getInterpretation();
+    if (!interpretation) return 0;
     if (this.abortController?.signal.aborted) return 0;
 
-    const blockers = parseNuisanceBlockers(this.lastPerception.interpretation);
+    const blockers = parseNuisanceBlockers(interpretation);
     if (blockers.length === 0) return 0;
 
     // Cap at 3 dismiss attempts per cycle to prevent infinite loops
@@ -1870,7 +1828,7 @@ export class AgentLoop {
       // Re-snapshot to get clean DOM state
       await this.refreshSnapshot(tabId);
       // Invalidate perception fingerprint so next perception re-interprets
-      this.lastPerceptionFingerprint = "";
+      this.perception.invalidateCache();
       // Record what was dismissed for LLM context
       this.context.addTriagedPopups(
         targets.slice(0, dismissed).map((b) => b.description),
@@ -1887,61 +1845,10 @@ export class AgentLoop {
   /**
    * Refresh perception then auto-dismiss nuisance popups identified in BLOCKERS.
    * Use this instead of bare `refreshPerception()` at all call sites.
-   *
-   * Also checks perception's OBJECTIVE_CHECK signal and injects a checkpoint
-   * message when the objective appears satisfied, giving the agent explicit
-   * permission to call done().
    */
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
     await this.refreshPerception(tabId);
     await this.triagePopups(tabId);
-
-    // Completion checkpoint: if perception reports completion, inject a message
-    // giving the agent permission to advance or call done().
-    // - Subtask-scoped signal (focused mode): only fire when plan IS active
-    // - Objective-scoped signal (orientation mode): only fire when no plan active
-    // Only once per fingerprint to avoid spam.
-    const signal = this.lastPerception?.completionSignal;
-    if (
-      signal?.status === "done" &&
-      this.lastPerceptionFingerprint !== this.objectiveCheckpointFingerprint
-    ) {
-      const isSubtaskSignal = signal.scope === "subtask";
-      const hasPlan = this.planSteps.length > 0;
-
-      // Subtask signals are relevant when a plan is active;
-      // objective signals are relevant when no plan is active
-      if (isSubtaskSignal === hasPlan) {
-        this.objectiveCheckpointFingerprint = this.lastPerceptionFingerprint;
-        const evidence = signal.evidence;
-        const label = isSubtaskSignal ? "subtask" : "objective";
-        const target = isSubtaskSignal
-          ? `Current subtask: "${this.lastPerception?.interpretation?.match(/SUBTASK_STATE:(.+)/)?.[1]?.trim() || "current step"}"`
-          : `Original objective: "${this.originalQuery}"`;
-        this.context.addMessage({
-          role: "user",
-          content:
-            `CHECKPOINT: Visual perception indicates the ${label} may be satisfied.\n` +
-            `${target}\n` +
-            `Evidence: ${evidence}\n` +
-            (isSubtaskSignal
-              ? `If the current subtask is complete, proceed to the next step or call done() if all steps are finished.`
-              : `If the objective is complete, call done() immediately. Do NOT continue to unrelated tasks.`),
-        });
-        this.log.info("agent", `Completion checkpoint injected (${label})`, {
-          turn: this.turnCount,
-          evidence,
-          scope: signal.scope,
-          fingerprint: this.lastPerceptionFingerprint,
-        });
-        this.traceRecorder?.recordEvent("completion_checkpoint", {
-          status: "done",
-          scope: signal.scope,
-          evidence,
-          fingerprint: this.lastPerceptionFingerprint,
-        });
-      }
-    }
   }
 
   /**
@@ -1951,7 +1858,7 @@ export class AgentLoop {
   private async runPlanMonitor(
     signal?: AbortSignal,
   ): Promise<PlanMonitorResult | null> {
-    if (this.planSteps.length === 0 || !this.lastPerception) return null;
+    if (this.planSteps.length === 0 || !this.perception.getInterpretation()) return null;
 
     // Find the currently running step
     const runningIdx = this.planSubtasks.findIndex(
@@ -1966,7 +1873,7 @@ export class AgentLoop {
     const result = await this.planner.monitorStep(
       step,
       runningIdx,
-      this.lastPerception.interpretation,
+      this.perception.getInterpretation()!,
       pageUrl,
       signal,
     );
@@ -2004,7 +1911,7 @@ export class AgentLoop {
       return;
     }
 
-    const perception = this.lastPerception?.interpretation || "";
+    const perception = this.perception.getInterpretation() || "";
     const pageUrl = this.context.getSnapshot()?.url || "";
 
     // Build completed steps summary
@@ -2205,8 +2112,7 @@ export class AgentLoop {
     // Plan-aware cache invalidation: force fresh perception on step advancement
     if (advancedTo !== this.lastPlanIndex) {
       this.lastPlanIndex = advancedTo;
-      this.lastPerceptionFingerprint = "";
-      this.perceptionFingerprintAge = 0;
+      this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
     }
     return advancedTo;
@@ -2516,13 +2422,18 @@ export class AgentLoop {
         );
 
         // Record initial perception on T1 (retroactive — perception ran before first startTurn)
-        if (this.turnCount === 1 && this.lastPerception) {
+        if (this.turnCount === 1 && this.perception.getInterpretation()) {
           const elSummary = snap
             ? buildElementSummary(snap.elements)
             : undefined;
           await this.traceRecorder.recordPerception(
-            this.lastPerception,
-            this.lastScreenshotUrl || undefined,
+            {
+              interpretation: this.perception.getInterpretation()!,
+              model: "google/gemini-2.5-flash",
+              durationMs: 0,
+              cached: false,
+            },
+            this.perception.getLastScreenshot() || undefined,
             elSummary,
           );
         }
@@ -3376,7 +3287,7 @@ export class AgentLoop {
                     this.context.getSnapshot()?.title || "",
                     this.context.getSnapshot()?.url || "",
                     this.abortController!.signal,
-                    this.lastPerception?.interpretation,
+                    this.perception.getInterpretation() ?? undefined,
                   );
 
                   if (!validation.approved) {
@@ -4875,11 +4786,11 @@ export class AgentLoop {
               }
 
               // Retroactive screenshot attachment: update the last DOM-modifying step with the screenshot
-              if (this.lastScreenshotUrl && this.lastDomStep) {
+              if (this.perception.getLastScreenshot() && this.lastDomStep) {
                 this.stepHandler(
                   {
                     ...this.lastDomStep,
-                    screenshotUrl: this.lastScreenshotUrl,
+                    screenshotUrl: this.perception.getLastScreenshot()!,
                   },
                   true,
                 );
@@ -4892,7 +4803,7 @@ export class AgentLoop {
                 this.taskId &&
                 this.planSteps.length > 0 &&
                 this.turnsSinceLastMonitor >= 2 &&
-                this.lastPerception &&
+                this.perception.getInterpretation() &&
                 !this.abortController?.signal.aborted
               ) {
                 this.turnsSinceLastMonitor = 0;
@@ -5096,8 +5007,7 @@ export class AgentLoop {
                 // Escalate: executor → planner
                 else if (escalationTier === 0 && cooldownRemaining <= 0) {
                   // Invalidate perception cache so the planner model gets a fresh interpretation
-                  this.lastPerceptionFingerprint = "";
-                  this.perceptionFingerprintAge = 0;
+                  this.perception.invalidateCache();
                   const attemptSummary = extractAttemptSummary(
                     this.context.getMessages(),
                   );

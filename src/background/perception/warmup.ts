@@ -13,7 +13,7 @@
 import { DomSnapshot, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { isTabReady, ensureContentScript } from "../infrastructure/tab-ready";
-import { perceive, PerceptionResult } from "./perception";
+import { perceive, LegacyPerceptionResult } from "./perception";
 import { computeSnapshotFingerprint } from "../agent/stagnation";
 
 /** Maximum age (ms) before a warmup entry is considered stale. */
@@ -22,7 +22,7 @@ const WARMUP_STALE_MS = 30_000;
 export interface WarmupEntry {
   tabId: number;
   snapshot: DomSnapshot;
-  perception: PerceptionResult;
+  perception: LegacyPerceptionResult;
   screenshotUrl: string | null;
   fingerprint: string;
   timestamp: number;
