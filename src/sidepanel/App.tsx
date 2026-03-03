@@ -177,6 +177,15 @@ export default function App() {
         const currentWsId = useStore.getState().activeWorkspaceId;
         if (newWsId !== currentWsId && newWsId != null) {
           useStore.getState().setActiveWorkspaceId(newWsId);
+          // Ask background to re-broadcast current state for this workspace
+          chrome.runtime
+            .sendMessage({
+              type: "WORKSPACE_SYNC",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.SIDEPANEL,
+              payload: { workspaceId: newWsId },
+            })
+            .catch(() => {});
         }
         await refreshBlockedWarning(activeInfo.tabId);
       } catch (e) {

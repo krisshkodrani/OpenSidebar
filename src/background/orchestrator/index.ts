@@ -1066,6 +1066,84 @@ export class Orchestrator {
     return this.tasksByWorkspace.size > 0;
   }
 
+  /**
+   * Re-broadcast the current state for a workspace so the side panel can
+   * recover transient UI state after a workspace switch.
+   */
+  resyncWorkspaceState(workspaceId: string): void {
+    const task = this.tasksByWorkspace.get(workspaceId);
+
+    if (!task) {
+      // No active task — send IDLE so the panel shows the correct status
+      this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
+      return;
+    }
+
+    if (task.status === "running" || task.status === "planning") {
+      // Task is in-flight — re-send current status + progress
+      this.sendStatus(
+        workspaceId,
+        task.status === "planning" ? AgentStatus.THINKING : AgentStatus.ACTING,
+        task.status === "planning" ? "Planning…" : "Working…",
+      );
+      this.sendProgress(task);
+      if (task.sessionMetrics) {
+        this.sendMessage({
+          type: "SESSION_METRICS",
+          workspaceId,
+          payload: { ...task.sessionMetrics },
+        });
+      }
+    } else {
+      // Task finished (completed / failed / stopped) — re-send completion
+      const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
+        description: node.description,
+        status:
+          node.status === "completed"
+            ? "completed"
+            : isUserSkippedNode(node)
+              ? "skipped"
+              : "failed",
+        turnsUsed: 0,
+        result: node.result || node.error || "",
+      }));
+      const completed = subtaskResults.filter(
+        (r) => r.status === "completed",
+      ).length;
+
+      this.sendMessage({
+        type: "TASK_COMPLETION",
+        workspaceId,
+        payload: {
+          taskId: task.id,
+          status:
+            task.status === "completed"
+              ? completed === subtaskResults.length
+                ? "completed"
+                : "partial"
+              : "failed",
+          totalTurnsUsed: 0,
+          totalTimeMs:
+            (task.finishedAt || Date.now()) -
+            (task.startedAt || task.createdAt),
+          summary: this.buildCompletionSummary(task),
+          subtaskResults,
+          urlHistory: [],
+          metrics: task.sessionMetrics,
+          terminationReason: task.terminationReason,
+        },
+      });
+      if (task.sessionMetrics) {
+        this.sendMessage({
+          type: "SESSION_METRICS",
+          workspaceId,
+          payload: { ...task.sessionMetrics },
+        });
+      }
+      this.sendStatus(workspaceId, AgentStatus.IDLE, "Task finished");
+    }
+  }
+
   private applyPreflightBudget(task: OrchestratorTask): void {
     const estimator = this.getBudgetEstimator(task.workspaceId);
     const capacity = estimator.estimateCapacity(task.budget);

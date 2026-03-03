@@ -853,6 +853,18 @@ chrome.runtime.onMessage.addListener(
       return true; // keep message channel open for async response
     }
 
+    // 4b. Workspace Sync — side panel switched workspaces, re-broadcast state
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "WORKSPACE_SYNC"
+    ) {
+      const wsId = message.payload.workspaceId;
+      if (wsId) {
+        orchestrator.resyncWorkspaceState(wsId);
+      }
+      return false;
+    }
+
     if (
       message.source === MessageSource.SIDEPANEL &&
       message.type === "DATA_CONTROL_REQUEST"
