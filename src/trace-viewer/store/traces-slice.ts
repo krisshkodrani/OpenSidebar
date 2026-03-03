@@ -1,4 +1,5 @@
 import type { SliceCreator, TracesSlice, TraceFilters } from "./types";
+import { isoDayOffset } from "../utils";
 
 function todayIso(): string {
   const d = new Date();
@@ -7,13 +8,14 @@ function todayIso(): string {
 
 const DEFAULT_FILTERS: TraceFilters = {
   outcome: "all",
-  day: todayIso(),
-  from: "",
-  to: "",
+  day: "all",
+  from: isoDayOffset(6),
+  to: todayIso(),
   domain: "",
   sessionPrefix: "",
   mode: "all",
   model: "all",
+  tier: "all",
 };
 
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
@@ -51,7 +53,7 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     }),
   resetFilters: () =>
     set((s) => {
-      s.filters = { ...DEFAULT_FILTERS, day: todayIso() };
+      s.filters = { ...DEFAULT_FILTERS, from: isoDayOffset(6), to: todayIso() };
     }),
   setCurrentSessionId: (id) =>
     set((s) => {

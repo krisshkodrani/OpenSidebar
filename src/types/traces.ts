@@ -83,6 +83,8 @@ export interface TraceEntry {
   /** LLM call metadata */
   llmRequest: {
     model: string;
+    /** Which tier executed this turn — executor (tier 0) vs planner (tier 1) */
+    modelTier?: "executor" | "planner";
     messageCount: number;
     toolCount: number;
     compressionLevel: string;
@@ -103,6 +105,10 @@ export interface TraceEntry {
       cost?: number;
     } | null;
     durationMs: number;
+    /** Provider that actually served the request (may differ after failover) */
+    actualProviderId?: string;
+    /** Model that actually served the request (may differ after failover) */
+    actualModel?: string;
   };
   /** Tool executions for this turn */
   toolExecutions: TraceToolExecution[];

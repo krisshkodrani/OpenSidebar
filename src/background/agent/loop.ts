@@ -2419,6 +2419,7 @@ export class AgentLoop {
             cachedPrefixLength:
               cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
           },
+          this.llm.isPlannerTier() ? "planner" : "executor",
         );
 
         // Record initial perception on T1 (retroactive — perception ran before first startTurn)
@@ -2546,6 +2547,8 @@ export class AgentLoop {
           response.finish_reason,
           response.usage ?? null,
           llmMs,
+          response.actualProviderId,
+          response.actualModel,
         );
       }
 

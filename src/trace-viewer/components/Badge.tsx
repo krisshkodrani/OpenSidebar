@@ -21,7 +21,9 @@ type BadgeVariant =
   | "original-query"
   | `event-${string}`
   | `role-${string}`
-  | `difficulty-${string}`;
+  | `difficulty-${string}`
+  | "tier-executor"
+  | "tier-planner";
 
 const VARIANT_CLASSES: Record<string, string> = {
   completed: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
@@ -49,6 +51,11 @@ const VARIANT_CLASSES: Record<string, string> = {
     "bg-orange-500/10 text-[#e67e22] border border-orange-500/20 text-[9px]",
   "original-query":
     "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30 text-[9px]",
+  // tier badges
+  "tier-executor":
+    "bg-cyan-500/15 text-[#22d3ee] border border-cyan-500/30 text-[9px] font-mono",
+  "tier-planner":
+    "bg-amber-500/15 text-[#fbbf24] border border-amber-500/30 text-[9px] font-mono",
   // difficulty badges
   "difficulty-simple":
     "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
