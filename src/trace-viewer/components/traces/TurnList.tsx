@@ -5,9 +5,18 @@ import TurnCard from "./TurnCard";
 export default function TurnList() {
   const entries = useStore((s) => s.currentEntries);
   const searchQuery = useStore((s) => s.searchQuery);
+  const tierFilter = useStore((s) => s.filters.tier);
 
   const q = searchQuery.toLowerCase().trim();
   let filtered = entries;
+
+  // Filter by model tier (executor/planner)
+  if (tierFilter && tierFilter !== "all") {
+    filtered = filtered.filter((e) => {
+      const llmReq = e.llmRequest as Record<string, unknown> | undefined;
+      return llmReq?.modelTier === tierFilter;
+    });
+  }
 
   if (q) {
     filtered = entries.filter((e) => {

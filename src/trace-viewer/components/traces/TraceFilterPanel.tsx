@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useStore } from "../../store";
 import FilterChips from "../FilterChips";
 import { useDebounce } from "../../hooks/useDebounce";
@@ -16,6 +16,40 @@ export default function TraceFilterPanel({
   const resetFilters = useStore((s) => s.resetFilters);
   const availableDays = useStore((s) => s.availableDays);
   const availableModels = useStore((s) => s.availableModels);
+
+  const sessions = useStore((s) => s.sessions);
+
+  // Derive available modes from session data (only show if modes exist)
+  const availableModes = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of sessions) {
+      const models = Array.isArray(s.models) ? (s.models as string[]) : [];
+      const hasRecording = models.includes("recording");
+      const hasManual = models.includes("manual");
+      if (hasRecording) counts["recording"] = (counts["recording"] || 0) + 1;
+      if (hasManual) counts["manual"] = (counts["manual"] || 0) + 1;
+      if (!hasRecording && !hasManual) counts["agent"] = (counts["agent"] || 0) + 1;
+    }
+    const labels: Record<string, string> = { agent: "Agent", recording: "Recording", manual: "Manual" };
+    return Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([value, count]) => ({ value, label: labels[value] || value, count }));
+  }, [sessions]);
+
+  // Derive available outcomes from session data
+  const availableOutcomes = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of sessions) {
+      const outcome = (s.outcome as string) || "unknown";
+      counts[outcome] = (counts[outcome] || 0) + 1;
+    }
+    const labels: Record<string, string> = {
+      completed: "Completed", stopped: "Stopped", max_turns: "Max Turns", error: "Error",
+    };
+    return Object.entries(counts)
+      .map(([value, count]) => ({ value, label: labels[value] || value, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [sessions]);
 
   const [localDomain, setLocalDomain] = useState(filters.domain);
   const [localSession, setLocalSession] = useState(filters.sessionPrefix);
@@ -72,6 +106,8 @@ export default function TraceFilterPanel({
     chips.push({ key: "mode", label: `Mode: ${filters.mode}` });
   if (filters.model !== "all")
     chips.push({ key: "model", label: `Model: ${shortModel(filters.model)}` });
+  if (filters.tier !== "all")
+    chips.push({ key: "tier", label: `Tier: ${filters.tier}` });
 
   const handleChipRemove = (key: string) => {
     if (key === "outcome") setFilter("outcome", "all");
@@ -88,6 +124,7 @@ export default function TraceFilterPanel({
     }
     if (key === "mode") setFilter("mode", "all");
     if (key === "model") setFilter("model", "all");
+    if (key === "tier") setFilter("tier", "all");
     onFiltersChanged();
   };
 
@@ -122,30 +159,35 @@ export default function TraceFilterPanel({
             className={selectClass}
           >
             <option value="all">All</option>
-            <option value="completed">Completed</option>
-            <option value="stopped">Stopped</option>
-            <option value="max_turns">Max Turns</option>
-            <option value="error">Error</option>
+            {availableOutcomes.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label} ({o.count})
+              </option>
+            ))}
           </select>
         </div>
-        <div className="flex-1">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Mode
-          </label>
-          <select
-            value={filters.mode}
-            onChange={(e) => handleSelectChange("mode", e.target.value)}
-            className={selectClass}
-          >
-            <option value="all">All</option>
-            <option value="agent">Agent</option>
-            <option value="recording">Recording</option>
-            <option value="manual">Manual</option>
-          </select>
-        </div>
+        {availableModes.length > 0 && (
+          <div className="flex-1">
+            <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
+              Mode
+            </label>
+            <select
+              value={filters.mode}
+              onChange={(e) => handleSelectChange("mode", e.target.value)}
+              className={selectClass}
+            >
+              <option value="all">All</option>
+              {availableModes.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label} ({m.count})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      {/* Day + Model row */}
+      {/* Day + Model + Tier row */}
       <div className="flex gap-2 mb-2.5">
         <div className="flex-1">
           <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
@@ -185,6 +227,20 @@ export default function TraceFilterPanel({
                 {shortModel(m.model)} ({m.count})
               </option>
             ))}
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
+            Tier
+          </label>
+          <select
+            value={filters.tier}
+            onChange={(e) => handleSelectChange("tier", e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">All Tiers</option>
+            <option value="executor">Executor</option>
+            <option value="planner">Planner</option>
           </select>
         </div>
       </div>

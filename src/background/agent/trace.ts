@@ -129,6 +129,7 @@ export class TraceRecorder {
     compressionLevel: string,
     rawMessages?: TraceLLMMessage[],
     contextMetrics?: TraceContextMetrics,
+    modelTier?: "executor" | "planner",
   ): void {
     this.turnToolExecutions = [];
     this.turnEvents = [];
@@ -140,6 +141,7 @@ export class TraceRecorder {
       elements,
       llmRequest: {
         model,
+        ...(modelTier ? { modelTier } : {}),
         messageCount,
         toolCount,
         compressionLevel,
@@ -156,6 +158,8 @@ export class TraceRecorder {
     finishReason: string,
     usage: TokenUsage | null,
     durationMs: number,
+    actualProviderId?: string,
+    actualModel?: string,
   ): void {
     if (!this.currentTurn) return;
     this.currentTurn.llmResponse = {
@@ -171,6 +175,8 @@ export class TraceRecorder {
           }
         : null,
       durationMs,
+      ...(actualProviderId ? { actualProviderId } : {}),
+      ...(actualModel ? { actualModel } : {}),
     };
   }
 

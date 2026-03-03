@@ -53,6 +53,8 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
     | Record<string, unknown>
     | undefined;
   const compressionLevel = llmRequest?.compressionLevel as string | undefined;
+  const modelTier = llmRequest?.modelTier as "executor" | "planner" | undefined;
+  const actualProviderId = llmResponse?.actualProviderId as string | undefined;
 
   return (
     <div className="bg-trace-panel border border-[rgba(15,52,96,0.6)] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
@@ -73,6 +75,16 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
           >
             {shortModel(model)}
           </Badge>
+        )}
+        {modelTier && (
+          <Badge variant={`tier-${modelTier}`}>
+            {modelTier}
+          </Badge>
+        )}
+        {actualProviderId && model && !model.startsWith("manual") && !model.startsWith("recording") && (
+          <span className="text-[9px] text-orange-400">
+            via {actualProviderId}
+          </span>
         )}
         {compressionLevel && compressionLevel !== "NONE" && (
           <span className="text-[10px] text-trace-muted">
