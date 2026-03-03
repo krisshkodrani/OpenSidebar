@@ -73,12 +73,10 @@ export function initializeBridge(
           // Keep sessionMetrics visible after completion (cleared on next run start)
         } else {
           state.setAgentRunning(true);
-          // Clear stale metrics when a new run starts (THINKING is the first status)
-          if (
-            message.payload.status === AgentStatus.THINKING &&
-            !state.sessionMetrics
-          ) {
-            // No-op - metrics will arrive via SESSION_METRICS
+          // Clear stale completion/progress from previous run when a new run starts
+          if (message.payload.status === AgentStatus.THINKING) {
+            state.clearTaskProgress(); // clears both taskProgress and taskCompletion
+            state.clearSessionMetrics();
           }
         }
         break;
@@ -312,6 +310,7 @@ export function initializeBridge(
       case "MANUAL_TOOL_EXECUTE":
       case "SCROLL_TO_POSITION":
       case "SCROLL_TO_POSITION_RESPONSE":
+      case "WORKSPACE_SYNC":
         break;
 
       default: {

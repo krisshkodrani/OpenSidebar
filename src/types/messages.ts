@@ -80,7 +80,8 @@ export type RuntimeMessage =
   | ClarificationRequestMessage
   | ClarificationResponseMessage
   | ScrollToPositionMessage
-  | ScrollToPositionResponse;
+  | ScrollToPositionResponse
+  | WorkspaceSyncMessage;
 
 // --- Chat Messages ---
 
@@ -192,6 +193,15 @@ export interface SidePanelOpenedMessage extends BaseMessage {
   payload: {
     tabId: number;
     windowId: number;
+  };
+}
+
+/** Side panel requests background to re-broadcast current state for a workspace */
+export interface WorkspaceSyncMessage extends BaseMessage {
+  type: "WORKSPACE_SYNC";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    workspaceId: string;
   };
 }
 
