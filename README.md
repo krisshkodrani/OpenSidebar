@@ -1,8 +1,12 @@
 # OpenSidebar
 
+[![CI](https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
+
 An open-source Chrome extension that turns your browser into an AI-powered agent workspace.
 
-OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: a fast model (`gpt-oss-120b`) for quick observe → act cycles, with escalation to a smart model (`z-ai/glm-4.7`, GLM-4.7 with native reasoning) when tasks get harder. Tri-provider failover (Cerebras → Groq → OpenRouter) keeps inference fast and resilient. A local "Second Brain" provides persistent memory across sessions.
+OpenSidebar can navigate, read, click, type, and research across web pages from a side panel. It uses a two-tier LLM architecture: an executor model (`gpt-oss-120b`) for quick observe → act cycles, with escalation to a planner model (`deepseek-v3.2`) when tasks get harder. All inference runs through OpenRouter.
 
 <!-- Add screenshots to docs/screenshots/ and uncomment the relevant lines below -->
 <!-- ![Side Panel](docs/screenshots/sidepanel.png) -->
@@ -14,14 +18,10 @@ OpenSidebar can navigate, read, click, type, and research across web pages from 
 
 - Browser automation via natural language (click, type, scroll, navigate).
 - Visual DOM understanding with Vimium-style element tags (`[1]`, `[2]`, ...).
-- Perception layer — vision-based page understanding (Groq Llama 4 Scout → GPT-4o-mini fallback).
+- Perception layer — vision-based page understanding (Gemini 2.5 Flash via OpenRouter).
 - Two-tier model execution with automatic escalation when needed.
 - Runtime lane isolation in the orchestrator (planner, executor, verifier).
-- Teach Mode with learned skill replay (capture successful runs and reuse them, with pin/enable controls).
 - Demo recording and replay for repeatable workflows.
-- Voice input via Browser Speech API or Groq Whisper.
-- React Toolkit — on-demand tools for React apps (inspect state, set controlled inputs, component tree).
-- Local memory with hybrid retrieval (Transformers.js + SQLite FTS5 + Voy + RRF).
 - Saved prompts and prompt management.
 - Auto-managed workspaces using Chrome Tab Groups.
 - Per-tab sidebar behavior (open on click, auto-close on tab switch).
@@ -34,19 +34,13 @@ OpenSidebar can navigate, read, click, type, and research across web pages from 
 
 ```text
 Side Panel (React) <-> Service Worker (Agent Loop / Orchestrator) <-> Content Script (DOM)
-                                  |
-                           Offscreen Document
-                    (Memory: SQLite + Voy + Transformers.js)
 ```
 
 | Component | Technology |
 | --- | --- |
-| Fast LLM | `gpt-oss-120b` via Cerebras → Groq → OpenRouter failover |
-| Smart LLM | `z-ai/glm-4.7` (GLM-4.7) via Cerebras → OpenRouter failover |
-| Perception | Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback) |
-| Embeddings | Transformers.js (`all-MiniLM-L6-v2`) |
-| Vector Search | Voy (WASM) |
-| Keyword Search | SQLite WASM (FTS5) |
+| Executor LLM | `openai/gpt-oss-120b` via OpenRouter |
+| Planner LLM | `deepseek/deepseek-v3.2` via OpenRouter |
+| Perception | Gemini 2.5 Flash via OpenRouter |
 | UI | React 18 + Tailwind CSS |
 | Build | Vite + `@crxjs/vite-plugin` |
 
@@ -76,7 +70,7 @@ Complete technical documentation: [docs/architecture/](./docs/architecture/)
 ### Install and Build
 
 ```bash
-git clone https://github.com/OpenSidebar/OpenSidebar.git
+git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
 npm install
 npm run build
@@ -206,7 +200,6 @@ If you forgot to start `npm run logs`, you can still export buffered logs from t
 
 - [Features Overview](./docs/features/)
 - [Browser Automation](./docs/features/browser-automation.md)
-- [Memory System](./docs/features/memory-system.md)
 - [Workspace Management](./docs/features/workspace-management.md)
 - [Streaming UI](./docs/features/streaming-ui.md)
 - [Security and Privacy](./docs/features/security.md)
@@ -216,7 +209,6 @@ If you forgot to start `npm run logs`, you can still export buffered logs from t
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Agent Loop](./docs/architecture/agent-loop.md)
 - [Fast-Smart Collaboration](./docs/architecture/fast-smart-collaboration.md)
-- [Memory System](./docs/architecture/memory-system.md)
 - [Message Protocol](./docs/architecture/message-protocol.md)
 - [Types Reference](./docs/architecture/types-reference.md)
 - [Orchestrator RFCs](./docs/rfc/orchestrator/)
@@ -231,13 +223,10 @@ If you forgot to start `npm run logs`, you can still export buffered logs from t
 
 ---
 
-## Organization
+## Repository
 
-OpenSidebar is developed by the OpenSidebar organization.
-
-- GitHub: [github.com/OpenSidebar](https://github.com/OpenSidebar)
-- Repository: [github.com/OpenSidebar/OpenSidebar](https://github.com/OpenSidebar/OpenSidebar)
-- Issues: [github.com/OpenSidebar/OpenSidebar/issues](https://github.com/OpenSidebar/OpenSidebar/issues)
+- Repository: [github.com/krisshkodrani/OpenSidebar](https://github.com/krisshkodrani/OpenSidebar)
+- Issues: [github.com/krisshkodrani/OpenSidebar/issues](https://github.com/krisshkodrani/OpenSidebar/issues)
 
 ## Contributing
 
@@ -256,7 +245,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and contribution workflow.
 See [SECURITY.md](SECURITY.md) for the security policy.
 
 - API keys are stored in `chrome.storage.sync`.
-- Memory data stays in local browser storage.
+- All data stays in local browser storage.
 - No telemetry or analytics by default.
 - URL sanitization blocks non-http(s) protocols.
 
