@@ -32,7 +32,7 @@ export interface ObserveInput {
   elements: TaggedElement[];
   url: string;
   title: string;
-  scroll: { y: number; maxY: number };
+  scroll: { y: number; maxY: number; viewportHeight?: number };
   /** Lightweight page skeleton (headings, landmarks, status, text) */
   skeleton?: PageSkeletonNode[];
 }

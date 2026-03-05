@@ -287,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports **39 tools** across four categories:
+The agent supports **35 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -399,7 +399,7 @@ Snapshot fingerprinting hashes `url + element count + sorted element signatures 
 
 ## Perception Layer
 
-The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Provider failover: Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback). Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
+The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Uses OpenRouter Gemini 2.5 Flash. Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
 
 ## Pause / Resume
 
@@ -484,13 +484,12 @@ interface TraceEntry {
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
 ### Executor Tier (observe→act cycles)
-- **Groq** (`openai/gpt-oss-120b`) — Highest priority, 250K TPM
-- **OpenRouter** (`openai/gpt-oss-120b`) — Fallback
+- **OpenRouter** (`openai/gpt-oss-120b`)
 
 ### Planner Tier (reasoning/escalation)
 - **OpenRouter** (`deepseek/deepseek-v3.2`) — Single provider
 
-Both pools use `ProviderPool` with `PoolConfig` for generic configuration. On 429, immediate fallback to next provider with 60s cooldown. The `TaskPlanner` also uses the planner pool.
+Both pools use `ProviderPool` with `PoolConfig` for generic configuration. The `TaskPlanner` also uses the planner pool.
 
 ### Context Distillation
 
@@ -518,7 +517,7 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (39 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (35 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
-| `src/background/perception.ts`        | Perception layer                     |
+| `src/background/perception/`          | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |

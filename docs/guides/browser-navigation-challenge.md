@@ -1,6 +1,6 @@
 # Running the Browser Navigation Challenge
 
-The [Browser Navigation Challenge](https://serene-frangipane-7fd25b.netlify.app/) is a 30-task timed benchmark for browser automation agents. Each task tests a different interaction pattern (clicking, typing, selecting, dragging, drawing, etc.) and the agent must complete all 30 within a 5-minute timer (~10s per task).
+The [Browser Navigation Challenge](https://example.com/browser-challenge/) is a 30-task timed benchmark for browser automation agents. Each task tests a different interaction pattern (clicking, typing, selecting, dragging, drawing, etc.) and the agent must complete all 30 within a 5-minute timer (~10s per task).
 
 ## Settings
 
@@ -12,7 +12,7 @@ Open the settings drawer and configure:
 | Show Element Tags | OFF | Visual overlays are a debugging aid — the LLM never sees them |
 | Show Session Metrics | ON | Track token usage and cost across the run |
 
-All other settings can stay at defaults. Memory and workspace can be left enabled — the agent may use `memory_add` to save strategies it discovers.
+All other settings can stay at defaults. Workspaces can be left enabled.
 
 ## Prompt
 

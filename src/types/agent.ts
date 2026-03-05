@@ -180,6 +180,8 @@ export interface ChatEntry {
   citations?: Citation[];
   /** Extracted LLM thinking/reasoning content (from <think> blocks or markdown sections) */
   thinking?: string;
+  /** Synthetic entry that renders as PlanTimelineCard instead of MessageBubble */
+  isPlanCard?: boolean;
 }
 
 /** Stagnation detection state for the side panel */
@@ -285,8 +287,6 @@ export interface SidePanelState {
   laneTelemetry: LaneTelemetrySnapshot | null;
   /** User-saved prompt templates */
   savedPrompts: SavedPrompt[];
-  /** Whether the PlanBoard panel is visible */
-  showPlanBoard: boolean;
   /** Whether demo recording is active */
   demoRecording: boolean;
   /** Number of actions captured in current recording */

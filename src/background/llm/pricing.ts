@@ -30,16 +30,6 @@ const MODEL_PRICING: ModelPricing[] = [
     sourceUrl: "https://openrouter.ai/deepseek/deepseek-v3.2",
     confidence: "official",
   },
-  {
-    providerId: "groq",
-    model: "openai/gpt-oss-120b",
-    inputUsdPerMillion: 0.15,
-    outputUsdPerMillion: 0.6,
-    cachedInputUsdPerMillion: 0.075,
-    effectiveDate: "2026-02-18",
-    sourceUrl: "https://console.groq.com/docs/model/openai/gpt-oss-120b",
-    confidence: "official",
-  },
 ];
 
 function normalizeModel(model: string): string {

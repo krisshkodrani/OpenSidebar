@@ -1,22 +1,12 @@
 import React from "react";
+import type { TraceLLMMessage, TraceContextMetrics } from "../../../types/traces";
 import CollapsibleSection from "../CollapsibleSection";
 import TurnLLMMessage from "./TurnLLMMessage";
 import { formatTokens } from "../../utils";
 
-interface ContextMetrics {
-  systemTokens?: number;
-  historyTokens?: number;
-  totalTokens?: number;
-  maxTokens?: number;
-  utilization?: number;
-  droppedMessageCount?: number;
-  compressionLevel?: string;
-  cachedPrefixLength?: number;
-}
-
 interface TurnLLMInputSectionProps {
-  messages: Record<string, unknown>[];
-  contextMetrics?: ContextMetrics;
+  messages: TraceLLMMessage[];
+  contextMetrics?: TraceContextMetrics;
 }
 
 export default function TurnLLMInputSection({
@@ -82,8 +72,7 @@ export default function TurnLLMInputSection({
       )}
       <div className="mt-1.5">
         {messages.map((msg, i) => {
-          const role = (msg.role as string) || "";
-          const isFirstUser = role === "user" && !firstUserSeen;
+          const isFirstUser = msg.role === "user" && !firstUserSeen;
           if (isFirstUser) firstUserSeen = true;
           return (
             <TurnLLMMessage

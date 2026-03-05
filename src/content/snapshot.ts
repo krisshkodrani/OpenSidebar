@@ -11,7 +11,7 @@
  */
 
 import { DomSnapshot } from "../types";
-import { tagElements, getCachedElements, getOverflowMetadata } from "./tagging";
+import { tagElements, getCachedElements, getOverflowMetadata, extractPageSkeleton } from "./tagging";
 import { extractPageContent, extractVisibleText } from "./readability";
 
 export function buildSnapshot(
@@ -39,6 +39,17 @@ export function buildSnapshot(
 
   if (overflow) {
     snapshot.overflow = overflow;
+  }
+
+  // Extract page skeleton (headings, landmarks, status, text) on refresh
+  if (refresh) {
+    const interactiveTexts = new Set<string>(
+      elements.map((el) => el.text.trim()).filter(Boolean),
+    );
+    const skeleton = extractPageSkeleton(interactiveTexts);
+    if (skeleton.length > 0) {
+      snapshot.skeleton = skeleton;
+    }
   }
 
   // DOM distillation: Readability + Turndown → Markdown, fallback to visible text

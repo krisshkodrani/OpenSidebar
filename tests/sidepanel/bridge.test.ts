@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import "../setup";
 import { useStore } from "../../src/sidepanel/store";
 import { initializeBridge } from "../../src/sidepanel/bridge";
@@ -9,6 +9,24 @@ import { AgentStatus, MessageSource } from "../../src/types";
  * so we can dispatch messages to it manually.
  */
 let capturedListener: ((message: any) => void) | null = null;
+
+/**
+ * Helper: capture the onDisconnect listener from chrome.runtime.connect
+ * so we can simulate SW crashes.
+ */
+let capturedPortDisconnectListener: (() => void) | null = null;
+let mockPort: { disconnect: ReturnType<typeof vi.fn>; onDisconnect: { addListener: ReturnType<typeof vi.fn> } };
+
+function createMockPort() {
+    capturedPortDisconnectListener = null;
+    mockPort = {
+        disconnect: vi.fn(),
+        onDisconnect: {
+            addListener: vi.fn((fn: any) => { capturedPortDisconnectListener = fn; }),
+        },
+    };
+    return mockPort;
+}
 
 describe("Bridge Message Routing", () => {
     beforeEach(() => {
@@ -21,6 +39,7 @@ describe("Bridge Message Routing", () => {
                 removeListener: vi.fn(() => {}),
             },
             sendMessage: vi.fn(async () => {}),
+            connect: vi.fn(() => createMockPort()),
         } as any;
         globalThis.chrome.storage = {
             session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
@@ -47,16 +66,11 @@ describe("Bridge Message Routing", () => {
             laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
-                groqApiKey: "",
                 maxTurns: 30,
-                contextWindowSize: 128000,
-                memoryEnabled: true,
-                workspaceEnabled: true,
                 theme: "system",
-                visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 showSessionMetrics: false,
-                disableNavigation: false,
-                bypassApprovals: false,
+                requireApprovals: true,
+                allowNavigation: true,
             },
         });
     });
@@ -544,5 +558,215 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().taskCompletion).not.toBeNull();
         expect(useStore.getState().taskCompletion!.status).toBe("completed");
         expect(useStore.getState().taskProgress).toBeNull();
+    });
+});
+
+describe("Bridge Port Keepalive", () => {
+    beforeEach(() => {
+        capturedListener = null;
+        vi.useFakeTimers();
+
+        globalThis.chrome = globalThis.chrome || {} as any;
+        globalThis.chrome.runtime = {
+            onMessage: {
+                addListener: vi.fn((fn: any) => { capturedListener = fn; }),
+                removeListener: vi.fn(() => {}),
+            },
+            sendMessage: vi.fn(async () => {}),
+            connect: vi.fn(() => createMockPort()),
+        } as any;
+        globalThis.chrome.storage = {
+            session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+            sync: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+        } as any;
+
+        useStore.setState({
+            messages: [],
+            agentStatus: AgentStatus.IDLE,
+            statusDetail: "Ready",
+            inputText: "",
+            isAgentRunning: false,
+            error: null,
+            taskProgress: null,
+            taskCompletion: null,
+            stagnationState: null,
+            turnProgress: null,
+            pendingApproval: null,
+            pendingEscalation: null,
+            pendingPlanConfirmation: null,
+            pendingClarification: null,
+            taskRecovery: null,
+            laneTelemetry: null,
+            settings: {
+                openRouterApiKey: "",
+                maxTurns: 30,
+                theme: "system",
+                showSessionMetrics: false,
+                requireApprovals: true,
+                allowNavigation: true,
+            },
+        });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    function setupBridge() {
+        const onScreenshot = vi.fn();
+        const onClose = vi.fn();
+        const cleanup = initializeBridge(useStore, { onScreenshot, onClose });
+        return { cleanup };
+    }
+
+    test("connects port on initialization", () => {
+        setupBridge();
+        expect(chrome.runtime.connect).toHaveBeenCalledWith({ name: "sidepanel-keepalive" });
+    });
+
+    test("port disconnect resets isAgentRunning when agent was running", () => {
+        useStore.getState().setAgentRunning(true);
+        setupBridge();
+
+        // Simulate SW crash
+        capturedPortDisconnectListener!();
+
+        expect(useStore.getState().isAgentRunning).toBe(false);
+        expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
+    });
+
+    test("port disconnect does not change status when agent was idle", () => {
+        setupBridge();
+
+        capturedPortDisconnectListener!();
+
+        // Should remain IDLE, not be set to IDLE again (no unnecessary status change)
+        expect(useStore.getState().isAgentRunning).toBe(false);
+        expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
+    });
+
+    test("port disconnect clears all pending overlays", () => {
+        useStore.getState().setPendingApproval({
+            approvalId: "a1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate",
+            timeoutMs: 30000,
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setPendingEscalation({
+            escalationId: "esc-1",
+            taskId: "t1",
+            workspaceId: "ws-1",
+            nodeId: "n1",
+            risk: "high",
+            confidence: 0.3,
+            reason: "Stuck",
+            options: [{ id: "approve_continue", label: "Continue", impact: "Retry" }],
+            recommendedOption: "approve_continue",
+            snapshotSummary: "Example",
+            lastActions: [],
+            budgetState: {
+                elapsedMs: 0, maxSessionTimeMs: 10000, totalTokens: 0,
+                maxTotalTokens: 1000, totalCostUsd: 0, maxTotalCostUsd: 1,
+            },
+            timeoutMs: 60000,
+            timestamp: Date.now(),
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setPendingPlanConfirmation({
+            confirmationId: "pc-1",
+            nodes: [{ description: "Step 1", successCriteria: "Done" }],
+            query: "test",
+            requestedAt: Date.now(),
+        });
+        useStore.getState().setPendingClarification({
+            clarificationId: "cl-1",
+            question: "Which?",
+            timeoutMs: 120000,
+            requestedAt: Date.now(),
+        });
+
+        setupBridge();
+        capturedPortDisconnectListener!();
+
+        expect(useStore.getState().pendingApproval).toBeNull();
+        expect(useStore.getState().pendingEscalation).toBeNull();
+        expect(useStore.getState().pendingPlanConfirmation).toBeNull();
+        expect(useStore.getState().pendingClarification).toBeNull();
+    });
+
+    test("port disconnect schedules reconnect after delay", () => {
+        setupBridge();
+
+        // First disconnect → reconnect at 1s
+        capturedPortDisconnectListener!();
+        expect(chrome.runtime.connect).toHaveBeenCalledTimes(1); // only initial
+
+        vi.advanceTimersByTime(1000);
+        expect(chrome.runtime.connect).toHaveBeenCalledTimes(2); // reconnected
+    });
+
+    test("backoff doubles on consecutive connect failures", () => {
+        // Make connect throw on second call (reconnect fails)
+        let connectAttempt = 0;
+        (chrome.runtime.connect as any).mockImplementation(() => {
+            connectAttempt++;
+            if (connectAttempt === 1) return createMockPort(); // initial OK
+            if (connectAttempt === 2) return createMockPort(); // first reconnect OK
+            // Third call: simulate the disconnect immediately triggering the backoff path
+            return createMockPort();
+        });
+
+        setupBridge();
+        expect(connectAttempt).toBe(1);
+
+        // Disconnect → 1s → reconnect OK (resets backoff) → disconnect → 1s → reconnect
+        capturedPortDisconnectListener!();
+        vi.advanceTimersByTime(1000);
+        expect(connectAttempt).toBe(2); // reconnected
+
+        // Second disconnect → still 1s because successful connect reset backoff
+        capturedPortDisconnectListener!();
+        vi.advanceTimersByTime(1000);
+        expect(connectAttempt).toBe(3);
+    });
+
+    test("cleanup cancels pending reconnect timer", () => {
+        const { cleanup } = setupBridge();
+
+        // Trigger disconnect (schedules reconnect)
+        capturedPortDisconnectListener!();
+
+        // Cleanup before reconnect fires
+        cleanup();
+
+        // Advance past the reconnect delay
+        vi.advanceTimersByTime(5000);
+
+        // Should NOT have reconnected (only initial connect)
+        expect(chrome.runtime.connect).toHaveBeenCalledTimes(1);
+    });
+
+    test("cleanup disconnects active port", () => {
+        const { cleanup } = setupBridge();
+        cleanup();
+
+        expect(mockPort.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    test("port disconnect after cleanup is a no-op (tornDown guard)", () => {
+        useStore.getState().setAgentRunning(true);
+        const { cleanup } = setupBridge();
+
+        cleanup();
+
+        // Simulate late disconnect event after cleanup
+        capturedPortDisconnectListener!();
+
+        // Should NOT have reset agent state (tornDown = true)
+        expect(useStore.getState().isAgentRunning).toBe(true);
     });
 });

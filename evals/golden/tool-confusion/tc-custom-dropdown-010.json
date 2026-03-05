@@ -1,0 +1,32 @@
+{
+  "id": "tc-custom-dropdown-010",
+  "confusionPair": { "toolA": "select_option", "toolB": "click_element", "label": "select_option_vs_click_element" },
+  "scenario": "Custom div-based dropdown should use click_element",
+  "difficulty": "hard",
+  "snapshot": {
+    "url": "https://example.com/dashboard/settings",
+    "title": "Dashboard Settings",
+    "elementCount": 22,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 110, "tagName": "div", "role": "listbox", "text": "Select timezone...", "attributes": { "aria-expanded": "true", "bg-color": "rgb(255, 255, 255)" }, "rect": { "x": 200, "y": 200, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 111, "tagName": "div", "role": "option", "text": "UTC-8 (Pacific Time)", "attributes": { "data-value": "America/Los_Angeles" }, "rect": { "x": 200, "y": 240, "width": 300, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 112, "tagName": "div", "role": "option", "text": "UTC-5 (Eastern Time)", "attributes": { "data-value": "America/New_York" }, "rect": { "x": 200, "y": 272, "width": 300, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 113, "tagName": "div", "role": "option", "text": "UTC+0 (GMT)", "attributes": { "data-value": "Europe/London" }, "rect": { "x": 200, "y": 304, "width": 300, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 114, "tagName": "div", "role": "option", "text": "UTC+1 (Central European)", "attributes": { "data-value": "Europe/Berlin" }, "rect": { "x": 200, "y": 336, "width": 300, "height": 32 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Dashboard Settings Timezone Select timezone... UTC-8 (Pacific Time) UTC-5 (Eastern Time) UTC+0 (GMT) UTC+1 (Central European)",
+  "instruction": "Select 'Eastern Time' from the timezone dropdown.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "click_element",
+    "correctArgs": { "id": 112 },
+    "antiPatternTools": ["select_option"],
+    "rationale": "This is a custom div-based dropdown (div elements with role=option, not a native <select>). select_option only works on native HTML <select>. For custom dropdowns, click_element on the option div is correct."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "Hard case: the dropdown is already open (aria-expanded=true) showing div options. Agent must recognize these are divs not native select options."
+  }
+}

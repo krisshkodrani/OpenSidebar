@@ -1,7 +1,7 @@
 /**
  * Perception eval runner.
  *
- * Replays perception eval cases against vision APIs (Groq / OpenRouter)
+ * Replays perception eval cases against vision APIs (OpenRouter)
  * without a browser.
  */
 
@@ -19,11 +19,9 @@ import { judgePerceptionCase } from "./perception-judge";
 import { buildPerceptionPrompt, parseCompletionSignal } from "../src/background/perception";
 import { stripThinkTags } from "../src/background/llm";
 
-export type PerceptionProvider = "groq" | "openrouter" | "both";
+export type PerceptionProvider = "openrouter";
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const OPENROUTER_MODEL = "openai/gpt-4o-mini";
 
 interface ProviderConfig {
@@ -35,19 +33,8 @@ interface ProviderConfig {
 }
 
 function buildProviderConfig(
-  provider: "groq" | "openrouter",
   keys: ApiKeys,
-): ProviderConfig | null {
-  if (provider === "groq") {
-    if (!keys.groq) return null;
-    return {
-      apiUrl: GROQ_API_URL,
-      apiKey: keys.groq,
-      model: GROQ_MODEL,
-      providerId: "groq",
-      headers: {},
-    };
-  }
+): ProviderConfig {
   return {
     apiUrl: OPENROUTER_API_URL,
     apiKey: keys.openrouter,
@@ -66,7 +53,6 @@ function buildProviderConfig(
 export async function replayPerceptionCase(
   keys: ApiKeys,
   evalCase: PerceptionEvalCase,
-  provider: "groq" | "openrouter",
 ): Promise<{
   interpretation: string;
   completionSignal?: { status: string; evidence: string; scope: string } | null;
@@ -74,10 +60,7 @@ export async function replayPerceptionCase(
   providerId: string;
   durationMs: number;
 }> {
-  const config = buildProviderConfig(provider, keys);
-  if (!config) {
-    throw new Error(`No API key for provider: ${provider}`);
-  }
+  const config = buildProviderConfig(keys);
 
   // Reconstruct the perception prompt
   const { promptText, mode } = buildPerceptionPrompt({
@@ -156,8 +139,6 @@ export async function runPerceptionEvals(options: {
   outDir?: string;
 }): Promise<PerceptionEvalResult[]> {
   const { keys, judge = false } = options;
-  const provider = options.provider ?? "both";
-
   let cases = readPerceptionEvalCases();
   if (cases.length === 0) {
     console.log("No perception eval cases found in evals/golden/perception/");
@@ -176,36 +157,27 @@ export async function runPerceptionEvals(options: {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outputFile = join(outDir, `perception-${timestamp}.jsonl`);
 
-  const providers: ("groq" | "openrouter")[] =
-    provider === "both" ? ["groq", "openrouter"] : [provider];
-
   const results: PerceptionEvalResult[] = [];
 
   console.log(
-    `Running ${cases.length} perception case(s) against ${providers.join(" + ")}...\n`,
+    `Running ${cases.length} perception case(s) against openrouter...\n`,
   );
 
   for (let i = 0; i < cases.length; i++) {
     const evalCase = cases[i];
 
-    for (const prov of providers) {
-      const config = buildProviderConfig(prov, keys);
-      if (!config) {
-        console.log(
-          `  [${i + 1}/${cases.length}] ${evalCase.id} [${prov}] \x1b[33mskipped\x1b[0m (no key)`,
-        );
-        continue;
-      }
+    {
+      const config = buildProviderConfig(keys);
 
       process.stdout.write(
-        `  [${i + 1}/${cases.length}] ${evalCase.id.slice(0, 35)} [${prov}]... `,
+        `  [${i + 1}/${cases.length}] ${evalCase.id.slice(0, 35)} [openrouter]... `,
       );
 
       const start = Date.now();
       let result: PerceptionEvalResult;
 
       try {
-        const replay = await replayPerceptionCase(keys, evalCase, prov);
+        const replay = await replayPerceptionCase(keys, evalCase);
         const durationMs = Date.now() - start;
 
         const scores = scorePerception(

@@ -7,15 +7,11 @@ import type { UserSettings } from "../../src/types";
 
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-or-key",
-  groqApiKey: "",
   maxTurns: 10,
-  contextWindowSize: 16000,
-  workspaceEnabled: true,
   theme: "system",
   showSessionMetrics: false,
-  disableNavigation: false,
-  bypassApprovals: true,
-  orchestratorMaxWorkers: 3,
+  requireApprovals: false,
+  allowNavigation: true,
 };
 
 /** Mock fetch that intercepts API calls and passes through log server requests. */
@@ -151,7 +147,7 @@ describe("classifyRoute", () => {
         "Do something",
         "Page",
         "https://example.com",
-        { ...baseSettings, groqApiKey: "key-only" , openRouterApiKey: "" },
+        { ...baseSettings, openRouterApiKey: "" },
       );
       expect(result.route).toBe("agent");
       expect(result.reason).toBe("Router fallback");
@@ -165,7 +161,7 @@ describe("classifyRoute", () => {
       "What is this?",
       "Page",
       "https://example.com",
-      { ...baseSettings, openRouterApiKey: "", groqApiKey: "" },
+      { ...baseSettings, openRouterApiKey: "" },
     );
     expect(result.route).toBe("agent");
     expect(result.reason).toBe("Router fallback");
@@ -242,24 +238,19 @@ describe("classifyRoute", () => {
     }
   });
 
-  test("tries next provider on 429", async () => {
-    let callCount = 0;
-    globalThis.fetch = mockFetch((url) => {
-      callCount++;
-      if (url.includes("groq")) {
-        return new Response("Rate limited", { status: 429 });
-      }
-      return jsonResponse('{"route": "agent", "confidence": 0.8, "reason": "Fallback provider"}');
-    });
+  test("falls back to agent on 429 from only provider", async () => {
+    globalThis.fetch = mockFetch(() =>
+      new Response("Rate limited", { status: 429 }),
+    );
     try {
       const result = await classifyRoute(
         "Click something",
         "Page",
         "https://example.com",
-        { ...baseSettings, groqApiKey: "key1", openRouterApiKey: "key2" },
+        baseSettings,
       );
       expect(result.route).toBe("agent");
-      expect(callCount).toBeGreaterThan(1);
+      expect(result.reason).toBe("Router fallback");
     } finally {
       restoreFetch();
     }

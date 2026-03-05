@@ -225,7 +225,7 @@
         }
       }
     ],
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=1",
+    "url": "https://example.com/browser-challenge/step1?version=1",
     "title": "Browser Navigation Challenge - The Ultimate Test",
     "scroll": {
       "y": 0,
@@ -268,7 +268,7 @@
     "durationMs": 938
   },
   "metadata": {
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step1?version=1",
+    "url": "https://example.com/browser-challenge/step1?version=1",
     "query": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied.",
     "difficulty": "medium",
     "tags": [

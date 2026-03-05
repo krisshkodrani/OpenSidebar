@@ -185,7 +185,7 @@ You MUST call clarify() to ask the user how to proceed. Do NOT assume the page i
 
 **Why this works**: The *Scaling Inference Law* (ADP, Ch.17) shows that giving a smaller model more attempts often outperforms switching to a larger model. The *Exception Handling and Recovery* pattern (ADP, Ch.12) mandates graduated responses. The current one-strike escalation is the opposite of graduated.
 
-The cost math supports this: Trace 1's executor turns cost ~$0/turn (Groq, free tier) with ~600ms latency. The planner turns cost ~$0.003/turn with ~5000ms latency. Three wasted executor turns cost $0 and 1.8s. One wasted planner turn costs $0.003 and 5s. The expected value of patience with the executor is positive.
+The cost math supports this: Trace 1's executor turns cost ~$0.001/turn (OpenRouter) with ~600ms latency. The planner turns cost ~$0.003/turn with ~5000ms latency. Three wasted executor turns cost $0.003 and 1.8s. One wasted planner turn costs $0.003 and 5s. The expected value of patience with the executor is positive.
 
 **Scope**: Modify `loop.ts` text-only handling block (~20 lines changed).
 
@@ -363,7 +363,7 @@ Replay traces `fdff73ae` and `f86910a7` with the changes applied:
 |------|-----------|--------|------------|
 | Grounding assertion is too verbose, wastes tokens | Low | Low | Section is ~80 tokens. Removed after T1 (only first turn). |
 | Contradiction detector has false positives | Medium | Medium | Only hard-contradict on step numbers (high precision). Soft warnings for others. `clarify` tool lets user override. |
-| Slower escalation causes more wasted executor turns | Low | Low | Executor turns are free (Groq) and fast (~600ms). Expected cost of patience is negative. |
+| Slower escalation causes more wasted executor turns | Low | Low | Executor turns are cheap (OpenRouter) and fast (~600ms). Expected cost of patience is negative. |
 | Failure brief becomes stale | Low | Low | Buffer resets on page navigation (URL change) or successful action. |
 | Element dedup removes useful information | Low | Medium | Only collapses `[invisible-text]` elements. Preserves IDs and labels in summary. Agent can call `read_element` for details. |
 

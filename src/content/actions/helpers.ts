@@ -80,7 +80,12 @@ export function isLikelyOverlay(el: HTMLElement): boolean {
   // Condition 0: Native HTML dialog element — always an overlay when open
   if (el.tagName === "DIALOG" && el.hasAttribute("open")) return true;
 
-  const style = window.getComputedStyle(el);
+  let style: CSSStyleDeclaration;
+  try {
+    style = window.getComputedStyle(el);
+  } catch {
+    return false;
+  }
   const position = style.position;
   const isPositioned =
     position === "fixed" || position === "absolute" || position === "sticky";

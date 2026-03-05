@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { Loader2, Pause, Play, ClipboardList } from "lucide-react";
+import { Loader2, Pause, Play } from "lucide-react";
 import { useStore } from "../store";
 import { AgentStatus, MessageSource, SessionMetrics } from "../../types";
 import { logger } from "../../utils";
@@ -87,9 +87,7 @@ export function StatusLine() {
   const sessionMetrics = useStore((s) => s.sessionMetrics);
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
   const stagnationState = useStore((s) => s.stagnationState);
-  const taskProgress = useStore((s) => s.taskProgress);
   const taskCompletion = useStore((s) => s.taskCompletion);
-  const togglePlanBoard = useStore((s) => s.togglePlanBoard);
 
   const isStalled = !!stagnationState;
   const cfg = statusConfig(status, isStalled);
@@ -204,27 +202,6 @@ export function StatusLine() {
         </button>
       )}
 
-      {/* Plan pill */}
-      {taskCompletion ? (
-        <button
-          onClick={togglePlanBoard}
-          className="shrink-0 inline-flex items-center gap-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-px text-[9px] font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
-          aria-label="Toggle plan"
-        >
-          <ClipboardList size={8} />
-          Done {taskCompletion.subtaskResults.length}/
-          {taskCompletion.subtaskResults.length}
-        </button>
-      ) : taskProgress ? (
-        <button
-          onClick={togglePlanBoard}
-          className="shrink-0 inline-flex items-center gap-0.5 rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 px-1.5 py-px text-[9px] font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/40 transition-colors"
-          aria-label="Toggle plan"
-        >
-          <ClipboardList size={8} />
-          Plan {taskProgress.currentIndex + 1}/{taskProgress.subtasks.length}
-        </button>
-      ) : null}
     </div>
   );
 }

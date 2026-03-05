@@ -1,0 +1,31 @@
+{
+  "id": "tc-dismiss-all-003",
+  "confusionPair": { "toolA": "dismiss_overlays", "toolB": "hide_element", "label": "dismiss_overlays_vs_hide_element" },
+  "scenario": "Multiple overlays blocking viewport need dismiss_overlays",
+  "difficulty": "easy",
+  "snapshot": {
+    "url": "https://example.com/shop",
+    "title": "Online Shop",
+    "elementCount": 25,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 50, "tagName": "div", "role": "dialog", "text": "Accept Cookies We use cookies to improve your experience. Accept All Reject", "attributes": { "bg-color": "rgb(255, 255, 255)", "position": "fixed" }, "rect": { "x": 0, "y": 500, "width": 1200, "height": 100 }, "isVisible": true, "isDisabled": false },
+    { "tag": 51, "tagName": "div", "role": "dialog", "text": "Subscribe to Newsletter Enter email Subscribe No thanks", "attributes": { "bg-color": "rgb(255, 255, 255)", "position": "fixed" }, "rect": { "x": 300, "y": 150, "width": 600, "height": 300 }, "isVisible": true, "isDisabled": false },
+    { "tag": 52, "tagName": "button", "role": "button", "text": "Accept All", "attributes": {}, "rect": { "x": 900, "y": 540, "width": 120, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 53, "tagName": "button", "role": "button", "text": "No thanks", "attributes": {}, "rect": { "x": 500, "y": 400, "width": 100, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 60, "tagName": "button", "role": "button", "text": "Add to Cart", "attributes": { "bg-color": "rgb(34, 197, 94)" }, "rect": { "x": 400, "y": 700, "width": 150, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Online Shop Best Products Accept Cookies We use cookies Accept All Reject Subscribe to Newsletter Enter email Subscribe No thanks Featured Product $29.99 Add to Cart",
+  "instruction": "Clear all the popups blocking the page so I can shop.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "dismiss_overlays",
+    "antiPatternTools": ["hide_element"],
+    "rationale": "Multiple overlays (cookie banner + newsletter popup) are blocking the viewport. dismiss_overlays handles all at once; hide_element targets only one by ID."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "User wants ALL popups cleared. dismiss_overlays is the batch tool; hide_element would require knowing each specific tag ID."
+  }
+}

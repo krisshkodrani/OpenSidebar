@@ -9,9 +9,11 @@ import {
 } from "../../types";
 import { formatStepLabel } from "../../background/agent/step-labels";
 import { clsx } from "clsx";
+import { sanitizeHtml } from "../../utils/sanitize-html";
 import { useStore } from "../store";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
+import { PlanStepIcon } from "./PlanStepIcon";
 import {
   CheckCircle2,
   XCircle,
@@ -20,6 +22,10 @@ import {
   ExternalLink,
   StickyNote,
   Terminal,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -148,6 +154,9 @@ function CompletionSummary({
 }: {
   data: TaskCompletionMessage["payload"];
 }) {
+  const [copied, setCopied] = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false);
+
   const statusIcon =
     data.status === "completed" ? (
       <CheckCircle2 size={14} className="text-green-500" />
@@ -164,8 +173,21 @@ function CompletionSummary({
         ? "Partially completed"
         : "Task failed";
 
+  const summaryHtml = useMemo(
+    () => (data.summary ? sanitizeHtml(marked.parse(data.summary) as string) : ""),
+    [data.summary],
+  );
+
+  const handleCopy = () => {
+    if (!data.summary) return;
+    navigator.clipboard.writeText(data.summary);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+
   return (
     <div className="bg-warm-100/50 dark:bg-warm-800/50 rounded-lg border border-warm-200 dark:border-warm-700 p-3 text-sm">
+      {/* Status badge */}
       <div className="flex items-center gap-2 mb-2">
         {statusIcon}
         <span className="font-medium">{statusLabel}</span>
@@ -175,32 +197,71 @@ function CompletionSummary({
           </span>
         )}
       </div>
-      {data.metrics && (
-        <div className="mb-2">
-          <MetricsSummary metrics={data.metrics} />
+
+      {/* Summary — markdown rendered */}
+      {data.summary && (
+        <div className="relative group/summary mb-2">
+          <div
+            className="prose-chat text-warm-700 dark:text-warm-200"
+            dangerouslySetInnerHTML={{ __html: summaryHtml }}
+          />
+          <button
+            onClick={handleCopy}
+            className="absolute top-0 right-0 p-1 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-200 opacity-0 group-hover/summary:opacity-100 transition-opacity"
+            title="Copy summary"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
         </div>
       )}
-      {data.summary && (
-        <p className="text-warm-600 dark:text-warm-300 text-xs mb-2">
-          {data.summary}
-        </p>
-      )}
+
+      {/* Subtask results — vertical timeline */}
       {data.subtaskResults && data.subtaskResults.length > 0 && (
-        <div className="space-y-1 mt-2 border-t border-warm-200 dark:border-warm-700 pt-2">
+        <div className="mt-2 border-t border-warm-200 dark:border-warm-700 pt-2 ml-1">
           {data.subtaskResults.map((sr, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-xs">
-              {sr.status === "completed" ? (
-                <CheckCircle2 size={10} className="text-green-500 shrink-0" />
-              ) : sr.status === "failed" ? (
-                <XCircle size={10} className="text-red-500 shrink-0" />
-              ) : (
-                <AlertTriangle size={10} className="text-yellow-500 shrink-0" />
-              )}
-              <span className="truncate text-warm-600 dark:text-warm-400">
-                {sr.description}
-              </span>
+            <div key={i} className="flex items-start gap-2">
+              <div className="flex flex-col items-center">
+                <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                  <PlanStepIcon status={sr.status === "completed" ? "completed" : sr.status === "failed" ? "failed" : sr.status === "skipped" ? "skipped" : "pending"} size={10} />
+                </div>
+                {i < data.subtaskResults.length - 1 && (
+                  <div className={`w-px flex-1 min-h-[4px] ${sr.status === "completed" ? "bg-emerald-300/60 dark:bg-emerald-700/40" : "bg-warm-200/60 dark:bg-warm-700/40"}`} />
+                )}
+              </div>
+              <div className="pb-1 min-w-0 flex-1">
+                <span className="text-xs truncate text-warm-600 dark:text-warm-400">
+                  {sr.description}
+                </span>
+                {sr.result && (
+                  <div className="text-[10px] text-warm-400 dark:text-warm-500 line-clamp-1 mt-0.5">
+                    {sr.result}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Session metrics — collapsible */}
+      {data.metrics && (
+        <div className="mt-2 border-t border-warm-200 dark:border-warm-700 pt-2">
+          <button
+            onClick={() => setMetricsOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
+          >
+            {metricsOpen ? (
+              <ChevronDown size={12} />
+            ) : (
+              <ChevronRight size={12} />
+            )}
+            <span>Session metrics</span>
+          </button>
+          {metricsOpen && (
+            <div className="mt-1">
+              <MetricsSummary metrics={data.metrics} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -276,7 +337,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (!cleaned) return "";
     const extracted = extractJsonText(cleaned);
     if (extracted) cleaned = extracted;
-    return marked.parse(cleaned) as string;
+    return sanitizeHtml(marked.parse(cleaned) as string);
   }, [message.content, isUser]);
 
   const stepCount = message.steps?.length ?? 0;
@@ -316,14 +377,14 @@ export const MessageBubble = React.memo(function MessageBubble({
   return (
     <div
       className={clsx(
-        "group flex flex-col gap-1 mb-5 message-enter",
+        "group flex flex-col gap-1 mb-6 message-enter",
         isUser ? "items-end" : "items-start",
       )}
     >
       {showBubble && (
         <div
           className={clsx(
-            "max-w-[85%] px-3 py-2 rounded-xl text-sm shadow-soft",
+            "max-w-[85%] px-3 py-2 rounded-2xl text-sm",
             isUser
               ? isManualCommand
                 ? "bg-indigo-500 text-white font-mono whitespace-pre-wrap"
@@ -331,10 +392,10 @@ export const MessageBubble = React.memo(function MessageBubble({
                   ? "bg-violet-500 text-white italic whitespace-pre-wrap"
                   : isFeedback
                     ? "bg-amber-500 text-white whitespace-pre-wrap"
-                    : "bg-primary-600 text-white whitespace-pre-wrap"
+                    : "bg-primary-100 text-primary-900 dark:bg-primary-900/40 dark:text-primary-100 whitespace-pre-wrap"
               : isManualCommand
-                ? "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-indigo-200/60 dark:border-indigo-700/60"
-                : "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-warm-200/60 dark:border-warm-700/60",
+                ? "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-indigo-200/60 dark:border-indigo-700/60 shadow-soft"
+                : "bg-warm-50 dark:bg-warm-800/80 text-warm-800 dark:text-warm-100 shadow-soft",
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >

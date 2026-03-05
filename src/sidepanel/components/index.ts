@@ -5,8 +5,8 @@ export * from "./StatusLine";
 export * from "./StepTimeline";
 export * from "./ApprovalOverlay";
 export * from "./EscalationOverlay";
-export * from "./PlanSheet";
+export * from "./PlanStepIcon";
+export * from "./PlanTimelineCard";
 
 export * from "./SavedPromptsDrawer";
-export * from "./PlanConfirmationOverlay";
 export * from "./ClarificationOverlay";

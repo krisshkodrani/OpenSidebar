@@ -11,13 +11,6 @@ OpenSidebar is designed with security and privacy as fundamental principles, kee
 - **Browser encryption** - Chrome encrypts stored data at rest
 - **IndexedDB isolation** - Each extension has separate storage
 
-### Memory Privacy
-
-- **Personal data stays private** - Memories stored locally only
-- **Search happens locally** - Semantic search runs in your browser
-- **No tracking** - We don't track what you store or search for
-- **User control** - Full control over saved memories
-
 ### Workspace Isolation
 
 - **Tab group boundaries** - AI can't access tabs outside current workspace
@@ -32,7 +25,6 @@ All AI actions are classified by risk level:
 
 - **Reading pages** - `read_page`, `read_element`, `read_pdf`
 - **Scrolling** - `scroll_page`
-- **Memory** - `memory_search`
 - **Inspection** - `hover_element`, `find_element`, `inspect_hidden`, `list_tabs`, `get_cookies`, `search_history`, `get_bookmarks`
 - **Utility** - `wait`, `escalate`, `transcribe_audio`, `copy_to_clipboard`, `send_notification`
 
@@ -41,7 +33,7 @@ All AI actions are classified by risk level:
 - **Interaction** - `click_element`, `type_text`, `select_option`, `press_key`, `drag_and_drop`, `draw_stroke`, `right_click`, `set_checkbox`, `click_coordinates`
 - **Modification** - `hide_element`
 - **Files** - `upload_file`, `download_file`
-- **Memory/Tabs** - `memory_add`, `switch_tab`, `group_tabs`, `ungroup_tabs`, `create_bookmark`
+- **Tabs** - `switch_tab`, `group_tabs`, `ungroup_tabs`, `create_bookmark`
 
 ### HIGH RISK (Navigation & System)
 
@@ -225,11 +217,9 @@ OpenSidebar operates without confirmation gates:
 
 ### Privacy Tips
 
-1. **Memory awareness** - Be careful what personal information you store
-2. **Workspace isolation** - Use separate workspaces for different activities
+1. **Workspace isolation** - Use separate workspaces for different activities
 3. **Public computers** - Avoid using on shared devices
-4. **Backup data** - Export important memories if needed
-5. **Understand limits** - Know what the extension can and cannot do
+4. **Understand limits** - Know what the extension can and cannot do
 
 ## Security Updates
 
@@ -250,6 +240,5 @@ OpenSidebar operates without confirmation gates:
 ## See Also
 
 - [Browser Automation](./browser-automation.md) - What AI can do
-- [Memory System](./memory-system.md) - Local data storage
 - [Workspace Management](./workspace-management.md) - Tab isolation
 - [Architecture Overview](../architecture/overview.md) - Technical security implementation

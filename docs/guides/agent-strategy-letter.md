@@ -8,16 +8,16 @@
 
 OpenSidebar is a Chrome extension that runs an autonomous browser agent. Given a natural-language instruction — "book a flight," "fill out this tax form," "find and compare prices across three sites" — it perceives the page, reasons about what to do, acts through the DOM, and verifies the result. It repeats this cycle until the task is done.
 
-The core design principle is **generic over task-specific**. There are no site-specific heuristics anywhere in the system. The agent adapts through prompting and memory, never through code. The guiding question behind every architectural decision: *"Would this work on a site I've never seen?"*
+The core design principle is **generic over task-specific**. There are no site-specific heuristics anywhere in the system. The agent adapts through prompting and demonstrations, never through code. The guiding question behind every architectural decision: *"Would this work on a site I've never seen?"*
 
 The entire LLM pipeline runs through a single provider, **OpenRouter**, with two model tiers:
 
 | Tier | Model | Role |
 |------|-------|------|
 | Executor | `openai/gpt-oss-120b` | Default for all turns — fast, cheap, good enough for most DOM interactions |
-| Planner | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
+| Planner | `deepseek/deepseek-v3.2` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
 
-Both share the same `LLMClient` class. Escalation is a one-way `switchToPlanner()` call — once the planner model is active, it stays active for the remainder of the session.
+Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.
 
 ---
 
@@ -91,17 +91,17 @@ The agent loop (`AgentLoop.loop()`) is a while-loop bounded by `maxTurns` (defau
 
 Streaming is always enabled. The LLM response is streamed via SSE, with text deltas forwarded to the side panel in real time via `STREAM_CHUNK` messages. `max_tokens` is set to 4096. `tool_choice: "auto"` is sent whenever tools are present.
 
-MiniMax M2.5 emits `<think>...</think>` reasoning blocks inline. These are handled at three levels:
+DeepSeek V3.2 emits `<think>...</think>` reasoning blocks inline. These are handled at three levels:
 
 - **Streaming UI**: A `createThinkFilter()` state machine suppresses think blocks from the text deltas sent to the side panel. It tracks chunk boundaries to avoid cutting in the middle of a tag.
-- **Conversation history**: Think blocks are preserved **raw** in the message history. This is critical — M2.5's reasoning chain continuity improves significantly when it can see its own prior reasoning.
+- **Conversation history**: Think blocks are preserved **raw** in the message history. This is critical — the planner's reasoning chain continuity improves significantly when it can see its own prior reasoning.
 - **Logic/logging**: `stripThinkTags()` produces `cleanContent` used for reflection detection, tool call recovery, and structured logging. The non-streaming `complete()` method (used by the TaskPlanner) strips think tags from its return value since the planner needs clean JSON for parsing.
 
 ---
 
-## 4. The 57-Tool Ecosystem
+## 4. The 35-Tool Ecosystem
 
-The agent has 57 tools organized into six categories:
+The agent has 35 tools organized into categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |
@@ -130,12 +130,6 @@ The agent has 57 tools organized into six categories:
 | `create_tab` | Open new tab (auto-adds to workspace) |
 | `close_tab` | Close tab by ID |
 | `switch_tab` | Switch to another tab |
-
-### Memory (2 tools)
-| Tool | Description |
-|------|-------------|
-| `memory_add` | Save info to long-term memory (hybrid vector + FTS5) |
-| `memory_search` | Search long-term memory |
 
 ### Agent Control (1 tool)
 | Tool | Description | Sequential |
@@ -333,7 +327,7 @@ When the LLM returns text without any tool calls, the loop applies a graduated i
 
 When the agent navigates to a new page (via `navigate()` or clicking a link that triggers navigation), the content script is destroyed. The navigation bridge handles this:
 
-1. **Before navigation**: `AgentLoopState` (messages, turn count, pending tool call) is serialized to `chrome.storage.local` under key `qsidebar:agentState`.
+1. **Before navigation**: `AgentLoopState` (messages, turn count, pending tool call) is serialized to `chrome.storage.local` under key `opensidebar:agentState`.
 
 2. **During navigation**: `webNavigation.onCompleted` and `webNavigation.onErrorOccurred` listeners wait for the page to load.
 
@@ -382,7 +376,7 @@ Instead of a manual `take_screenshot` tool, OpenSidebar uses an automatic **perc
 2. Sends the screenshot + element summary to a vision model for structured interpretation
 3. Returns a compact 6-section interpretation (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens — replacing ~4K of raw visible text
 
-The perception layer uses provider failover: Groq Llama 4 Scout (fastest) then OpenRouter GPT-4o-mini (fallback). No user-configurable setting — it uses whichever API key is available (`groqApiKey` first, `openRouterApiKey` fallback). 429/4xx on the primary provider triggers immediate failover.
+The perception layer uses OpenRouter with `google/gemini-2.5-flash` for vision-based page understanding. 429/4xx errors trigger retry with exponential backoff.
 
 Response parameters: `max_tokens: 600`, `temperature: 0.1`, timeout 20s. Up to 2 retries with 800ms base delay and exponential backoff plus jitter. Fingerprint-based caching (via `computeSnapshotFingerprint()`) avoids redundant calls when the page hasn't changed.
 
@@ -423,18 +417,17 @@ For longer-term state preservation, the `ContextManager` auto-saves conversation
 - **Self-correcting**: The Verify step + stuck detection + model escalation create a multi-layered recovery system. The agent doesn't just try harder — it tries differently.
 - **Cost-efficient**: Starts with the cheapest viable model, escalates only when needed. Dynamic compression adapts context to budget. Compact element format saves ~300-450 tokens per turn compared to verbose representations.
 - **Vision-assisted**: The automatic perception layer interprets the page visually every turn, capturing spatial layout, canvas content, and non-DOM elements that pure DOM inspection would miss.
-- **Memory-persistent**: Long-term memory (vector + keyword hybrid search) allows the agent to recall strategies and facts across sessions.
 - **Transparent**: Session metrics expose exactly how many tokens and dollars each task costs, with per-model breakdowns.
 
 ### Known Limitations
 
 - **50-element cap**: Pages with hundreds of interactive elements (e.g., complex dashboards, data tables) will only see the first 50 visible elements. The agent can mitigate this with `scroll_page` and `find_element`, but may miss elements entirely.
 - **Perception latency**: Each perception call adds 1-3 seconds of latency for the vision model round-trip, though fingerprint-based caching avoids redundant calls.
-- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. Gemini 2.5 Flash Lite handles routine interactions well but struggles with complex multi-step logic. M2.5 is stronger but slower and more expensive.
+- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. GPT-OSS-120B handles routine interactions well but struggles with complex multi-step logic. DeepSeek V3.2 is stronger but slower and more expensive.
 - **No iframe support**: The content script only sees the top-level document. Elements inside iframes are invisible to the agent.
 - **Single-tab focus**: While tab management tools exist, the agent can only actively observe one tab at a time. Cross-tab coordination requires explicit switching.
 - **No file upload/download**: The agent cannot interact with native file dialogs or manage downloads.
 
 ---
 
-*This document reflects the implementation as of February 2026. All numbers, thresholds, and model names are verified against the source code.*
+*This document reflects the implementation as of March 2026. All numbers, thresholds, and model names are verified against the source code.*

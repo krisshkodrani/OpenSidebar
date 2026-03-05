@@ -13,6 +13,7 @@
  */
 
 import type { UserSettings } from "../../types";
+import { loadSettings } from "../../utils/settings-storage";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
@@ -65,7 +66,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
         "HTTP-Referer": "chrome-extension://opensidebar",
         "X-Title": "OpenSidebar",
       },
-      model: OPENROUTER_PERCEPTION_MODEL,
+      model: settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL,
       providerId: "openrouter",
     });
   }
@@ -159,6 +160,7 @@ export class PerceptionAgent {
   private _hasRunPanoramicPerception = false;
   private _turnCounter = 0;
   private _lastInterpretation: string | null = null;
+  private _lastObservedUrl = "";
 
   // -------------------------------------------------------------------------
   // Public API — state accessors
@@ -229,6 +231,7 @@ export class PerceptionAgent {
     this._hasRunPanoramicPerception = false;
     this._turnCounter = 0;
     this._lastInterpretation = null;
+    this._lastObservedUrl = "";
   }
 
   /** Serialize state for cross-navigation persistence. */
@@ -272,6 +275,14 @@ export class PerceptionAgent {
     fingerprint: string,
     signal?: AbortSignal,
   ): Promise<PerceptionResult> {
+    // 0. URL-change hard invalidation — a URL change is the strongest signal
+    //    that the page state has changed, regardless of fingerprint similarity.
+    const urlChanged = input.url !== this._lastObservedUrl;
+    this._lastObservedUrl = input.url;
+    if (urlChanged && this._lastObservedUrl !== "") {
+      this.invalidateCache();
+    }
+
     // 1. Fingerprint cache check
     if (fingerprint === this.lastFingerprint && this._lastInterpretation) {
       this.fingerprintAge++;
@@ -307,8 +318,7 @@ export class PerceptionAgent {
     }
 
     // 3. Get API key
-    const stored = await chrome.storage.sync.get("userSettings");
-    const settings = (stored.userSettings ?? {}) as UserSettings;
+    const settings = (await loadSettings()) ?? ({} as UserSettings);
     const providers = buildProviders(settings);
 
     if (providers.length === 0) {
@@ -368,7 +378,10 @@ export class PerceptionAgent {
     const moreBelow = input.scroll.y < input.scroll.maxY - 10;
 
     const priorObservations = formatPriorObservations(this.observationLog);
-    const elementSummary = buildElementSummary(input.elements, input.skeleton);
+    const viewport = input.scroll.viewportHeight
+      ? { height: input.scroll.viewportHeight, scrollY: input.scroll.y }
+      : undefined;
+    const elementSummary = buildElementSummary(input.elements, input.skeleton, viewport);
 
     // Build panoramic note
     let panoramicNote = "";

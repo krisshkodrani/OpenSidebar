@@ -91,12 +91,15 @@ describe("Tool Registration", () => {
         expect(hide!.function.parameters.properties.id.type).toBe("integer");
     });
 
-    test("scroll_page tool has optional id parameter", () => {
+    test("scroll_page tool has y param and optional id/direction", () => {
         const defs = toolRegistry.getDefinitions();
         const scroll = defs.find(d => d.function.name === ToolName.SCROLL_PAGE);
         expect(scroll).toBeDefined();
-        expect(scroll!.function.parameters.required).toContain("direction");
-        expect(scroll!.function.parameters.required).not.toContain("id");
+        // Neither y nor direction is required — handler validates at runtime
+        expect(scroll!.function.parameters.required).toEqual([]);
+        expect(scroll!.function.parameters.properties.y).toBeDefined();
+        expect(scroll!.function.parameters.properties.y.type).toBe("integer");
+        expect(scroll!.function.parameters.properties.direction).toBeDefined();
         expect(scroll!.function.parameters.properties.id).toBeDefined();
         expect(scroll!.function.parameters.properties.id.type).toBe("integer");
     });
@@ -109,11 +112,11 @@ describe("Tool Registration", () => {
         expect(escalate!.function.parameters.properties.reason.type).toBe("string");
     });
 
-    test("escalate tool description mentions puzzles/riddles", () => {
+    test("escalate tool description mentions planner model and puzzles/riddles", () => {
         const defs = toolRegistry.getDefinitions();
         const escalate = defs.find(d => d.function.name === ToolName.ESCALATE);
         expect(escalate).toBeDefined();
-        expect(escalate!.function.description).toContain("smarter");
+        expect(escalate!.function.description).toContain("planner model");
         expect(escalate!.function.description).toContain("riddles");
     });
 

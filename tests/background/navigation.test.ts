@@ -139,9 +139,9 @@ describe("Navigation Bridge", () => {
             await saveNavigationState(state, "https://a.com", null);
 
             // Manually age the state
-            const stored = mockStorage.get("qsidebar:agentState");
+            const stored = mockStorage.get("opensidebar:agentState");
             stored.navigationStartTs = Date.now() - 60_000; // 60 seconds ago
-            mockStorage.set("qsidebar:agentState", stored);
+            mockStorage.set("opensidebar:agentState", stored);
 
             await checkStaleNavigationState();
 

@@ -127,7 +127,7 @@ function emitAction(action: DemoAction, targetEl?: Element): void {
   if (goldenMode) {
     // Golden mode: emit enriched GOLDEN_ACTION with snapshot + tag ID
     const tagId = targetEl ? resolveTagId(targetEl) : null;
-    const snapshot = buildSnapshot(true, true, false);
+    const snapshot = buildSnapshot(true);
 
     if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       chrome.runtime

@@ -14,12 +14,12 @@ export function Header({
   showApprovalBypassBadge = false,
 }: Props) {
   return (
-    <header className="flex items-center justify-between px-3 py-1.5 border-b border-warm-200 dark:border-warm-800 bg-warm-50 dark:bg-warm-900 sticky top-0 z-10 transition-colors">
+    <header className="flex items-center justify-between px-3 py-1.5 glass-surface sticky top-0 z-10 transition-colors">
       <div className="flex items-center gap-1.5 min-w-0">
         <DemoRecordButton />
       </div>
 
-      <span className="text-xs font-semibold text-warm-400 dark:text-warm-500 tracking-wide select-none">
+      <span className="text-[11px] font-medium text-warm-400 dark:text-warm-500 tracking-wide select-none">
         OpenSidebar
       </span>
 

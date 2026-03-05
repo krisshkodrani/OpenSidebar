@@ -110,6 +110,7 @@ export interface OrchestratorTask {
   maxWorkers: number;
   maxReplans: number;
   replansUsed: number;
+  horizonExpansions: number;
   currentIndex: number;
   sessionMetrics: SessionMetrics;
   budget: {
@@ -150,6 +151,5 @@ export interface OrchestratorStartInput {
   workspaceId: string;
   settings: UserSettings;
   openRouterApiKey: string;
-  groqApiKey?: string;
 }
 

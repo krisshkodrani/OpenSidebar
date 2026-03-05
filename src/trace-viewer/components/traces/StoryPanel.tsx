@@ -1,4 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
+import type { TraceSession, TraceEntry } from "../../../types/traces";
+import type { SessionLogEntry } from "../../store/types";
 import { marked } from "marked";
 import { useStore } from "../../store";
 import {
@@ -7,60 +9,66 @@ import {
   formatTokens,
   truncate,
 } from "../../utils";
+import { sanitizeHtml } from "../../../utils/sanitize-html";
 
 marked.setOptions({ breaks: true, gfm: true });
 
 const STORAGE_KEY = "openrouter_api_key";
-const MODEL = "x-ai/grok-4.1-fast";
+const MODEL_STORAGE_KEY = "story_model";
+
+const STORY_MODELS = [
+  "x-ai/grok-4.1-fast",
+  "anthropic/claude-sonnet-4",
+  "google/gemini-2.5-flash",
+  "openai/gpt-4.1-mini",
+];
 
 function getApiKey(): string {
   return localStorage.getItem(STORAGE_KEY) ?? "";
 }
 
+function getModel(): string {
+  return localStorage.getItem(MODEL_STORAGE_KEY) || STORY_MODELS[0];
+}
+
 /** Pack session + entries + logs into a single prompt. */
 function buildPrompt(
-  session: Record<string, unknown>,
-  entries: Record<string, unknown>[],
-  logs: { lvl: string; msg: string; cat?: string; ts?: string }[],
+  session: TraceSession,
+  entries: TraceEntry[],
+  logs: SessionLogEntry[],
 ): string {
-  const metrics = session.metrics as Record<string, unknown> | undefined;
-  const durationMs =
-    ((session.endTime as number) || 0) - ((session.startTime as number) || 0);
+  const metrics = session.metrics;
+  const durationMs = (session.endTime || 0) - (session.startTime || 0);
 
   let cost = "";
   let tokens = "";
   if (metrics) {
-    if (metrics.totalCost) cost = formatCost(metrics.totalCost as number);
+    if (metrics.totalCost) cost = formatCost(metrics.totalCost);
     if (metrics.totalTokens)
-      tokens = formatTokens(metrics.totalTokens as number);
-  } else {
-    if (session.totalCost) cost = formatCost(session.totalCost as number);
-    if (session.totalTokens)
-      tokens = formatTokens(session.totalTokens as number);
+      tokens = formatTokens(metrics.totalTokens);
   }
 
   const lines: string[] = [];
   lines.push("# Session Data");
-  lines.push(`Query: ${(session.query as string) || "(none)"}`);
+  lines.push(`Query: ${session.query || "(none)"}`);
   lines.push(`Outcome: ${session.outcome || "unknown"}`);
   lines.push(`Duration: ${formatDuration(durationMs)}`);
   if (tokens) lines.push(`Tokens: ${tokens}`);
   if (cost) lines.push(`Cost: ${cost}`);
   if (session.startUrl) lines.push(`Start URL: ${session.startUrl}`);
-  lines.push(`Turns: ${(session.turnCount as number) || entries.length}`);
+  lines.push(`Turns: ${session.turnCount || entries.length}`);
   lines.push("");
 
   // Each turn
   for (let i = 0; i < entries.length; i++) {
-    const e = entries[i] as Record<string, unknown>;
+    const e = entries[i];
     lines.push(`## Turn ${i + 1}`);
-    const snap = e.snapshot as Record<string, unknown> | undefined;
-    if (snap) {
-      if (snap.url) lines.push(`URL: ${snap.url}`);
-      if (snap.title) lines.push(`Title: ${snap.title}`);
+    if (e.snapshot) {
+      if (e.snapshot.url) lines.push(`URL: ${e.snapshot.url}`);
+      if (e.snapshot.title) lines.push(`Title: ${e.snapshot.title}`);
     }
     // LLM content
-    const llmContent = (e.llmContent as string) || (e.content as string) || "";
+    const llmContent = e.llmResponse?.content || "";
     if (llmContent) {
       const trimmed =
         llmContent.length > 2000
@@ -68,30 +76,20 @@ function buildPrompt(
           : llmContent;
       lines.push(`LLM: ${trimmed}`);
     }
-    // Tool calls
-    const tools =
-      (e.toolCalls as Record<string, unknown>[]) ||
-      (e.tools as Record<string, unknown>[]) ||
-      [];
-    for (const t of tools) {
-      const name = t.name || t.toolName || "unknown";
-      const args = t.args || t.arguments || {};
-      const result = t.result ?? t.output ?? "";
-      const success =
-        t.success !== undefined ? t.success : t.error ? false : true;
+    // Tool executions
+    const toolExecs = e.toolExecutions || [];
+    for (const t of toolExecs) {
       lines.push(
-        `  Tool: ${name}(${typeof args === "string" ? args : JSON.stringify(args)})`,
+        `  Tool: ${t.toolName}(${JSON.stringify(t.args)})`,
       );
-      const resStr =
-        typeof result === "string" ? result : JSON.stringify(result);
       lines.push(
-        `  Result [${success ? "OK" : "ERROR"}]: ${truncate(resStr, 500)}`,
+        `  Result [${t.success ? "OK" : "ERROR"}]: ${truncate(t.result, 500)}`,
       );
     }
     // Events
-    const events = (e.events as Record<string, unknown>[]) || [];
+    const events = e.events || [];
     for (const ev of events) {
-      lines.push(`  Event: ${ev.type || ev.name} ${ev.detail || ""}`);
+      lines.push(`  Event: ${ev.type}`);
     }
     lines.push("");
   }
@@ -145,15 +143,21 @@ export default function StoryPanel() {
 
   const [streamText, setStreamText] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [model, setModel] = useState(getModel);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef("");
 
   const session = sessions.find(
-    (s) => (s.sessionId as string) === currentSessionId,
+    (s) => s.sessionId === currentSessionId,
   );
   const cachedStory = currentSessionId
     ? storyCache[currentSessionId]
     : undefined;
+
+  const handleModelChange = (newModel: string) => {
+    setModel(newModel);
+    localStorage.setItem(MODEL_STORAGE_KEY, newModel);
+  };
 
   const generate = useCallback(async () => {
     if (!currentSessionId || !session) return;
@@ -165,11 +169,7 @@ export default function StoryPanel() {
     setStreamText("");
     streamRef.current = "";
 
-    const prompt = buildPrompt(
-      session as Record<string, unknown>,
-      currentEntries,
-      sessionLogs as { lvl: string; msg: string; cat?: string; ts?: string }[],
-    );
+    const prompt = buildPrompt(session, currentEntries, sessionLogs);
 
     abortRef.current = new AbortController();
 
@@ -183,7 +183,7 @@ export default function StoryPanel() {
             Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: MODEL,
+            model,
             stream: true,
             max_tokens: 4096,
             messages: [
@@ -259,6 +259,7 @@ export default function StoryPanel() {
     session,
     currentEntries,
     sessionLogs,
+    model,
     setStoryCache,
     setStoryLoading,
     setStoryError,
@@ -270,6 +271,18 @@ export default function StoryPanel() {
       setApiKeyInput("");
     }
   };
+
+  const modelSelector = (
+    <select
+      value={model}
+      onChange={(e) => handleModelChange(e.target.value)}
+      className="px-2 py-1 text-xs rounded bg-trace-bg border border-trace-border text-trace-text focus:outline-none focus:border-trace-accent cursor-pointer"
+    >
+      {STORY_MODELS.map((m) => (
+        <option key={m} value={m}>{m}</option>
+      ))}
+    </select>
+  );
 
   // No API key available — show input
   if (!getApiKey()) {
@@ -300,10 +313,11 @@ export default function StoryPanel() {
 
   // Cached story — render Markdown
   if (cachedStory && !storyLoading) {
-    const html = marked.parse(cachedStory) as string;
+    const html = sanitizeHtml(marked.parse(cachedStory) as string);
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
+          {modelSelector}
           <button
             onClick={generate}
             className="px-3 py-1 text-xs font-medium rounded border border-trace-border text-trace-muted hover:text-trace-text hover:border-trace-accent transition-colors cursor-pointer"
@@ -321,7 +335,7 @@ export default function StoryPanel() {
 
   // Loading / streaming
   if (storyLoading) {
-    const html = streamText ? (marked.parse(streamText) as string) : "";
+    const html = streamText ? sanitizeHtml(marked.parse(streamText) as string) : "";
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
@@ -349,12 +363,15 @@ export default function StoryPanel() {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <div className="text-red-400 text-sm">{storyError}</div>
-        <button
-          onClick={generate}
-          className="px-4 py-2 text-sm font-medium rounded bg-trace-accent text-white hover:bg-trace-accent-light transition-colors cursor-pointer"
-        >
-          Retry
-        </button>
+        <div className="flex items-center gap-3">
+          {modelSelector}
+          <button
+            onClick={generate}
+            className="px-4 py-2 text-sm font-medium rounded bg-trace-accent text-white hover:bg-trace-accent-light transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -363,14 +380,17 @@ export default function StoryPanel() {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
       <div className="text-trace-muted text-sm">
-        Generate an AI narrative of this session using {MODEL}
+        Generate an AI narrative of this session
       </div>
-      <button
-        onClick={generate}
-        className="px-5 py-2 text-sm font-medium rounded bg-trace-accent text-white hover:bg-trace-accent-light transition-colors cursor-pointer"
-      >
-        Generate Story
-      </button>
+      <div className="flex items-center gap-3">
+        {modelSelector}
+        <button
+          onClick={generate}
+          className="px-5 py-2 text-sm font-medium rounded bg-trace-accent text-white hover:bg-trace-accent-light transition-colors cursor-pointer"
+        >
+          Generate Story
+        </button>
+      </div>
     </div>
   );
 }

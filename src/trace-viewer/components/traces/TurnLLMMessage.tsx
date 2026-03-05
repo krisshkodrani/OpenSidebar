@@ -1,9 +1,10 @@
 import React, { useState } from "react";
+import type { TraceLLMMessage } from "../../../types/traces";
 import Badge from "../Badge";
 import { truncate, formatTokens } from "../../utils";
 
 interface LLMMessageProps {
-  msg: Record<string, unknown>;
+  msg: TraceLLMMessage;
   cachedPrefixLength?: number;
   isFirstUser: boolean;
 }
@@ -14,11 +15,9 @@ export default function TurnLLMMessage({
   isFirstUser,
 }: LLMMessageProps) {
   const [open, setOpen] = useState(false);
-  const role = (msg.role as string) || "unknown";
-  const contentText = (msg.content as string) || "";
-  const toolCalls = msg.tool_calls as
-    | Array<{ function?: { name?: string } }>
-    | undefined;
+  const role = msg.role || "unknown";
+  const contentText = msg.content || "";
+  const toolCalls = msg.tool_calls;
 
   let tokEst = Math.ceil(contentText.length / 4);
   if (toolCalls) tokEst += Math.ceil(JSON.stringify(toolCalls).length / 4);
@@ -36,7 +35,7 @@ export default function TurnLLMMessage({
       preview = truncate(contentText, 80);
     }
   } else if (role === "tool") {
-    preview = `call: ${((msg.tool_call_id as string) || "?").slice(0, 12)}`;
+    preview = `call: ${(msg.tool_call_id || "?").slice(0, 12)}`;
     if (contentText) preview += ` — ${truncate(contentText, 60)}`;
   } else {
     preview = truncate(contentText, 80);

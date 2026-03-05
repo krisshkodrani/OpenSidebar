@@ -18,34 +18,23 @@
 
 ## Overview
 
-OpenSidebar has four execution contexts that communicate via Chrome's messaging APIs:
+OpenSidebar has three execution contexts that communicate via Chrome's messaging APIs:
 
 | Context                         | Process              | Lifecycle                              | File                           |
 | ------------------------------- | -------------------- | -------------------------------------- | ------------------------------ |
 | **Service Worker** (background) | Extension process    | Ephemeral (terminates after ~30s idle) | `src/background/background.ts` |
 | **Side Panel** (UI)             | Extension process    | Lives while panel is open              | `src/sidepanel/App.tsx`        |
 | **Content Script**              | Tab renderer process | Lives while page is loaded             | `src/content/content.ts`       |
-| **Offscreen Document**          | Extension process    | Created on demand for memory WASM      | `src/offscreen/offscreen.ts`   |
 
 ### Communication Paths
 
 ```
 Side Panel ←——chrome.runtime——→ Service Worker ←——chrome.tabs.sendMessage——→ Content Script
-                                        ↕
-                                 chrome.runtime
-                                        ↕
-                               Offscreen Document
-                                        ↕
-                                   postMessage
-                                        ↕
-                                   Web Worker (embeddings)
 ```
 
 **Rules:**
 
 - Content scripts **cannot** talk directly to the side panel — all messages route through the service worker.
-- The offscreen document **only** communicates with the service worker.
-- The web worker inside the offscreen document uses `postMessage` (not chrome.runtime).
 
 ---
 
@@ -53,7 +42,7 @@ Side Panel ←——chrome.runtime——→ Service Worker ←——chrome.tabs.
 
 ### 1. `chrome.runtime.sendMessage` (one-shot, with response)
 
-Used for: Side Panel ↔ Service Worker, Offscreen Document → Service Worker.
+Used for: Side Panel ↔ Service Worker.
 
 ```typescript
 // Sender
@@ -92,18 +81,6 @@ const response = await chrome.tabs.sendMessage(tabId, {
 ### 3. `chrome.runtime.onMessage` with `sender.tab` check (content script → background)
 
 Content scripts use `chrome.runtime.sendMessage`, and the background listener disambiguates via `sender.tab`.
-
-### 4. `postMessage` (offscreen document ↔ web worker)
-
-The offscreen document spawns a web worker for Transformers.js embeddings. They communicate via the standard `postMessage` / `onmessage` channel.
-
-```typescript
-// Offscreen document → Web Worker
-worker.postMessage({ action: "embed", text: "hello world" });
-
-// Web Worker → Offscreen document
-self.postMessage({ action: "embed_result", embedding: Float32Array });
-```
 
 ---
 
@@ -160,18 +137,6 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 | `DOM_SNAPSHOT_RESPONSE`   | Return DOM snapshot           | `{ snapshot: DomSnapshot, durationMs }`                     |
 | `TOOL_RESULT`             | Return tool execution result  | `{ toolCallId, success, result, navigated }`                |
 | `DISMISS_MODALS_RESPONSE` | Report dismissed modals count | `{ dismissed: number, remainingOverlay?, capturedTexts[] }` |
-
-### Service Worker → Offscreen Document
-
-| Message Type    | Purpose          | Payload                                                                                | Expected Response        |
-| --------------- | ---------------- | -------------------------------------------------------------------------------------- | ------------------------ |
-| `MEMORY_WORKER` | Memory operation | `{ action: "init" \| "add" \| "search" \| "delete" \| "clear" \| "extract_pdf", ... }` | `MEMORY_WORKER_RESPONSE` |
-
-### Offscreen Document → Service Worker
-
-| Message Type             | Purpose                 | Payload                                 |
-| ------------------------ | ----------------------- | --------------------------------------- |
-| `MEMORY_WORKER_RESPONSE` | Memory operation result | `{ action, success, results?, error? }` |
 
 ---
 
@@ -233,29 +198,7 @@ Service Worker          Content Script (old)    Content Script (new)
     │                     │                       │
 ```
 
-### 3. Memory Search Flow
-
-```
-Service Worker       Offscreen Document       Web Worker
-    │                       │                       │
-    │── MEMORY_WORKER ────→ │                       │
-    │   (action: search)    │                       │
-    │                       │── postMessage ──────→ │
-    │                       │   (embed query)       │
-    │                       │                       │ (run MiniLM-L6-v2)
-    │                       │←── postMessage ──────  │
-    │                       │   (embedding vector)  │
-    │                       │                       │
-    │                       │ (query Voy with vector)
-    │                       │ (query SQLite FTS5)
-    │                       │ (RRF fusion)
-    │                       │                       │
-    │←── MEMORY_WORKER_RESPONSE                     │
-    │   (action: search, results)                   │
-    │                       │                       │
-```
-
-### 4. Pause / Resume
+### 3. Pause / Resume
 
 ```
 Side Panel          Service Worker
@@ -271,7 +214,7 @@ Side Panel          Service Worker
     │                     │
 ```
 
-### 5. Stagnation Detection
+### 4. Stagnation Detection
 
 ```
 Side Panel          Service Worker          Content Script
@@ -288,7 +231,7 @@ Side Panel          Service Worker          Content Script
     │                     │                       │
 ```
 
-### 6. Turn Progress + Metrics
+### 5. Turn Progress + Metrics
 
 ```
 Side Panel          Service Worker
@@ -328,7 +271,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 | ------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Content script destroyed (navigation) | `chrome.runtime.lastError` on `sendMessage` | Navigation Bridge restores state after new page loads                                     |
 | Service worker terminated (idle)      | Side panel detects missed `AGENT_STATUS`    | Side panel re-sends last `USER_CHAT`; service worker restores from `chrome.storage.local` |
-| Offscreen document closed             | `chrome.runtime.lastError`                  | Service worker re-creates offscreen document via `chrome.offscreen.createDocument()`      |
 | Side panel closed by user             | N/A (service worker continues if mid-loop)  | Agent loop completes silently; results available when panel reopens                       |
 
 ### Timeout Constants
@@ -339,7 +281,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 | Tool execution            | 10,000 ms | Return error to agent: "Action timed out"    |
 | LLM API call (OpenRouter) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel   |
 | Navigation bridge wait    | 30,000 ms | Abort navigation, set `AgentStatus.ERROR`    |
-| Memory worker init        | 15,000 ms | Disable memory features, warn user           |
 
 ---
 

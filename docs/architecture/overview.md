@@ -31,8 +31,8 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │  │(planner) │  │(executor)│  │ (planner+critic) │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-│  │  │ Retry    │  │ Handoff  │  │   Skills Store    │   │   │
-│  │  │ Policy   │  │ Context  │  │   (learn+replay)  │   │   │
+│  │  │ Retry    │  │ Handoff  │  │   Sanitizers    │   │   │
+│  │  │ Policy   │  │ Context  │  │   (lane types)  │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
@@ -40,7 +40,7 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │                  Agent Loop                           │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │  LLM     │  │ Context  │  │   Tool Registry   │   │   │
-│  │  │ Client   │  │ Manager  │  │   (39 tools)      │   │   │
+│  │  │ Client   │  │ Manager  │  │   (35 tools)      │   │   │
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
 │  │  │ Progress │  │  Prompt  │  │   Trace           │   │   │
@@ -48,26 +48,17 @@ OpenSidebar is an AI-powered Chrome extension that transforms the browser into a
 │  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐            │
-│  │ Navigation │  │   Memory   │  │  Workspace │            │
-│  │  Bridge    │  │   Bridge   │  │  Manager   │            │
-│  └────────────┘  └────────────┘  └────────────┘            │
+│  ┌────────────┐  ┌────────────┐                              │
+│  │ Navigation │  │  Workspace │                              │
+│  │  Bridge    │  │  Manager   │                              │
+│  └────────────┘  └────────────┘                              │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │          Storage Logger (JSONL rotation)              │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│              Offscreen Document (Memory)                     │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
-│  │  SQLite     │  │    Voy      │  │ Transformers.js   │   │
-│  │  FTS5       │  │  (Vector)   │  │   (Embeddings)    │   │
-│  └─────────────┘  └─────────────┘  └──────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                               ▲
                                │ Chrome Tabs API
-┌──────────────────────────────┴──────────────────────────────┐
+┌──────────────────────────────▼──────────────────────────────┐
 │                  Content Script (per tab)                    │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
 │  │  Element    │  │   DOM       │  │   Action          │   │
@@ -110,19 +101,10 @@ Executor (executor LLM via AgentLoop) → result + StructuredEvidence
 Verifier (planner LLM) → accept / retry / reroute
   [Advocate] challenges retries (low confidence)
   [Retrospective] planner learns from failures
-  [Skill Learning] on success with teach mode
+  Task complete
 ```
 
-### 4. Memory Operations
-
-```
-Background → Offscreen: MEMORY_WORKER
-Offscreen → Worker: embed request
-Worker → Offscreen: embedding
-Offscreen → Background: MEMORY_WORKER_RESPONSE
-```
-
-### 5. Navigation
+### 4. Navigation
 
 ```
 Background → Chrome Tabs: tabs.update (navigate)
@@ -132,7 +114,7 @@ Background → Content Script: DOM_SNAPSHOT_REQUEST (new page)
 Background → Agent Loop: Resumed with new snapshot
 ```
 
-### 6. Session Metrics
+### 5. Session Metrics
 
 ```
 Background → Side Panel: SESSION_METRICS (every 3 turns + on completion)
@@ -149,12 +131,9 @@ Background → Side Panel: TASK_COMPLETION (with metrics summary)
 | **Package Manager** | npm                                             |
 | **UI**              | React 18 + Tailwind CSS 3.4                     |
 | **State**           | Zustand + Immer                                 |
-| **Executor LLM**    | GPT-OSS-120B (Groq → OpenRouter)                 |
+| **Executor LLM**    | GPT-OSS-120B (OpenRouter)                         |
 | **Planner LLM**     | DeepSeek V3.2 (OpenRouter), native reasoning      |
-| **Perception**      | Groq Llama 4 Scout → OpenRouter GPT-4o-mini      |
-| **Embeddings**      | Transformers.js (all-MiniLM-L6-v2)              |
-| **Vector Search**   | Voy (WASM)                                      |
-| **Keyword Search**  | SQLite WASM (FTS5)                               |
+| **Perception**      | Gemini 2.5 Flash (OpenRouter)                     |
 | **Tests**           | Vitest + Happy DOM                               |
 
 ## Directory Structure
@@ -178,19 +157,15 @@ src/
 │   │   ├── handoff.ts   # Role transition context
 │   │   ├── retry-policy.ts
 │   │   ├── scheduling.ts
-│   │   ├── budget-estimator.ts
-│   │   ├── contracts.ts
-│   │   └── memory-buffer.ts
-│   ├── skills/
-│   │   └── store.ts     # SkillStore (learn + replay)
+│   │   ├── sanitizers.ts
+│   │   └── lane-types.ts
 │   ├── llm/
-│   │   ├── client.ts    # Multi-provider client (Groq/OpenRouter)
+│   │   ├── client.ts    # LLM client (OpenRouter, two-tier)
 │   │   └── types.ts     # LLM types, ProviderConfig, TokenUsage
 │   ├── tools/
-│   │   ├── index.ts     # 39 tool definitions
+│   │   ├── index.ts     # 35 tool definitions
 │   │   ├── registry.ts  # ToolRegistry
 │   │   └── metadata.ts  # ToolMeta, pre-computed sets
-│   ├── memory/          # Offscreen document bridge
 │   ├── workspaces/      # Workspace/Tab Group management
 │   ├── perception.ts    # Perception layer (vision-based page understanding)
 │   ├── navigation.ts    # Navigation Bridge
@@ -210,15 +185,13 @@ src/
 │   ├── App.tsx          # Main component
 │   ├── store.ts         # Zustand state
 │   ├── bridge.ts        # Message routing
-│   ├── hooks/           # Custom hooks (speech-to-text)
+│   ├── hooks/           # Custom hooks
 │   └── components/      # 20+ UI components
-├── offscreen/           # Offscreen document (memory)
-│   └── memory/          # SQLite + Voy + RRF
 ├── types/               # TypeScript types
 │   └── index.ts         # Single source of truth
 └── utils/               # Shared utilities
 
-tests/                   # Test files mirror src structure (600+ tests)
+tests/                   # Test files mirror src structure (1100+ tests)
 docs/                    # Documentation
 evals/                   # Offline evaluation framework
 scripts/                 # Build/dev scripts
@@ -234,7 +207,7 @@ All inter-context communication uses typed discriminated unions (`RuntimeMessage
 
 ### 2. Two-Tier LLM Architecture
 
-Independent provider pools for executor (GPT-OSS-120B) and planner (DeepSeek V3.2) tiers. Automatic failover across Groq → OpenRouter. Planner tier uses native reasoning (no reasoning parameter).
+Independent provider pools for executor (GPT-OSS-120B) and planner (DeepSeek V3.2) tiers, both via OpenRouter. Planner tier uses native reasoning (no reasoning parameter).
 
 ### 3. Orchestrator Pipeline
 
@@ -249,19 +222,15 @@ Complex tasks decomposed via planner→executor→verifier with:
 
 Each orchestrator role (planner, executor, verifier) runs in its own isolated lane via `runInLane()`, preventing context contamination.
 
-### 5. Skills System
-
-Successful orchestrator runs can be saved as learned skills (teach mode). Skills are auto-replayed on similar future queries, skipping re-planning.
-
-### 6. Streaming Architecture
+### 5. Streaming Architecture
 
 SSE from LLM → parseSSEStream → STREAM_CHUNK → Zustand → React. Real-time text streaming with token usage capture.
 
-### 7. Navigation Persistence
+### 6. Navigation Persistence
 
 Agent state saved to `chrome.storage.local` before navigation, restored via `webNavigation.onCompleted` after page load.
 
-### 8. Session Tracing
+### 7. Session Tracing
 
 Full-fidelity recording of agent sessions for offline evaluation replay. Traces drain to `traces/` via log server.
 
@@ -286,7 +255,7 @@ Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the 
 | Integration tests | `tests/background/orchestrator-*.test.ts` |
 | Eval replay       | `evals/`                      |
 
-**Coverage:** 600+ tests
+**Coverage:** 1100+ tests
 
 ## See Also
 
@@ -294,8 +263,7 @@ Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the 
 - [Content Script](./content-script.md) - DOM interaction
 - [Agent Loop](./agent-loop.md) - Core execution engine
 - [Navigation Bridge](./navigation-bridge.md) - State persistence
-- [Memory System](./memory-system.md) - RAG implementation
-- [Tools](./tools.md) - 39 tool definitions
+- [Tools](./tools.md) - Tool system architecture
 - [Types Reference](./types-reference.md) - TypeScript types
 - [Message Protocol](./message-protocol.md) - Message passing
 - [Side Panel UI](./sidepanel-ui.md) - React UI

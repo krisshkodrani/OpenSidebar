@@ -1,0 +1,31 @@
+{
+  "id": "tc-press-escape-008",
+  "confusionPair": { "toolA": "type_text", "toolB": "press_key", "label": "type_text_vs_press_key" },
+  "scenario": "Pressing Escape to close modal should use press_key",
+  "difficulty": "easy",
+  "snapshot": {
+    "url": "https://example.com/settings",
+    "title": "User Settings",
+    "elementCount": 20,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 80, "tagName": "div", "role": "dialog", "text": "Confirm Changes Are you sure you want to save these changes? Save Cancel", "attributes": { "position": "fixed", "bg-color": "rgb(255, 255, 255)" }, "rect": { "x": 350, "y": 200, "width": 500, "height": 200 }, "isVisible": true, "isDisabled": false },
+    { "tag": 81, "tagName": "button", "role": "button", "text": "Save", "attributes": { "bg-color": "rgb(59, 130, 246)" }, "rect": { "x": 600, "y": 340, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 82, "tagName": "button", "role": "button", "text": "Cancel", "attributes": {}, "rect": { "x": 700, "y": 340, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "User Settings Confirm Changes Are you sure you want to save these changes? Save Cancel",
+  "instruction": "Press Escape to close this dialog.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "press_key",
+    "correctArgs": { "key": "Escape" },
+    "acceptAlternatives": ["click_element"],
+    "antiPatternTools": ["type_text"],
+    "rationale": "Pressing Escape is a keyboard action, not text input. press_key dispatches keyboard events to the page. type_text is for entering text into fields."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "User explicitly asks to press Escape. click_element on Cancel button is also acceptable."
+  }
+}

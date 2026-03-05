@@ -2,7 +2,7 @@
 
 ## Overview
 
-The perception layer replaces raw DOM text injection with a vision-based page interpretation system. Instead of dumping up to 15K characters of unfiltered, unstructured page text directly into the agent's system prompt, a multimodal model (Groq Llama 4 Scout or GPT-4o-mini) interprets a screenshot + element metadata and produces a structured ~150-token summary.
+The perception layer replaces raw DOM text injection with a vision-based page interpretation system. Instead of dumping up to 15K characters of unfiltered, unstructured page text directly into the agent's system prompt, a multimodal model (OpenRouter Gemini 2.5 Flash) interprets a screenshot + element metadata and produces a structured ~150-token summary.
 
 **Before (raw DOM text):**
 - ~3,750 tokens of unfiltered page content per turn
@@ -35,12 +35,12 @@ The perception layer replaces raw DOM text injection with a vision-based page in
     (stagnation.ts)      (chrome.tabs API)   (perception.ts)
               │                │                 │
               ▼                │      ┌──────────┴──────────┐
-       Cache check             │      │  Provider Failover  │
-       (FNV-1a hash)           │      │                     │
-              │                │      │  1. Groq (Scout)    │
-         hit? ──► skip         │      │  2. OpenRouter      │
-         miss? ──────────────► │      │     (GPT-4o-mini)   │
-                               │      └──────────┬──────────┘
+       Cache check             │      │    OpenRouter        │
+       (FNV-1a hash)           │      │  (Gemini 2.5 Flash)  │
+              │                │      │                      │
+         hit? ──► skip         │      │                      │
+         miss? ──────────────► │      │                      │
+                               │      └──────────┬───────────┘
                                │                  │
                                ▼                  ▼
                           Screenshot +      Vision Model API
@@ -85,7 +85,7 @@ interface PerceptionResult {
   interpretation: string;   // Structured text injected into system prompt
   usage?: TokenUsage;       // Token counts and cost
   model: string;            // Which model produced this
-  providerId?: string;      // "groq" | "openrouter"
+  providerId?: string;      // "openrouter"
   durationMs: number;       // Wall-clock time
   cached: boolean;          // True if fingerprint cache hit
 }
@@ -223,41 +223,30 @@ SPATIAL: Price and "Add to Cart" grouped in right column. Reviews section below 
 
 ## Provider Architecture
 
-### Failover Chain
+### Single Provider
 
-```
-Groq (Llama 4 Scout 17B)  ──429/4xx──►  OpenRouter (GPT-4o-mini)
-         │                                        │
-    ~750 tok/s                               ~60 tok/s
-    $0.11/$0.34                              $0.15/$0.60
-    (input/output per M)                     (input/output per M)
-```
+All perception requests route through OpenRouter using `google/gemini-2.5-flash`.
 
-**Provider selection** is automatic based on available API keys:
-1. If `groqApiKey` is set → Groq is first in the chain
-2. If `openRouterApiKey` is set → OpenRouter is the fallback (or primary if no Groq key)
-3. If neither key is set → returns "No API key" fallback message
-
-### Error Handling Per Provider
+### Error Handling
 
 | Error | Behavior |
 |-------|----------|
-| 429 (rate limit) | Skip to next provider immediately (no retry) |
-| 400, 401, 403 (client error) | Skip to next provider immediately |
-| 500, 502, 503, 504 (server error) | Retry same provider (up to 2 retries, exponential backoff) |
-| Network error | Retry same provider, then fall to next |
-| Timeout (20s) | Return timeout fallback immediately (no failover) |
+| 429 (rate limit) | Retry with exponential backoff |
+| 400, 401, 403 (client error) | Return error fallback |
+| 500, 502, 503, 504 (server error) | Retry (up to 2 retries, exponential backoff) |
+| Network error | Retry with backoff |
+| Timeout (20s) | Return timeout fallback immediately |
 | AbortSignal | Return timeout fallback immediately |
 
 **Retry timing:** Base delay 800ms, exponential backoff with jitter (800ms, 1600ms+).
 
 ### API Request Format
 
-Both providers use the OpenAI-compatible multimodal format:
+Uses the OpenAI-compatible multimodal format via OpenRouter:
 
 ```json
 {
-  "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+  "model": "google/gemini-2.5-flash",
   "messages": [{
     "role": "user",
     "content": [
@@ -269,11 +258,6 @@ Both providers use the OpenAI-compatible multimodal format:
   "temperature": 0.1
 }
 ```
-
-The only differences between providers:
-- `model` field (different model IDs)
-- Base URL (`api.groq.com` vs `openrouter.ai`)
-- Headers (OpenRouter requires `HTTP-Referer` and `X-Title`)
 
 ---
 
@@ -290,15 +274,15 @@ The only differences between providers:
 
 ### Latency Impact
 
-| Scenario | Groq (primary) | OpenRouter (fallback) |
-|----------|----------------|----------------------|
-| Vision API call | ~200-400ms | ~1,500-3,000ms |
-| Screenshot capture | ~50-100ms | ~50-100ms |
-| Fingerprint check | <1ms | <1ms |
-| **Total (cache miss)** | **~300-500ms** | **~1,600-3,100ms** |
-| **Total (cache hit)** | **<1ms** | **<1ms** |
+| Scenario | OpenRouter |
+|----------|------------|
+| Vision API call | ~500-2,000ms |
+| Screenshot capture | ~50-100ms |
+| Fingerprint check | <1ms |
+| **Total (cache miss)** | **~600-2,100ms** |
+| **Total (cache hit)** | **<1ms** |
 
-**Net effect on turn latency:** With Groq as primary, perception adds ~300-500ms per cache-miss turn. With fingerprint caching (~50% hit rate), the average per-turn overhead is ~150-250ms. This is offset by reduced token processing time due to the 96% reduction in system prompt tokens.
+**Net effect on turn latency:** Perception adds ~600-2,100ms per cache-miss turn. With fingerprint caching (~50% hit rate), the average per-turn overhead is ~300-1,000ms. This is offset by reduced token processing time due to the 96% reduction in system prompt tokens.
 
 ### API Cost Estimates
 
@@ -306,17 +290,15 @@ The only differences between providers:
 
 | Provider | Input tokens | Output tokens | Cost |
 |----------|-------------|---------------|------|
-| Groq (Scout) | ~800 | ~150 | ~$0.000139 |
-| OpenRouter (4o-mini) | ~800 | ~150 | ~$0.000210 |
+| OpenRouter (Gemini 2.5 Flash) | ~800 | ~150 | ~$0.000210 |
 
 **Per 10-turn session (~5 cache misses):**
 
 | Provider | Cost per session |
 |----------|-----------------|
-| Groq | ~$0.0007 |
 | OpenRouter | ~$0.0011 |
 
-**Cost comparison:** The token savings on the main LLM (not sending ~3,750 tokens/turn) offset the perception cost. With Groq as primary, perception adds ~$0.07 per 100 sessions while saving ~$0.15-0.30 per 100 sessions in main LLM input tokens.
+**Cost comparison:** The token savings on the main LLM (not sending ~3,750 tokens/turn) offset the perception cost. Perception adds ~$0.11 per 100 sessions while saving ~$0.15-0.30 per 100 sessions in main LLM input tokens.
 
 ### Cache Hit Rate Estimates
 
@@ -338,21 +320,17 @@ Level 0: Full perception
   ├─ Screenshot + element summary → vision model → structured interpretation
   └─ Agent sees: LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL
 
-Level 1: Provider failover
-  ├─ Primary provider fails → fallback provider succeeds
-  └─ Agent sees: same structured interpretation (different model quality)
-
-Level 2: All providers failed
-  ├─ Both Groq and OpenRouter exhausted
-  └─ Agent sees: "[Visual perception failed: all providers exhausted]"
+Level 1: Provider error
+  ├─ OpenRouter returns error after retries
+  └─ Agent sees: "[Visual perception failed: provider error]"
   └─ Element list still available — agent can still operate
 
-Level 3: No API key
-  ├─ No groqApiKey, no openRouterApiKey
+Level 2: No API key
+  ├─ No openRouterApiKey configured
   └─ Agent sees: "[No API key — visual perception unavailable...]"
   └─ Element list still available
 
-Level 4: Runtime exception
+Level 3: Runtime exception
   ├─ Unexpected error in refreshPerception()
   └─ context.setPageInterpretation(null)
   └─ Agent sees: "No visual interpretation available. Use element list above."
@@ -378,8 +356,8 @@ The element list (`## Visible Elements` in the system prompt) is always populate
 
 **Solution:** Score page complexity from element count + element diversity + scroll depth:
 - **Low complexity** (<10 elements, single viewport): Skip perception entirely, use element list only
-- **Medium complexity** (10-50 elements): Use Groq Scout (fast, cheap)
-- **High complexity** (50+ elements, multiple overlays): Use GPT-4o-mini (higher quality)
+- **Medium complexity** (10-50 elements): Use Gemini 2.5 Flash (fast, cheap)
+- **High complexity** (50+ elements, multiple overlays): Use a higher-quality vision model
 
 **Impact:** Eliminates unnecessary vision calls on simple pages (~30% of turns), while ensuring complex pages get the best interpretation.
 
@@ -407,15 +385,7 @@ The element list (`## Visible Elements` in the system prompt) is always populate
 
 **Impact:** Enables the agent to self-correct when perception quality is low, reducing wasted turns acting on bad information.
 
-### 6. Cerebras Vision Provider
-
-**Problem:** Cerebras is the fastest provider in the LLM pool but isn't used for perception because they don't currently offer vision models.
-
-**Solution:** Monitor Cerebras model releases. When a vision-capable model becomes available, add it as the highest-priority provider (Cerebras → Groq → OpenRouter). The `buildProviders()` function is designed for easy extension.
-
-**Impact:** Could reduce perception latency to <100ms based on Cerebras' current text generation speeds.
-
-### 7. Perception Result Caching Across Sessions
+### 6. Perception Result Caching Across Sessions
 
 **Problem:** If the user navigates back to a previously visited page, the perception cache is empty (it's in-memory only, reset per session).
 

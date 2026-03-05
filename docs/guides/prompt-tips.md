@@ -72,10 +72,10 @@ Fill in the credit card form. Note: the card number field requires spaces betwee
 Read the product page and tell me the price, rating, and number of reviews. Return the answer via done().
 ```
 
-**Use `memory_add` for persistence** across sessions:
+**For multi-step research**, let the agent plan:
 
 ```
-Read this API documentation page. Save the key endpoints and auth method to memory for future reference.
+Read this API documentation page. Summarize the key endpoints and auth method via done().
 ```
 
 ## What NOT to Do

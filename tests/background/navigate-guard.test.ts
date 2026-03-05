@@ -38,7 +38,7 @@ vi.mock("../../src/background/llm", () => ({
 }));
 
 function createAgent(): AgentLoop {
-    return new AgentLoop("test-key", undefined, {
+    return new AgentLoop("test-key", {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
         onStep: vi.fn(),

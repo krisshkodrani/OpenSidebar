@@ -1,0 +1,34 @@
+{
+  "id": "tc-hide-specific-004",
+  "confusionPair": { "toolA": "dismiss_overlays", "toolB": "hide_element", "label": "dismiss_overlays_vs_hide_element" },
+  "scenario": "Specific sticky banner with Dismiss button visible",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://example.com/article",
+    "title": "Tech News Article",
+    "elementCount": 18,
+    "scrollY": 200
+  },
+  "elements": [
+    { "tag": 30, "tagName": "div", "role": "", "text": "Download our app for a better reading experience! Download Now Dismiss", "attributes": { "position": "fixed", "bg-color": "rgb(30, 64, 175)" }, "rect": { "x": 0, "y": 0, "width": 1200, "height": 60 }, "isVisible": true, "isDisabled": false },
+    { "tag": 31, "tagName": "button", "role": "button", "text": "Dismiss", "attributes": {}, "rect": { "x": 1100, "y": 15, "width": 80, "height": 30 }, "isVisible": true, "isDisabled": false },
+    { "tag": 40, "tagName": "article", "role": "article", "text": "", "attributes": {}, "rect": { "x": 50, "y": 80, "width": 800, "height": 2000 }, "isVisible": true, "isDisabled": false },
+    { "tag": 41, "tagName": "h1", "role": "heading", "text": "New AI Breakthrough in 2026", "attributes": {}, "rect": { "x": 50, "y": 80, "width": 800, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Download our app for a better reading experience! Download Now Dismiss New AI Breakthrough in 2026 Researchers have announced a major advancement in artificial intelligence...",
+  "instruction": "The blue app download banner at the top is annoying. Hide that specific banner so I can read the article.",
+  "priorHistory": [
+    { "tool": "dismiss_overlays", "args": {}, "result": "Dismissed 0 overlays. Remaining overlay: tag 30 (52% coverage, could not find close button that works)." }
+  ],
+  "expected": {
+    "correctTool": "click_element",
+    "correctArgs": { "id": 31 },
+    "acceptAlternatives": ["hide_element"],
+    "antiPatternTools": ["dismiss_overlays"],
+    "rationale": "Best action is clicking the Dismiss button (proper JS cleanup). hide_element is acceptable as fallback since dismiss_overlays already failed. dismiss_overlays should not be retried."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "Prior history shows dismiss_overlays was already tried and failed. Clicking the Dismiss button is best (proper cleanup). hide_element is acceptable fallback."
+  }
+}

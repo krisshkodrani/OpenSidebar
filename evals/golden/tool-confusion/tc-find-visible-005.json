@@ -1,0 +1,32 @@
+{
+  "id": "tc-find-visible-005",
+  "confusionPair": { "toolA": "find_element", "toolB": "inspect_hidden", "label": "find_element_vs_inspect_hidden" },
+  "scenario": "Visible text on page should use find_element",
+  "difficulty": "easy",
+  "snapshot": {
+    "url": "https://example.com/docs/api",
+    "title": "API Documentation",
+    "elementCount": 45,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 100, "tagName": "nav", "role": "navigation", "text": "Home Docs API Reference", "attributes": {}, "rect": { "x": 0, "y": 0, "width": 250, "height": 600 }, "isVisible": true, "isDisabled": false },
+    { "tag": 101, "tagName": "a", "role": "link", "text": "Authentication", "attributes": { "href": "/docs/api/auth" }, "rect": { "x": 20, "y": 200, "width": 200, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 102, "tagName": "a", "role": "link", "text": "Rate Limits", "attributes": { "href": "/docs/api/rate-limits" }, "rect": { "x": 20, "y": 230, "width": 200, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 103, "tagName": "h2", "role": "heading", "text": "Getting Started", "attributes": {}, "rect": { "x": 300, "y": 100, "width": 600, "height": 32 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "API Documentation Home Docs API Reference Getting Started Welcome to the API documentation. Authentication Rate Limits To get started, create an API key from your dashboard.",
+  "instruction": "Find the 'Rate Limits' link on the page so I can click it.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "find_element",
+    "correctArgs": { "text": "Rate Limits" },
+    "acceptAlternatives": ["click_element"],
+    "antiPatternTools": ["inspect_hidden"],
+    "rationale": "The text 'Rate Limits' is visible on the page. find_element searches visible text and returns a tag ID. click_element is also valid since the tag ID [102] is already in the snapshot. inspect_hidden is for hidden/CSS-concealed content."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "The target text is clearly visible and already tagged. find_element or direct click_element are both valid. inspect_hidden is wrong since the text is visible."
+  }
+}

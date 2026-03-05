@@ -45,16 +45,12 @@ opensidebar/
 │   │   │   ├── handoff.ts    # Role transition context
 │   │   │   ├── retry-policy.ts
 │   │   │   ├── scheduling.ts
-│   │   │   ├── budget-estimator.ts
-│   │   │   ├── contracts.ts
-│   │   │   └── memory-buffer.ts
-│   │   ├── skills/
-│   │   │   └── store.ts      # SkillStore (learn + replay)
-│   │   ├── llm/              # Multi-provider LLM client (Cerebras/Groq/OpenRouter)
-│   │   ├── tools/            # 57 tool definitions + React Toolkit
-│   │   ├── memory/           # Memory bridge to offscreen
+│   │   │   ├── sanitizers.ts
+│   │   │   └── lane-types.ts
+│   │   ├── llm/              # LLM client (OpenRouter, two-tier)
+│   │   ├── tools/            # 35 tool definitions
 │   │   ├── workspaces/       # Workspace/Tab Group manager
-│   │   ├── perception.ts    # Perception layer
+│   │   ├── perception/       # Perception layer
 │   │   ├── navigation.ts     # Navigation bridge
 │   │   ├── keepalive.ts      # SW keepalive alarm
 │   │   ├── streaming.ts      # SSE parser with usage capture
@@ -63,8 +59,7 @@ opensidebar/
 │   │   ├── content.ts        # Message listener + auto-dismiss
 │   │   ├── snapshot.ts       # DOM distillation
 │   │   ├── tagging.ts        # Element tagging (stable hash IDs)
-│   │   ├── actions.ts        # DOM actions
-│   │   └── framework-detect.ts # React detection
+│   │   └── actions.ts        # DOM actions
 │   ├── prompts/              # Prompt registry
 │   │   ├── registry.ts       # Versioned prompt templates
 │   │   ├── types.ts          # PromptId union type
@@ -73,15 +68,10 @@ opensidebar/
 │   │   ├── App.tsx           # Main component
 │   │   ├── store.ts          # Zustand state
 │   │   ├── bridge.ts         # Message routing
-│   │   ├── hooks/            # Custom hooks (speech-to-text)
+│   │   ├── hooks/            # Custom hooks
 │   │   └── components/       # 20+ UI components
-│   ├── offscreen/            # Offscreen document (memory)
-│   │   └── memory/
-│   │       ├── main.ts       # SQLite + Voy coordination
-│   │       ├── worker.ts     # Embeddings worker
-│   │       └── utils.ts      # RRF algorithm
 │   └── utils/                # Shared utilities
-├── tests/                    # Test files mirror src structure (600+ tests)
+├── tests/                    # Test files mirror src structure (1100+ tests)
 ├── docs/                     # Documentation
 │   ├── architecture/         # Technical architecture
 │   ├── features/             # Feature documentation
@@ -102,7 +92,6 @@ Key dependencies:
 - `react` + `react-dom` - UI framework
 - `zustand` + `immer` - State management
 - `lucide-react` - Icons
-- `sql.js`, `voy-search`, `@huggingface/transformers` - Memory system
 - `pdfjs-dist` - PDF text extraction
 
 Key dev dependencies:
@@ -121,13 +110,10 @@ Required permissions:
 - `tabGroups` - Workspace integration
 - `storage` - State persistence
 - `webNavigation` - Navigation detection
-- `offscreen` - Memory worker
 
 Host permissions:
 
 - `https://openrouter.ai/*` - LLM API (OpenRouter)
-- `https://api.cerebras.ai/*` - LLM API (Cerebras, fastest)
-- `https://api.groq.com/*` - LLM API (Groq, fallback)
 
 ### vite.config.ts
 
@@ -136,34 +122,15 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { crx } from "@crxjs/vite-plugin";
 import manifest from "./manifest.json" assert { type: "json" };
-import { viteStaticCopy } from "vite-plugin-static-copy";
 
 export default defineConfig({
   plugins: [
     react(),
     crx({ manifest }),
-    viteStaticCopy({
-      targets: [
-        {
-          src: "node_modules/sql.js/dist/sql-wasm.wasm",
-          dest: "wasm",
-        },
-      ],
-    }),
   ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-    },
-  },
-  optimizeDeps: {
-    exclude: ["sql.js", "@huggingface/transformers", "voy-search"],
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        offscreen: "src/offscreen/memory/index.html",
-      },
     },
   },
 });
@@ -192,7 +159,7 @@ npm run build          # Production build
 # Quality
 npm run lint           # ESLint (src/**/*.ts,tsx)
 npm run fmt            # Prettier format src/
-npm test               # Run all tests (600+)
+npm test               # Run all tests (1100+)
 
 # Logging & Traces
 npm run logs           # Start log drain server (127.0.0.1:7589)

@@ -262,6 +262,32 @@ export function buildAssumptionDriftSignal(
   return `Partial assumption drift: matched=${matched.length}, unmatched=${unmatched.length}.`;
 }
 
+const MAX_COMPLETED_SUMMARY_NODES = 10;
+const MAX_RESULT_LEN = 100;
+
+export function buildCompletedStepsSummary(nodes: TaskNode[]): string {
+  const completed = nodes.filter((n) => n.status === "completed");
+  if (completed.length === 0) return "";
+
+  const shown = completed.slice(-MAX_COMPLETED_SUMMARY_NODES);
+  const omitted = completed.length - shown.length;
+
+  const lines: string[] = [];
+  if (omitted > 0) {
+    lines.push(`[${omitted} earlier steps omitted]`);
+  }
+  shown.forEach((node, i) => {
+    const idx = omitted + i + 1;
+    const result = (node.result || node.error || "No detail")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_RESULT_LEN);
+    lines.push(`${idx}. "${normalizeNote(node.description)}" → ${result}`);
+  });
+
+  return `Steps completed (${completed.length} total):\n${lines.join("\n")}`;
+}
+
 export function createRerouteNode(
   sourceNode: TaskNode,
   rerouteObjective: string,

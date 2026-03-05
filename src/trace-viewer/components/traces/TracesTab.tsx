@@ -11,9 +11,11 @@ import TraceDetailHeader from "./TraceDetailHeader";
 import TraceSubviewToggle from "./TraceSubviewToggle";
 import TurnSearchBar from "./TurnSearchBar";
 import TurnList from "./TurnList";
+import TurnTimeline from "./TurnTimeline";
 import PerceptionList from "./PerceptionList";
 import LogList from "./LogList";
 import StoryPanel from "./StoryPanel";
+import CostDashboard from "./CostDashboard";
 
 export default function TracesTab() {
   const sessions = useStore((s) => s.sessions);
@@ -49,7 +51,7 @@ export default function TracesTab() {
       // Check if current session still exists
       if (currentSessionId) {
         const stillExists = (sessionsData || []).some(
-          (s: Record<string, unknown>) => s.sessionId === currentSessionId,
+          (s) => s.sessionId === currentSessionId,
         );
         if (!stillExists) {
           setCurrentSessionId(null);
@@ -96,7 +98,7 @@ export default function TracesTab() {
   }, [currentSessionId]);
 
   const currentSession = sessions.find(
-    (s) => (s.sessionId as string) === currentSessionId,
+    (s) => s.sessionId === currentSessionId,
   );
 
   return (
@@ -110,7 +112,10 @@ export default function TracesTab() {
               hint
             />
           ) : (
-            <TraceSessionList />
+            <>
+              <CostDashboard sessions={sessions} />
+              <TraceSessionList />
+            </>
           )}
         </>
       }
@@ -126,7 +131,10 @@ export default function TracesTab() {
                   {currentEntries.length === 0 && !tracesError ? (
                     <LoadingSpinner message="Loading turns..." />
                   ) : (
-                    <TurnList />
+                    <>
+                      <TurnTimeline entries={currentEntries} />
+                      <TurnList />
+                    </>
                   )}
                 </div>
               </>

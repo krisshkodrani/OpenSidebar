@@ -17,6 +17,7 @@ import type { E2EGoldenCase } from "./e2e-types";
 import type { EscalationGoldenCase } from "./escalation-types";
 import type { CompletionTimingGoldenCase } from "./completion-timing-types";
 import type { GroundingGoldenCase } from "./grounding-types";
+import type { ToolConfusionGoldenCase } from "./tool-confusion-types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -106,10 +107,9 @@ export function readEvalResults(): EvalResult[] {
 
 export interface ApiKeys {
   openrouter: string;
-  groq?: string;
 }
 
-/** Load API keys from .env / .env.local. OpenRouter is required; Groq is optional. */
+/** Load API keys from .env / .env.local. OpenRouter is required. */
 export function loadApiKeys(): ApiKeys {
   const envFile = join(PROJECT_ROOT, ".env");
   const localEnv = join(PROJECT_ROOT, ".env.local");
@@ -133,9 +133,7 @@ export function loadApiKeys(): ApiKeys {
     throw new Error("OPENROUTER_API_KEY not found in .env file");
   }
 
-  const groq = extractEnvVar(content, "GROQ_API_KEY") || undefined;
-
-  return { openrouter, groq };
+  return { openrouter };
 }
 
 /** Load OPENROUTER_API_KEY from .env file (backward compat wrapper) */
@@ -343,6 +341,25 @@ export function readGroundingGoldenCases(): GroundingGoldenCase[] {
   for (const file of files.sort()) {
     try {
       const content = readFileSync(join(GROUNDING_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Tool-confusion eval I/O ────────────────────────────────────────────
+
+export const TOOL_CONFUSION_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "tool-confusion");
+export const TOOL_CONFUSION_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "tool-confusion");
+
+/** Read all tool-confusion golden cases from the tool-confusion golden dir */
+export function readToolConfusionGoldenCases(): ToolConfusionGoldenCase[] {
+  if (!existsSync(TOOL_CONFUSION_GOLDEN_DIR)) return [];
+  const files = readdirSync(TOOL_CONFUSION_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: ToolConfusionGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(TOOL_CONFUSION_GOLDEN_DIR, file), "utf-8");
       cases.push(JSON.parse(content));
     } catch { /* skip malformed */ }
   }

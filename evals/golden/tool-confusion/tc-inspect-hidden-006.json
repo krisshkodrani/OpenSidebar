@@ -1,0 +1,34 @@
+{
+  "id": "tc-inspect-hidden-006",
+  "confusionPair": { "toolA": "find_element", "toolB": "inspect_hidden", "label": "find_element_vs_inspect_hidden" },
+  "scenario": "Hidden code requires inspect_hidden",
+  "difficulty": "hard",
+  "snapshot": {
+    "url": "https://example.com/puzzle/step3",
+    "title": "Puzzle Challenge - Step 3",
+    "elementCount": 15,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 70, "tagName": "h1", "role": "heading", "text": "Step 3: Find the Hidden Code", "attributes": {}, "rect": { "x": 50, "y": 50, "width": 500, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 71, "tagName": "p", "role": "", "text": "The code is hidden somewhere in this page. Look carefully — it might not be visible to the naked eye.", "attributes": {}, "rect": { "x": 50, "y": 100, "width": 600, "height": 24 }, "isVisible": true, "isDisabled": false },
+    { "tag": 72, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Enter hidden code" }, "rect": { "x": 50, "y": 200, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 73, "tagName": "button", "role": "button", "text": "Submit", "attributes": { "type": "submit" }, "rect": { "x": 360, "y": 200, "width": 100, "height": 36 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Step 3: Find the Hidden Code The code is hidden somewhere in this page. Look carefully — it might not be visible to the naked eye. Enter hidden code Submit",
+  "instruction": "Find the hidden code on this page.",
+  "priorHistory": [
+    { "tool": "find_element", "args": { "text": "code" }, "result": "Found element at tag 70: 'Step 3: Find the Hidden Code'" },
+    { "tool": "read_page", "args": {}, "result": "Page snapshot refreshed. No additional visible text found." }
+  ],
+  "expected": {
+    "correctTool": "inspect_hidden",
+    "acceptAlternatives": ["xray_page"],
+    "antiPatternTools": ["find_element", "read_page"],
+    "rationale": "The page explicitly says the code is hidden and not visible. find_element already failed to find it. inspect_hidden scans for display:none, opacity:0, and other CSS-concealed elements."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "Hard case: agent must recognize that visible-text search tools have failed and switch to hidden content inspection."
+  }
+}

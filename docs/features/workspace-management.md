@@ -86,7 +86,7 @@ Each `AgentLoop` instance owns its own:
 | Resource | Isolation Strategy |
 |---|---|
 | Conversation history | `agent_context:{workspaceId}` storage key |
-| Navigation state | `qsidebar:agentState:{workspaceId}` storage key |
+| Navigation state | `opensidebar:agentState:{workspaceId}` storage key |
 | Vision/screenshot callbacks | Per-tab `Map` in tools bridge |
 | Streaming & status messages | Filtered by `workspaceId` on RuntimeMessage |
 | Keepalive alarm | Shared — smart lifecycle (starts when any loop active, stops when all finish) |
@@ -123,7 +123,7 @@ Practically, 2-3 parallel agents work well. Performance depends on API rate limi
 
 ### Context Preservation
 
-- **AI memory** - Each workspace maintains its own conversation context
+- **AI context** - Each workspace maintains its own conversation context
 - **Tab isolation** - AI only operates on tabs in the current workspace
 - **Task focus** - Workspaces help maintain focus on specific activities
 
@@ -198,7 +198,7 @@ While workspaces use automatic naming ("OpenSidebar N"), you can identify them b
 
 When switching activities:
 
-1. **Complete current task** or save important information to memory
+1. **Complete current task** before switching
 2. **Let the workspace auto-delete** by closing its tabs
 3. **Start new activity** - fresh workspace will be created
 
@@ -260,5 +260,5 @@ You can have multiple workspaces active:
 ## See Also
 
 - [Browser Automation](./browser-automation.md) - AI tab interactions
-- [Memory System](./memory-system.md) - Cross-workspace information
+- [Streaming UI](./streaming-ui.md) - Real-time response streaming
 - [Architecture Overview](../architecture/overview.md) - Technical implementation

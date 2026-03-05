@@ -1,6 +1,6 @@
 # Agent Capabilities
 
-OpenSidebar features a multi-tier agent system with orchestrated task decomposition, learned skills, and conversation-driven collaboration between planner, executor, and verifier roles.
+OpenSidebar features a multi-tier agent system with orchestrated task decomposition and conversation-driven collaboration between planner, executor, and verifier roles.
 
 ## Unified Agent Mode
 
@@ -15,13 +15,12 @@ OpenSidebar uses a single **Unified Mode** that combines the speed of parallel e
 
 ## Two-Tier LLM Architecture
 
-| Tier | Model | Providers | Purpose |
-|------|-------|-----------|---------|
-| **Executor** (tier 0) | GPT-OSS-120B | Groq → OpenRouter | Default execution |
+| Tier | Model | Provider | Purpose |
+|------|-------|----------|---------|
+| **Executor** (tier 0) | GPT-OSS-120B | OpenRouter | Default execution |
 | **Planner** (tier 1) | DeepSeek V3.2 | OpenRouter | Planning, verification, escalation |
 
-- GLM-4.7 has **native reasoning** (no reasoning parameter needed)
-- Automatic failover with 60s cooldown per provider on 429 errors
+- DeepSeek V3.2 has **native reasoning** (no reasoning parameter needed)
 - Token usage and cost tracked per model via `SessionMetrics`
 
 ## Orchestrator (Multi-Step Tasks)
@@ -140,35 +139,15 @@ Extended overlay selectors covering:
 
 The `dismiss_overlays` tool triggers on-demand modal cleanup via the `DISMISS_MODALS` message. Reports dismissed count, remaining overlays, and any captured text content.
 
-## Skills System
-
-Learned skills enable the agent to replay successful plans:
-
-- **Teach Mode**: When ON and a task succeeds, the orchestrator extracts the plan as a reusable skill
-- **Feedback Coaching**: During active runs, input area switches to amber "Send feedback..." mode for real-time guidance
-- **Auto-Replay**: Matching skills are replayed on similar future queries
-- **Management**: Settings → Learned Skills panel with pin/enable controls
-
 ## Perception Layer
 
 The agent understands web pages through a vision-based perception layer:
 
 - **Automatic perception**: After every DOM-modifying action, a screenshot + element summary is sent to a vision model
-- **Structured output**: 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens
-- **Provider failover**: Groq Llama 4 Scout (fastest) → OpenRouter GPT-4o-mini (fallback)
+- **Structured output**: 5-section format (LOCATION, CHANGES, BLOCKERS, VISUAL-ONLY, AFFORDANCES)
+- **Provider**: OpenRouter Gemini 2.5 Flash
 - **Fingerprint caching**: Unchanged pages skip redundant perception calls
 - **Graceful degradation**: Element list always present even if vision fails
-
-## React Toolkit
-
-On-demand tools for React applications, gated behind framework detection:
-
-- **`inspect_react`**: Read component state/props via fiber tree
-- **`react_set_input`**: Set controlled input values using native value setter
-- **`inspect_react_tree`**: Compact component hierarchy with state summaries
-- **`wait_for_react`**: Poll until fiber tree stabilizes
-
-Automatically enabled when React is detected on the page.
 
 ## Session Metrics
 
@@ -176,5 +155,5 @@ Real-time tracking of token usage and costs:
 
 - Per-model breakdown (which provider actually served after failover)
 - Compact display: `12.4K tokens · $0.0023 · 4.2s LLM · 850 tok/s`
-- Cost from OpenRouter's inline `usage.cost`; Cerebras/Groq report tokens only
+- Cost from OpenRouter's inline `usage.cost`
 - Toggle via `showSessionMetrics` setting

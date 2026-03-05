@@ -68,7 +68,6 @@ function createLoop(overrides?: Record<string, any>) {
   const onStep = vi.fn();
   const agent = new AgentLoop(
     "test-key",
-    undefined,
     {
       onStatusUpdate: onStatus,
       onMessage: onMessage,
@@ -236,6 +235,45 @@ describe("AgentLoop Public API", () => {
       expect(pt).toBeDefined();
       expect(typeof pt.reset).toBe("function");
       expect(typeof pt.onSnapshotRefresh).toBe("function");
+    });
+  });
+
+  describe("402 credit exhaustion", () => {
+    test("returns outcome error with provider failure info on 402", async () => {
+      const { agent, onStatus } = createLoop();
+
+      // Override completeStream to throw a 402 error on first call
+      const llm = (agent as any).llm;
+      llm.completeStream = vi.fn(() => {
+        const err = new Error("Insufficient credits") as any;
+        err.status = 402;
+        throw err;
+      });
+
+      const result = await agent.start("Hello", 123);
+
+      expect(result.outcome).toBe("error");
+      expect(result.failure).toBeDefined();
+      expect(result.failure!.category).toBe("provider");
+      expect(result.failure!.code).toBe("credits_exhausted");
+
+      // Should have broadcast ERROR status
+      const errorCalls = onStatus.mock.calls.filter(
+        (c: any[]) => c[0] === AgentStatus.ERROR,
+      );
+      expect(errorCalls.length).toBeGreaterThan(0);
+      expect(errorCalls[0][1]).toBe("Insufficient credits");
+
+      // Should have broadcast a user-friendly stream message via chrome.runtime.sendMessage
+      const sendCalls = (chrome.runtime.sendMessage as any).mock.calls;
+      const streamChunks = sendCalls
+        .map((c: any[]) => c[0])
+        .filter((m: any) => m?.type === "STREAM_CHUNK");
+      const textChunks = streamChunks
+        .map((m: any) => m.payload?.delta)
+        .filter(Boolean);
+      const combined = textChunks.join("");
+      expect(combined).toContain("openrouter.ai/credits");
     });
   });
 });

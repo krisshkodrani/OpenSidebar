@@ -14,7 +14,8 @@ import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
 import { Header, MessageBubble, InputArea } from "./components";
-import { PlanSheet } from "./components/PlanSheet";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PlanTimelineCard } from "./components/PlanTimelineCard";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
@@ -243,14 +244,21 @@ export default function App() {
       }
       scrollTimerRef.current = null;
     }, 100);
+    return () => {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current);
+        scrollTimerRef.current = null;
+      }
+    };
   }, [messages]);
 
-  // Auto-dismiss error after 8 seconds
+  // Auto-dismiss error after 8 seconds (persistent errors stay until user acts)
+  const errorPersistent = useStore((s) => s.errorPersistent);
   useEffect(() => {
-    if (!error) return;
+    if (!error || errorPersistent) return;
     const timer = setTimeout(() => setError(null), 8000);
     return () => clearTimeout(timer);
-  }, [error, setError]);
+  }, [error, errorPersistent, setError]);
 
   // Send message to agent
   const handleSend = useCallback(
@@ -258,6 +266,15 @@ export default function App() {
       const store = useStore.getState();
       const trimmedText = text.trim();
       if (!trimmedText || store.isAgentRunning) return;
+
+      // Check for API key before sending (read fresh from store, not stale closure)
+      if (!store.settings.openRouterApiKey) {
+        setError(
+          "Please add your OpenRouter API key in Settings to get started.",
+          { persistent: true },
+        );
+        return;
+      }
 
       // Add user message to chat
       const userEntry: ChatEntry = {
@@ -470,7 +487,7 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-warm-50 dark:bg-warm-900">
+      <div className="flex flex-col items-center justify-center h-full bg-warm-gradient">
         <div className="animate-pulse flex flex-col items-center gap-3">
           <div className="px-4 py-3 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
             <span className="text-white font-bold text-lg tracking-tight">
@@ -486,14 +503,15 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-warm-50 dark:bg-warm-900 text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
+    <ErrorBoundary>
+    <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
       <Header
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenSavedPrompts={() => {
           setSavedPromptsPrefill(undefined);
           setIsSavedPromptsOpen(true);
         }}
-        showApprovalBypassBadge={settings.bypassApprovals}
+        showApprovalBypassBadge={!settings.requireApprovals}
       />
 
       <SettingsDrawer
@@ -542,18 +560,18 @@ export default function App() {
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
               <div className="max-w-[260px]">
-                <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-lg mb-4 flex items-center justify-center mx-auto">
-                  <Sparkles size={20} className="text-primary-500" />
+                <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
+                  <Sparkles size={24} className="text-primary-500" />
                 </div>
                 <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
-                  What can I help with?
+                  Hi! What can I help with?
                 </h2>
                 <div className="flex flex-wrap gap-2 justify-center mt-4">
                   {SUGGESTED_ACTIONS.map((action) => (
                     <button
                       key={action}
                       onClick={() => setInputText(action)}
-                      className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-colors"
+                      className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
                     >
                       {action}
                     </button>
@@ -565,6 +583,7 @@ export default function App() {
             messages
               .filter(
                 (msg) =>
+                  msg.isPlanCard ||
                   msg.role === "user" ||
                   msg.isStreaming ||
                   msg.content.trim() ||
@@ -572,12 +591,16 @@ export default function App() {
                   msg.completionData ||
                   (msg.steps?.length ?? 0) > 0,
               )
-              .map((msg) => <MessageBubble key={msg.id} message={msg} />)
+              .map((msg) =>
+                msg.isPlanCard ? (
+                  <PlanTimelineCard key={msg.id} />
+                ) : (
+                  <MessageBubble key={msg.id} message={msg} />
+                ),
+              )
           )}
         </div>
 
-        {/* Plan sheet overlay — anchored to bottom of main content area */}
-        <PlanSheet />
       </main>
 
       <div className="flex flex-col shrink-0 z-20 border-t border-warm-200 dark:border-warm-800">
@@ -616,5 +639,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

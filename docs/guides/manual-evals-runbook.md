@@ -11,7 +11,7 @@ During an active run, the input area switches to feedback mode:
 - Send button turns **amber**
 - Your message is injected into the agent's conversation as feedback
 
-The agent reads your feedback on its next turn and adjusts. If teach mode is ON and the task succeeds, the orchestrator extracts the plan as a **learned skill** for future replay.
+The agent reads your feedback on its next turn and adjusts.
 
 **Why hints over demonstrations:** The agent still plans, reasons, and verifies. Hints build transferable reasoning; recorded demos just replay brittle click sequences.
 
@@ -48,8 +48,6 @@ If nothing appears, check the service worker console (DevTools → chrome-extens
 ### Settings (side panel gear icon)
 | Setting | Value | Why |
 |---------|-------|-----|
-| Teach Mode | **OFF** | Don't learn from a potentially failed run |
-| Auto Skill Replay | **OFF** | No skills exist yet |
 | Max Turns | **25** | Enough to observe behavior |
 
 ### Steps
@@ -81,13 +79,11 @@ Write them down:
 
 ## Run B: Coached (You Guide via Hints)
 
-**Goal:** Guide the agent to success using hints. The successful plan gets saved as a learned skill.
+**Goal:** Guide the agent to success using hints.
 
 ### Settings
 | Setting | Value | Why |
 |---------|-------|-----|
-| Teach Mode | **ON** | Learn from successful completion |
-| Auto Skill Replay | **OFF** | You're teaching fresh, not replaying |
 | Max Turns | **40** | Extra room for feedback-guided retries |
 
 ### Steps
@@ -102,14 +98,6 @@ Write them down:
      - Good: `"You need to scroll down to see the form"`
      - Bad: `"I think maybe you should try a different approach to this problem"`
 5. Let the verifier do its job — retries generate valuable reflexion data
-6. **Critical:** The task must complete with status **"completed"** for skill learning to fire
-
-### Verify skill was learned
-After successful completion, check:
-- A step appears in the timeline: **"Teach mode: updated skill [name]"**
-- Side panel → Settings → scroll to **Learned Skills** panel → new skill shows up
-- Note the skill name and step count
-
 ### Capture session ID
 ```bash
 tail -1 traces/index.jsonl
@@ -175,7 +163,6 @@ New conversation collaboration patterns — verify these appear in orchestrator 
 | `planner_retrospective` | Task end with failures | 1 LLM call |
 | `advocate_challenge` | Retry + low confidence + first attempt | 1 LLM call |
 | `dialogue_completed` | Verifier-critic dialogue | Already existed |
-| `skill_learned` | Successful task + teach mode ON | Zero |
 
 Search logs for specific events:
 ```bash
@@ -193,8 +180,6 @@ npx tsx scripts/log-query.ts search "cross_role_reflexion"
 | Mistake | Fix |
 |---------|-----|
 | Forgot `npm run logs` | Traces won't record. Use Settings → Export Logs for buffered data, then re-run with the server |
-| Teach mode OFF during coached run | Skill won't be learned. Re-run with it ON |
-| Task failed during coached run | Skill learning only fires on success. Guide more aggressively with hints |
 | Different query text between runs | Use the exact same task text for fair comparison |
 | Build stale after code changes | `npm run build` and reload extension before capture |
 | Multiple tasks in one session | Keep one task per session for clean eval conversion |
@@ -205,4 +190,4 @@ Before analyzing results, confirm:
 1. `npm run lint` — 0 errors
 2. `npm test` — all pass
 3. At least one `traces/<session-id>.jsonl` exists per run
-4. Coached run has a learned skill visible in the panel
+4. Coached run completed successfully

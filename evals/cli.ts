@@ -70,6 +70,8 @@ import { runCompletionTimingEvals, type CompletionTimingProvider } from "./compl
 import { buildCompletionTimingReport } from "./completion-timing-report";
 import { runGroundingEvals, type GroundingProvider } from "./grounding-runner";
 import { buildGroundingReport } from "./grounding-report";
+import { runToolConfusionEvals, type ToolConfusionProvider } from "./tool-confusion-runner";
+import { buildToolConfusionReport } from "./tool-confusion-report";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -205,6 +207,12 @@ async function main() {
       break;
     case "grounding-validate":
       await cmdGroundingValidate();
+      break;
+    case "tool-confusion-critique":
+      await cmdToolConfusionCritique(args.slice(1));
+      break;
+    case "tool-confusion-validate":
+      await cmdToolConfusionValidate();
       break;
     case "help":
     default:
@@ -828,10 +836,10 @@ async function cmdPerceptionExtractAll(args: string[]) {
 
 async function cmdPerceptionCritique(args: string[]) {
   const providerIdx = args.indexOf("--provider");
-  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : "both";
-  if (!["groq", "openrouter", "both"].includes(providerArg)) {
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : "openrouter";
+  if (providerArg !== "openrouter") {
     console.error(
-      `${c.red}Invalid provider: ${providerArg}. Use "groq", "openrouter", or "both".${c.reset}`,
+      `${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`,
     );
     process.exit(1);
   }
@@ -1212,8 +1220,8 @@ async function cmdE2ECritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EProvider : undefined;
-  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
     process.exit(1);
   }
   const stepIdx = args.indexOf("--step");
@@ -1335,8 +1343,8 @@ async function cmdE2EValidate() {
 async function cmdE2EMultiturn(args: string[]) {
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EMultiturnProvider : undefined;
-  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
     process.exit(1);
   }
   const stepIdx = args.indexOf("--step");
@@ -1425,7 +1433,7 @@ Commands:
       --model <m>           Override replay model
       --tag <p>             Filter by pathology tag
       --out <dir>           Output directory (default: evals/reports)
-      --provider <p>        Force provider: groq or openrouter (auto-selects groq if key present)
+      --provider <p>        Force provider (default: openrouter)
 
   perception-extract <session-id> <turn> [options]
     Extract a perception eval case from a trace turn
@@ -1443,7 +1451,7 @@ Commands:
   perception-critique [options]
     Replay perception cases, score, judge, generate comparison report
     Options:
-      --provider <p>          groq, openrouter, or both (default: both)
+      --provider <p>          openrouter (default: both)
       --dimension <d>         Filter by dimension tag
       --judge                 Enable LLM-as-judge
       --out <dir>             Output directory (default: evals/reports)
@@ -1523,7 +1531,7 @@ Stagnation eval commands:
 
 E2E eval commands:
   e2e-critique [options]                 Replay E2E golden cases, score, judge, report
-    --provider <p>    Force provider: groq or openrouter
+    --provider <p>    Force provider: openrouter
     --judge           Enable LLM-as-judge
     --step <n>        Filter by step number
     --out <dir>       Output directory (default: evals/reports)
@@ -1531,13 +1539,13 @@ E2E eval commands:
   e2e-validate                           Structural validation of E2E golden cases (offline)
 
   e2e-multiturn [options]                Oracle-guided multi-turn replay eval
-    --provider <p>    Force provider: groq or openrouter
+    --provider <p>    Force provider: openrouter
     --step <n>        Filter by step number
     --out <dir>       Output directory (default: evals/reports)
 
 Completion-timing eval commands:
   completion-timing-critique [options]   Replay completion-timing cases, score, judge, report
-    --provider <p>    Force provider: groq or openrouter
+    --provider <p>    Force provider: openrouter
     --judge           Enable LLM-as-judge
     --scenario <s>    Filter by scenario
     --out <dir>       Output directory (default: evals/reports)
@@ -1546,12 +1554,21 @@ Completion-timing eval commands:
 
 Grounding eval commands:
   grounding-critique [options]           Replay grounding cases, score, judge, report
-    --provider <p>    Force provider: groq or openrouter
+    --provider <p>    Force provider: openrouter
     --judge           Enable LLM-as-judge
     --scenario <s>    Filter by scenario
     --out <dir>       Output directory (default: evals/reports)
 
   grounding-validate                     Structural validation of grounding golden cases (offline)
+
+Tool-confusion eval commands:
+  tool-confusion-critique [options]      Replay tool-confusion cases, score, judge, report
+    --provider <p>    Force provider: openrouter
+    --judge           Enable LLM-as-judge
+    --pair <p>        Filter by confusion pair label
+    --out <dir>       Output directory (default: evals/reports)
+
+  tool-confusion-validate                Structural validation of tool-confusion golden cases (offline)
 `);
 }
 
@@ -1625,8 +1642,8 @@ async function cmdCritique(args: string[]) {
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as EvalProvider : undefined;
-  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
     process.exit(1);
   }
 
@@ -1692,7 +1709,7 @@ async function cmdCritique(args: string[]) {
     process.exit(1);
   }
 
-  const provider: EvalProvider = providerArg ?? (keys.groq ? "groq" : "openrouter");
+  const provider: EvalProvider = providerArg ?? ("openrouter");
 
   console.log(`${c.bold}Running critique on ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
@@ -1982,8 +1999,8 @@ async function cmdCompletionTimingCritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
-  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "openrouter".${c.reset}`);
     process.exit(1);
   }
   const scenarioIdx = args.indexOf("--scenario");
@@ -2007,7 +2024,7 @@ async function cmdCompletionTimingCritique(args: string[]) {
     process.exit(1);
   }
 
-  const provider: CompletionTimingProvider = (providerArg as CompletionTimingProvider) ?? (keys.groq ? "groq" : "openrouter");
+  const provider: CompletionTimingProvider = (providerArg as CompletionTimingProvider) ?? ("openrouter");
   console.log(`${c.bold}Completion-Timing Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
   const results = await runCompletionTimingEvals({
@@ -2118,8 +2135,8 @@ async function cmdGroundingCritique(args: string[]) {
   const judgeFlag = args.includes("--judge");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
-  if (providerArg && providerArg !== "groq" && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "groq" or "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "openrouter".${c.reset}`);
     process.exit(1);
   }
   const scenarioIdx = args.indexOf("--scenario");
@@ -2143,7 +2160,7 @@ async function cmdGroundingCritique(args: string[]) {
     process.exit(1);
   }
 
-  const provider: GroundingProvider = (providerArg as GroundingProvider) ?? (keys.groq ? "groq" : "openrouter");
+  const provider: GroundingProvider = (providerArg as GroundingProvider) ?? ("openrouter");
   console.log(`${c.bold}Grounding Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
   const results = await runGroundingEvals({
@@ -2236,6 +2253,143 @@ async function cmdGroundingValidate() {
         `(${goldenCase.scenario}, ${goldenCase.difficulty}, ` +
         `mismatch: ${goldenCase.expected.shouldDetectMismatch}, ` +
         `tool: ${goldenCase.expected.expectedTool}${altCount > 0 ? ` +${altCount} alt` : ""}, ` +
+        `${histCount} prior turns)`,
+      );
+      valid++;
+    }
+  }
+
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
+}
+
+// ── Tool-confusion commands ───────────────────────────────────────────
+
+async function cmdToolConfusionCritique(args: string[]) {
+  const judgeFlag = args.includes("--judge");
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : undefined;
+  if (providerArg && providerArg !== "openrouter") {
+    console.error(`${c.red}Invalid --provider: ${providerArg}. Use "openrouter".${c.reset}`);
+    process.exit(1);
+  }
+  const pairIdx = args.indexOf("--pair");
+  const pairFilter = pairIdx !== -1 ? args[pairIdx + 1] : undefined;
+  const outIdx = args.indexOf("--out");
+  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
+
+  let keys: ApiKeys;
+  try {
+    keys = loadApiKeys();
+  } catch (err: any) {
+    console.error(`${c.red}${err.message}${c.reset}`);
+    process.exit(1);
+  }
+
+  const { readToolConfusionGoldenCases } = await import("./utils");
+  const cases = readToolConfusionGoldenCases();
+
+  if (cases.length === 0) {
+    console.error(`${c.red}No tool-confusion golden cases found in evals/golden/tool-confusion/${c.reset}`);
+    process.exit(1);
+  }
+
+  const provider: ToolConfusionProvider = (providerArg as ToolConfusionProvider) ?? ("openrouter");
+  console.log(`${c.bold}Tool-Confusion Critique: ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
+
+  const results = await runToolConfusionEvals({
+    keys,
+    provider,
+    judge: judgeFlag,
+    pairFilter,
+  });
+
+  if (results.length === 0) return;
+
+  const report = buildToolConfusionReport({ cases, results });
+
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const mdPath = join(outDir, `tool-confusion-critique-${stamp}.md`);
+  writeFileSync(mdPath, report, "utf-8");
+
+  const passed = results.filter((r) => r.status === "pass").length;
+  const failed = results.filter((r) => r.status === "fail").length;
+  const errors = results.filter((r) => r.status === "error").length;
+  console.log(`\n${c.bold}Tool-Confusion: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
+  console.log(`Report: ${mdPath}`);
+}
+
+async function cmdToolConfusionValidate() {
+  const { readToolConfusionGoldenCases } = await import("./utils");
+  const cases = readToolConfusionGoldenCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No tool-confusion golden cases found in evals/golden/tool-confusion/${c.reset}`);
+    return;
+  }
+
+  console.log(`${c.bold}Validating ${cases.length} tool-confusion golden case(s)...${c.reset}\n`);
+
+  let valid = 0;
+  let invalid = 0;
+
+  for (const goldenCase of cases) {
+    const errors: string[] = [];
+
+    // Required fields
+    if (!goldenCase.id) errors.push("missing id");
+    if (!goldenCase.scenario) errors.push("missing scenario");
+    if (!["easy", "medium", "hard"].includes(goldenCase.difficulty)) errors.push("invalid difficulty");
+
+    // Confusion pair
+    if (!goldenCase.confusionPair?.toolA) errors.push("missing confusionPair.toolA");
+    if (!goldenCase.confusionPair?.toolB) errors.push("missing confusionPair.toolB");
+    if (!goldenCase.confusionPair?.label) errors.push("missing confusionPair.label");
+
+    // Snapshot
+    if (!goldenCase.snapshot?.url) errors.push("missing snapshot.url");
+    if (!goldenCase.snapshot?.title) errors.push("missing snapshot.title");
+
+    // Elements
+    if (!Array.isArray(goldenCase.elements) || goldenCase.elements.length === 0) {
+      errors.push("empty or missing elements");
+    }
+
+    // Page content
+    if (!goldenCase.pageContent) errors.push("missing pageContent");
+
+    // Instruction
+    if (!goldenCase.instruction) errors.push("missing instruction");
+
+    // Expected
+    if (goldenCase.expected == null) {
+      errors.push("missing expected");
+    } else {
+      if (!goldenCase.expected.correctTool) errors.push("missing expected.correctTool");
+      if (!Array.isArray(goldenCase.expected.antiPatternTools)) errors.push("missing expected.antiPatternTools");
+      if (!goldenCase.expected.rationale) errors.push("missing expected.rationale");
+    }
+
+    // Prior history (optional but if present must be array)
+    if (goldenCase.priorHistory !== null && !Array.isArray(goldenCase.priorHistory)) {
+      errors.push("priorHistory must be null or array");
+    }
+
+    // Metadata
+    if (!goldenCase.metadata?.curatedAt) errors.push("missing metadata.curatedAt");
+
+    if (errors.length > 0) {
+      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
+      invalid++;
+    } else {
+      const altCount = goldenCase.expected?.acceptAlternatives?.length ?? 0;
+      const histCount = goldenCase.priorHistory?.length ?? 0;
+      console.log(
+        `  ${c.green}VALID${c.reset}   ${goldenCase.id} ` +
+        `(${goldenCase.confusionPair.label}, ${goldenCase.difficulty}, ` +
+        `correct: ${goldenCase.expected.correctTool}${altCount > 0 ? ` +${altCount} alt` : ""}, ` +
+        `anti: ${goldenCase.expected.antiPatternTools.join(",")}, ` +
         `${histCount} prior turns)`,
       );
       valid++;

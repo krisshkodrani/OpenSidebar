@@ -88,7 +88,7 @@ describe("AgentLoop", () => {
     const onMessage = vi.fn();
     const onStep = vi.fn();
 
-    const agent = new AgentLoop("test-key", undefined, {
+    const agent = new AgentLoop("test-key", {
       onStatusUpdate: onStatus,
       onMessage: onMessage,
       onStep: onStep,
@@ -110,7 +110,7 @@ describe("AgentLoop", () => {
     const onMessage = vi.fn();
     const onStep = vi.fn();
 
-    const agent = new AgentLoop("test-key", undefined, {
+    const agent = new AgentLoop("test-key", {
       onStatusUpdate: onStatus,
       onMessage: onMessage,
       onStep: onStep,
@@ -248,7 +248,6 @@ describe("High-risk approval policy", () => {
     const onStep = vi.fn();
     const agent = new AgentLoop(
       "test-key",
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -285,7 +284,6 @@ describe("High-risk approval policy", () => {
 
     const agent = new AgentLoop(
       "test-key",
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -311,7 +309,6 @@ describe("High-risk approval policy", () => {
 
     const agent = new AgentLoop(
       "test-key",
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -337,7 +334,6 @@ describe("High-risk approval policy", () => {
     const onStep = vi.fn();
     const agent = new AgentLoop(
       "test-key",
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),
@@ -388,7 +384,6 @@ describe("Workspace-scoped tab operations", () => {
   function createAgent(workspaceId: string | null = null) {
     return new AgentLoop(
       "test-key",
-      undefined,
       {
         onStatusUpdate: vi.fn(),
         onMessage: vi.fn(),

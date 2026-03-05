@@ -76,7 +76,7 @@ Key issues:
 
 3. Debug detail has same visual weight as primary conversation
 - Tool cards are strongly styled (cards, borders, iconography) and repeated.
-- This competes with the assistant’s actual answer.
+- This competes with the assistantï¿½s actual answer.
 
 4. Settings IA is flat and long
 - Current drawer mixes frequent, advanced, dangerous, and enterprise-style controls in one scroll.
@@ -84,7 +84,7 @@ Key issues:
 
 5. Safety/privacy controls exist, but need stronger grouping and copy hierarchy
 - Good controls are present (`bypassApprovals`, tool restrictions, metrics).
-- Missing explicit site blocklist and clearer “risk level” grouping UX.
+- Missing explicit site blocklist and clearer ï¿½risk levelï¿½ grouping UX.
 
 ## 4) Recommendations (Prioritized)
 
@@ -101,7 +101,7 @@ Key issues:
 - Persist user preference: "Always show details" (off by default).
 
 3. Split settings into Basic vs Advanced
-- Basic tab: API key, model/provider strategy, safety defaults, theme, voice.
+- Basic tab: API key, model/provider strategy, safety defaults, theme.
 - Advanced tab: budgets, tool restrictions, debugging, replay, dry-run options.
 
 4. Safety block in settings
@@ -148,7 +148,7 @@ Suggested mapping:
 - General: theme, language, voice, saved prompts behavior.
 - Agent: max turns, provider strategy, token budget.
 - Privacy & Security: approvals, site blocklist, data retention, clear-data.
-- Integrations: OpenRouter/Groq/Cerebras keys, app connectors.
+- Integrations: OpenRouter API key, app connectors.
 - Appearance: compact mode, detail defaults, metrics visibility.
 - Advanced: replay, dry-run, orchestration internals, debug exports.
 

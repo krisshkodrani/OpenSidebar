@@ -10,17 +10,6 @@
 | 0.2.x   | ✅ Yes    |
 | 0.1.x   | ❌ No     |
 
-## Reporting Security Issues
-
-If you discover a security vulnerability, please email security@qsidebar.dev with:
-
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-Do NOT open public issues for security vulnerabilities.
-
 ## Security Measures
 
 ### API Key Storage
@@ -32,7 +21,7 @@ Do NOT open public issues for security vulnerabilities.
 
 ### Data Privacy
 
-- All memory data stays in browser IndexedDB
+- All data stays in local browser storage
 - No external servers (except LLM APIs)
 - No analytics or tracking
 - No data collection
@@ -42,10 +31,3 @@ Do NOT open public issues for security vulnerabilities.
 - Only http/https protocols allowed
 - URL validation before navigation
 - Risk classification for tools
-
-### Local-Only Operation
-
-- SQLite database: Local only
-- Vector embeddings: Local only
-- Search index: Local only
-- PDF processing: Local only

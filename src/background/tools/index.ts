@@ -459,7 +459,13 @@ export function registerTools() {
 
       try {
         const opts: any = { url: urlResult.value };
-        if (filename) opts.filename = filename;
+        if (filename) {
+          // Strip path traversal and absolute path components
+          opts.filename = filename
+            .replace(/\.\.[/\\]/g, "")
+            .replace(/^[/\\]+/, "")
+            .replace(/\0/g, "");
+        }
         const downloadId = await chrome.downloads.download(opts);
         return `Download started (ID: ${downloadId})`;
       } catch (e: any) {
@@ -496,7 +502,10 @@ export function registerTools() {
   );
 
   toolRegistry.register(ToolName.SET_COOKIE, SET_COOKIE_DEF, async (args) => {
-    const url = args.url as string;
+    const rawUrl = args.url as string;
+    const urlResult = sanitizeUrl(rawUrl);
+    if (!urlResult.ok) return `Error: ${urlResult.error}`;
+    const url = urlResult.value;
     const name = args.name as string;
     const value = args.value as string;
     const domain = args.domain as string | undefined;
@@ -517,7 +526,10 @@ export function registerTools() {
     ToolName.DELETE_COOKIE,
     DELETE_COOKIE_DEF,
     async (args) => {
-      const url = args.url as string;
+      const rawUrl = args.url as string;
+      const urlResult = sanitizeUrl(rawUrl);
+      if (!urlResult.ok) return `Error: ${urlResult.error}`;
+      const url = urlResult.value;
       const name = args.name as string;
       logger.info("tools", "delete_cookie", { url, name });
       try {

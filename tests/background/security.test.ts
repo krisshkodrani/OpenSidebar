@@ -138,6 +138,42 @@ describe("sanitizeForPrompt", () => {
         );
     });
 
+    test("wraps ChatML system/user/assistant delimiters", () => {
+        expect(sanitizeForPrompt("text <|system|> more")).toContain(
+            "[PAGE_TEXT: <|system|>]",
+        );
+        expect(sanitizeForPrompt("text <|user|> more")).toContain(
+            "[PAGE_TEXT: <|user|>]",
+        );
+        expect(sanitizeForPrompt("text <|assistant|> more")).toContain(
+            "[PAGE_TEXT: <|assistant|>]",
+        );
+    });
+
+    test("wraps Llama-2 SYS delimiters", () => {
+        expect(sanitizeForPrompt("text <<SYS>> more")).toContain(
+            "[PAGE_TEXT: <<SYS>>]",
+        );
+        expect(sanitizeForPrompt("text <</SYS>> more")).toContain(
+            "[PAGE_TEXT: <</SYS>>]",
+        );
+    });
+
+    test("wraps Alpaca-style markers", () => {
+        expect(sanitizeForPrompt("### Instruction\nDo something")).toContain(
+            "[PAGE_TEXT: ### Instruction]",
+        );
+        expect(sanitizeForPrompt("### Response\nHere is")).toContain(
+            "[PAGE_TEXT: ### Response]",
+        );
+    });
+
+    test("wraps Claude-style Human: role impersonation", () => {
+        expect(sanitizeForPrompt("human: do something")).toBe(
+            "[PAGE_TEXT: human]: do something",
+        );
+    });
+
     test("preserves benign text", () => {
         const benign = "Welcome to our website! Click the button to proceed.";
         expect(sanitizeForPrompt(benign)).toBe(benign);
@@ -245,10 +281,107 @@ describe("validateToolCalls", () => {
         expect(results[0].reason).toContain("navigate tool");
     });
 
+    test("blocks execute_js with bare location.href assignment", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "location.href = 'https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with location.assign()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "location.assign('https://evil.com')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with location.replace()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "location.replace('https://evil.com')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with globalThis.location", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "globalThis.location.href='https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with self.location", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "self.location.href='https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with top.location", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "top.location.href='https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with location = new URL(...)", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "location = 'https://evil.com'" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+    });
+
     test("allows execute_js without location manipulation", () => {
         const results = validateToolCalls([
             makeTc("execute_js", { code: "document.title" }),
         ]);
         expect(results[0].blocked).toBe(false);
+    });
+
+    test("blocks execute_js with window.open()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "window.open('https://evil.com')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("window.open");
+    });
+
+    test("blocks execute_js with document.write()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.write('<script>alert(1)</script>')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("document.write");
+    });
+
+    test("blocks execute_js with document.writeln()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.writeln('<h1>hi</h1>')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("document.write");
+    });
+
+    test("blocks execute_js with eval()", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "eval('document.cookie')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("eval");
+    });
+
+    test("blocks execute_js with Function constructor", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "new Function('return document.cookie')()" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("Function");
+    });
+
+    test("blocks execute_js with createElement('script')", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.createElement('script')" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("script injection");
     });
 });

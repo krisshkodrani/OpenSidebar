@@ -10,6 +10,7 @@
 
 import { TaggedElement, PageSkeletonNode, UserSettings } from "../../types";
 import { logger } from "../../utils";
+import { loadSettings } from "../../utils/settings-storage";
 import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
 import { TokenUsage } from "../llm/types";
@@ -98,6 +99,7 @@ function formatSkeletonForPerception(skeleton: PageSkeletonNode[]): string {
 export function buildElementSummary(
   elements: TaggedElement[],
   skeleton?: PageSkeletonNode[],
+  viewport?: { height: number; scrollY: number },
 ): string {
   const counts: Record<string, number> = {};
   for (const el of elements) {
@@ -133,7 +135,20 @@ export function buildElementSummary(
       el.attributes.type === "submit";
 
     if (isInput || isButton || lines.length < 30) {
-      lines.push(`[${el.tag}] ${el.tagName} "${text}"`);
+      // Position hint for off-screen elements (mirrors formatElementCompact)
+      let posHint = "";
+      if (viewport && el.rect) {
+        if (el.rect.y < 0 || el.rect.y >= viewport.height) {
+          if (el.rect.pageY != null) {
+            posHint = ` @y${el.rect.pageY}`;
+          } else if (el.rect.y < 0) {
+            posHint = " ^above";
+          } else {
+            posHint = ` v${Math.round(el.rect.y - viewport.height)}px`;
+          }
+        }
+      }
+      lines.push(`[${el.tag}] ${el.tagName} "${text}"${posHint}`);
     }
 
     // Track duplicate vague text
@@ -312,7 +327,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
         "HTTP-Referer": "chrome-extension://opensidebar",
         "X-Title": "OpenSidebar",
       },
-      model: OPENROUTER_PERCEPTION_MODEL,
+      model: settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL,
       providerId: "openrouter",
     });
   }
@@ -333,8 +348,7 @@ export async function perceive(
   input: PerceptionInput,
   signal?: AbortSignal,
 ): Promise<LegacyPerceptionResult> {
-  const stored = await chrome.storage.sync.get("userSettings");
-  const settings = (stored.userSettings ?? {}) as UserSettings;
+  const settings = (await loadSettings()) ?? ({} as UserSettings);
   const providers = buildProviders(settings);
 
   if (providers.length === 0) {

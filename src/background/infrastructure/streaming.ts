@@ -2,6 +2,8 @@ import { ToolCall, ToolName } from "../../types";
 import { logger } from "../../utils";
 import { TokenUsage } from "../llm/types";
 
+const VALID_TOOL_NAMES = new Set<string>(Object.values(ToolName));
+
 interface PartialToolCall {
   id: string;
   name: string;
@@ -130,10 +132,16 @@ export async function parseSSEStream(
       } else {
         args = "{}";
       }
+      if (!VALID_TOOL_NAMES.has(partial.name)) {
+        logger.warn("agent", "SSE stream contained unknown tool name", {
+          name: partial.name,
+        });
+      }
       toolCalls.push({
         id: partial.id,
         type: "function",
         function: {
+          // Cast is safe: unknown names are caught by validateToolCalls()
           name: partial.name as ToolName,
           arguments: args,
         },

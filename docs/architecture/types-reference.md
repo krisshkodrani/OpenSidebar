@@ -15,12 +15,11 @@
 6. [Tool System Types](#tool-system-types)
 7. [Content Script Types](#content-script-types)
 8. [Side Panel UI Types](#side-panel-ui-types)
-9. [Memory / Second Brain Types](#memory--second-brain-types)
-10. [Workspace / Tab Group Types](#workspace--tab-group-types)
-11. [Navigation Bridge Types](#navigation-bridge-types)
-12. [Configuration Types](#configuration-types)
-13. [Trace Types](#trace-types)
-14. [Utility Types](#utility-types)
+9. [Workspace / Tab Group Types](#workspace--tab-group-types)
+10. [Navigation Bridge Types](#navigation-bridge-types)
+11. [Configuration Types](#configuration-types)
+12. [Trace Types](#trace-types)
+13. [Utility Types](#utility-types)
 
 ---
 
@@ -58,13 +57,12 @@ export enum MessageSource {
   SIDEPANEL = "sidepanel",
   BACKGROUND = "background",
   CONTENT = "content",
-  OFFSCREEN = "offscreen",
 }
 ```
 
 ### `ToolName`
 
-All 39 tool names the agent can invoke.
+All 35 tool names the agent can invoke.
 
 ```typescript
 /** Tool identifiers exposed to the LLM */
@@ -169,8 +167,6 @@ export type RuntimeMessage =
   | DomSnapshotRequest
   | DomSnapshotResponse
   | NavigationResumeMessage
-  | MemoryWorkerMessage
-  | MemoryWorkerResponse
   | StopAgentMessage
   | SettingsUpdateMessage
   | SidePanelOpenedMessage
@@ -746,7 +742,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (39 tools):
+Each tool has a typed argument interface (35 tools):
 
 ```typescript
 /** Arguments for click_element */
@@ -971,7 +967,7 @@ export type ToolRouter = {
 
 /** Maps each tool name to its argument type */
 export type ToolArgsMap = {
-  // ... (39 entries mapping each ToolName to its Args type)
+  // ... (35 entries mapping each ToolName to its Args type)
   [ToolName.CLICK_ELEMENT]: ClickElementArgs;
   [ToolName.TYPE_TEXT]: TypeTextArgs;
   // ... etc.
@@ -1233,95 +1229,6 @@ export interface SavedPrompt {
 
 ---
 
-## Memory / Second Brain Types
-
-### `MemoryEntry`
-
-```typescript
-/** A single entry stored in the Second Brain */
-export interface MemoryEntry {
-  /** UUID v4 */
-  id: string;
-  /** The stored text content */
-  content: string;
-  /** Embedding vector (384 dimensions for MiniLM-L6-v2) */
-  embedding: Float32Array;
-  /** User-defined category tag */
-  category: string;
-  /** Source URL where this was captured */
-  sourceUrl: string;
-  /** Unix timestamp of creation */
-  createdAt: number;
-}
-```
-
-### `MemorySearchResult`
-
-```typescript
-/** A single result from a memory search */
-export interface MemorySearchResult {
-  entry: MemoryEntry;
-  /** Combined RRF score (higher = more relevant) */
-  score: number;
-  /** Individual scores for debugging */
-  scores: {
-    semantic: number;
-    keyword: number;
-  };
-}
-```
-
-### `MemoryWorkerMessage`
-
-```typescript
-/** Messages sent to the memory offscreen document / web worker */
-export interface MemoryWorkerMessage extends BaseMessage {
-  type: "MEMORY_WORKER";
-  source: MessageSource.BACKGROUND;
-  payload:
-    | { action: "init" }
-    | { action: "add"; content: string; category: string; sourceUrl: string }
-    | { action: "search"; query: string; limit: number }
-    | { action: "delete"; id: string }
-    | { action: "clear" }
-    | { action: "extract_pdf"; url: string; maxPages?: number };
-}
-```
-
-### `MemoryWorkerResponse`
-
-```typescript
-/** Responses from the memory worker back to the service worker */
-export interface MemoryWorkerResponse extends BaseMessage {
-  type: "MEMORY_WORKER_RESPONSE";
-  source: MessageSource.OFFSCREEN;
-  payload:
-    | { action: "init"; success: boolean; error?: string }
-    | { action: "add"; success: boolean; id: string; error?: string }
-    | { action: "search"; results: MemorySearchResult[]; error?: string }
-    | { action: "delete"; success: boolean; error?: string }
-    | { action: "clear"; success: boolean; error?: string }
-    | { action: "extract_pdf"; text: string; success: boolean; error?: string };
-}
-```
-
-### `FTS5Row`
-
-```typescript
-/** A row from the SQLite FTS5 table */
-export interface FTS5Row {
-  id: string;
-  content: string;
-  category: string;
-  source_url: string;
-  created_at: number;
-  /** BM25 relevance score (lower = more relevant in SQLite FTS5) */
-  rank: number;
-}
-```
-
----
-
 ## Workspace / Tab Group Types
 
 ### `Workspace`
@@ -1390,19 +1297,12 @@ export interface NavigationResumeMessage extends BaseMessage {
 ```typescript
 export interface UserSettings {
   openRouterApiKey: string;
-  /** Groq API key for executor model (GPT-OSS-120B) */
-  groqApiKey: string;
-  /** Cerebras API key for executor model (highest priority when present) */
-  cerebrasApiKey: string;
   maxTurns: number;
   contextWindowSize: number;
-  memoryEnabled: boolean;
   workspaceEnabled: boolean;
   theme: "light" | "dark" | "system";
   /** Show visual [N] tag overlays on page elements (debugging aid) */
   showElementTags: boolean;
-  /** OpenRouter model ID for vision/screenshot analysis (default: qwen/qwen3-vl-235b-a22b-instruct) */
-  visionModel: string;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
   /** Hide navigate from tools */

@@ -77,9 +77,16 @@
     "sourcePath": "prompts/evals/planner_judge_user.md"
   },
   {
+    "id": "evals.tool_confusion_judge.system",
+    "version": "v1",
+    "hash": "30a41dc0",
+    "description": "System prompt for tool-confusion eval LLM-as-judge with 4-dimension rubric.",
+    "sourcePath": "prompts/evals/tool_confusion_judge_system.md"
+  },
+  {
     "id": "agent.system",
     "version": "v3",
-    "hash": "1a8fd6e4",
+    "hash": "9d53d086",
     "description": "Core executor system prompt for browser automation turns. v3: perception-grounded guidance.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -107,14 +114,14 @@
   {
     "id": "perception.interpret_page",
     "version": "v6",
-    "hash": "070125fd",
+    "hash": "a35e1a0e",
     "description": "Unified stateful perception prompt — 5 goal-free sections, prior observation history, no completion checking.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "261f10f4",
+    "hash": "2acae85a",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },

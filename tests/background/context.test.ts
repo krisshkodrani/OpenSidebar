@@ -698,17 +698,32 @@ describe("formatElementCompact position hints", () => {
   test("no annotation for elements in the viewport", () => {
     const el = makeElement({ rect: { x: 10, y: 300, width: 80, height: 30 } });
     const result = formatElementCompact(el, "Submit", null, 800);
+    expect(result).not.toContain("@y");
     expect(result).not.toContain("^above");
     expect(result).not.toMatch(/v\d+px/);
   });
 
-  test("^above for elements above viewport", () => {
+  test("@y hint for elements above viewport (with pageY)", () => {
+    const el = makeElement({ rect: { x: 10, y: -50, width: 80, height: 30, pageY: 950 } });
+    const result = formatElementCompact(el, "Header", null, 800);
+    expect(result).toContain("@y950");
+    expect(result).not.toContain("^above");
+  });
+
+  test("@y hint for elements below viewport (with pageY)", () => {
+    const el = makeElement({ rect: { x: 10, y: 920, width: 80, height: 30, pageY: 1920 } });
+    const result = formatElementCompact(el, "Footer", null, 800);
+    expect(result).toContain("@y1920");
+    expect(result).not.toMatch(/v\d+px/);
+  });
+
+  test("^above fallback for elements above viewport (no pageY)", () => {
     const el = makeElement({ rect: { x: 10, y: -50, width: 80, height: 30 } });
     const result = formatElementCompact(el, "Header", null, 800);
     expect(result).toContain("^above");
   });
 
-  test("v{N}px for elements below viewport", () => {
+  test("v{N}px fallback for elements below viewport (no pageY)", () => {
     const el = makeElement({ rect: { x: 10, y: 920, width: 80, height: 30 } });
     const result = formatElementCompact(el, "Footer", null, 800);
     expect(result).toContain("v120px");
@@ -719,9 +734,16 @@ describe("formatElementCompact position hints", () => {
     const result = formatElementCompact(el, "Footer", null);
     expect(result).not.toContain("v120px");
     expect(result).not.toContain("^above");
+    expect(result).not.toContain("@y");
   });
 
-  test("element exactly at viewport bottom gets v0px", () => {
+  test("element exactly at viewport bottom gets @y hint (with pageY)", () => {
+    const el = makeElement({ rect: { x: 10, y: 800, width: 80, height: 30, pageY: 1800 } });
+    const result = formatElementCompact(el, "Edge", null, 800);
+    expect(result).toContain("@y1800");
+  });
+
+  test("element exactly at viewport bottom gets v0px (no pageY)", () => {
     const el = makeElement({ rect: { x: 10, y: 800, width: 80, height: 30 } });
     const result = formatElementCompact(el, "Edge", null, 800);
     expect(result).toContain("v0px");
@@ -737,13 +759,90 @@ describe("formatSnapshotElements with viewport", () => {
         tagName: "input",
         role: "textbox",
         text: "Email",
-        rect: { x: 10, y: 900, width: 200, height: 30 },
+        rect: { x: 10, y: 900, width: 200, height: 30, pageY: 2100 },
       }),
     ];
     const result = formatSnapshotElements(elements, 600);
     // First element in viewport — no hint
     expect(result).toContain('[1] button "Submit"');
-    // Second element 300px below viewport
-    expect(result).toContain("v300px");
+    // Second element off-screen — @y hint from pageY
+    expect(result).toContain("@y2100");
+  });
+});
+
+// --- Form batch hint tests ---
+describe("Form batch hint", () => {
+  function makeInputElement(tag: number, tagName = "input", role = "textbox"): TaggedElement {
+    return {
+      tag,
+      tagName,
+      role,
+      text: "",
+      attributes: { type: "text" },
+      rect: { x: 10, y: tag * 50, width: 200, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+  }
+
+  test("system message contains batch hint when 4 input fields visible", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Signup Form",
+      url: "https://example.com/signup",
+      elements: [
+        makeInputElement(1),
+        makeInputElement(2),
+        makeInputElement(3),
+        makeInputElement(4),
+        { tag: 5, tagName: "button", role: "button", text: "Submit", attributes: {}, rect: { x: 10, y: 250, width: 80, height: 30 }, isVisible: true, isDisabled: false },
+      ],
+      visibleContent: "Sign up for an account",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("Batch hint");
+    expect(systemContent).toContain("4 input fields");
+    expect(systemContent).toContain("type_text");
+  });
+
+  test("system message does NOT contain batch hint with only 1 input field", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Search Page",
+      url: "https://example.com/search",
+      elements: [
+        makeInputElement(1),
+        { tag: 2, tagName: "button", role: "button", text: "Search", attributes: {}, rect: { x: 10, y: 100, width: 80, height: 30 }, isVisible: true, isDisabled: false },
+      ],
+      visibleContent: "Search results",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).not.toContain("Batch hint");
+  });
+
+  test("system message contains batch hint with 3 textarea elements", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Feedback Form",
+      url: "https://example.com/feedback",
+      elements: [
+        makeInputElement(1, "textarea", "textbox"),
+        makeInputElement(2, "textarea", "textbox"),
+        makeInputElement(3, "textarea", "textbox"),
+      ],
+      visibleContent: "Tell us what you think",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("Batch hint");
+    expect(systemContent).toContain("3 input fields");
   });
 });

@@ -24,12 +24,10 @@ import { getPromptTemplate } from "../src/prompts";
 import { recoverToolCallsFromText } from "../src/background/agent/tool-recovery";
 import type { TaggedElement } from "../src/types";
 
-export type E2EMultiturnProvider = "groq" | "openrouter";
+export type E2EMultiturnProvider = "openrouter";
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_MODEL_OPENROUTER = "openai/gpt-oss-120b";
-const DEFAULT_MODEL_GROQ = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 const TOOL_DEFS_PATH = join("evals", "tool-definitions.json");
 const PASS_THRESHOLD = 0.50;
@@ -144,9 +142,7 @@ async function callLLM(
   modelVersion?: string;
   durationMs: number;
 }> {
-  const useGroq = provider === "groq" && !!keys.groq;
-  const model = useGroq ? DEFAULT_MODEL_GROQ : DEFAULT_MODEL_OPENROUTER;
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
+  const model = DEFAULT_MODEL;
 
   const tools = loadToolDefinitions();
   const body: Record<string, unknown> = {
@@ -162,16 +158,14 @@ async function callLLM(
   }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
+    Authorization: `Bearer ${keys.openrouter}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": "https://opensidebar.dev",
+    "X-Title": "OpenSidebar E2E Multi-Turn Evals",
   };
-  if (!useGroq) {
-    headers["HTTP-Referer"] = "https://opensidebar.dev";
-    headers["X-Title"] = "OpenSidebar E2E Multi-Turn Evals";
-  }
 
   const start = Date.now();
-  const response = await fetch(apiUrl, {
+  const response = await fetch(OPENROUTER_API, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -442,7 +436,7 @@ export async function runE2EMultiturnEvals(options: {
   stepFilter?: number;
 }): Promise<E2EMultiturnResult[]> {
   const { keys } = options;
-  const provider = options.provider ?? (keys.groq ? "groq" : "openrouter");
+  const provider = options.provider ?? "openrouter";
 
   let cases = readE2EGoldenCases();
   if (cases.length === 0) {

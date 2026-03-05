@@ -58,17 +58,18 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
   messages: [],
   inputText: "",
 
-  addMessage: (msg) =>
+  addMessage: (msg) => {
     set((state) => {
       state.messages.push(msg);
       logger.debug("ui", "Message added to store", {
         id: msg.id,
         role: msg.role,
       });
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
-  appendStreamDelta: (delta) =>
+  appendStreamDelta: (delta) => {
     set((state) => {
       const last = state.messages[state.messages.length - 1];
       if (last?.role === "assistant" && last.isStreaming) {
@@ -83,17 +84,19 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           isStreaming: true,
         });
       }
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
-  replaceStreamContent: (content) =>
+  replaceStreamContent: (content) => {
     set((state) => {
       const last = state.messages[state.messages.length - 1];
       if (last?.role === "assistant" && last.isStreaming) {
         last.content = content;
       }
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
   setStreamThinking: (thinking) =>
     set((state) => {
@@ -103,7 +106,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       }
     }),
 
-  finalizeStream: (citations?: Citation[]) =>
+  finalizeStream: (citations?: Citation[]) => {
     set((state) => {
       const last = state.messages[state.messages.length - 1];
       if (last?.role === "assistant" && last.isStreaming) {
@@ -112,10 +115,11 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           last.citations = citations;
         }
       }
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
-  addStep: (step) =>
+  addStep: (step) => {
     set((state) => {
       for (let i = state.messages.length - 1; i >= 0; i--) {
         if (
@@ -126,7 +130,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
             state.messages[i].steps = [];
           }
           state.messages[i].steps!.push(step);
-          persistMessages(get().messages, get().activeWorkspaceId);
           return;
         }
       }
@@ -141,10 +144,11 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
         isStreaming: true,
         steps: [step],
       });
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
-  updateStep: (step) =>
+  updateStep: (step) => {
     set((state) => {
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const msg = state.messages[i];
@@ -156,8 +160,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           }
         }
       }
-      persistMessages(get().messages, get().activeWorkspaceId);
-    }),
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
 
   setInputText: (text) =>
     set((state) => {

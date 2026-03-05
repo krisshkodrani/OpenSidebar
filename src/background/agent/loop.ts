@@ -298,7 +298,7 @@ export class AgentLoop {
 
   private resolveCost(
     usage: TokenUsage,
-    providerId: "openrouter" | "groq",
+    providerId: "openrouter",
     model: string,
   ): { total: number; actual: number; estimated: number } {
     // Always use static pricing table for consistent cost across all providers
@@ -464,7 +464,6 @@ export class AgentLoop {
 
   constructor(
     openRouterApiKey: string,
-    groqApiKey: string | undefined,
     callbacks: {
       onStatusUpdate: (status: AgentStatus, detail: string) => void;
       onMessage: (text: string, toolCalls: ToolCall[]) => void;
@@ -499,6 +498,8 @@ export class AgentLoop {
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
+      executorModel?: string;
+      plannerModel?: string;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
@@ -523,7 +524,11 @@ export class AgentLoop {
       workerId: this.workerId,
       maxSessionMs: MAX_SESSION_MS,
     });
-    this.llm = new LLMClient(openRouterApiKey, groqApiKey);
+    const modelOverrides = {
+      executorModel: options?.executorModel,
+      plannerModel: options?.plannerModel,
+    };
+    this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     if (this.preferredModelTier === "planner") {
       this.llm.switchToPlanner();
     } else if (this.preferredModelTier === "executor") {
@@ -537,22 +542,18 @@ export class AgentLoop {
       workerId: this.workerId,
     });
     this.llm.setFailoverCallback((from, to) => {
-      const names: Record<string, string> = {
-        groq: "Groq",
-        openrouter: "OpenRouter",
-      };
       this.stepHandler(
         {
           id: crypto.randomUUID(),
           type: "info",
-          label: `Rate limited on ${names[from] ?? from} — switched to ${names[to] ?? to}`,
+          label: `Rate limited on ${from} — switched to ${to}`,
           status: "done",
           timestamp: Date.now(),
         },
         false,
       );
     });
-    this.planner = new TaskPlanner(openRouterApiKey);
+    this.planner = new TaskPlanner(openRouterApiKey, modelOverrides);
     this.baseContextTokens = options?.maxContextTokens ?? 32000;
     this.context = new ContextManager(
       this.baseContextTokens,
@@ -1630,9 +1631,12 @@ export class AgentLoop {
   /**
    * Capture additional viewport screenshots at different scroll positions
    * for first-turn panoramic perception. Returns empty array for short pages.
+   * @param primaryScrollY — If the primary screenshot was taken after an orientation
+   *   scroll (e.g., to y=0), pass that value so we skip duplicate positions.
    */
   private async capturePanoramicScreenshots(
     tabId: number,
+    primaryScrollY?: number,
   ): Promise<PanoramicShot[]> {
     const snapshot = this.context.getSnapshot();
     if (!snapshot) return [];
@@ -1644,6 +1648,8 @@ export class AgentLoop {
     if (maxY < viewportH * 0.5) return [];
 
     const originalY = snapshot.scroll?.y ?? 0;
+    // Use primaryScrollY for filtering if the primary shot was taken at a different position
+    const primaryY = primaryScrollY ?? originalY;
     const shots: PanoramicShot[] = [];
 
     // Calculate positions: top, middle, bottom
@@ -1655,9 +1661,9 @@ export class AgentLoop {
     }
     positions.push({ y: maxY, label: "bottom" });
 
-    // Filter out positions close to current viewport (already captured as primary)
+    // Filter out positions close to primary screenshot (already captured)
     const filteredPositions = positions.filter(
-      (p) => Math.abs(p.y - originalY) > viewportH * 0.3,
+      (p) => Math.abs(p.y - primaryY) > viewportH * 0.3,
     );
 
     const tab = await chrome.tabs.get(tabId);
@@ -1693,6 +1699,16 @@ export class AgentLoop {
       // Take screenshot (unless near-empty — agent handles fallback)
       let dataUrl: string | undefined;
       if (snapshot.elements.length > 3) {
+        // Orientation scan: on first perception, scroll to top so the primary
+        // screenshot shows the page beginning (defeats auto-scroll tricks).
+        let primaryScrollY: number | undefined;
+        const isFirstPerception = !this.perception.panoramicDone;
+        if (isFirstPerception && (snapshot.scroll?.y ?? 0) > 0) {
+          await this.scrollContentScript(tabId, 0);
+          await new Promise((r) => setTimeout(r, 150));
+          primaryScrollY = 0;
+        }
+
         const tab = await chrome.tabs.get(tabId);
         dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
           format: "jpeg",
@@ -1702,9 +1718,12 @@ export class AgentLoop {
 
         // First-turn panoramic: capture additional viewports for page-level context
         let panoramicScreenshots: PanoramicShot[] | undefined;
-        if (!this.perception.panoramicDone) {
+        if (isFirstPerception) {
           this.perception.markPanoramicDone();
-          panoramicScreenshots = await this.capturePanoramicScreenshots(tabId);
+          panoramicScreenshots = await this.capturePanoramicScreenshots(
+            tabId,
+            primaryScrollY,
+          );
           if (panoramicScreenshots.length > 0) {
             this.log.info(
               "agent",
@@ -1719,6 +1738,12 @@ export class AgentLoop {
           }
         }
 
+        // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
+        const scrollOverride =
+          primaryScrollY !== undefined
+            ? { ...snapshot.scroll, y: primaryScrollY }
+            : snapshot.scroll;
+
         const result = await this.perception.observe(
           {
             screenshotDataUrl: dataUrl,
@@ -1726,7 +1751,7 @@ export class AgentLoop {
             elements: snapshot.elements,
             url: snapshot.url,
             title: snapshot.title,
-            scroll: snapshot.scroll,
+            scroll: scrollOverride,
             skeleton: snapshot.skeleton,
           },
           fingerprint,
@@ -2496,9 +2521,6 @@ export class AgentLoop {
           onTextDelta,
         );
       } catch (llmError: any) {
-        // Clean up main abort listener on error path
-        this.abortController!.signal.removeEventListener("abort", onMainAbort);
-
         // Hallucination abort: synthesize a response from accumulated text
         if (hallucinationDetected && llmError.name === "AbortError") {
           this.traceRecorder?.recordEvent("hallucination_detected", {
@@ -2517,7 +2539,8 @@ export class AgentLoop {
         } else if (llmError.name === "AbortError") {
           throw llmError;
         } else if ((llmError as any).status === 402) {
-          const msg = llmError.message;
+          const msg = "Your OpenRouter account has insufficient credits. " +
+            "Please add credits at openrouter.ai/credits and try again.";
           this.broadcast({
             type: "STREAM_CHUNK",
             payload: { delta: msg, done: false },
@@ -2527,12 +2550,24 @@ export class AgentLoop {
             payload: { delta: "", done: true },
           });
           this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
-          break;
+          return {
+            outcome: "error" as const,
+            turnCount: this.turnCount,
+            summary: "Insufficient OpenRouter credits",
+            failure: {
+              category: "provider" as const,
+              code: "credits_exhausted",
+              detail: "HTTP 402 from OpenRouter",
+            },
+            metrics: this.getMetrics(),
+          };
         }
         throw llmError;
+      } finally {
+        // Always clean up the main abort listener — prevents leak on all paths
+        // (success, hallucination recovery, 402 return, and re-thrown errors)
+        this.abortController?.signal.removeEventListener("abort", onMainAbort);
       }
-      // Clean up main abort listener on success path
-      this.abortController!.signal.removeEventListener("abort", onMainAbort);
       const llmMs = Date.now() - llmStart;
 
       // Accumulate token usage and broadcast metrics
@@ -2744,9 +2779,13 @@ export class AgentLoop {
             );
           }
         });
+        const hasDomModifyingTool = response.tool_calls.some((tc) =>
+          DOM_MODIFYING_TOOLS.has(tc.function.name as ToolName),
+        );
         const canParallelize =
           !hasSequentialTool &&
           !hasHighRiskTool &&
+          !hasDomModifyingTool &&
           response.tool_calls.length > 1;
 
         if (canParallelize) {
@@ -3043,6 +3082,7 @@ export class AgentLoop {
               const gateResult = checkVerificationGate(
                 toolResultStrings,
                 currentSub.verificationGate,
+                this.context.getCurrentUrl(),
               );
               if (gateResult.matched) {
                 const actionLabel =
@@ -4135,6 +4175,7 @@ export class AgentLoop {
               const seqGateResult = checkVerificationGate(
                 seqToolResults,
                 currentSubSeq.verificationGate,
+                this.context.getCurrentUrl(),
               );
               if (seqGateResult.matched) {
                 const seqActionLabel =

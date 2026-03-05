@@ -42,16 +42,11 @@ describe("SidePanel Store", () => {
             laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
-                groqApiKey: "",
-                useGroqFast: false,
                 maxTurns: 30,
-                contextWindowSize: 128000,
-                workspaceEnabled: true,
                 theme: "system",
-                visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
                 showSessionMetrics: false,
-                disableNavigation: false,
-                bypassApprovals: false,
+                requireApprovals: true,
+                allowNavigation: true,
             },
         });
     });
@@ -96,10 +91,12 @@ describe("SidePanel Store", () => {
     });
 
     test("loadSettingsFromStorage merges saved settings with defaults", async () => {
-        // Mock storage to return partial settings
+        // API key in session storage, other settings in sync storage
+        (chrome.storage.session.get as any) = vi.fn(async () => ({
+            openRouterApiKey: "sk-or-test-123",
+        }));
         (chrome.storage.sync.get as any) = vi.fn(async () => ({
             userSettings: {
-                openRouterApiKey: "sk-or-test-123",
                 maxTurns: 10,
             },
         }));
@@ -110,20 +107,20 @@ describe("SidePanel Store", () => {
         expect(settings.openRouterApiKey).toBe("sk-or-test-123");
         expect(settings.maxTurns).toBe(10);
         // Defaults preserved for missing fields
-        expect(settings.workspaceEnabled).toBe(true);
         expect(settings.theme).toBe("system");
-        expect(settings.contextWindowSize).toBe(128000);
+        expect(settings.requireApprovals).toBe(true);
     });
 
     test("loadSettingsFromStorage uses defaults when storage is empty", async () => {
         (chrome.storage.sync.get as any) = vi.fn(async () => ({}));
+        (chrome.storage.session.get as any) = vi.fn(async () => ({}));
 
         await useStore.getState().loadSettingsFromStorage();
 
         const settings = useStore.getState().settings;
         expect(settings.openRouterApiKey).toBe("");
         expect(settings.maxTurns).toBe(30);
-        expect(settings.workspaceEnabled).toBe(true);
+        expect(settings.requireApprovals).toBe(true);
     });
 
     test("loadMessagesFromStorage restores messages and finalizes streaming", async () => {
@@ -189,9 +186,9 @@ describe("SidePanel Store", () => {
         expect(setSpy).toHaveBeenCalledWith({ "chatMessages:ws-test": [] });
     });
 
-    test("DEFAULT_SETTINGS includes workspaceEnabled", () => {
+    test("DEFAULT_SETTINGS includes requireApprovals", () => {
         const settings = useStore.getState().settings;
-        expect(settings.workspaceEnabled).toBe(true);
+        expect(settings.requireApprovals).toBe(true);
     });
 
     test("addStep pushes step to last assistant message", () => {
@@ -489,14 +486,9 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().taskRecovery).toBeNull();
     });
 
-    test("DEFAULT_SETTINGS includes visionModel", () => {
+    test("DEFAULT_SETTINGS includes allowNavigation", () => {
         const settings = useStore.getState().settings;
-        expect(settings.visionModel).toBe("qwen/qwen3-vl-235b-a22b-instruct");
-    });
-
-    test("DEFAULT_SETTINGS includes bypassApprovals", () => {
-        const settings = useStore.getState().settings;
-        expect(settings.bypassApprovals).toBe(false);
+        expect(settings.allowNavigation).toBe(true);
     });
 
     test("setActiveWorkspaceId clears workspace-scoped transient state", () => {
@@ -603,6 +595,37 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().pendingClarification).not.toBeNull();
         useStore.getState().clearPendingClarification();
         expect(useStore.getState().pendingClarification).toBeNull();
+    });
+
+    test("setActiveWorkspaceId resets agent running state", () => {
+        useStore.getState().setAgentRunning(true);
+        useStore.getState().updateStatus(AgentStatus.THINKING, "Analyzing...");
+        useStore.getState().setSessionMetrics({
+            totalTokens: 500,
+            totalCost: 0.01,
+            turnCount: 5,
+            elapsedMs: 10000,
+        } as any);
+
+        useStore.getState().setActiveWorkspaceId("ws-new");
+
+        const state = useStore.getState();
+        expect(state.isAgentRunning).toBe(false);
+        expect(state.agentStatus).toBe(AgentStatus.IDLE);
+        expect(state.statusDetail).toBe("");
+        expect(state.sessionMetrics).toBeNull();
+    });
+
+    test("setActiveWorkspaceId no-op when same workspace", () => {
+        useStore.getState().setAgentRunning(true);
+        useStore.getState().updateStatus(AgentStatus.THINKING, "Working...");
+
+        // Re-set the same workspace ID
+        useStore.getState().setActiveWorkspaceId("ws-test");
+
+        // Should NOT have reset — no-op guard
+        expect(useStore.getState().isAgentRunning).toBe(true);
+        expect(useStore.getState().agentStatus).toBe(AgentStatus.THINKING);
     });
 
     test("setActiveWorkspaceId flushes messages before clearing", () => {

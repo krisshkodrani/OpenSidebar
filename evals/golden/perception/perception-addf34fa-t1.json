@@ -249,7 +249,7 @@
         }
       }
     ],
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step20?version=1",
+    "url": "https://example.com/browser-challenge/step20?version=1",
     "title": "Browser Navigation Challenge - The Ultimate Test",
     "scroll": {
       "y": 0,
@@ -279,7 +279,7 @@
     "durationMs": 742
   },
   "metadata": {
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step20?version=1",
+    "url": "https://example.com/browser-challenge/step20?version=1",
     "query": "Objective: Solve the puzzle to go to step 21\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User needs to interact with the page (solve a puzzle) to progress, which requires tool actions rather than just reading content.)\n- Executor start (executor): Executor started objective: Solve the puzzle to go to step 21\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied.",
     "difficulty": "medium",
     "tags": [

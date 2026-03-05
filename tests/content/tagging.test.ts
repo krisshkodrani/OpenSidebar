@@ -735,5 +735,22 @@ describe("task-relevance element scoring (WI-3)", () => {
     expect(tagged[0].text).toBe("First");
     expect(tagged[1].text).toBe("Second");
   });
+
+  test("computes pageY (rect.y + scrollY) for each element", () => {
+    // Mock window.scrollY to simulate a scrolled page
+    Object.defineProperty(window, "scrollY", { value: 1000, configurable: true });
+
+    const btn = document.createElement("button");
+    btn.textContent = "Below";
+    document.body.appendChild(btn);
+
+    const tagged = tagElements();
+    expect(tagged.length).toBe(1);
+    // getBoundingClientRect returns y=0 in happy-dom, so pageY = 0 + 1000
+    expect(tagged[0].rect.pageY).toBe(1000);
+
+    // Reset scrollY
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+  });
 });
 

@@ -6,7 +6,7 @@
  *   - agent:  Clear single objective, skip planner
  *   - plan:   Multi-step / ambiguous, use full planner pipeline
  *
- * Provider failover: Groq → OpenRouter (executor model providers).
+ * Uses OpenRouter as the sole provider.
  * Follows the perception.ts pattern: standalone fetch, no LLMClient dependency.
  */
 
@@ -31,10 +31,8 @@ interface RouterProvider {
   providerId: string;
 }
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-const MODEL_GROQ = "openai/gpt-oss-120b";
 const MODEL_OPENROUTER = "openai/gpt-oss-120b";
 
 const ROUTER_TIMEOUT_MS = 8_000;
@@ -50,17 +48,6 @@ const VALID_ROUTES = new Set<Route>(["direct", "agent", "plan"]);
 /** Build ordered list of router providers from available API keys. */
 function buildProviders(settings: UserSettings): RouterProvider[] {
   const providers: RouterProvider[] = [];
-
-  const groqKey = settings.groqApiKey;
-  if (groqKey) {
-    providers.push({
-      baseUrl: GROQ_API_URL,
-      apiKey: groqKey,
-      headers: {},
-      model: MODEL_GROQ,
-      providerId: "groq",
-    });
-  }
 
   const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
