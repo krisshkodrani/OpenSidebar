@@ -3,7 +3,7 @@
  *
  * Produces structured reports with:
  * - Summary table (pass rate, avg scores per metric)
- * - Provider comparison (side-by-side Groq vs GPT-4o-mini)
+ * - Provider comparison
  * - Per-dimension breakdown
  * - Failed case details with judge reasoning
  * - Perception prompt recommendations from judge suggestions

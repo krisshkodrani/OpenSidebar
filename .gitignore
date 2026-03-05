@@ -27,11 +27,13 @@ logs/archive/
 
 # Traces (keep code, ignore data files)
 traces/*.jsonl
+traces/runs/*.jsonl
 traces/archive/
 
 # Eval data (generated, not checked in)
-evals/cases/*.jsonl
-evals/results/*.jsonl
+evals/cases/
+evals/results/
+evals/reports/
 
 # Test coverage
 coverage/
@@ -55,3 +57,11 @@ analyze-log.js
 /books/*
 !/books/notes/
 !/books/notes/**
+
+# Secret files (defense in depth)
+*.pem
+*.key
+credentials.json
+
+# Test results
+test-results/

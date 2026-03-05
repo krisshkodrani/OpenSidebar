@@ -49,9 +49,17 @@ const INJECTION_PATTERNS = [
   /you are now/gi,
   /disregard (all |previous )?/gi,
   /forget everything/gi,
+  // OpenAI ChatML delimiters
   /<\|im_(start|end)\|>/g,
   /<\|endoftext\|>/g,
+  /<\|(system|user|assistant)\|>/g,
+  // Llama / Mistral delimiters
   /\[(\/?)INST\]/g,
+  /<<\/?SYS>>/g,
+  // BOS/EOS tokens
+  /<\/?s>/g,
+  // Alpaca-style markers
+  /^### (?:Instruction|Response|Input)\b/gim,
 ];
 
 /**
@@ -62,8 +70,8 @@ const INJECTION_PATTERNS = [
  */
 export function sanitizeForPrompt(text: string): string {
   let s = text;
-  // Neutralize role impersonation lines
-  s = s.replace(/^(system|user|assistant)\s*:/gim, "[PAGE_TEXT: $1]:");
+  // Neutralize role impersonation lines (OpenAI + Claude-style)
+  s = s.replace(/^(system|user|assistant|human)\s*:/gim, "[PAGE_TEXT: $1]:");
   // Neutralize injection patterns (wrap, don't delete)
   for (const pat of INJECTION_PATTERNS) {
     // Reset lastIndex for global regexes
@@ -111,15 +119,56 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
       return { original: tc, blocked: false };
     }
 
-    // execute_js: block navigation via window.location / document.location
+    // execute_js: block dangerous APIs
     if (name === "execute_js") {
       const code = (args.code as string) || (args.expression as string) || "";
-      if (/(?:window|document)\.location/i.test(code)) {
+      // Block navigation via location assignment (any accessor variant)
+      if (
+        /(?:window|document|globalThis|self|top|parent|frames\s*\[.*?\])\.location/i.test(code) ||
+        /\blocation\s*\.\s*(?:href|assign|replace|reload)/i.test(code) ||
+        /\blocation\s*=/i.test(code)
+      ) {
         return {
           original: tc,
           blocked: true,
           reason:
-            "Navigation via window.location is blocked. Use the navigate tool instead.",
+            "Navigation via location is blocked. Use the navigate tool instead.",
+        };
+      }
+      // Block window.open (can open arbitrary URLs including javascript:)
+      if (/\bwindow\.open\s*\(/i.test(code) || /\bopen\s*\(\s*['"`]/i.test(code)) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "window.open() is blocked. Use the create_tab tool instead.",
+        };
+      }
+      // Block document.write/writeln (arbitrary HTML/JS injection)
+      if (/\bdocument\.write(?:ln)?\s*\(/i.test(code)) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "document.write() is blocked due to XSS risk.",
+        };
+      }
+      // Block eval and Function constructor (code obfuscation)
+      if (/\beval\s*\(/i.test(code) || /\bFunction\s*\(/i.test(code)) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "eval() and Function() are blocked due to code injection risk.",
+        };
+      }
+      // Block dynamic script injection
+      if (/createElement\s*\(\s*['"`]script/i.test(code)) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "Dynamic script injection is blocked due to XSS risk.",
         };
       }
     }

@@ -33,7 +33,7 @@ describe("Keepalive Module", () => {
             await startKeepalive();
 
             expect(chrome.alarms.create).toHaveBeenCalledWith(
-                "qsidebar:keepalive",
+                "opensidebar:keepalive",
                 expect.objectContaining({ periodInMinutes: expect.any(Number) })
             );
         });
@@ -45,7 +45,15 @@ describe("Keepalive Module", () => {
             await startKeepalive();
             await stopKeepalive();
 
-            expect(chrome.alarms.clear).toHaveBeenCalledWith("qsidebar:keepalive");
+            expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
+        });
+
+        test("clears alarm even when called without prior startKeepalive (SW restart scenario)", async () => {
+            // Simulate SW restart: isActive is false, but alarm exists in Chrome registry.
+            // stopKeepalive should still attempt to clear the alarm.
+            await stopKeepalive();
+
+            expect(chrome.alarms.clear).toHaveBeenCalledWith("opensidebar:keepalive");
         });
     });
 

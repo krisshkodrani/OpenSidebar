@@ -84,6 +84,36 @@ describe("checkVerificationGate", () => {
     expect(result.evidence).toContain("code accepted");
   });
 
+  test("matches URL-based trigger when currentUrl is provided", () => {
+    const gate: VerificationGate = {
+      trigger: "URL contains /step6",
+      action: "call_done",
+    };
+    // Tool results don't mention /step6, but the current URL does
+    const result = checkVerificationGate(
+      ["Clicked submit button"],
+      gate,
+      "https://example.com/step6?version=2",
+    );
+    expect(result.matched).toBe(true);
+    expect(result.evidence).toContain("/step6");
+  });
+
+  test("URL-based regex pattern matches against currentUrl", () => {
+    const gate: VerificationGate = {
+      trigger: "navigate to step 6",
+      action: "call_done",
+      pattern: "/step6",
+    };
+    const result = checkVerificationGate(
+      ["Form submitted"],
+      gate,
+      "https://example.com/step6?version=2",
+    );
+    expect(result.matched).toBe(true);
+    expect(result.evidence).toContain("/step6");
+  });
+
   test("filters out short trigger phrases (<=3 chars)", () => {
     const gate: VerificationGate = {
       trigger: "ok, yes, successfully saved",

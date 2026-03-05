@@ -108,6 +108,16 @@ export function initializeBridge(
           ...message.payload,
           requestedAt: Date.now(),
         });
+        // Inject a synthetic plan card into the chat timeline
+        state.addMessage({
+          id: `plan-${message.payload.confirmationId}`,
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: false,
+          isPlanCard: true,
+        });
         break;
 
       case "CLARIFICATION_REQUEST":
@@ -180,24 +190,12 @@ export function initializeBridge(
         break;
 
       case "TASK_PROGRESS":
-        // Auto-open PlanBoard on first plan arrival
-        if (!state.taskProgress && message.payload && !state.showPlanBoard) {
-          state.togglePlanBoard();
-        }
         state.setTaskProgress(message.payload);
         break;
 
-      case "TASK_COMPLETION": {
+      case "TASK_COMPLETION":
         state.setTaskCompletion(message.payload);
-        // Auto-close PlanSheet for trivial tasks (single subtask or 0-1 turns)
-        const results = message.payload.subtaskResults ?? [];
-        const isTrivial =
-          results.length <= 1 || (message.payload.totalTurnsUsed ?? 0) <= 1;
-        if (isTrivial && state.showPlanBoard) {
-          state.togglePlanBoard();
-        }
         break;
-      }
 
       case "SESSION_METRICS":
         state.setSessionMetrics(message.payload);
@@ -324,5 +322,60 @@ export function initializeBridge(
   };
 
   chrome.runtime.onMessage.addListener(listener);
-  return () => chrome.runtime.onMessage.removeListener(listener);
+
+  // Long-lived port to detect SW crashes. When the SW terminates, the port
+  // disconnects and we reset stuck agent state so the user isn't locked out.
+  let port: chrome.runtime.Port | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectDelay = 1000;
+  const MAX_RECONNECT_DELAY = 30_000;
+  let tornDown = false;
+
+  function connectPort() {
+    if (tornDown) return;
+    try {
+      port = chrome.runtime.connect({ name: "sidepanel-keepalive" });
+      reconnectDelay = 1000; // reset backoff on successful connect
+      port.onDisconnect.addListener(() => {
+        port = null;
+        if (tornDown) return;
+        const state = store.getState();
+        if (state.isAgentRunning) {
+          logger.warn("ui", "SW disconnected while agent running — resetting state");
+          state.setAgentRunning(false);
+          state.updateStatus(AgentStatus.IDLE, "Agent disconnected");
+          state.finalizeStream();
+        }
+        // Clear any stuck overlays
+        state.clearPendingApproval();
+        state.clearPendingEscalation();
+        state.clearPendingClarification();
+        state.clearPendingPlanConfirmation();
+        // Reconnect with exponential backoff (SW may restart)
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          connectPort();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+      });
+    } catch {
+      // Extension context invalidated — side panel is closing
+      return;
+    }
+  }
+
+  connectPort();
+
+  return () => {
+    tornDown = true;
+    chrome.runtime.onMessage.removeListener(listener);
+    if (reconnectTimer != null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (port) {
+      try { port.disconnect(); } catch { /* context invalidated */ }
+      port = null;
+    }
+  };
 }

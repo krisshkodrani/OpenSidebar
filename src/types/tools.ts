@@ -58,7 +58,9 @@ export interface TypeTextArgs {
 /** Arguments for scroll_page */
 export interface ScrollPageArgs {
   /** Direction to scroll */
-  direction: ScrollDirection;
+  direction?: ScrollDirection;
+  /** Absolute Y position from @y hints — scrolls directly to this page offset */
+  y?: number;
   /** Number of pixels to scroll (default: 500) */
   amount?: number;
   /** Optional tag ID of a scrollable container. Omit to scroll the window. */

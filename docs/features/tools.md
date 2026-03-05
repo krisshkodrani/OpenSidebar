@@ -4,15 +4,15 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **57 tools** organized into categories:
+OpenSidebar provides **35 tools** organized into categories:
 
 - **DOM Interaction** (17 tools)
 - **Navigation** (8 tools)
-- **Memory** (2 tools)
 - **Browser Management** (12 tools)
 - **Page Analysis** (4 tools)
-- **React Toolkit** (4 tools)
-- **Utilities** (4 tools)
+- **Control Flow** (1 tool)
+- **Audio/Video** (1 tool)
+- **Utilities** (1 tool)
 
 ---
 
@@ -362,33 +362,6 @@ Open a new browser window.
 
 ---
 
-## Memory Tools
-
-### memory_add
-
-Save info to long-term memory (Second Brain).
-
-| Parameter | Type   | Required | Description      |
-| --------- | ------ | -------- | ---------------- |
-| content   | string | Yes      | Text to remember |
-| category  | string | No       | Category tag     |
-
-**Note:** Memories are stored locally using SQLite FTS5 + Voy vector search with Reciprocal Rank Fusion (RRF) for hybrid retrieval.
-
----
-
-### memory_search
-
-Search long-term memory.
-
-| Parameter | Type   | Required | Description  |
-| --------- | ------ | -------- | ------------ |
-| query     | string | Yes      | Search query |
-
-**Returns:** Ranked results with scores from the hybrid search.
-
----
-
 ## Browser Management Tools
 
 ### wait
@@ -597,69 +570,6 @@ Extract text from a PDF URL.
 
 ---
 
-## React Toolkit
-
-> **Note:** These tools are gated behind React detection — they only become available when React is detected on the page.
-
-### inspect_react
-
-Read React component name, props, and state for a tagged element.
-
-| Parameter | Type    | Required | Description                                                 |
-| --------- | ------- | -------- | ----------------------------------------------------------- |
-| id        | integer | Yes      | Tag ID of the element to inspect                            |
-| depth     | integer | No       | How many parent components to traverse (default: 3, max: 8) |
-
-**Notes:**
-
-- Use when data isn't visible in the DOM
-- Hidden values, form state, loading flags
-- Values stored in useState/useReducer
-
----
-
-### react_set_input
-
-Set a React controlled input value.
-
-| Parameter | Type    | Required | Description                                      |
-| --------- | ------- | -------- | ------------------------------------------------ |
-| id        | integer | Yes      | Tag ID of the input element                      |
-| value     | string  | Yes      | The value to set                                 |
-| submit    | boolean | No       | Press Enter after setting value (default: false) |
-
-**Notes:**
-
-- Use when `type_text` doesn't update the field (React controlled components ignore direct DOM writes)
-- Falls back to standard input events if React isn't managing this element
-
----
-
-### inspect_react_tree
-
-Show the React component tree structure with state summaries.
-
-| Parameter | Type    | Required | Description                                          |
-| --------- | ------- | -------- | ---------------------------------------------------- |
-| depth     | integer | No       | Max tree depth to traverse (default: 5, max: 10)     |
-| filter    | string  | No       | Only show components whose name contains this string |
-
-**Note:** Use to understand page organization when the DOM structure is unclear.
-
----
-
-### wait_for_react
-
-Wait for React to finish rendering (pending state updates, Suspense, transitions).
-
-| Parameter | Type    | Required | Description                                     |
-| --------- | ------- | -------- | ----------------------------------------------- |
-| timeout   | integer | No       | Max wait time in ms (default: 3000, max: 10000) |
-
-**Note:** Use after an action that triggers async state changes instead of a blind wait.
-
----
-
 ## Control Flow Tools
 
 ### escalate
@@ -670,7 +580,7 @@ Switch to a smarter, slower model for complex reasoning.
 | --------- | ------ | -------- | --------------------------------------- |
 | reason    | string | Yes      | Why the current model can't handle this |
 
-**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches to GLM-4.7 (native reasoning) model.
+**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches to the planner model (DeepSeek V3.2 with native reasoning).
 
 ---
 
@@ -688,7 +598,6 @@ Transcribe speech from an `<audio>` or `<video>` element.
 
 - Use when a challenge hides information in audio (spoken codes, instructions, passwords)
 - Returns the full text transcript
-- Requires a Groq API key in settings (uses Whisper large-v3-turbo)
 
 ---
 
@@ -711,10 +620,8 @@ Show a desktop notification to the user.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **DOM Interaction**    | click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element, read_element, right_click, set_checkbox, click_coordinates, upload_file, execute_js |
 | **Navigation**         | navigate, create_tab, close_tab, switch_tab, go_back, go_forward, list_tabs, create_window                                                                                                                                             |
-| **Memory**             | memory_add, memory_search                                                                                                                                                                                                              |
 | **Browser Management** | wait, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                                            |
 | **Page Analysis**      | inspect_hidden, xray_page, fast_forward, read_pdf                                                                                                                                                                                      |
-| **React Toolkit**      | inspect_react, react_set_input, inspect_react_tree, wait_for_react                                                                                                                                                                     |
 | **Control Flow**       | escalate                                                                                                                                                                                                                               |
 | **Audio/Video**        | transcribe_audio                                                                                                                                                                                                                       |
 | **Utilities**          | send_notification                                                                                                                                                                                                                      |
@@ -727,7 +634,7 @@ Tools are classified by risk level:
 
 | Level      | Description                     | Tools                                                                                        |
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| **LOW**    | Read-only operations            | read_page, scroll_page, memory_search, list_tabs, get_cookies, search_history, get_bookmarks |
+| **LOW**    | Read-only operations            | read_page, scroll_page, list_tabs, get_cookies, search_history, get_bookmarks |
 | **MEDIUM** | Mutates state but reversible    | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard      |
 | **HIGH**   | Navigation, tabs, external data | navigate, close_tab, create_tab, escalate, download_file, send_notification                  |
 
@@ -735,14 +642,12 @@ Tools are classified by risk level:
 
 ## Model Tiers
 
-OpenSidebar uses two LLM tiers with priority-based provider failover:
+OpenSidebar uses two LLM tiers via OpenRouter:
 
-| Model Tier | Model ID                           | Provider                              | Use Case                           |
-| ---------- | ---------------------------------- | ------------------------------------- | ---------------------------------- |
-| **Executor** | `gpt-oss-120b`                     | Cerebras (3000 TPS, highest priority) | Executor, everyday tasks (default) |
-| **Executor** | `openai/gpt-oss-120b`              | Groq (250K TPM)                       | Executor fallback                  |
-| **Executor** | `openai/gpt-oss-120b`              | OpenRouter                            | Executor fallback                  |
-| **Planner**  | `zai-glm-4.7` / `z-ai/glm-4.7`          | Cerebras → OpenRouter                 | Complex reasoning, escalated tasks |
-| **Perception** | Llama 4 Scout / GPT-4o-mini              | Groq → OpenRouter                     | Vision-based page understanding    |
+| Model Tier | Model ID                           | Provider    | Use Case                           |
+| ---------- | ---------------------------------- | ----------- | ---------------------------------- |
+| **Executor** | `openai/gpt-oss-120b`              | OpenRouter  | Executor, everyday tasks (default) |
+| **Planner**  | `deepseek/deepseek-v3.2`          | OpenRouter  | Complex reasoning, escalated tasks |
+| **Perception** | `google/gemini-2.5-flash`        | OpenRouter  | Vision-based page understanding    |
 
-The `escalate` tool switches to GLM-4.7 (native reasoning) when needed.
+The `escalate` tool switches to the planner model (DeepSeek V3.2 with native reasoning) when needed.

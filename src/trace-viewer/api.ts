@@ -1,3 +1,4 @@
+import type { TraceSession, TraceEntry } from "../types/traces";
 import type {
   TraceFilters,
   DayBucket,
@@ -13,7 +14,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function fetchTraceSessions(
   filters: TraceFilters,
-): Promise<Record<string, unknown>[]> {
+): Promise<TraceSession[]> {
   const params = new URLSearchParams();
   if (filters.outcome && filters.outcome !== "all")
     params.set("outcome", filters.outcome);
@@ -41,7 +42,7 @@ export async function fetchTraceModels(): Promise<ModelBucket[]> {
 
 export async function fetchTraceEntries(
   sessionId: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<TraceEntry[]> {
   return fetchJson(`/api/traces/${encodeURIComponent(sessionId)}`);
 }
 

@@ -1,22 +1,18 @@
 import type { UserSettings } from "../../types";
 import { logger } from "../../utils";
+import { loadSettings } from "../../utils/settings-storage";
 import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
-  groqApiKey: "",
-  maxTurns: 500,
-  contextWindowSize: 128000,
-  workspaceEnabled: true,
+  maxTurns: 100,
   theme: "system",
   showSessionMetrics: true,
   showMessageDetailsByDefault: false,
   siteAccessMode: "allow_all",
   siteAccessBlocklist: [],
-  disableNavigation: false,
-  bypassApprovals: false,
-  orchestratorMaxTotalTokens: 1_000_000,
-  demosAutoInject: true,
+  requireApprovals: true,
+  allowNavigation: true,
   requirePlanConfirmation: true,
 };
 
@@ -30,10 +26,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({
 
   loadSettingsFromStorage: async () => {
     try {
-      const result = await chrome.storage.sync.get("userSettings");
-      if (result.userSettings) {
+      const loaded = await loadSettings();
+      if (loaded) {
         set((state) => {
-          state.settings = { ...DEFAULT_SETTINGS, ...result.userSettings };
+          state.settings = { ...DEFAULT_SETTINGS, ...loaded };
         });
         logger.debug("ui", "Settings loaded from storage");
       }

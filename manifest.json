@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "OpenSidebar",
   "version": "0.5.0",
-  "description": "AI-powered browser agent workspace",
+  "description": "Open-source AI browser agent. Navigate, click, type, and automate web tasks from a side panel. BYOK via OpenRouter.",
   "permissions": [
     "sidePanel",
     "storage",

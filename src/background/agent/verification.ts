@@ -6,22 +6,47 @@ export interface GateCheckResult {
 }
 
 /**
- * Check whether tool results satisfy a verification gate.
- * Tries regex `pattern` first, falls back to substring match on trigger phrases.
+ * Check whether tool results (and optionally current page state) satisfy a
+ * verification gate. Tries regex `pattern` first, falls back to substring
+ * match on trigger phrases against the combined corpus of tool results + URL.
+ *
+ * @param toolResults - Array of tool result strings from this turn
+ * @param gate - The verification gate to check
+ * @param currentUrl - Optional current page URL for URL-based predicates
  */
 export function checkVerificationGate(
   toolResults: string[],
   gate?: VerificationGate | null,
+  currentUrl?: string,
 ): GateCheckResult {
   if (!gate) return { matched: false, evidence: "" };
 
   const corpus = toolResults.join("\n");
 
-  // Try regex pattern first
+  // URL-based trigger check: extract "URL contains X" patterns from trigger
+  if (currentUrl) {
+    const urlContainsMatch = gate.trigger.match(
+      /url\s+contains?\s+(\S+)/i,
+    );
+    if (urlContainsMatch) {
+      const urlFragment = urlContainsMatch[1].toLowerCase();
+      if (currentUrl.toLowerCase().includes(urlFragment)) {
+        return {
+          matched: true,
+          evidence: `URL: ${currentUrl.slice(0, 120)}`,
+        };
+      }
+    }
+  }
+
+  // Try regex pattern first (check against both tool results and URL)
+  const corpusWithUrl = currentUrl
+    ? corpus + "\nURL: " + currentUrl
+    : corpus;
   if (gate.pattern) {
     try {
       const re = new RegExp(gate.pattern, "i");
-      const match = re.exec(corpus);
+      const match = re.exec(corpusWithUrl);
       if (match) {
         return { matched: true, evidence: match[0].slice(0, 120) };
       }

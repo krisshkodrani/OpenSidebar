@@ -687,4 +687,29 @@ describe("Content Actions", () => {
             expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
         });
     });
+
+    describe("executeScroll with y param", () => {
+        test("scroll_page with y scrolls window to absolute position", async () => {
+            const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+            const result = await executeAction(ToolName.SCROLL_PAGE, { y: 3000 });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("y=3000");
+            expect(scrollToSpy).toHaveBeenCalledWith({ top: 3000, behavior: "instant" });
+            scrollToSpy.mockRestore();
+        });
+
+        test("scroll_page with neither y nor direction returns error", async () => {
+            const result = await executeAction(ToolName.SCROLL_PAGE, {});
+            expect(result.success).toBe(false);
+            expect(result.result).toContain("requires either");
+        });
+
+        test("scroll_page with direction still works (backward compat)", async () => {
+            const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+            const result = await executeAction(ToolName.SCROLL_PAGE, { direction: "top" });
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("Scrolled to top");
+            scrollToSpy.mockRestore();
+        });
+    });
 });

@@ -1,4 +1,4 @@
-import { LLMClient } from "../llm";
+import { LLMClient, LLMClientOptions } from "../llm";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
@@ -250,8 +250,8 @@ export function deriveVerifierFallbackDecision(
 export class OrchestratorVerifier {
   private llm: LLMClient;
 
-  constructor(openRouterApiKey: string) {
-    this.llm = new LLMClient(openRouterApiKey);
+  constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
+    this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     this.llm.switchToPlanner();
   }
 

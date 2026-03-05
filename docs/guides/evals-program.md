@@ -107,16 +107,15 @@ A/B winner logic prioritizes:
 
 ## Run-Trace Signals To Watch
 
-Use run traces (`traces/runs/<run-id>.jsonl`) to track behavior changes, especially for skill replay:
+Use run traces (`traces/runs/<run-id>.jsonl`) to track behavior changes:
 
 - `task_completed`
-- `skill_replay_attempted`
-- `skill_replay_selected`
-- `skill_replay_miss`
-- `skill_replay_dry_run_match`
-- `skill_replay_outcome`
+- `evidence_attached`
+- `cross_role_reflexion`
+- `plan_reviewed`
+- `advocate_challenge`
 
-These are summarized in critique output so prompt changes can be tied to replay hit-rate, replay success/failure, and deltas in duration/tokens.
+These are summarized in critique output so prompt changes can be tied to deltas in duration/tokens.
 
 ## Operating Cadence
 

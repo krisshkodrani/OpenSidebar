@@ -17,6 +17,7 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
+import { loadSettings } from "../../utils/settings-storage";
 import { listPromptDescriptors } from "../../prompts";
 import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
@@ -37,6 +38,7 @@ import {
 } from "./verifier";
 import {
   buildAssumptionDriftSignal,
+  buildCompletedStepsSummary,
   buildExecutorInstruction,
   createRerouteNode,
   formatPlannerReflexionContext,
@@ -91,6 +93,7 @@ export * from "./sanitizers";
 export * from "./utils";
 
 const DEFAULT_MAX_WORKERS = 3;
+const MAX_HORIZON_EXPANSIONS = 30;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
 const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
@@ -141,18 +144,17 @@ export class Orchestrator {
     this.deps = {
       createPlanner:
         deps.createPlanner ??
-        ((openRouterApiKey: string) =>
-          new OrchestratorPlanner(openRouterApiKey)),
+        ((openRouterApiKey, modelOverrides) =>
+          new OrchestratorPlanner(openRouterApiKey, modelOverrides)),
       createVerifier:
         deps.createVerifier ??
-        ((openRouterApiKey: string) =>
-          new OrchestratorVerifier(openRouterApiKey)),
+        ((openRouterApiKey, modelOverrides) =>
+          new OrchestratorVerifier(openRouterApiKey, modelOverrides)),
       createAgentLoop:
         deps.createAgentLoop ??
         ((input: CreateAgentLoopInput) =>
           new AgentLoop(
             input.openRouterApiKey,
-            input.groqApiKey,
             input.callbacks,
             input.options,
           )),
@@ -920,9 +922,7 @@ export class Orchestrator {
     task: OrchestratorTask,
     resumeTabId: number,
   ): Promise<OrchestratorStartInput | null> {
-    const stored = await chrome.storage.sync.get("userSettings");
-    const settings = (stored.userSettings ?? {}) as UserSettings;
-
+    const settings = (await loadSettings()) ?? ({} as UserSettings);
     const openRouterApiKey = settings.openRouterApiKey;
     if (!openRouterApiKey) {
       logger.warn(
@@ -941,7 +941,6 @@ export class Orchestrator {
       workspaceId: task.workspaceId,
       settings,
       openRouterApiKey,
-      groqApiKey: settings.groqApiKey || undefined,
     };
   }
 
@@ -1236,17 +1235,18 @@ export class Orchestrator {
         1,
         Math.min(
           8,
-          input.settings.orchestratorMaxWorkers || DEFAULT_MAX_WORKERS,
+          DEFAULT_MAX_WORKERS,
         ),
       ),
       maxReplans: DEFAULT_MAX_REPLANS,
       replansUsed: 0,
+      horizonExpansions: 0,
       currentIndex: 0,
       sessionMetrics: emptySessionMetrics(),
       budget: {
         maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
         maxTotalTokens: clampInteger(
-          input.settings.orchestratorMaxTotalTokens ?? DEFAULT_MAX_TOTAL_TOKENS,
+          DEFAULT_MAX_TOTAL_TOKENS,
           1,
         ),
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
@@ -1364,8 +1364,13 @@ export class Orchestrator {
           modelTier: plannerContract.modelTier,
           allowedToolCount: plannerContract.allowedTools.length,
         });
+        const modelOverrides = {
+          executorModel: input.settings.executorModel,
+          plannerModel: input.settings.plannerModel,
+        };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
+          modelOverrides,
         );
         const tab = await chrome.tabs.get(input.tabId);
         const buildResult = await this.runInLane(task, "planner", async () =>
@@ -1525,7 +1530,10 @@ export class Orchestrator {
         const revisedQuery = `${input.query}\n\nUser guidance: ${confirmation.feedback.trim()}`;
         try {
           const tab = await chrome.tabs.get(input.tabId);
-          const replanPlanner = this.deps.createPlanner(input.openRouterApiKey);
+          const replanPlanner = this.deps.createPlanner(input.openRouterApiKey, {
+            executorModel: input.settings.executorModel,
+            plannerModel: input.settings.plannerModel,
+          });
           const replanResult = await replanPlanner.buildNodes(
             revisedQuery,
             tab.title || "Untitled",
@@ -1577,11 +1585,17 @@ export class Orchestrator {
       modelTier: verifierContract.modelTier,
       allowedToolCount: verifierContract.allowedTools.length,
     });
+    const loopModelOverrides = {
+      executorModel: input.settings.executorModel,
+      plannerModel: input.settings.plannerModel,
+    };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
+      loopModelOverrides,
     );
     const replanner = this.deps.createPlanner(
       input.openRouterApiKey,
+      loopModelOverrides,
     );
     const nodeTabMap = new Map<string, number>();
     let initialTabUrl = "about:blank";
@@ -1715,7 +1729,6 @@ export class Orchestrator {
 
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
-        groqApiKey: input.groqApiKey,
         callbacks: {
           onStatusUpdate: (_status, _detail) => {
             // Task-level status is emitted by orchestrator.
@@ -1763,7 +1776,7 @@ export class Orchestrator {
           },
         },
         options: {
-          maxContextTokens: input.settings.contextWindowSize || 32000,
+          maxContextTokens: 128000,
           maxTurns: input.settings.maxTurns || 30,
           showSessionMetrics: false,
           preferredModelTier: executorContract.modelTier,
@@ -1812,7 +1825,9 @@ export class Orchestrator {
               }
             : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
-          bypassApprovals: input.settings.bypassApprovals ?? false,
+          bypassApprovals: !(input.settings.requireApprovals ?? true),
+          executorModel: input.settings.executorModel,
+          plannerModel: input.settings.plannerModel,
         },
       });
 
@@ -2618,7 +2633,16 @@ export class Orchestrator {
       }
 
       const pendingNodes = task.nodes.filter((n) => n.status === "pending");
-      if (pendingNodes.length === 0) break;
+      if (pendingNodes.length === 0) {
+        const expanded = await this.tryHorizonExpansion(
+          task,
+          input,
+          replanner,
+          getBudgetExhaustionReason,
+        );
+        if (expanded) continue;
+        break;
+      }
 
       const nodesById = new Map<string, TaskNode>(
         task.nodes.map((n) => [n.id, n]),
@@ -2978,6 +3002,96 @@ export class Orchestrator {
     }
 
     return "";
+  }
+
+  private async tryHorizonExpansion(
+    task: OrchestratorTask,
+    input: OrchestratorStartInput,
+    replanner: OrchestratorPlanner,
+    getBudgetExhaustionReason: () => string | null,
+  ): Promise<boolean> {
+    if (task.planClassification?.isSingleNode) return false;
+    if (task.horizonExpansions >= MAX_HORIZON_EXPANSIONS) return false;
+
+    const completedNodes = task.nodes.filter((n) => n.status === "completed");
+    if (completedNodes.length === 0) return false;
+
+    // Check budget near exhaustion (>90%)
+    const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
+    const timeRatio = elapsedMs / task.budget.maxSessionTimeMs;
+    const tokenRatio =
+      task.sessionMetrics.totalTokens / task.budget.maxTotalTokens;
+    const costRatio =
+      task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd;
+    if (timeRatio >= 0.9 || tokenRatio >= 0.9 || costRatio >= 0.9) return false;
+
+    if (getBudgetExhaustionReason()) return false;
+
+    let pageTitle = "Untitled";
+    let pageUrl = "";
+    try {
+      const tab = await chrome.tabs.get(task.rootTabId);
+      pageTitle = tab.title || "Untitled";
+      pageUrl = tab.url || "";
+    } catch {
+      // Tab may have been closed
+      return false;
+    }
+
+    const summary = buildCompletedStepsSummary(task.nodes);
+
+    let newNodes: TaskNode[] | null = null;
+    try {
+      newNodes = await this.runInLane(task, "planner", async () =>
+        replanner.planNextHorizon(
+          task.query,
+          summary,
+          pageTitle,
+          pageUrl,
+        ),
+      );
+    } catch (error: any) {
+      logger.warn("orchestrator", "Horizon expansion planner call failed", {
+        taskId: task.id,
+        error: error?.message,
+      });
+      return false;
+    }
+
+    if (!newNodes || newNodes.length === 0) return false;
+
+    // Set first new node's dependency on the last completed node
+    const lastCompletedId = completedNodes[completedNodes.length - 1].id;
+    if (newNodes[0].dependencies.length === 0) {
+      newNodes[0].dependencies = [lastCompletedId];
+    }
+
+    task.nodes.push(...newNodes);
+    task.horizonExpansions++;
+    task.currentIndex = currentIndex(task.nodes);
+    this.sendProgress(task);
+    await this.persistTaskCheckpoint(task);
+
+    this.emitTraceEvent(
+      task,
+      "horizon_expansion",
+      {
+        taskId: task.id,
+        expansionNumber: task.horizonExpansions,
+        newNodeCount: newNodes.length,
+        totalNodes: task.nodes.length,
+      },
+      "planner",
+    );
+
+    logger.info("orchestrator", "Horizon expansion added new nodes", {
+      taskId: task.id,
+      expansionNumber: task.horizonExpansions,
+      newNodeCount: newNodes.length,
+      totalNodes: task.nodes.length,
+    });
+
+    return true;
   }
 
   private sendProgress(task: OrchestratorTask): void {

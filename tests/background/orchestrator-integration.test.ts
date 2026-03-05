@@ -45,15 +45,11 @@ let autoEscalationDecision:
   | null = null;
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-openrouter",
-  groqApiKey: "",
   maxTurns: 10,
-  contextWindowSize: 16000,
-  workspaceEnabled: true,
   theme: "system",
   showSessionMetrics: false,
-  disableNavigation: false,
-  bypassApprovals: true,
-  orchestratorMaxWorkers: 3,
+  requireApprovals: false,
+  allowNavigation: true,
   requirePlanConfirmation: false,
 };
 
@@ -165,10 +161,10 @@ describe("Orchestrator integration join tests", () => {
     (globalThis as any).__checkpointStore = checkpointStore;
 
     (chrome.storage.sync as any).get = vi.fn(async (_key: string) => ({
-      userSettings: {
-        ...baseSettings,
-        openRouterApiKey: "resume-openrouter-key",
-      },
+      userSettings: baseSettings,
+    }));
+    (chrome.storage.session as any).get = vi.fn(async (_key: string) => ({
+      openRouterApiKey: "resume-openrouter-key",
     }));
 
     (chrome.tabs as any).get = vi.fn(async (tabId: number) => ({

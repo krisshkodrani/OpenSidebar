@@ -3,7 +3,7 @@ import { estimateCostUsd, findModelPricing } from "../../src/background/llm/pric
 
 describe("pricing estimator", () => {
   test("returns null when pricing is unknown", () => {
-    const cost = estimateCostUsd("groq", "unknown-model-xyz", {
+    const cost = estimateCostUsd("openrouter", "unknown-model-xyz", {
       prompt_tokens: 1000,
       completion_tokens: 500,
       total_tokens: 1500,
@@ -11,16 +11,15 @@ describe("pricing estimator", () => {
     expect(cost).toBeNull();
   });
 
-  test("estimates groq cached + uncached prompt cost", () => {
-    const cost = estimateCostUsd("groq", "openai/gpt-oss-120b", {
+  test("estimates openrouter prompt + output cost", () => {
+    const cost = estimateCostUsd("openrouter", "openai/gpt-oss-120b", {
       prompt_tokens: 100_000,
       completion_tokens: 20_000,
       total_tokens: 120_000,
-      cached_tokens: 40_000,
     });
     expect(cost).not.toBeNull();
-    // prompt (60k * 0.15/M) + cached (40k * 0.075/M) + output (20k * 0.60/M)
-    expect(cost!).toBeCloseTo(0.024, 8);
+    // prompt (100k * 0.039/M) + output (20k * 0.19/M)
+    expect(cost!).toBeCloseTo(0.0077, 4);
   });
 
   test("finds known openrouter pricing", () => {
@@ -30,4 +29,3 @@ describe("pricing estimator", () => {
     expect(pricing?.outputUsdPerMillion).toBe(0.19);
   });
 });
-

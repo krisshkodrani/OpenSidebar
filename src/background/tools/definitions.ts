@@ -9,7 +9,7 @@ export const CLICK_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLICK_ELEMENT,
     description:
-      "Click an element. Auto-scrolls to it first. Use count for repeated clicks (e.g. 'click 3 times').",
+      "Click an element. Auto-scrolls to it first. Use count for repeated clicks (e.g. 'click 3 times'). Not for canvas/game elements without tags — use click_coordinates.",
     parameters: {
       type: "object",
       properties: {
@@ -33,7 +33,7 @@ export const TYPE_TEXT_DEF: ToolDefinition = {
   function: {
     name: ToolName.TYPE_TEXT,
     description:
-      "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button.",
+      "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button. Not for keyboard shortcuts or hotkeys — use press_key.",
     parameters: {
       type: "object",
       properties: {
@@ -57,21 +57,25 @@ export const SCROLL_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.SCROLL_PAGE,
     description:
-      "Scroll the page or a container. If you know what text you're looking for, use find_element instead — it scrolls directly to it.",
+      "Scroll the page or a container. Pass 'y' from @y hints to jump directly, or 'direction' for relative scrolling. If you know what text you're looking for, use find_element instead.",
     parameters: {
       type: "object",
       properties: {
+        y: {
+          type: "integer",
+          description: "Absolute Y position (from @y hints). Scrolls directly to this page offset.",
+        },
         direction: {
           type: "string",
           enum: ["up", "down", "top", "bottom"],
-          description: "Direction.",
+          description: "Direction for relative scrolling.",
         },
         id: {
           type: "integer",
           description: "Container tag ID. Omit for window.",
         },
       },
-      required: ["direction"],
+      required: [],
     },
   },
 };
@@ -81,7 +85,7 @@ export const READ_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.READ_PAGE,
     description:
-      "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page.",
+      "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page. Not for searching text (use find_element) or waiting (use wait).",
     parameters: {
       type: "object",
       properties: {},
@@ -231,7 +235,7 @@ export const FIND_ELEMENT_DEF: ToolDefinition = {
   function: {
     name: ToolName.FIND_ELEMENT,
     description:
-      "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists.",
+      "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists. Only finds VISIBLE text. For hidden/CSS-concealed content, use inspect_hidden.",
     parameters: {
       type: "object",
       properties: {
@@ -250,7 +254,7 @@ export const SELECT_OPTION_DEF: ToolDefinition = {
   function: {
     name: ToolName.SELECT_OPTION,
     description:
-      "Select an option from a native HTML <select> dropdown. For custom dropdowns (div-based menus), click the menu to open it then click the option.",
+      "Select an option from a native HTML <select> dropdown ONLY. For div-based custom dropdowns, click the menu to open it then click_element the option.",
     parameters: {
       type: "object",
       properties: {
@@ -325,7 +329,7 @@ export const HIDE_ELEMENT_DEF: ToolDefinition = {
   function: {
     name: ToolName.HIDE_ELEMENT,
     description:
-      "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead.",
+      "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead. To dismiss ALL overlays at once, use dismiss_overlays first.",
     parameters: {
       type: "object",
       properties: {
@@ -344,7 +348,7 @@ export const DISMISS_OVERLAYS_DEF: ToolDefinition = {
   function: {
     name: ToolName.DISMISS_OVERLAYS,
     description:
-      "Dismiss all overlays, popups, modals, cookie banners, and dialogs blocking the viewport. Tries close/dismiss buttons first (triggering proper JS cleanup), then falls back to hiding. Reports any surviving overlay with its tag ID so you can hide_element it.",
+      "Dismiss all overlays, popups, modals, cookie banners, and dialogs blocking the viewport. Tries close/dismiss buttons first (triggering proper JS cleanup), then falls back to hiding. Reports any surviving overlay with its tag ID so you can hide_element it. To target ONE specific overlay by tag ID, use hide_element instead.",
     parameters: {
       type: "object",
       properties: {},
@@ -358,7 +362,7 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to a smarter, slower model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
+      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
     parameters: {
       type: "object",
       properties: {
@@ -658,7 +662,7 @@ export const INSPECT_HIDDEN_DEF: ToolDefinition = {
   function: {
     name: ToolName.INSPECT_HIDDEN,
     description:
-      "Scan the page for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, color camouflage, aria-hidden, etc). Use when you suspect content is intentionally hidden in the page — hidden codes, invisible text, or CSS-concealed elements that don't appear in the normal page snapshot.",
+      "Scan the page for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, color camouflage, aria-hidden, etc). Use when you suspect content is intentionally hidden in the page — hidden codes, invisible text, or CSS-concealed elements that don't appear in the normal page snapshot. Not for visible text — use find_element for that.",
     parameters: {
       type: "object",
       properties: {
@@ -682,7 +686,7 @@ export const XRAY_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.XRAY_PAGE,
     description:
-      "Toggle X-ray mode: forces all hidden elements visible (overrides display:none, opacity:0, visibility:hidden). Call again to disable. Use when you suspect content is hidden by CSS.",
+      "Toggle X-ray mode: forces all hidden elements visible (overrides display:none, opacity:0, visibility:hidden). Call again to disable. Use when you suspect content is hidden by CSS. To just read hidden content without changing visibility, use inspect_hidden.",
     parameters: { type: "object", properties: {}, required: [] },
   },
 };

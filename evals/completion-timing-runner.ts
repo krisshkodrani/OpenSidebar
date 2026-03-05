@@ -28,10 +28,7 @@ import { recoverToolCallsFromText } from "../src/background/agent/tool-recovery"
 import type { TaggedElement } from "../src/types";
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
-
-const FAST_MODEL_OPENROUTER = "openai/gpt-oss-120b";
-const FAST_MODEL_GROQ = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 const TOOL_DEFS_PATH = join("evals", "tool-definitions.json");
 
@@ -112,7 +109,7 @@ function buildMessages(goldenCase: CompletionTimingGoldenCase): any[] {
 
 // ── Replay ───────────────────────────────────────────────────────────
 
-export type CompletionTimingProvider = "groq" | "openrouter";
+export type CompletionTimingProvider = "openrouter";
 
 /**
  * Replay a single completion-timing case. Returns the model's tool calls and text.
@@ -127,9 +124,7 @@ export async function replayCompletionTiming(
   modelVersion?: string;
   durationMs: number;
 }> {
-  const useGroq = provider === "groq" && !!keys.groq;
-  const model = useGroq ? FAST_MODEL_GROQ : FAST_MODEL_OPENROUTER;
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
+  const model = DEFAULT_MODEL;
 
   const messages = buildMessages(goldenCase);
   const tools = loadToolDefinitions();
@@ -147,16 +142,14 @@ export async function replayCompletionTiming(
   }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
+    Authorization: `Bearer ${keys.openrouter}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": "https://opensidebar.dev",
+    "X-Title": "OpenSidebar Completion-Timing Evals",
   };
-  if (!useGroq) {
-    headers["HTTP-Referer"] = "https://opensidebar.dev";
-    headers["X-Title"] = "OpenSidebar Completion-Timing Evals";
-  }
 
   const start = Date.now();
-  const response = await fetch(apiUrl, {
+  const response = await fetch(OPENROUTER_API, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -212,7 +205,7 @@ export async function runCompletionTimingEvals(options: {
   scenarioFilter?: string;
 }): Promise<CompletionTimingEvalResult[]> {
   const { keys, judge = false } = options;
-  const provider = options.provider ?? (keys.groq ? "groq" : "openrouter");
+  const provider = options.provider ?? "openrouter";
 
   let cases = readCompletionTimingGoldenCases();
   if (cases.length === 0) {

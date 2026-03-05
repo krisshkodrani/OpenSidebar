@@ -155,7 +155,7 @@ LLM-as-judge (Claude Sonnet) with 4-dimension rubric (1-5):
 
 Add commands:
 ```bash
-npm run evals grounding-critique [--judge] [--provider groq|openrouter] [--scenario NAME]
+npm run evals grounding-critique [--judge] [--scenario NAME]
 npm run evals grounding-validate
 ```
 

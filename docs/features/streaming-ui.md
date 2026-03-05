@@ -56,14 +56,14 @@ When the AI performs actions, you see:
 [🖱️] Clicking element [12] "Search Button"
 [⌨️] Typing "search query" in element [15]
 [📄] Navigating to https://example.com
-[📚] Adding to memory: "User prefers window seats"
+[✅] Done: "Found 3 results matching your query"
 ```
 
 ## Performance Features
 
 ### OpenRouter Models
 
-- **Executor Tier (gpt-oss-120b)** - Executor model via Groq, or OpenRouter fallback
+- **Executor Tier (gpt-oss-120b)** - Executor model via OpenRouter
 - **Planner Tier (DeepSeek V3.2)** - Planner model, activated via automatic escalation when stuck
 - **Automatic switching** - Agent starts on executor, escalates to planner model if needed
 
@@ -218,5 +218,5 @@ If the UI is slow:
 ## See Also
 
 - [Browser Automation](./browser-automation.md) - What AI can do
-- [Memory System](./memory-system.md) - Persistent information
+- [Workspace Management](./workspace-management.md) - Tab group organization
 - [Architecture Overview](../architecture/streaming.md) - Technical details

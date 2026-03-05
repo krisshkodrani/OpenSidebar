@@ -1,11 +1,12 @@
+import { AgentStatus } from "../../types";
 import { logger } from "../../utils";
 import { flushPersist } from "./chat-slice";
 import type { UiSlice, SliceCreator } from "./types";
 
 export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
   ready: false,
-  showPlanBoard: false,
   error: null,
+  errorPersistent: false,
   activeWorkspaceId: null,
   demoRecording: false,
   demoActionCount: 0,
@@ -16,14 +17,10 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.ready = true;
     }),
 
-  togglePlanBoard: () =>
-    set((state) => {
-      state.showPlanBoard = !state.showPlanBoard;
-    }),
-
-  setError: (error) =>
+  setError: (error, options) =>
     set((state) => {
       state.error = error;
+      state.errorPersistent = error != null && (options?.persistent ?? false);
       if (error) logger.error("ui", error);
     }),
 
@@ -46,6 +43,12 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.pendingClarification = null;
       state.taskRecovery = null;
       state.laneTelemetry = null;
+      // Reset agent running state — WORKSPACE_SYNC from background will
+      // re-set the correct state if an agent is running in the new workspace
+      state.isAgentRunning = false;
+      state.agentStatus = AgentStatus.IDLE;
+      state.statusDetail = "";
+      state.sessionMetrics = null;
     });
     // Load messages only for real workspace IDs.
     if (id != null) {

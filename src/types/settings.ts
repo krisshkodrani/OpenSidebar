@@ -8,11 +8,7 @@ import type { AgentLoopState } from "./agent";
 
 export interface UserSettings {
   openRouterApiKey: string;
-  /** Groq API key for executor model (GPT-OSS-120B) */
-  groqApiKey: string;
   maxTurns: number;
-  contextWindowSize: number;
-  workspaceEnabled: boolean;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
@@ -22,18 +18,18 @@ export interface UserSettings {
   siteAccessMode?: "allow_all" | "blocklist";
   /** Blocked domains when `siteAccessMode` is `blocklist` */
   siteAccessBlocklist?: string[];
-  /** Hide navigate from tools */
-  disableNavigation: boolean;
-  /** Skip all user approval prompts (including high-risk tool approvals) */
-  bypassApprovals: boolean;
-  /** Max parallel workers for orchestrator task execution */
-  orchestratorMaxWorkers?: number;
-  /** Global token budget for one orchestrator task (planner + executor + verifier) */
-  orchestratorMaxTotalTokens?: number;
-  /** Auto-inject matching demos into agent context (default: true) */
-  demosAutoInject?: boolean;
+  /** Require user approval for high-risk actions (default: true) */
+  requireApprovals: boolean;
+  /** Allow agent to open or switch to new pages (default: true) */
+  allowNavigation: boolean;
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
+  /** Override executor model (default: openai/gpt-oss-120b) */
+  executorModel?: string;
+  /** Override planner model (default: deepseek/deepseek-v3.2) */
+  plannerModel?: string;
+  /** Override perception model (default: google/gemini-2.5-flash) */
+  perceptionModel?: string;
 }
 
 // --- Workspace / Tab Group Types ---

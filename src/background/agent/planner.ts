@@ -1,4 +1,4 @@
-import { LLMClient } from "../llm";
+import { LLMClient, LLMClientOptions } from "../llm";
 import { TokenUsage } from "../llm/types";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
@@ -61,14 +61,16 @@ const MONITOR_STEP_SYSTEM = renderPrompt("planner.monitor_step.system");
 export class TaskPlanner {
   private llm: LLMClient;
   private openRouterApiKey: string;
+  private modelOverrides?: LLMClientOptions;
   private executorLlm: LLMClient | null = null;
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
 
-  constructor(openRouterApiKey: string) {
+  constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
-    this.llm = new LLMClient(openRouterApiKey);
+    this.modelOverrides = modelOverrides;
+    this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     // Planner always uses the planner model tier
     this.llm.switchToPlanner();
   }
@@ -76,7 +78,7 @@ export class TaskPlanner {
   /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
   private getExecutorLlm(): LLMClient {
     if (!this.executorLlm) {
-      this.executorLlm = new LLMClient(this.openRouterApiKey);
+      this.executorLlm = new LLMClient(this.openRouterApiKey, this.modelOverrides);
       // Stay on executor tier — never switchToPlanner
     }
     return this.executorLlm;

@@ -23,10 +23,7 @@ import type { TaggedElement } from "../src/types";
 export type PlannerModel = "deepseek" | "deepseek-base";
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
-
-const FAST_MODEL_OPENROUTER = "openai/gpt-oss-120b";
-const FAST_MODEL_GROQ = "openai/gpt-oss-120b";
+const EXECUTOR_MODEL = "openai/gpt-oss-120b";
 const PLANNER_MODEL_DEEPSEEK = "deepseek/deepseek-v3.2";
 const PLANNER_MODEL_DEEPSEEK_BASE = "deepseek/deepseek-v3.2";
 
@@ -123,16 +120,13 @@ function buildFastMessages(goldenCase: EscalationGoldenCase): any[] {
 export async function replayFastPhase(
   keys: ApiKeys,
   goldenCase: EscalationGoldenCase,
-  provider: "groq" | "openrouter",
 ): Promise<{
   toolCalls: Array<{ toolName: string; args: Record<string, unknown> }>;
   text: string | null;
   modelVersion?: string;
   durationMs: number;
 }> {
-  const useGroq = provider === "groq" && !!keys.groq;
-  const model = useGroq ? FAST_MODEL_GROQ : FAST_MODEL_OPENROUTER;
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
+  const model = EXECUTOR_MODEL;
 
   const messages = buildFastMessages(goldenCase);
   const tools = loadToolDefinitions();
@@ -150,16 +144,14 @@ export async function replayFastPhase(
   }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
+    Authorization: `Bearer ${keys.openrouter}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": "https://opensidebar.dev",
+    "X-Title": "OpenSidebar Escalation Evals",
   };
-  if (!useGroq) {
-    headers["HTTP-Referer"] = "https://opensidebar.dev";
-    headers["X-Title"] = "OpenSidebar Escalation Evals";
-  }
 
   const start = Date.now();
-  const response = await fetch(apiUrl, {
+  const response = await fetch(OPENROUTER_API, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -344,13 +336,11 @@ function parseToolCalls(
 export async function runEscalationEvals(options: {
   keys: ApiKeys;
   plannerModel?: PlannerModel;
-  fastProvider?: "groq" | "openrouter";
   judge?: boolean;
   scenarioFilter?: string;
 }): Promise<EscalationEvalResult[]> {
   const { keys, judge = false } = options;
   const plannerModel = options.plannerModel ?? "deepseek";
-  const fastProvider = options.fastProvider ?? (keys.groq ? "groq" : "openrouter");
 
   let cases = readEscalationGoldenCases();
   if (cases.length === 0) {
@@ -373,7 +363,7 @@ export async function runEscalationEvals(options: {
   const results: EscalationEvalResult[] = [];
 
   console.log(
-    `Running ${cases.length} escalation case(s) [executor: ${fastProvider}, planner: ${plannerModelLabel}]...\n`,
+    `Running ${cases.length} escalation case(s) [executor: openrouter, planner: ${plannerModelLabel}]...\n`,
   );
 
   for (let i = 0; i < cases.length; i++) {
@@ -387,7 +377,7 @@ export async function runEscalationEvals(options: {
 
     try {
       // Phase 1: Executor model
-      const fastResult = await replayFastPhase(keys, goldenCase, fastProvider);
+      const fastResult = await replayFastPhase(keys, goldenCase);
 
       // Phase 2: Planner model
       const smartResult = await replaySmartPhase(keys, goldenCase, plannerModel);

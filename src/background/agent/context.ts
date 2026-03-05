@@ -38,6 +38,30 @@ function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
     .join("\n");
 }
 
+/**
+ * If 3+ input fields are visible, return a hint telling the LLM
+ * to batch type_text calls in a single response.
+ */
+function buildFormBatchHint(elements: TaggedElement[]): string | null {
+  const inputCount = elements.filter(
+    (el) =>
+      ["input", "textarea", "select"].includes(el.tagName) ||
+      el.role === "textbox" ||
+      el.role === "combobox" ||
+      el.role === "searchbox",
+  ).length;
+
+  if (inputCount < 3) return null;
+
+  return (
+    "\n\n> **Batch hint:** This page has " +
+    inputCount +
+    " input fields. " +
+    "You may call multiple type_text actions in a single response — they will execute in parallel. " +
+    "Fill all visible fields at once, then click the submit button."
+  );
+}
+
 export class ContextManager {
   private history: LLMMessage[] = [];
   private snapshot: DomSnapshot | null = null;
@@ -564,6 +588,12 @@ Do NOT call done() until every planned step is complete.
         );
       }
 
+      // Batch hint for multi-field forms
+      const batchHint = buildFormBatchHint(visibleElements);
+      if (batchHint) {
+        content = content.replace("{{pageContent}}", batchHint + "\n\n{{pageContent}}");
+      }
+
       // Page content: Readability Markdown or plain text fallback, with dynamic truncation
       const pageContentCharLimits: Record<CompressionLevel, number> = {
         [CompressionLevel.NONE]: 60000,
@@ -579,7 +609,9 @@ Do NOT call done() until every planned step is complete.
             truncated.slice(0, charLimit) +
             "\n\n[Content truncated — use scroll_page to see more]";
         }
-        truncated = compressRepetitiveContent(truncated);
+        if (!this.isFirstTurn) {
+          truncated = compressRepetitiveContent(truncated);
+        }
         content = content.replace("{{pageContent}}", truncated);
       } else {
         content = content.replace(

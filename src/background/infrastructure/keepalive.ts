@@ -13,8 +13,8 @@ import { isContentScript } from "../../utils/context";
 
 // --- Constants ---
 
-const ALARM_NAME = "qsidebar:keepalive";
-const ALARM_PERIOD_MINUTES = 0.4; // ~24 seconds (minimum is 0.5 in production, but 0.4 works in dev)
+const ALARM_NAME = "opensidebar:keepalive";
+const ALARM_PERIOD_MINUTES = 0.45; // ~27s; Chrome rounds to ≥0.5 in prod. Side panel port acts as primary keepalive.
 
 // --- State ---
 
@@ -59,14 +59,14 @@ export async function stopKeepalive(): Promise<void> {
     return;
   }
 
-  if (!isActive) {
-    return;
-  }
-
+  // Always attempt to clear — after a SW restart isActive resets to false
+  // but the alarm may still exist in Chrome's alarm registry.
   try {
     await chrome.alarms.clear(ALARM_NAME);
+    if (isActive) {
+      logger.info("keepalive", "Stopped keepalive alarm");
+    }
     isActive = false;
-    logger.info("keepalive", "Stopped keepalive alarm");
   } catch (error) {
     logger.warn("keepalive", "Failed to clear alarm", { error });
   }

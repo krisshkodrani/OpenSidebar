@@ -47,10 +47,9 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier. Executor pool: Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Planner pool: OpenRouter (`deepseek/deepseek-v3.2`). Both pools use `PoolConfig` interface for generic configuration. `ProviderPool` manages cooldowns (60s on 429) and immediate failover. `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so callers know which provider served after failover. Streaming payload includes `stream_options: { include_usage: true }` to ensure Groq returns token counts. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier, both via OpenRouter. Executor pool: `openai/gpt-oss-120b`. Planner pool: `deepseek/deepseek-v3.2`. `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 51 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
-- `vision.ts` — `describeScreenshot(dataUrl)`. Sends screenshots to a vision LLM (configurable via `visionModel` setting, default `qwen/qwen3-vl-235b-a22b-instruct`) via OpenRouter for text descriptions. Used by `take_screenshot` tool. Retry logic with exponential backoff. Strips think-tags from output.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
 - `navigation.ts` — Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
@@ -73,8 +72,7 @@ React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 - `App.tsx` — Root component. Composes Header, StallBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
 - `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stagnationState, turnProgress).
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
-- `hooks/useSpeechToText.ts` — `useSpeechToText()` custom hook. Two providers: Browser (Web Speech API, real-time interim + final transcripts) and Groq (MediaRecorder → Whisper `whisper-large-v3-turbo` API). Returns `{ isRecording, isProcessing, error, toggle, stop, isSupported }`.
-- `components/` — `Header`, `MessageBubble`, `InputArea` (mic button for voice input), `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`.
+- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`.
 
 ### Utilities (`src/utils/`)
 
@@ -89,12 +87,12 @@ Shared utilities used across all execution contexts. Barrel-exported via `index.
 Single source of truth for all interfaces. Key patterns:
 
 - `RuntimeMessage` — discriminated union (discriminant: `type` field) for all inter-context messages. Includes `STREAM_CHUNK`, `NAVIGATION_RESUME`, `SETTINGS_UPDATE`, `SIDE_PANEL_OPENED`, `CLOSE_SIDE_PANEL`, `DISMISS_MODALS`, `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`, `AGENT_STEP`, `AGENT_ACTIVITY`, `SCREENSHOT_CAPTURED`, `PLAN_CONFIRMATION_REQUEST`, `PLAN_CONFIRMATION_RESPONSE`, `CLARIFICATION_REQUEST`, `CLARIFICATION_RESPONSE`.
-- `ToolName` enum (47 tools) → `ToolArgsMap` maps each tool to its typed arguments.
+- `ToolName` enum → `ToolArgsMap` maps each tool to its typed arguments.
 - `ToolDefinition` — OpenAI function-calling schema format, used by `ToolRegistry`.
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
 - `Result<T, E>` — discriminated union for fallible operations.
-- `UserSettings` — OpenRouter API key, Groq API key, maxTurns, contextWindowSize, workspace toggle, theme, showElementTags, speechProvider (`"browser"` | `"groq"`).
+- `UserSettings` — OpenRouter API key, maxTurns, contextWindowSize, workspace toggle, theme, showElementTags.
 
 ### Messaging Protocol
 

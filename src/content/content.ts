@@ -170,15 +170,23 @@ export function detectViewportCoveringOverlays(): {
   const vpArea = vpW * vpH;
   if (vpArea === 0) return [];
 
+  const OVERLAY_SCAN_BUDGET_MS = 15;
   const results: { el: HTMLElement; coverage: number; rect: DOMRect }[] = [];
   const allElements = document.querySelectorAll("*");
+  const start = performance.now();
 
   for (const raw of allElements) {
+    if (performance.now() - start > OVERLAY_SCAN_BUDGET_MS) break;
     if (!(raw instanceof HTMLElement)) continue;
     if (raw.id === AGENT_BORDER_ID) continue;
     if (!isElementVisible(raw)) continue;
 
-    const style = window.getComputedStyle(raw);
+    let style: CSSStyleDeclaration;
+    try {
+      style = window.getComputedStyle(raw);
+    } catch {
+      continue;
+    }
     if (style.position !== "fixed" && style.position !== "absolute") continue;
 
     const rect = raw.getBoundingClientRect();
@@ -496,6 +504,9 @@ function autoDismissModals(): DismissResult {
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(
     (message: RuntimeMessage, _sender, sendResponse) => {
+      // Only accept messages from our own background service worker
+      if (message.source !== MessageSource.BACKGROUND) return;
+
       if (message.type === "AGENT_ACTIVITY") {
         setAgentBorder(message.payload.active);
         return;

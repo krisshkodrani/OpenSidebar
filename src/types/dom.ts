@@ -26,6 +26,22 @@ export interface DomSnapshot {
   capturedTexts?: string[];
   /** Overflow info when element cap was hit or near-identical elements collapsed */
   overflow?: { shown: number; total: number; collapsedGroups?: string[] };
+  /** Lightweight page skeleton: headings, landmarks, status, and content text */
+  skeleton?: PageSkeletonNode[];
+}
+
+/** A structural (non-interactive) DOM node for page skeleton */
+export interface PageSkeletonNode {
+  /** HTML tag name, e.g. "h1", "nav", "p" */
+  tagName: string;
+  /** Semantic role: "heading", "navigation", "status", or tagName */
+  role: string;
+  /** Heading level 1-6 (only for headings) */
+  level?: number;
+  /** Visible text content (truncated to 120 chars) */
+  text: string;
+  /** Nesting depth from <body> (0 = direct child), capped at 4 */
+  depth: number;
 }
 
 /** A single interactive DOM element with a numeric tag */
@@ -54,6 +70,8 @@ export interface ElementRect {
   y: number;
   width: number;
   height: number;
+  /** Absolute Y position on the page (rect.y + scrollY). Used for @y hints. */
+  pageY?: number;
 }
 
 /** Describes a viewport-covering overlay that heuristic dismissal couldn't remove */

@@ -12,40 +12,32 @@ export default function TurnList() {
 
   // Filter by model tier (executor/planner)
   if (tierFilter && tierFilter !== "all") {
-    filtered = filtered.filter((e) => {
-      const llmReq = e.llmRequest as Record<string, unknown> | undefined;
-      return llmReq?.modelTier === tierFilter;
-    });
+    filtered = filtered.filter((e) => e.llmRequest?.modelTier === tierFilter);
   }
 
   if (q) {
     filtered = entries.filter((e) => {
-      const llmResponse = e.llmResponse as Record<string, unknown> | undefined;
-      const content = (llmResponse?.content as string) || "";
+      const content = e.llmResponse?.content || "";
       if (content.toLowerCase().includes(q)) return true;
 
-      const toolExecutions =
-        (e.toolExecutions as Array<Record<string, unknown>>) || [];
+      const toolExecutions = e.toolExecutions || [];
       for (const te of toolExecutions) {
-        if ((te.toolName as string)?.toLowerCase().includes(q)) return true;
-        if ((te.result as string)?.toLowerCase().includes(q)) return true;
+        if (te.toolName?.toLowerCase().includes(q)) return true;
+        if (te.result?.toLowerCase().includes(q)) return true;
       }
 
-      const toolCalls =
-        (llmResponse?.toolCalls as Array<Record<string, unknown>>) || [];
+      const toolCalls = e.llmResponse?.toolCalls || [];
       for (const tc of toolCalls) {
-        const fn = tc.function as Record<string, unknown> | undefined;
-        if ((fn?.name as string)?.toLowerCase().includes(q)) return true;
+        if (tc.function?.name?.toLowerCase().includes(q)) return true;
       }
 
-      const events = (e.events as Array<Record<string, unknown>>) || [];
+      const events = e.events || [];
       for (const ev of events) {
-        if ((ev.type as string)?.toLowerCase().includes(q)) return true;
+        if (ev.type?.toLowerCase().includes(q)) return true;
       }
 
-      const snapshot = e.snapshot as Record<string, unknown> | undefined;
-      if ((snapshot?.url as string)?.toLowerCase().includes(q)) return true;
-      if ((snapshot?.title as string)?.toLowerCase().includes(q)) return true;
+      if (e.snapshot?.url?.toLowerCase().includes(q)) return true;
+      if (e.snapshot?.title?.toLowerCase().includes(q)) return true;
 
       return false;
     });

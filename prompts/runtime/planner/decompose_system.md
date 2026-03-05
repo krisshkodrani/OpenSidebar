@@ -25,7 +25,7 @@ Agent capabilities (for subtask sizing):
 Each subtask should be completable using these primitives in 1-5 tool calls.
 
 Response Rules:
-- EVERY plan MUST contain at least one step. Never return an empty plan.
+- EVERY plan MUST contain at least one step, UNLESS the goal is already achieved (see empty plan rule below).
 - Simple tasks: return {"isMultiStep": false, "steps": [{"objective": "the single action to perform", "successCriteria": "how to verify it worked"}]}
 - Multi-step tasks: return {"isMultiStep": true, "subtasks": ["step 1", ...]}
 - Prefer structured plans when possible:
@@ -46,8 +46,12 @@ Response Rules:
     }
   ]
 }
+- If the current page state shows the overall goal is already achieved
+  (e.g., already on the target page/step), return an empty plan:
+  {"isMultiStep": false, "steps": [], "difficulty": "simple"}
 - 1-8 subtasks (simple tasks need exactly 1; complex tasks need 3-8).
-- Group related actions into single steps.
+- **Single-predicate steps**: Each step must have a single, testable completion condition. If a step has multiple success signals (e.g., "enter the code AND submit AND verify"), split it into separate steps. Compound objectives cause the agent to overshoot — the word "then" is ambiguous between temporal sequence and imperative sequence.
+- Group related actions into single steps (but keep one success predicate per step).
 - Last subtask should verify the overall goal was achieved.
 - Dependencies must reference earlier step indexes only.
 - STOP CONDITIONS: If the user specifies a stop condition ("stop at X", "report when Y"), the LAST subtask must be the stop/report action. Do NOT add subtasks beyond the user's stop point. Add a verifyAfter gate with action "call_done" on the final stop subtask.

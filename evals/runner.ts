@@ -26,9 +26,8 @@ function loadToolDefinitions(): any[] {
 }
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
 
-export type EvalProvider = "groq" | "openrouter";
+export type EvalProvider = "openrouter";
 
 /**
  * Run eval cases and return results.
@@ -45,7 +44,7 @@ export async function runEvals(options: {
   provider?: EvalProvider;
 }): Promise<EvalResult[]> {
   const keys = options.keys ?? loadApiKeys();
-  const provider = options.provider ?? (keys.groq ? "groq" : "openrouter");
+  const provider = options.provider ?? "openrouter";
   let cases = readEvalCases();
 
   if (cases.length === 0) {
@@ -242,8 +241,6 @@ export async function replayCase(
   promptOverride?: string,
   provider?: EvalProvider,
 ): Promise<{ toolCalls: { toolName: string; args: Record<string, unknown> }[]; text: string | null }> {
-  const useGroq = provider === "groq" && !!keys.groq;
-
   const messages = evalCase.input.conversationHistory.length > 0
     ? evalCase.input.conversationHistory
     : [{ role: "user" as const, content: evalCase.metadata.query }];
@@ -267,17 +264,14 @@ export async function replayCase(
     body.tool_choice = "auto";
   }
 
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
+    Authorization: `Bearer ${keys.openrouter}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": "https://opensidebar.dev",
+    "X-Title": "OpenSidebar Evals",
   };
-  if (!useGroq) {
-    headers["HTTP-Referer"] = "https://opensidebar.dev";
-    headers["X-Title"] = "OpenSidebar Evals";
-  }
 
-  const response = await fetch(apiUrl, {
+  const response = await fetch(OPENROUTER_API, {
     method: "POST",
     headers,
     body: JSON.stringify(body),

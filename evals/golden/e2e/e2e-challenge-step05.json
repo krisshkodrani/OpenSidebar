@@ -3,9 +3,9 @@
   "sourceSessionId": "875873f9-277d-4685-94b7-bf19be2f2f5e",
   "sourceType": "manual-recording",
   "stepNumber": 5,
-  "challengeUrl": "https://serene-frangipane-7fd25b.netlify.app/step5?version=2",
+  "challengeUrl": "https://example.com/browser-challenge/step5?version=2",
   "entrySnapshot": {
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step5?version=2",
+    "url": "https://example.com/browser-challenge/step5?version=2",
     "title": "Browser Navigation Challenge - The Ultimate Test",
     "elementCount": 47,
     "scrollY": 2193

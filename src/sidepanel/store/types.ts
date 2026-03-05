@@ -99,8 +99,9 @@ export interface SavedPromptsSlice {
 
 export interface UiSlice {
   ready: boolean;
-  showPlanBoard: boolean;
   error: string | null;
+  /** When true, the error banner stays until the user dismisses it manually. */
+  errorPersistent: boolean;
   activeWorkspaceId: string | null;
   demoRecording: boolean;
   demoActionCount: number;
@@ -110,8 +111,7 @@ export interface UiSlice {
     name: string;
   } | null;
   setReady: () => void;
-  togglePlanBoard: () => void;
-  setError: (error: string | null) => void;
+  setError: (error: string | null, options?: { persistent?: boolean }) => void;
   setActiveWorkspaceId: (id: string | null) => void;
   setDemoRecording: (active: boolean, actionCount?: number) => void;
   setManualRecording: (

@@ -67,7 +67,6 @@ function createLoop() {
   const onStep = vi.fn();
   const agent = new AgentLoop(
     "test-key",
-    undefined,
     {
       onStatusUpdate: onStatus,
       onMessage: onMessage,

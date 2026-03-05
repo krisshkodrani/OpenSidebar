@@ -1,0 +1,31 @@
+{
+  "id": "tc-click-canvas-002",
+  "confusionPair": { "toolA": "click_element", "toolB": "click_coordinates", "label": "click_element_vs_click_coordinates" },
+  "scenario": "Canvas game element requires click_coordinates",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://example.com/game",
+    "title": "Puzzle Game",
+    "elementCount": 5,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "canvas", "role": "", "text": "", "attributes": { "width": "800", "height": "600" }, "rect": { "x": 50, "y": 50, "width": 800, "height": 600 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "div", "role": "", "text": "Score: 150", "attributes": {}, "rect": { "x": 50, "y": 10, "width": 200, "height": 30 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "button", "role": "button", "text": "Reset", "attributes": {}, "rect": { "x": 750, "y": 10, "width": 80, "height": 30 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Puzzle Game Score: 150 Click the red circle at position (400, 300) to score points. Reset",
+  "instruction": "Click the red circle in the center of the game canvas to score a point.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "click_coordinates",
+    "correctArgs": { "x": 450, "y": 350 },
+    "acceptAlternatives": [],
+    "antiPatternTools": ["click_element"],
+    "rationale": "The target is inside a canvas element with no individual tags for rendered objects. click_coordinates must be used for canvas/game targets."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "The canvas element has a tag but individual game objects inside it don't. Agent must use click_coordinates with approximate center position."
+  }
+}

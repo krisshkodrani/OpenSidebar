@@ -8,10 +8,6 @@ Complete documentation for all implemented features in OpenSidebar.
 
 Navigate, read, click, type, and scroll across web pages using natural language commands.
 
-### [Memory System](./memory-system.md)
-
-Local "Second Brain" that stores and retrieves your information privately in the browser.
-
 ### [Workspace Management](./workspace-management.md)
 
 Automatic Chrome Tab Groups that organize related tabs and isolate activities.
@@ -33,8 +29,6 @@ User Command
     ↓
 Browser Automation (actions)
     ↓
-Memory System (context & storage)
-    ↓
 Workspace Management (organization)
     ↓
 Streaming UI (real-time feedback)
@@ -44,11 +38,10 @@ Security & Privacy (protection throughout)
 
 ## Getting Started
 
-1. **Install extension** and configure API keys
+1. **Install extension** and configure your OpenRouter API key
 2. **Click extension icon** on any tab to create workspace
 3. **Type natural language commands** to interact with web pages
 4. **Watch real-time streaming** as AI executes actions
-5. **Use memory** to store preferences and retrieve information
 
 ## User Guides
 
@@ -56,8 +49,8 @@ Security & Privacy (protection throughout)
 
 - "Navigate to google.com" - Opens new tab and goes to URL
 - "Click the Search button" - Interacts with page elements
-- "Remember I prefer window seats" - Stores preference in memory
-- "What are my flight preferences?" - Retrieves from memory
+- "Fill out the shipping form" - Multi-step form automation
+- "Compare prices across these tabs" - Cross-tab workflows
 
 ### Advanced Workflows
 

@@ -11,8 +11,8 @@ import { LLMMessage } from "../llm/types";
  *
  * Position hints (when viewportHeight is provided):
  * - No annotation: element is in the current viewport
- * - `^above`: element is above the viewport
- * - `v{N}px`: element is below the viewport by N pixels
+ * - `@y{N}`: absolute page Y position (from pageY) — use scroll_page({"y": N})
+ * - `^above` / `v{N}px`: legacy relative hints when pageY is unavailable
  */
 export function formatElementCompact(
   el: TaggedElement,
@@ -40,13 +40,18 @@ export function formatElementCompact(
   const invisible =
     textColor && bgColor && textColor === bgColor ? " [invisible-text]" : "";
 
-  // Position hint: indicate if element is above or below the viewport
+  // Position hint: indicate if element is off-screen
+  // Prefer absolute @y{N} when pageY is available; fall back to relative ^above / v{N}px
   let posHint = "";
   if (viewportHeight !== undefined && el.rect) {
-    if (el.rect.y < 0) {
-      posHint = " ^above";
-    } else if (el.rect.y >= viewportHeight) {
-      posHint = ` v${Math.round(el.rect.y - viewportHeight)}px`;
+    if (el.rect.y < 0 || el.rect.y >= viewportHeight) {
+      if (el.rect.pageY != null) {
+        posHint = ` @y${el.rect.pageY}`;
+      } else if (el.rect.y < 0) {
+        posHint = " ^above";
+      } else {
+        posHint = ` v${Math.round(el.rect.y - viewportHeight)}px`;
+      }
     }
   }
 
@@ -94,6 +99,7 @@ export function summarizeHistory(
         if (args.id != null) parts.push(`[${args.id}]`);
         if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
         if (args.url) parts.push(String(args.url).slice(0, 40));
+        if (args.y != null) parts.push(`y=${args.y}`);
         if (args.direction) parts.push(args.direction);
         if (args.summary) parts.push(`"${String(args.summary).slice(0, 30)}"`);
         if (args.reason) parts.push(`"${String(args.reason).slice(0, 30)}"`);

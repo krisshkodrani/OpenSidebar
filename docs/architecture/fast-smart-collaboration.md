@@ -6,8 +6,8 @@ How two LLM tiers work together inside a single `AgentLoop` to solve browser aut
 
 | | Executor Model | Planner Model |
 |---|---|---|
-| **Models** | `gpt-oss-120b` (Groq/OpenRouter) | `deepseek-v3.2` (OpenRouter) |
-| **Provider Pool** | `ProviderPool` — Groq → OpenRouter | `ProviderPool` — OpenRouter |
+| **Models** | `gpt-oss-120b` (OpenRouter) | `deepseek-v3.2` (OpenRouter) |
+| **Provider Pool** | `ProviderPool` — OpenRouter | `ProviderPool` — OpenRouter |
 | **Reasoning** | Standard completion | Native reasoning (enabled by default) |
 | **Persona** | "sharp, resourceful web automation expert" | "seasoned systems thinker" |
 | **Role** | Handles routine observe→act cycles quickly | Breaks through when the executor model gets stuck |
@@ -20,15 +20,14 @@ Both tiers use `ProviderPool` with a generic `PoolConfig` interface:
 
 ```typescript
 interface PoolConfig {
-  groqModel?: string;      // Only used by executor tier
   openRouterModel: string;
 }
 ```
 
-The executor pool has 2 providers (Groq → OpenRouter). The planner pool has 1 provider (OpenRouter only). Both pools share the same failover mechanics: 60s cooldown on 429, immediate fallback to next provider.
+Both pools use OpenRouter as the single provider.
 
 ```
-Executor Pool:  Groq (openai/gpt-oss-120b)    → OpenRouter (openai/gpt-oss-120b)
+Executor Pool:  OpenRouter (openai/gpt-oss-120b)
 Planner Pool:   OpenRouter (deepseek/deepseek-v3.2)
 ```
 
@@ -158,7 +157,7 @@ if on_planner_model
 On de-escalation:
 
 ```
-1. llm.switchToExecutor()          → swap back to executor pool (Groq → OpenRouter)
+1. llm.switchToExecutor()          → swap back to executor pool (OpenRouter)
 2. context.setModelTier("executor")  → swap persona back
 3. Inject DEESCALATION_REFLECTION     → orient the executor model
 4. cooldownRemaining = 3             → prevent immediate re-escalation
@@ -186,45 +185,42 @@ After 3 cycles, the agent stays on whichever tier it's currently using.
 A typical hard navigation task might play out like:
 
 ```
-Turn  1 [executor/groq]   → navigate to login page           ✓
-Turn  2 [executor/groq]   → type username                    ✓
-Turn  3 [executor/groq]   → type password, click submit      ✓
-Turn  4 [executor/groq]   → page has a CAPTCHA puzzle        ✗ stale
-Turn  5 [executor/groq]   → tries clicking CAPTCHA           ✗ stale
-Turn  6 [executor/groq]   → tries again                      ✗ stale
+Turn  1 [executor/openrouter]   → navigate to login page           ✓
+Turn  2 [executor/openrouter]   → type username                    ✓
+Turn  3 [executor/openrouter]   → type password, click submit      ✓
+Turn  4 [executor/openrouter]   → page has a CAPTCHA puzzle        ✗ stale
+Turn  5 [executor/openrouter]   → tries clicking CAPTCHA           ✗ stale
+Turn  6 [executor/openrouter]   → tries again                      ✗ stale
                             ↳ reflection injected
-Turn  7 [executor/groq]   → still stuck                      ✗ stale
+Turn  7 [executor/openrouter]   → still stuck                      ✗ stale
                             ↳ ESCALATE: distill + screenshot + reflection
                             ↳ History compressed: 7 turns → ~500 token timeline
 Turn  8 [planner/openrouter] → analyzes screenshot + timeline, reasons about puzzle
 Turn  9 [planner/openrouter] → solves CAPTCHA with execute_js   ✓ progress!
 Turn 10 [planner/openrouter] → verifies success                 ✓
                             ↳ DE-ESCALATE: progress resumed, tenure=3
-Turn 11 [executor/groq]   → continues with post-login flow   ✓
-Turn 12 [executor/groq]   → fills out form                   ✓
-Turn 13 [executor/groq]   → done()
+Turn 11 [executor/openrouter]   → continues with post-login flow   ✓
+Turn 12 [executor/openrouter]   → fills out form                   ✓
+Turn 13 [executor/openrouter]   → done()
 ```
 
-The executor model handled 10 of 13 turns. The planner model was only used for the 3 turns where reasoning was needed. If Groq was rate-limited, the executor would transparently fail over to OpenRouter.
+The executor model handled 10 of 13 turns. The planner model was only used for the 3 turns where reasoning was needed.
 
-## Provider Failover (Both Tiers)
+## Provider Configuration
 
-Both tiers have independent resilience layers. Each tier's `ProviderPool` manages providers in priority order:
+Both tiers use OpenRouter as the single provider:
 
 ### Executor Tier
 ```
-Priority 1: Groq      (openai/gpt-oss-120b,   250K TPM)
-Priority 2: OpenRouter (openai/gpt-oss-120b,   fallback)
+OpenRouter (openai/gpt-oss-120b)
 ```
 
 ### Planner Tier
 ```
-Priority 1: OpenRouter (deepseek/deepseek-v3.2,  native reasoning)
+OpenRouter (deepseek/deepseek-v3.2, native reasoning)
 ```
 
-On a 429 (rate limit), the pool immediately falls back to the next provider with zero delay. The hit provider enters a 60-second cooldown. This is transparent to the agent loop — `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so metrics are attributed correctly, but the loop doesn't need to care which provider served.
-
-OpenRouter is the absolute fallback for both tiers — even if cooled down, `getActive()` returns the last slot (OpenRouter) when all others are unavailable.
+`fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so metrics are attributed correctly.
 
 ## Key Design Decisions
 

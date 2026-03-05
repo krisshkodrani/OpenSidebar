@@ -8,9 +8,7 @@ export default function TraceSubviewToggle() {
   const sessionLogs = useStore((s) => s.sessionLogs);
 
   const turnCount = entries.length;
-  const perceptionCount = entries.filter(
-    (e) => (e as Record<string, unknown>).perception,
-  ).length;
+  const perceptionCount = entries.filter((e) => e.perception).length;
   const logCount = sessionLogs.length;
 
   const views = [

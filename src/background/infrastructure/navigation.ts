@@ -17,7 +17,7 @@ import { waitForContentScriptReady } from "./tab-ready";
 
 // --- Constants ---
 
-const STORAGE_KEY_PREFIX = "qsidebar:agentState";
+const STORAGE_KEY_PREFIX = "opensidebar:agentState";
 const NAVIGATION_TIMEOUT_MS = 30_000; // 30 seconds
 
 /** Get workspace-scoped storage key */

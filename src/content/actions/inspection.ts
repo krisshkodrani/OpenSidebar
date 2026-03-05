@@ -21,6 +21,40 @@ export function executeScroll(args: ScrollPageArgs): {
   result: string;
   navigated: boolean;
 } {
+  // Validate: need either y or direction
+  if (args.y == null && args.direction == null) {
+    return {
+      success: false,
+      result: "Error: scroll_page requires either 'y' (absolute position) or 'direction'.",
+      navigated: false,
+    };
+  }
+
+  // Absolute Y scroll (from @y hints)
+  if (args.y != null) {
+    if (args.id !== undefined) {
+      const tagMap = getTagMap();
+      const el = tagMap.get(args.id);
+      if (!el) return staleIdError(args.id);
+      if (!(el instanceof HTMLElement)) {
+        return { success: false, result: `Element [${args.id}] is not scrollable`, navigated: false };
+      }
+      el.scrollTo({ top: args.y, behavior: "instant" });
+      return {
+        success: true,
+        result: `Scrolled [${args.id}] to y=${args.y}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+        navigated: false,
+      };
+    }
+    window.scrollTo({ top: args.y, behavior: "instant" });
+    return {
+      success: true,
+      result: `Scrolled to y=${args.y}. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`,
+      navigated: false,
+    };
+  }
+
+  // Direction-based scroll (original behavior)
   const amount = args.amount ?? 500;
   const isAbsolute =
     args.direction === ScrollDirection.TOP ||
@@ -94,7 +128,7 @@ export function executeRead(): {
   result: string;
   navigated: boolean;
 } {
-  const snapshot = buildSnapshot(true, true);
+  const snapshot = buildSnapshot(true);
 
   // Format for the LLM
   const lines: string[] = [

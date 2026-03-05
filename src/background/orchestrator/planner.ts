@@ -1,4 +1,5 @@
 import { TaskPlanner } from "../agent/planner";
+import type { LLMClientOptions } from "../llm";
 import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
@@ -103,11 +104,75 @@ export function validatePlannerAssignments(raw: unknown): PlannerAssignment[] {
   return sanitized as PlannerAssignment[];
 }
 
+interface DecompositionStep {
+  objective: string;
+  successCriteria?: string;
+  dependencies?: number[];
+  assumptions?: string[];
+  verifyAfter?: { trigger: string; action: string; pattern?: string };
+  toolProfile?: string;
+}
+
+function stepsToNodes(
+  steps: DecompositionStep[],
+  phase: "planned" | "planner_replan" = "planned",
+): TaskNode[] {
+  const nodeIds = steps.map(() => crypto.randomUUID());
+  const rawAssignments: PlannerAssignment[] = steps.map((step, index) => ({
+    role: "executor",
+    objective: step.objective,
+    successCriteria:
+      step.successCriteria ||
+      `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
+    allowedTools: resolveToolProfile(step.toolProfile) ?? [
+      ...EXECUTOR_DEFAULT_TOOLS,
+    ],
+    dependencies: (step.dependencies || [])
+      .filter(
+        (depIndex) =>
+          Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
+      )
+      .map((depIndex) => nodeIds[depIndex]),
+    assumptions: step.assumptions || [],
+    verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
+  }));
+
+  const assignments = validatePlannerAssignments(rawAssignments);
+
+  return assignments.map((assignment, index) => ({
+    id: nodeIds[index],
+    role: assignment.role,
+    description: assignment.objective,
+    successCriteria: assignment.successCriteria,
+    allowedTools: assignment.allowedTools,
+    dependencies: (assignment.dependencies || []).filter(
+      (dep) => dep.length > 0,
+    ),
+    assumptions: assignment.assumptions || [],
+    handoffArtifacts: [
+      {
+        role: "planner",
+        phase,
+        note:
+          assignment.assumptions && assignment.assumptions.length > 0
+            ? `Planner assigned objective: ${assignment.objective}. Assumptions: ${assignment.assumptions.join("; ")}`
+            : `Planner assigned objective: ${assignment.objective}`,
+        timestamp: Date.now(),
+      },
+    ],
+    reflexionLog: [],
+    handoffDepth: 0,
+    verificationGate: assignment.verificationGate,
+    status: "pending" as const,
+    retries: 0,
+  }));
+}
+
 export class OrchestratorPlanner {
   private planner: TaskPlanner;
 
-  constructor(openRouterApiKey: string) {
-    this.planner = new TaskPlanner(openRouterApiKey);
+  constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
+    this.planner = new TaskPlanner(openRouterApiKey, modelOverrides);
   }
 
   async buildNodes(
@@ -125,85 +190,29 @@ export class OrchestratorPlanner {
 
     const difficulty: Difficulty = decomposition?.difficulty ?? "moderate";
 
-    let rawAssignments: PlannerAssignment[] = [];
-    let nodeIds: string[] = [];
+    let nodes: TaskNode[];
     if (decomposition?.steps?.length) {
-      nodeIds = decomposition.steps.map(() => crypto.randomUUID());
-      rawAssignments = decomposition.steps.map((step, index) => ({
-        role: "executor",
-        objective: step.objective,
-        successCriteria:
-          step.successCriteria ||
-          `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-        allowedTools: resolveToolProfile(step.toolProfile) ?? [
-          ...EXECUTOR_DEFAULT_TOOLS,
-        ],
-        dependencies: (step.dependencies || [])
-          .filter(
-            (depIndex) =>
-              Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
-          )
-          .map((depIndex) => nodeIds[depIndex]),
-        assumptions: step.assumptions || [],
-        verificationGate: step.verifyAfter
-          ? { ...step.verifyAfter }
-          : undefined,
-      }));
+      nodes = stepsToNodes(decomposition.steps);
       logger.info(
         "orchestrator",
         "Planner produced structured graph assignments",
-        {
-          count: rawAssignments.length,
-        },
+        { count: nodes.length },
       );
     } else {
       const subtasks = decomposition?.subtasks?.length
         ? decomposition.subtasks
         : [query];
-      rawAssignments = subtasks.map((step) => ({
-        role: "executor",
+      const fallbackSteps: DecompositionStep[] = subtasks.map((step) => ({
         objective: step,
-        successCriteria: `The subtask outcome for "${step}" is verified on the page or in tool output.`,
-        allowedTools: [...EXECUTOR_DEFAULT_TOOLS],
         dependencies: [],
         assumptions: [],
       }));
-      nodeIds = rawAssignments.map(() => crypto.randomUUID());
+      nodes = stepsToNodes(fallbackSteps);
     }
 
-    const assignments = validatePlannerAssignments(rawAssignments);
-
     logger.info("orchestrator", "Planner generated nodes", {
-      count: assignments.length,
+      count: nodes.length,
     });
-
-    const nodes: TaskNode[] = assignments.map((assignment, index) => ({
-      id: nodeIds[index],
-      role: assignment.role,
-      description: assignment.objective,
-      successCriteria: assignment.successCriteria,
-      allowedTools: assignment.allowedTools,
-      dependencies: (assignment.dependencies || []).filter(
-        (dep) => dep.length > 0,
-      ),
-      assumptions: assignment.assumptions || [],
-      handoffArtifacts: [
-        {
-          role: "planner",
-          phase: "planned",
-          note:
-            assignment.assumptions && assignment.assumptions.length > 0
-              ? `Planner assigned objective: ${assignment.objective}. Assumptions: ${assignment.assumptions.join("; ")}`
-              : `Planner assigned objective: ${assignment.objective}`,
-          timestamp: Date.now(),
-        },
-      ],
-      reflexionLog: [],
-      handoffDepth: 0,
-      verificationGate: assignment.verificationGate,
-      status: "pending" as const,
-      retries: 0,
-    }));
 
     // Simple task: decomposition had no subtasks (empty array)
     const isSingleNode =
@@ -280,5 +289,53 @@ export class OrchestratorPlanner {
       count: expanded.length,
     });
     return expanded;
+  }
+
+  async planNextHorizon(
+    query: string,
+    completedSummary: string,
+    pageTitle: string,
+    pageUrl: string,
+    signal?: AbortSignal,
+  ): Promise<TaskNode[] | null> {
+    const horizonQuery = [
+      "Continue working toward the overall goal.",
+      "",
+      `Overall goal: ${query}`,
+      "",
+      completedSummary,
+      "",
+      "Plan the NEXT 1-3 steps from the current page state.",
+      'If the goal is already achieved, return an empty plan (steps: []).',
+    ].join("\n");
+
+    const decomposition = await this.planner.decompose(
+      horizonQuery,
+      pageTitle,
+      pageUrl,
+      signal,
+    );
+
+    if (!decomposition) return null;
+
+    const steps = decomposition.steps?.length
+      ? decomposition.steps
+      : decomposition.subtasks?.length
+        ? decomposition.subtasks.map((step) => ({
+            objective: step,
+            dependencies: [],
+            assumptions: [],
+          }))
+        : [];
+
+    if (steps.length === 0) return null;
+
+    const nodes = stepsToNodes(steps as DecompositionStep[], "planned");
+
+    logger.info("orchestrator", "Planner produced horizon expansion nodes", {
+      count: nodes.length,
+    });
+
+    return nodes;
   }
 }

@@ -7,22 +7,19 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 **Current Implementation: 95%+ Complete**
 
 **Core Systems (All Working):**
-- Side Panel UI - Chat interface with real-time streaming, orchestrator console, step timeline
-- Agent Loop - 57 tools, sliding window context, progress tracking, feedback injection
-- Orchestrator - Planner/executor/verifier pipeline with lane isolation, skills, and conversation collaboration
-- Content Script - DOM distillation, element tagging, action execution, shadow DOM, React detection
+- Side Panel UI - Chat interface with real-time streaming, step timeline, plan timeline card
+- Agent Loop - 35 tools, sliding window context, progress tracking, feedback injection
+- Orchestrator - Planner/executor/verifier pipeline with lane isolation and conversation collaboration
+- Content Script - DOM distillation, element tagging, action execution, shadow DOM
 - Navigation Bridge - State persistence across page loads
-- Memory System - SQLite FTS5 + Voy vector search + RRF fusion
 - Workspace Management - Auto-managed Chrome Tab Groups (invisible to user)
-- Perception Layer - Vision-based page understanding (Groq Llama 4 Scout → GPT-4o-mini)
-- Skills System - Learned skills from successful tasks, auto-replay on similar queries
+- Perception Layer - Stateful vision-based page understanding (OpenRouter Gemini 2.5 Flash)
 - Evals Framework - Offline evaluation with golden datasets and trace replay
 
 **Infrastructure:**
 - SSE streaming parser with tool call accumulation and token usage tracking
 - Service worker keepalive (alarms)
-- Web Worker for embeddings (Transformers.js)
-- Comprehensive test suite (600+ tests)
+- Comprehensive test suite (1100+ tests)
 - Storage Logger with JSONL rotation and auto-redaction
 - Progress Tracker with stuck detection and graduated intervention
 - Session metrics with per-model cost attribution
@@ -30,7 +27,7 @@ AI-powered Chrome extension with agentic browsing capabilities. Uses React + Typ
 
 ## Architecture
 
-Chrome Manifest V3 extension with four isolated execution contexts communicating via `chrome.runtime.onMessage`:
+Chrome Manifest V3 extension with three isolated execution contexts communicating via `chrome.runtime.onMessage`:
 
 ```
 Side Panel (React/Zustand) <-> Service Worker <-> Content Script (DOM)
@@ -47,9 +44,6 @@ Side Panel (React/Zustand) <-> Service Worker <-> Content Script (DOM)
                               │    └─────────┼─────────┘
                               │              │
                               ├──────────────┘
-                              │
-                       Offscreen Document
-                  (Memory: SQLite + Voy + Transformers.js)
 ```
 
 ### Service Worker (`src/background/`)
@@ -63,12 +57,10 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text.
 - `agent/trace.ts` — `TraceRecorder`. Full-fidelity session recording (DOM snapshots, LLM requests/responses, tool executions, events). Drains to `traces/` via log server.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s. Executor pool: Groq (`openai/gpt-oss-120b`) → OpenRouter (`openai/gpt-oss-120b`). Planner pool: OpenRouter (`deepseek/deepseek-v3.2`). `switchToPlanner()` / `switchToExecutor()` for tier switching. DeepSeek V3.2 has native reasoning (no reasoning parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution). Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 57 tools and bridges to content script / memory.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s. Executor pool: OpenRouter (`openai/gpt-oss-120b`). Planner pool: OpenRouter (`deepseek/deepseek-v3.2`). `switchToPlanner()` / `switchToExecutor()` for tier switching. DeepSeek V3.2 has native reasoning (no reasoning parameter needed). `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution). Barrel-exported via `llm/index.ts`.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 35 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential).
-- `tools/react.ts` — React Toolkit: 4 on-demand tools (`inspect_react`, `react_set_input`, `inspect_react_tree`, `wait_for_react`) gated behind framework detection.
-- `perception.ts` — `perceive()`. Vision-based page understanding. Sends screenshot + element summary to vision model → structured 6-section output. Provider failover: Groq Llama 4 Scout → OpenRouter GPT-4o-mini. Fingerprint-based caching.
-- `memory/bridge.ts` — Creates the offscreen document and relays memory commands to it.
+- `perception/perception-agent.ts` — `PerceptionAgent`. Stateful vision-based page understanding. Accumulates observations across turns. Sends screenshot + element summary to Gemini 2.5 Flash → structured 5-section output (LOCATION, CHANGES, BLOCKERS, VISUAL-ONLY, AFFORDANCES). Fingerprint-based caching.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms` (~24s interval).
 - `navigation.ts` — Navigation bridge. Persists state before navigations, resumes after page load.
@@ -87,12 +79,8 @@ Multi-step task decomposition and execution pipeline. Activated for complex task
 - `retry-policy.ts` — `decideRetryPolicy()`. Classifies failures into categories (insufficient_evidence, state_mismatch, etc.) and determines retry strategy.
 - `scheduling.ts` — Node scheduling and dependency resolution.
 - `budget-estimator.ts` — Token budget estimation for LLM calls.
-- `contracts.ts` — Inter-role contracts and type definitions.
-- `memory-buffer.ts` — Buffered memory operations during orchestrator runs.
-
-### Skills (`src/background/skills/`)
-
-- `store.ts` — `SkillStore`. Persists learned skills to `chrome.storage.local`. `learnFromTask()` extracts reusable plans from successful orchestrator runs. `findMatchingSkill()` retrieves skills for auto-replay on similar queries.
+- `sanitizers.ts` — Output sanitization for orchestrator messages.
+- `lane-types.ts` — Runtime lane definitions and policies.
 
 ### Prompts (`src/prompts/`)
 
@@ -106,9 +94,8 @@ Injected into every page at `document_idle`. Handles DOM snapshot generation and
 
 - `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` on load.
 - `tagging.ts` — Vimium-style numeric tagging of interactive elements. Stable hash-based IDs (FNV-1a). Tags `canvas`, `[draggable='true']`, and inline clickable elements.
-- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, visible content, scroll position, framework detection.
+- `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, visible content, scroll position.
 - `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element.
-- `framework-detect.ts` — Detects React via fiber keys. Gates React Toolkit tools.
 
 ### Side Panel (`src/sidepanel/`)
 
@@ -117,18 +104,7 @@ React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 - `App.tsx` — Root component. Composes all sub-components.
 - `store.ts` — Zustand + Immer store. Holds `SidePanelState`.
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check.
-- `hooks/useSpeechToText.ts` — Voice input via Browser Speech API or Groq Whisper.
-- `components/` — `Header`, `MessageBubble`, `InputArea` (feedback mode during agent runs), `ControlBar` (pause/resume/turn counter), `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`, `MetricsBar`, `StepTimeline`, `OrchestratorConsole`, `PlanBoard`, `LearnedSkillsPanel`, `EscalationBanner`, `ApprovalBanner`, `RecoveryBanner`, `ArchitectureStrip`, `ScreenshotLightbox`, `SavedPromptsDrawer`, `PromptPicker`.
-
-### Offscreen Document (`src/offscreen/`)
-
-Runs heavy memory operations outside the service worker.
-
-- `offscreen.ts` — Entry point.
-- `memory/main.ts` — Message handler wrapping `VectorStore`.
-- `memory/storage.ts` — `VectorStore`. Hybrid search: Transformers.js embeddings (all-MiniLM-L6-v2) + Voy vector search + SQLite FTS5 keyword search, fused with RRF.
-- `memory/utils.ts` — `reciprocalRankFusion()`. RRF scoring (K=60).
-- `memory/worker.ts` — Web Worker for Transformers.js embedding pipeline.
+- `components/` — `Header`, `MessageBubble`, `InputArea`, `StatusLine`, `StepTimeline`, `PlanTimelineCard`, `PlanStepIcon`, `SettingsDrawer`, `ToolCallBadge`, `ScreenshotLightbox`, `SavedPromptsDrawer`, `ApprovalOverlay`, `EscalationOverlay`, `ClarificationOverlay`, `DemoLibrary`, `DemoRecordButton`, `DemoSaveModal`.
 
 ### Utilities (`src/utils/`)
 
@@ -144,12 +120,11 @@ Two-tier model system with independent provider pools and automatic failover:
 
 | Tier | Models | Purpose |
 |------|--------|---------|
-| **Executor** (tier 0) | `openai/gpt-oss-120b` (Groq → OpenRouter) | Default execution, most turns |
+| **Executor** (tier 0) | `openai/gpt-oss-120b` (OpenRouter) | Default execution, most turns |
 | **Planner** (tier 1) | `deepseek/deepseek-v3.2` (OpenRouter) | Escalation, planning, DeepSeek V3.2 with native reasoning |
 
-- `ProviderPool` manages cooldowns (60s on 429) and immediate failover
-- `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` for failover attribution
-- `stream_options: { include_usage: true }` ensures Groq returns token counts
+- `ProviderPool` manages provider configuration for each tier
+- `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` for attribution
 - `tool_choice: "auto"` sent when tools are present
 - Think-tag stripping: `stripThinkTags()` + `createThinkFilter()` in client.ts
 - Think blocks preserved raw in conversation history for reasoning chain continuity
@@ -176,7 +151,7 @@ Verifier (planner model) ← validates against success criteria
     ↓
 [Retrospective] ← Planner learns from failures (if any)
     ↓
-Task Complete → [Skill Learning] (if teach mode ON)
+Task Complete
 ```
 
 ### Conversation Collaboration Patterns
@@ -189,7 +164,6 @@ Task Complete → [Skill Learning] (if teach mode ON)
 | Planner Retrospective | Task end with failures | 1 LLM call |
 | Advocate Triad | Retry + low confidence + first attempt | 1 LLM call |
 | Verifier-Critic Dialogue | Every verification | Already existed |
-| Skill Learning | Successful task + teach mode ON | Zero |
 
 ### Escalation
 
@@ -198,15 +172,6 @@ Two-tier escalation: tier 0 (executor) → tier 1 (planner):
 - Context distillation on escalation: `summarizeTrajectory()` replaces raw history with compact timeline
 - plan-then-act pattern: start planner (tier 1) for 2 turns, hand off to executor (tier 0)
 - Text-only response: reflection → escalate (at 2, tier 0→1 only) → give-up (at 3)
-
-## Skills System
-
-Learned skills enable the agent to replay successful plans on similar future queries:
-
-- **Teach Mode**: Toggle in settings. When ON and a task completes successfully, the orchestrator extracts the plan as a reusable skill.
-- **Feedback Coaching**: During active runs, the input area switches to amber "Send feedback..." mode. Feedback is injected into the agent's context via `injectFeedback()`.
-- **Auto-Replay**: When a new query matches a learned skill, the orchestrator replays the stored plan instead of re-planning from scratch.
-- **Management**: Side panel → Settings → Learned Skills panel shows all skills with pin/enable controls.
 
 ## Per-Tab Sidebar + Auto-Managed Workspaces
 
@@ -232,7 +197,7 @@ npm run dev            # Vite dev server with HMR
 npm run build          # Production build
 npm run lint           # ESLint (src/**/*.ts,tsx)
 npm run fmt            # Prettier format src/
-npm test               # Run all tests (600+)
+npm test               # Run all tests (1100+)
 npx vitest run tests/background/agent.test.ts  # Single test file
 
 npm run logs           # Start log drain server (127.0.0.1:7589)
@@ -296,88 +261,71 @@ src/
 │   ├── agent/
 │   │   ├── loop.ts       # AgentLoop orchestration
 │   │   ├── context.ts    # ContextManager (sliding window + distillation)
-│   │   ├── stagnation.ts  # StagnationMonitor (stuck detection)
+│   │   ├── stagnation.ts # StagnationMonitor (stuck detection)
 │   │   ├── step-labels.ts # Human-readable step labels
 │   │   ├── tool-recovery.ts # Extract tool calls from LLM text
+│   │   ├── verification.ts # Done validation
 │   │   └── trace.ts      # TraceRecorder (session recording)
 │   ├── orchestrator/
 │   │   ├── index.ts      # Orchestrator pipeline (planner→executor→verifier)
 │   │   ├── types.ts      # OrchestratorTask, TaskNode, evidence types
 │   │   ├── planner.ts    # Task decomposition + retrospective
-│   │   ├── verifier.ts   # Validation + dialogue + advocate + pre-flight
 │   │   ├── handoff.ts    # Role transition context building
-│   │   ├── retry-policy.ts # Failure classification + retry strategy
-│   │   ├── scheduling.ts # Node scheduling + dependencies
-│   │   ├── budget-estimator.ts # Token budget estimation
-│   │   ├── contracts.ts  # Inter-role contracts
-│   │   └── memory-buffer.ts # Buffered memory operations
-│   ├── skills/
-│   │   └── store.ts      # SkillStore (learn + replay)
+│   │   ├── router.ts     # Lane routing
+│   │   ├── sanitizers.ts # Output sanitization
+│   │   └── lane-types.ts # Runtime lane definitions
 │   ├── llm/
-│   │   ├── client.ts     # Multi-provider LLM client (Groq/OpenRouter)
-│   │   └── types.ts      # LLM types, ProviderConfig, TokenUsage
+│   │   ├── client.ts     # LLM client (OpenRouter, two-tier)
+│   │   ├── types.ts      # LLM types, ProviderConfig, TokenUsage
+│   │   └── pricing.ts    # Cost estimation
 │   ├── tools/
-│   │   ├── index.ts      # 53 core tool definitions + registration
+│   │   ├── index.ts      # 35 tool definitions + registration
+│   │   ├── definitions.ts # Tool schema definitions
 │   │   ├── registry.ts   # ToolRegistry
-│   │   ├── metadata.ts   # ToolMeta, DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS
-│   │   └── react.ts      # React Toolkit (4 on-demand tools)
-│   ├── memory/
-│   │   └── bridge.ts     # Offscreen document communication
+│   │   └── metadata.ts   # ToolMeta, DOM_MODIFYING_TOOLS, SEQUENTIAL_TOOLS
+│   ├── perception/
+│   │   ├── perception-agent.ts # Stateful PerceptionAgent
+│   │   ├── perception.ts # Legacy stateless perceive()
+│   │   └── types.ts      # Perception types
+│   ├── infrastructure/
+│   │   ├── keepalive.ts  # SW keepalive alarm
+│   │   ├── navigation.ts # Navigation Bridge (state persistence)
+│   │   └── tab-resolution.ts # Tab resolution utilities
 │   ├── workspaces/
 │   │   └── manager.ts    # Auto-managed workspace system
-│   ├── perception.ts     # Perception layer
-│   ├── navigation.ts     # Navigation Bridge (state persistence)
-│   ├── keepalive.ts      # SW keepalive alarm
 │   ├── streaming.ts      # SSE parser with usage capture
 │   └── security.ts       # Risk classification + sanitization
 ├── content/              # Content script (runs in every tab)
 │   ├── content.ts        # Main entry + message listener + auto-dismiss
 │   ├── snapshot.ts       # DOM distillation
-│   ├── tagging.ts        # Element tagging [1], [2], [3]... (stable hash IDs)
-│   ├── actions.ts        # Tool execution (click, type, scroll, etc.)
-│   └── framework-detect.ts # React/framework detection
-├── prompts/              # Prompt registry
-│   ├── registry.ts       # PromptRegistry (versioned templates)
-│   ├── types.ts          # PromptId union type
-│   ├── render.ts         # Template rendering
-│   └── index.ts          # Barrel export
+│   ├── tagging/          # Element tagging system
+│   │   ├── index.ts      # Vimium-style [1], [2], [3]... (stable hash IDs)
+│   │   ├── dom-traversal.ts # DOM walking
+│   │   └── structural.ts # Structural analysis
+│   └── actions/
+│       └── inspection.ts # Element inspection actions
+├── prompts/              # Prompt system
+│   ├── generated.ts      # Auto-generated prompt constants
+│   └── manifest.json     # Prompt manifest
 ├── sidepanel/            # React UI (side panel)
 │   ├── App.tsx           # Main component
 │   ├── store.ts          # Zustand state management
 │   ├── bridge.ts         # Message router
-│   ├── hooks/
-│   │   └── useSpeechToText.ts # Voice input (Browser/Groq Whisper)
 │   └── components/       # UI components
 │       ├── Header.tsx
-│       ├── InputArea.tsx  # Chat input + feedback mode
+│       ├── InputArea.tsx
 │       ├── MessageBubble.tsx
-│       ├── ControlBar.tsx # Pause/resume/turn counter
-│       ├── SettingsDrawer.tsx
-│       ├── StatusBar.tsx
-│       ├── ToolCallBadge.tsx
-│       ├── StallBanner.tsx
+│       ├── StatusLine.tsx
 │       ├── StepTimeline.tsx
-│       ├── TaskProgressPanel.tsx
-│       ├── OrchestratorConsole.tsx
-│       ├── PlanBoard.tsx
-│       ├── LearnedSkillsPanel.tsx
-│       ├── MetricsBar.tsx
-│       ├── CompletionSummary.tsx
-│       ├── EscalationBanner.tsx
-│       ├── ApprovalBanner.tsx
-│       ├── RecoveryBanner.tsx
-│       ├── ArchitectureStrip.tsx
+│       ├── PlanTimelineCard.tsx  # Inline plan timeline
+│       ├── PlanStepIcon.tsx
+│       ├── SettingsDrawer.tsx
+│       ├── ToolCallBadge.tsx
 │       ├── ScreenshotLightbox.tsx
 │       ├── SavedPromptsDrawer.tsx
-│       └── PromptPicker.tsx
-├── offscreen/            # Offscreen document (separate DOM context)
-│   ├── offscreen.ts      # Entry point
-│   └── memory/
-│       ├── main.ts       # SQLite + Voy + RRF coordination
-│       ├── storage.ts    # VectorStore hybrid search
-│       ├── worker.ts     # Transformers.js embedding worker
-│       ├── utils.ts      # RRF fusion algorithm
-│       └── index.html
+│       ├── ApprovalOverlay.tsx
+│       ├── EscalationOverlay.tsx
+│       └── ClarificationOverlay.tsx
 ├── types/                # TypeScript types
 │   └── index.ts          # Single source of truth
 └── utils/                # Shared utilities
@@ -385,7 +333,7 @@ src/
     ├── storage-logger.ts # StorageLogger with auto-redaction
     └── context.ts        # Execution context detection
 
-tests/                    # Test files mirror src structure (600+ tests)
+tests/                    # Test files mirror src structure (1100+ tests)
 docs/                     # Documentation
 ├── architecture/         # Technical architecture docs
 ├── features/             # Feature documentation
@@ -406,40 +354,31 @@ logs/                     # Application logs
 ```typescript
 interface UserSettings {
   openRouterApiKey: string;
-  groqApiKey: string;
   maxTurns: number;
   contextWindowSize: number;
-  enableMemory: boolean;
   enableWorkspaces: boolean;
   theme: "light" | "dark" | "system";
   showElementTags: boolean;
-  visionModel: string;
-  confirmPlan: boolean;
+  requirePlanConfirmation: boolean;
   showSessionMetrics: boolean;
-  teachModeEnabled: boolean;
-  autoSkillReplay: boolean;
 }
 ```
 
 ## Tool System
 
-57 tools registered in `src/background/tools/index.ts`:
+35 tools registered in `src/background/tools/index.ts`:
 
-**DOM Tools (11):** click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element
+**DOM Interaction (17):** click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element, read_element, right_click, set_checkbox, click_coordinates, upload_file, execute_js
 
-**Navigation/Tab Tools (5):** navigate, create_tab, close_tab, switch_tab, wait
+**Navigation (8):** navigate, create_tab, close_tab, switch_tab, go_back, go_forward, list_tabs, create_window
 
-**Memory Tools (2):** memory_add, memory_search
+**Browser Management (12):** wait, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file
 
-**Chrome API Tools (12):** Various browser management tools
+**Page Analysis (4):** inspect_hidden, xray_page, fast_forward, read_pdf
 
-**Page Analysis (4):** inspect_hidden, xray_page, fast_forward, + 1 more
+**Control Flow / Utilities (4):** escalate, clarify, update_plan, transcribe_audio, send_notification
 
-**React Toolkit (4, on-demand):** inspect_react, react_set_input, inspect_react_tree, wait_for_react
-
-**Agent Control (4):** escalate, done, update_plan, pause_agent
-
-**Special:** escalate switches to planner model (DeepSeek V3.2), update_plan broadcasts progress
+**Special:** escalate switches to planner model (DeepSeek V3.2), update_plan broadcasts progress, clarify pauses for user input
 
 ## Logging System
 
@@ -458,7 +397,7 @@ Log file: `logs/opensidebar.jsonl` (JSONL, 50MB rotation, 5 files max).
 All agent infrastructure must be **task-agnostic**. Never hardcode logic for a specific website or workflow.
 
 - **No site-specific heuristics.** If a pattern only works on one site, it doesn't belong.
-- **The agent adapts through prompting and memory, not code.**
+- **The agent adapts through prompting and demonstrations, not code.**
 - **Tools are generic primitives.** Click, type, scroll, navigate — higher-level behavior emerges from LLM reasoning.
 - **Plans are dynamic.** The orchestrator decomposes any query based on context.
 

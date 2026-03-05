@@ -100,11 +100,9 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 
 1. **Be specific** - Use button text and element descriptions you can see
 2. **Break down complex tasks** - Multi-step tasks work better than single complex requests
-3. **Use memory for repeated information** - "Remember that I live in New York" saves preferences for future sessions
+3. **Provide context in your request** - Include relevant details so the agent has all the information it needs
 
 ## Technical Details
-
-### Tools Used
 
 ### Tools Used
 
@@ -155,8 +153,6 @@ The agent can only interact with tabs in the current workspace. Each workspace i
 - `create_bookmark` - Create a new bookmark
 - `get_bookmarks` - List bookmarks
 - `send_notification` - Send a browser notification
-- `memory_add` - Save information to long-term memory
-- `memory_search` - Search long-term memory
 
 ### DOM Snapshot Format
 
@@ -170,6 +166,5 @@ This allows the agent to understand page structure without seeing the raw HTML.
 
 ## See Also
 
-- [Memory System](./memory-system.md) - Store and recall information
 - [Workspace Management](./workspace-management.md) - Organize related tabs
 - [Architecture Overview](../architecture/overview.md) - Technical details

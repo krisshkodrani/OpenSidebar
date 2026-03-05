@@ -1,4 +1,4 @@
-import { ToolCall } from "../../types";
+import { ToolCall, ToolName } from "../../types";
 import { logger } from "../../utils";
 import { parseSSEStream } from "../streaming";
 import {
@@ -10,7 +10,6 @@ import {
 } from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -30,12 +29,16 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Executor model tier — used for initial turns (OpenRouter fallback) */
+/** Executor model tier — used for initial turns (OpenRouter) */
 export const MODEL_EXECUTOR = "openai/gpt-oss-120b";
-/** Executor model tier — used for initial turns (Groq, when enabled) */
-export const MODEL_EXECUTOR_GROQ = "openai/gpt-oss-120b";
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "deepseek/deepseek-v3.2";
+
+/** Options for overriding default models in LLMClient */
+export interface LLMClientOptions {
+  executorModel?: string;
+  plannerModel?: string;
+}
 
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
@@ -46,15 +49,6 @@ function openRouterProvider(apiKey: string): ProviderConfig {
       "X-Title": "OpenSidebar",
     },
     providerId: "openrouter",
-  };
-}
-
-function groqProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: GROQ_BASE_URL,
-    apiKey,
-    headers: {},
-    providerId: "groq",
   };
 }
 
@@ -189,16 +183,14 @@ export interface ProviderSlot {
   model: string;
 }
 
-/** Model identifiers per provider for a given tier. */
+/** Model identifier for a provider pool tier. */
 export interface PoolConfig {
-  groqModel?: string;
   openRouterModel: string;
 }
 
 /**
- * Priority-based provider pool. Groq → OpenRouter (fastest first).
- * On 429, the provider is placed on a 60s cooldown and the next provider is used.
- * Used for both executor and planner model tiers with different PoolConfig.
+ * Provider pool. Currently single-provider (OpenRouter).
+ * Retains multi-slot structure for future provider additions.
  */
 export class ProviderPool {
   private slots: ProviderSlot[];
@@ -206,18 +198,8 @@ export class ProviderPool {
   constructor(
     openRouterKey: string,
     config: PoolConfig,
-    groqKey?: string,
   ) {
     this.slots = [];
-    // Priority: fastest first
-    if (groqKey && config.groqModel) {
-      this.slots.push({
-        provider: groqProvider(groqKey),
-        cooldownUntil: 0,
-        model: config.groqModel,
-      });
-    }
-    // OpenRouter always present as last resort
     this.slots.push({
       provider: openRouterProvider(openRouterKey),
       cooldownUntil: 0,
@@ -294,39 +276,31 @@ export class LLMClient {
   private _isPlannerTier = false;
 
   /**
-   * Creates a new LLM client with priority-based provider failover.
-   * @param openRouterApiKey - OpenRouter key (always needed for planner model + fallback)
-   * @param groqApiKey - Groq key (optional; auto-joins executor pool when present)
-   * @param model - Model ID override (defaults to executor pool's top-priority model)
+   * Creates a new LLM client with OpenRouter as the sole provider.
+   * @param openRouterApiKey - OpenRouter key (required)
+   * @param options - Optional model overrides for executor and planner tiers
    */
   constructor(
     openRouterApiKey: string,
-    groqApiKey?: string,
-    model?: string,
+    options?: LLMClientOptions,
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    // Build executor pool: Groq → OpenRouter
+    // Build executor pool: OpenRouter
     this.executorPool = new ProviderPool(
       openRouterApiKey,
-      {
-        groqModel: MODEL_EXECUTOR_GROQ,
-        openRouterModel: MODEL_EXECUTOR,
-      },
-      groqApiKey,
+      { openRouterModel: options?.executorModel || MODEL_EXECUTOR },
     );
 
-    // Build planner pool: OpenRouter only (DeepSeek V3.2 not on Groq)
+    // Build planner pool: OpenRouter (DeepSeek V3.2)
     this.plannerPool = new ProviderPool(
       openRouterApiKey,
-      {
-        openRouterModel: MODEL_PLANNER,
-      },
+      { openRouterModel: options?.plannerModel || MODEL_PLANNER },
     );
 
     // Initialize from executor pool's top priority
     const initialSlot = this.executorPool.getActive();
-    this.model = model ?? initialSlot.model;
+    this.model = initialSlot.model;
     this.provider = initialSlot.provider;
   }
 
@@ -530,12 +504,8 @@ export class LLMClient {
     let activeModel = activeSlot.model;
 
     if (!provider.apiKey) {
-      const name =
-        provider.providerId === "groq"
-          ? "Groq"
-          : "OpenRouter";
       throw new Error(
-        `${name} API Key is missing. Please configure it in settings.`,
+        `OpenRouter API Key is missing. Please configure it in settings.`,
       );
     }
 
@@ -568,7 +538,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter" | "groq";
+      let actualProviderId: "openrouter";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -586,9 +556,7 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
-        actualProviderId = fetchResult.actualProviderId as
-          | "openrouter"
-          | "groq";
+        actualProviderId = fetchResult.actualProviderId as "openrouter";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -645,14 +613,8 @@ export class LLMClient {
           }
 
           // No viable fallback — throw the credit error
-          const providerName =
-            provider.providerId === "groq"
-              ? "Groq"
-              : "OpenRouter";
-          const creditsUrl =
-            provider.providerId === "groq"
-              ? "console.groq.com/settings/billing"
-              : "openrouter.ai/credits";
+          const providerName = "OpenRouter";
+          const creditsUrl = "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
@@ -670,6 +632,11 @@ export class LLMClient {
       }
 
       const data = await response.json();
+      if (!data.choices?.length) {
+        throw new Error(
+          `LLM returned empty choices array (model: ${actualModel ?? "unknown"})`,
+        );
+      }
       const choice = data.choices[0];
 
       // Parse tool calls from provider format to internal ToolCall format
@@ -678,15 +645,21 @@ export class LLMClient {
         | undefined;
       let parsedToolCalls: ToolCall[] = [];
 
+      const VALID_TOOL_NAMES = new Set<string>(Object.values(ToolName));
+
       if (rawToolCalls) {
         parsedToolCalls = rawToolCalls.map((tc) => {
-          // Return exactly what matches parameters of ToolCall interface
-          // We validate that the name is a valid ToolName? Or just cast it.
+          if (!VALID_TOOL_NAMES.has(tc.function.name)) {
+            logger.warn("agent", "LLM emitted unknown tool name", {
+              name: tc.function.name,
+            });
+          }
           return {
             id: tc.id,
             type: "function",
             function: {
-              name: tc.function.name as any, // Cast to ToolName
+              // Cast is safe: unknown names are caught by validateToolCalls()
+              name: tc.function.name as ToolName,
               arguments: tc.function.arguments,
             },
           };
@@ -748,12 +721,8 @@ export class LLMClient {
     let activeModel = activeSlot.model;
 
     if (!provider.apiKey) {
-      const name =
-        provider.providerId === "groq"
-          ? "Groq"
-          : "OpenRouter";
       throw new Error(
-        `${name} API Key is missing. Please configure it in settings.`,
+        `OpenRouter API Key is missing. Please configure it in settings.`,
       );
     }
 
@@ -788,7 +757,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter" | "groq";
+      let actualProviderId: "openrouter";
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -806,9 +775,7 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
-        actualProviderId = fetchResult.actualProviderId as
-          | "openrouter"
-          | "groq";
+        actualProviderId = fetchResult.actualProviderId as "openrouter";
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -865,14 +832,8 @@ export class LLMClient {
           }
 
           // No viable fallback — throw the credit error
-          const providerName =
-            provider.providerId === "groq"
-              ? "Groq"
-              : "OpenRouter";
-          const creditsUrl =
-            provider.providerId === "groq"
-              ? "console.groq.com/settings/billing"
-              : "openrouter.ai/credits";
+          const providerName = "OpenRouter";
+          const creditsUrl = "openrouter.ai/credits";
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(

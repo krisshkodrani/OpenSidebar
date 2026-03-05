@@ -1,6 +1,6 @@
 # Tool System
 
-OpenSidebar implements **39 tools** across four categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
+OpenSidebar implements **35 tools** across four categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
 
 ## Tool Categories
 

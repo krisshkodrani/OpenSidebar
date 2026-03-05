@@ -209,6 +209,9 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
         ? raw.replansUsed
         : null;
   if (replansUsed === null) return null;
+  const horizonExpansions = isNonNegativeInteger(raw.horizonExpansions)
+    ? raw.horizonExpansions
+    : 0;
   if (!isNonNegativeInteger(raw.currentIndex)) return null;
 
   const nodes = raw.nodes.map(sanitizeTaskNode);
@@ -248,6 +251,7 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     maxWorkers: raw.maxWorkers,
     maxReplans,
     replansUsed,
+    horizonExpansions,
     currentIndex: raw.currentIndex,
     sessionMetrics,
     budget,

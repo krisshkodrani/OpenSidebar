@@ -17,7 +17,7 @@ function applyGlobalToolFlags(
   settings: UserSettings,
   allowed: Set<ToolName>,
 ): void {
-  if (settings.disableNavigation) {
+  if (!settings.allowNavigation) {
     allowed.delete(ToolName.NAVIGATE);
   }
 }

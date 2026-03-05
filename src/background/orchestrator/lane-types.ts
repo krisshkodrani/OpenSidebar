@@ -4,6 +4,7 @@
 
 import { AgentLoop } from "../agent";
 import { EscalationDecisionMessage } from "../../types";
+import type { LLMClientOptions } from "../llm";
 import { WorkerInstance } from "./types";
 import { OrchestratorPlanner } from "./planner";
 import { OrchestratorVerifier } from "./verifier";
@@ -108,7 +109,6 @@ export type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
 
 export type CreateAgentLoopInput = {
   openRouterApiKey: string;
-  groqApiKey?: string;
   callbacks?: AgentLoopCallbacksArg;
   options?: AgentLoopOptionsArg;
 };
@@ -116,9 +116,11 @@ export type CreateAgentLoopInput = {
 export type OrchestratorDeps = {
   createPlanner?: (
     openRouterApiKey: string,
+    modelOverrides?: LLMClientOptions,
   ) => PlannerLike;
   createVerifier?: (
     openRouterApiKey: string,
+    modelOverrides?: LLMClientOptions,
   ) => VerifierLike;
   createAgentLoop?: (input: CreateAgentLoopInput) => AgentLoop;
   workspaceManager?: Pick<

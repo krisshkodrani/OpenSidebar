@@ -6,17 +6,11 @@ import { buildRoleExecutionContract } from "../../src/background/orchestrator/co
 
 const baseSettings: UserSettings = {
   openRouterApiKey: "test",
-  groqApiKey: "",
   maxTurns: 30,
-  contextWindowSize: 32000,
-  memoryEnabled: true,
-  workspaceEnabled: true,
   theme: "system",
-  visionModel: "qwen/qwen3-vl-235b-a22b-instruct",
   showSessionMetrics: false,
-  disableNavigation: false,
-  bypassApprovals: false,
-  orchestratorMaxWorkers: 3,
+  requireApprovals: true,
+  allowNavigation: true,
 };
 
 function makeNode(allowedTools: ToolName[]): TaskNode {
@@ -64,7 +58,7 @@ describe("Orchestrator role contracts", () => {
       "executor",
       {
         ...baseSettings,
-        disableNavigation: true,
+        allowNavigation: false,
       },
       node,
     );

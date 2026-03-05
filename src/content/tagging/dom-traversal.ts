@@ -6,7 +6,7 @@ import { logger } from "../../utils";
 import { isElementVisible } from "./utils";
 
 /** CSS class for the injected label overlay (legacy — kept for cleanup of old labels) */
-export const LABEL_CLASS = "qsidebar-tag";
+export const LABEL_CLASS = "opensidebar-tag";
 
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
 const MAX_SHADOW_DEPTH = 3;
@@ -72,33 +72,16 @@ export function querySelectorAllDeep(
   const results: Element[] = [];
 
   try {
-    if (root instanceof Element) {
-      results.push(...Array.from(root.querySelectorAll(selector)));
-    } else {
-      results.push(...Array.from(root.querySelectorAll(selector)));
-    }
+    results.push(...Array.from(root.querySelectorAll(selector)));
 
     const allElements = root.querySelectorAll("*");
 
     for (const el of allElements) {
-      // Shadow DOM traversal
+      // Shadow DOM traversal (single check — avoids duplicate traversal)
       if (el.shadowRoot) {
         try {
           const shadowResults = querySelectorAllDeep(
             el.shadowRoot,
-            selector,
-            depth + 1,
-          );
-          results.push(...shadowResults);
-        } catch (_e) {
-          continue;
-        }
-      }
-
-      if ((el as any).shadowRoot && el !== root) {
-        try {
-          const shadowResults = querySelectorAllDeep(
-            (el as any).shadowRoot,
             selector,
             depth + 1,
           );

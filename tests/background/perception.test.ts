@@ -71,18 +71,21 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response | Prom
 }
 
 /** Set API keys via storage mock; returns cleanup function. */
-function setKeys(opts: { groq?: string; openRouter?: string }): () => void {
-    const origGet = chrome.storage.sync.get;
+function setKeys(opts: { openRouter?: string }): () => void {
+    const origSyncGet = chrome.storage.sync.get;
+    const origSessionGet = chrome.storage.session.get;
 
     chrome.storage.sync.get = (async () => ({
-        userSettings: {
-            openRouterApiKey: opts.openRouter ?? "",
-            groqApiKey: opts.groq ?? "",
-        },
+        userSettings: {},
+    })) as any;
+
+    chrome.storage.session.get = (async () => ({
+        openRouterApiKey: opts.openRouter ?? "",
     })) as any;
 
     return () => {
-        chrome.storage.sync.get = origGet;
+        chrome.storage.sync.get = origSyncGet;
+        chrome.storage.session.get = origSessionGet;
     };
 }
 

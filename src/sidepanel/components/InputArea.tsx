@@ -1,11 +1,9 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
-import { StopCircle, Mic, Loader2, ArrowUp } from "lucide-react";
+import { StopCircle, ArrowUp } from "lucide-react";
 import { useStore } from "../store";
-import { useSpeechToText } from "../hooks/useSpeechToText";
 import { StatusLine } from "./StatusLine";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
-import { PlanConfirmationOverlay } from "./PlanConfirmationOverlay";
 import { ClarificationOverlay } from "./ClarificationOverlay";
 import {
   isSlashCommand,
@@ -34,42 +32,12 @@ export function InputArea({
   const demoRecording = useStore((s) => s.demoRecording);
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
-  const pendingPlanConfirmation = useStore((s) => s.pendingPlanConfirmation);
   const pendingClarification = useStore((s) => s.pendingClarification);
-  const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const manualRecording = useStore((s) => s.manualRecording);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevHeightRef = useRef<number>(0);
-  const interimRef = useRef<string>("");
   const [completions, setCompletions] = useState<CommandHint[]>([]);
   const [selectedCompletion, setSelectedCompletion] = useState(0);
-
-  // Speech-to-text hook
-  const handleTranscript = useCallback(
-    (text: string, isFinal: boolean) => {
-      const current = useStore.getState().inputText;
-      if (isFinal) {
-        const withoutInterim = interimRef.current
-          ? current.slice(0, current.length - interimRef.current.length)
-          : current;
-        interimRef.current = "";
-        const separator =
-          withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
-        setInputText(withoutInterim + separator + text);
-      } else {
-        const withoutInterim = interimRef.current
-          ? current.slice(0, current.length - interimRef.current.length)
-          : current;
-        const separator =
-          withoutInterim && !withoutInterim.endsWith(" ") ? " " : "";
-        interimRef.current = separator + text;
-        setInputText(withoutInterim + interimRef.current);
-      }
-    },
-    [setInputText],
-  );
-
-  const speech = useSpeechToText(groqApiKey, handleTranscript);
 
   // Smooth auto-resize
   const MAX_HEIGHT = 120;
@@ -101,8 +69,6 @@ export function InputArea({
 
   const handleSubmit = () => {
     if (!hasText) return;
-    if (speech.isRecording) speech.stop();
-    interimRef.current = "";
     setCompletions([]);
 
     // Route slash commands (only when agent is not running)
@@ -189,16 +155,6 @@ export function InputArea({
     );
   }
 
-  // Plan confirmation overlay replaces the entire input area
-  if (pendingPlanConfirmation) {
-    return (
-      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
-        <StatusLine />
-        <PlanConfirmationOverlay />
-      </div>
-    );
-  }
-
   // Clarification overlay replaces the entire input area
   if (pendingClarification) {
     return (
@@ -218,7 +174,7 @@ export function InputArea({
           Recording: {manualRecording.name} ({manualRecording.turnCount} turns)
         </div>
       )}
-      <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-xl ring-1 ring-transparent focus-within:ring-primary-500 transition-all">
+      <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200 dark:ring-warm-700 focus-within:ring-2 focus-within:ring-primary-400/60 input-glow transition-all">
         {completions.length > 0 && (
           <div className="absolute bottom-full left-0 right-0 mb-1 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg overflow-hidden z-50">
             {completions.map((hint, i) => (
@@ -254,39 +210,12 @@ export function InputArea({
               ? "Add annotation..."
               : isAgentRunning
                 ? "Send feedback..."
-                : "Ask OpenSidebar..."
+                : "What can I help with?"
           }
-          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-500"
+          className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
           rows={1}
         />
         <div className="flex items-end gap-1">
-          {/* Mic button */}
-          {speech.isSupported && (
-            <button
-              onClick={() => {
-                if (speech.isRecording) interimRef.current = "";
-                speech.toggle();
-              }}
-              disabled={speech.isProcessing}
-              className={clsx(
-                "p-1.5 mb-0.5 rounded-lg transition-colors flex-shrink-0",
-                speech.isProcessing
-                  ? "text-warm-400 cursor-wait"
-                  : speech.isRecording
-                    ? "bg-red-500 text-white mic-recording"
-                    : "text-warm-400 hover:text-warm-600 dark:hover:text-warm-300",
-              )}
-              aria-label={
-                speech.isRecording ? "Stop recording" : "Start voice input"
-              }
-            >
-              {speech.isProcessing ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Mic size={16} />
-              )}
-            </button>
-          )}
           {/* Stop button — only when agent is running */}
           {isAgentRunning && (
             <button
@@ -302,7 +231,7 @@ export function InputArea({
             <button
               onClick={handleSubmit}
               className={clsx(
-                "p-1.5 mb-0.5 rounded-full transition-colors flex-shrink-0",
+                "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
                 demoRecording && !isAgentRunning
                   ? "bg-violet-500 hover:bg-violet-600 text-white"
                   : isAgentRunning
@@ -322,9 +251,6 @@ export function InputArea({
           )}
         </div>
       </div>
-      {speech.error && (
-        <p className="text-xs text-red-500 mt-1 px-1">{speech.error}</p>
-      )}
     </div>
   );
 }

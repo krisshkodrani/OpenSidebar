@@ -15,14 +15,14 @@
 
 ## Product Overview
 
-OpenSidebar is a Chrome Extension (Manifest V3) that provides an AI agent capable of autonomous web browsing. The agent can see web pages via DOM snapshots, click elements, type text, navigate, scroll, and perform 30+ browser automation tasks.
+OpenSidebar is a Chrome Extension (Manifest V3) that provides an AI agent capable of autonomous web browsing. The agent can see web pages via DOM snapshots, click elements, type text, navigate, scroll, and perform 35 browser automation tasks.
 
 ### Core Features
 
 - **Agentic Web Browsing** — AI agent interacts with web pages autonomously
 - **Real-time Streaming** — LLM responses stream live to the side panel
-- **Memory System** — "Second Brain" stores memories with hybrid search (semantic + keyword)
-- **Vision Model** — Analyzes screenshots when text-based tools fail
+- **Perception Layer** — Vision-based page understanding (Gemini 2.5 Flash)
+- **Two-Tier LLM** — Executor + planner model escalation
 - **Workspace Management** — Auto-manages Chrome Tab Groups
 - **Session Metrics** — Tracks token usage and costs per session
 
@@ -31,9 +31,8 @@ OpenSidebar is a Chrome Extension (Manifest V3) that provides an AI agent capabl
 ```
 Chrome Extension (MV3)
 ├── Side Panel (React + Zustand)
-├── Service Worker (Agent Loop)
-├── Content Script (DOM Actions)
-└── Offscreen Document (Memory: SQLite + Transformers.js)
+├── Service Worker (Agent Loop + Orchestrator)
+└── Content Script (DOM Actions)
 ```
 
 ---
@@ -86,11 +85,11 @@ This means OpenSidebar cannot compete on general brand awareness or funding. It 
 | Competitor         | GitHub Stars | Approach                              | Strengths                                                           | Weaknesses                                                                  |
 | ------------------ | ------------ | ------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | **Browser-Use**    | 60K+         | Python library for browser automation | Massive community, strong benchmarks (beats Operator on WebVoyager) | Requires Python, headless browser, not a Chrome extension                   |
-| **Nanobrowser**    | Growing      | Chrome extension, multi-agent, BYOK   | Nearly identical concept to OpenSidebar                             | No memory system, no multi-provider failover, no eval pipeline, less mature |
+| **Nanobrowser**    | Growing      | Chrome extension, multi-agent, BYOK   | Nearly identical concept to OpenSidebar                             | No perception layer, no two-tier model system, no eval pipeline, less mature |
 | **Steel Browser**  | Active       | Open-source browser API sandbox       | Batteries-included infra                                            | Infrastructure layer, not end-user product                                  |
 | **A5 Browser-Use** | Active       | Chrome extension wrapping Browser-Use | Bridges Python ecosystem to Chrome                                  | Thin wrapper, limited native tooling                                        |
 
-**Implication:** Nanobrowser is the closest direct competitor. Browser-Use has the largest community but is a Python library, not a Chrome extension. OpenSidebar's engineering depth (31 tools, memory, vision, eval pipeline, multi-provider failover) is a genuine moat over these.
+**Implication:** Nanobrowser is the closest direct competitor. Browser-Use has the largest community but is a Python library, not a Chrome extension. OpenSidebar's engineering depth (35 tools, perception layer, eval pipeline, two-tier model system) is a genuine moat over these.
 
 ### Why OpenSidebar Wins: Architectural Advantages
 
@@ -107,7 +106,7 @@ Most competitors use one of two approaches, both with fundamental limitations:
 2. **DOM-level precision** — Reads structured HTML elements, not screenshots. Faster, cheaper, more reliable than pixel-based agents.
 3. **Zero infrastructure** — No cloud VM, no Python, no Docker. Install the extension and go.
 4. **Works with existing extensions** — Password managers, ad blockers, corporate VPNs all work normally.
-5. **Speed** — Multi-provider failover (Cerebras 3000 TPS → Groq → OpenRouter) delivers sub-second responses vs. Operator's multi-second cloud VM round trips.
+5. **Speed** — OpenRouter delivers sub-second responses vs. Operator's multi-second cloud VM round trips.
 
 ---
 
@@ -127,9 +126,9 @@ The direct competitor is Nanobrowser. To win this comparison:
 
 | Dimension         | Nanobrowser     | OpenSidebar                        | Action needed                          |
 | ----------------- | --------------- | ---------------------------------- | -------------------------------------- |
-| Memory system     | None            | Hybrid search (semantic + keyword) | Already ahead — promote it             |
-| Provider failover | Single provider | Cerebras → Groq → OpenRouter       | Already ahead — promote it             |
-| Tool count        | ~15             | 31                                 | Already ahead — promote it             |
+| Perception layer  | None            | Vision-based page understanding    | Already ahead — promote it             |
+| Provider failover | Single provider | OpenRouter (two-tier model system)   | Already ahead — promote it             |
+| Tool count        | ~15             | 35                                 | Already ahead — promote it             |
 | Eval pipeline     | None            | Trace-based evals                  | Already ahead — promote it             |
 | Documentation     | Basic           | Needs work                         | Write great docs + video demos         |
 | Community         | Small           | None yet                           | Launch Discord, respond fast to issues |
@@ -152,9 +151,9 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 | Wedge candidate               | Why OpenSidebar wins                                                                                               | Target user                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
 | **CRM data entry**            | Runs on user's logged-in Salesforce/HubSpot. No API integration needed.                                            | SDRs, sales ops                           |
-| **Research + memory**         | Agent browses, collects facts, stores in local memory, recalls later. No other extension has hybrid search memory. | Analysts, journalists, academics          |
+| **Multi-tab research**        | Agent browses across tabs, collects facts, compares data across sites. Perception layer understands visual context. | Analysts, journalists, academics          |
 | **Internal tool automation**  | Works behind corporate VPNs and SSO — cloud agents can't reach these.                                              | Enterprise employees                      |
-| **Form filling across sites** | Agent remembers context from site A and applies it on site B.                                                      | Insurance agents, recruiters, accountants |
+| **Form filling across sites** | Agent carries context from site A and applies it on site B via conversation history.                               | Insurance agents, recruiters, accountants |
 
 **How to find the wedge:** After open source launch, monitor which use cases users actually succeed at (via traces + evals). Double down on the top 2-3 with dedicated prompt engineering, custom tools, and marketing.
 
@@ -174,7 +173,7 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 
 ### Positioning Statement
 
-> **For professionals who automate web workflows**, OpenSidebar is the **open-source Chrome extension** that gives you an AI agent running **inside your actual browser** — with access to your logged-in sessions, local memory, and zero cloud dependencies. Unlike Operator ($200/mo, cloud VM) or Cowork (desktop app), OpenSidebar works where you already work: your Chrome tabs.
+> **For professionals who automate web workflows**, OpenSidebar is the **open-source Chrome extension** that gives you an AI agent running **inside your actual browser** — with access to your logged-in sessions, local data, and zero cloud dependencies. Unlike Operator ($200/mo, cloud VM) or Cowork (desktop app), OpenSidebar works where you already work: your Chrome tabs.
 
 ### What Not to Do
 
@@ -191,44 +190,28 @@ General-purpose "do anything on the web" agents are a commodity. The winners wil
 
 #### Models Used
 
-| Model Tier            | Provider   | Model ID                           | Speed     | Use Case                                 |
-| --------------------- | ---------- | ---------------------------------- | --------- | ---------------------------------------- |
-| **Fast (primary)**    | Cerebras   | `gpt-oss-120b`                     | ~3000 TPS | Default — fastest provider               |
-| **Fast (fallback 1)** | Groq       | `openai/gpt-oss-120b`              | ~250K TPM | Automatic failover on 429                |
-| **Fast (fallback 2)** | OpenRouter | `openai/gpt-oss-120b`              | Variable  | Always-available fallback                |
-| **Planner**           | OpenRouter | `x-ai/grok-4.1-fast:nitro`         | Moderate  | Complex reasoning (escalation)           |
-| **Vision**            | OpenRouter | `qwen/qwen3-vl-235b-a22b-instruct` | Moderate  | Screenshot analysis (GUI grounding, OCR) |
-| **Audio**             | Groq       | `whisper-large-v3-turbo`           | Very High | Speech-to-text & Video transcription     |
+| Model Tier     | Provider   | Model ID                           | Speed     | Use Case                                 |
+| -------------- | ---------- | ---------------------------------- | --------- | ---------------------------------------- |
+| **Executor**   | OpenRouter | `openai/gpt-oss-120b`              | Fast      | Default execution, most turns            |
+| **Planner**    | OpenRouter | `deepseek/deepseek-v3.2`           | Moderate  | Complex reasoning (escalation)           |
+| **Perception** | OpenRouter | `google/gemini-2.5-flash`          | Fast      | Vision-based page understanding          |
 
-Priority-based failover: Cerebras → Groq → OpenRouter. Automatic 60s cooldown on 429 rate limits with zero-delay fallback to next provider.
+All models route through OpenRouter as the single provider.
 
 #### User Settings
 
 ```typescript
 interface UserSettings {
   openRouterApiKey: string; // User provides
-  groqApiKey: string; // User provides (optional)
-  useGroqFast: boolean; // Toggle Groq vs OpenRouter
   maxTurns: number; // Default: 30
   contextWindowSize: number; // Default: 128000 tokens
-  memoryEnabled: boolean; // Default: true
-  workspaceEnabled: boolean; // Default: true
+  enableWorkspaces: boolean; // Default: true
   theme: "light" | "dark" | "system";
   showElementTags: boolean; // Debug overlay
-  visionModel: string; // Default: qwen/qwen3-vl-235b-a22b-instruct
-  confirmPlan: boolean; // Require user confirmation
+  requirePlanConfirmation: boolean; // Require user plan confirmation
   showSessionMetrics: boolean; // Show token/cost metrics
 }
 ```
-
-#### Memory System (Local)
-
-| Component      | Technology                                |
-| -------------- | ----------------------------------------- |
-| Vector Store   | Transformers.js (Xenova/all-MiniLM-L6-v2) |
-| Keyword Search | SQLite FTS5 (in-browser)                  |
-| Fusion         | Reciprocal Rank Fusion (RRF)              |
-| Storage        | IndexedDB via offscreen document          |
 
 ---
 
@@ -279,10 +262,10 @@ interface UserSettings {
 
 | Model                     | Price (Input) | Price (Output) | Est. Tokens/Month | Cost/Month |
 | ------------------------- | ------------- | -------------- | ----------------- | ---------- |
-| GPT-OSS-120B (OpenRouter) | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
-| Grok 4.1 Fast (Nitro)     | $0.40/1M      | $4.00/1M       | 0.1M              | $0.32      |
-| Vision (Qwen3 VL 235B)    | $0.14/1M      | $0.14/1M       | 0.6M              | $0.08      |
-| **Total LLM**             |               |                |                   | **~$0.85** |
+| GPT-OSS-120B (Executor)   | $0.15/1M      | $0.60/1M       | 1.5M              | $0.45      |
+| DeepSeek V3.2 (Planner)   | $0.30/1M      | $1.50/1M       | 0.1M              | $0.18      |
+| Gemini 2.5 Flash (Vision) | $0.15/1M      | $0.60/1M       | 0.6M              | $0.20      |
+| **Total LLM**             |               |                |                   | **~$0.83** |
 
 #### Infrastructure Costs
 
@@ -438,9 +421,9 @@ model UsageLog {
 
 | Risk                                            | Likelihood | Impact   | Mitigation                                                                                                         |
 | ----------------------------------------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Google ships native browser agent in Chrome** | Medium     | Critical | Focus on power-user features Google won't build (memory, multi-provider, BYOK). Worst case: pivot to Firefox/Edge. |
+| **Google ships native browser agent in Chrome** | Medium     | Critical | Focus on power-user features Google won't build (BYOK, multi-model, open source). Worst case: pivot to Firefox/Edge. |
 | **LLM API costs exceed revenue (heavy users)**  | High       | High     | Token-based usage tiers, hard caps, auto-fallback to BYOK mode when limit exceeded.                                |
-| **Nanobrowser or similar OSS catches up**       | Medium     | High     | Move fast on wedge use cases. Engineering depth (evals, traces, memory) is hard to replicate quickly.              |
+| **Nanobrowser or similar OSS catches up**       | Medium     | High     | Move fast on wedge use cases. Engineering depth (evals, traces, perception) is hard to replicate quickly.          |
 | **Too few paid conversions (free is too good)** | High       | High     | Gate specific capabilities (scheduled tasks, higher turn limits, team features), not just convenience.             |
 | **Chrome Web Store rejection**                  | Low        | High     | Follow MV3 policies strictly. No eval() in content scripts. Declare permissions minimally.                         |
 | **API provider price changes**                  | Low        | High     | Multi-provider architecture already built. Can swap models without user-facing changes.                            |
@@ -461,7 +444,7 @@ model UsageLog {
    - Maintain engineering moat: eval pipeline, trace recording, multi-provider failover
 
 3. **Platform Risk (Google):**
-   - If Google ships a native agent, OpenSidebar still wins on: BYOK (cost control), local memory (privacy), open source (customization), multi-provider (speed)
+   - If Google ships a native agent, OpenSidebar still wins on: BYOK (cost control), local-first data (privacy), open source (customization), multi-model (speed)
    - Worst case: port to Firefox/Edge (MV3 is cross-browser)
 
 ---
@@ -503,12 +486,12 @@ Converts to paid subscriber
 
 1. **In-browser execution** — Runs inside the user's actual Chrome session. Full access to logged-in state, cookies, extensions, and corporate VPNs. Cloud VM agents (Operator, MultiOn) cannot do this.
 2. **DOM-level precision** — Reads structured HTML, not pixels. Faster, cheaper, and more reliable than screenshot-based agents (Cowork, Computer Use).
-3. **Multi-provider speed** — Cerebras (3000 TPS) → Groq → OpenRouter failover. Sub-second responses vs. multi-second cloud VM round trips.
-4. **Local-first memory** — Hybrid search (semantic + keyword) with zero cloud dependency. No other Chrome extension agent has this.
+3. **Fast execution** — OpenRouter delivers sub-second responses vs. multi-second cloud VM round trips.
+4. **Local-first data** — All data stays in browser storage. No cloud dependency beyond the LLM API.
 
 ### Open Source (vs. Nanobrowser, A5, etc.)
 
-1. **Engineering depth** — 31 tools, eval pipeline, trace recording, multi-provider failover, vision bridge. Most OSS competitors have 10-15 tools and no eval system.
+1. **Engineering depth** — 35 tools, eval pipeline, trace recording, two-tier model system, perception layer. Most OSS competitors have 10-15 tools and no eval system.
 2. **Privacy** — All data stays in the browser. No telemetry, no cloud calls beyond the LLM API.
 3. **Full source code** — MIT license, fork-friendly, extensible tool system.
 4. **Community-driven roadmap** — Public development, responsive to feedback.
@@ -604,10 +587,8 @@ opensidebar/
 │   │   ├── agent/           # Agent loop
 │   │   ├── llm/             # LLM client
 │   │   ├── tools/           # Tool registry
-│   │   └── memory/          # Memory bridge
 │   ├── content/              # Content script
 │   ├── sidepanel/           # React UI
-│   ├── offscreen/           # Memory worker
 │   └── types/               # TypeScript types
 ├── server/                   # Backend (Phase 3)
 ├── docs/                     # Documentation
@@ -622,12 +603,9 @@ opensidebar/
 
 | Provider   | Model                            | Context | Input               | Output              |
 | ---------- | -------------------------------- | ------- | ------------------- | ------------------- |
-| Cerebras   | gpt-oss-120b                     | 128K    | Free (rate-limited) | Free (rate-limited) |
-| Groq       | openai/gpt-oss-120b              | 128K    | Free (rate-limited) | Free (rate-limited) |
 | OpenRouter | openai/gpt-oss-120b              | 128K    | $0.15/1M            | $0.60/1M            |
-| OpenRouter | minimax/minimax-m2.5             | 1M      | $0.40/1M            | $4.00/1M            |
-| OpenRouter | qwen/qwen3-vl-235b-a22b-instruct | 128K    | $0.14/1M            | $0.14/1M            |
-| Groq       | whisper-large-v3-turbo           | N/A     | $0.003/min          | N/A                 |
+| OpenRouter | deepseek/deepseek-v3.2           | 128K    | $0.30/1M            | $1.50/1M            |
+| OpenRouter | google/gemini-2.5-flash          | 1M      | $0.15/1M            | $0.60/1M            |
 
 ### Chrome Extension APIs Used
 

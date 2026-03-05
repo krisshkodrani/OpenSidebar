@@ -3,7 +3,7 @@
   "scenario": "blind_first_action",
   "difficulty": "easy",
   "snapshot": {
-    "url": "https://serene-frangipane-7fd25b.netlify.app/step5?version=1",
+    "url": "https://example.com/browser-challenge/step5?version=1",
     "title": "Browser Navigation Challenge - The Ultimate Test",
     "elementCount": 29,
     "scrollY": 2143

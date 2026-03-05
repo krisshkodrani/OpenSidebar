@@ -1,0 +1,31 @@
+{
+  "id": "tc-native-select-009",
+  "confusionPair": { "toolA": "select_option", "toolB": "click_element", "label": "select_option_vs_click_element" },
+  "scenario": "Native HTML select dropdown should use select_option",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://example.com/checkout",
+    "title": "Checkout - Shipping",
+    "elementCount": 30,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 90, "tagName": "select", "role": "combobox", "text": "United States Canada United Kingdom Germany France", "attributes": { "name": "country" }, "rect": { "x": 200, "y": 300, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 91, "tagName": "label", "role": "", "text": "Country", "attributes": { "for": "country" }, "rect": { "x": 200, "y": 275, "width": 100, "height": 20 }, "isVisible": true, "isDisabled": false },
+    { "tag": 92, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "City" }, "rect": { "x": 200, "y": 350, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 93, "tagName": "button", "role": "button", "text": "Continue to Payment", "attributes": { "type": "submit" }, "rect": { "x": 200, "y": 450, "width": 200, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Checkout - Shipping Address Country United States Canada United Kingdom Germany France City Continue to Payment",
+  "instruction": "Select 'Canada' from the country dropdown.",
+  "priorHistory": null,
+  "expected": {
+    "correctTool": "select_option",
+    "correctArgs": { "id": 90, "value": "Canada" },
+    "antiPatternTools": ["click_element"],
+    "rationale": "The country field is a native HTML <select> element (role=combobox, tagName=select). select_option is designed for native selects. click_element cannot set a <select> value."
+  },
+  "metadata": {
+    "curatedAt": "2026-03-04",
+    "notes": "The select element's tagName and role clearly indicate a native dropdown. select_option is the correct tool."
+  }
+}

@@ -19,13 +19,10 @@ import { recoverToolCallsFromText } from "../src/background/agent/tool-recovery"
 import { detectInstructionContradiction } from "../src/background/agent/loop-helpers";
 import type { TaggedElement, DomSnapshot } from "../src/types";
 
-export type GroundingProvider = "groq" | "openrouter";
+export type GroundingProvider = "openrouter";
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
-
-const MODEL_OPENROUTER = "openai/gpt-oss-120b";
-const MODEL_GROQ = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 
 const TOOL_DEFS_PATH = join("evals", "tool-definitions.json");
 
@@ -142,9 +139,7 @@ export async function replayGroundingCase(
   modelVersion?: string;
   durationMs: number;
 }> {
-  const useGroq = provider === "groq" && !!keys.groq;
-  const model = useGroq ? MODEL_GROQ : MODEL_OPENROUTER;
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
+  const model = DEFAULT_MODEL;
 
   const messages = buildGroundingMessages(goldenCase);
   const tools = loadToolDefinitions();
@@ -162,16 +157,14 @@ export async function replayGroundingCase(
   }
 
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${useGroq ? keys.groq! : keys.openrouter}`,
+    Authorization: `Bearer ${keys.openrouter}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": "https://opensidebar.dev",
+    "X-Title": "OpenSidebar Grounding Evals",
   };
-  if (!useGroq) {
-    headers["HTTP-Referer"] = "https://opensidebar.dev";
-    headers["X-Title"] = "OpenSidebar Grounding Evals";
-  }
 
   const start = Date.now();
-  const response = await fetch(apiUrl, {
+  const response = await fetch(OPENROUTER_API, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -227,7 +220,7 @@ export async function runGroundingEvals(options: {
   scenarioFilter?: string;
 }): Promise<GroundingEvalResult[]> {
   const { keys, judge = false } = options;
-  const provider = options.provider ?? (keys.groq ? "groq" : "openrouter");
+  const provider = options.provider ?? "openrouter";
 
   let cases = readGroundingGoldenCases();
   if (cases.length === 0) {
@@ -245,7 +238,7 @@ export async function runGroundingEvals(options: {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outputFile = join(GROUNDING_RESULTS_DIR, `grounding-${timestamp}.jsonl`);
-  const modelLabel = provider === "groq" ? MODEL_GROQ : MODEL_OPENROUTER;
+  const modelLabel = DEFAULT_MODEL;
 
   const results: GroundingEvalResult[] = [];
 

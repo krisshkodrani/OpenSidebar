@@ -35,15 +35,11 @@ let orchestratorDeps: OrchestratorDeps;
 let activeOrchestrator: Orchestrator | null = null;
 const baseSettings: UserSettings = {
   openRouterApiKey: "test-openrouter",
-  groqApiKey: "",
   maxTurns: 10,
-  contextWindowSize: 16000,
-  workspaceEnabled: true,
   theme: "system",
   showSessionMetrics: false,
-  disableNavigation: false,
-  bypassApprovals: true,
-  orchestratorMaxWorkers: 3,
+  requireApprovals: false,
+  allowNavigation: true,
 };
 
 function makeNode(

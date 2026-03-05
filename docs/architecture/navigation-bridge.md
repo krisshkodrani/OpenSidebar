@@ -60,7 +60,7 @@ interface NavigationState {
   timeoutMs: number; // Default: 30000ms
 }
 
-// Stored at key: "qsidebar:agentState"
+// Stored at key: "opensidebar:agentState"
 ```
 
 ## Implementation
@@ -80,7 +80,7 @@ async function saveNavigationState(state: AgentLoopState): Promise<void> {
   };
 
   await chrome.storage.local.set({
-    "qsidebar:agentState": navState,
+    "opensidebar:agentState": navState,
   });
 }
 ```
@@ -93,8 +93,8 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   if (details.frameId !== 0) return;
 
   // Check for pending navigation state
-  const stored = await chrome.storage.local.get("qsidebar:agentState");
-  const navState = stored["qsidebar:agentState"];
+  const stored = await chrome.storage.local.get("opensidebar:agentState");
+  const navState = stored["opensidebar:agentState"];
   if (!navState) return;
 
   // Validate this is our tab
@@ -103,13 +103,13 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   // Check timeout
   const elapsed = Date.now() - navState.navigationStartTs;
   if (elapsed > navState.timeoutMs) {
-    await chrome.storage.local.remove("qsidebar:agentState");
+    await chrome.storage.local.remove("opensidebar:agentState");
     broadcastStatus(AgentStatus.ERROR, "Navigation timed out");
     return;
   }
 
   // Clear stored state
-  await chrome.storage.local.remove("qsidebar:agentState");
+  await chrome.storage.local.remove("opensidebar:agentState");
 
   // Resume agent loop
   await resumeAgentLoop(navState.agentState, details.url);
@@ -163,12 +163,12 @@ chrome.webNavigation.onCompleted.addListener(handleNavigationComplete);
 
 // Check for stale state on startup
 chrome.runtime.onStartup.addListener(async () => {
-  const stored = await chrome.storage.local.get("qsidebar:agentState");
-  if (stored["qsidebar:agentState"]) {
+  const stored = await chrome.storage.local.get("opensidebar:agentState");
+  if (stored["opensidebar:agentState"]) {
     const elapsed = Date.now() - stored.navigationStartTs;
     if (elapsed > stored.timeoutMs) {
       // Clean up stale state
-      await chrome.storage.local.remove("qsidebar:agentState");
+      await chrome.storage.local.remove("opensidebar:agentState");
     }
   }
 });
@@ -192,9 +192,9 @@ Client-side routing does NOT trigger `onCompleted`. Content script survives, so 
 
 ```typescript
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const stored = await chrome.storage.local.get("qsidebar:agentState");
-  if (stored["qsidebar:agentState"]?.agentState?.activeTabId === tabId) {
-    await chrome.storage.local.remove("qsidebar:agentState");
+  const stored = await chrome.storage.local.get("opensidebar:agentState");
+  if (stored["opensidebar:agentState"]?.agentState?.activeTabId === tabId) {
+    await chrome.storage.local.remove("opensidebar:agentState");
     broadcastStatus(AgentStatus.ERROR, "Tab closed during navigation");
     stopKeepalive();
   }
@@ -211,11 +211,11 @@ If agent triggers two navigations rapidly, only the last state is saved. The `on
 chrome.webNavigation.onErrorOccurred.addListener(async (details) => {
   if (details.frameId !== 0) return;
 
-  const stored = await chrome.storage.local.get("qsidebar:agentState");
-  if (!stored["qsidebar:agentState"]) return;
+  const stored = await chrome.storage.local.get("opensidebar:agentState");
+  if (!stored["opensidebar:agentState"]) return;
   if (details.tabId !== stored.agentState.activeTabId) return;
 
-  await chrome.storage.local.remove("qsidebar:agentState");
+  await chrome.storage.local.remove("opensidebar:agentState");
 
   // Resume with error
   const state = stored.agentState;

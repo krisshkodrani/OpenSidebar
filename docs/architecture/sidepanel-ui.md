@@ -20,7 +20,6 @@ App (Main container)
 ├── Header
 │   └── Settings button
 ├── SettingsDrawer (conditional overlay)
-│   └── LearnedSkillsPanel (skills management with pin/enable)
 ├── SavedPromptsDrawer (conditional overlay)
 ├── StallBanner (visible when agent is stalled)
 ├── EscalationBanner (visible during escalation dialog)
@@ -339,11 +338,8 @@ Displays chat messages with:
 ### SettingsDrawer
 
 - OpenRouter API key input
-- Groq API key input
-- Cerebras API key input
 - Max turns slider (cap: 500)
 - Context window selector (8k/32k/128k)
-- Memory enabled toggle
 - Workspace enabled toggle
 - Confirm plan toggle
 - Show session metrics toggle

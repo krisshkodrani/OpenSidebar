@@ -1,27 +1,11 @@
 import React, { useState } from "react";
+import type { TraceEntry } from "../../../types/traces";
 import Badge from "../Badge";
 import { screenshotUrl } from "../../api";
 import { truncate } from "../../utils";
 
-interface PerceptionData {
-  interpretation?: string;
-  model?: string;
-  providerId?: string;
-  durationMs?: number;
-  cached?: boolean;
-  screenshotDataUrl?: string;
-  elementSummary?: string;
-}
-
-interface Element {
-  tag?: number;
-  attributes?: Record<string, string>;
-  tagName?: string;
-  text?: string;
-}
-
 interface PerceptionCardProps {
-  entry: Record<string, unknown>;
+  entry: TraceEntry;
   sessionId: string;
 }
 
@@ -30,9 +14,9 @@ export default function PerceptionCard({
   sessionId,
 }: PerceptionCardProps) {
   const [imgError, setImgError] = useState(false);
-  const p = entry.perception as PerceptionData;
-  const turnNum = (entry.turnNumber as number) ?? 0;
-  const elements = (entry.elements as Element[]) || [];
+  const p = entry.perception!;
+  const turnNum = entry.turnNumber ?? 0;
+  const elements = entry.elements || [];
 
   const screenshotSrc = p.screenshotDataUrl
     ? p.screenshotDataUrl
@@ -61,7 +45,7 @@ export default function PerceptionCard({
         </span>
         <Badge variant="model">{p.model || "unknown"}</Badge>
         {p.cached && <Badge variant="stopped">cached</Badge>}
-        {p.elementSummary && <Badge variant="default">exact input</Badge>}
+        {p.elementSummary && <Badge variant="type">exact input</Badge>}
       </div>
 
       {/* Body */}

@@ -1,4 +1,5 @@
 import type { StateCreator } from "zustand";
+import type { TraceSession, TraceEntry } from "../../types/traces";
 
 // ── Viewer-only types ──────────────────────────────────────────
 
@@ -38,25 +39,25 @@ export interface TraceFilters {
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
-  sessions: Record<string, unknown>[];
+  sessions: TraceSession[];
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
   currentSessionId: string | null;
-  currentEntries: Record<string, unknown>[];
+  currentEntries: TraceEntry[];
   sessionLogs: SessionLogEntry[];
   sessionLogsLoading: boolean;
   searchQuery: string;
   activeSubview: "turns" | "perception" | "logs" | "story";
   tracesLoading: boolean;
   tracesError: string | null;
-  setSessions: (sessions: Record<string, unknown>[]) => void;
+  setSessions: (sessions: TraceSession[]) => void;
   setAvailableDays: (days: DayBucket[]) => void;
   setAvailableModels: (models: ModelBucket[]) => void;
   setFilter: (key: keyof TraceFilters, value: string) => void;
   resetFilters: () => void;
   setCurrentSessionId: (id: string | null) => void;
-  setCurrentEntries: (entries: Record<string, unknown>[]) => void;
+  setCurrentEntries: (entries: TraceEntry[]) => void;
   setSessionLogs: (logs: SessionLogEntry[]) => void;
   setSessionLogsLoading: (loading: boolean) => void;
   setSearchQuery: (query: string) => void;

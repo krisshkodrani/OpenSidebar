@@ -41,6 +41,7 @@ export * from "./utils";
 export * from "./stable-ids";
 export * from "./dom-traversal";
 export * from "./scoring";
+export * from "./structural";
 
 /** Maps tag number → DOM element (for action execution) */
 const tagMap = new Map<number, Element>();
@@ -191,6 +192,7 @@ export function tagElements(): TaggedElement[] {
         y: rect.y,
         width: rect.width,
         height: rect.height,
+        pageY: Math.round(rect.y + window.scrollY),
       },
       isVisible: true,
       isDisabled: isDisabled(el),
@@ -231,7 +233,7 @@ export function tagElements(): TaggedElement[] {
       role: entry.el.getAttribute("role") || inferRole(entry.el),
       text: truncateText(getVisibleText(entry.el), 80),
       attributes: extractAttributes(entry.el),
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, pageY: Math.round(rect.y + window.scrollY) },
       isVisible: true,
       isDisabled: isDisabled(entry.el),
     });
