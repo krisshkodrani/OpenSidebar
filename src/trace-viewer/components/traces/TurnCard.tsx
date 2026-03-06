@@ -55,12 +55,7 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
                   : "model"
             }
           >
-            {shortModel(model)}
-          </Badge>
-        )}
-        {modelTier && (
-          <Badge variant={`tier-${modelTier}`}>
-            {modelTier}
+            {shortModel(model)}{modelTier && !model.startsWith("manual") && !model.startsWith("recording") ? ` (${modelTier})` : ""}
           </Badge>
         )}
         {actualProviderId && model && !model.startsWith("manual") && !model.startsWith("recording") && (

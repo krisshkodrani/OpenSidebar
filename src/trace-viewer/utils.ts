@@ -31,7 +31,8 @@ export function formatCost(cost: number | undefined | null): string {
 
 export function formatTokens(n: number | undefined | null): string {
   if (n == null) return "---";
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  if (n >= 10000) return `${(n / 1000).toFixed(1)}K`;
+  if (n >= 1000) return n.toLocaleString("en-US");
   return String(n);
 }
 

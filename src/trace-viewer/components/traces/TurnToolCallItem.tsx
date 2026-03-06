@@ -21,13 +21,19 @@ export default function TurnToolCallItem({
     <div className="bg-[rgba(26,26,46,0.4)] border border-[rgba(15,52,96,0.3)] rounded-[5px] p-2 mb-1.5">
       <div className="flex items-center gap-2 flex-wrap">
         {success != null && (
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              success
-                ? "bg-[#2ecc71] shadow-[0_0_4px_rgba(46,204,113,0.4)]"
-                : "bg-[#e74c3c] shadow-[0_0_4px_rgba(231,76,60,0.4)]"
-            }`}
-          />
+          <span className="flex items-center gap-1 shrink-0">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                success
+                  ? "bg-[#2ecc71] shadow-[0_0_4px_rgba(46,204,113,0.4)]"
+                  : "bg-[#e74c3c] shadow-[0_0_4px_rgba(231,76,60,0.4)]"
+              }`}
+              aria-hidden="true"
+            />
+            <span className={`text-[9px] font-bold ${success ? "text-[#2ecc71]" : "text-[#e74c3c]"}`}>
+              {success ? "OK" : "ERR"}
+            </span>
+          </span>
         )}
         <Badge variant="tool">{toolName}</Badge>
         {durationMs != null && (
@@ -37,7 +43,7 @@ export default function TurnToolCallItem({
         )}
       </div>
       {result && (
-        <div className="text-[11px] text-[#8a8ab0] mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
+        <div className="text-[11px] text-[#a0a0c8] mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
           {result}
         </div>
       )}

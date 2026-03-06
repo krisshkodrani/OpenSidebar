@@ -73,8 +73,8 @@ export default function TurnLLMMessage({
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[#8a8ab0]">
           {preview}
         </span>
-        <span className="shrink-0 font-mono text-[#5a5a7e] text-[10px]">
-          ~{formatTokens(tokEst)}
+        <span className="shrink-0 font-mono text-[#5a5a7e] text-[10px]" title="Estimated from character count">
+          ~{formatTokens(tokEst)} tok
         </span>
       </div>
       <div className={`collapsible ${open ? "open" : ""}`}>

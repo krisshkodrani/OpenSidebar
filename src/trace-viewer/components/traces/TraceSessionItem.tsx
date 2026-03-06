@@ -31,7 +31,16 @@ export default function TraceSessionItem({
   return (
     <div
       onClick={onClick}
-      className={`px-4 py-3 border-b border-[rgba(15,52,96,0.4)] cursor-pointer transition-colors ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      tabIndex={0}
+      role="option"
+      aria-selected={isActive}
+      className={`px-4 py-3 border-b border-[rgba(15,52,96,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${
         isActive ? "bg-trace-border" : "hover:bg-[rgba(15,52,96,0.5)]"
       }`}
     >

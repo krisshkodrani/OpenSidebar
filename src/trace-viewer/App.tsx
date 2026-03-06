@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { useStore } from "./store";
 import TabBar from "./components/TabBar";
 import TracesTab from "./components/traces/TracesTab";
+import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 
 function parseHash(): { session?: string; view?: string } {
   const hash = window.location.hash.slice(1);
@@ -53,7 +54,9 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-trace-bg text-trace-text font-sans overflow-hidden">
       <TabBar />
-      {activeTab === "traces" && <TracesTab />}
+      <ViewerErrorBoundary>
+        {activeTab === "traces" && <TracesTab />}
+      </ViewerErrorBoundary>
     </div>
   );
 }

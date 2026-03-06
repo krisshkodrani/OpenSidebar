@@ -86,7 +86,7 @@ Browser AI can encounter prompt injection — hidden instructions on websites th
 - URL sanitization blocks non-http(s) protocols
 - Report issues on GitHub
 
-Source code: https://github.com/krisshkodrani/OpenSidebar
+Source code: https://github.com/OpenSidebar/OpenSidebar
 ```
 
 ---
