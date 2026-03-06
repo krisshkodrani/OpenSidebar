@@ -47,6 +47,7 @@ export interface TracesSlice {
   currentEntries: TraceEntry[];
   sessionLogs: SessionLogEntry[];
   sessionLogsLoading: boolean;
+  logsWarning: string | null;
   searchQuery: string;
   activeSubview: "turns" | "perception" | "logs" | "story";
   tracesLoading: boolean;
@@ -60,6 +61,7 @@ export interface TracesSlice {
   setCurrentEntries: (entries: TraceEntry[]) => void;
   setSessionLogs: (logs: SessionLogEntry[]) => void;
   setSessionLogsLoading: (loading: boolean) => void;
+  setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
   setActiveSubview: (view: "turns" | "perception" | "logs" | "story") => void;
   storyCache: Record<string, string>;

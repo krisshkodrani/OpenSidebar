@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { TraceSession, TraceEntry } from "../../../types/traces";
 import type { SessionLogEntry } from "../../store/types";
 import { marked } from "marked";
@@ -24,7 +24,7 @@ const STORY_MODELS = [
 ];
 
 function getApiKey(): string {
-  return localStorage.getItem(STORAGE_KEY) ?? "";
+  return sessionStorage.getItem(STORAGE_KEY) ?? "";
 }
 
 function getModel(): string {
@@ -265,9 +265,25 @@ export default function StoryPanel() {
     setStoryError,
   ]);
 
+  // Auto-generate when Story tab is opened with API key + entries + no cached story
+  const autoTriggered = useRef(false);
+  useEffect(() => {
+    if (autoTriggered.current) return;
+    if (!currentSessionId || !session || !getApiKey()) return;
+    if (cachedStory || storyLoading || storyError) return;
+    if (currentEntries.length === 0) return;
+    autoTriggered.current = true;
+    generate();
+  }, [currentSessionId, session, cachedStory, storyLoading, storyError, currentEntries, generate]);
+
+  // Reset auto-trigger when session changes
+  useEffect(() => {
+    autoTriggered.current = false;
+  }, [currentSessionId]);
+
   const handleSaveKey = () => {
     if (apiKeyInput.trim()) {
-      localStorage.setItem(STORAGE_KEY, apiKeyInput.trim());
+      sessionStorage.setItem(STORAGE_KEY, apiKeyInput.trim());
       setApiKeyInput("");
     }
   };

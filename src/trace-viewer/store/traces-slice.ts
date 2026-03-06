@@ -27,6 +27,7 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   currentEntries: [],
   sessionLogs: [],
   sessionLogsLoading: false,
+  logsWarning: null,
   searchQuery: "",
   activeSubview: "turns",
   tracesLoading: false,
@@ -70,6 +71,10 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   setSessionLogsLoading: (loading) =>
     set((s) => {
       s.sessionLogsLoading = loading;
+    }),
+  setLogsWarning: (warning) =>
+    set((s) => {
+      s.logsWarning = warning;
     }),
   setSearchQuery: (query) =>
     set((s) => {

@@ -9,7 +9,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, mkdirSync, statSync, renameSync, unlinkSync, readFileSync } from "fs";
 import { appendFile, readFile, writeFile } from "fs/promises";
-import { join, dirname, extname } from "path";
+import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
@@ -711,7 +711,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // GET /assets/* — serve built viewer assets from dist/assets/
   if (url.pathname.startsWith("/assets/") && req.method === "GET") {
     const distDir = join(PROJECT_ROOT, "dist");
-    const filePath = join(distDir, ...url.pathname.split("/").filter(Boolean));
+    const filePath = resolve(distDir, ...url.pathname.split("/").filter(Boolean));
+    if (!filePath.startsWith(distDir)) { sendText(res, "Forbidden", 403); return; }
     if (existsSync(filePath) && statSync(filePath).isFile()) {
       const ext = extname(filePath);
       const contentType = MIME_TYPES[ext] || "application/octet-stream";
@@ -729,7 +730,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       let subPath = url.pathname.slice("/viewer".length);
       if (subPath === "" || subPath === "/") subPath = "/index.html";
 
-      const filePath = join(VIEWER_DIR, ...subPath.split("/").filter(Boolean));
+      const filePath = resolve(VIEWER_DIR, ...subPath.split("/").filter(Boolean));
+      if (!filePath.startsWith(VIEWER_DIR)) { sendText(res, "Forbidden", 403); return; }
       if (existsSync(filePath) && statSync(filePath).isFile()) {
         const ext = extname(filePath);
         const contentType = MIME_TYPES[ext] || "application/octet-stream";

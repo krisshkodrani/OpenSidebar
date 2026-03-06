@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { TraceSession } from "../../../types/traces";
+import { useStore } from "../../store";
 import Badge from "../Badge";
 import CollapsibleSection from "../CollapsibleSection";
 import {
@@ -15,6 +16,7 @@ interface TraceDetailHeaderProps {
 }
 
 export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
+  const currentEntries = useStore((s) => s.currentEntries);
   const [copied, setCopied] = useState(false);
   const outcome = session.outcome;
   const metrics = session.metrics;
@@ -34,6 +36,20 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
     navigator.clipboard.writeText(session.sessionId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
+  };
+
+  const handleExport = () => {
+    const lines = [JSON.stringify(session)];
+    for (const entry of currentEntries) {
+      lines.push(JSON.stringify(entry));
+    }
+    const blob = new Blob([lines.join("\n") + "\n"], { type: "application/x-ndjson" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${session.sessionId}.jsonl`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -78,6 +94,13 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         >
           {outcome}
         </Badge>
+        <button
+          className="ml-auto text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+          title="Export session as JSONL"
+          onClick={handleExport}
+        >
+          Export JSONL
+        </button>
       </div>
       <QueryTitle query={session.query || ""} />
       <div className="flex gap-4 text-[11px] text-trace-muted mt-1.5 flex-wrap">

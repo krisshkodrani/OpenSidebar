@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useStore } from "../../store";
+import { useDebounce } from "../../hooks/useDebounce";
 import type { SessionLogEntry } from "../../store/types";
 import LoadingSpinner from "../LoadingSpinner";
 
@@ -90,6 +91,7 @@ export default function LogList() {
   const [levelFilter, setLevelFilter] = useState("all");
   const [catFilter, setCatFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 200);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -105,8 +107,8 @@ export default function LogList() {
     if (catFilter !== "all") {
       logs = logs.filter((l) => l.cat === catFilter);
     }
-    if (search) {
-      const q = search.toLowerCase();
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
       logs = logs.filter(
         (l) =>
           l.msg.toLowerCase().includes(q) ||
@@ -115,7 +117,7 @@ export default function LogList() {
       );
     }
     return logs;
-  }, [sessionLogs, levelFilter, catFilter, search]);
+  }, [sessionLogs, levelFilter, catFilter, debouncedSearch]);
 
   if (sessionLogsLoading) {
     return <LoadingSpinner message="Loading logs..." />;

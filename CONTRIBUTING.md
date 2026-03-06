@@ -7,64 +7,39 @@ Thank you for your interest in contributing! This document provides guidelines f
 1. Fork the repository
 2. Clone your fork: `git clone git@github.com:yourusername/OpenSidebar.git`
 3. Install dependencies: `npm install`
-4. Copy environment file: `cp .env.example .env`
-5. Add your API keys to `.env`
-6. Build: `npm run build`
+4. Copy environment file: `cp .env.example .env` and add your OpenRouter API key
+5. Start development: `npm run dev`
 
 ## Project Architecture
 
-OpenSidebar is a Chrome extension with four isolated execution contexts:
+Chrome Manifest V3 extension with three isolated execution contexts:
 
 ```
-Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Script (DOM)
-                                        ↕
-                                Offscreen Document (Memory)
+Side Panel (React/Zustand) <--> Service Worker (Agent Loop) <--> Content Script (DOM)
 ```
 
-See [docs/architecture/](docs/architecture/) for detailed documentation.
+See [CLAUDE.md](./CLAUDE.md) for the full internal architecture reference, and [docs/architecture/](docs/architecture/) for detailed documentation.
 
 ## Adding New Tools
 
-To add a new tool:
+1. **Add the enum value** in `src/types/enums.ts` (`ToolName` enum)
+2. **Add typed args** in `src/types/tools.ts` (`ToolArgsMap`)
+3. **Define the tool schema** in `src/background/tools/definitions.ts` (OpenAI function-calling format)
+4. **Add metadata** in `src/background/tools/metadata.ts` (`ToolMeta` — risk, domModifying, sequential)
+5. **Register the executor** in `src/background/tools/index.ts`
+6. **Implement the action** in `src/content/actions.ts` (if it interacts with the DOM)
 
-1. **Define the tool** in `src/background/tools/index.ts`:
-
-   ```typescript
-   {
-     name: "my_new_tool",
-     description: "What the tool does",
-     parameters: {
-       type: "object",
-       properties: {
-         param1: { type: "string", description: "Parameter description" }
-       },
-       required: ["param1"]
-     }
-   }
-   ```
-
-2. **Add metadata** in `src/background/tools/metadata.ts`:
-
-   ```typescript
-   // Add to appropriate set
-   DOM_MODIFYING_TOOLS.add("my_new_tool"); // if it modifies DOM
-   SEQUENTIAL_TOOLS.add("my_new_tool"); // if must run alone
-   ```
-
-3. **Implement the executor** in the same file (see existing examples)
+Important: tool parameter names must match across all layers (definition, TypeScript types, executor).
 
 ## Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npx vitest run tests/background/agent.test.ts
-
-# Run tests matching pattern
-npx vitest run --grep "AgentLoop"
+npm test                                          # Run all tests
+npx vitest run tests/background/tools.test.ts     # Run a specific file
+npx vitest run --grep "AgentLoop"                 # Run tests matching pattern
 ```
+
+Tests use Vitest + happy-dom. The test setup (`tests/setup.ts`) mocks `chrome.*` APIs. Tests are not type-checked by `tsc` — only `src/` is included in `tsconfig.json`.
 
 ## Making Changes
 
@@ -80,35 +55,31 @@ npx vitest run --grep "AgentLoop"
 ## Commit Message Format
 
 ```
-type: Subject (50 chars max)
+type: subject (50 chars max)
 
 Body (optional, wrap at 72 chars)
-
-Footer (optional)
 ```
 
-Types:
-
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation only
-- `style:` Code style (formatting, semicolons, etc)
-- `refactor:` Code refactoring
-- `test:` Adding/updating tests
-- `chore:` Build process, dependencies, etc
+Types: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `ci:`
 
 ## Code Style
 
-- TypeScript strict mode enabled
-- Use 2 spaces for indentation
+- TypeScript with strict mode
+- 2-space indentation
 - Run `npm run fmt` before committing
 - Follow existing patterns in the codebase
-- Add JSDoc to new public functions
+- Path alias: `@/*` maps to `./src/*`
+
+## Design Principles
+
+- **Generic over task-specific** — no site-specific heuristics. Everything must work on sites the agent has never seen.
+- **Tools are generic primitives** — click, type, scroll, navigate. Higher-level behavior emerges from LLM reasoning.
+- **Plans are dynamic** — the planner decomposes any query into subtasks based on context, not templates.
 
 ## Pull Request Process
 
-1. Ensure all tests pass
-2. Ensure linter passes with no errors
+1. Ensure all tests pass (`npm test`)
+2. Ensure linter passes (`npm run lint`)
 3. Update documentation if needed
 4. Reference any related issues
 5. Wait for review from maintainers

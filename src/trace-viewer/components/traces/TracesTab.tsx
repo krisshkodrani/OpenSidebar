@@ -23,11 +23,13 @@ export default function TracesTab() {
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
   const tracesError = useStore((s) => s.tracesError);
+  const logsWarning = useStore((s) => s.logsWarning);
   const setSessions = useStore((s) => s.setSessions);
   const setAvailableDays = useStore((s) => s.setAvailableDays);
   const setAvailableModels = useStore((s) => s.setAvailableModels);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSessionLogs = useStore((s) => s.setSessionLogs);
+  const setLogsWarning = useStore((s) => s.setLogsWarning);
   const setTracesLoading = useStore((s) => s.setTracesLoading);
   const setTracesError = useStore((s) => s.setTracesError);
   const filters = useStore((s) => s.filters);
@@ -80,9 +82,13 @@ export default function TracesTab() {
     entriesLoading.current = true;
 
     // Fetch trace entries and session logs in parallel
+    setLogsWarning(null);
     Promise.all([
       api.fetchTraceEntries(currentSessionId),
-      api.fetchSessionLogs(currentSessionId).catch(() => []),
+      api.fetchSessionLogs(currentSessionId).catch((err) => {
+        setLogsWarning(`Failed to load logs: ${err}`);
+        return [] as never[];
+      }),
     ])
       .then(([entries, logs]) => {
         setCurrentEntries(entries || []);
@@ -110,6 +116,7 @@ export default function TracesTab() {
             <ErrorBanner
               message={`Failed to load sessions: ${tracesError}`}
               hint
+              onRetry={refreshSessions}
             />
           ) : (
             <>
@@ -127,16 +134,18 @@ export default function TracesTab() {
             {activeSubview === "turns" ? (
               <>
                 <TurnSearchBar />
-                <div className="flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
-                  {currentEntries.length === 0 && !tracesError ? (
+                {currentEntries.length === 0 && !tracesError ? (
+                  <div className="flex-1 px-5 py-4">
                     <LoadingSpinner message="Loading turns..." />
-                  ) : (
-                    <>
-                      <TurnTimeline entries={currentEntries} />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-hidden flex flex-col px-5 py-4">
+                    <TurnTimeline entries={currentEntries} />
+                    <div className="flex-1 min-h-0">
                       <TurnList />
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </div>
+                )}
               </>
             ) : activeSubview === "perception" ? (
               <div className="flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
@@ -148,6 +157,13 @@ export default function TracesTab() {
               </div>
             ) : (
               <div className="flex-1 overflow-hidden flex flex-col">
+                {logsWarning && (
+                  <div className="px-5 pt-3">
+                    <div className="text-xs text-yellow-400/80 bg-yellow-500/10 border border-yellow-500/20 rounded px-3 py-2">
+                      {logsWarning}
+                    </div>
+                  </div>
+                )}
                 <LogList />
               </div>
             )}
