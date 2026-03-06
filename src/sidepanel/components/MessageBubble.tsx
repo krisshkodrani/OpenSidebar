@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { marked } from "marked";
 import {
   ChatEntry,
@@ -159,19 +159,12 @@ function CompletionSummary({
 
   const statusIcon =
     data.status === "completed" ? (
-      <CheckCircle2 size={14} className="text-green-500" />
+      <CheckCircle2 size={13} className="text-green-500 shrink-0" />
     ) : data.status === "partial" ? (
-      <AlertTriangle size={14} className="text-yellow-500" />
+      <AlertTriangle size={13} className="text-yellow-500 shrink-0" />
     ) : (
-      <XCircle size={14} className="text-red-500" />
+      <XCircle size={13} className="text-red-500 shrink-0" />
     );
-
-  const statusLabel =
-    data.status === "completed"
-      ? "Task completed"
-      : data.status === "partial"
-        ? "Partially completed"
-        : "Task failed";
 
   const summaryHtml = useMemo(
     () => (data.summary ? sanitizeHtml(marked.parse(data.summary) as string) : ""),
@@ -186,21 +179,18 @@ function CompletionSummary({
   };
 
   return (
-    <div className="bg-warm-100/50 dark:bg-warm-800/50 rounded-lg border border-warm-200 dark:border-warm-700 p-3 text-sm">
-      {/* Status badge */}
-      <div className="flex items-center gap-2 mb-2">
+    <div className="text-sm">
+      {/* Status line */}
+      <div className="flex items-center gap-1.5 mb-1.5">
         {statusIcon}
-        <span className="font-medium">{statusLabel}</span>
-        {data.totalTurnsUsed > 0 && (
-          <span className="text-warm-400 text-xs ml-auto">
-            {data.totalTurnsUsed} turns
-          </span>
-        )}
+        <span className="text-xs font-medium text-warm-500 dark:text-warm-400">
+          {data.status === "completed" ? "Done" : data.status === "partial" ? "Partially done" : "Failed"}
+        </span>
       </div>
 
-      {/* Summary — markdown rendered */}
+      {/* Summary — markdown rendered, conversational */}
       {data.summary && (
-        <div className="relative group/summary mb-2">
+        <div className="relative group/summary">
           <div
             className="prose-chat text-warm-700 dark:text-warm-200"
             dangerouslySetInnerHTML={{ __html: summaryHtml }}
@@ -215,29 +205,15 @@ function CompletionSummary({
         </div>
       )}
 
-      {/* Subtask results — vertical timeline */}
-      {data.subtaskResults && data.subtaskResults.length > 0 && (
-        <div className="mt-2 border-t border-warm-200 dark:border-warm-700 pt-2 ml-1">
+      {/* Subtask results — compact list */}
+      {data.subtaskResults && data.subtaskResults.length > 1 && (
+        <div className="mt-2 ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-0.5">
           {data.subtaskResults.map((sr, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <div className="flex flex-col items-center">
-                <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                  <PlanStepIcon status={sr.status === "completed" ? "completed" : sr.status === "failed" ? "failed" : sr.status === "skipped" ? "skipped" : "pending"} size={10} />
-                </div>
-                {i < data.subtaskResults.length - 1 && (
-                  <div className={`w-px flex-1 min-h-[4px] ${sr.status === "completed" ? "bg-emerald-300/60 dark:bg-emerald-700/40" : "bg-warm-200/60 dark:bg-warm-700/40"}`} />
-                )}
-              </div>
-              <div className="pb-1 min-w-0 flex-1">
-                <span className="text-xs truncate text-warm-600 dark:text-warm-400">
-                  {sr.description}
-                </span>
-                {sr.result && (
-                  <div className="text-[10px] text-warm-400 dark:text-warm-500 line-clamp-1 mt-0.5">
-                    {sr.result}
-                  </div>
-                )}
-              </div>
+            <div key={i} className="flex items-center gap-1.5 text-xs">
+              <PlanStepIcon status={sr.status === "completed" ? "completed" : sr.status === "failed" ? "failed" : sr.status === "skipped" ? "skipped" : "pending"} size={10} />
+              <span className="text-warm-500 dark:text-warm-400 truncate">
+                {sr.description}
+              </span>
             </div>
           ))}
         </div>
@@ -245,7 +221,7 @@ function CompletionSummary({
 
       {/* Session metrics — collapsible */}
       {data.metrics && (
-        <div className="mt-2 border-t border-warm-200 dark:border-warm-700 pt-2">
+        <div className="mt-2 pt-1">
           <button
             onClick={() => setMetricsOpen((v) => !v)}
             className="flex items-center gap-1 text-xs text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
@@ -315,15 +291,6 @@ export const MessageBubble = React.memo(function MessageBubble({
   const isFeedback = isUser && message.isFeedback;
   const isAnnotation = isUser && message.isAnnotation;
   const isManualCommand = !!message.isManualCommand;
-  const hasDetails =
-    !isUser &&
-    ((message.steps?.length ?? 0) > 0 || message.toolCalls.length > 0);
-  const [showDetails, setShowDetails] = useState(
-    message.isStreaming || showDetailsByDefault,
-  );
-  useEffect(() => {
-    if (message.isStreaming) setShowDetails(true);
-  }, [message.isStreaming]);
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
@@ -339,8 +306,6 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (extracted) cleaned = extracted;
     return sanitizeHtml(marked.parse(cleaned) as string);
   }, [message.content, isUser]);
-
-  const stepCount = message.steps?.length ?? 0;
 
   // Human-readable summary for tool-only turns (no LLM text output)
   // Prefer pre-resolved step labels (with element names) over raw tool call labels
@@ -384,18 +349,22 @@ export const MessageBubble = React.memo(function MessageBubble({
       {showBubble && (
         <div
           className={clsx(
-            "max-w-[85%] px-3 py-2 rounded-2xl text-sm",
+            "max-w-[85%] text-sm",
             isUser
-              ? isManualCommand
-                ? "bg-indigo-500 text-white font-mono whitespace-pre-wrap"
-                : isAnnotation
-                  ? "bg-violet-500 text-white italic whitespace-pre-wrap"
-                  : isFeedback
-                    ? "bg-amber-500 text-white whitespace-pre-wrap"
-                    : "bg-primary-100 text-primary-900 dark:bg-primary-900/40 dark:text-primary-100 whitespace-pre-wrap"
-              : isManualCommand
-                ? "bg-warm-50 dark:bg-warm-800 text-warm-800 dark:text-warm-100 border border-indigo-200/60 dark:border-indigo-700/60 shadow-soft"
-                : "bg-warm-50 dark:bg-warm-800/80 text-warm-800 dark:text-warm-100 shadow-soft",
+              ? clsx(
+                  "px-3 py-2 rounded-2xl whitespace-pre-wrap",
+                  isManualCommand
+                    ? "bg-warm-600 dark:bg-warm-500 text-white font-mono"
+                    : isAnnotation
+                      ? "bg-primary-600 dark:bg-primary-700 text-white italic"
+                      : isFeedback
+                        ? "bg-amber-500/80 text-white"
+                        : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
+                )
+              : clsx(
+                  "text-warm-800 dark:text-warm-100",
+                  isManualCommand && "px-3 py-2 rounded-2xl border border-warm-300/40 dark:border-warm-600/40",
+                ),
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >
@@ -443,31 +412,11 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
-      {hasDetails && (
-        <div className="w-full max-w-[85%] mt-0.5">
-          <button
-            onClick={() => setShowDetails((v) => !v)}
-            className="text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
-          >
-            {showDetails
-              ? stepCount > 0
-                ? "Hide steps"
-                : "Hide tools"
-              : stepCount > 0
-                ? `${stepCount} ${stepCount === 1 ? "step" : "steps"}`
-                : `${message.toolCalls.length} ${message.toolCalls.length === 1 ? "tool" : "tools"}`}
-          </button>
-        </div>
+      {!isUser && message.steps && message.steps.length > 0 && (
+        <StepTimeline steps={message.steps} />
       )}
 
-      {showDetails && !isUser && message.steps && message.steps.length > 0 && (
-        <StepTimeline
-          steps={message.steps}
-          defaultCollapsed={!message.isStreaming}
-        />
-      )}
-
-      {showDetails && message.toolCalls.length > 0 && (
+      {showDetailsByDefault && message.toolCalls.length > 0 && (
         <div className="flex flex-col gap-2 w-full max-w-[85%] mt-1">
           {message.toolCalls.map((tool, idx) => (
             <ToolCallBadge key={idx} tool={tool} />

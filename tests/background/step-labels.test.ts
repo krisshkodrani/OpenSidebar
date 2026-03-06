@@ -25,8 +25,8 @@ describe("formatStepLabel", () => {
         expect(label).toBe("Find element");
     });
 
-    test("done returns Task complete", () => {
-        expect(formatStepLabel(ToolName.DONE, { summary: "all done" })).toBe("Task complete");
+    test("done returns Done", () => {
+        expect(formatStepLabel(ToolName.DONE, { summary: "all done" })).toBe("Done");
     });
 
     test("click_element shows tag ID", () => {
@@ -50,7 +50,7 @@ describe("formatStepLabel", () => {
     });
 
     test("read_page", () => {
-        expect(formatStepLabel(ToolName.READ_PAGE, {})).toBe("Read page content");
+        expect(formatStepLabel(ToolName.READ_PAGE, {})).toBe("Read page");
     });
 
     test("hide_element shows tag ID", () => {

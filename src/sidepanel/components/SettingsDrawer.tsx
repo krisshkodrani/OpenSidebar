@@ -243,44 +243,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium dark:text-warm-300">
-                      Require approvals
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Ask before high-risk actions
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formState.requireApprovals}
-                    onChange={(e) =>
-                      handleChange("requireApprovals", e.target.checked)
-                    }
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Confirm plans before execution
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Review multi-step plans before the agent starts
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={formState.requirePlanConfirmation !== false}
-                    onChange={(e) =>
-                      handleChange("requirePlanConfirmation", e.target.checked)
-                    }
-                    className="w-4 h-4 text-primary-600 rounded"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium dark:text-warm-300">
                       Allow navigation
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
@@ -423,7 +385,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                 <button
                   onClick={handleExportLogs}
-                  className="w-full flex items-center justify-center gap-2 p-2.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-blue-200 dark:border-blue-900/30 rounded-lg transition-colors text-sm font-medium"
+                  className="w-full flex items-center justify-center gap-2 p-2.5 text-warm-600 dark:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={16} />
                   Export Logs

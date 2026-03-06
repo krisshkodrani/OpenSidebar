@@ -603,13 +603,14 @@ export default function App() {
 
       </main>
 
-      <div className="flex flex-col shrink-0 z-20 border-t border-warm-200 dark:border-warm-800">
+      <div className="flex flex-col shrink-0 z-20">
         <InputArea
           onSend={handleSend}
           onSendFeedback={handleSendFeedback}
           onSendAnnotation={handleSendAnnotation}
           onManualCommand={handleManualCommand}
           onStop={handleStop}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       </div>
 
