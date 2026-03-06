@@ -336,6 +336,16 @@ export function initializeBridge(
     try {
       port = chrome.runtime.connect({ name: "sidepanel-keepalive" });
       reconnectDelay = 1000; // reset backoff on successful connect
+      // Re-sync agent status after reconnect (SW may still be running a task)
+      const wsId = store.getState().activeWorkspaceId;
+      if (wsId) {
+        chrome.runtime.sendMessage({
+          type: "WORKSPACE_SYNC",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.SIDEPANEL,
+          payload: { workspaceId: wsId },
+        }).catch(() => {});
+      }
       port.onDisconnect.addListener(() => {
         port = null;
         if (tornDown) return;

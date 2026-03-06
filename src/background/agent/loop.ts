@@ -2542,8 +2542,10 @@ export class AgentLoop {
             payload: { delta: "", done: false, replaceContent: "" },
           });
           response = {
+            role: "assistant",
             content: streamedTextAccumulator,
             tool_calls: undefined,
+            finish_reason: "stop",
           };
         } else if (llmError.name === "AbortError") {
           throw llmError;
