@@ -260,6 +260,20 @@ export class ProviderPool {
 }
 
 /**
+ * Annotate system message with cache_control for OpenRouter prefix caching.
+ * The static prefix (rules, persona, demo catalog) is stable across turns,
+ * so marking the system message as ephemeral enables provider-side caching.
+ */
+function annotateCacheControl(messages: LLMMessage[]): LLMMessage[] {
+  if (messages.length === 0 || messages[0].role !== "system") return messages;
+  const systemMsg: LLMMessage = {
+    ...messages[0],
+    cache_control: { type: "ephemeral" as const },
+  };
+  return [systemMsg, ...messages.slice(1)];
+}
+
+/**
  * LLM Client for OpenSidebar
  * Handles communication with LLM APIs via priority-based provider failover
  */
@@ -511,7 +525,7 @@ export class LLMClient {
 
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: request.messages,
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
@@ -728,7 +742,7 @@ export class LLMClient {
 
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: request.messages,
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0,

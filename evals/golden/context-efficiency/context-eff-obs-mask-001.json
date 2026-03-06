@@ -1,0 +1,42 @@
+{
+  "id": "context-eff-obs-mask-001",
+  "scenario": "observation_masking",
+  "difficulty": "easy",
+  "snapshot": {
+    "url": "https://shop.example.com/checkout",
+    "title": "Checkout - Example Shop",
+    "elementCount": 12,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Full Name", "name": "name" }, "rect": { "x": 50, "y": 100, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "email", "placeholder": "Email", "name": "email" }, "rect": { "x": 50, "y": 150, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Address", "name": "address" }, "rect": { "x": 50, "y": 200, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 4, "tagName": "button", "role": "button", "text": "Place Order", "attributes": { "type": "submit" }, "rect": { "x": 50, "y": 260, "width": 140, "height": 40 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Checkout\nFill in your details to complete the order.\nOrder Summary: 1× Widget ($29.99)\nTotal: $29.99",
+  "instruction": "Fill in the checkout form with name 'John Doe', email 'john@example.com', address '123 Main St', then submit.",
+  "priorHistory": [
+    { "tool": "navigate", "args": { "url": "https://shop.example.com" }, "result": "Navigated to https://shop.example.com. Page loaded: Example Shop - Home. Found 45 interactive elements including product listings, navigation menu, search bar, and cart icon." },
+    { "tool": "click_element", "args": { "id": 15 }, "result": "Clicked element [15] button 'Add to Cart'. Cart badge updated to show 1 item. A toast notification appeared: 'Widget added to cart'." },
+    { "tool": "click_element", "args": { "id": 8 }, "result": "Clicked element [8] a 'Cart'. Navigated to /cart. Page shows: Shopping Cart with 1 item (Widget, $29.99). Checkout button visible." },
+    { "tool": "read_page", "args": {}, "result": "Page: Shopping Cart - Example Shop\nURL: https://shop.example.com/cart\nElements: [1] input#qty type=number \"1\" [2] button \"Update\" [3] button \"Remove\" [4] span \"$29.99\" [5] a \"Continue Shopping\" [6] button \"Proceed to Checkout\"\nContent: Shopping Cart\n1× Widget - $29.99\nSubtotal: $29.99" },
+    { "tool": "click_element", "args": { "id": 6 }, "result": "Clicked element [6] button 'Proceed to Checkout'. Navigated to /checkout. Page shows checkout form with fields for name, email, and address." },
+    { "tool": "read_page", "args": {}, "result": "Page: Checkout - Example Shop\nURL: https://shop.example.com/checkout\nElements: [1] input placeholder=\"Full Name\" [2] input type=email placeholder=\"Email\" [3] input placeholder=\"Address\" [4] button \"Place Order\"\nContent: Checkout\nFill in your details to complete the order.\nOrder Summary: 1× Widget ($29.99)\nTotal: $29.99" },
+    { "tool": "find_element", "args": { "searchText": "Full Name" }, "result": "Found element matching 'Full Name': [1] input placeholder=\"Full Name\"" },
+    { "tool": "find_element", "args": { "searchText": "Email" }, "result": "Found element matching 'Email': [2] input type=email placeholder=\"Email\"" },
+    { "tool": "find_element", "args": { "searchText": "Address" }, "result": "Found element matching 'Address': [3] input placeholder=\"Address\"" },
+    { "tool": "find_element", "args": { "searchText": "Place Order" }, "result": "Found element matching 'Place Order': [4] button \"Place Order\"" }
+  ],
+  "expected": {
+    "expectedTool": "type_text",
+    "expectedArgs": { "id": 1, "text": "John Doe" },
+    "acceptAlternatives": ["click_element"],
+    "trapActions": ["navigate", "read_page", "find_element"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-05",
+    "notes": "Tests that observation masking of 10 prior tool results does not change the agent's next action. Agent should proceed to fill the form, not re-explore.",
+    "baselineTokenEstimate": 6500
+  }
+}

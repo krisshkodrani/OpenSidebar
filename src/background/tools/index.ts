@@ -44,6 +44,7 @@ import {
   INSPECT_HIDDEN_DEF,
   XRAY_PAGE_DEF,
   RECALL_DEMO_DEF,
+  UPDATE_NOTES_DEF,
 } from "./definitions";
 import {
   formatUnknownError,
@@ -796,6 +797,12 @@ export function registerTools() {
       return results?.[0]?.result ?? "X-ray toggled.";
     },
   );
+
+  // Working notes tool (intercepted by agent loop before executor runs)
+  toolRegistry.register(ToolName.UPDATE_NOTES, UPDATE_NOTES_DEF, async (_args) => {
+    // This executor is a fallback — the loop intercepts update_notes before reaching here
+    return "Note saved.";
+  });
 
   // Demo recall tool
   toolRegistry.register(ToolName.RECALL_DEMO, RECALL_DEMO_DEF, async (args) => {

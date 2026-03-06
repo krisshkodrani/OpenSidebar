@@ -40,8 +40,24 @@ const BASE_DELAY_MS = 800;
 /** Number of full-detail observation entries in prompt context */
 const OBSERVATION_WINDOW = 5;
 
-/** Max stale fingerprint turns before forced re-interpret */
-const STALE_THRESHOLD = 2;
+/** Tool-aware stale thresholds: routine actions need vision less frequently. */
+const STALE_THRESHOLD_ROUTINE = 4;   // click, type, scroll, press_key, select_option, set_checkbox
+const STALE_THRESHOLD_NAVIGATION = 1; // navigate, go_back, create_tab, switch_tab
+const STALE_THRESHOLD_DEFAULT = 2;    // everything else
+
+const ROUTINE_TOOLS = new Set([
+  "click_element", "type_text", "scroll_page", "press_key", "select_option", "set_checkbox",
+]);
+const NAVIGATION_TOOLS = new Set([
+  "navigate", "go_back", "create_tab", "switch_tab",
+]);
+
+function getStaleThreshold(lastToolName?: string): number {
+  if (!lastToolName) return STALE_THRESHOLD_DEFAULT;
+  if (NAVIGATION_TOOLS.has(lastToolName)) return STALE_THRESHOLD_NAVIGATION;
+  if (ROUTINE_TOOLS.has(lastToolName)) return STALE_THRESHOLD_ROUTINE;
+  return STALE_THRESHOLD_DEFAULT;
+}
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -274,6 +290,7 @@ export class PerceptionAgent {
     input: ObserveInput,
     fingerprint: string,
     signal?: AbortSignal,
+    lastToolName?: string,
   ): Promise<PerceptionResult> {
     // 0. URL-change hard invalidation — a URL change is the strongest signal
     //    that the page state has changed, regardless of fingerprint similarity.
@@ -284,9 +301,10 @@ export class PerceptionAgent {
     }
 
     // 1. Fingerprint cache check
+    const staleThreshold = getStaleThreshold(lastToolName);
     if (fingerprint === this.lastFingerprint && this._lastInterpretation) {
       this.fingerprintAge++;
-      if (this.fingerprintAge < STALE_THRESHOLD) {
+      if (this.fingerprintAge < staleThreshold) {
         return {
           interpretation: this._lastInterpretation,
           model: OPENROUTER_PERCEPTION_MODEL,

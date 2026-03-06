@@ -272,6 +272,12 @@ export interface RecallDemoArgs {
   query: string;
 }
 
+/** Arguments for update_notes — save a note to persistent working memory */
+export interface UpdateNotesArgs {
+  /** The note to save (max 500 chars) */
+  note: string;
+}
+
 // --- Tool Routing Types ---
 
 /** Maps tool names to their execution handlers */
@@ -317,4 +323,5 @@ export type ToolArgsMap = {
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.RECALL_DEMO]: RecallDemoArgs;
   [ToolName.CLARIFY]: ClarifyArgs;
+  [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
 };

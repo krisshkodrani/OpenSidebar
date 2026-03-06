@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v3",
-    "hash": "9d53d086",
+    "hash": "a53a9c7d",
     "description": "Core executor system prompt for browser automation turns. v3: perception-grounded guidance.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },

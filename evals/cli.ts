@@ -214,6 +214,12 @@ async function main() {
     case "tool-confusion-validate":
       await cmdToolConfusionValidate();
       break;
+    case "context-efficiency-critique":
+      await cmdContextEfficiencyCritique(args.slice(1));
+      break;
+    case "context-efficiency-validate":
+      await cmdContextEfficiencyValidate();
+      break;
     case "help":
     default:
       cmdHelp();
@@ -1569,6 +1575,12 @@ Tool-confusion eval commands:
     --out <dir>       Output directory (default: evals/reports)
 
   tool-confusion-validate                Structural validation of tool-confusion golden cases (offline)
+
+Context-efficiency eval commands:
+  context-efficiency-critique [options]  Replay context-efficiency cases with A/B variants, score, report
+    --scenario <s>    Filter by scenario (observation_masking, attribute_pruning, plan_persistence, time_awareness)
+
+  context-efficiency-validate            Structural validation of context-efficiency golden cases (offline)
 `);
 }
 
@@ -2397,6 +2409,28 @@ async function cmdToolConfusionValidate() {
   }
 
   console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
+  if (invalid > 0) process.exit(1);
+}
+
+// ── Context-efficiency commands ──────────────────────────────────────
+
+async function cmdContextEfficiencyCritique(args: string[]) {
+  const { loadApiKeys } = await import("./utils");
+  const { runContextEfficiencyEvals } = await import("./context-efficiency-runner");
+
+  const keys = loadApiKeys();
+  const scenarioIdx = args.indexOf("--scenario");
+  const scenarioFilter = scenarioIdx !== -1 ? args[scenarioIdx + 1] : undefined;
+
+  await runContextEfficiencyEvals({
+    keys,
+    scenarioFilter,
+  });
+}
+
+async function cmdContextEfficiencyValidate() {
+  const { validateContextEfficiencyGoldenCases } = await import("./context-efficiency-runner");
+  const { invalid } = validateContextEfficiencyGoldenCases();
   if (invalid > 0) process.exit(1);
 }
 

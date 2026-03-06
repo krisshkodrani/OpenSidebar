@@ -573,9 +573,10 @@ describe("ContextManager", () => {
         m => m.role === "tool" && m.tool_call_id === "early_call",
       );
       if (earlyResult && typeof earlyResult.content === "string") {
-        // Should have been compressed (original was 409 chars)
+        // Should have been masked (original was 409 chars)
         expect(earlyResult.content.length).toBeLessThan(400);
-        expect(earlyResult.content).toMatch(/\[(truncated|compressed)\]/);
+        // Observation masking format: [T{n}: tool_name → first line]
+        expect(earlyResult.content).toMatch(/^\[T\d+:/);
       }
     });
   });
@@ -826,6 +827,24 @@ describe("Form batch hint", () => {
     expect(systemContent).not.toContain("Batch hint");
   });
 
+  test("system message does NOT contain batch hint with only 2 input fields", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Login Page",
+      url: "https://example.com/login",
+      elements: [
+        makeInputElement(1),
+        makeInputElement(2),
+      ],
+      visibleContent: "Login",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).not.toContain("Batch hint");
+  });
+
   test("system message contains batch hint with 3 textarea elements", () => {
     const ctx = new ContextManager();
     ctx.setSnapshot({
@@ -844,5 +863,152 @@ describe("Form batch hint", () => {
     const systemContent = prompt[0].content as string;
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("3 input fields");
+  });
+});
+
+// --- Attribute Pruning Tests ---
+describe("Attribute Pruning Whitelist", () => {
+  test("NONE level filters out data-* and class attributes", () => {
+    const ctx = new ContextManager(500000); // Large window = NONE compression
+    ctx.setSnapshot({
+      title: "Test",
+      url: "https://example.com",
+      elements: [
+        {
+          tag: 1,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: {
+            type: "submit",
+            class: "btn btn-primary",
+            "data-testid": "submit-btn",
+            "data-analytics": "click-submit",
+            style: "color: red",
+          },
+          rect: { x: 10, y: 100, width: 80, height: 30 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      visibleContent: "content",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    // type=submit should be included (action-relevant)
+    expect(systemContent).toContain("type=submit");
+    // class and data-* should be filtered out
+    expect(systemContent).not.toContain("btn-primary");
+    expect(systemContent).not.toContain("data-testid");
+    expect(systemContent).not.toContain("data-analytics");
+    expect(systemContent).not.toContain("style");
+  });
+
+  test("action-relevant attrs like href, placeholder are preserved at NONE", () => {
+    const ctx = new ContextManager(500000);
+    ctx.setSnapshot({
+      title: "Test",
+      url: "https://example.com",
+      elements: [
+        {
+          tag: 1,
+          tagName: "input",
+          role: "textbox",
+          text: "",
+          attributes: {
+            type: "email",
+            placeholder: "Enter email",
+            name: "email",
+            required: "true",
+            "aria-label": "Email address",
+          },
+          rect: { x: 10, y: 100, width: 200, height: 30 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      visibleContent: "content",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("type=email");
+    expect(systemContent).toContain("placeholder=");
+    expect(systemContent).toContain("name=email");
+    expect(systemContent).toContain("required=");
+    expect(systemContent).toContain("aria-label=");
+  });
+});
+
+// --- Working Notes Tests ---
+describe("Working Notes", () => {
+  test("appendWorkingNote adds note and renders in system prompt", () => {
+    const ctx = new ContextManager();
+    ctx.appendWorkingNote("Element [5] is the submit button");
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("## Working Notes");
+    expect(systemContent).toContain("Element [5] is the submit button");
+  });
+
+  test("working notes placeholder removed when no notes", () => {
+    const ctx = new ContextManager();
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).not.toContain("{{workingNotes}}");
+    expect(systemContent).not.toContain("## Working Notes");
+  });
+
+  test("appendWorkingNote caps at 500 chars", () => {
+    const ctx = new ContextManager();
+    ctx.appendWorkingNote("A".repeat(300));
+    ctx.appendWorkingNote("B".repeat(300));
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    // Should have Working Notes section
+    expect(systemContent).toContain("## Working Notes");
+    // Total should be capped at 500 chars
+    const notesMatch = systemContent.match(/## Working Notes\n([\s\S]*?)(?:\n## |$)/);
+    expect(notesMatch).not.toBeNull();
+    const notesContent = notesMatch![1].trim();
+    expect(notesContent.length).toBeLessThanOrEqual(500);
+  });
+
+  test("multiple notes are joined with newlines", () => {
+    const ctx = new ContextManager();
+    ctx.appendWorkingNote("Note 1: first");
+    ctx.appendWorkingNote("Note 2: second");
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("Note 1: first");
+    expect(systemContent).toContain("Note 2: second");
+  });
+});
+
+// --- Turn Budget Tests ---
+describe("Turn Budget", () => {
+  test("turnBudget appears in system prompt when time context is set", () => {
+    const ctx = new ContextManager();
+    ctx.setTimeContext(5, 30, Date.now() - 10000); // 10s ago
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("Turn 5/30");
+    expect(systemContent).toContain("Elapsed:");
+    expect(systemContent).toContain("Budget: 25 turns left");
+  });
+
+  test("turnBudget placeholder removed when no time context", () => {
+    const ctx = new ContextManager();
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).not.toContain("{{turnBudget}}");
+    expect(systemContent).not.toContain("Turn 0/0");
   });
 });

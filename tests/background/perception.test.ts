@@ -705,6 +705,77 @@ describe("PerceptionAgent", () => {
             cleanup();
         }
     });
+
+    test("routine tool (click_element) extends stale threshold to 4", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            // First call — fresh
+            await agent.observe(makeObserveInput(), "fp1", undefined, "click_element");
+            expect(callCount).toBe(1);
+
+            // Stale turns 1-3 with routine tool — should be cached
+            await agent.observe(makeObserveInput(), "fp1", undefined, "click_element");
+            expect(callCount).toBe(1);
+            await agent.observe(makeObserveInput(), "fp1", undefined, "click_element");
+            expect(callCount).toBe(1);
+            await agent.observe(makeObserveInput(), "fp1", undefined, "click_element");
+            expect(callCount).toBe(1);
+
+            // Stale turn 4 — forced re-interpret
+            await agent.observe(makeObserveInput(), "fp1", undefined, "click_element");
+            expect(callCount).toBe(2);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("navigation tool (navigate) triggers re-interpret after 1 stale turn", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            // First call — fresh
+            await agent.observe(makeObserveInput(), "fp1", undefined, "navigate");
+            expect(callCount).toBe(1);
+
+            // Stale turn 1 with navigation tool — forced re-interpret
+            await agent.observe(makeObserveInput(), "fp1", undefined, "navigate");
+            expect(callCount).toBe(2);
+        } finally {
+            cleanup();
+        }
+    });
+
+    test("default stale threshold (2) for non-routine/non-navigation tools", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let callCount = 0;
+        globalThis.fetch = mockFetch(() => {
+            callCount++;
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            await agent.observe(makeObserveInput(), "fp1", undefined, "find_element");
+            expect(callCount).toBe(1);
+
+            // Stale turn 1 — cached
+            await agent.observe(makeObserveInput(), "fp1", undefined, "find_element");
+            expect(callCount).toBe(1);
+
+            // Stale turn 2 — forced re-interpret
+            await agent.observe(makeObserveInput(), "fp1", undefined, "find_element");
+            expect(callCount).toBe(2);
+        } finally {
+            cleanup();
+        }
+    });
 });
 
 // ----- formatPriorObservations() -----
