@@ -1,0 +1,48 @@
+{
+  "id": "context-eff-plan-persist-001",
+  "scenario": "plan_persistence",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://travel.example.com/flights/results",
+    "title": "Flight Search Results - TravelApp",
+    "elementCount": 35,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 40, "tagName": "button", "role": "button", "text": "Select", "attributes": { "type": "button" }, "rect": { "x": 700, "y": 180, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 41, "tagName": "button", "role": "button", "text": "Select", "attributes": { "type": "button" }, "rect": { "x": 700, "y": 280, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 42, "tagName": "button", "role": "button", "text": "Select", "attributes": { "type": "button" }, "rect": { "x": 700, "y": 380, "width": 80, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 50, "tagName": "select", "role": "combobox", "text": "Price: Low to High", "attributes": { "name": "sort" }, "rect": { "x": 600, "y": 80, "width": 180, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 51, "tagName": "input", "role": "checkbox", "text": "", "attributes": { "type": "checkbox", "name": "nonstop" }, "rect": { "x": 50, "y": 80, "width": 20, "height": 20 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Flight Results: NYC → LAX\nDec 20, 2026 | 1 Adult\n\n1. Delta DL402 - Depart 8:00 AM, Arrive 11:30 AM (nonstop) - $289\n2. United UA1155 - Depart 10:15 AM, Arrive 3:45 PM (1 stop) - $245\n3. American AA330 - Depart 2:00 PM, Arrive 5:30 PM (nonstop) - $312\n\nShowing 3 of 12 results. Sort: Price Low to High.",
+  "instruction": "Book the cheapest nonstop flight from NYC to LAX for Dec 20.",
+  "priorHistory": [
+    { "tool": "navigate", "args": { "url": "https://travel.example.com" }, "result": "Navigated to TravelApp homepage." },
+    { "tool": "type_text", "args": { "id": 1, "text": "NYC" }, "result": "Typed 'NYC' into departure field." },
+    { "tool": "type_text", "args": { "id": 2, "text": "LAX" }, "result": "Typed 'LAX' into destination field." },
+    { "tool": "type_text", "args": { "id": 3, "text": "Dec 20, 2026" }, "result": "Typed date into departure date field." },
+    { "tool": "click_element", "args": { "id": 10 }, "result": "Clicked 'Search Flights'. Navigated to /flights/results. 12 results found." }
+  ],
+  "planStatus": {
+    "subtasks": [
+      { "description": "Search for flights NYC to LAX on Dec 20", "status": "done" },
+      { "description": "Filter for nonstop flights only", "status": "running" },
+      { "description": "Select the cheapest nonstop option", "status": "pending" },
+      { "description": "Complete passenger details and payment", "status": "pending" }
+    ],
+    "currentIndex": 1
+  },
+  "expected": {
+    "expectedTool": "set_checkbox",
+    "expectedArgs": { "id": 51, "checked": true },
+    "acceptAlternatives": ["click_element"],
+    "shouldReferencePlan": true,
+    "trapActions": ["done", "navigate"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-05",
+    "notes": "Mid-task with active 4-step plan. Step 1 done, step 2 (filter nonstop) is current. Tests that agent references the current plan step after history compression and acts on the filter, not on selecting a flight (step 3).",
+    "baselineTokenEstimate": 7000
+  }
+}

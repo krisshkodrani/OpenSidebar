@@ -25,6 +25,8 @@ export interface LLMMessage {
   tool_calls?: LLMToolCall[];
   tool_call_id?: string;
   name?: string; // for tool role
+  /** OpenRouter prefix caching: mark message as cache-friendly boundary */
+  cache_control?: { type: "ephemeral" };
 }
 
 export interface LLMToolCall {

@@ -1,0 +1,35 @@
+{
+  "id": "context-eff-attr-prune-002",
+  "scenario": "attribute_pruning",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://dashboard.example.com/analytics",
+    "title": "Analytics Dashboard",
+    "elementCount": 60,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 20, "tagName": "button", "role": "button", "text": "Export CSV", "attributes": { "data-action": "export", "data-format": "csv", "class": "btn btn-outline-secondary btn-sm", "data-tooltip": "Download report as CSV" }, "rect": { "x": 700, "y": 60, "width": 100, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 21, "tagName": "button", "role": "button", "text": "Export PDF", "attributes": { "data-action": "export", "data-format": "pdf", "class": "btn btn-outline-secondary btn-sm", "data-tooltip": "Download report as PDF" }, "rect": { "x": 810, "y": 60, "width": 100, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 22, "tagName": "select", "role": "combobox", "text": "Last 7 days", "attributes": { "name": "dateRange", "data-default": "7d", "class": "form-select form-select-sm" }, "rect": { "x": 50, "y": 60, "width": 160, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 23, "tagName": "select", "role": "combobox", "text": "All Channels", "attributes": { "name": "channel", "data-default": "all", "class": "form-select form-select-sm" }, "rect": { "x": 220, "y": 60, "width": 160, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 24, "tagName": "button", "role": "button", "text": "Apply Filters", "attributes": { "type": "button", "class": "btn btn-primary btn-sm", "data-action": "filter" }, "rect": { "x": 400, "y": 60, "width": 100, "height": 32 }, "isVisible": true, "isDisabled": false },
+    { "tag": 30, "tagName": "a", "role": "link", "text": "View Details", "attributes": { "href": "/analytics/traffic", "class": "card-link", "data-section": "traffic" }, "rect": { "x": 50, "y": 200, "width": 80, "height": 20 }, "isVisible": true, "isDisabled": false },
+    { "tag": 31, "tagName": "a", "role": "link", "text": "View Details", "attributes": { "href": "/analytics/conversions", "class": "card-link", "data-section": "conversions" }, "rect": { "x": 350, "y": 200, "width": 80, "height": 20 }, "isVisible": true, "isDisabled": false },
+    { "tag": 32, "tagName": "a", "role": "link", "text": "View Details", "attributes": { "href": "/analytics/revenue", "class": "card-link", "data-section": "revenue" }, "rect": { "x": 650, "y": 200, "width": 80, "height": 20 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Analytics Dashboard\nDate Range: Last 7 days | Channel: All\n\nTraffic: 12,450 visits (+8.3%)\nConversions: 342 (+15.2%)\nRevenue: $28,450 (+12.1%)\n\nTop Pages:\n1. /home - 4,200 visits\n2. /products - 3,100 visits\n3. /checkout - 1,800 visits",
+  "instruction": "Export the analytics data as CSV.",
+  "priorHistory": null,
+  "expected": {
+    "expectedTool": "click_element",
+    "expectedArgs": { "id": 20 },
+    "acceptAlternatives": [],
+    "trapActions": ["navigate", "find_element", "execute_js"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-05",
+    "notes": "Elements heavy on data-* attributes (data-action, data-format, data-tooltip, data-section, data-default). Tests that pruning data-* attrs doesn't break tool selection for a simple click action.",
+    "baselineTokenEstimate": 5000
+  }
+}

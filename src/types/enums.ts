@@ -66,6 +66,7 @@ export enum ToolName {
   DISMISS_OVERLAYS = "dismiss_overlays",
   RECALL_DEMO = "recall_demo",
   CLARIFY = "clarify",
+  UPDATE_NOTES = "update_notes",
 }
 
 /** Risk classification for a tool invocation */

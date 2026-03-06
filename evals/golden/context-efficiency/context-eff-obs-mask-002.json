@@ -1,0 +1,54 @@
+{
+  "id": "context-eff-obs-mask-002",
+  "scenario": "observation_masking",
+  "difficulty": "medium",
+  "snapshot": {
+    "url": "https://app.example.com/settings/profile",
+    "title": "Profile Settings - MyApp",
+    "elementCount": 18,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 10, "tagName": "input", "role": "textbox", "text": "Jane Smith", "attributes": { "type": "text", "name": "displayName", "value": "Jane Smith" }, "rect": { "x": 200, "y": 120, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 11, "tagName": "input", "role": "textbox", "text": "jane@company.com", "attributes": { "type": "email", "name": "email", "value": "jane@company.com" }, "rect": { "x": 200, "y": 170, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 12, "tagName": "select", "role": "combobox", "text": "UTC-5 (Eastern)", "attributes": { "name": "timezone" }, "rect": { "x": 200, "y": 220, "width": 300, "height": 36 }, "isVisible": true, "isDisabled": false },
+    { "tag": 13, "tagName": "input", "role": "checkbox", "text": "", "attributes": { "type": "checkbox", "name": "newsletter", "checked": "true" }, "rect": { "x": 200, "y": 270, "width": 20, "height": 20 }, "isVisible": true, "isDisabled": false },
+    { "tag": 14, "tagName": "button", "role": "button", "text": "Save Changes", "attributes": { "type": "submit" }, "rect": { "x": 200, "y": 320, "width": 140, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 15, "tagName": "a", "role": "link", "text": "Change Password", "attributes": { "href": "/settings/password" }, "rect": { "x": 200, "y": 380, "width": 140, "height": 20 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Profile Settings\nUpdate your personal information.\nDisplay Name: Jane Smith\nEmail: jane@company.com\nTimezone: UTC-5 (Eastern)\nNewsletter: Subscribed\n\nChange Password",
+  "instruction": "Change the display name to 'Jane Doe' and save.",
+  "priorHistory": [
+    { "tool": "navigate", "args": { "url": "https://app.example.com" }, "result": "Navigated to https://app.example.com. Dashboard loaded with 32 elements: sidebar nav, main content area showing recent activity, notification bell with 3 unread." },
+    { "tool": "click_element", "args": { "id": 5 }, "result": "Clicked [5] avatar icon. Dropdown appeared with: Profile, Settings, Logout." },
+    { "tool": "click_element", "args": { "id": 7 }, "result": "Clicked [7] 'Settings'. Navigated to /settings. Settings page with tabs: General, Profile, Notifications, Security." },
+    { "tool": "click_element", "args": { "id": 9 }, "result": "Clicked [9] 'Profile' tab. Profile form loaded with fields for display name, email, timezone, newsletter subscription." },
+    { "tool": "read_page", "args": {}, "result": "Page: Profile Settings - MyApp\nURL: https://app.example.com/settings/profile\nElements: [10] input name=displayName value=\"Jane Smith\" [11] input type=email value=\"jane@company.com\" [12] select name=timezone \"UTC-5 (Eastern)\" [13] input type=checkbox checked [14] button \"Save Changes\" [15] a \"Change Password\"\nContent: Profile Settings..." },
+    { "tool": "read_element", "args": { "id": 10, "attribute": "value" }, "result": "Element [10] attribute \"value\": \"Jane Smith\"" },
+    { "tool": "read_element", "args": { "id": 11, "attribute": "value" }, "result": "Element [11] attribute \"value\": \"jane@company.com\"" },
+    { "tool": "read_element", "args": { "id": 12, "attribute": "value" }, "result": "Element [12] attribute \"value\": \"UTC-5\"" },
+    { "tool": "scroll_page", "args": { "direction": "down" }, "result": "Scrolled down. No additional content below the fold. All form fields visible." },
+    { "tool": "scroll_page", "args": { "direction": "up" }, "result": "Scrolled up. Back to top of profile form." },
+    { "tool": "read_page", "args": {}, "result": "Page: Profile Settings - MyApp\nURL: https://app.example.com/settings/profile\nElements: [10] input name=displayName value=\"Jane Smith\" [11] input type=email value=\"jane@company.com\" [12] select name=timezone \"UTC-5 (Eastern)\" [13] input type=checkbox checked [14] button \"Save Changes\" [15] a \"Change Password\"\nContent: Profile Settings..." },
+    { "tool": "read_element", "args": { "id": 14, "attribute": "disabled" }, "result": "Element [14] attribute \"disabled\": null (not disabled)" },
+    { "tool": "find_element", "args": { "searchText": "Display Name" }, "result": "Found label 'Display Name' associated with input [10]." },
+    { "tool": "find_element", "args": { "searchText": "Save" }, "result": "Found element matching 'Save': [14] button \"Save Changes\"" },
+    { "tool": "read_element", "args": { "id": 10, "attribute": "type" }, "result": "Element [10] attribute \"type\": \"text\"" },
+    { "tool": "read_page", "args": {}, "result": "Page unchanged. Same elements visible." },
+    { "tool": "find_element", "args": { "searchText": "newsletter" }, "result": "Found checkbox [13] for newsletter subscription." },
+    { "tool": "read_element", "args": { "id": 13, "attribute": "checked" }, "result": "Element [13] attribute \"checked\": \"true\"" },
+    { "tool": "scroll_page", "args": { "direction": "down" }, "result": "Scrolled down. Footer visible. No additional form fields." },
+    { "tool": "scroll_page", "args": { "direction": "up" }, "result": "Scrolled back to top. All form fields in view." }
+  ],
+  "expected": {
+    "expectedTool": "type_text",
+    "expectedArgs": { "id": 10, "text": "Jane Doe" },
+    "acceptAlternatives": ["click_element"],
+    "trapActions": ["read_page", "find_element", "scroll_page", "read_element"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-05",
+    "notes": "Heavy history (20 prior turns). Tests that aggressive observation masking of old results still produces the correct action. Agent should type the new name, not re-explore.",
+    "baselineTokenEstimate": 12000
+  }
+}

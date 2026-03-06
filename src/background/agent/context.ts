@@ -28,6 +28,14 @@ export * from "./context-formatting";
 // Do NOT move persona or dynamic content above the static rules.
 const SYSTEM_PROMPT_TEMPLATE = getPromptTemplate("agent.system");
 
+/** Whitelist of action-relevant DOM attributes for NONE/LIGHT compression levels. */
+const ACTION_RELEVANT_ATTRS = new Set([
+  "type", "href", "placeholder", "value", "aria-label", "role",
+  "name", "action", "method", "target", "alt", "title",
+  "min", "max", "pattern", "required", "checked", "selected",
+  "disabled", "readonly", "multiple", "accept", "label", "description",
+]);
+
 /** Format skeleton nodes into indented hierarchy for the agent system prompt. */
 function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
   return skeleton
@@ -77,6 +85,10 @@ export class ContextManager {
   private pageContent: string | null = null;
   private isFirstTurn = true;
   private contradictionDetails: string | null = null;
+  private turnCount = 0;
+  private turnMax = 0;
+  private startTimeMs = 0;
+  private workingNotes = "";
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -114,6 +126,27 @@ export class ContextManager {
   /** Set the compact demo catalog (one line per demo) for the system prompt prefix. */
   public setDemoCatalog(catalog: string | null): void {
     this.demoCatalog = catalog;
+  }
+
+  /** Set time-awareness fields for the turn budget indicator. */
+  public setTimeContext(turnCount: number, maxTurns: number, startTimeMs: number): void {
+    this.turnCount = turnCount;
+    this.turnMax = maxTurns;
+    this.startTimeMs = startTimeMs;
+  }
+
+  /** Append a working note (ring-buffer, max 500 chars). */
+  public appendWorkingNote(note: string): void {
+    const trimmed = note.slice(0, 500);
+    if (this.workingNotes) {
+      this.workingNotes += "\n" + trimmed;
+    } else {
+      this.workingNotes = trimmed;
+    }
+    // Cap total at 500 chars
+    if (this.workingNotes.length > 500) {
+      this.workingNotes = this.workingNotes.slice(-500);
+    }
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -452,11 +485,24 @@ export class ContextManager {
   private constructSystemMessage(): LLMMessage {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
-    // Persona: executor vs planner model framing (placed after static rules for prefix caching)
+    // Persona: executor vs planner model framing (in static prefix for caching)
     content = content.replace(
       "{{persona}}",
       `## Persona\n${this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA}`,
     );
+
+    // Demo catalog: semi-static, changes per session (in static prefix for caching)
+    if (this.demoCatalog) {
+      content = content.replace(
+        "{{demoCatalog}}",
+        `## Available Demonstrations\nUse recall_demo to retrieve step-by-step instructions for any of these:\n${this.demoCatalog}\n`,
+      );
+    } else {
+      content = content.replace("{{demoCatalog}}", "");
+    }
+
+    // Cache breakpoint marker: stripped from output, signals end of static prefix
+    content = content.replace("{{cacheBreakpoint}}", "");
 
     // Multi-Step Planning: only include when a plan is active
     if (this.planStatus) {
@@ -476,18 +522,18 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{planInstructions}}", "");
     }
 
-    // Inject demo catalog (compact list of available demonstrations, in static prefix)
-    if (this.demoCatalog) {
-      content = content.replace(
-        "{{demoCatalog}}",
-        `## Available Demonstrations\nUse recall_demo to retrieve step-by-step instructions for any of these:\n${this.demoCatalog}\n`,
-      );
-    } else {
-      content = content.replace("{{demoCatalog}}", "");
-    }
-
     // Inject demonstration context (if any)
     content = content.replace("{{demonstrations}}", this.demonstrations || "");
+
+    // Inject working notes (if any)
+    if (this.workingNotes) {
+      content = content.replace(
+        "{{workingNotes}}",
+        `## Working Notes\n${this.workingNotes}\n`,
+      );
+    } else {
+      content = content.replace("{{workingNotes}}", "");
+    }
 
     // Pinned goal: keeps original query visible in every system prompt
     if (this.originalQuery) {
@@ -696,6 +742,18 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     }
 
+    // Turn budget indicator (independent of snapshot)
+    if (this.turnMax > 0 && this.startTimeMs > 0) {
+      const elapsed = Math.round((Date.now() - this.startTimeMs) / 1000);
+      const remaining = Math.max(0, this.turnMax - this.turnCount);
+      content = content.replace(
+        "{{turnBudget}}",
+        `Turn ${this.turnCount}/${this.turnMax} | Elapsed: ${elapsed}s | Budget: ${remaining} turns left`,
+      );
+    } else {
+      content = content.replace("{{turnBudget}}", "");
+    }
+
     return {
       role: "system",
       content: content,
@@ -824,7 +882,7 @@ Do NOT call done() until every planned step is complete.
         : level === CompressionLevel.MEDIUM
           ? (k) =>
               ["id", "role", "type", "href", "label", "description"].includes(k)
-          : null;
+          : (k) => ACTION_RELEVANT_ATTRS.has(k);
 
     // Categorize elements into semantic groups
     const groups = this.groupElementsByCategory(processed);
@@ -1030,33 +1088,41 @@ Do NOT call done() until every planned step is complete.
           content: `[COMPRESSED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
         });
       }
+      // Carry plan state through HEAVY compression (plan persistence)
+      if (this.planStatus) {
+        const planBlock = this.formatPlanStatus();
+        if (planBlock) {
+          this.history.push({ role: "user", content: planBlock });
+        }
+      }
       this.history.push(...recentMessages);
 
       logger.info("agent", "HEAVY compression applied", {
         timelineEntries: timeline.length,
         newHistoryLength: this.history.length,
+        planPreserved: !!this.planStatus,
       });
       return;
     }
 
-    // LIGHT and MEDIUM: truncate old tool results
-    const limit =
-      level === CompressionLevel.MEDIUM
-        ? COMPRESSION_TRIGGERS.MEDIUM_TOOL_RESULT_LIMIT
-        : COMPRESSION_TRIGGERS.LIGHT_TOOL_RESULT_LIMIT;
-    const preserveRecent = 4; // keep last 4 tool results verbatim
+    // LIGHT and MEDIUM: observation masking on old tool results
+    // Keep actions visible (agent remembers what it did), mask verbose output
+    const preserveRecent = level === CompressionLevel.MEDIUM ? 3 : 4;
 
     let toolResultCount = 0;
+    let turnNum = 0;
     for (let i = this.history.length - 1; i >= 0; i--) {
       if (this.history[i].role === "tool") toolResultCount++;
       if (toolResultCount > preserveRecent) {
-        // Truncate all tool results from index 0..i
+        // Mask all tool results from index 0..i with one-liner summaries
         for (let j = 0; j <= i; j++) {
           const msg = this.history[j];
           if (msg.role === "tool" && typeof msg.content === "string") {
-            if (msg.content.length > limit) {
-              msg.content = msg.content.slice(0, limit) + " [compressed]";
-            }
+            turnNum++;
+            const toolName = this.findToolNameForResult(msg.tool_call_id);
+            const firstLine = msg.content.split("\n")[0].slice(0, 100);
+            const label = toolName ? `${toolName} → ${firstLine}` : firstLine;
+            msg.content = `[T${turnNum}: ${label}]`;
           }
         }
         break;
@@ -1070,7 +1136,7 @@ Do NOT call done() until every planned step is complete.
 
     logger.info("agent", `${level.toUpperCase()} compression applied`, {
       historyLength: this.history.length,
-      toolResultLimit: limit,
+      preserveRecent,
     });
   }
 
@@ -1327,12 +1393,20 @@ Do NOT call done() until every planned step is complete.
         content: `[DISTILLED HISTORY — ${timeline.length} actions]\n${timeline.join("\n")}`,
       });
     }
+    // Carry plan state through rolling distillation (plan persistence)
+    if (this.planStatus) {
+      const planBlock = this.formatPlanStatus();
+      if (planBlock) {
+        this.history.push({ role: "user", content: planBlock });
+      }
+    }
     this.history.push(...recentMessages);
 
     this.saveState().catch(() => {});
     logger.info("agent", "Rolling distillation applied", {
       timelineEntries: timeline.length,
       newHistoryLength: this.history.length,
+      planPreserved: !!this.planStatus,
     });
     return true;
   }

@@ -18,6 +18,7 @@ import type { EscalationGoldenCase } from "./escalation-types";
 import type { CompletionTimingGoldenCase } from "./completion-timing-types";
 import type { GroundingGoldenCase } from "./grounding-types";
 import type { ToolConfusionGoldenCase } from "./tool-confusion-types";
+import type { ContextEfficiencyGoldenCase } from "./context-efficiency-types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
@@ -360,6 +361,25 @@ export function readToolConfusionGoldenCases(): ToolConfusionGoldenCase[] {
   for (const file of files.sort()) {
     try {
       const content = readFileSync(join(TOOL_CONFUSION_GOLDEN_DIR, file), "utf-8");
+      cases.push(JSON.parse(content));
+    } catch { /* skip malformed */ }
+  }
+  return cases;
+}
+
+// ── Context-efficiency eval I/O ──────────────────────────────────────
+
+export const CONTEXT_EFFICIENCY_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "context-efficiency");
+export const CONTEXT_EFFICIENCY_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "context-efficiency");
+
+/** Read all context-efficiency golden cases from the context-efficiency golden dir */
+export function readContextEfficiencyGoldenCases(): ContextEfficiencyGoldenCase[] {
+  if (!existsSync(CONTEXT_EFFICIENCY_GOLDEN_DIR)) return [];
+  const files = readdirSync(CONTEXT_EFFICIENCY_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
+  const cases: ContextEfficiencyGoldenCase[] = [];
+  for (const file of files.sort()) {
+    try {
+      const content = readFileSync(join(CONTEXT_EFFICIENCY_GOLDEN_DIR, file), "utf-8");
       cases.push(JSON.parse(content));
     } catch { /* skip malformed */ }
   }

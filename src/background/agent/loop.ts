@@ -257,6 +257,9 @@ export class AgentLoop {
   /** Consecutive turns where DOM-modifying tools had no observable effect */
   private consecutiveZeroEffectTurns = 0;
 
+  /** Last tool name executed — used for perception stale threshold selection */
+  private lastToolNameForPerception: string | undefined;
+
   /** Off-domain navigation detection */
   private startingOrigin: string | null = null;
   private offDomainWarned = false;
@@ -1606,10 +1609,11 @@ export class AgentLoop {
     if (!allowedNames) return tools; // "full" or unknown → no filtering
 
     const allowedSet = new Set<string>(allowedNames);
-    // Always ensure done, escalate, and clarify are available
+    // Always ensure done, escalate, clarify, and update_notes are available
     allowedSet.add(ToolName.DONE);
     allowedSet.add(ToolName.ESCALATE);
     allowedSet.add(ToolName.CLARIFY);
+    allowedSet.add(ToolName.UPDATE_NOTES);
 
     return tools.filter((t) => allowedSet.has(t.function.name));
   }
@@ -1756,6 +1760,7 @@ export class AgentLoop {
           },
           fingerprint,
           this.abortController?.signal,
+          this.lastToolNameForPerception,
         );
 
         this.context.setPageInterpretation(result.interpretation);
@@ -1779,6 +1784,7 @@ export class AgentLoop {
           },
           fingerprint,
           this.abortController?.signal,
+          this.lastToolNameForPerception,
         );
 
         this.context.setPageInterpretation(result.interpretation);
@@ -2379,6 +2385,9 @@ export class AgentLoop {
           },
         });
       }
+
+      // Set time context for turn budget indicator
+      this.context.setTimeContext(this.turnCount, this.maxTurns, this.sessionStartTime);
 
       // 1. LLM Inference (streamed)
       const messages = this.context.getPrompt();
@@ -3574,6 +3583,22 @@ export class AgentLoop {
               continue;
             }
 
+            // UPDATE_NOTES tool — save a note to persistent working memory
+            if (toolName === ToolName.UPDATE_NOTES) {
+              const note = (args.note as string) || "";
+              this.context.appendWorkingNote(note);
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: "Note saved.",
+              });
+              this.log.info("agent", "UPDATE_NOTES saved", {
+                turn: this.turnCount,
+                noteLength: note.length,
+              });
+              continue;
+            }
+
             // WAIT tool — re-orientation mechanism
             if (toolName === ToolName.WAIT) {
               const seconds = Math.min(
@@ -4707,6 +4732,11 @@ export class AgentLoop {
               break;
             }
           }
+        }
+
+        // Track last tool name for perception stale threshold selection
+        if (response.tool_calls.length > 0) {
+          this.lastToolNameForPerception = response.tool_calls[response.tool_calls.length - 1].function.name;
         }
 
         // Batch snapshot refresh: ONE refresh after all tools complete

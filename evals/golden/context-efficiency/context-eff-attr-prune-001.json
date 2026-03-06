@@ -1,0 +1,34 @@
+{
+  "id": "context-eff-attr-prune-001",
+  "scenario": "attribute_pruning",
+  "difficulty": "easy",
+  "snapshot": {
+    "url": "https://forms.example.com/signup",
+    "title": "Sign Up - Example",
+    "elementCount": 40,
+    "scrollY": 0
+  },
+  "elements": [
+    { "tag": 1, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "text", "placeholder": "Username", "name": "username", "data-testid": "username-input", "class": "form-control input-lg", "autocomplete": "username", "aria-label": "Username" }, "rect": { "x": 100, "y": 120, "width": 300, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 2, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "email", "placeholder": "Email Address", "name": "email", "data-testid": "email-input", "class": "form-control input-lg", "autocomplete": "email", "aria-label": "Email" }, "rect": { "x": 100, "y": 180, "width": 300, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 3, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "password", "placeholder": "Password", "name": "password", "data-testid": "password-input", "class": "form-control input-lg", "autocomplete": "new-password", "aria-label": "Password", "minlength": "8" }, "rect": { "x": 100, "y": 240, "width": 300, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 4, "tagName": "input", "role": "textbox", "text": "", "attributes": { "type": "password", "placeholder": "Confirm Password", "name": "confirmPassword", "data-testid": "confirm-password-input", "class": "form-control input-lg", "autocomplete": "new-password", "aria-label": "Confirm Password" }, "rect": { "x": 100, "y": 300, "width": 300, "height": 40 }, "isVisible": true, "isDisabled": false },
+    { "tag": 5, "tagName": "input", "role": "checkbox", "text": "", "attributes": { "type": "checkbox", "name": "terms", "data-testid": "terms-checkbox", "class": "form-check-input" }, "rect": { "x": 100, "y": 360, "width": 20, "height": 20 }, "isVisible": true, "isDisabled": false },
+    { "tag": 6, "tagName": "button", "role": "button", "text": "Create Account", "attributes": { "type": "submit", "data-testid": "submit-btn", "class": "btn btn-primary btn-lg w-100" }, "rect": { "x": 100, "y": 400, "width": 300, "height": 48 }, "isVisible": true, "isDisabled": false },
+    { "tag": 7, "tagName": "a", "role": "link", "text": "Already have an account? Sign in", "attributes": { "href": "/login", "class": "text-muted text-center d-block mt-3" }, "rect": { "x": 100, "y": 460, "width": 300, "height": 20 }, "isVisible": true, "isDisabled": false }
+  ],
+  "pageContent": "Create Your Account\nJoin thousands of users.\n\nUsername\nEmail Address\nPassword (minimum 8 characters)\nConfirm Password\nI agree to the Terms of Service\n\nAlready have an account? Sign in",
+  "instruction": "Sign up with username 'testuser', email 'test@example.com', password 'SecurePass123!'.",
+  "priorHistory": null,
+  "expected": {
+    "expectedTool": "type_text",
+    "expectedArgs": { "id": 1, "text": "testuser" },
+    "acceptAlternatives": ["click_element"],
+    "trapActions": ["navigate", "read_page", "find_element"]
+  },
+  "metadata": {
+    "curatedAt": "2026-03-05",
+    "notes": "Elements have many non-actionable attributes (data-testid, class, autocomplete). Tests that pruning these does not change tool selection. Agent should start typing immediately.",
+    "baselineTokenEstimate": 4500
+  }
+}

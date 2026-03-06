@@ -11,9 +11,9 @@ beforeAll(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 35 tools are registered", () => {
+    test("all 36 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(35);
+        expect(defs.length).toBe(36);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -245,6 +245,15 @@ describe("Tool Registration", () => {
         expect(Object.keys(def!.function.parameters.properties)).toHaveLength(0);
         expect(def!.function.description).toContain("Toggle");
         expect(def!.function.description).toContain("hidden");
+    });
+
+    test("update_notes requires note parameter", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.UPDATE_NOTES);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("note");
+        expect(def!.function.parameters.properties.note.type).toBe("string");
+        expect(def!.function.description).toContain("persistent working memory");
     });
 
 });

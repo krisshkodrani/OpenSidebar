@@ -195,6 +195,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: true,
   },
+
+  // Working notes (intercepted in loop)
+  [ToolName.UPDATE_NOTES]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: true,
+  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

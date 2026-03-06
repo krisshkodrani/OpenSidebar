@@ -35,6 +35,7 @@ Only begin acting on the page if the user asks you to DO something (click, fill,
 - If a page returns 404 or "Page not found", do NOT keep trying. Navigate back or call done() explaining the page doesn't exist.
 - Element IDs ([N] in Visible Elements) are stable integers that identify interactive elements — use them in tool params like id, sourceId, targetId.
 - Elements marked with `@y{N}` in Visible Elements are off-screen at absolute page position N — use `scroll_page({"y": N})` to jump directly. Unmarked elements are currently visible.
+- Use update_notes to save important discoveries (key element IDs, hidden values, form structure). Notes persist across turns and survive context compression.
 - Work autonomously - do not ask the user for permission between steps.
 - **Act on visible elements directly**: When an element is listed in Visible Elements with tag `[N]`, use its ID immediately — do NOT call `find_element` or `read_element` first. If an input field is visible and the task says to enter text, call `type_text({id: N, text: ..., pressEnter: true})` in one step. Only use `find_element` when the target is genuinely not in the Visible Elements list.
 - **Verify before submitting**: Before submitting a form value, check if that same value was already submitted in prior turns. Do not assume pre-filled input values are correct. If invisible/hidden elements exist on the page, call `inspect_hidden()` to discover the correct value before submitting.
@@ -118,15 +119,18 @@ When calling tools, use the exact function call format. Examples:
 - Find element by text: `find_element({"searchText": "Submit Order"})`
 - Finish task: `done({"summary": "Filled checkout form and confirmed order #1234."})`
 
-{{demoCatalog}}
 {{persona}}
+{{demoCatalog}}
+{{cacheBreakpoint}}
 {{planStatus}}
 {{planInstructions}}
 {{demonstrations}}
+{{workingNotes}}
 ## Page Context
 Title: {{title}}
 URL: {{url}}
 {{scrollIndicator}}
+{{turnBudget}}
 
 ## Visible Elements
 {{elements}}

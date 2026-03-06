@@ -400,6 +400,25 @@ export const CLARIFY_DEF: ToolDefinition = {
   },
 };
 
+export const UPDATE_NOTES_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.UPDATE_NOTES,
+    description:
+      "Save a brief note to persistent working memory. Notes survive context compression. Use for: key element IDs, discovered values, form structure. Max 500 chars.",
+    parameters: {
+      type: "object",
+      properties: {
+        note: {
+          type: "string",
+          description: "The note to save.",
+        },
+      },
+      required: ["note"],
+    },
+  },
+};
+
 export const READ_ELEMENT_DEF: ToolDefinition = {
   type: "function",
   function: {
