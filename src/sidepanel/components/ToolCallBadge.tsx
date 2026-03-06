@@ -21,7 +21,7 @@ export function ToolCallBadge({ tool, defaultOpen = false }: Props) {
 
   const StatusIcon = () => {
     if (!tool.result)
-      return <Clock size={12} className="text-blue-500 animate-pulse" />;
+      return <Clock size={12} className="text-primary-500 animate-pulse" />;
     return <CheckCircle size={12} className="text-green-500" />;
   };
 
