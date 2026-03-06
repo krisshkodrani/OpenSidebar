@@ -42,14 +42,14 @@ function statusConfig(status: AgentStatus, isStalled: boolean) {
   switch (status) {
     case AgentStatus.THINKING:
       return {
-        color: "text-blue-600 dark:text-blue-400",
-        dotColor: "bg-blue-500",
+        color: "text-primary-600 dark:text-primary-400",
+        dotColor: "bg-primary-500",
         label: "Thinking",
       };
     case AgentStatus.ACTING:
       return {
-        color: "text-emerald-600 dark:text-emerald-400",
-        dotColor: "bg-emerald-500",
+        color: "text-primary-600 dark:text-primary-400",
+        dotColor: "bg-primary-500",
         label: "Acting",
       };
     case AgentStatus.WAITING_FOR_PAGE_LOAD:

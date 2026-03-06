@@ -16,11 +16,11 @@ export function PlanStepIcon({
   size?: number;
 }) {
   if (status === "completed") {
-    return <CheckCircle2 size={size} className="text-emerald-500 shrink-0" />;
+    return <CheckCircle2 size={size} className="text-green-500 shrink-0" />;
   }
   if (status === "running") {
     return (
-      <Loader2 size={size} className="text-sky-500 animate-spin shrink-0" />
+      <Loader2 size={size} className="text-primary-500 animate-spin shrink-0" />
     );
   }
   if (status === "failed") {

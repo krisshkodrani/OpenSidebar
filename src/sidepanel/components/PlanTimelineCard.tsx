@@ -94,7 +94,7 @@ export function PlanTimelineCard() {
     mode === "confirmation"
       ? "border-blue-200 dark:border-blue-800"
       : mode === "completion"
-        ? "border-emerald-200 dark:border-emerald-800"
+        ? "border-green-200 dark:border-green-800"
         : "border-warm-200 dark:border-warm-700";
 
   return (
@@ -206,7 +206,7 @@ export function PlanTimelineCard() {
           <div className="flex items-center gap-2 mb-2">
             <ClipboardList
               size={14}
-              className={`shrink-0 ${mode === "completion" ? "text-emerald-500" : "text-warm-500 dark:text-warm-400"}`}
+              className={`shrink-0 ${mode === "completion" ? "text-green-500" : "text-warm-500 dark:text-warm-400"}`}
             />
             <span className="text-xs font-medium text-warm-800 dark:text-warm-100">
               {mode === "completion"
@@ -228,14 +228,14 @@ export function PlanTimelineCard() {
           {/* Progress bar */}
           <div className="h-1 rounded-full bg-warm-200 dark:bg-warm-700 mb-2 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${mode === "completion" ? "bg-emerald-500" : "bg-primary-500"}`}
+              className={`h-full rounded-full transition-all duration-500 ${mode === "completion" ? "bg-green-500" : "bg-primary-500"}`}
               style={{ width: `${mode === "completion" ? 100 : progressPct}%` }}
             />
           </div>
 
           {/* Recovery banner */}
           {taskRecovery && (
-            <div className="mb-2 rounded border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-900/20 px-2 py-1.5 text-[11px] text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
+            <div className="mb-2 rounded border border-primary-200 dark:border-primary-800 bg-primary-50/70 dark:bg-primary-900/20 px-2 py-1.5 text-[11px] text-primary-700 dark:text-primary-300 flex items-center gap-1.5">
               <span>
                 Recovered: {taskRecovery.completedSubtasks}/
                 {taskRecovery.totalSubtasks} done, {taskRecovery.pendingSubtasks}{" "}
@@ -243,7 +243,7 @@ export function PlanTimelineCard() {
               </span>
               <button
                 onClick={() => setInputText(buildRecoveryHint(taskRecovery))}
-                className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300 hover:text-violet-800 dark:hover:text-violet-100 transition-colors"
+                className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-medium text-primary-600 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-100 transition-colors"
               >
                 <RotateCcw size={9} />
                 Resume
@@ -264,7 +264,7 @@ export function PlanTimelineCard() {
                     <div
                       className={`w-px flex-1 min-h-[8px] ${
                         row.status === "completed"
-                          ? "bg-emerald-300/60 dark:bg-emerald-700/40"
+                          ? "bg-green-300/60 dark:bg-green-700/40"
                           : "bg-warm-200/60 dark:bg-warm-700/40"
                       }`}
                     />
