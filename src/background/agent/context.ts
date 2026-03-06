@@ -882,7 +882,9 @@ Do NOT call done() until every planned step is complete.
         : level === CompressionLevel.MEDIUM
           ? (k) =>
               ["id", "role", "type", "href", "label", "description"].includes(k)
-          : (k) => ACTION_RELEVANT_ATTRS.has(k);
+          : level === CompressionLevel.LIGHT
+            ? (k) => ACTION_RELEVANT_ATTRS.has(k)
+            : null;
 
     // Categorize elements into semantic groups
     const groups = this.groupElementsByCategory(processed);

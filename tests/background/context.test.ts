@@ -868,7 +868,7 @@ describe("Form batch hint", () => {
 
 // --- Attribute Pruning Tests ---
 describe("Attribute Pruning Whitelist", () => {
-  test("NONE level filters out data-* and class attributes", () => {
+  test("NONE level preserves all attributes including data-* and class", () => {
     const ctx = new ContextManager(500000); // Large window = NONE compression
     ctx.setSnapshot({
       title: "Test",
@@ -897,13 +897,12 @@ describe("Attribute Pruning Whitelist", () => {
 
     const prompt = ctx.getPrompt();
     const systemContent = prompt[0].content as string;
-    // type=submit should be included (action-relevant)
+    // NONE compression: all attributes pass through unfiltered
     expect(systemContent).toContain("type=submit");
-    // class and data-* should be filtered out
-    expect(systemContent).not.toContain("btn-primary");
-    expect(systemContent).not.toContain("data-testid");
-    expect(systemContent).not.toContain("data-analytics");
-    expect(systemContent).not.toContain("style");
+    expect(systemContent).toContain("btn-primary");
+    expect(systemContent).toContain("data-testid");
+    expect(systemContent).toContain("data-analytics");
+    expect(systemContent).toContain("style");
   });
 
   test("action-relevant attrs like href, placeholder are preserved at NONE", () => {
