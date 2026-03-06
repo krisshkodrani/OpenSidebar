@@ -63,7 +63,7 @@ export function formatStepLabel(
     case ToolName.SCROLL_PAGE:
       return `Scroll ${args.direction ?? "down"}`;
     case ToolName.READ_PAGE:
-      return "Read page content";
+      return "Read page";
     case ToolName.HOVER_ELEMENT:
       return `Hover ${el(args.id)}`;
     case ToolName.FIND_ELEMENT: {
@@ -104,7 +104,7 @@ export function formatStepLabel(
     case ToolName.HIDE_ELEMENT:
       return `Hide ${el(args.id)}`;
     case ToolName.DONE:
-      return "Task complete";
+      return "Done";
     case ToolName.ESCALATE: {
       const reason = args.reason as string | undefined;
       return reason

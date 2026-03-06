@@ -1,6 +1,5 @@
 import React from "react";
-import { Settings, Bookmark } from "lucide-react";
-import { DemoRecordButton } from "./DemoRecordButton";
+import { Bookmark, Settings } from "lucide-react";
 
 interface Props {
   onOpenSettings: () => void;
@@ -11,13 +10,10 @@ interface Props {
 export function Header({
   onOpenSettings,
   onOpenSavedPrompts,
-  showApprovalBypassBadge = false,
 }: Props) {
   return (
-    <header className="flex items-center justify-between px-3 py-1.5 glass-surface sticky top-0 z-10 transition-colors">
-      <div className="flex items-center gap-1.5 min-w-0">
-        <DemoRecordButton />
-      </div>
+    <header className="flex items-center justify-between px-3 py-1.5 bg-warm-50 dark:bg-warm-900 border-b border-warm-100 dark:border-warm-800 sticky top-0 z-10">
+      <div className="w-8" />
 
       <span className="text-[11px] font-medium text-warm-400 dark:text-warm-500 tracking-wide select-none">
         OpenSidebar
@@ -33,13 +29,10 @@ export function Header({
         </button>
         <button
           onClick={onOpenSettings}
-          className="relative p-1.5 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full transition-colors text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
+          className="p-1.5 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full transition-colors text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
           aria-label="Settings"
         >
           <Settings size={16} />
-          {showApprovalBypassBadge && (
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500" />
-          )}
         </button>
       </div>
     </header>
