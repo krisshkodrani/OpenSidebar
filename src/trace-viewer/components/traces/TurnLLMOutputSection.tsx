@@ -66,7 +66,7 @@ export default function TurnLLMOutputSection({
   const body = (
     <div className="mt-1.5">
       {hasContent && (
-        <div className="p-2.5 bg-[rgba(26,26,46,0.6)] rounded text-xs leading-relaxed text-[#b0b0d0] whitespace-pre-wrap break-words font-mono max-h-[400px] overflow-y-auto scrollbar-thin">
+        <div className="p-2.5 bg-[rgba(41,37,36,0.6)] rounded text-xs leading-relaxed text-[#d6d3cc] whitespace-pre-wrap break-words font-mono max-h-[400px] overflow-y-auto scrollbar-thin">
           <StyledContent text={content!} />
         </div>
       )}
@@ -123,7 +123,7 @@ function ToolCallRequest({ tc }: { tc: ToolCall }) {
   const hasArgs = argsStr && argsStr !== "{}";
 
   return (
-    <div className="bg-[rgba(26,26,46,0.4)] border border-[rgba(15,52,96,0.3)] rounded-[5px] p-2 mb-1.5">
+    <div className="bg-[rgba(41,37,36,0.4)] border border-[rgba(68,64,60,0.3)] rounded-[5px] p-2 mb-1.5">
       <div className="flex items-center gap-2">
         <Badge variant="tool">{name}</Badge>
         {hasArgs && (
@@ -136,7 +136,7 @@ function ToolCallRequest({ tc }: { tc: ToolCall }) {
         )}
       </div>
       {hasArgs && expanded && (
-        <div className="text-[11px] font-mono text-trace-subtle bg-[rgba(26,26,46,0.5)] p-1.5 rounded mt-1.5 whitespace-pre-wrap break-all leading-normal max-h-[200px] overflow-y-auto scrollbar-thin">
+        <div className="text-[11px] font-mono text-trace-subtle bg-[rgba(41,37,36,0.5)] p-1.5 rounded mt-1.5 whitespace-pre-wrap break-all leading-normal max-h-[200px] overflow-y-auto scrollbar-thin">
           {argsStr}
         </div>
       )}

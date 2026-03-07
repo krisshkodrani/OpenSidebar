@@ -31,7 +31,7 @@ export default function CostDashboard({ sessions }: CostDashboardProps) {
   };
 
   return (
-    <div className="px-3 py-2 border-b border-trace-border bg-[rgba(15,52,96,0.2)] shrink-0">
+    <div className="px-3 py-2 border-b border-trace-border bg-[rgba(68,64,60,0.2)] shrink-0">
       <div className="flex items-center gap-3 flex-wrap text-[11px]">
         <span className="text-trace-muted">
           <span className="font-semibold text-trace-subtle">{sessions.length}</span> sessions

@@ -12,7 +12,7 @@ export default function TurnSearchBar() {
   }, [debouncedQuery, setSearchQuery]);
 
   return (
-    <div className="px-5 py-2.5 border-b border-[rgba(15,52,96,0.4)] shrink-0 bg-trace-bg">
+    <div className="px-5 py-2.5 border-b border-[rgba(68,64,60,0.4)] shrink-0 bg-trace-bg">
       <input
         type="text"
         value={localQuery}

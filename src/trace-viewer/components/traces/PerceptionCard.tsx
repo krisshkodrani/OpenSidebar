@@ -37,9 +37,9 @@ export default function PerceptionCard({
         .join("\n");
 
   return (
-    <div className="bg-trace-panel border border-[rgba(15,52,96,0.6)] rounded-lg mb-4 overflow-hidden">
+    <div className="bg-trace-panel border border-[rgba(68,64,60,0.6)] rounded-lg mb-4 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(15,52,96,0.3)] border-b border-[rgba(15,52,96,0.4)]">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(68,64,60,0.3)] border-b border-[rgba(68,64,60,0.4)]">
         <span className="text-[13px] font-bold text-trace-accent-light">
           Turn {turnNum}
         </span>
@@ -51,17 +51,17 @@ export default function PerceptionCard({
       {/* Body */}
       <div className="flex min-h-[200px]">
         {/* Left: screenshot + elements */}
-        <div className="flex-1 border-r border-[rgba(15,52,96,0.4)] p-3 flex flex-col gap-2.5 min-w-0">
+        <div className="flex-1 border-r border-[rgba(68,64,60,0.4)] p-3 flex flex-col gap-2.5 min-w-0">
           {!imgError ? (
             <img
-              className="max-w-full rounded border border-[rgba(15,52,96,0.6)] cursor-pointer transition-opacity hover:opacity-85"
+              className="max-w-full rounded border border-[rgba(68,64,60,0.6)] cursor-pointer transition-opacity hover:opacity-85"
               src={screenshotSrc}
               alt={`Turn ${turnNum} screenshot`}
               loading="lazy"
               onError={() => setImgError(true)}
             />
           ) : (
-            <div className="bg-[rgba(15,52,96,0.3)] border border-dashed border-[rgba(15,52,96,0.6)] rounded p-8 text-center text-trace-dim text-xs">
+            <div className="bg-[rgba(68,64,60,0.3)] border border-dashed border-[rgba(68,64,60,0.6)] rounded p-8 text-center text-trace-dim text-xs">
               Screenshot not available
             </div>
           )}
@@ -74,10 +74,10 @@ export default function PerceptionCard({
 
         {/* Right: interpretation + metadata */}
         <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
-          <div className="text-xs text-[#c0c0d8] leading-relaxed whitespace-pre-wrap break-words">
+          <div className="text-xs text-[#d6d3cc] leading-relaxed whitespace-pre-wrap break-words">
             {p.interpretation}
           </div>
-          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-[rgba(15,52,96,0.4)]">
+          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-[rgba(68,64,60,0.4)]">
             <span>Model: {p.model || "?"}</span>
             {p.providerId && <span>Provider: {p.providerId}</span>}
             <span>

@@ -17,7 +17,7 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
       <div className="text-[10px] text-trace-muted uppercase tracking-wider mb-1.5 font-semibold">
         Turn Timeline
       </div>
-      <div className="flex gap-px h-6 rounded overflow-hidden bg-[rgba(15,52,96,0.3)]" title="Turn timeline — width = relative duration, color = model tier">
+      <div className="flex gap-px h-6 rounded overflow-hidden bg-[rgba(68,64,60,0.3)]" title="Turn timeline — width = relative duration, color = model tier">
         {entries.map((entry, i) => {
           const dur = entry.llmResponse?.durationMs ?? 0;
           // Minimum width so every turn is visible
