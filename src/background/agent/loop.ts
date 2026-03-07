@@ -1641,6 +1641,7 @@ export class AgentLoop {
   private async capturePanoramicScreenshots(
     tabId: number,
     primaryScrollY?: number,
+    restoreY?: number,
   ): Promise<PanoramicShot[]> {
     const snapshot = this.context.getSnapshot();
     if (!snapshot) return [];
@@ -1651,7 +1652,7 @@ export class AgentLoop {
     // Short pages (< 1.5 viewports): no panoramic needed
     if (maxY < viewportH * 0.5) return [];
 
-    const originalY = snapshot.scroll?.y ?? 0;
+    const originalY = restoreY ?? snapshot.scroll?.y ?? 0;
     // Use primaryScrollY for filtering if the primary shot was taken at a different position
     const primaryY = primaryScrollY ?? originalY;
     const shots: PanoramicShot[] = [];
@@ -1726,6 +1727,8 @@ export class AgentLoop {
           this.perception.markPanoramicDone();
           panoramicScreenshots = await this.capturePanoramicScreenshots(
             tabId,
+            primaryScrollY,
+            // If we scrolled for orientation, restore to that position (not original)
             primaryScrollY,
           );
           if (panoramicScreenshots.length > 0) {
