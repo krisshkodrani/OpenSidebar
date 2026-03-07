@@ -563,20 +563,39 @@ export default function App() {
                 <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
                   <Sparkles size={24} className="text-primary-500" />
                 </div>
-                <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
-                  Hi! What can I help with?
-                </h2>
-                <div className="flex flex-wrap gap-2 justify-center mt-4">
-                  {SUGGESTED_ACTIONS.map((action) => (
+                {!settings.openRouterApiKey ? (
+                  <>
+                    <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                      Welcome to OpenSidebar
+                    </h2>
+                    <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
+                      Add your OpenRouter API key to get started.
+                    </p>
                     <button
-                      key={action}
-                      onClick={() => setInputText(action)}
-                      className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
                     >
-                      {action}
+                      Open Settings
                     </button>
-                  ))}
-                </div>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                      Hi! What can I help with?
+                    </h2>
+                    <div className="flex flex-wrap gap-2 justify-center mt-4">
+                      {SUGGESTED_ACTIONS.map((action) => (
+                        <button
+                          key={action}
+                          onClick={() => setInputText(action)}
+                          className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ) : (

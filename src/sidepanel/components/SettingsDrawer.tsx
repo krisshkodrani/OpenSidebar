@@ -111,6 +111,13 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
     updateSettings(nextState);
     void saveSettings(nextState);
+
+    // Clear the "add API key" error if the key is now present
+    if (nextState.openRouterApiKey) {
+      const { error, setError } = useStore.getState();
+      if (error?.includes("API key")) setError(null);
+    }
+
     onClose();
   };
 
