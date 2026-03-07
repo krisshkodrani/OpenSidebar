@@ -1,12 +1,21 @@
-# OpenSidebar
+<p align="center">
+  <img src="OpenSidebar.png" alt="OpenSidebar" width="128" />
+</p>
 
-[![CI](https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
+<h1 align="center">OpenSidebar</h1>
 
-Open-source Chrome extension that turns your browser into an AI-powered agent. Navigate, click, type, and automate web tasks from a side panel — bring your own key via [OpenRouter](https://openrouter.ai).
+<p align="center">
+  <a href="https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node.js" /></a>
+</p>
 
-https://github.com/user-attachments/assets/PLACEHOLDER_DEMO_VIDEO
+<p align="center">
+  Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
+  Navigate, click, type, and automate web tasks from a side panel — bring your own key via <a href="https://openrouter.ai">OpenRouter</a>.
+</p>
+
+<video src="docs/assets/demo-agent.mp4" width="100%" autoplay loop muted></video>
 
 ---
 
@@ -98,7 +107,7 @@ For deep architecture docs, see [`CLAUDE.md`](./CLAUDE.md) and [`docs/architectu
 
 OpenSidebar ships with a built-in trace viewer for inspecting agent execution sessions.
 
-https://github.com/user-attachments/assets/PLACEHOLDER_VIEWER_VIDEO
+<video src="docs/assets/demo-trace-viewer.mp4" width="100%" autoplay loop muted></video>
 
 ### What you can inspect
 
