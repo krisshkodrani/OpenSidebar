@@ -40,8 +40,8 @@ export default function TraceSessionItem({
       tabIndex={0}
       role="option"
       aria-selected={isActive}
-      className={`px-4 py-3 border-b border-[rgba(15,52,96,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${
-        isActive ? "bg-trace-border" : "hover:bg-[rgba(15,52,96,0.5)]"
+      className={`px-4 py-3 border-b border-[rgba(68,64,60,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${
+        isActive ? "bg-trace-border" : "hover:bg-[rgba(68,64,60,0.5)]"
       }`}
     >
       <div className="flex items-center gap-2 mb-1">
@@ -70,7 +70,7 @@ export default function TraceSessionItem({
           )}
         </div>
       </div>
-      <div className="text-[13px] text-[#c0c0d8] leading-snug overflow-hidden text-ellipsis whitespace-nowrap">
+      <div className="text-[13px] text-[#d6d3cc] leading-snug overflow-hidden text-ellipsis whitespace-nowrap">
         {truncate(session.query, 60)}
       </div>
       {models.length > 0 && (

@@ -16,7 +16,7 @@ export default function EmptyState({
       {icon && <div className="text-4xl opacity-30">{icon}</div>}
       <div>{message}</div>
       {submessage && (
-        <div className="text-[11px] text-[#5a5a7e]">{submessage}</div>
+        <div className="text-[11px] text-[#57534e]">{submessage}</div>
       )}
     </div>
   );

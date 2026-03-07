@@ -27,7 +27,7 @@ export default function TraceSubviewToggle() {
           className={`px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
             activeSubview === v.key
               ? "text-trace-accent-light border-trace-accent"
-              : "text-trace-muted border-transparent hover:text-[#b0b0d0]"
+              : "text-trace-muted border-transparent hover:text-[#d6d3cc]"
           }`}
         >
           {v.label}

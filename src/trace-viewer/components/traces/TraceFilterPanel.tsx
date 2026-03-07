@@ -309,19 +309,19 @@ export default function TraceFilterPanel({
       <div className="flex gap-1.5 mt-1">
         <button
           onClick={() => handleDatePreset(0, 0)}
-          className="bg-trace-bg text-[#c0c0d8] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
         >
           Today
         </button>
         <button
           onClick={() => handleDatePreset(6, 0)}
-          className="bg-trace-bg text-[#c0c0d8] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
         >
           7d
         </button>
         <button
           onClick={() => handleDatePreset(29, 0)}
-          className="bg-trace-bg text-[#c0c0d8] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
         >
           30d
         </button>

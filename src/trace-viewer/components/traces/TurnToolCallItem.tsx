@@ -18,7 +18,7 @@ export default function TurnToolCallItem({
   durationMs,
 }: TurnToolCallItemProps) {
   return (
-    <div className="bg-[rgba(26,26,46,0.4)] border border-[rgba(15,52,96,0.3)] rounded-[5px] p-2 mb-1.5">
+    <div className="bg-[rgba(41,37,36,0.4)] border border-[rgba(68,64,60,0.3)] rounded-[5px] p-2 mb-1.5">
       <div className="flex items-center gap-2 flex-wrap">
         {success != null && (
           <span className="flex items-center gap-1 shrink-0">
@@ -43,7 +43,7 @@ export default function TurnToolCallItem({
         )}
       </div>
       {result && (
-        <div className="text-[11px] text-[#a0a0c8] mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
+        <div className="text-[11px] text-[#a8a29e] mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
           {result}
         </div>
       )}

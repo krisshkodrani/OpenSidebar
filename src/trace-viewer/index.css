@@ -5,7 +5,7 @@
 /* ── Scrollbar Styling ──────────────────────────────────────── */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #0f3460 transparent;
+  scrollbar-color: #44403c transparent;
 }
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
@@ -14,7 +14,7 @@
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #0f3460;
+  background: #44403c;
   border-radius: 3px;
 }
 
@@ -22,7 +22,7 @@
   width: 4px;
 }
 .scrollbar-thin-4::-webkit-scrollbar-thumb {
-  background: #0f3460;
+  background: #44403c;
   border-radius: 2px;
 }
 
@@ -61,15 +61,15 @@
 .story-prose h2 {
   font-size: 1.15rem;
   font-weight: 700;
-  color: #5dade2;
+  color: #2dd4bf;
   margin: 1.25rem 0 0.5rem;
   padding-bottom: 0.25rem;
-  border-bottom: 1px solid #0f3460;
+  border-bottom: 1px solid #44403c;
 }
 .story-prose h3 {
   font-size: 1rem;
   font-weight: 600;
-  color: #a0a0c0;
+  color: #a8a29e;
   margin: 1rem 0 0.35rem;
 }
 .story-prose p {
@@ -84,14 +84,14 @@
   margin: 0.15rem 0;
 }
 .story-prose code {
-  background: #1a1a2e;
+  background: #1c1917;
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
   font-size: 0.85em;
-  color: #5dade2;
+  color: #2dd4bf;
 }
 .story-prose pre {
-  background: #1a1a2e;
+  background: #1c1917;
   padding: 0.75rem 1rem;
   border-radius: 4px;
   overflow-x: auto;
@@ -106,7 +106,7 @@
   font-weight: 600;
 }
 .story-prose a {
-  color: #5dade2;
+  color: #2dd4bf;
   text-decoration: underline;
 }
 

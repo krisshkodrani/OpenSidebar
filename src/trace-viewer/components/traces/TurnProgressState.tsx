@@ -13,7 +13,7 @@ export default function TurnProgressState({
   progressState,
 }: TurnProgressStateProps) {
   return (
-    <div className="text-[10px] text-[#5a5a7e] pt-1.5 border-t border-[rgba(15,52,96,0.3)] mt-2 flex gap-3">
+    <div className="text-[10px] text-[#57534e] pt-1.5 border-t border-[rgba(68,64,60,0.3)] mt-2 flex gap-3">
       <span
         className={(progressState.staleTurns || 0) > 4 ? "text-[#e67e22]" : ""}
       >
