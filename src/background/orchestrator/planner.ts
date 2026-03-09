@@ -109,7 +109,7 @@ interface DecompositionStep {
   successCriteria?: string;
   dependencies?: number[];
   assumptions?: string[];
-  verifyAfter?: { trigger: string; action: string; pattern?: string };
+  verifyAfter?: { trigger: string; action: "call_done" | "advance_step"; pattern?: string };
   toolProfile?: string;
 }
 

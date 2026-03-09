@@ -90,7 +90,9 @@ export function buildTaskStateBrief(
             ? "failed"
             : node.status === "running"
               ? "running"
-              : "pending";
+              : node.status === "skipped"
+                ? "skipped"
+                : "pending";
       return `- [${status}] ${normalizeNote(node.description)} :: ${normalizeNodeResult(node)}`;
     })
     .join("\n");
@@ -137,10 +139,12 @@ export function buildExecutorInstruction(
     "- Continue from prior context; do not repeat completed work.",
     "- Use global context to avoid duplicating sibling node outcomes.",
     "- If verifier requested reroute/retry, adapt strategy before acting.",
-    node.reflexionLog.length > 0
-      ? "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy."
-      : "- Call done() only when success criteria are satisfied.",
-    "- Call done() only when success criteria are satisfied.",
+    ...(node.reflexionLog.length > 0
+      ? [
+          "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
+          "- Call done() only when success criteria are satisfied.",
+        ]
+      : ["- Call done() only when success criteria are satisfied."]),
   );
 
   if (node.verificationGate) {
