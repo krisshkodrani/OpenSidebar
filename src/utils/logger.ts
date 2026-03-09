@@ -154,10 +154,13 @@ class Logger {
           : console.log;
 
     if (data || requestId) {
+      // Use console.log for inner group content — console.warn/error inside
+      // groups get captured individually by Chrome's extension errors page,
+      // showing unhelpful "[object Object]" entries.
       console.groupCollapsed(prefix, ...styles);
-      consoleFn("Details:", entry);
-      if (requestId) consoleFn("Request ID:", requestId);
-      if (data) consoleFn("Payload:", data);
+      console.log("Details:", entry);
+      if (requestId) console.log("Request ID:", requestId);
+      if (data) console.log("Payload:", data);
       if (data && data.error && (data as any).stack)
         console.error((data as any).stack);
       console.groupEnd();

@@ -203,7 +203,7 @@ export const DONE_DEF: ToolDefinition = {
         summary: {
           type: "string",
           description:
-            "What was accomplished, or your answer to the user's question.",
+            "Your answer or report in clean Markdown. Use bullet points, headings, and clear structure. Write for the user — no internal reasoning.",
         },
       },
       required: ["summary"],
