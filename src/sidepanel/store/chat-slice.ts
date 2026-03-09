@@ -187,14 +187,29 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       const key = chatStorageKey(wsId);
       const result = await chrome.storage.local.get(key);
       if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
-        const messages = (result[key] as ChatEntry[]).map((msg) =>
+        const stored = (result[key] as ChatEntry[]).map((msg) =>
           msg.isStreaming ? { ...msg, isStreaming: false } : msg,
         );
+        const current = get().messages;
+        // Non-destructive merge: if in-memory messages exist and are newer
+        // (by last message timestamp), skip storage load to avoid clobbering
+        // live data. Otherwise load from storage (panel was rebuilt or stale).
+        if (current.length > 0) {
+          const lastCurrent = current[current.length - 1].timestamp;
+          const lastStored = stored[stored.length - 1].timestamp;
+          if (lastCurrent >= lastStored) {
+            logger.debug("ui", "Skipping storage load — in-memory messages are newer", {
+              inMemoryCount: current.length,
+              storedCount: stored.length,
+            });
+            return;
+          }
+        }
         set((state) => {
-          state.messages = messages;
+          state.messages = stored;
         });
         logger.debug("ui", "Messages restored from storage", {
-          count: messages.length,
+          count: stored.length,
           storageKey: key,
         });
       }

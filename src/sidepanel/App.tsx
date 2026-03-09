@@ -200,6 +200,31 @@ export default function App() {
     return () => chrome.tabs.onActivated.removeListener(listener);
   }, [settings]);
 
+  // Visibility resync — recover state when panel becomes visible again
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const wsId = useStore.getState().activeWorkspaceId;
+      // Reload messages from storage (picks up background-persisted entries)
+      loadMessagesFromStorage();
+      // Ask background to re-broadcast current status
+      if (wsId) {
+        chrome.runtime
+          .sendMessage({
+            type: "WORKSPACE_SYNC",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.SIDEPANEL,
+            payload: { workspaceId: wsId },
+          })
+          .catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Message Bridge — centralized message routing from background to store
   useEffect(() => {
     const cleanup = initializeBridge(useStore, {
@@ -235,12 +260,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-scroll (throttled to max 10/sec)
+  // Auto-scroll (throttled to max 10/sec, only when near bottom)
   useEffect(() => {
     if (scrollTimerRef.current) return;
     scrollTimerRef.current = setTimeout(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      if (el) {
+        // Only auto-scroll if user is within 150px of the bottom
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distanceFromBottom < 150) {
+          el.scrollTop = el.scrollHeight;
+        }
       }
       scrollTimerRef.current = null;
     }, 100);
@@ -555,7 +585,7 @@ export default function App() {
         )}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-4 scroll-smooth"
+          className="flex-1 overflow-y-auto p-4"
         >
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8">
