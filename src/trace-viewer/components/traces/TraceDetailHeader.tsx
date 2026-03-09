@@ -9,6 +9,7 @@ import {
   formatCost,
   formatTokens,
   truncate,
+  extractQueryTitle,
 } from "../../utils";
 
 interface TraceDetailHeaderProps {
@@ -119,19 +120,9 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
 
 // ── Query title ─────────────────────────────────────────────────────
 
-function extractObjective(query: string): { title: string; hasMore: boolean } {
-  if (!query) return { title: "(no query)", hasMore: false };
-  const match = query.match(/^Objective:\s*(.+?)(?:\n|$)/);
-  if (match) {
-    return { title: match[1].trim(), hasMore: query.length > match[0].length };
-  }
-  const firstLine = query.split("\n")[0].trim();
-  return { title: firstLine, hasMore: query.includes("\n") };
-}
-
 function QueryTitle({ query }: { query: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { title, hasMore } = extractObjective(query);
+  const { title, hasMore } = extractQueryTitle(query);
 
   return (
     <div>

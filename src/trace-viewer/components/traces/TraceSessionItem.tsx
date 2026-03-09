@@ -6,6 +6,7 @@ import {
   shortModel,
   formatTime,
   formatCost,
+  extractQueryTitle,
   truncate,
 } from "../../utils";
 
@@ -14,6 +15,15 @@ interface TraceSessionItemProps {
   isActive: boolean;
   onClick: () => void;
 }
+
+const OUTCOME_BORDER: Record<string, string> = {
+  completed: "border-l-[3px] border-l-green-500/60",
+  success: "border-l-[3px] border-l-green-500/60",
+  stopped: "border-l-[3px] border-l-yellow-500/60",
+  error: "border-l-[3px] border-l-red-500/60",
+  failure: "border-l-[3px] border-l-red-500/60",
+  max_turns: "border-l-[3px] border-l-orange-500/60",
+};
 
 export default function TraceSessionItem({
   session,
@@ -28,6 +38,8 @@ export default function TraceSessionItem({
     ? Object.keys(metrics.modelBreakdown)
     : [];
 
+  const borderCls = OUTCOME_BORDER[session.outcome] ?? "border-l-[3px] border-l-transparent";
+
   return (
     <div
       onClick={onClick}
@@ -40,7 +52,7 @@ export default function TraceSessionItem({
       tabIndex={0}
       role="option"
       aria-selected={isActive}
-      className={`px-4 py-3 border-b border-[rgba(68,64,60,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${
+      className={`px-4 py-3 border-b border-[rgba(68,64,60,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${borderCls} ${
         isActive ? "bg-trace-border" : "hover:bg-[rgba(68,64,60,0.5)]"
       }`}
     >
@@ -71,7 +83,7 @@ export default function TraceSessionItem({
         </div>
       </div>
       <div className="text-[13px] text-[#d6d3cc] leading-snug overflow-hidden text-ellipsis whitespace-nowrap">
-        {truncate(session.query, 60)}
+        {truncate(extractQueryTitle(session.query).title, 60)}
       </div>
       {models.length > 0 && (
         <div className="flex gap-1 mt-1 flex-wrap">

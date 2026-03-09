@@ -30,7 +30,6 @@ export interface TraceFilters {
   from: string;
   to: string;
   domain: string;
-  sessionPrefix: string;
   mode: string;   // "all" | "agent" | "recording" | "manual"
   model: string;  // "all" | specific model name
   tier: string;   // "all" | "executor" | "planner"

@@ -41,6 +41,19 @@ export function truncate(s: string | undefined | null, len: number): string {
   return s.length > len ? s.slice(0, len) + "..." : s;
 }
 
+/** Extract a clean title from a query — strips "Objective:" prefix, takes first line. */
+export function extractQueryTitle(
+  query: string | undefined | null,
+): { title: string; hasMore: boolean } {
+  if (!query) return { title: "(no query)", hasMore: false };
+  const match = query.match(/^Objective:\s*(.+?)(?:\n|$)/);
+  if (match) {
+    return { title: match[1].trim(), hasMore: query.length > match[0].length };
+  }
+  const firstLine = query.split("\n")[0].trim();
+  return { title: firstLine || "(no query)", hasMore: query.includes("\n") };
+}
+
 export function shortModel(model: string | undefined | null): string {
   if (!model) return "?";
   return model
