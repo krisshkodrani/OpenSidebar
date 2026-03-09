@@ -8,6 +8,7 @@ import {
   EscalationRisk,
   MessageSource,
   SubtaskResult,
+  TaskCompletionMessage,
   ToolName,
   UserSettings,
 } from "../../types";
@@ -98,8 +99,18 @@ const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
 const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
 const CHECKPOINT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_PERSISTED_MESSAGES = 200;
+
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
+  private recentCompletion = new Map<
+    string,
+    {
+      payload: TaskCompletionMessage["payload"];
+      timestamp: number;
+    }
+  >();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
   private laneRuntimeByWorkspace = new Map<
@@ -343,6 +354,7 @@ export class Orchestrator {
     this.workersByWorkspace.delete(workspaceId);
     this.budgetEstimatorsByWorkspace.delete(workspaceId);
     this.laneRuntimeByWorkspace.delete(workspaceId);
+    this.recentCompletion.delete(workspaceId);
   }
 
   private getBudgetEstimator(workspaceId: string): BudgetEstimator {
@@ -1073,7 +1085,15 @@ export class Orchestrator {
     const task = this.tasksByWorkspace.get(workspaceId);
 
     if (!task) {
-      // No active task — send IDLE so the panel shows the correct status
+      // Check for a recent completion that the panel may have missed
+      const cached = this.recentCompletion.get(workspaceId);
+      if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
+        this.sendMessage({
+          type: "TASK_COMPLETION",
+          workspaceId,
+          payload: cached.payload,
+        });
+      }
       this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
       return;
     }
@@ -1566,7 +1586,26 @@ export class Orchestrator {
       "Executing subtasks...",
     );
 
-    await this.runTask(task, input);
+    try {
+      await this.runTask(task, input);
+    } catch (error) {
+      // Catch unexpected exceptions (LaneIsolationError, etc.) so the side
+      // panel stream is always finalized and the task is cleaned up.
+      logger.error("orchestrator", "runTask threw unexpected error", {
+        taskId: task.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      task.status = "failed";
+      task.finishedAt = Date.now();
+      this.sendTerminationCompletion(
+        task,
+        `Task failed: ${error instanceof Error ? error.message : "unexpected error"}`,
+      );
+      this.sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
+      this.tasksByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
+      await this.clearTaskCheckpoint(task.workspaceId);
+    }
   }
 
   private async runTask(
@@ -1793,8 +1832,9 @@ export class Orchestrator {
           runId: task.runId || task.id,
           correlationId: task.runId || task.id,
           suppressUiBroadcast: true,
-          // For single-node tasks, forward stream chunks directly to the side panel
-          // so the user sees real-time content instead of just "Task completed."
+          // For single-node tasks, forward clean content to the side panel.
+          // Suppresses intermediate text deltas (raw reasoning/JSON) — the user
+          // sees step progress during execution and the final summary via replaceContent.
           onStreamChunk: task.planClassification?.isSingleNode
             ? (
                 delta: string,
@@ -1802,12 +1842,13 @@ export class Orchestrator {
                 replaceContent?: string,
                 thinking?: string,
               ) => {
-                if (delta || done || replaceContent !== undefined || thinking) {
+                // Only forward replaceContent, done, and thinking — skip raw text deltas
+                if (replaceContent !== undefined || done || thinking) {
                   this.sendMessage({
                     type: "STREAM_CHUNK",
                     workspaceId: task.workspaceId,
                     payload: {
-                      delta,
+                      delta: "",
                       done,
                       ...(replaceContent !== undefined
                         ? { replaceContent }
@@ -1818,9 +1859,7 @@ export class Orchestrator {
                 }
                 // Track whether real content was streamed (for dedup in finalization)
                 if (replaceContent !== undefined) {
-                  task._streamHasContent = false;
-                } else if (delta) {
-                  task._streamHasContent = true;
+                  task._streamHasContent = replaceContent.length > 0;
                 }
               }
             : undefined,
@@ -2705,17 +2744,15 @@ export class Orchestrator {
       task.finishedAt - (task.startedAt || task.createdAt);
     task.status = failed > 0 ? "failed" : "completed";
 
-    // Build summary from executor results. For single-node tasks this is the
-    // done() summary; for multi-node tasks it's an aggregated result.
-    // Skip for single-node tasks that already streamed content to avoid duplicate bubbles.
-    const alreadyStreamed =
-      task.planClassification?.isSingleNode && task._streamHasContent;
-    const summary = alreadyStreamed ? "" : this.buildProgrammaticSummary(task);
+    // Build summary and replace any accumulated reasoning with the clean result.
+    // Uses replaceContent to ensure a single clean bubble regardless of what was
+    // streamed during execution (intermediate reasoning, tool output, etc.).
+    const summary = this.buildProgrammaticSummary(task);
     if (summary) {
       this.sendMessage({
         type: "STREAM_CHUNK",
         workspaceId: task.workspaceId,
-        payload: { delta: summary, done: false },
+        payload: { delta: "", done: false, replaceContent: summary },
       });
     }
     this.sendMessage({
@@ -2724,17 +2761,7 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
-      description: node.description,
-      status:
-        node.status === "completed"
-          ? "completed"
-          : isUserSkippedNode(node)
-            ? "skipped"
-            : "failed",
-      turnsUsed: 0,
-      result: node.result || node.error || "",
-    }));
+    const subtaskResults = this.buildSubtaskResults(task);
 
     const completionStatus: "completed" | "partial" | "failed" =
       failed > 0
@@ -2745,21 +2772,23 @@ export class Orchestrator {
           ? "partial"
           : "completed";
 
+    const completionPayload: TaskCompletionMessage["payload"] = {
+      taskId: task.id,
+      status: completionStatus,
+      totalTurnsUsed: 0,
+      totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
+      summary,
+      subtaskResults,
+      urlHistory: [],
+      metrics: task.sessionMetrics,
+      terminationReason: task.terminationReason,
+    };
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
-      payload: {
-        taskId: task.id,
-        status: completionStatus,
-        totalTurnsUsed: 0,
-        totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
-        summary,
-        subtaskResults,
-        urlHistory: [],
-        metrics: task.sessionMetrics,
-        terminationReason: task.terminationReason,
-      },
+      payload: completionPayload,
     });
+    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
@@ -3107,11 +3136,49 @@ export class Orchestrator {
     });
   }
 
-  private sendTerminationCompletion(
-    task: OrchestratorTask,
-    terminationReason: string,
+  /**
+   * Cache a completion payload for later resync and persist the summary
+   * directly to chat storage so it survives side-panel death.
+   */
+  private cacheAndPersistCompletion(
+    workspaceId: string,
+    payload: TaskCompletionMessage["payload"],
   ): void {
-    const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
+    // Cache for resync on panel reopen
+    this.recentCompletion.set(workspaceId, {
+      payload,
+      timestamp: Date.now(),
+    });
+
+    // Persist summary as a chat message directly to storage (bypasses panel)
+    if (payload.summary) {
+      const storageKey = `chatMessages:${workspaceId}`;
+      chrome.storage.local
+        .get(storageKey)
+        .then((result) => {
+          const messages: any[] = result[storageKey] ?? [];
+          messages.push({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: payload.summary,
+            timestamp: Date.now(),
+            toolCalls: [],
+            isStreaming: false,
+          });
+          const trimmed =
+            messages.length > MAX_PERSISTED_MESSAGES
+              ? messages.slice(-MAX_PERSISTED_MESSAGES)
+              : messages;
+          return chrome.storage.local.set({ [storageKey]: trimmed });
+        })
+        .catch((e) => {
+          logger.debug("orchestrator", "Failed to persist completion to chat storage", { error: e });
+        });
+    }
+  }
+
+  private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
+    return task.nodes.map((node) => ({
       description: node.description,
       status:
         node.status === "completed"
@@ -3122,26 +3189,43 @@ export class Orchestrator {
       turnsUsed: 0,
       result: node.result || node.error || "",
     }));
+  }
+
+  private sendTerminationCompletion(
+    task: OrchestratorTask,
+    terminationReason: string,
+  ): void {
+    // Finalize the stream first so the side panel exits isStreaming state.
+    // Without this, the UI stays stuck showing "Thinking..." after a stop.
+    this.sendMessage({
+      type: "STREAM_CHUNK",
+      workspaceId: task.workspaceId,
+      payload: { delta: "", done: true },
+    });
+
+    const subtaskResults = this.buildSubtaskResults(task);
     const completed = subtaskResults.filter(
       (r) => r.status === "completed",
     ).length;
 
+    const completionPayload: TaskCompletionMessage["payload"] = {
+      taskId: task.id,
+      status: completed > 0 ? "partial" : "failed",
+      totalTurnsUsed: 0,
+      totalTimeMs:
+        (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
+      summary: terminationReason,
+      subtaskResults,
+      urlHistory: [],
+      metrics: task.sessionMetrics,
+      terminationReason,
+    };
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
-      payload: {
-        taskId: task.id,
-        status: completed > 0 ? "partial" : "failed",
-        totalTurnsUsed: 0,
-        totalTimeMs:
-          (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
-        summary: terminationReason,
-        subtaskResults,
-        urlHistory: [],
-        metrics: task.sessionMetrics,
-        terminationReason,
-      },
+      payload: completionPayload,
     });
+    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
   }
 
   private emitVerifierStep(
