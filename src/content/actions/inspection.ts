@@ -159,16 +159,25 @@ export function executeRead(): {
   };
 }
 
-export function executeFindElement(args: { text: string }): {
+export function executeFindElement(args: { text: string; searchText?: string }): {
   success: boolean;
   result: string;
   navigated: boolean;
 } {
-  const found = (window as any).find(args.text);
+  // LLMs sometimes hallucinate "searchText" instead of "text"
+  const query = args.text || args.searchText;
+  if (!query) {
+    return {
+      success: false,
+      result: 'Missing "text" parameter — provide the text to search for.',
+      navigated: false,
+    };
+  }
+  const found = (window as any).find(query);
   if (!found) {
     return {
       success: false,
-      result: `Text "${args.text}" not found on this page`,
+      result: `Text "${query}" not found on this page`,
       navigated: false,
     };
   }
@@ -183,7 +192,7 @@ export function executeFindElement(args: { text: string }): {
   if (!anchorNode) {
     return {
       success: true,
-      result: `Found "${args.text}" but could not locate its DOM node`,
+      result: `Found "${query}" but could not locate its DOM node`,
       navigated: false,
     };
   }
@@ -240,7 +249,7 @@ export function executeFindElement(args: { text: string }): {
   if (!matched) {
     return {
       success: true,
-      result: `Found "${args.text}" but could not locate a container element`,
+      result: `Found "${query}" but could not locate a container element`,
       navigated: false,
     };
   }
@@ -248,7 +257,7 @@ export function executeFindElement(args: { text: string }): {
   // Drill down: if matched is a non-interactive container (p, form, div, etc.),
   // check for a more specific interactive or cursor:pointer child containing the text
   if (!matched.matches(INTERACTIVE)) {
-    const searchText = args.text.toLowerCase();
+    const searchText = query.toLowerCase();
     // For form containers, prefer the input element directly
     if (matched.tagName === "FORM") {
       const formInput = matched.querySelector("input,textarea,select");
@@ -300,7 +309,7 @@ export function executeFindElement(args: { text: string }): {
 
   return {
     success: true,
-    result: `Found "${args.text}" near [${tagId}] <${tagName}> "${context}". Use tag [${tagId}] to interact with it.`,
+    result: `Found "${query}" near [${tagId}] <${tagName}> "${context}". Use tag [${tagId}] to interact with it.`,
     navigated: false,
   };
 }

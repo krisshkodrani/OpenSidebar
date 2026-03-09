@@ -130,9 +130,14 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.SEARCH_HISTORY)).toBe("static");
     });
 
-    test("does not include DOM-modifying tools (except read_page which is not cacheable)", () => {
+    test("does not include DOM-modifying tools (except read_page which is cacheable)", () => {
       for (const tool of DOM_MODIFYING_TOOLS) {
-        // DOM-modifying tools should not be cacheable (they change the page)
+        if (tool === ToolName.READ_PAGE) {
+          // read_page is domModifying (re-tags elements) but cacheable (doesn't change the page)
+          expect(CACHEABLE_TOOLS.has(tool)).toBe(true);
+          continue;
+        }
+        // Other DOM-modifying tools should not be cacheable (they change the page)
         expect(CACHEABLE_TOOLS.has(tool)).toBe(false);
       }
     });
@@ -145,8 +150,8 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.has(ToolName.ESCALATE)).toBe(false);
     });
 
-    test("has exactly 7 entries", () => {
-      expect(CACHEABLE_TOOLS.size).toBe(7);
+    test("has exactly 8 entries", () => {
+      expect(CACHEABLE_TOOLS.size).toBe(8);
     });
   });
 

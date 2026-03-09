@@ -53,6 +53,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.LOW,
     domModifying: true,
     sequential: false,
+    cacheable: "dom",
   },
   [ToolName.SCROLL_PAGE]: {
     risk: RiskLevel.LOW,

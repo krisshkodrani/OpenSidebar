@@ -12,8 +12,11 @@ export function buildElementResolver(
   return (id: number) => {
     const el = map.get(id);
     if (!el) return undefined;
-    const text = el.text?.slice(0, 24);
-    if (text) return `"${text}" ${el.tagName}`;
+    const raw = el.text?.trim();
+    if (raw) {
+      const text = raw.length > 24 ? raw.slice(0, 24) + "…" : raw;
+      return `"${text}" ${el.tagName}`;
+    }
     return el.tagName;
   };
 }
