@@ -28,6 +28,10 @@ import {
   waitForDomReady,
   ensureContentScript,
 } from "../tab-ready";
+import {
+  isBridgeDisconnect,
+  reinjectContentScript,
+} from "../tools/bridge";
 import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
@@ -1071,7 +1075,11 @@ export class AgentLoop {
     // Consume the warmup entry so it's not reused by a subsequent task
     perceptionWarmup.consume(tabId);
 
+    // Save initial scroll position for restoration when the agent finishes
+    let initialScrollY: number | null = null;
+
     if (snapshot) {
+      initialScrollY = snapshot.scroll?.y ?? 0;
       this.context.setSnapshot(snapshot);
       this.elementResolver = buildElementResolver(snapshot.elements);
       // If snapshot was fetched via fallback/warmup, update trace startUrl
@@ -1114,11 +1122,42 @@ export class AgentLoop {
         await this.refreshPerceptionAndTriage(tabId);
       }
     } else {
-      this.log.warn(
-        "agent",
-        "Starting without snapshot — content script unreachable",
-        { tabId },
-      );
+      // Content script unreachable — build a minimal snapshot from tab metadata
+      // so the system prompt shows the real URL instead of "about:blank"
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.url && tab.url !== "about:blank") {
+          const minimalSnapshot: DomSnapshot = {
+            title: tab.title || "",
+            url: tab.url,
+            elements: [],
+            viewport: { width: 0, height: 0 },
+            scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 0 },
+          };
+          this.context.setSnapshot(minimalSnapshot);
+          this.traceRecorder.setSessionInfo(initialUserText, tab.url);
+          try {
+            this.startingOrigin = new URL(tab.url).origin;
+          } catch { /* */ }
+          this.log.warn(
+            "agent",
+            "Using tab metadata fallback (content script unreachable)",
+            { tabId, url: tab.url, title: tab.title },
+          );
+        } else {
+          this.log.warn(
+            "agent",
+            "Starting without snapshot — content script unreachable",
+            { tabId },
+          );
+        }
+      } catch {
+        this.log.warn(
+          "agent",
+          "Starting without snapshot — tab and content script unreachable",
+          { tabId },
+        );
+      }
     }
 
     // 2. Add User Message
@@ -1357,7 +1396,7 @@ export class AgentLoop {
         const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
         this.broadcast({
           type: "STREAM_CHUNK",
-          payload: { delta: errorMsg, done: false },
+          payload: { delta: "", done: false, replaceContent: errorMsg },
         });
         this.broadcast({
           type: "STREAM_CHUNK",
@@ -1387,6 +1426,17 @@ export class AgentLoop {
           result.summary,
         );
       }
+
+      // Restore the user's original scroll position (only on successful completion —
+      // on stop/error, freeze the page exactly where it is)
+      if (initialScrollY !== null && result.outcome === "completed") {
+        try {
+          await this.scrollContentScript(tabId, initialScrollY);
+        } catch {
+          // Tab may have been closed or navigated — safe to ignore
+        }
+      }
+
       this.isRunning = false;
       // Finalize trace recording (fire-and-forget)
       if (this.traceRecorder) {
@@ -1567,15 +1617,16 @@ export class AgentLoop {
 
   /** Refresh DOM snapshot and update context. Returns element count or -1 on failure. */
   private async refreshSnapshot(tabId: number): Promise<number> {
-    try {
-      const snapResponse = await chrome.tabs.sendMessage(tabId, {
+    const sendRequest = () =>
+      chrome.tabs.sendMessage(tabId, {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: {
-          refresh: true,
-        },
+        payload: { refresh: true },
       });
+
+    try {
+      const snapResponse = await sendRequest();
       if (snapResponse?.payload?.snapshot) {
         this.context.setSnapshot(snapResponse.payload.snapshot);
         this.elementResolver = buildElementResolver(
@@ -1583,8 +1634,33 @@ export class AgentLoop {
         );
         return snapResponse.payload.snapshot.elements.length;
       }
-    } catch {
-      /* non-critical */
+    } catch (e: any) {
+      // Content script disconnected — attempt reinjection once
+      if (isBridgeDisconnect(e?.message || "")) {
+        this.log.warn("agent", "Snapshot failed — content script disconnected, attempting reinjection", {
+          turn: this.turnCount,
+          tabId,
+        });
+        const reinjected = await reinjectContentScript(tabId);
+        if (reinjected) {
+          try {
+            const retryResponse = await sendRequest();
+            if (retryResponse?.payload?.snapshot) {
+              this.context.setSnapshot(retryResponse.payload.snapshot);
+              this.elementResolver = buildElementResolver(
+                retryResponse.payload.snapshot.elements,
+              );
+              this.log.info("agent", "Snapshot recovered after reinjection", {
+                turn: this.turnCount,
+                elements: retryResponse.payload.snapshot.elements.length,
+              });
+              return retryResponse.payload.snapshot.elements.length;
+            }
+          } catch {
+            /* reinjection succeeded but snapshot still failed */
+          }
+        }
+      }
     }
     return -1;
   }
@@ -1672,6 +1748,7 @@ export class AgentLoop {
     );
 
     const tab = await chrome.tabs.get(tabId);
+    if (!tab.active) return shots; // Tab not visible — skip panoramic capture
     for (const pos of filteredPositions) {
       if (this.abortController?.signal.aborted) break;
       await this.scrollContentScript(tabId, pos.y);
@@ -1714,65 +1791,100 @@ export class AgentLoop {
           primaryScrollY = 0;
         }
 
+        // Only capture if the agent's tab is the visible one — otherwise
+        // captureVisibleTab returns the wrong page or a black frame.
         const tab = await chrome.tabs.get(tabId);
-        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-          format: "jpeg",
-          quality: 70,
-        });
-        this.perception.setScreenshotUrl(dataUrl);
-
-        // First-turn panoramic: capture additional viewports for page-level context
-        let panoramicScreenshots: PanoramicShot[] | undefined;
-        if (isFirstPerception) {
-          this.perception.markPanoramicDone();
-          panoramicScreenshots = await this.capturePanoramicScreenshots(
-            tabId,
-            primaryScrollY,
-            // If we scrolled for orientation, restore to that position (not original)
-            primaryScrollY,
-          );
-          if (panoramicScreenshots.length > 0) {
-            this.log.info(
-              "agent",
-              "Panoramic perception: captured additional viewports",
-              {
-                count: panoramicScreenshots.length,
-                labels: panoramicScreenshots.map((s) => s.label),
-              },
-            );
-          } else {
-            panoramicScreenshots = undefined;
-          }
+        if (tab.active) {
+          dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+            format: "jpeg",
+            quality: 70,
+          });
+          this.perception.setScreenshotUrl(dataUrl);
         }
 
-        // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
-        const scrollOverride =
-          primaryScrollY !== undefined
-            ? { ...snapshot.scroll, y: primaryScrollY }
-            : snapshot.scroll;
+        // No screenshot available (tab not active) — use element-only fallback
+        // instead of calling VLM with an invalid image URL.
+        if (!dataUrl) {
+          if (isFirstPerception) {
+            this.perception.markPanoramicDone();
+          }
+          const result = await this.perception.observe(
+            {
+              screenshotDataUrl: "",
+              elements: snapshot.elements,
+              url: snapshot.url,
+              title: snapshot.title,
+              scroll: snapshot.scroll,
+              skeleton: snapshot.skeleton,
+              lang: snapshot.lang,
+            },
+            fingerprint,
+            this.abortController?.signal,
+            this.lastToolNameForPerception,
+          );
+          this.context.setPageInterpretation(result.interpretation);
+          const elSummary = buildElementSummary(snapshot.elements, snapshot.skeleton);
+          await this.traceRecorder?.recordPerception(result, undefined, elSummary);
+          this.log.info(
+            "agent",
+            "Perception: tab not active, using element-only mode",
+            { tabId, url: snapshot.url },
+          );
+        } else {
+          // First-turn panoramic: capture additional viewports for page-level context
+          let panoramicScreenshots: PanoramicShot[] | undefined;
+          if (isFirstPerception) {
+            this.perception.markPanoramicDone();
+            panoramicScreenshots = await this.capturePanoramicScreenshots(
+              tabId,
+              primaryScrollY,
+              // If we scrolled for orientation, restore to that position (not original)
+              primaryScrollY,
+            );
+            if (panoramicScreenshots.length > 0) {
+              this.log.info(
+                "agent",
+                "Panoramic perception: captured additional viewports",
+                {
+                  count: panoramicScreenshots.length,
+                  labels: panoramicScreenshots.map((s) => s.label),
+                },
+              );
+            } else {
+              panoramicScreenshots = undefined;
+            }
+          }
 
-        const result = await this.perception.observe(
-          {
-            screenshotDataUrl: dataUrl,
-            panoramicScreenshots,
-            elements: snapshot.elements,
-            url: snapshot.url,
-            title: snapshot.title,
-            scroll: scrollOverride,
-            skeleton: snapshot.skeleton,
-          },
-          fingerprint,
-          this.abortController?.signal,
-          this.lastToolNameForPerception,
-        );
+          // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
+          const scrollOverride =
+            primaryScrollY !== undefined
+              ? { ...snapshot.scroll, y: primaryScrollY }
+              : snapshot.scroll;
 
-        this.context.setPageInterpretation(result.interpretation);
-        const elSummary = buildElementSummary(snapshot.elements, snapshot.skeleton);
-        await this.traceRecorder?.recordPerception(result, dataUrl, elSummary);
+          const result = await this.perception.observe(
+            {
+              screenshotDataUrl: dataUrl,
+              panoramicScreenshots,
+              elements: snapshot.elements,
+              url: snapshot.url,
+              title: snapshot.title,
+              scroll: scrollOverride,
+              skeleton: snapshot.skeleton,
+              lang: snapshot.lang,
+            },
+            fingerprint,
+            this.abortController?.signal,
+            this.lastToolNameForPerception,
+          );
 
-        // Track usage for non-cached calls
-        if (result.usage && !result.cached) {
-          this.recordVisionUsage(result.usage, result.durationMs, result.model);
+          this.context.setPageInterpretation(result.interpretation);
+          const elSummary = buildElementSummary(snapshot.elements, snapshot.skeleton);
+          await this.traceRecorder?.recordPerception(result, dataUrl, elSummary);
+
+          // Track usage for non-cached calls
+          if (result.usage && !result.cached) {
+            this.recordVisionUsage(result.usage, result.durationMs, result.model);
+          }
         }
       } else {
         // Near-empty DOM: let agent handle fallback
@@ -1784,6 +1896,7 @@ export class AgentLoop {
             title: snapshot.title,
             scroll: snapshot.scroll,
             skeleton: snapshot.skeleton,
+            lang: snapshot.lang,
           },
           fingerprint,
           this.abortController?.signal,
@@ -2269,7 +2382,14 @@ export class AgentLoop {
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
-      if (!this.isRunning) break; // Check again after resume (user may have stopped)
+      if (!this.isRunning) {
+        // Finalize the stream so the side panel exits isStreaming state
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
+        break;
+      }
 
       this.turnCount++;
       this.turnsOnCurrentStep++;
@@ -2709,11 +2829,9 @@ export class AgentLoop {
         const firstToolName = response.tool_calls[0].function.name;
         this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
 
-        // Always finalize the stream so the next turn creates a fresh message
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        // Keep the streaming message open across tool-calling turns.
+        // The stream is finalized when done() is called (with replaceContent)
+        // or when the loop exits (by the orchestrator or exit-path handlers).
 
         // Execute Tools
         let doneSignaled = false;
@@ -3456,6 +3574,13 @@ export class AgentLoop {
                 },
                 false,
               );
+              // Replace accumulated reasoning with clean summary and finalize the stream.
+              // done:true is critical — without it the side panel message stays in
+              // isStreaming state and the "Thinking..." placeholder hides the summary.
+              this.broadcast({
+                type: "STREAM_CHUNK",
+                payload: { delta: "", done: true, replaceContent: summary },
+              });
               this.statusHandler(AgentStatus.IDLE, "Done");
               this.messageHandler(summary, []);
               doneSummary = summary;
@@ -4916,8 +5041,9 @@ export class AgentLoop {
               const progressSignal = this.stagnation.onSnapshotRefresh(snap);
 
               // P0: Surface action effect — tell the agent whether its last action changed the page
+              // Use visuallyModified (not domModified) so read_page doesn't produce misleading deltas
               const actionEffect = this.stagnation.lastActionEffect;
-              if (actionEffect && domModified) {
+              if (actionEffect && visuallyModified) {
                 const effectLine = formatActionEffect(actionEffect);
                 if (effectLine) {
                   this.context.addMessage({
@@ -5206,6 +5332,36 @@ export class AgentLoop {
       } else {
         // TEXT RESPONSE — no tool calls
 
+        // Think-only output: model reasoned (rawContent has tokens) but produced
+        // no visible text or tool calls after think-tag stripping. Fast-track the
+        // text-only counter so escalation fires sooner — the generic nudge doesn't
+        // help a model that's stuck in a think loop.
+        if (
+          !cleanContent &&
+          rawContent &&
+          rawContent.length > 50 &&
+          consecutiveTextOnly < 2
+        ) {
+          consecutiveTextOnly = 2; // Next text-only turn triggers escalation
+          this.log.warn("agent", "Think-only output detected, fast-tracking escalation", {
+            turn: this.turnCount,
+            rawLen: rawContent.length,
+          });
+          this.context.addMessage({
+            role: "user",
+            content:
+              "Your response contained only internal reasoning with no output or tool calls. " +
+              "You MUST include at least one tool call. Use read_page to inspect the page, " +
+              "or done() if the task is already complete.",
+          });
+          this.broadcast({
+            type: "STREAM_CHUNK",
+            payload: { delta: "", done: true },
+          });
+          await this.traceRecorder?.endTurn();
+          continue;
+        }
+
         // Soft nudge: turn 1, no plan, substantive text — likely an answer to a question
         if (
           this.turnCount === 1 &&
@@ -5353,7 +5509,7 @@ export class AgentLoop {
             cleanContent || "The agent appears stuck and cannot continue.";
           this.broadcast({
             type: "STREAM_CHUNK",
-            payload: { delta: stuckMsg, done: false },
+            payload: { delta: "", done: false, replaceContent: stuckMsg },
           });
           this.broadcast({
             type: "STREAM_CHUNK",
@@ -5385,7 +5541,7 @@ export class AgentLoop {
             "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
           this.broadcast({
             type: "STREAM_CHUNK",
-            payload: { delta: stuckMsg, done: false },
+            payload: { delta: "", done: false, replaceContent: stuckMsg },
           });
           this.broadcast({
             type: "STREAM_CHUNK",
@@ -5429,7 +5585,7 @@ export class AgentLoop {
       const limitMsg = `Reached turn limit (${this.turnCount}/${this.maxTurns}). You can increase the limit in Settings or send a follow-up message to continue.`;
       this.broadcast({
         type: "STREAM_CHUNK",
-        payload: { delta: limitMsg, done: false },
+        payload: { delta: "", done: false, replaceContent: limitMsg },
       });
       this.broadcast({
         type: "STREAM_CHUNK",
@@ -5498,7 +5654,7 @@ export class AgentLoop {
         const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
         this.broadcast({
           type: "STREAM_CHUNK",
-          payload: { delta: errorMsg, done: false },
+          payload: { delta: "", done: false, replaceContent: errorMsg },
         });
         this.broadcast({
           type: "STREAM_CHUNK",
