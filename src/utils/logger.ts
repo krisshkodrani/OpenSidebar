@@ -19,17 +19,30 @@ declare const __DEV__: boolean;
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
-export type LogSource = "background" | "content" | "sidepanel";
+export type LogSource = "background" | "content" | "sidepanel" | "offscreen";
 
 export type LogCategory =
   | "agent"
-  | "tools"
-  | "ui"
-  | "system"
-  | "navigation"
-  | "workspace"
+  | "content"
+  | "demos"
+  | "grounding"
   | "keepalive"
-  | "sidebar";
+  | "manual"
+  | "navigation"
+  | "orchestrator"
+  | "perception"
+  | "policy"
+  | "recording"
+  | "router"
+  | "screenshot"
+  | "sidebar"
+  | "streaming"
+  | "system"
+  | "tools"
+  | "trace"
+  | "ui"
+  | "warmup"
+  | "workspace";
 
 export interface LogEntry {
   ts: string;

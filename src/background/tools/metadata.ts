@@ -203,6 +203,20 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: true,
   },
+
+  // Window management
+  [ToolName.CREATE_WINDOW]: {
+    risk: RiskLevel.HIGH,
+    domModifying: false,
+    sequential: true,
+  },
+
+  // Plan update (intercepted in loop)
+  [ToolName.UPDATE_PLAN]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: true,
+  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

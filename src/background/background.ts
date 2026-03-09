@@ -787,7 +787,7 @@ chrome.runtime.onMessage.addListener(
           elements: [] as any[],
           visibleContent: "",
           viewport: { width: 0, height: 0 },
-          scroll: { x: 0, y: 0, maxY: 0 },
+          scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 0 },
         };
         activeRecording
           .recordAction({

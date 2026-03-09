@@ -60,8 +60,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.CLARIFY)).toBe(true);
     });
 
-    test("has exactly 13 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(13);
+    test("has exactly 15 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(15);
     });
   });
 

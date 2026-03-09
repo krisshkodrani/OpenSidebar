@@ -33,7 +33,7 @@ export function getDomPath(el: Element): string {
     current !== document.body &&
     current !== document.documentElement
   ) {
-    const parent = current.parentElement;
+    const parent: Element | null = current.parentElement;
     if (!parent) break;
     const siblings = Array.from(parent.children);
     const idx = siblings.indexOf(current);

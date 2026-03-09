@@ -3,7 +3,7 @@ import type { LLMClientOptions } from "../llm";
 import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
-import { resolveToolProfile } from "../tools/metadata";
+import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
@@ -124,7 +124,7 @@ function stepsToNodes(
     successCriteria:
       step.successCriteria ||
       `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-    allowedTools: resolveToolProfile(step.toolProfile) ?? [
+    allowedTools: resolveToolProfile(step.toolProfile as ToolProfile | undefined) ?? [
       ...EXECUTOR_DEFAULT_TOOLS,
     ],
     dependencies: (step.dependencies || [])
@@ -237,13 +237,13 @@ export class OrchestratorPlanner {
     );
     if (!decomposition) return null;
 
-    const steps = decomposition.steps?.length
+    const steps: DecompositionStep[] = decomposition.steps?.length
       ? decomposition.steps
       : decomposition.subtasks.map((step, i) => ({
           objective: step,
           successCriteria: `The subtask outcome for "${step}" is verified on the page or in tool output.`,
           dependencies: i === 0 ? [] : [i - 1],
-          assumptions: [],
+          assumptions: [] as string[],
         }));
     if (steps.length < 2) return null;
 
@@ -255,7 +255,7 @@ export class OrchestratorPlanner {
       successCriteria:
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: resolveToolProfile(step.toolProfile) ?? [
+      allowedTools: resolveToolProfile(step.toolProfile as ToolProfile | undefined) ?? [
         ...node.allowedTools,
       ],
       dependencies: [

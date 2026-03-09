@@ -268,8 +268,16 @@ export interface TraceSession {
   turnCount: number;
   summary: string;
   metrics: SessionMetrics | null;
+  /** Normalized failure category */
+  failureCategory?: string;
+  /** Normalized failure code */
+  failureCode?: string;
+  /** Human-readable failure detail */
+  failureDetail?: string;
   /** Workspace ID for session isolation correlation */
   workspaceId?: string | null;
+  /** Models referenced in this session (e.g. for filtering recording/manual/agent sessions) */
+  models?: string[];
   /** Planner's difficulty assessment for this session */
   difficultyAssessment?: string;
   /** Resolved runtime limits after merging defaults + profile + overrides */
@@ -293,4 +301,11 @@ export interface TraceSession {
       };
     }>;
   };
+}
+
+/** Normalized failure info for trace/session rollups */
+export interface TraceFailureInfo {
+  category: string;
+  code: string;
+  detail?: string;
 }

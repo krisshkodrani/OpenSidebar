@@ -45,6 +45,8 @@ import {
   XRAY_PAGE_DEF,
   RECALL_DEMO_DEF,
   UPDATE_NOTES_DEF,
+  CREATE_WINDOW_DEF,
+  UPDATE_PLAN_DEF,
 } from "./definitions";
 import {
   formatUnknownError,
@@ -802,6 +804,25 @@ export function registerTools() {
   toolRegistry.register(ToolName.UPDATE_NOTES, UPDATE_NOTES_DEF, async (_args) => {
     // This executor is a fallback — the loop intercepts update_notes before reaching here
     return "Note saved.";
+  });
+
+  // Create window tool (intercepted by orchestrator before executor runs)
+  toolRegistry.register(ToolName.CREATE_WINDOW, CREATE_WINDOW_DEF, async (args) => {
+    // Fallback — normally intercepted by orchestrator
+    const url = args.url as string | undefined;
+    logger.info("tools", "create_window", { url });
+    try {
+      const win = await chrome.windows.create(url ? { url } : {});
+      return `Created new window (ID: ${win.id})`;
+    } catch (e: any) {
+      return `Error creating window: ${e.message}`;
+    }
+  });
+
+  // Update plan tool (intercepted by agent loop before executor runs)
+  toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
+    // Fallback — the loop intercepts update_plan before reaching here
+    return `Plan updated: ${(args.summary as string) || "no summary"}`;
   });
 
   // Demo recall tool

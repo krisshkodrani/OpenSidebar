@@ -25,7 +25,7 @@ export async function parseSSEStream(
   tool_calls?: ToolCall[];
   usage?: TokenUsage;
 }> {
-  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  const reader = body.pipeThrough(new TextDecoderStream() as any).getReader();
 
   let buffer = "";
   let content = "";

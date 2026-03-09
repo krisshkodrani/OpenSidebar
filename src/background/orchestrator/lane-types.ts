@@ -10,8 +10,8 @@ import { OrchestratorPlanner } from "./planner";
 import { OrchestratorVerifier } from "./verifier";
 import { workspaceManager } from "../workspaces/manager";
 
-export type AgentLoopCallbacksArg = ConstructorParameters<typeof AgentLoop>[3];
-export type AgentLoopOptionsArg = ConstructorParameters<typeof AgentLoop>[4];
+export type AgentLoopCallbacksArg = ConstructorParameters<typeof AgentLoop>[1];
+export type AgentLoopOptionsArg = ConstructorParameters<typeof AgentLoop>[2];
 export type RuntimeLane = "planner" | "executor" | "verifier";
 export type EscalationDecisionPayload = EscalationDecisionMessage["payload"];
 
@@ -129,8 +129,8 @@ export type OrchestratorDeps = {
   >;
   waitForContentScriptReady?: (
     tabId: number,
-    timeoutMs: number,
-  ) => Promise<boolean>;
+    timeoutMs?: number,
+  ) => Promise<void | boolean>;
   lanePolicies?: Partial<Record<RuntimeLane, Partial<LaneBudgetPolicy>>>;
 };
 

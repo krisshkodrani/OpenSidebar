@@ -315,8 +315,8 @@ export class TaskPlanner {
       const legacySubtasks = Array.isArray(parsed.subtasks)
         ? parsed.subtasks
             .filter((step: unknown): step is string => typeof step === "string")
-            .map((step) => step.trim())
-            .filter((step) => step.length > 0)
+            .map((step: string) => step.trim())
+            .filter((step: string) => step.length > 0)
         : [];
       const subtasks =
         steps?.map((step) => step.objective) ||

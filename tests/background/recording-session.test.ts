@@ -198,7 +198,7 @@ describe("RecordingSession", () => {
         totalTokens: 0,
         totalCost: 0,
         modelBreakdown: {
-          recording: { calls: 2, tokens: 0, cost: 0 },
+          recording: { calls: 2, promptTokens: 0, completionTokens: 0, cost: 0 },
         },
       }),
     );

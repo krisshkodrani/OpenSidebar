@@ -320,7 +320,7 @@ export class AgentLoop {
       this.metrics.totalCompletionTokens += response.usage.completion_tokens;
       this.metrics.totalTokens += response.usage.total_tokens;
       const providerId =
-        response.actualProviderId ?? this.llm.getCurrentProvider();
+        (response.actualProviderId ?? this.llm.getCurrentProvider()) as "openrouter";
       const model = response.actualModel ?? this.llm.getCurrentModel();
       const cost = this.resolveCost(response.usage, providerId, model);
       this.metrics.totalCost += cost.total;
@@ -364,7 +364,7 @@ export class AgentLoop {
       entry.promptTokens += response.usage.prompt_tokens;
       entry.completionTokens += response.usage.completion_tokens;
       const providerId =
-        response.actualProviderId ?? this.llm.getCurrentProvider();
+        (response.actualProviderId ?? this.llm.getCurrentProvider()) as "openrouter";
       const cost = this.resolveCost(response.usage, providerId, model);
       entry.cost += cost.total;
       entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
@@ -584,25 +584,25 @@ export class AgentLoop {
     if (this.suppressUiBroadcast) {
       // Forward STREAM_CHUNK to callback even when UI broadcasts are suppressed
       if (msg.type === "STREAM_CHUNK" && this.onStreamChunk) {
+        const p = msg.payload as { delta: string; done: boolean; replaceContent?: string; thinking?: string };
         this.onStreamChunk(
-          msg.payload.delta,
-          msg.payload.done,
-          msg.payload.replaceContent,
-          msg.payload.thinking,
+          p.delta,
+          p.done,
+          p.replaceContent,
+          p.thinking,
         );
       }
       return;
     }
     // Attach citations to the final stream chunk
-    if (
-      msg.type === "STREAM_CHUNK" &&
-      msg.payload.done &&
-      this.citations.length > 0
-    ) {
-      msg = {
-        ...msg,
-        payload: { ...msg.payload, citations: [...this.citations] },
-      };
+    if (msg.type === "STREAM_CHUNK") {
+      const p = msg.payload as { delta: string; done: boolean; citations?: unknown[] };
+      if (p.done && this.citations.length > 0) {
+        msg = {
+          ...msg,
+          payload: { ...p, citations: [...this.citations] },
+        } as typeof msg;
+      }
     }
     chrome.runtime
       .sendMessage({
@@ -1267,21 +1267,17 @@ export class AgentLoop {
           });
           this.traceRecorder?.setPlanDecomposition({
             subtasks: decomposition.subtasks,
-            ...(decomposition.steps
-              ? {
-                  steps: decomposition.steps.map((s) => ({
-                    objective: s.objective,
-                    successCriteria: s.successCriteria,
-                    dependencies: s.dependencies,
-                    assumptions: s.assumptions,
-                    ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
-                    ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
-                    ...(s.expectedState
-                      ? { expectedState: s.expectedState }
-                      : {}),
-                  })),
-                }
-              : {}),
+            steps: (decomposition.steps ?? []).map((s: any) => ({
+              objective: s.objective,
+              successCriteria: s.successCriteria,
+              dependencies: s.dependencies,
+              assumptions: s.assumptions,
+              ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
+              ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
+              ...(s.expectedState
+                ? { expectedState: s.expectedState }
+                : {}),
+            })),
           });
 
           if (decomposition.subtasks.length >= 2) {
@@ -1442,7 +1438,7 @@ export class AgentLoop {
       if (this.traceRecorder) {
         this.traceRecorder.recordEvent(
           "tool_cache_stats",
-          this.toolCache.getStats(),
+          { ...this.toolCache.getStats() } as Record<string, unknown>,
         );
         await this.traceRecorder.finalize(
           result.outcome,
@@ -2353,7 +2349,7 @@ export class AgentLoop {
     let freshStartCount = 0; // S3: fresh-start recovery counter
 
     // Complexity-adaptive orientation: extend planner phase when investigation tools are used
-    let effectiveOrientationTurns = ORIENTATION.PHASE_TURNS;
+    let effectiveOrientationTurns: number = ORIENTATION.PHASE_TURNS;
     const orientationToolsUsed = new Set<string>();
 
     // Circuit breaker: consecutive all-fail turns
@@ -2846,7 +2842,7 @@ export class AgentLoop {
         for (const a of auditedCalls) {
           this.traceRecorder?.recordEvent("safety_gate_audit", {
             tool: a.original.function.name,
-            flag: a.auditFlag,
+            flag: a.auditFlag ?? "unknown",
             phase: "output",
           });
         }
@@ -2885,7 +2881,7 @@ export class AgentLoop {
           });
           this.traceRecorder?.recordEvent("safety_gate_blocked", {
             tool: b.original.function.name,
-            reason: b.reason,
+            reason: b.reason ?? "unknown",
             phase: "output",
           });
         }
@@ -5181,10 +5177,7 @@ export class AgentLoop {
 
                   // Refresh snapshot
                   try {
-                    const freshSnap = await this.refreshSnapshot(tabId);
-                    if (freshSnap) {
-                      this.context.setSnapshot(freshSnap);
-                    }
+                    await this.refreshSnapshot(tabId);
                   } catch {
                     /* non-critical */
                   }

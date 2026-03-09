@@ -116,7 +116,7 @@ export default function TracesTab() {
           {tracesError ? (
             <ErrorBanner
               message={`Failed to load sessions: ${tracesError}`}
-              hint
+              hint="Ensure the log server is running (npm run logs)"
               onRetry={refreshSessions}
             />
           ) : (
