@@ -552,10 +552,10 @@ Do NOT call done() until every planned step is complete.
           "You MUST call clarify() to resolve this mismatch before taking any other action. Do NOT proceed with the instruction as given.\n\n";
       }
       groundingBlock +=
-        "Your FIRST tool call this turn MUST be an observation tool: read_page, find_element, or read_element.\n" +
-        "Do NOT call click_element, type_text, scroll_page, or any action tool until you have observed the page.\n" +
+        "The current page snapshot (elements, content, scroll position) is already provided above — do NOT call read_page redundantly.\n" +
+        "Observe the page state from the Visible Elements, Page Content, and Page Interpretation sections above.\n" +
         "Check Page Interpretation BLOCKERS for MISMATCH entries — if present, the page does not match your task.\n" +
-        "Even though elements and content are shown above, verify the page state matches your task before acting.\n";
+        "Verify the page state matches your task before acting. Then proceed directly with the appropriate action tool.\n";
       content = content.replace(
         "## Page Context",
         `${groundingBlock}\n## Page Context`,
@@ -568,6 +568,16 @@ Do NOT call done() until every planned step is complete.
         sanitizeForPrompt(this.snapshot.title || "Unknown"),
       );
       content = content.replace("{{url}}", this.snapshot.url || "Unknown");
+
+      // Language context — helps LLM ground element references in the correct language
+      if (this.snapshot.lang) {
+        content = content.replace(
+          "{{langHint}}",
+          `Language: ${this.snapshot.lang}${this.snapshot.dir === "rtl" ? " (RTL)" : ""}`,
+        );
+      } else {
+        content = content.replace("{{langHint}}", "");
+      }
 
       // Scroll position indicator
       if (this.snapshot.scroll) {

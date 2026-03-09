@@ -21,6 +21,10 @@ export function buildSnapshot(
 
   const overflow = getOverflowMetadata();
 
+  // Detect page language and text direction from <html> attributes
+  const htmlLang = document.documentElement.lang?.split("-")[0]?.toLowerCase();
+  const htmlDir = document.documentElement.dir?.toLowerCase();
+
   const snapshot: DomSnapshot = {
     title: document.title,
     url: window.location.href,
@@ -36,6 +40,14 @@ export function buildSnapshot(
       viewportHeight: window.innerHeight,
     },
   };
+
+  // Add language info when present and non-English
+  if (htmlLang && htmlLang !== "en") {
+    snapshot.lang = htmlLang;
+  }
+  if (htmlDir === "rtl") {
+    snapshot.dir = "rtl";
+  }
 
   if (overflow) {
     snapshot.overflow = overflow;

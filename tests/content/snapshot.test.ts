@@ -31,4 +31,35 @@ describe("buildSnapshot", () => {
         const snapshot = buildSnapshot(true);
         expect(snapshot.visibleContent).toBeUndefined();
     });
+
+    test("captures non-English page language from <html lang>", () => {
+        document.documentElement.lang = "de";
+        const snapshot = buildSnapshot(true);
+        expect(snapshot.lang).toBe("de");
+        document.documentElement.lang = "";
+    });
+
+    test("omits lang for English pages", () => {
+        document.documentElement.lang = "en";
+        const snapshot = buildSnapshot(true);
+        expect(snapshot.lang).toBeUndefined();
+        document.documentElement.lang = "";
+    });
+
+    test("extracts base language from full locale tag", () => {
+        document.documentElement.lang = "pt-BR";
+        const snapshot = buildSnapshot(true);
+        expect(snapshot.lang).toBe("pt");
+        document.documentElement.lang = "";
+    });
+
+    test("captures RTL dir attribute", () => {
+        document.documentElement.lang = "ar";
+        document.documentElement.dir = "rtl";
+        const snapshot = buildSnapshot(true);
+        expect(snapshot.lang).toBe("ar");
+        expect(snapshot.dir).toBe("rtl");
+        document.documentElement.lang = "";
+        document.documentElement.dir = "";
+    });
 });
