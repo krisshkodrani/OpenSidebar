@@ -139,12 +139,16 @@ export class RecordingSession {
       : `Recording: ${finalName}`;
 
     const metrics: SessionMetrics = {
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
       totalTokens: 0,
       totalCost: 0,
-      llmTimeMs: 0,
-      sessionTimeMs: durationMs,
+      totalLlmTimeMs: 0,
+      totalSessionTimeMs: durationMs,
+      llmCallCount: 0,
+      totalCachedTokens: 0,
       modelBreakdown: {
-        recording: { calls: this.turnCount, tokens: 0, cost: 0 },
+        recording: { promptTokens: 0, completionTokens: 0, cost: 0, calls: this.turnCount },
       },
     };
 

@@ -67,6 +67,8 @@ export enum ToolName {
   RECALL_DEMO = "recall_demo",
   CLARIFY = "clarify",
   UPDATE_NOTES = "update_notes",
+  CREATE_WINDOW = "create_window",
+  UPDATE_PLAN = "update_plan",
 }
 
 /** Risk classification for a tool invocation */

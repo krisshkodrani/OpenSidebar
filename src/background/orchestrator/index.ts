@@ -166,7 +166,7 @@ export class Orchestrator {
         ((input: CreateAgentLoopInput) =>
           new AgentLoop(
             input.openRouterApiKey,
-            input.callbacks,
+            input.callbacks!,
             input.options,
           )),
       workspaceManager: deps.workspaceManager ?? workspaceManager,
@@ -188,7 +188,7 @@ export class Orchestrator {
   }
 
   private emitTraceEvent(
-    task: Pick<OrchestratorTask, "runId"> | null | undefined,
+    task: { runId?: string; id?: string; workspaceId?: string } | null | undefined,
     type: string,
     data?: Record<string, unknown>,
     role?: "planner" | "executor" | "verifier" | "system",
@@ -494,9 +494,10 @@ export class Orchestrator {
       lane === "executor" ? null : `${lane}-op-${crypto.randomUUID()}`;
     if (laneOperationId) {
       const pools = this.getWorkspaceLanePools(task.workspaceId);
+      const narrowedLane = lane as Exclude<RuntimeLane, "executor">;
       const op: LaneOperationInstance = {
         operationId: laneOperationId,
-        lane,
+        lane: narrowedLane,
         taskId: queued.taskId,
         workspaceId: queued.workspaceId,
         startedAt,
@@ -504,7 +505,7 @@ export class Orchestrator {
         label: queued.label,
         nodeId: queued.nodeId,
       };
-      pools[lane].set(laneOperationId, op);
+      (pools[narrowedLane] as Map<string, LaneOperationInstance>).set(laneOperationId, op);
       logger.debug("orchestrator", "Lane operation registered", {
         taskId: queued.taskId,
         workspaceId: queued.workspaceId,
@@ -1145,7 +1146,7 @@ export class Orchestrator {
           totalTimeMs:
             (task.finishedAt || Date.now()) -
             (task.startedAt || task.createdAt),
-          summary: this.buildCompletionSummary(task),
+          summary: this.buildProgrammaticSummary(task),
           subtaskResults,
           urlHistory: [],
           metrics: task.sessionMetrics,
@@ -1514,7 +1515,7 @@ export class Orchestrator {
     if (
       nodes.length >= 2 &&
       input.settings.requirePlanConfirmation !== false &&
-      task.status !== "stopped"
+      (task.status as string) !== "stopped"
     ) {
       const confirmation = await this.requestPlanConfirmation(
         task,
@@ -1526,7 +1527,7 @@ export class Orchestrator {
         task.planClassification?.difficulty,
       );
 
-      if (task.status === "stopped") return; // Stopped while waiting
+      if ((task.status as string) === "stopped") return; // Stopped while waiting
 
       if (confirmation.decision === "cancel") {
         task.status = "stopped";
@@ -1572,7 +1573,7 @@ export class Orchestrator {
       }
     }
 
-    if (task.status === "stopped") return;
+    if ((task.status as string) === "stopped") return;
 
     this.applyPreflightBudget(task);
     task.status = "running";
@@ -2676,7 +2677,7 @@ export class Orchestrator {
         const expanded = await this.tryHorizonExpansion(
           task,
           input,
-          replanner,
+          replanner as OrchestratorPlanner,
           getBudgetExhaustionReason,
         );
         if (expanded) continue;

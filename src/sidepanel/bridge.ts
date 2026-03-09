@@ -1,4 +1,4 @@
-﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
+﻿import { AgentStatus, RuntimeMessage, MessageSource, RiskLevel } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
 
@@ -246,9 +246,10 @@ export function initializeBridge(
           toolCalls: p.toolName
             ? [
                 {
-                  name: p.toolName,
-                  args: p.args ? JSON.stringify(p.args) : "{}",
+                  toolName: p.toolName,
+                  args: p.args ?? {},
                   result: p.result,
+                  riskLevel: RiskLevel.LOW,
                   durationMs: p.durationMs,
                 },
               ]
@@ -275,49 +276,22 @@ export function initializeBridge(
         break;
       }
 
-      // Messages from other sources (sidepanel->background, background->content, etc.)
-      // These are filtered by the source check above, but listed for exhaustiveness.
-      case "USER_CHAT":
-      case "STOP_AGENT":
-      case "SETTINGS_UPDATE":
-      case "SIDE_PANEL_OPENED":
-      case "APPROVAL_RESPONSE":
-      case "ESCALATION_DECISION":
-      case "PLAN_CONFIRMATION_RESPONSE":
-      case "CLARIFICATION_RESPONSE":
+      // Background-sourced messages not relevant to the side panel (sent to content script, etc.)
       case "TOOL_EXECUTE":
-      case "TOOL_RESULT":
       case "DOM_SNAPSHOT_REQUEST":
-      case "DOM_SNAPSHOT_RESPONSE":
       case "NAVIGATION_RESUME":
       case "DISMISS_MODALS":
-      case "DISMISS_MODALS_RESPONSE":
-      case "SKIP_SUBTASK":
-      case "PAUSE_AGENT":
-      case "RESUME_AGENT":
-      case "CONTENT_SCRIPT_READY":
       case "DOM_READY_PROBE":
-      case "DOM_READY_ACK":
-      case "DATA_CONTROL_REQUEST":
-      case "DATA_CONTROL_RESULT":
-      case "DEMO_RECORD_START":
-      case "DEMO_RECORD_STOP":
-      case "DEMO_ACTION_CAPTURED":
-      case "GOLDEN_ACTION":
-      case "GOLDEN_ANNOTATION":
-      case "MANUAL_TOOL_EXECUTE":
       case "SCROLL_TO_POSITION":
-      case "SCROLL_TO_POSITION_RESPONSE":
-      case "WORKSPACE_SYNC":
+      case "DATA_CONTROL_RESULT":
         break;
 
-      default: {
-        const _exhaustive: never = message;
-        logger.debug("ui", "Unknown message type", {
-          type: (_exhaustive as RuntimeMessage).type,
+      default:
+        // Non-exhaustive: other message types are filtered by source guard above
+        logger.debug("ui", "Unhandled message type", {
+          type: (message as RuntimeMessage).type,
         });
         break;
-      }
     }
   };
 

@@ -613,8 +613,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true; // async response
       }
 
-      if (message.type === "DEMO_RECORD_START") {
-        if (message.payload?.golden) {
+      // DEMO messages are forwarded from sidepanel via background, arriving with
+      // source=BACKGROUND at runtime but typed as SIDEPANEL in the union.
+      if ((message as any).type === "DEMO_RECORD_START") {
+        if ((message as any).payload?.golden) {
           startGoldenRecording();
         } else {
           startRecording();
@@ -623,9 +625,9 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true;
       }
 
-      if (message.type === "DEMO_RECORD_STOP") {
+      if ((message as any).type === "DEMO_RECORD_STOP") {
         // Check if we were in golden mode (payload.golden forwarded from background)
-        const actions = message.payload?.golden
+        const actions = (message as any).payload?.golden
           ? stopGoldenRecording()
           : stopRecording();
         sendResponse({ ok: true, actions });

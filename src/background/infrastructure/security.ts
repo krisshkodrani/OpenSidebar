@@ -20,7 +20,7 @@ export function classifyRisk(
  * Sanitizes a URL before navigation or tab creation.
  * Only allows http: and https: protocols.
  */
-export function sanitizeUrl(url: string): Result<string> {
+export function sanitizeUrl(url: string): Result<string, string> {
   try {
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) {

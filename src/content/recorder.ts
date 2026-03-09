@@ -44,10 +44,10 @@ function buildDomPath(el: Element): string {
   let current: Element | null = el;
   while (current && current !== document.documentElement) {
     let segment = current.tagName.toLowerCase();
-    const parent = current.parentElement;
+    const parent: Element | null = current.parentElement;
     if (parent) {
       const siblings = Array.from(parent.children).filter(
-        (c) => c.tagName === current!.tagName,
+        (c: Element) => c.tagName === current!.tagName,
       );
       if (siblings.length > 1) {
         const idx = siblings.indexOf(current) + 1;

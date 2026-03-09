@@ -112,6 +112,7 @@ export const NAVIGATE_DEF: ToolDefinition = {
           description: "Search query (uses default search engine).",
         },
       },
+      required: [],
     },
   },
 };
@@ -290,6 +291,7 @@ export const PRESS_KEY_DEF: ToolDefinition = {
           type: "array",
           items: {
             type: "string",
+            description: "A modifier key.",
             enum: ["ctrl", "shift", "alt", "meta"],
           },
           description:
@@ -391,7 +393,7 @@ export const CLARIFY_DEF: ToolDefinition = {
         },
         suggestions: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", description: "A suggested answer." },
           description: "Optional suggested answers for quick selection.",
         },
       },
@@ -725,6 +727,44 @@ export const RECALL_DEMO_DEF: ToolDefinition = {
         },
       },
       required: ["query"],
+    },
+  },
+};
+
+export const CREATE_WINDOW_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CREATE_WINDOW,
+    description:
+      "Open a new browser window. Used by the orchestrator for parallel lane execution.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Optional URL to open in the new window.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const UPDATE_PLAN_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.UPDATE_PLAN,
+    description:
+      "Update the current task plan with progress or revised steps. Intercepted by the agent loop to broadcast progress to the side panel.",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "Brief summary of progress or plan update.",
+        },
+      },
+      required: [],
     },
   },
 };

@@ -324,4 +324,6 @@ export type ToolArgsMap = {
   [ToolName.RECALL_DEMO]: RecallDemoArgs;
   [ToolName.CLARIFY]: ClarifyArgs;
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
+  [ToolName.CREATE_WINDOW]: Record<string, unknown>;
+  [ToolName.UPDATE_PLAN]: Record<string, unknown>;
 };

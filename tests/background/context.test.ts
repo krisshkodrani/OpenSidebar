@@ -160,7 +160,11 @@ describe("ContextManager", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
       expect(systemContent).toContain("at bottom of page");
-      expect(systemContent).not.toContain("more content below");
+      // The scroll indicator line should not contain "more content below"
+      // (Note: the phrase may appear elsewhere in the prompt as instructional text)
+      const scrollLine = systemContent.split("\n").find(l => l.includes("3000/3000px"));
+      expect(scrollLine).toBeDefined();
+      expect(scrollLine).not.toContain("more content below");
     });
 
     test("shows 'all content visible' when page fits viewport", () => {

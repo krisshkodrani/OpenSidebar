@@ -4,7 +4,7 @@
  * Pure functions: no side effects, no chrome APIs.
  */
 
-import type { GoldenAction, ToolName, DomSnapshot } from "../../types";
+import type { GoldenAction, DemoAction, ToolName, DomSnapshot } from "../../types";
 
 // --- Action → Tool Call Mapping ---
 
@@ -93,7 +93,7 @@ export function toolCallToGoldenAction(
     navigate: "navigate",
     hover_element: "hover",
   };
-  const actionType = typeMap[toolName] ?? "click";
+  const actionType = (typeMap[toolName] ?? "click") as DemoAction["type"];
   const tagId = typeof args.id === "number" ? args.id : null;
 
   return {
