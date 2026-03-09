@@ -295,11 +295,14 @@ export const MessageBubble = React.memo(function MessageBubble({
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
     let cleaned = message.content
+      // Strip ReAct-style reasoning blocks
       .replace(
         /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
         "",
       )
       .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
+      // Normalize literal \n escape sequences to real newlines
+      .replace(/\\n/g, "\n")
       .trim();
     if (!cleaned) return "";
     const extracted = extractJsonText(cleaned);

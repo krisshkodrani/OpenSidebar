@@ -74,7 +74,6 @@ chrome.sidePanel.setPanelBehavior({
 });
 
 // 5. State — per-workspace agent loops
-let pendingCloseTimer: ReturnType<typeof setTimeout> | null = null;
 const pendingSidePanelOpens = new Set<number>();
 const pendingUserChat = new Set<string>(); // per-workspace guard against concurrent USER_CHAT
 let demoActionCounter = 0;
@@ -284,12 +283,6 @@ async function handleSidePanelOpened(
 
 // Handle tab activation - show/hide panel based on workspace status
 chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
-  // Cancel any pending close from a previous rapid tab switch
-  if (pendingCloseTimer) {
-    clearTimeout(pendingCloseTimer);
-    pendingCloseTimer = null;
-  }
-
   const workspace = await workspaceManager.getWorkspaceForTab(tabId);
 
   if (workspace) {
@@ -313,30 +306,23 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
       });
     }
   } else {
-    // Tab is NOT in a workspace -> Disable/Close Side Panel
+    // Tab is NOT in a workspace -> Disable side panel for this tab.
+    // We intentionally do NOT send CLOSE_SIDE_PANEL / globalThis.close() here.
+    // Chrome hides the panel via setOptions({ enabled: false }), but the React
+    // app stays alive in memory so Zustand state (messages, progress, overlays)
+    // survives tab switches. The panel reappears with full context when the
+    // user returns to a workspace tab.
     try {
       await chrome.sidePanel.setOptions({
         tabId,
         enabled: false,
       });
-      // Debounce the close message so rapid workspace→non-workspace→workspace
-      // switches don't kill the panel with a stale CLOSE_SIDE_PANEL
-      pendingCloseTimer = setTimeout(() => {
-        pendingCloseTimer = null;
-        chrome.runtime
-          .sendMessage({
-            type: "CLOSE_SIDE_PANEL",
-            source: MessageSource.BACKGROUND,
-            payload: { tabId, windowId },
-          })
-          .catch(() => {});
-      }, 150);
 
-      logger.debug("sidebar", "Panel close scheduled for non-workspace tab", {
+      logger.debug("sidebar", "Panel disabled for non-workspace tab", {
         tabId,
       });
     } catch (e) {
-      logger.debug("sidebar", "Failed to close panel for non-workspace tab", {
+      logger.debug("sidebar", "Failed to disable panel for non-workspace tab", {
         tabId,
         error: e,
       });
@@ -349,16 +335,9 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   // Workspace auto-delete is handled by WorkspaceManager
   logger.debug("sidebar", "Tab closed", { tabId });
 
-  // Cancel any pending close from onActivated (the tab switch after removal
-  // will be handled fresh below or by the next onActivated)
-  if (pendingCloseTimer) {
-    clearTimeout(pendingCloseTimer);
-    pendingCloseTimer = null;
-  }
-
-  // Robustness: Check if the *currently active* tab is in a workspace.
-  // This handles edge cases where tab closure triggers a switch to a non-workspace tab
-  // but onActivated didn't catch it (e.g. race conditions or group deletions).
+  // Robustness: If the now-active tab is not in a workspace, disable the
+  // side panel for it. Same as onActivated — we do NOT destroy the panel,
+  // just let Chrome hide it so state is preserved across tab switches.
   try {
     const [activeTab] = await chrome.tabs.query({
       active: true,
@@ -370,27 +349,13 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       if (!workspace) {
         logger.debug(
           "sidebar",
-          "Active tab not in workspace after tab removal - enforcing close",
+          "Active tab not in workspace after tab removal - disabling panel",
           { activeTabId: activeTab.id },
         );
         await chrome.sidePanel.setOptions({
           tabId: activeTab.id,
           enabled: false,
         });
-        // Debounce close message (same as onActivated)
-        pendingCloseTimer = setTimeout(() => {
-          pendingCloseTimer = null;
-          chrome.runtime
-            .sendMessage({
-              type: "CLOSE_SIDE_PANEL",
-              source: MessageSource.BACKGROUND,
-              payload: {
-                tabId: activeTab.id!,
-                windowId: activeTab.windowId,
-              },
-            })
-            .catch(() => {});
-        }, 150);
       }
     }
   } catch (e) {
