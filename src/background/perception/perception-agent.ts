@@ -19,6 +19,7 @@ import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import { buildElementSummary } from "./perception";
+import type { TaggedElement } from "../../types";
 import type {
   ObservationEntry,
   ObserveInput,
@@ -161,6 +162,106 @@ function parseObservation(
     visualOnly: extractSection(text, "VISUAL-ONLY").slice(0, 150),
     fingerprint,
   };
+}
+
+// ---------------------------------------------------------------------------
+// AFFORDANCES validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate [N] tag IDs in the AFFORDANCES section of perception output against
+ * the actual element list. The VLM sometimes hallucinates tag-to-element mappings
+ * (sees a button in the screenshot, guesses it's [6] when [6] is actually a radio
+ * input). This validator strips or corrects wrong references so the agent doesn't
+ * click the wrong element.
+ */
+export function validatePerceptionTagIds(
+  interpretation: string,
+  elements: TaggedElement[],
+): string {
+  // Build a lookup: tag number → element description
+  const tagMap = new Map<number, TaggedElement>();
+  for (const el of elements) {
+    tagMap.set(el.tag, el);
+  }
+
+  // Find the AFFORDANCES section
+  const affordancesMatch = interpretation.match(
+    /(\d+\.\s*AFFORDANCES:\s*)([\s\S]*?)(?=\n\d+\.\s|\s*$)/i,
+  );
+  if (!affordancesMatch) return interpretation;
+
+  const prefix = affordancesMatch[1];
+  const body = affordancesMatch[2];
+
+  // Parse each [N] reference in the AFFORDANCES body
+  const lines = body.split("\n");
+  const correctedLines: string[] = [];
+  let correctionsMade = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Match lines like "[6] button 'In den Einkaufswagen'"
+    const tagRefMatch = trimmed.match(/^\[(\d+)\]\s+(.+)/);
+    if (!tagRefMatch) {
+      // Non-tagged line (e.g., "None.") — keep as-is
+      correctedLines.push(line);
+      continue;
+    }
+
+    const tagId = parseInt(tagRefMatch[1], 10);
+    const vlmDescription = tagRefMatch[2].trim();
+    const actualElement = tagMap.get(tagId);
+
+    if (!actualElement) {
+      // Tag ID doesn't exist in the element list — strip it
+      correctionsMade++;
+      continue;
+    }
+
+    // Check if the VLM description roughly matches the actual element.
+    // Compare tag name and first significant word of text content.
+    const actualDesc = `${actualElement.tagName} "${actualElement.text.slice(0, 40)}"`;
+    const vlmLower = vlmDescription.toLowerCase();
+    const actualTextLower = actualElement.text.toLowerCase().slice(0, 40);
+    const actualTagLower = actualElement.tagName.toLowerCase();
+
+    // Heuristic: the VLM description should mention either the actual tag name
+    // or at least part of the actual text content. If neither matches, flag it.
+    const tagNameMatch =
+      vlmLower.includes(actualTagLower) ||
+      (actualElement.role && vlmLower.includes(actualElement.role.toLowerCase()));
+    const textOverlap =
+      actualTextLower.length > 0 &&
+      (vlmLower.includes(actualTextLower.slice(0, 15)) ||
+        actualTextLower.includes(vlmLower.slice(0, 15)));
+
+    if (!tagNameMatch && !textOverlap && actualTextLower.length > 3) {
+      // Significant mismatch — replace with corrected description
+      correctedLines.push(`[${tagId}] ${actualDesc}`);
+      correctionsMade++;
+    } else {
+      correctedLines.push(line);
+    }
+  }
+
+  if (correctionsMade === 0) return interpretation;
+
+  // Rebuild the AFFORDANCES section
+  const correctedBody = correctedLines.length > 0
+    ? correctedLines.join("\n")
+    : "None (all VLM references were invalid).";
+
+  logger.warn("perception", "Corrected AFFORDANCES tag IDs", {
+    corrections: correctionsMade,
+  });
+
+  return interpretation.replace(
+    affordancesMatch[0],
+    prefix + correctedBody,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -366,7 +467,15 @@ export class PerceptionAgent {
       signal,
     );
 
-    // 6. Parse observation and update state
+    // 6. Validate AFFORDANCES tag IDs against actual elements
+    if (result.interpretation && !result.interpretation.startsWith("[")) {
+      result.interpretation = validatePerceptionTagIds(
+        result.interpretation,
+        input.elements,
+      );
+    }
+
+    // 7. Parse observation and update state
     if (result.interpretation && !result.interpretation.startsWith("[")) {
       const entry = parseObservation(
         result.interpretation,
@@ -425,10 +534,16 @@ export class PerceptionAgent {
         ? "\n(First observation — describe the current page layout and state instead of changes.)"
         : "";
 
+    // Language context for cross-lingual grounding
+    const langNote = input.lang
+      ? `Page language: ${input.lang}. Element text and labels are in ${input.lang}. Match [tagId] by checking the element list, not by guessing from the screenshot.\n`
+      : "";
+
     return renderPrompt("perception.interpret_page", {
       priorObservations,
       title: input.title || "Unknown",
       url: input.url || "Unknown",
+      langNote,
       scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
       elementSummary,
       panoramicNote,

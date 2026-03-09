@@ -1,7 +1,7 @@
 import "../setup";
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { perceive, parseCompletionSignal, buildPerceptionPrompt, type PerceptionInput, type PanoramicShot } from "../../src/background/perception";
-import { PerceptionAgent, formatPriorObservations } from "../../src/background/perception/perception-agent";
+import { PerceptionAgent, formatPriorObservations, validatePerceptionTagIds } from "../../src/background/perception/perception-agent";
 import type { ObservationEntry, ObserveInput } from "../../src/background/perception/types";
 import { computeSnapshotFingerprint, computeElementSignatures } from "../../src/background/agent/stagnation";
 import type { DomSnapshot, TaggedElement } from "../../src/types";
@@ -827,5 +827,92 @@ describe("formatPriorObservations()", () => {
         ];
         const result = formatPriorObservations(log);
         expect(result).toContain("Blockers: Cookie banner");
+    });
+});
+
+// ----- validatePerceptionTagIds Tests -----
+
+describe("validatePerceptionTagIds", () => {
+    const elements: TaggedElement[] = [
+        makeElement({ tag: 1, tagName: "button", text: "Submit" }),
+        makeElement({ tag: 6, tagName: "input", text: "Größe 3 (198 Stück)", role: "radio" }),
+        makeElement({ tag: 15, tagName: "input", text: "Größe 8 (24 Stück)", role: "radio" }),
+        makeElement({ tag: 20, tagName: "button", text: "In den Einkaufswagen" }),
+    ];
+
+    test("passes through correct AFFORDANCES unchanged", () => {
+        const interpretation = [
+            "1. LOCATION: Amazon product page",
+            "2. CHANGES: None.",
+            "3. BLOCKERS: None.",
+            "4. VISUAL-ONLY: None.",
+            '5. AFFORDANCES:\n[1] button "Submit"\n[20] button "In den Einkaufswagen"',
+        ].join("\n");
+
+        const result = validatePerceptionTagIds(interpretation, elements);
+        expect(result).toBe(interpretation);
+    });
+
+    test("corrects hallucinated tag-to-element mapping", () => {
+        // VLM says [6] is "In den Einkaufswagen" but actual [6] is "Größe 3 (198 Stück)" input
+        const interpretation = [
+            "1. LOCATION: Amazon product page",
+            "2. CHANGES: None.",
+            "3. BLOCKERS: None.",
+            "4. VISUAL-ONLY: None.",
+            '5. AFFORDANCES:\n[6] button "In den Einkaufswagen"\n[20] button "In den Einkaufswagen"',
+        ].join("\n");
+
+        const result = validatePerceptionTagIds(interpretation, elements);
+        // [6] should be corrected to show actual element description
+        expect(result).toContain('[6] input "Größe 3 (198 Stück)"');
+        // [20] is correct — should remain
+        expect(result).toContain("[20]");
+    });
+
+    test("strips non-existent tag IDs", () => {
+        const interpretation = [
+            "1. LOCATION: Test page",
+            "2. CHANGES: None.",
+            "3. BLOCKERS: None.",
+            "4. VISUAL-ONLY: None.",
+            '5. AFFORDANCES:\n[99] button "Ghost element"\n[1] button "Submit"',
+        ].join("\n");
+
+        const result = validatePerceptionTagIds(interpretation, elements);
+        expect(result).not.toContain("[99]");
+        expect(result).toContain("[1]");
+    });
+
+    test("passes through interpretation without AFFORDANCES section", () => {
+        const interpretation = "1. LOCATION: Test\n2. CHANGES: None.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.";
+        const result = validatePerceptionTagIds(interpretation, elements);
+        expect(result).toBe(interpretation);
+    });
+
+    test('handles "None." in AFFORDANCES', () => {
+        const interpretation = [
+            "1. LOCATION: Test",
+            "2. CHANGES: None.",
+            "3. BLOCKERS: None.",
+            "4. VISUAL-ONLY: None.",
+            "5. AFFORDANCES: None.",
+        ].join("\n");
+
+        const result = validatePerceptionTagIds(interpretation, elements);
+        expect(result).toBe(interpretation);
+    });
+
+    test("replaces all invalid refs with fallback message", () => {
+        const interpretation = [
+            "1. LOCATION: Test",
+            "2. CHANGES: None.",
+            "3. BLOCKERS: None.",
+            "4. VISUAL-ONLY: None.",
+            '5. AFFORDANCES:\n[99] fake button\n[100] another ghost',
+        ].join("\n");
+
+        const result = validatePerceptionTagIds(interpretation, elements);
+        expect(result).toContain("None (all VLM references were invalid)");
     });
 });
