@@ -12,7 +12,6 @@ const DEFAULT_FILTERS: TraceFilters = {
   from: isoDayOffset(6),
   to: todayIso(),
   domain: "",
-  sessionPrefix: "",
   mode: "all",
   model: "all",
   tier: "all",

@@ -6,6 +6,44 @@ interface TurnTimelineProps {
   entries: TraceEntry[];
 }
 
+/** Build a plain-text title string: "T3 · 1.2s · click [5]" */
+function buildTitle(entry: TraceEntry, turnNum: number): string {
+  const dur = entry.llmResponse?.durationMs ?? 0;
+  const tier = entry.llmRequest?.modelTier;
+  const parts: string[] = [`T${turnNum} · ${formatDuration(dur)}`];
+  if (tier) parts[0] += ` · ${tier}`;
+
+  const calls = entry.llmResponse?.toolCalls;
+  if (calls && calls.length > 0) {
+    for (const tc of calls) {
+      const name = tc.function.name;
+      try {
+        const args = JSON.parse(tc.function.arguments);
+        if (args.id != null) { parts.push(`${name} [${args.id}]`); continue; }
+        if (args.url) { parts.push(`${name} → ${args.url.slice(0, 40)}`); continue; }
+        if (args.direction) { parts.push(`${name} ${args.direction}`); continue; }
+        if (args.text) {
+          const t = args.text.length > 30 ? args.text.slice(0, 27) + "…" : args.text;
+          parts.push(`${name} "${t}"`);
+          continue;
+        }
+        if (args.key) { parts.push(`${name} ${args.key}`); continue; }
+        parts.push(name);
+      } catch {
+        parts.push(name);
+      }
+    }
+  } else {
+    const text = entry.llmResponse?.content;
+    if (text) {
+      const preview = text.length > 60 ? text.slice(0, 57) + "…" : text;
+      parts.push(`💬 ${preview}`);
+    }
+  }
+
+  return parts.join("\n");
+}
+
 export default function TurnTimeline({ entries }: TurnTimelineProps) {
   if (entries.length < 2) return null;
 
@@ -17,28 +55,25 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
       <div className="text-[10px] text-trace-muted uppercase tracking-wider mb-1.5 font-semibold">
         Turn Timeline
       </div>
-      <div className="flex gap-px h-6 rounded overflow-hidden bg-[rgba(68,64,60,0.3)]" title="Turn timeline — width = relative duration, color = model tier">
+      <div className="flex gap-px h-6 rounded overflow-hidden bg-[rgba(68,64,60,0.3)]">
         {entries.map((entry, i) => {
           const dur = entry.llmResponse?.durationMs ?? 0;
-          // Minimum width so every turn is visible
           const widthPct = Math.max((dur / maxDuration) * 100, 2);
           const tier = entry.llmRequest?.modelTier;
           const bgColor = tier === "planner"
             ? "bg-amber-500/60 hover:bg-amber-500/80"
             : "bg-cyan-500/50 hover:bg-cyan-500/70";
 
+          const turnNum = entry.turnNumber ?? i + 1;
+
           return (
             <a
               key={i}
-              href={`#turn-${entry.turnNumber ?? i + 1}`}
-              className={`${bgColor} transition-colors cursor-pointer relative group`}
+              href={`#turn-${turnNum}`}
+              className={`${bgColor} transition-colors cursor-pointer`}
               style={{ width: `${widthPct}%`, minWidth: "3px" }}
-              title={`Turn ${entry.turnNumber ?? i + 1} — ${formatDuration(dur)}${tier ? ` (${tier})` : ""}`}
-            >
-              <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] text-trace-muted opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                T{entry.turnNumber ?? i + 1}
-              </span>
-            </a>
+              title={buildTitle(entry, turnNum)}
+            />
           );
         })}
       </div>

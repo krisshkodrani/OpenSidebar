@@ -112,6 +112,7 @@ export default function TracesTab() {
       left={
         <>
           <TraceFilterPanel onFiltersChanged={refreshSessions} />
+          <div className="border-b border-trace-border" />
           {tracesError ? (
             <ErrorBanner
               message={`Failed to load sessions: ${tracesError}`}

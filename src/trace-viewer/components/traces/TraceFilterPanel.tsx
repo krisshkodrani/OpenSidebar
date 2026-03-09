@@ -52,9 +52,7 @@ export default function TraceFilterPanel({
   }, [sessions]);
 
   const [localDomain, setLocalDomain] = useState(filters.domain);
-  const [localSession, setLocalSession] = useState(filters.sessionPrefix);
   const debouncedDomain = useDebounce(localDomain, 250);
-  const debouncedSession = useDebounce(localSession, 250);
 
   useEffect(() => {
     if (debouncedDomain !== filters.domain) {
@@ -63,14 +61,6 @@ export default function TraceFilterPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedDomain]);
-
-  useEffect(() => {
-    if (debouncedSession !== filters.sessionPrefix) {
-      setFilter("sessionPrefix", debouncedSession);
-      onFiltersChanged();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSession]);
 
   const handleSelectChange = useCallback(
     (key: keyof typeof filters, value: string) => {
@@ -100,8 +90,6 @@ export default function TraceFilterPanel({
   if (filters.to) chips.push({ key: "to", label: `To: ${filters.to}` });
   if (filters.domain)
     chips.push({ key: "domain", label: `Website: ${filters.domain}` });
-  if (filters.sessionPrefix)
-    chips.push({ key: "session", label: `Session: ${filters.sessionPrefix}` });
   if (filters.mode !== "all")
     chips.push({ key: "mode", label: `Mode: ${filters.mode}` });
   if (filters.model !== "all")
@@ -118,10 +106,6 @@ export default function TraceFilterPanel({
       setFilter("domain", "");
       setLocalDomain("");
     }
-    if (key === "session") {
-      setFilter("sessionPrefix", "");
-      setLocalSession("");
-    }
     if (key === "mode") setFilter("mode", "all");
     if (key === "model") setFilter("model", "all");
     if (key === "tier") setFilter("tier", "all");
@@ -131,7 +115,6 @@ export default function TraceFilterPanel({
   const handleClearAll = () => {
     resetFilters();
     setLocalDomain("");
-    setLocalSession("");
     onFiltersChanged();
   };
 
@@ -139,192 +122,119 @@ export default function TraceFilterPanel({
     "w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent";
 
   return (
-    <div className="p-4 border-b border-trace-border shrink-0">
-      <h2 className="text-[15px] font-bold text-trace-text mb-1">
-        Trace Sessions
-      </h2>
-      <div className="text-[11px] text-trace-muted mb-3">
-        Agent execution traces
-      </div>
-
-      {/* Outcome + Mode row */}
-      <div className="flex gap-2 mb-2.5">
-        <div className="flex-1">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Outcome
-          </label>
-          <select
-            value={filters.outcome}
-            onChange={(e) => handleSelectChange("outcome", e.target.value)}
-            className={selectClass}
-          >
-            <option value="all">All</option>
-            {availableOutcomes.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label} ({o.count})
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className="px-3 pt-3 pb-2 shrink-0">
+      {/* Row 1: Outcome + Mode + Day */}
+      <div className="flex gap-1.5 mb-2">
+        <select
+          value={filters.outcome}
+          onChange={(e) => handleSelectChange("outcome", e.target.value)}
+          className={selectClass}
+        >
+          <option value="all">Outcome</option>
+          {availableOutcomes.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label} ({o.count})
+            </option>
+          ))}
+        </select>
         {availableModes.length > 0 && (
-          <div className="flex-1">
-            <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-              Mode
-            </label>
-            <select
-              value={filters.mode}
-              onChange={(e) => handleSelectChange("mode", e.target.value)}
-              className={selectClass}
-            >
-              <option value="all">All</option>
-              {availableModes.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label} ({m.count})
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={filters.mode}
+            onChange={(e) => handleSelectChange("mode", e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">Mode</option>
+            {availableModes.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label} ({m.count})
+              </option>
+            ))}
+          </select>
         )}
-      </div>
-
-      {/* Day + Model + Tier row */}
-      <div className="flex gap-2 mb-2.5">
-        <div className="flex-1">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Day
-          </label>
-          <select
-            value={filters.day}
-            onChange={(e) => {
-              if (e.target.value !== "all") {
-                setFilter("from", "");
-                setFilter("to", "");
-              }
-              handleSelectChange("day", e.target.value);
-            }}
-            className={selectClass}
-          >
-            <option value="all">All Days</option>
-            {availableDays.map((d) => (
-              <option key={d.day} value={d.day}>
-                {d.day} ({d.count})
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Model
-          </label>
-          <select
-            value={filters.model}
-            onChange={(e) => handleSelectChange("model", e.target.value)}
-            className={selectClass}
-          >
-            <option value="all">All Models</option>
-            {availableModels.map((m) => (
-              <option key={m.model} value={m.model}>
-                {shortModel(m.model)} ({m.count})
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Tier
-          </label>
-          <select
-            value={filters.tier}
-            onChange={(e) => handleSelectChange("tier", e.target.value)}
-            className={selectClass}
-          >
-            <option value="all">All Tiers</option>
-            <option value="executor">Executor</option>
-            <option value="planner">Planner</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Website + Session */}
-      <div className="flex gap-2">
-        <div className="flex-1 mb-2.5">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Website
-          </label>
-          <input
-            type="text"
-            value={localDomain}
-            onChange={(e) => setLocalDomain(e.target.value)}
-            placeholder="e.g. github.com"
-            className="w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim"
-          />
-        </div>
-        <div className="flex-1 mb-2.5">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            Session
-          </label>
-          <input
-            type="text"
-            value={localSession}
-            onChange={(e) => setLocalSession(e.target.value)}
-            placeholder="prefix"
-            className="w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim"
-          />
-        </div>
-      </div>
-
-      {/* Date range */}
-      <div className="flex gap-2">
-        <div className="flex-1 mb-2.5">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            From
-          </label>
-          <input
-            type="date"
-            value={filters.from}
-            onChange={(e) => {
-              if (e.target.value || filters.to) setFilter("day", "all");
-              handleSelectChange("from", e.target.value);
-            }}
-            className="w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent"
-          />
-        </div>
-        <div className="flex-1 mb-2.5">
-          <label className="block text-[11px] font-semibold text-trace-muted uppercase tracking-wider mb-1">
-            To
-          </label>
-          <input
-            type="date"
-            value={filters.to}
-            onChange={(e) => {
-              if (e.target.value || filters.from) setFilter("day", "all");
-              handleSelectChange("to", e.target.value);
-            }}
-            className="w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent"
-          />
-        </div>
-      </div>
-
-      {/* Presets */}
-      <div className="flex gap-1.5 mt-1">
-        <button
-          onClick={() => handleDatePreset(0, 0)}
-          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+        <select
+          value={filters.day}
+          onChange={(e) => {
+            if (e.target.value !== "all") {
+              setFilter("from", "");
+              setFilter("to", "");
+            }
+            handleSelectChange("day", e.target.value);
+          }}
+          className={selectClass}
         >
-          Today
-        </button>
-        <button
-          onClick={() => handleDatePreset(6, 0)}
-          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+          <option value="all">Day</option>
+          {availableDays.map((d) => (
+            <option key={d.day} value={d.day}>
+              {d.day} ({d.count})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Row 2: Model + Tier + Website */}
+      <div className="flex gap-1.5 mb-2">
+        <select
+          value={filters.model}
+          onChange={(e) => handleSelectChange("model", e.target.value)}
+          className={selectClass}
         >
-          7d
-        </button>
-        <button
-          onClick={() => handleDatePreset(29, 0)}
-          className="bg-trace-bg text-[#d6d3cc] border border-trace-border rounded px-2 py-1 text-[11px] cursor-pointer hover:border-trace-accent hover:text-trace-text"
+          <option value="all">Model</option>
+          {availableModels.map((m) => (
+            <option key={m.model} value={m.model}>
+              {shortModel(m.model)} ({m.count})
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.tier}
+          onChange={(e) => handleSelectChange("tier", e.target.value)}
+          className={selectClass}
         >
-          30d
-        </button>
+          <option value="all">Tier</option>
+          <option value="executor">Executor</option>
+          <option value="planner">Planner</option>
+        </select>
+        <input
+          type="text"
+          value={localDomain}
+          onChange={(e) => setLocalDomain(e.target.value)}
+          placeholder="Website"
+          className="w-full bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim"
+        />
+      </div>
+
+      {/* Row 3: Date range + presets */}
+      <div className="flex gap-1.5 items-center">
+        <input
+          type="date"
+          value={filters.from}
+          onChange={(e) => {
+            if (e.target.value || filters.to) setFilter("day", "all");
+            handleSelectChange("from", e.target.value);
+          }}
+          className="flex-1 min-w-0 bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent"
+        />
+        <span className="text-trace-dim text-[10px]">&ndash;</span>
+        <input
+          type="date"
+          value={filters.to}
+          onChange={(e) => {
+            if (e.target.value || filters.from) setFilter("day", "all");
+            handleSelectChange("to", e.target.value);
+          }}
+          className="flex-1 min-w-0 bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent"
+        />
+        <div className="flex gap-1 shrink-0">
+          {([["Today", 0], ["7d", 6], ["30d", 29]] as const).map(([label, days]) => (
+            <button
+              key={label}
+              onClick={() => handleDatePreset(days, 0)}
+              className="bg-trace-bg text-trace-subtle border border-trace-border rounded px-1.5 py-1 text-[10px] cursor-pointer hover:border-trace-accent hover:text-trace-text transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <FilterChips
