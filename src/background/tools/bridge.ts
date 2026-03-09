@@ -22,15 +22,47 @@ export function isBridgeDisconnect(errorMsg: string): boolean {
 
 /** Re-inject the content script into a tab after a bridge disconnect */
 export async function reinjectContentScript(tabId: number): Promise<boolean> {
+  // Attempt 1: file-based injection from manifest
   try {
     const manifest = chrome.runtime.getManifest();
     const files = manifest.content_scripts?.[0]?.js;
-    if (!files?.length) return false;
-    await chrome.scripting.executeScript({ target: { tabId }, files });
-    await waitForContentScriptReady(tabId, 3000);
+    if (files?.length) {
+      await chrome.scripting.executeScript({ target: { tabId }, files });
+      await waitForContentScriptReady(tabId, 3000);
+      return true;
+    }
+  } catch (e: any) {
+    logger.warn("tools", "File-based reinjection failed, trying tab reload", {
+      tabId,
+      error: e.message,
+    });
+  }
+
+  // Attempt 2: reload the tab so Chrome re-injects content scripts via manifest
+  // This handles CRXJS dev mode where the loader file can't be dynamically loaded
+  try {
+    await chrome.tabs.reload(tabId);
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        chrome.webNavigation?.onCompleted.removeListener(onNav);
+        chrome.webNavigation?.onErrorOccurred.removeListener(onNav);
+        clearTimeout(timer);
+        resolve();
+      };
+      const onNav = (details: { tabId: number; frameId: number }) => {
+        if (details.tabId === tabId && details.frameId === 0) done();
+      };
+      chrome.webNavigation?.onCompleted.addListener(onNav);
+      chrome.webNavigation?.onErrorOccurred.addListener(onNav);
+      const timer = setTimeout(done, 10_000);
+    });
+    await waitForContentScriptReady(tabId, 5000);
     return true;
   } catch (e: any) {
-    logger.error("tools", "Content script reinjection failed", {
+    logger.error("tools", "Content script reinjection failed (file + reload)", {
       tabId,
       error: e.message,
     });
