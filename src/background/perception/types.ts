@@ -35,6 +35,8 @@ export interface ObserveInput {
   scroll: { y: number; maxY: number; viewportHeight?: number };
   /** Lightweight page skeleton (headings, landmarks, status, text) */
   skeleton?: PageSkeletonNode[];
+  /** Page language from <html lang> (e.g., "de", "ja"). Omitted for English pages. */
+  lang?: string;
 }
 
 /** Additional viewport screenshot captured at a different scroll position */

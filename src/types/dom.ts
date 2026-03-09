@@ -10,6 +10,10 @@ export interface DomSnapshot {
   title: string;
   /** Current URL */
   url: string;
+  /** Page language from <html lang> attribute (e.g., "de", "ja", "ar") */
+  lang?: string;
+  /** Text direction — "rtl" for right-to-left languages (Arabic, Hebrew) */
+  dir?: "ltr" | "rtl";
   /** Array of tagged interactive elements */
   elements: TaggedElement[];
   /** Plain text content of the visible viewport (truncated) */

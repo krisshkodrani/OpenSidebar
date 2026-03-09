@@ -22,7 +22,7 @@ CRITICAL RULES:
 {{priorObservations}}
 
 Page: {{title}} ({{url}})
-Scroll: {{scrollPosition}}
+{{langNote}}Scroll: {{scrollPosition}}
 Interactive elements: {{elementSummary}}
 
 Report (use exact numbered format — no bold, no markdown):
@@ -40,5 +40,5 @@ Report (use exact numbered format — no bold, no markdown):
    Vague-CTA divs ("Click Me", "Try This!") = NUISANCE with their actual [tagId] as dismiss target.
    If none: "None."
 4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses. Not page text already in elements. If none: "None."
-5. AFFORDANCES: Key interactive elements in the current viewport. List up to 8 as: [tagId] brief description. Elements with @y hints are off-screen — note their position so the agent knows to scroll. Focus on elements relevant to common tasks (forms, buttons, navigation). If none: "None."
+5. AFFORDANCES: Key interactive elements in the current viewport. List up to 8 as: [tagId] brief description. Each [tagId] MUST come from the element list above — match the tag number to the actual element, not what you think the screenshot shows. Do NOT guess tag numbers from visual position. Elements with @y hints are off-screen — note their position so the agent knows to scroll. Focus on elements relevant to common tasks (forms, buttons, navigation). If none: "None."
 {{panoramicNote}}

@@ -115,14 +115,46 @@ class PerceptionWarmup {
 
       const fingerprint = computeSnapshotFingerprint(snapshot);
 
-      // 3. Take screenshot
+      // 3. Take screenshot (only if the tab is active — avoids black frames)
+      //    Scroll to top first so the VLM sees the page beginning, not wherever
+      //    the user happened to be scrolled. This matches refreshPerception() behavior.
       let screenshotUrl: string | null = null;
+      const originalScrollY = snapshot.scroll?.y ?? 0;
       try {
         const tab = await chrome.tabs.get(tabId);
-        screenshotUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-          format: "jpeg",
-          quality: 70,
-        });
+        if (tab.active) {
+          // Scroll to top if not already there
+          if (originalScrollY > 0) {
+            await chrome.tabs.sendMessage(tabId, {
+              type: "TOOL_EXECUTE",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              payload: {
+                tool: "scroll_page",
+                args: { y: 0 },
+              },
+            });
+            await new Promise((r) => setTimeout(r, 150));
+          }
+
+          screenshotUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+            format: "jpeg",
+            quality: 70,
+          });
+
+          // Restore original scroll position
+          if (originalScrollY > 0) {
+            await chrome.tabs.sendMessage(tabId, {
+              type: "TOOL_EXECUTE",
+              requestId: crypto.randomUUID(),
+              source: MessageSource.BACKGROUND,
+              payload: {
+                tool: "scroll_page",
+                args: { y: originalScrollY },
+              },
+            });
+          }
+        }
       } catch (e: any) {
         logger.warn("warmup", "Screenshot capture failed (non-fatal)", {
           tabId,
@@ -144,12 +176,17 @@ class PerceptionWarmup {
         return null;
       }
 
+      // Tell perception the screenshot is from y=0 if we scrolled to top
+      const scrollOverride = originalScrollY > 0
+        ? { ...snapshot.scroll, y: 0 }
+        : snapshot.scroll;
+
       const result = await perceive({
         screenshotDataUrl: screenshotUrl,
         elements: snapshot.elements,
         url: snapshot.url,
         title: snapshot.title,
-        scroll: snapshot.scroll,
+        scroll: scrollOverride,
       });
 
       const entry: WarmupEntry = {
