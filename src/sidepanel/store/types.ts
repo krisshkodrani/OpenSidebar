@@ -60,6 +60,7 @@ export interface AgentSlice {
   laneTelemetry: LaneTelemetrySnapshot | null;
   updateStatus: (status: AgentStatus, detail: string) => void;
   setAgentRunning: (isRunning: boolean) => void;
+  loadAgentStateFromStorage: () => Promise<void>;
   setTaskProgress: (payload: TaskProgressMessage["payload"]) => void;
   setTaskCompletion: (payload: TaskCompletionMessage["payload"]) => void;
   clearTaskProgress: () => void;
