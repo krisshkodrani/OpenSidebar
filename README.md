@@ -5,7 +5,7 @@
 <h1 align="center">OpenSidebar</h1>
 
 <p align="center">
-  <a href="https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/OpenSidebar/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node.js" /></a>
 </p>
