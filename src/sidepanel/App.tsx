@@ -8,7 +8,7 @@
  * State: Managed via Zustand store
  */
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { X, Sparkles } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
@@ -42,6 +42,23 @@ export default function App() {
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
   const setReady = useStore((s) => s.setReady);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
+  const isAgentRunning = useStore((s) => s.isAgentRunning);
+  // Memoize filtered messages — avoids re-running filter/map on every delta
+  const visibleMessages = useMemo(
+    () =>
+      messages.filter(
+        (msg) =>
+          msg.isPlanCard ||
+          msg.role === "user" ||
+          msg.isStreaming ||
+          msg.content.trim() ||
+          msg.toolCalls.length > 0 ||
+          msg.completionData ||
+          (msg.steps?.length ?? 0) > 0,
+      ),
+    [messages],
+  );
+
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
@@ -260,14 +277,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-scroll (throttled to max 10/sec, only when near bottom)
+  // Auto-scroll — uses message count + streaming flag as lightweight trigger
+  // instead of the full messages array reference (which changes on every delta).
+  const messageCount = useStore((s) => s.messages.length);
+  const isStreaming = useStore(
+    (s) => s.messages[s.messages.length - 1]?.isStreaming ?? false,
+  );
   useEffect(() => {
     if (scrollTimerRef.current) return;
     scrollTimerRef.current = setTimeout(() => {
       const el = scrollRef.current;
       if (el) {
-        // Only auto-scroll if user is within 150px of the bottom
-        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const distanceFromBottom =
+          el.scrollHeight - el.scrollTop - el.clientHeight;
         if (distanceFromBottom < 150) {
           el.scrollTop = el.scrollHeight;
         }
@@ -280,7 +302,7 @@ export default function App() {
         scrollTimerRef.current = null;
       }
     };
-  }, [messages]);
+  }, [messageCount, isStreaming]);
 
   // Auto-dismiss error after 8 seconds (persistent errors stay until user acts)
   const errorPersistent = useStore((s) => s.errorPersistent);
@@ -535,6 +557,16 @@ export default function App() {
   return (
     <ErrorBoundary>
     <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
+      {/* Ambient activity bar — thin animated gradient when agent is running */}
+      {isAgentRunning && (
+        <div
+          className="h-0.5 shrink-0 animate-shimmer"
+          style={{
+            background: "linear-gradient(90deg, transparent, var(--tw-gradient-via, #0d9488), transparent)",
+            backgroundSize: "200% 100%",
+          }}
+        />
+      )}
       <Header
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenSavedPrompts={() => {
@@ -629,24 +661,13 @@ export default function App() {
               </div>
             </div>
           ) : (
-            messages
-              .filter(
-                (msg) =>
-                  msg.isPlanCard ||
-                  msg.role === "user" ||
-                  msg.isStreaming ||
-                  msg.content.trim() ||
-                  msg.toolCalls.length > 0 ||
-                  msg.completionData ||
-                  (msg.steps?.length ?? 0) > 0,
-              )
-              .map((msg) =>
-                msg.isPlanCard ? (
-                  <PlanTimelineCard key={msg.id} />
-                ) : (
-                  <MessageBubble key={msg.id} message={msg} />
-                ),
-              )
+            visibleMessages.map((msg) =>
+              msg.isPlanCard ? (
+                <PlanTimelineCard key={msg.id} />
+              ) : (
+                <MessageBubble key={msg.id} message={msg} />
+              ),
+            )
           )}
         </div>
 

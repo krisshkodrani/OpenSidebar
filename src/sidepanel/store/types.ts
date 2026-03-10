@@ -28,6 +28,13 @@ export interface ChatSlice {
   appendStreamDelta: (delta: string) => void;
   replaceStreamContent: (content: string) => void;
   setStreamThinking: (thinking: string) => void;
+  applyStreamChunk: (chunk: {
+    delta?: string;
+    done?: boolean;
+    replaceContent?: string;
+    thinking?: string;
+    citations?: Citation[];
+  }) => void;
   finalizeStream: (citations?: Citation[]) => void;
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;

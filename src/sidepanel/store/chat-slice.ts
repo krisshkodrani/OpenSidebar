@@ -106,6 +106,76 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       }
     }),
 
+  /**
+   * Apply all STREAM_CHUNK fields in a single Zustand transaction to avoid
+   * multiple re-renders per message (replaceContent + thinking + done/delta
+   * used to trigger 2-3 separate set() calls).
+   */
+  applyStreamChunk: (chunk: {
+    delta?: string;
+    done?: boolean;
+    replaceContent?: string;
+    thinking?: string;
+    citations?: Citation[];
+  }) => {
+    set((state) => {
+      let last = state.messages[state.messages.length - 1];
+      let isStreaming = last?.role === "assistant" && last.isStreaming;
+
+      // Replace content (must come before delta append)
+      if (chunk.replaceContent !== undefined) {
+        if (isStreaming) {
+          last.content = chunk.replaceContent;
+        } else {
+          // No streaming message exists (e.g. task completion summary arriving
+          // after stream was already finalized) — create one so it's visible.
+          state.messages.push({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: chunk.replaceContent,
+            timestamp: Date.now(),
+            toolCalls: [],
+            isStreaming: true,
+          });
+          // Re-derive so subsequent done/thinking blocks see the new message
+          last = state.messages[state.messages.length - 1];
+          isStreaming = true;
+        }
+      }
+
+      // Thinking
+      if (chunk.thinking && last?.role === "assistant") {
+        last.thinking = chunk.thinking;
+      }
+
+      // Finalize or append
+      if (chunk.done) {
+        if (isStreaming) {
+          last.isStreaming = false;
+          if (chunk.citations && chunk.citations.length > 0) {
+            last.citations = chunk.citations;
+          }
+        }
+      } else if (chunk.delta) {
+        if (isStreaming) {
+          last.content += chunk.delta;
+        } else {
+          state.messages.push({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: chunk.delta,
+            timestamp: Date.now(),
+            toolCalls: [],
+            isStreaming: true,
+          });
+        }
+      }
+    });
+    if (chunk.done || chunk.replaceContent !== undefined || chunk.delta) {
+      persistMessages(get().messages, get().activeWorkspaceId);
+    }
+  },
+
   finalizeStream: (citations?: Citation[]) => {
     set((state) => {
       const last = state.messages[state.messages.length - 1];

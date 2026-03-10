@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
-import { StopCircle, ArrowUp, Play, ShieldAlert, Settings, ShieldCheck, ChevronDown, Check } from "lucide-react";
+import { ArrowUp, Play, ShieldAlert, ShieldCheck, ChevronDown, Check, Square } from "lucide-react";
 import { useStore } from "../store";
 import { StatusLine } from "./StatusLine";
 import { ApprovalOverlay } from "./ApprovalOverlay";
@@ -20,7 +20,7 @@ export function InputArea({
   onSendAnnotation,
   onManualCommand,
   onStop,
-  onOpenSettings,
+  onOpenSettings: _onOpenSettings,
 }: {
   onSend: (text: string) => void;
   onSendFeedback: (text: string) => void;
@@ -152,6 +152,20 @@ export function InputArea({
     }
   };
 
+  // Escape-to-stop: global keyboard shortcut
+  useEffect(() => {
+    if (!isAgentRunning) return;
+    const handler = (e: KeyboardEvent) => {
+      // Only stop on bare Escape (not when autocomplete is open or in overlay)
+      if (e.key === "Escape" && completions.length === 0) {
+        e.preventDefault();
+        onStop();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [isAgentRunning, onStop, completions.length]);
+
   // Approval overlay replaces the entire input area
   if (pendingApproval) {
     return (
@@ -186,7 +200,7 @@ export function InputArea({
     <div className="bg-warm-50 dark:bg-warm-900 relative border-t border-warm-200 dark:border-warm-800">
       <StatusLine />
       {/* Risk banner when autonomous mode is on */}
-      {autonomousMode && (
+      {autonomousMode && !isAgentRunning && (
         <div className="mx-2 mt-1 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
           <ShieldAlert size={12} className="shrink-0" />
           <span>Autonomous mode — agent acts without asking</span>
@@ -199,143 +213,180 @@ export function InputArea({
         </div>
       )}
       <div className="p-2">
-        <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
-          {completions.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg overflow-hidden z-50">
-              {completions.map((hint, i) => (
-                <button
-                  key={hint.name}
-                  className={clsx(
-                    "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2",
-                    i === selectedCompletion
-                      ? "bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                      : "text-warm-600 dark:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-700",
-                  )}
-                  onClick={() => {
-                    setInputText(hint.name + " ");
-                    setCompletions([]);
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  <span className="font-mono font-medium">{hint.name}</span>
-                  <span className="text-warm-400 dark:text-warm-500 truncate">
-                    {hint.description}
+        {/* Running-state panel: prominent stop + optional feedback input */}
+        {isAgentRunning ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 bg-warm-100 dark:bg-warm-800 px-3 py-2 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-60 animate-ping" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-500" />
                   </span>
-                </button>
-              ))}
-            </div>
-          )}
-          <textarea
-            ref={textareaRef}
-            value={inputText}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              demoRecording && !isAgentRunning
-                ? "Add annotation..."
-                : isAgentRunning
-                  ? "Reply to agent..."
-                  : "What can I help with?"
-            }
-            className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
-            rows={1}
-          />
-          <div className="flex items-end gap-1">
-            {/* Stop button — only when agent is running */}
-            {isAgentRunning && (
+                  <span className="text-xs font-medium text-warm-700 dark:text-warm-200 truncate">
+                    Working on your task...
+                  </span>
+                </div>
+              </div>
               <button
                 onClick={onStop}
-                className="p-1.5 mb-0.5 text-white rounded-lg transition-colors flex-shrink-0 bg-red-500 hover:bg-red-600"
-                aria-label="Stop generation"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+                aria-label="Stop agent"
               >
-                <StopCircle size={16} />
+                <Square size={12} fill="currentColor" />
+                Stop
               </button>
-            )}
-            {/* Send button — appears when text is present */}
-            {hasText && (
-              <button
-                onClick={handleSubmit}
-                className={clsx(
-                  "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
-                  demoRecording && !isAgentRunning
-                    ? "bg-primary-600 hover:bg-primary-700 text-white"
-                    : isAgentRunning
-                      ? "bg-amber-500 hover:bg-amber-600 text-white"
-                      : "bg-warm-700 hover:bg-warm-800 dark:bg-warm-300 dark:hover:bg-warm-200 text-white dark:text-warm-900",
-                )}
-                aria-label={
-                  demoRecording && !isAgentRunning
-                    ? "Send annotation"
-                    : isAgentRunning
-                      ? "Send feedback"
-                      : "Send message"
-                }
-              >
-                <ArrowUp size={16} />
-              </button>
-            )}
-          </div>
-        </div>
-        {/* Footer row: autonomy popover */}
-        <div className="flex items-center mt-1.5 px-1 relative">
-          <div className="relative">
-            <button
-              onClick={() => setAutonomyMenuOpen((v) => !v)}
-              className={clsx(
-                "flex items-center gap-1.5 text-[11px] py-0.5 px-1.5 rounded-md transition-colors",
-                autonomousMode
-                  ? "text-amber-700 dark:text-amber-300"
-                  : "text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200",
+            </div>
+            {/* Feedback input row */}
+            <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
+              <textarea
+                ref={textareaRef}
+                value={inputText}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Reply to agent..."
+                className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
+                rows={1}
+              />
+              {hasText && (
+                <button
+                  onClick={handleSubmit}
+                  className="w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white"
+                  aria-label="Send feedback"
+                >
+                  <ArrowUp size={16} />
+                </button>
               )}
-            >
-              {autonomousMode ? <Play size={10} className="shrink-0" /> : <ShieldCheck size={10} className="shrink-0" />}
-              <span>{autonomousMode ? "Act without asking" : "Ask before acting"}</span>
-              <ChevronDown size={10} className="shrink-0" />
-            </button>
-            {autonomyMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setAutonomyMenuOpen(false)} />
-                <div className="absolute bottom-full left-0 mb-1.5 w-64 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg z-50 overflow-hidden">
-                  <button
-                    onClick={() => { setAutonomyMode(false); setAutonomyMenuOpen(false); }}
-                    className={clsx(
-                      "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                      !autonomousMode
-                        ? "bg-warm-100 dark:bg-warm-700/50"
-                        : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                    )}
-                  >
-                    <ShieldCheck size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Ask before acting</div>
-                      <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent asks for approval before taking actions</div>
-                    </div>
-                    {!autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
-                  </button>
-                  <button
-                    onClick={() => { setAutonomyMode(true); setAutonomyMenuOpen(false); }}
-                    className={clsx(
-                      "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                      autonomousMode
-                        ? "bg-warm-100 dark:bg-warm-700/50"
-                        : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                    )}
-                  >
-                    <Play size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Act without asking</div>
-                      <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent takes actions without asking for permission</div>
-                    </div>
-                    {autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
-                  </button>
-                </div>
-              </>
-            )}
+            </div>
+            <p className="text-center text-[10px] text-warm-400 dark:text-warm-500 select-none">
+              Press <kbd className="px-1 py-0.5 rounded bg-warm-200/60 dark:bg-warm-700/60 text-warm-500 dark:text-warm-400 font-mono text-[9px]">Esc</kbd> to stop
+            </p>
           </div>
-        </div>
-        <p className="text-center text-[10px] text-warm-400 dark:text-warm-500 mt-1 select-none">
-          AI can make mistakes. Please double-check responses.
-        </p>
+        ) : (
+          <>
+            <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
+              {completions.length > 0 && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg overflow-hidden z-50">
+                  {completions.map((hint, i) => (
+                    <button
+                      key={hint.name}
+                      className={clsx(
+                        "w-full text-left px-3 py-1.5 text-xs flex items-center gap-2",
+                        i === selectedCompletion
+                          ? "bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+                          : "text-warm-600 dark:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-700",
+                      )}
+                      onClick={() => {
+                        setInputText(hint.name + " ");
+                        setCompletions([]);
+                        textareaRef.current?.focus();
+                      }}
+                    >
+                      <span className="font-mono font-medium">{hint.name}</span>
+                      <span className="text-warm-400 dark:text-warm-500 truncate">
+                        {hint.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={textareaRef}
+                value={inputText}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  demoRecording
+                    ? "Add annotation..."
+                    : "What can I help with?"
+                }
+                className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
+                rows={1}
+              />
+              <div className="flex items-end gap-1">
+                {/* Send button — appears when text is present */}
+                {hasText && (
+                  <button
+                    onClick={handleSubmit}
+                    className={clsx(
+                      "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
+                      demoRecording
+                        ? "bg-primary-600 hover:bg-primary-700 text-white"
+                        : "bg-warm-700 hover:bg-warm-800 dark:bg-warm-300 dark:hover:bg-warm-200 text-white dark:text-warm-900",
+                    )}
+                    aria-label={
+                      demoRecording
+                        ? "Send annotation"
+                        : "Send message"
+                    }
+                  >
+                    <ArrowUp size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Footer row: autonomy popover */}
+            <div className="flex items-center mt-1.5 px-1 relative">
+              <div className="relative">
+                <button
+                  onClick={() => setAutonomyMenuOpen((v) => !v)}
+                  className={clsx(
+                    "flex items-center gap-1.5 text-[11px] py-0.5 px-1.5 rounded-md transition-colors",
+                    autonomousMode
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200",
+                  )}
+                >
+                  {autonomousMode ? <Play size={10} className="shrink-0" /> : <ShieldCheck size={10} className="shrink-0" />}
+                  <span>{autonomousMode ? "Act without asking" : "Ask before acting"}</span>
+                  <ChevronDown size={10} className="shrink-0" />
+                </button>
+                {autonomyMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setAutonomyMenuOpen(false)} />
+                    <div className="absolute bottom-full left-0 mb-1.5 w-64 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                      <button
+                        onClick={() => { setAutonomyMode(false); setAutonomyMenuOpen(false); }}
+                        className={clsx(
+                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
+                          !autonomousMode
+                            ? "bg-warm-100 dark:bg-warm-700/50"
+                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
+                        )}
+                      >
+                        <ShieldCheck size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Ask before acting</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent asks for approval before taking actions</div>
+                        </div>
+                        {!autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                      </button>
+                      <button
+                        onClick={() => { setAutonomyMode(true); setAutonomyMenuOpen(false); }}
+                        className={clsx(
+                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
+                          autonomousMode
+                            ? "bg-warm-100 dark:bg-warm-700/50"
+                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
+                        )}
+                      >
+                        <Play size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Act without asking</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent takes actions without asking for permission</div>
+                        </div>
+                        {autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <p className="text-center text-[10px] text-warm-400 dark:text-warm-500 mt-1 select-none">
+              AI can make mistakes. Please double-check responses.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
