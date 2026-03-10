@@ -2749,7 +2749,7 @@ export class Orchestrator {
     // Uses replaceContent to ensure a single clean bubble regardless of what was
     // streamed during execution (intermediate reasoning, tool output, etc.).
     const summary = this.buildProgrammaticSummary(task);
-    if (summary) {
+    if (summary && !task._streamHasContent) {
       this.sendMessage({
         type: "STREAM_CHUNK",
         workspaceId: task.workspaceId,
