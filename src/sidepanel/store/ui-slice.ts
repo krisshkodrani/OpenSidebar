@@ -31,7 +31,7 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
     flushPersist(get().messages, currentId);
     set((state) => {
       state.activeWorkspaceId = id;
-      // Cross-slice: clear chat messages and agent transient state
+      // Cross-slice: clear chat messages and transient overlay state
       state.messages = [];
       state.taskProgress = null;
       state.taskCompletion = null;
@@ -43,15 +43,16 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       state.pendingClarification = null;
       state.taskRecovery = null;
       state.laneTelemetry = null;
-      // Reset agent running state — WORKSPACE_SYNC from background will
-      // re-set the correct state if an agent is running in the new workspace
+      // Reset to defaults — loadAgentStateFromStorage will override with
+      // persisted values, then WORKSPACE_SYNC corrects any staleness.
       state.isAgentRunning = false;
       state.agentStatus = AgentStatus.IDLE;
       state.statusDetail = "";
       state.sessionMetrics = null;
     });
-    // Load messages only for real workspace IDs.
+    // Load persisted state for the new workspace (messages + agent status).
     if (id != null) {
+      get().loadAgentStateFromStorage();
       get().loadMessagesFromStorage();
     }
   },

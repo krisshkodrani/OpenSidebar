@@ -40,6 +40,7 @@ export default function App() {
   const error = useStore((s) => s.error);
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
+  const loadAgentStateFromStorage = useStore((s) => s.loadAgentStateFromStorage);
   const setReady = useStore((s) => s.setReady);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
@@ -150,7 +151,8 @@ export default function App() {
         logger.warn("ui", "Failed to resolve workspace on mount", { error: e });
       }
 
-      // 4. Load messages (now workspace-aware)
+      // 4. Load persisted state (now workspace-aware)
+      await loadAgentStateFromStorage();
       await loadMessagesFromStorage();
       // 5. Load saved prompts
       await loadSavedPrompts();
@@ -222,7 +224,8 @@ export default function App() {
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
       const wsId = useStore.getState().activeWorkspaceId;
-      // Reload messages from storage (picks up background-persisted entries)
+      // Reload persisted state (picks up background-persisted entries)
+      loadAgentStateFromStorage();
       loadMessagesFromStorage();
       // Ask background to re-broadcast current status
       if (wsId) {

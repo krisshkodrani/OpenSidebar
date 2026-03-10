@@ -1,7 +1,35 @@
 import { AgentStatus } from "../../types";
-import type { AgentSlice, SliceCreator } from "./types";
+import { logger } from "../../utils";
+import type { AgentSlice, SliceCreator, Store } from "./types";
 
-export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
+// ── Per-workspace agent state persistence ──
+// Persists isAgentRunning + agentStatus + statusDetail so the side panel can
+// render the correct UI immediately on mount / workspace switch, before
+// WORKSPACE_SYNC arrives from the background service worker.
+
+function agentStateKey(wsId: string): string {
+  return `agentState:${wsId}`;
+}
+
+interface PersistedAgentState {
+  isRunning: boolean;
+  status: AgentStatus;
+  detail: string;
+}
+
+/** Write agent state to chrome.storage.local (fire-and-forget). */
+function persistAgentState(get: () => Store) {
+  const wsId = get().activeWorkspaceId;
+  if (wsId == null) return;
+  const data: PersistedAgentState = {
+    isRunning: get().isAgentRunning,
+    status: get().agentStatus,
+    detail: get().statusDetail,
+  };
+  chrome.storage.local.set({ [agentStateKey(wsId)]: data }).catch(() => {});
+}
+
+export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   agentStatus: AgentStatus.IDLE,
   statusDetail: "Ready",
   isAgentRunning: false,
@@ -17,16 +45,43 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set) => ({
   sessionMetrics: null,
   laneTelemetry: null,
 
-  updateStatus: (status, detail) =>
+  updateStatus: (status, detail) => {
     set((state) => {
       state.agentStatus = status;
       state.statusDetail = detail;
-    }),
+    });
+    persistAgentState(get);
+  },
 
-  setAgentRunning: (isRunning) =>
+  setAgentRunning: (isRunning) => {
     set((state) => {
       state.isAgentRunning = isRunning;
-    }),
+    });
+    persistAgentState(get);
+  },
+
+  loadAgentStateFromStorage: async () => {
+    const wsId = get().activeWorkspaceId;
+    if (wsId == null) return;
+    try {
+      const key = agentStateKey(wsId);
+      const result = await chrome.storage.local.get(key);
+      const stored = result[key] as PersistedAgentState | undefined;
+      if (stored) {
+        set((state) => {
+          state.isAgentRunning = stored.isRunning;
+          state.agentStatus = stored.status;
+          state.statusDetail = stored.detail;
+        });
+        logger.debug("ui", "Agent state restored from storage", {
+          isRunning: stored.isRunning,
+          status: stored.status,
+        });
+      }
+    } catch (e) {
+      logger.warn("ui", "Failed to load agent state from storage", { error: e });
+    }
+  },
 
   setTaskProgress: (payload) =>
     set((state) => {
