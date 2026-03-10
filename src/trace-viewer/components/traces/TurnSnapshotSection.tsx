@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { TraceEntry } from "../../../types/traces";
 import CollapsibleSection from "../CollapsibleSection";
+import PanoramicThumbnails from "./PanoramicThumbnails";
 
 interface TurnSnapshotSectionProps {
   snapshot: TraceEntry["snapshot"] | null;
@@ -10,6 +11,7 @@ interface TurnSnapshotSectionProps {
 export default function TurnSnapshotSection({ snapshot, perception }: TurnSnapshotSectionProps) {
   const [imgError, setImgError] = useState(false);
   const screenshotDataUrl = perception?.screenshotDataUrl;
+  const panoramicShots = perception?.panoramicShots;
 
   if (!snapshot?.url && !snapshot?.title && !screenshotDataUrl) return null;
 
@@ -32,6 +34,9 @@ export default function TurnSnapshotSection({ snapshot, perception }: TurnSnapsh
               loading="lazy"
               onError={() => setImgError(true)}
             />
+            {panoramicShots && panoramicShots.length > 0 && (
+              <PanoramicThumbnails shots={panoramicShots} />
+            )}
           </div>
         </CollapsibleSection>
       )}

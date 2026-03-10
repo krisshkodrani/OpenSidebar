@@ -1838,10 +1838,12 @@ export class AgentLoop {
             panoramicScreenshots = await this.capturePanoramicScreenshots(
               tabId,
               primaryScrollY,
-              // If we scrolled for orientation, restore to that position (not original)
-              primaryScrollY,
+              // Restore to user's original scroll position after panoramic capture
+              snapshot.scroll?.y,
             );
             if (panoramicScreenshots.length > 0) {
+              // Store on perception agent for retroactive T1 trace recording
+              this.perception.setPanoramicShots(panoramicScreenshots);
               this.log.info(
                 "agent",
                 "Panoramic perception: captured additional viewports",
@@ -1879,7 +1881,12 @@ export class AgentLoop {
 
           this.context.setPageInterpretation(result.interpretation);
           const elSummary = buildElementSummary(snapshot.elements, snapshot.skeleton);
-          await this.traceRecorder?.recordPerception(result, dataUrl, elSummary);
+          await this.traceRecorder?.recordPerception(
+            result,
+            dataUrl,
+            elSummary,
+            panoramicScreenshots,
+          );
 
           // Track usage for non-cached calls
           if (result.usage && !result.cached) {
@@ -2594,6 +2601,7 @@ export class AgentLoop {
             },
             this.perception.getLastScreenshot() || undefined,
             elSummary,
+            this.perception.getPanoramicShots() || undefined,
           );
         }
       }

@@ -131,6 +131,8 @@ export interface TraceEntry {
     cached: boolean;
     /** The element summary text that was sent to the vision model */
     elementSummary?: string;
+    /** Additional viewport screenshots from panoramic capture (first turn only) */
+    panoramicShots?: TracePanoramicShot[];
   };
   /** Mid-session runtime limit reassessment (only on reassessment turns) */
   limitReassessment?: {
@@ -140,6 +142,13 @@ export interface TraceEntry {
     changedLimits: Record<string, number>;
     reason: string;
   };
+}
+
+/** A panoramic screenshot captured at a different scroll position for trace recording */
+export interface TracePanoramicShot {
+  dataUrl: string;
+  scrollY: number;
+  label: string; // "top", "middle", "bottom"
 }
 
 /** A single tool execution within a trace turn */

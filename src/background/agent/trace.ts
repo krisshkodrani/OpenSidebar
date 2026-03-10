@@ -12,6 +12,7 @@ import {
   TraceSession,
   TraceLLMMessage,
   TraceContextMetrics,
+  TracePanoramicShot,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
@@ -231,6 +232,7 @@ export class TraceRecorder {
     },
     screenshotDataUrl?: string,
     elementSummary?: string,
+    panoramicShots?: TracePanoramicShot[],
   ): Promise<void> {
     if (!this.currentTurn) return;
     this.currentTurn.perception = {
@@ -241,6 +243,7 @@ export class TraceRecorder {
       cached: perception.cached,
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
       ...(elementSummary ? { elementSummary } : {}),
+      ...(panoramicShots?.length ? { panoramicShots } : {}),
     };
   }
 
