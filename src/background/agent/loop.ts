@@ -234,6 +234,8 @@ export class AgentLoop {
   private planner: TaskPlanner;
   /** Number of times done() has been rejected by the planner */
   private doneRejections = 0;
+  /** Whether read_page or xray_page has been called at least once this session */
+  private hasReadPage = false;
   /** Turns spent on the current plan step */
   private turnsOnCurrentStep = 0;
   /** Last plan index — used to detect step transitions */
@@ -2379,6 +2381,9 @@ export class AgentLoop {
     // Exploration budget: nudge after N consecutive exploration-only turns
     let consecutiveExplorationTurns = 0;
 
+    // Blind tool call detection: tool_calls present but no reasoning content
+    let consecutiveBlindToolTurns = 0;
+
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
     const recentOutcomes: { fingerprint: string; snapshotFp: string }[] = [];
@@ -2839,6 +2844,40 @@ export class AgentLoop {
       const rawContent = response.content;
       let cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
 
+      // Fix 2: Empty Response Circuit Breaker
+      // After retry loop exhausts, a truly empty response (no content AND no tool_calls)
+      // should exit immediately rather than degrading through the text-only flow.
+      if (!rawContent && (!response.tool_calls || response.tool_calls.length === 0)) {
+        this.log.error("agent", "Empty response after retries exhausted", {
+          turn: this.turnCount,
+        });
+        this.traceRecorder?.recordEvent("empty_response_circuit_breaker", {
+          turn: this.turnCount,
+        });
+        const errorMsg = "AI provider returned an empty response. Try again.";
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: errorMsg, done: false },
+        });
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: true },
+        });
+        this.statusHandler(AgentStatus.ERROR, "Empty response from provider");
+        await this.traceRecorder?.endTurn();
+        return {
+          outcome: "error" as const,
+          turnCount: this.turnCount,
+          summary: "AI provider returned an empty response",
+          failure: {
+            category: "provider" as const,
+            code: "empty_response",
+            detail: `Turn ${this.turnCount}: no content and no tool_calls after retry loop`,
+          },
+          metrics: this.getMetrics(),
+        };
+      }
+
       // Extract thinking content and broadcast to UI before any done:true
       const thinkingContent = rawContent
         ? extractThinkContent(rawContent)
@@ -2939,6 +2978,62 @@ export class AgentLoop {
       if (response.tool_calls && response.tool_calls.length > 0) {
         // ACTION REQUIRED
         consecutiveTextOnly = 0;
+
+        // Fix 1: Blind Tool Call Guard — track tool calls with no reasoning content
+        if (!cleanContent) {
+          consecutiveBlindToolTurns++;
+          if (consecutiveBlindToolTurns === 3) {
+            this.log.warn("agent", "Blind tool calls: 3 consecutive turns with no reasoning", {
+              turn: this.turnCount,
+            });
+            this.traceRecorder?.recordEvent("blind_tool_call_nudge", {
+              turn: this.turnCount,
+              consecutive: consecutiveBlindToolTurns,
+            });
+            this.context.addMessage({
+              role: "user",
+              content:
+                "WARNING: You have made 3 consecutive tool calls with no reasoning. " +
+                "Include your thinking before calling tools — explain what you observe and why you chose this action.",
+            });
+          } else if (consecutiveBlindToolTurns >= 5 && escalationTier < 1 && cooldownRemaining <= 0) {
+            this.log.warn("agent", "Blind tool calls: escalating after 5 consecutive", {
+              turn: this.turnCount,
+            });
+            this.traceRecorder?.recordEvent("blind_tool_call_escalation", {
+              turn: this.turnCount,
+              consecutive: consecutiveBlindToolTurns,
+            });
+            const blindAttemptSummary = extractAttemptSummary(this.context.getMessages());
+            this.escalateModel();
+            escalationTier = 1;
+            orientationPhase = false;
+            plannerModelStartTurn = this.turnCount;
+            await this.strategyPivot(tabId, blindAttemptSummary);
+            this.stagnation.resetEscalation();
+            this.context.addMessage({
+              role: "user",
+              content: ESCALATION_REFLECTION(
+                "consecutive blind tool calls with no reasoning content",
+              ),
+            });
+            consecutiveBlindToolTurns = 0;
+            recentSuccesses.length = 0;
+            this.stepHandler(
+              {
+                id: crypto.randomUUID(),
+                type: "info",
+                label: "Switching to smarter model (blind tool calls)",
+                status: "done",
+                timestamp: Date.now(),
+              },
+              false,
+            );
+          }
+        } else {
+          consecutiveBlindToolTurns = 0;
+        }
+
         const firstToolName = response.tool_calls[0].function.name;
         this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
 
@@ -3242,6 +3337,11 @@ export class AgentLoop {
                     status: "done",
                     durationMs: toolMs,
                   };
+                }
+
+                // Track read_page / xray_page for done() content verification guard
+                if (toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE) {
+                  this.hasReadPage = true;
                 }
 
                 // Cache store (Feature 1): cache successful results for cacheable tools
@@ -3550,6 +3650,54 @@ export class AgentLoop {
             // DONE tool — planner-validated exit
             if (toolName === ToolName.DONE) {
               const summary = (args.summary as string) || "Task completed.";
+
+              // Guard: reject done() on early turns when the summary looks like a question
+              // (model is asking for clarification instead of using the clarify tool)
+              if (this.turnCount <= 2 && summary.includes("?")) {
+                this.log.warn("agent", "DONE rejected: summary is a question on T1, redirecting to clarify", {
+                  turn: this.turnCount,
+                  summary: summary.slice(0, 150),
+                });
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    "done() REJECTED: Your summary is a question, not a completion report. " +
+                    "Use the clarify() tool to ask the user a question. " +
+                    "Do NOT call done() to ask questions.",
+                });
+                continue;
+              }
+
+              // Fix 3: Done() Content Verification Guard
+              // Reject done() if the agent never called read_page/xray_page and the page
+              // has substantive content — prevents hallucinated summaries from filename/URL alone.
+              if (!this.hasReadPage) {
+                const snap = this.context.getSnapshot();
+                const elementCount = snap?.elements?.length ?? 0;
+                const visibleLen = (snap?.visibleContent || snap?.pageContent || "").length;
+                if (elementCount > 5 && visibleLen > 100) {
+                  this.log.warn("agent", "DONE rejected: read_page never called on substantive page", {
+                    turn: this.turnCount,
+                    elementCount,
+                    visibleLen,
+                    summary: summary.slice(0, 150),
+                  });
+                  this.traceRecorder?.recordEvent("done_rejected_no_read", {
+                    turn: this.turnCount,
+                    elementCount,
+                    visibleLen,
+                  });
+                  this.context.addMessage({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content:
+                      "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
+                      "Do NOT summarize from the page title or URL alone.",
+                  });
+                  continue;
+                }
+              }
 
               // Planner validation: only when a plan exists
               if (this.taskId && this.planSubtasks.length > 0) {
@@ -4349,6 +4497,11 @@ export class AgentLoop {
                 status: "done",
                 durationMs: Date.now() - toolStep.timestamp,
               };
+            }
+
+            // Track read_page / xray_page for done() content verification guard
+            if (toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE) {
+              this.hasReadPage = true;
             }
 
             // Cache store (Feature 1): cache successful results for cacheable tools
