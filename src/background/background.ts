@@ -282,7 +282,7 @@ async function handleSidePanelOpened(
 }
 
 // Handle tab activation - show/hide panel based on workspace status
-chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
+chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
   const workspace = await workspaceManager.getWorkspaceForTab(tabId);
 
   if (workspace) {

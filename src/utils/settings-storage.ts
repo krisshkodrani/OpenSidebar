@@ -81,6 +81,6 @@ export async function loadApiKey(): Promise<string> {
       await chrome.storage.session.remove(SESSION_KEY);
       return key;
     }
-  } catch {}
+  } catch { /* empty */ }
   return "";
 }
