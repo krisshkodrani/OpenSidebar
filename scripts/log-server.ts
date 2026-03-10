@@ -7,7 +7,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, statSync, renameSync, unlinkSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, statSync, renameSync, unlinkSync, readFileSync, readdirSync } from "fs";
 import { appendFile, readFile, writeFile } from "fs/promises";
 import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -58,7 +58,7 @@ function parseJsonBody(req: IncomingMessage): Promise<any> {
  */
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -473,6 +473,34 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       sendJson(res, sessions);
     } catch (err) {
       sendText(res, `Error reading traces: ${err}`, 500);
+    }
+    return;
+  }
+
+  // DELETE /api/traces — delete all trace sessions, turn files, and screenshots
+  if (url.pathname === "/api/traces" && req.method === "DELETE") {
+    try {
+      let deleted = 0;
+      const removeDirFiles = (dir: string, filter: (f: string) => boolean) => {
+        if (!existsSync(dir)) return;
+        for (const file of readdirSync(dir)) {
+          if (filter(file)) {
+            try { unlinkSync(join(dir, file)); deleted++; } catch { /* ignore */ }
+          }
+        }
+      };
+      // Trace session files + index
+      removeDirFiles(TRACE_DIR, (f) => f.endsWith(".jsonl"));
+      // Screenshots
+      removeDirFiles(SCREENSHOT_DIR, () => true);
+      // Per-session log files (not the main log)
+      removeDirFiles(LOG_DIR, (f) => f.startsWith("session-") && f.endsWith(".jsonl"));
+      // Run traces
+      removeDirFiles(RUN_TRACE_DIR, (f) => f.endsWith(".jsonl"));
+
+      sendJson(res, { deleted });
+    } catch (err) {
+      sendText(res, `Delete error: ${err}`, 500);
     }
     return;
   }

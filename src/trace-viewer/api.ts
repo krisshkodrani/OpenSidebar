@@ -48,6 +48,10 @@ export function screenshotUrl(sessionId: string, turn: number): string {
   return `/api/traces/${encodeURIComponent(sessionId)}/screenshots/${turn}`;
 }
 
+export async function deleteAllTraces(): Promise<{ deleted: number }> {
+  return fetchJson("/api/traces", { method: "DELETE" });
+}
+
 export async function fetchSessionLogs(
   sessionId: string,
   level?: string,

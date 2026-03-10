@@ -121,7 +121,7 @@ export default function TracesTab() {
             />
           ) : (
             <>
-              <CostDashboard sessions={sessions} />
+              <CostDashboard sessions={sessions} onDeleted={refreshSessions} />
               <TraceSessionList />
             </>
           )}
