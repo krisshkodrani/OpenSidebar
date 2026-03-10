@@ -164,7 +164,7 @@ function StepRow({ step }: { step: AgentStep }) {
   );
 }
 
-export function StepTimeline({
+export const StepTimeline = React.memo(function StepTimeline({
   steps,
 }: {
   steps: AgentStep[];
@@ -181,4 +181,4 @@ export function StepTimeline({
       </div>
     </div>
   );
-}
+});

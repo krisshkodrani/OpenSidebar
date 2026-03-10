@@ -128,19 +128,8 @@ export function initializeBridge(
         break;
 
       case "STREAM_CHUNK": {
-        const { delta, done, citations, replaceContent, thinking } =
-          message.payload;
-        if (replaceContent !== undefined) {
-          state.replaceStreamContent(replaceContent);
-        }
-        if (thinking) {
-          state.setStreamThinking(thinking);
-        }
-        if (done) {
-          state.finalizeStream(citations);
-        } else if (delta) {
-          state.appendStreamDelta(delta);
-        }
+        // Single transaction — avoids 2-3 separate re-renders per chunk
+        state.applyStreamChunk(message.payload);
         break;
       }
 
