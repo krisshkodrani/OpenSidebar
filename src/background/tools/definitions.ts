@@ -197,7 +197,7 @@ export const DONE_DEF: ToolDefinition = {
   function: {
     name: ToolName.DONE,
     description:
-      "Signal task completion or answer the user's question with a summary.",
+      "Signal task completion or answer the user's question with a summary. NEVER use done() to ask the user a question — use clarify() instead.",
     parameters: {
       type: "object",
       properties: {
