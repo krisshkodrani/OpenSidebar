@@ -3,6 +3,7 @@ import type { TraceEntry } from "../../../types/traces";
 import Badge from "../Badge";
 import { screenshotUrl } from "../../api";
 import { truncate } from "../../utils";
+import PanoramicThumbnails from "./PanoramicThumbnails";
 
 interface PerceptionCardProps {
   entry: TraceEntry;
@@ -64,6 +65,9 @@ export default function PerceptionCard({
             <div className="bg-[rgba(68,64,60,0.3)] border border-dashed border-[rgba(68,64,60,0.6)] rounded p-8 text-center text-trace-dim text-xs">
               Screenshot not available
             </div>
+          )}
+          {p.panoramicShots && p.panoramicShots.length > 0 && (
+            <PanoramicThumbnails shots={p.panoramicShots} />
           )}
           {elementText && (
             <div className="text-[11px] text-trace-muted font-mono max-h-[400px] overflow-y-auto leading-normal whitespace-pre-wrap break-all">

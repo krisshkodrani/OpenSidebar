@@ -278,6 +278,8 @@ export class PerceptionAgent {
   private _turnCounter = 0;
   private _lastInterpretation: string | null = null;
   private _lastObservedUrl = "";
+  /** Stored panoramic shots from first-turn capture (for retroactive T1 trace recording) */
+  private _lastPanoramicShots: PanoramicShot[] | null = null;
 
   // -------------------------------------------------------------------------
   // Public API — state accessors
@@ -301,6 +303,14 @@ export class PerceptionAgent {
 
   markPanoramicDone(): void {
     this._hasRunPanoramicPerception = true;
+  }
+
+  getPanoramicShots(): PanoramicShot[] | null {
+    return this._lastPanoramicShots;
+  }
+
+  setPanoramicShots(shots: PanoramicShot[] | null): void {
+    this._lastPanoramicShots = shots;
   }
 
   /** Force next observe() to re-interpret even if fingerprint matches. */
@@ -349,6 +359,7 @@ export class PerceptionAgent {
     this._turnCounter = 0;
     this._lastInterpretation = null;
     this._lastObservedUrl = "";
+    this._lastPanoramicShots = null;
   }
 
   /** Serialize state for cross-navigation persistence. */
