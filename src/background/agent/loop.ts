@@ -89,6 +89,7 @@ import {
   buildFailureBrief,
   buildFailureRecovery,
   buildHandoffBriefing,
+  classifyTurnError,
   detectInstructionContradiction,
   extractAttemptSummary,
   findPriorFailure,
@@ -96,10 +97,13 @@ import {
   getSnapshotFingerprint,
   isFillerText,
   isHallucinatedToolCall,
+  MAX_TURN_RETRIES,
   normalizeOutcome,
   preflightElementCheck,
   RecentAction,
+  RETRYABLE_ERRORS,
   SubgoalAttempt,
+  TURN_RETRY_BACKOFF_MS,
   userExplicitlyRequestedTabManagement,
   validateElementIds,
 } from "./loop-helpers";
@@ -2509,7 +2513,8 @@ export class AgentLoop {
       this.context.setTimeContext(this.turnCount, this.maxTurns, this.sessionStartTime);
 
       // 1. LLM Inference (streamed)
-      const messages = this.context.getPrompt();
+      // `let` because retry loop may append diagnostic hints (cleaned up after)
+      let messages = this.context.getPrompt();
       const allTools = toolRegistry.getDefinitions(this.disabledTools);
       // Apply tool profile filtering for current plan step
       const tools = this.applyToolProfile(allTools);
@@ -2603,101 +2608,205 @@ export class AgentLoop {
       };
       this.stepHandler(thinkingStep, false);
 
-      // Per-turn AbortController: allows aborting just this turn (e.g. on hallucination)
-      // while keeping the main loop alive
-      const turnAbortController = new AbortController();
-      const onMainAbort = () => turnAbortController.abort();
-      this.abortController!.signal.addEventListener("abort", onMainAbort);
-
-      // Always stream deltas to side panel, with hallucination detection
-      const onTextDelta = (delta: string) => {
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta, done: false },
-        });
-        // Accumulate streamed text for hallucination detection
-        streamedTextAccumulator += delta;
-        if (
-          !hallucinationDetected &&
-          streamedTextAccumulator.length > 150 &&
-          isHallucinatedToolCall(streamedTextAccumulator)
-        ) {
-          hallucinationDetected = true;
-          this.log.warn(
-            "agent",
-            "Hallucinated tool call detected, aborting stream",
-            {
-              turn: this.turnCount,
-              textLen: streamedTextAccumulator.length,
-            },
-          );
-          turnAbortController.abort();
-        }
-      };
-
+      // ── LLM call with bounded retry loop ──
+      // Retries hallucinations, network errors, and empty responses up to MAX_TURN_RETRIES.
+      // Non-retryable errors (user abort, 402, bad request) exit immediately.
       const llmStart = Date.now();
       let response: CompletionResponse;
-      try {
-        response = await this.llm.completeStream(
-          {
-            messages,
-            tools,
-            max_tokens: LLM_CONFIG.MAX_TOKENS,
-            stop: ["Observation:"], // ReAct pattern stop token just in case
-            signal: turnAbortController.signal,
-          },
-          onTextDelta,
-        );
-      } catch (llmError: any) {
-        // Hallucination abort: synthesize a response from accumulated text
-        if (hallucinationDetected && llmError.name === "AbortError") {
-          this.traceRecorder?.recordEvent("hallucination_detected", {
-            turn: this.turnCount,
-            textLen: streamedTextAccumulator.length,
-          });
-          // Clear the hallucinated garbage from the chat stream
+      let turnRetryCount = 0;
+
+      // eslint-disable-next-line no-constant-condition
+      retryLoop: while (true) {
+        // Reset per-attempt streaming state
+        streamedTextAccumulator = "";
+        hallucinationDetected = false;
+
+        // Per-turn AbortController: allows aborting just this turn (e.g. on hallucination)
+        // while keeping the main loop alive. Recreated on each retry attempt.
+        const turnAbortController = new AbortController();
+        const onMainAbort = () => turnAbortController.abort();
+        this.abortController!.signal.addEventListener("abort", onMainAbort);
+
+        // Always stream deltas to side panel, with hallucination detection
+        const onTextDelta = (delta: string) => {
           this.broadcast({
             type: "STREAM_CHUNK",
-            payload: { delta: "", done: false, replaceContent: "" },
+            payload: { delta, done: false },
           });
-          response = {
-            role: "assistant",
-            content: streamedTextAccumulator,
-            tool_calls: undefined,
-            finish_reason: "stop",
-          };
-        } else if (llmError.name === "AbortError") {
-          throw llmError;
-        } else if ((llmError as any).status === 402) {
-          const msg = "Your OpenRouter account has insufficient credits. " +
-            "Please add credits at openrouter.ai/credits and try again.";
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: msg, done: false },
-          });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
-          this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
-          return {
-            outcome: "error" as const,
-            turnCount: this.turnCount,
-            summary: "Insufficient OpenRouter credits",
-            failure: {
-              category: "provider" as const,
-              code: "credits_exhausted",
-              detail: "HTTP 402 from OpenRouter",
+          // Accumulate streamed text for hallucination detection
+          streamedTextAccumulator += delta;
+          if (
+            !hallucinationDetected &&
+            streamedTextAccumulator.length > 150 &&
+            isHallucinatedToolCall(streamedTextAccumulator)
+          ) {
+            hallucinationDetected = true;
+            this.log.warn(
+              "agent",
+              "Hallucinated tool call detected, aborting stream",
+              {
+                turn: this.turnCount,
+                textLen: streamedTextAccumulator.length,
+              },
+            );
+            turnAbortController.abort();
+          }
+        };
+
+        try {
+          response = await this.llm.completeStream(
+            {
+              messages,
+              tools,
+              max_tokens: LLM_CONFIG.MAX_TOKENS,
+              stop: ["Observation:"], // ReAct pattern stop token just in case
+              signal: turnAbortController.signal,
             },
-            metrics: this.getMetrics(),
-          };
+            onTextDelta,
+          );
+
+          // Check for empty response (retryable)
+          if (!response.content && (!response.tool_calls || response.tool_calls.length === 0)) {
+            if (turnRetryCount < MAX_TURN_RETRIES && RETRYABLE_ERRORS.has("empty_response")) {
+              turnRetryCount++;
+              this.log.warn("agent", "Empty LLM response, retrying", {
+                turn: this.turnCount, retry: turnRetryCount,
+              });
+              this.broadcast({
+                type: "STREAM_CHUNK",
+                payload: { delta: "", done: false, replaceContent: "" },
+              });
+              this.stepHandler({
+                id: crypto.randomUUID(), type: "info",
+                label: `Retrying (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
+                status: "running", timestamp: Date.now(),
+              }, false);
+              this.traceRecorder?.recordEvent("turn_retry", {
+                turn: this.turnCount, retry: turnRetryCount, errorClass: "empty_response",
+              });
+              const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+              if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
+              this.abortController?.signal.removeEventListener("abort", onMainAbort);
+              continue retryLoop;
+            }
+          }
+
+          // Success — exit retry loop
+          this.abortController?.signal.removeEventListener("abort", onMainAbort);
+          break;
+
+        } catch (llmError: any) {
+          // Always clean up the main abort listener
+          this.abortController?.signal.removeEventListener("abort", onMainAbort);
+
+          const errorClass = classifyTurnError(llmError, hallucinationDetected);
+
+          // Non-retryable: user abort — propagate immediately
+          if (errorClass === "user_abort" && !hallucinationDetected) {
+            throw llmError;
+          }
+
+          // Non-retryable: insufficient credits
+          if (errorClass === "credits_exhausted") {
+            const msg = "Your OpenRouter account has insufficient credits. " +
+              "Please add credits at openrouter.ai/credits and try again.";
+            this.broadcast({
+              type: "STREAM_CHUNK",
+              payload: { delta: msg, done: false },
+            });
+            this.broadcast({
+              type: "STREAM_CHUNK",
+              payload: { delta: "", done: true },
+            });
+            this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
+            return {
+              outcome: "error" as const,
+              turnCount: this.turnCount,
+              summary: "Insufficient OpenRouter credits",
+              failure: {
+                category: "provider" as const,
+                code: "credits_exhausted",
+                detail: "HTTP 402 from OpenRouter",
+              },
+              metrics: this.getMetrics(),
+            };
+          }
+
+          // Retryable errors: hallucination, network
+          if (turnRetryCount < MAX_TURN_RETRIES && RETRYABLE_ERRORS.has(errorClass)) {
+            turnRetryCount++;
+            this.log.warn("agent", `Turn error (${errorClass}), retrying`, {
+              turn: this.turnCount, retry: turnRetryCount,
+            });
+
+            // Clear any garbage streamed to UI
+            this.broadcast({
+              type: "STREAM_CHUNK",
+              payload: { delta: "", done: false, replaceContent: "" },
+            });
+
+            // Show retry step in timeline
+            this.stepHandler({
+              id: crypto.randomUUID(), type: "info",
+              label: `Retrying (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
+              status: "running", timestamp: Date.now(),
+            }, false);
+
+            this.traceRecorder?.recordEvent("turn_retry", {
+              turn: this.turnCount, retry: turnRetryCount, errorClass,
+            });
+
+            // Inject diagnostic hint for hallucination retries
+            if (errorClass === "hallucination") {
+              this.traceRecorder?.recordEvent("hallucination_detected", {
+                turn: this.turnCount, textLen: streamedTextAccumulator.length,
+              });
+              messages = [...messages, {
+                role: "user" as const,
+                content: "[System] Your previous response contained raw JSON instead of a proper tool call. " +
+                  "Use the tool_calls API to invoke tools. Do not emit JSON as text.",
+              }];
+            }
+
+            // Invalidate perception cache (force fresh observation on retry)
+            this.perception.invalidateCache();
+
+            const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+            if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
+            continue retryLoop;
+          }
+
+          // Retries exhausted for hallucination — fall through with synthesized response
+          if (hallucinationDetected) {
+            this.traceRecorder?.recordEvent("hallucination_detected", {
+              turn: this.turnCount,
+              textLen: streamedTextAccumulator.length,
+            });
+            // Clear the hallucinated garbage from the chat stream
+            this.broadcast({
+              type: "STREAM_CHUNK",
+              payload: { delta: "", done: false, replaceContent: "" },
+            });
+            response = {
+              role: "assistant",
+              content: streamedTextAccumulator,
+              tool_calls: undefined,
+              finish_reason: "stop",
+            };
+            break;
+          }
+
+          throw llmError;
         }
-        throw llmError;
-      } finally {
-        // Always clean up the main abort listener — prevents leak on all paths
-        // (success, hallucination recovery, 402 return, and re-thrown errors)
-        this.abortController?.signal.removeEventListener("abort", onMainAbort);
+      } // end retryLoop
+
+      // Clean up diagnostic hints injected during retries (don't pollute history)
+      if (turnRetryCount > 0) {
+        messages = messages.filter(
+          (m) => !(m.role === "user" && typeof m.content === "string" && m.content.startsWith("[System] Your previous response")),
+        );
       }
+
       const llmMs = Date.now() - llmStart;
 
       // Accumulate token usage and broadcast metrics

@@ -375,6 +375,56 @@ export function isHallucinatedToolCall(text: string): boolean {
   return false;
 }
 
+// ── Turn-level error classification for retry decisions ──
+
+export type TurnErrorClass =
+  | "hallucination"
+  | "network"
+  | "empty_response"
+  | "credits_exhausted"
+  | "user_abort"
+  | "bad_request"
+  | "unknown";
+
+/** Retryable error classes (up to MAX_TURN_RETRIES). */
+export const RETRYABLE_ERRORS = new Set<TurnErrorClass>([
+  "hallucination",
+  "network",
+  "empty_response",
+]);
+
+/** Max retries per turn before falling through to escalation path. */
+export const MAX_TURN_RETRIES = 2;
+
+/** Backoff delays in ms for each retry attempt (index = retryCount - 1). */
+export const TURN_RETRY_BACKOFF_MS = [0, 500];
+
+/**
+ * Classify a turn-level error for retry decisions.
+ * Called inside the LLM call catch block and after empty-response detection.
+ */
+export function classifyTurnError(
+  error: unknown,
+  hallucinationDetected: boolean,
+): TurnErrorClass {
+  if (hallucinationDetected) return "hallucination";
+
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return "user_abort";
+  }
+
+  // HTTP status-based classification
+  const status = (error as any)?.status;
+  if (status === 402) return "credits_exhausted";
+  if (status === 400 || status === 422) return "bad_request";
+  if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) return "network";
+
+  // Fetch/network failures
+  if (error instanceof TypeError && error.message.includes("fetch")) return "network";
+
+  return "unknown";
+}
+
 /**
  * Build a compact summary of what the agent tried before a strategy pivot.
  * Includes both successes and failures so the next model knows what was
