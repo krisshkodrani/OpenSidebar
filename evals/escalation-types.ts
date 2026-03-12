@@ -5,7 +5,7 @@
  * planner model recovers using distilled context.
  */
 
-import type { E2EElement } from "./e2e-types";
+import type { E2EElement } from "./types";
 
 /** Shape of a curated escalation golden case */
 export interface EscalationGoldenCase {

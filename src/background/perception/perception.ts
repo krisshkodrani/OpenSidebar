@@ -327,7 +327,10 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
         "HTTP-Referer": "chrome-extension://opensidebar",
         "X-Title": "OpenSidebar",
       },
-      model: settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL,
+      model: (() => {
+        const base = settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL;
+        return settings.useNitro && !base.endsWith(":nitro") ? `${base}:nitro` : base;
+      })(),
       providerId: "openrouter",
     });
   }

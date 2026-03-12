@@ -425,6 +425,28 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </div>
               </section>
 
+              {/* NITRO TOGGLE */}
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Use Nitro
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Route all models through faster :nitro endpoints
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formState.useNitro)}
+                    onChange={(e) =>
+                      handleChange("useNitro", e.target.checked)
+                    }
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
+              </section>
+
               {/* EXECUTOR MODEL */}
               <section className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">

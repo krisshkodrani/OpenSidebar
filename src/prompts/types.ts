@@ -1,5 +1,4 @@
 export type PromptId =
-  | "orchestrator.router.system"
   | "orchestrator.verifier.system"
   | "orchestrator.advisory.system"
   | "planner.decompose.system"

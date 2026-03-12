@@ -13,7 +13,6 @@ import type {
   ContextEvalCase,
   StagnationEvalCase,
 } from "./types";
-import type { E2EGoldenCase } from "./e2e-types";
 import type { EscalationGoldenCase } from "./escalation-types";
 import type { CompletionTimingGoldenCase } from "./completion-timing-types";
 import type { GroundingGoldenCase } from "./grounding-types";
@@ -272,24 +271,6 @@ export function readStagnationEvalCases(): StagnationEvalCase[] {
   return cases;
 }
 
-// ── E2E eval I/O ────────────────────────────────────────────────────
-
-export const E2E_GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden", "e2e");
-export const E2E_RESULTS_DIR = join(PROJECT_ROOT, "evals", "results", "e2e");
-
-/** Read all E2E golden cases from the e2e golden dir */
-export function readE2EGoldenCases(): E2EGoldenCase[] {
-  if (!existsSync(E2E_GOLDEN_DIR)) return [];
-  const files = readdirSync(E2E_GOLDEN_DIR).filter((f) => f.endsWith(".json"));
-  const cases: E2EGoldenCase[] = [];
-  for (const file of files.sort()) {
-    try {
-      const content = readFileSync(join(E2E_GOLDEN_DIR, file), "utf-8");
-      cases.push(JSON.parse(content));
-    } catch { /* skip malformed */ }
-  }
-  return cases;
-}
 
 // ── Escalation eval I/O ──────────────────────────────────────────────
 

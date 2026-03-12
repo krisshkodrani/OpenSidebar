@@ -32,12 +32,20 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 /** Executor model tier — used for initial turns (OpenRouter) */
 export const MODEL_EXECUTOR = "openai/gpt-oss-120b";
 /** Planner model tier — used after escalation (OpenRouter) */
-export const MODEL_PLANNER = "deepseek/deepseek-v3.2";
+export const MODEL_PLANNER = "minimax/minimax-m2.5";
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
   plannerModel?: string;
+  /** Append :nitro routing suffix to all model IDs */
+  useNitro?: boolean;
+}
+
+/** Append `:nitro` suffix if enabled and not already present */
+export function applyNitro(model: string, useNitro?: boolean): string {
+  if (!useNitro || model.endsWith(":nitro")) return model;
+  return `${model}:nitro`;
 }
 
 function openRouterProvider(apiKey: string): ProviderConfig {
@@ -300,16 +308,17 @@ export class LLMClient {
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
+    const nitro = options?.useNitro;
     // Build executor pool: OpenRouter
     this.executorPool = new ProviderPool(
       openRouterApiKey,
-      { openRouterModel: options?.executorModel || MODEL_EXECUTOR },
+      { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
     );
 
-    // Build planner pool: OpenRouter (DeepSeek V3.2)
+    // Build planner pool: OpenRouter (MiniMax M2.5)
     this.plannerPool = new ProviderPool(
       openRouterApiKey,
-      { openRouterModel: options?.plannerModel || MODEL_PLANNER },
+      { openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro) },
     );
 
     // Initialize from executor pool's top priority

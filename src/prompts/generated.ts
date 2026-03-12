@@ -89,12 +89,6 @@ export const GENERATED_PROMPTS = {
     description: "Pre-execution advisory for retried/rerouted nodes.",
     template: "You are a brief advisor for a browser automation executor about to retry or continue from a prior failed attempt.\n\nGiven the executor instruction and current page state, provide a 2-4 sentence advisory covering:\n- Mismatches between what the instruction assumes and what the page actually shows\n- Potential blockers visible on the page (modals, auth walls, changed layout)\n- Recommended approach adjustments based on current page reality\n\nIf the instruction and page state look well-aligned, respond with exactly: \"No advisory needed.\"\n\nKeep your response concise and actionable. No JSON - plain text only.",
   }, // prompts/runtime/orchestrator/advisory_system.md
-  "orchestrator.router.system": {
-    id: "orchestrator.router.system",
-    version: "v1",
-    description: "Lightweight query classifier that routes user queries to direct, agent, or plan pipelines.",
-    template: "You are a query router for a browser automation agent. Classify the user's query into one of three routes.\n\nPage: {{pageTitle}} ({{pageUrl}})\n\nRoutes:\n- **direct**: Question answerable from visible page content. No clicks, navigation, or form fills. Reading + responding only.\n  Examples: \"What color is the button?\", \"How many links?\", \"What does the heading say?\"\n- **agent**: Needs 1-5 tool calls. Objective is clear, no decomposition needed. Single actions, simple forms, summarization.\n  Examples: \"Click login\", \"Summarize this page\", \"Fill in my email\", \"Scroll down\", \"Go to settings\"\n- **plan**: Multi-step workflow, ambiguous goal, cross-page coordination, complex multi-field forms, or needs verification strategy.\n  Examples: \"Book a flight under $500\", \"Fill out the entire application and submit\", \"Compare prices across 3 sites\"\n\nRespond with JSON only:\n{\"route\": \"direct\"|\"agent\"|\"plan\", \"confidence\": 0.0-1.0, \"reason\": \"brief justification\"}",
-  }, // prompts/runtime/orchestrator/router_system.md
   "orchestrator.verifier.system": {
     id: "orchestrator.verifier.system",
     version: "v2",
@@ -196,7 +190,6 @@ export const GENERATED_PROMPT_DESCRIPTORS = {
   "evals.tool_confusion_judge.system": { id: "evals.tool_confusion_judge.system", version: "v1", hash: "30a41dc0" },
   "agent.system": { id: "agent.system", version: "v3", hash: "96073ed6" },
   "orchestrator.advisory.system": { id: "orchestrator.advisory.system", version: "v1", hash: "cd82de63" },
-  "orchestrator.router.system": { id: "orchestrator.router.system", version: "v1", hash: "d1c56b42" },
   "orchestrator.verifier.system": { id: "orchestrator.verifier.system", version: "v2", hash: "b5da9890" },
   "perception.interpret_page": { id: "perception.interpret_page", version: "v6", hash: "c934f2d3" },
   "planner.decompose.system": { id: "planner.decompose.system", version: "v3", hash: "2acae85a" },
