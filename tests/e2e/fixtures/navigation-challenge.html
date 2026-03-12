@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Navigation Challenge</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+    h1 { margin-bottom: 8px; }
+    .instructions { color: #555; margin-bottom: 24px; }
+    #progress { font-size: 1.1em; margin-bottom: 16px; color: #333; }
+    #advance-btn {
+      padding: 10px 24px;
+      font-size: 1em;
+      cursor: pointer;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+    }
+    #advance-btn:hover { background: #1d4ed8; }
+    #secret-code {
+      display: none;
+      margin-top: 20px;
+      padding: 12px 16px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 6px;
+      font-size: 1.2em;
+      font-weight: bold;
+      color: #166534;
+    }
+    #code-section {
+      display: none;
+      margin-top: 24px;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    #code-section label { display: block; margin-bottom: 8px; font-weight: 500; }
+    #code-input {
+      padding: 8px;
+      font-size: 1em;
+      width: 220px;
+      margin-right: 8px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+    }
+    #submit-code {
+      padding: 8px 18px;
+      font-size: 1em;
+      cursor: pointer;
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+    }
+    #submit-code:hover { background: #15803d; }
+    #code-error {
+      display: none;
+      margin-top: 10px;
+      color: #dc2626;
+      font-weight: 500;
+    }
+    #success-banner {
+      display: none;
+      margin-top: 20px;
+      padding: 16px;
+      background: #dcfce7;
+      border: 2px solid #22c55e;
+      border-radius: 8px;
+      font-size: 1.3em;
+      font-weight: bold;
+      color: #166534;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Navigation Challenge</h1>
+  <p class="instructions">Click the "Advance" button 3 times to reveal the secret code.</p>
+
+  <div id="progress">Step 0 of 3</div>
+  <button id="advance-btn" type="button">Advance</button>
+
+  <div id="secret-code"></div>
+
+  <div id="code-section">
+    <label for="code-input">Enter the secret code</label>
+    <div>
+      <input id="code-input" type="text" placeholder="Enter the secret code" />
+      <button id="submit-code" type="button">Submit Code</button>
+    </div>
+    <div id="code-error">Incorrect code. Try again.</div>
+  </div>
+
+  <div id="success-banner">Challenge Complete!</div>
+
+  <script>
+    var SECRET = 'ALPHA-7492';
+    var step = 0;
+
+    var progressEl = document.getElementById('progress');
+    var advanceBtn = document.getElementById('advance-btn');
+    var secretCodeEl = document.getElementById('secret-code');
+    var codeSectionEl = document.getElementById('code-section');
+    var codeInput = document.getElementById('code-input');
+    var submitCodeBtn = document.getElementById('submit-code');
+    var codeErrorEl = document.getElementById('code-error');
+    var successBannerEl = document.getElementById('success-banner');
+
+    advanceBtn.addEventListener('click', function () {
+      step++;
+      progressEl.textContent = 'Step ' + step + ' of 3';
+
+      if (step >= 3) {
+        advanceBtn.style.display = 'none';
+        secretCodeEl.textContent = 'Secret code: ' + SECRET;
+        secretCodeEl.style.display = 'block';
+        codeSectionEl.style.display = 'block';
+      }
+    });
+
+    submitCodeBtn.addEventListener('click', function () {
+      var entered = codeInput.value.trim();
+      if (entered === SECRET) {
+        codeErrorEl.style.display = 'none';
+        successBannerEl.style.display = 'block';
+        window.challengeResult = {
+          completed: true,
+          code: SECRET,
+          timestamp: Date.now()
+        };
+      } else {
+        codeErrorEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Northstar Outfitters - Performance Running</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; }
+      body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; background: #f3f5f8; }
+      .topbar { background: #0b1220; color: #f8fafc; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+      .logo { font-size: 20px; font-weight: 700; }
+      .cart-button { border: 0; background: #1e293b; color: #f8fafc; border-radius: 999px; padding: 10px 14px; cursor: pointer; font-weight: 600; }
+      .hero { padding: 18px 24px; background: #e8efff; border-bottom: 1px solid #dbe2ea; }
+      .hero h1 { font-size: 26px; margin-bottom: 4px; }
+      .hero p { color: #334155; }
+      .content { padding: 18px 24px; display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
+      .panel { background: #fff; border: 1px solid #dbe2ea; border-radius: 14px; padding: 16px; height: fit-content; }
+      .field { display: grid; gap: 6px; margin-bottom: 12px; }
+      .field label { font-size: 13px; color: #64748b; font-weight: 600; }
+      .field input, .field select { width: 100%; border: 1px solid #dbe2ea; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+      .catalog-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+      .product { border: 1px solid #dbe2ea; border-radius: 14px; background: #fff; overflow: hidden; }
+      .product .visual { height: 80px; background: linear-gradient(145deg, #dbeafe, #eef2ff); }
+      .product .body { padding: 12px; display: grid; gap: 6px; }
+      .badge { font-size: 11px; font-weight: 700; background: #e2e8f0; border-radius: 999px; width: fit-content; padding: 2px 8px; }
+      .name { font-weight: 700; }
+      .meta { color: #64748b; font-size: 13px; }
+      .price { font-size: 18px; font-weight: 700; }
+      .price-row { display: flex; justify-content: space-between; align-items: center; }
+      .btn { border: 0; border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+      .btn-primary { background: #0b5fff; color: white; }
+      .btn-ghost { border: 1px solid #dbe2ea; background: white; }
+      .section-block { margin: 16px 24px; background: #fff; border: 1px solid #dbe2ea; border-radius: 14px; padding: 16px; }
+      .section-block h3 { margin: 0 0 10px; }
+      .cart-line { border: 1px solid #dbe2ea; border-radius: 12px; padding: 10px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+      .qty-controls { display: inline-flex; align-items: center; border: 1px solid #dbe2ea; border-radius: 999px; overflow: hidden; }
+      .qty-controls button { border: 0; background: #f8fafc; width: 28px; height: 28px; cursor: pointer; }
+      .qty-controls span { width: 28px; text-align: center; font-size: 13px; }
+      .summary-line { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+      .ok { color: #16a34a; }
+      .error { color: #dc2626; }
+      .hidden { display: none !important; }
+      #order-confirmation { margin: 16px 24px; background: #ecfdf5; border: 1px solid #86efac; border-radius: 14px; padding: 16px; }
+      #order-confirmation h2 { margin: 0 0 8px; }
+      #order-confirmation p { margin: 4px 0; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="logo">Northstar Outfitters</div>
+      <div>
+        <span>Cart: <strong id="cart-badge">0</strong></span>
+        <button id="open-cart" class="cart-button">Open Cart</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <h1>Performance Running Collection</h1>
+      <p>Field-tested shoes and essentials for race-day comfort.</p>
+    </section>
+
+    <main class="content">
+      <aside class="panel">
+        <h2>Find Your Gear</h2>
+        <div class="field">
+          <label for="search-input">Search products</label>
+          <input id="search-input" placeholder="e.g. Pegasus" />
+        </div>
+        <div class="field">
+          <label for="category-filter">Category</label>
+          <select id="category-filter">
+            <option value="all">All</option>
+            <option value="road">Road Running</option>
+            <option value="trail">Trail</option>
+            <option value="apparel">Apparel</option>
+          </select>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="quick-category-road" class="btn btn-ghost" type="button">Road Running</button>
+            <button id="quick-category-all" class="btn btn-ghost" type="button">All Categories</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="sort-filter">Sort by</label>
+          <select id="sort-filter">
+            <option value="featured">Featured</option>
+            <option value="price-asc">Price: Low to High</option>
+            <option value="price-desc">Price: High to Low</option>
+            <option value="rating">Rating</option>
+          </select>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="quick-sort-low-high" class="btn btn-ghost" type="button">Price Low to High</button>
+            <button id="quick-sort-featured" class="btn btn-ghost" type="button">Featured</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="max-price">Max price ($)</label>
+          <input id="max-price" type="number" value="300" />
+        </div>
+        <button id="apply-filters" class="btn btn-primary" style="width:100%">Apply Filters</button>
+      </aside>
+
+      <section class="catalog">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2>Catalog</h2>
+          <p id="catalog-count" class="meta">0 items</p>
+        </div>
+        <div id="catalog-grid" class="catalog-grid"></div>
+      </section>
+    </main>
+
+    <!-- Product Detail (inline, toggled via display) -->
+    <section id="product-modal" class="section-block hidden" aria-label="Product details">
+      <h3 id="pdp-name">Product</h3>
+      <p id="pdp-meta" class="meta" style="margin-bottom:12px"></p>
+      <div class="field">
+        <label for="pdp-size-select">Choose size</label>
+        <select id="pdp-size-select"></select>
+      </div>
+      <div class="field">
+        <label for="pdp-color-select">Choose color</label>
+        <select id="pdp-color-select"></select>
+      </div>
+      <div class="field">
+        <label for="pdp-qty">Quantity</label>
+        <input id="pdp-qty" type="number" min="1" value="1" />
+      </div>
+      <button id="pdp-add-to-cart" class="btn btn-primary" style="width:100%;margin-top:8px">Add to cart</button>
+      <button id="pdp-close" class="btn btn-ghost" style="width:100%;margin-top:8px">Close</button>
+    </section>
+
+    <!-- Cart + Checkout (inline, toggled via display) -->
+    <section id="cart-drawer" class="section-block hidden" aria-label="Shopping cart">
+      <h3>Your Cart</h3>
+      <div id="cart-lines" style="margin:12px 0"></div>
+
+      <h3>Promo Code</h3>
+      <div style="display:flex;gap:8px;margin:8px 0">
+        <input id="coupon-input" placeholder="SAVE10" style="border:1px solid #dbe2ea;border-radius:10px;padding:10px 12px;font-size:14px" />
+        <button id="apply-coupon" class="btn btn-primary">Apply</button>
+      </div>
+      <p id="coupon-message" class="meta" style="margin-bottom:12px"></p>
+
+      <h3>Shipping</h3>
+      <div style="margin:8px 0 12px">
+        <label style="display:block;margin-bottom:6px"><input type="radio" name="shipping-method" value="standard" checked /> Standard (Free)</label>
+        <label style="display:block"><input type="radio" name="shipping-method" value="express" /> Express ($15)</label>
+      </div>
+
+      <h3>Checkout</h3>
+      <div style="margin-top:8px">
+        <div class="field"><input id="checkout-name" placeholder="Full name" aria-label="Full name" /></div>
+        <div class="field"><input id="checkout-email" type="email" placeholder="Email address" aria-label="Email address" /></div>
+      </div>
+
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #dbe2ea">
+        <div class="summary-line"><span>Subtotal</span><span id="summary-subtotal">$0.00</span></div>
+        <div class="summary-line"><span>Discount</span><span id="summary-discount">$0.00</span></div>
+        <div class="summary-line"><span>Shipping</span><span id="summary-shipping">$0.00</span></div>
+        <div class="summary-line"><strong>Total</strong><strong id="summary-total">$0.00</strong></div>
+        <button id="place-order" class="btn btn-primary" style="width:100%;margin-top:8px">Place Order</button>
+        <button id="close-cart" class="btn btn-ghost" style="width:100%;margin-top:8px">Close Cart</button>
+        <p id="order-error" class="error"></p>
+      </div>
+    </section>
+
+    <section id="order-confirmation" class="hidden">
+      <h2>Order Confirmed</h2>
+      <p>Order ID: <strong id="order-id"></strong></p>
+      <p>Email: <span id="order-email"></span></p>
+      <p>Total Charged: <strong id="order-total"></strong></p>
+    </section>
+
+    <script>
+      (() => {
+        const products = [
+          { id: "pegasus-41", name: "Air Zoom Pegasus 41", category: "road", price: 149, rating: 4.8, brand: "Nike", sizes: [8, 9, 10, 11], colors: ["black", "white", "volt"] },
+          { id: "novablast-4", name: "Novablast 4", category: "road", price: 140, rating: 4.6, brand: "ASICS", sizes: [8, 9, 10, 11], colors: ["blue", "black"] },
+          { id: "trabuco-max", name: "Trabuco Max 3", category: "trail", price: 170, rating: 4.5, brand: "ASICS", sizes: [8, 9, 10, 11], colors: ["green", "black"] },
+          { id: "tempo-shorts", name: "Tempo 2-in-1 Shorts", category: "apparel", price: 58, rating: 4.1, brand: "Northstar", sizes: ["S", "M", "L", "XL"], colors: ["black", "navy"] },
+        ];
+
+        const state = {
+          filters: { search: "", category: "all", sort: "featured", maxPrice: 300 },
+          cart: [],
+          coupon: null,
+          shippingMethod: "standard",
+          modalProduct: null,
+          lastOrder: null,
+        };
+
+        window.cart = state.cart;
+        window.lastOrder = state.lastOrder;
+
+        const $ = (id) => document.getElementById(id);
+        const money = (v) => `$${v.toFixed(2)}`;
+
+        function getFiltered() {
+          let list = products.filter((p) => {
+            if (state.filters.category !== "all" && p.category !== state.filters.category) return false;
+            if (p.price > state.filters.maxPrice) return false;
+            if (state.filters.search) {
+              if (!`${p.name} ${p.brand}`.toLowerCase().includes(state.filters.search.toLowerCase())) return false;
+            }
+            return true;
+          });
+          if (state.filters.sort === "price-asc") list = list.slice().sort((a, b) => a.price - b.price);
+          if (state.filters.sort === "price-desc") list = list.slice().sort((a, b) => b.price - a.price);
+          if (state.filters.sort === "rating") list = list.slice().sort((a, b) => b.rating - a.rating);
+          return list;
+        }
+
+        function renderCatalog() {
+          const list = getFiltered();
+          $("catalog-count").textContent = `${list.length} items`;
+          $("catalog-grid").innerHTML = list.map((p) => `
+            <article class="product" data-product-id="${p.id}">
+              <div class="visual"></div>
+              <div class="body">
+                <span class="badge">${p.brand}</span>
+                <div class="name">${p.name}</div>
+                <div class="meta">Category: ${p.category} | Rating: ${p.rating}</div>
+                <div class="price-row">
+                  <span class="price">${money(p.price)}</span>
+                  <div style="display:flex;gap:8px">
+                    <button class="btn btn-ghost" data-action="view-product" data-product-id="${p.id}">View details</button>
+                    <button id="quick-add-${p.id}" class="btn btn-primary" data-action="quick-add" data-product-id="${p.id}">Add to cart</button>
+                  </div>
+                </div>
+              </div>
+            </article>`).join("");
+        }
+
+        function showSection(id) {
+          $(id).classList.remove("hidden");
+          // When showing cart, hide catalog so page isn't too tall
+          if (id === "cart-drawer") {
+            document.querySelector("main.content").classList.add("hidden");
+            document.querySelector(".hero").classList.add("hidden");
+          }
+          $(id).scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        function hideSection(id) {
+          $(id).classList.add("hidden");
+          // When hiding cart, show catalog again
+          if (id === "cart-drawer") {
+            document.querySelector("main.content").classList.remove("hidden");
+            document.querySelector(".hero").classList.remove("hidden");
+          }
+        }
+
+        function openProduct(id) {
+          const p = products.find((x) => x.id === id);
+          if (!p) return;
+          state.modalProduct = p;
+          $("pdp-name").textContent = p.name;
+          $("pdp-meta").textContent = `${p.brand} | $${p.price} | Rating ${p.rating}`;
+          $("pdp-qty").value = "1";
+          $("pdp-size-select").innerHTML = p.sizes.map((s) => `<option value="${s}">${s}</option>`).join("");
+          $("pdp-color-select").innerHTML = p.colors.map((c) => `<option value="${c}">${c}</option>`).join("");
+          showSection("product-modal");
+        }
+
+        function addLine(product, size, color, qty) {
+          const key = `${product.id}::${size}::${color}`;
+          const existing = state.cart.find((item) => item.key === key);
+          if (existing) { existing.qty += qty; } else {
+            state.cart.push({ key, id: product.id, name: product.name, unitPrice: product.price, qty, size, color });
+          }
+          renderCart();
+        }
+
+        function addToCart() {
+          const p = state.modalProduct;
+          if (!p) return;
+          const qty = Math.max(1, Number($("pdp-qty").value) || 1);
+          addLine(p, String($("pdp-size-select").value), String($("pdp-color-select").value), qty);
+          hideSection("product-modal");
+          showSection("cart-drawer");
+        }
+
+        function quickAdd(id) {
+          const p = products.find((x) => x.id === id);
+          if (!p) return;
+          addLine(p, String(p.sizes.includes(10) ? 10 : p.sizes[0]), p.colors.includes("black") ? "black" : p.colors[0], 1);
+          showSection("cart-drawer");
+        }
+
+        function computeSummary() {
+          const subtotal = state.cart.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+          const discount = state.coupon === "SAVE10" ? subtotal * 0.1 : 0;
+          const shipping = state.shippingMethod === "express" ? 15 : 0;
+          return { subtotal, discount, shipping, total: Math.max(0, subtotal - discount + shipping) };
+        }
+
+        function renderCart() {
+          window.cart = state.cart;
+          const count = state.cart.reduce((s, l) => s + l.qty, 0);
+          $("cart-badge").textContent = String(count);
+
+          $("cart-lines").innerHTML = state.cart.length === 0
+            ? `<p class="meta">Your cart is empty.</p>`
+            : state.cart.map((l) => `
+                <div class="cart-line" data-cart-key="${l.key}">
+                  <div>
+                    <div class="name">${l.name}</div>
+                    <div class="meta">Size ${l.size} | ${l.color}</div>
+                    <div class="meta">Unit ${money(l.unitPrice)}</div>
+                  </div>
+                  <div style="display:grid;gap:8px;justify-items:end">
+                    <div class="qty-controls">
+                      <button data-action="qty-minus" data-key="${l.key}">-</button>
+                      <span>${l.qty}</span>
+                      <button data-action="qty-plus" data-key="${l.key}">+</button>
+                    </div>
+                    <button class="btn btn-ghost" data-action="remove-line" data-key="${l.key}">Remove</button>
+                  </div>
+                </div>`).join("");
+
+          const s = computeSummary();
+          $("summary-subtotal").textContent = money(s.subtotal);
+          $("summary-discount").textContent = s.discount > 0 ? `- ${money(s.discount)}` : money(0);
+          $("summary-shipping").textContent = money(s.shipping);
+          $("summary-total").textContent = money(s.total);
+        }
+
+        function placeOrder() {
+          $("order-error").textContent = "";
+          if (state.cart.length === 0) { $("order-error").textContent = "Add at least one item."; return; }
+          for (const id of ["checkout-name","checkout-email"]) {
+            if (!$(id)?.value?.trim()) { $("order-error").textContent = "Please complete all checkout fields."; return; }
+          }
+          const s = computeSummary();
+          const orderId = `NS-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+          state.lastOrder = { orderId, email: $("checkout-email").value, total: s.total, shippingMethod: state.shippingMethod, coupon: state.coupon, items: state.cart.map((l) => ({ ...l })) };
+          window.lastOrder = state.lastOrder;
+          $("order-id").textContent = orderId;
+          $("order-email").textContent = state.lastOrder.email;
+          $("order-total").textContent = money(s.total);
+          hideSection("cart-drawer");
+          showSection("order-confirmation");
+        }
+
+        // Delegated click handler
+        document.addEventListener("click", (e) => {
+          const t = e.target.closest("[data-action]");
+          if (!t) return;
+          const a = t.dataset.action;
+          if (a === "view-product") openProduct(t.dataset.productId);
+          if (a === "quick-add") quickAdd(t.dataset.productId);
+          if (a === "qty-plus") { const l = state.cart.find((x) => x.key === t.dataset.key); if (l) { l.qty++; renderCart(); } }
+          if (a === "qty-minus") { const l = state.cart.find((x) => x.key === t.dataset.key); if (l) { l.qty = Math.max(1, l.qty - 1); renderCart(); } }
+          if (a === "remove-line") { state.cart = state.cart.filter((x) => x.key !== t.dataset.key); window.cart = state.cart; renderCart(); }
+        });
+
+        $("apply-filters").addEventListener("click", () => {
+          state.filters.search = $("search-input").value.trim();
+          state.filters.category = $("category-filter").value;
+          state.filters.sort = $("sort-filter").value;
+          state.filters.maxPrice = Math.max(1, Number($("max-price").value) || 300);
+          renderCatalog();
+        });
+
+        $("quick-category-road").addEventListener("click", () => { state.filters.category = "road"; $("category-filter").value = "road"; renderCatalog(); });
+        $("quick-category-all").addEventListener("click", () => { state.filters.category = "all"; $("category-filter").value = "all"; renderCatalog(); });
+        $("quick-sort-low-high").addEventListener("click", () => { state.filters.sort = "price-asc"; $("sort-filter").value = "price-asc"; renderCatalog(); });
+        $("quick-sort-featured").addEventListener("click", () => { state.filters.sort = "featured"; $("sort-filter").value = "featured"; renderCatalog(); });
+        $("open-cart").addEventListener("click", () => showSection("cart-drawer"));
+        $("close-cart").addEventListener("click", () => hideSection("cart-drawer"));
+        $("pdp-close").addEventListener("click", () => hideSection("product-modal"));
+        $("pdp-add-to-cart").addEventListener("click", addToCart);
+        $("apply-coupon").addEventListener("click", () => {
+          const code = $("coupon-input").value.trim().toUpperCase();
+          if (code === "SAVE10") { state.coupon = "SAVE10"; $("coupon-message").textContent = "Coupon applied: 10% off"; $("coupon-message").className = "ok"; }
+          else { state.coupon = null; $("coupon-message").textContent = "Invalid coupon"; $("coupon-message").className = "error"; }
+          renderCart();
+        });
+        $("place-order").addEventListener("click", placeOrder);
+        document.querySelectorAll("input[name='shipping-method']").forEach((r) => r.addEventListener("change", (e) => { state.shippingMethod = e.target.value; renderCart(); }));
+
+        renderCatalog();
+        renderCart();
+      })();
+    </script>
+  </body>
+</html>
