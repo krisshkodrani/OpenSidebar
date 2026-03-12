@@ -17,6 +17,7 @@ const STORAGE_KEY = "openrouter_api_key";
 const MODEL_STORAGE_KEY = "story_model";
 
 const STORY_MODELS = [
+  "minimax/minimax-m2.5",
   "x-ai/grok-4.1-fast",
   "anthropic/claude-sonnet-4",
   "google/gemini-2.5-flash",
@@ -66,15 +67,52 @@ function buildPrompt(
     if (e.snapshot) {
       if (e.snapshot.url) lines.push(`URL: ${e.snapshot.url}`);
       if (e.snapshot.title) lines.push(`Title: ${e.snapshot.title}`);
+      lines.push(`Elements: ${e.snapshot.elementCount}`);
     }
-    // LLM content
-    const llmContent = e.llmResponse?.content || "";
-    if (llmContent) {
-      const trimmed =
-        llmContent.length > 2000
-          ? llmContent.slice(0, 2000) + "..."
-          : llmContent;
-      lines.push(`LLM: ${trimmed}`);
+    // Model & context info
+    if (e.llmRequest) {
+      const req = e.llmRequest;
+      const tierLabel = req.modelTier === "planner" ? " [PLANNER]" : " [EXECUTOR]";
+      lines.push(`Model: ${req.model}${tierLabel}`);
+      lines.push(`Compression: ${req.compressionLevel}, Messages: ${req.messageCount}`);
+      if (req.contextMetrics) {
+        const cm = req.contextMetrics;
+        lines.push(`Context: ${cm.totalTokens}/${cm.maxTokens} tokens (${Math.round(cm.utilization * 100)}%), dropped: ${cm.droppedMessageCount}`);
+      }
+    }
+    // LLM response
+    if (e.llmResponse) {
+      const resp = e.llmResponse;
+      const llmContent = resp.content || "";
+      if (llmContent) {
+        const trimmed =
+          llmContent.length > 2000
+            ? llmContent.slice(0, 2000) + "..."
+            : llmContent;
+        lines.push(`LLM: ${trimmed}`);
+      }
+      if (resp.actualModel && resp.actualModel !== e.llmRequest?.model) {
+        lines.push(`Actual model (failover): ${resp.actualModel}`);
+      }
+      if (resp.usage) {
+        lines.push(`Tokens: ${resp.usage.prompt_tokens} in / ${resp.usage.completion_tokens} out${resp.usage.cost ? ` ($${resp.usage.cost.toFixed(4)})` : ""}`);
+      }
+      lines.push(`LLM latency: ${resp.durationMs}ms`);
+    }
+    // Perception
+    if (e.perception) {
+      const p = e.perception;
+      lines.push(`Perception [${p.model}]: ${p.cached ? "CACHED" : `${p.durationMs}ms`}`);
+      if (p.interpretation) {
+        lines.push(`  Vision: ${truncate(p.interpretation, 500)}`);
+      }
+    }
+    // Stagnation
+    if (e.progressState) {
+      const ps = e.progressState;
+      if (ps.stagnantTurns > 0 || ps.signal) {
+        lines.push(`Stagnation: ${ps.stagnantTurns} stagnant turns${ps.signal ? `, signal: ${ps.signal}` : ""}`);
+      }
     }
     // Tool executions
     const toolExecs = e.toolExecutions || [];
@@ -114,7 +152,7 @@ function buildPrompt(
 
 /* eslint-disable prefer-template */
 const SYSTEM_PROMPT =
-  "You are a session analyst for a browser automation agent. " +
+  "You are a senior session analyst for a browser automation agent. " +
   "Given the full trace data of an agent session, produce a structured Markdown report. " +
   "Be specific — reference turn numbers, tool names, and URLs. Be concise but thorough.\n\n" +
   "Use this structure:\n\n" +
@@ -126,8 +164,20 @@ const SYSTEM_PROMPT =
   "Escalations, strategy pivots, model switches, planning steps.\n\n" +
   "## Issues & Failures\n" +
   "Tool failures, stagnation, unexpected states, retries.\n\n" +
+  "## Efficiency Analysis\n" +
+  "Turn economy: how many turns were productive vs wasted (retries, empty responses, rejected done() calls, unnecessary reads). " +
+  "Tool selection: were the right tools used? Could fewer calls have achieved the same result? " +
+  "Identify the optimal path — the minimum number of tool calls that would complete the task.\n\n" +
+  "## Model & Provider Insights\n" +
+  "Analyze model behavior: did the model use native tool calling or was text-based recovery needed? " +
+  "Note any model switches (executor/planner), escalation triggers, and their effectiveness. " +
+  "Flag empty responses, hallucinated tool arguments, or format issues.\n\n" +
+  "## Perception & Context\n" +
+  "How well did perception (screenshot interpretation) contribute? Was it cached, stale, or failing? " +
+  "Context window usage: compression levels, token utilization, history management.\n\n" +
   "## Result\n" +
-  "Final outcome with evidence from the trace data.";
+  "Final outcome with evidence from the trace data. " +
+  "Score the session 1-10 on: task completion, efficiency, error recovery. Justify each score.";
 
 export default function StoryPanel() {
   const currentSessionId = useStore((s) => s.currentSessionId);

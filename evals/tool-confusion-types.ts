@@ -5,7 +5,7 @@
  * (e.g. click_element vs click_coordinates, dismiss_overlays vs hide_element).
  */
 
-import type { E2EElement } from "./e2e-types";
+import type { E2EElement } from "./types";
 
 /** Shape of a curated tool-confusion golden case */
 export interface ToolConfusionGoldenCase {

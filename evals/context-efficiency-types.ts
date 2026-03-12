@@ -6,7 +6,7 @@
  * Supports A/B comparison: baseline prompt vs optimized prompt on the same case.
  */
 
-import type { E2EElement } from "./e2e-types";
+import type { E2EElement } from "./types";
 
 /** Shape of a curated context-efficiency golden case */
 export interface ContextEfficiencyGoldenCase {

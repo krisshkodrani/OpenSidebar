@@ -98,13 +98,6 @@
     "sourcePath": "prompts/runtime/orchestrator/advisory_system.md"
   },
   {
-    "id": "orchestrator.router.system",
-    "version": "v1",
-    "hash": "d1c56b42",
-    "description": "Lightweight query classifier that routes user queries to direct, agent, or plan pipelines.",
-    "sourcePath": "prompts/runtime/orchestrator/router_system.md"
-  },
-  {
     "id": "orchestrator.verifier.system",
     "version": "v2",
     "hash": "b5da9890",

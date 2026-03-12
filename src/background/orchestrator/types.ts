@@ -8,7 +8,6 @@ import {
   ToolName,
   UserSettings,
 } from "../../types";
-import type { RouteDecision } from "./router";
 
 export interface VerificationGate {
   trigger: string; // "text 'Code accepted' visible", "URL contains /step3"
@@ -127,7 +126,6 @@ export interface OrchestratorTask {
     isSingleNode: boolean;
     difficulty: Difficulty;
   };
-  routeDecision?: RouteDecision;
   /** Internal: tracks whether onStreamChunk forwarded non-empty content (for dedup) */
   _streamHasContent?: boolean;
 }

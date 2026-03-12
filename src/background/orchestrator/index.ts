@@ -51,7 +51,6 @@ import { buildRoleExecutionContract } from "./contracts";
 import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
-import { classifyRoute, RouteDecision } from "./router";
 import {
   CreateAgentLoopInput,
   DEFAULT_LANE_POLICIES,
@@ -1294,88 +1293,10 @@ export class Orchestrator {
       "Planning task...",
     );
 
-    // ─── Route classification ───
-    let routeDecision: RouteDecision | undefined;
-    try {
-      const routeTab = await chrome.tabs.get(input.tabId);
-      routeDecision = await classifyRoute(
-        input.query,
-        routeTab.title || "Untitled",
-        routeTab.url || "",
-        input.settings,
-      );
-      task.routeDecision = routeDecision;
-      this.emitTraceEvent(
-        task,
-        "route_classified",
-        {
-          route: routeDecision.route,
-          confidence: routeDecision.confidence,
-          reason: routeDecision.reason,
-        },
-        "system",
-      );
-    } catch {
-      // Router failure → fall through to existing pipeline
-    }
-
     let nodes: TaskNode[] = [];
 
-    // ─── Direct / Agent fast-path: skip planner ───
-    if (routeDecision && routeDecision.route !== "plan") {
-      nodes = [
-        {
-          id: crypto.randomUUID(),
-          role: "executor",
-          description: input.query,
-          successCriteria: "The user goal is completed.",
-          allowedTools: Object.values(ToolName),
-          dependencies: [],
-          assumptions: [],
-          handoffArtifacts: [
-            {
-              role: "planner",
-              phase: "planned",
-              note: `Router: ${routeDecision.route} (${routeDecision.reason})`,
-              timestamp: Date.now(),
-            },
-          ],
-          reflexionLog: [],
-          handoffDepth: 0,
-          status: "pending",
-          retries: 0,
-        },
-      ];
-      task.planClassification = { isSingleNode: true, difficulty: "simple" };
-      this.emitTraceEvent(
-        task,
-        "plan_decomposed",
-        {
-          nodeCount: 1,
-          structured: false,
-          routerFastPath: true,
-          route: routeDecision.route,
-        },
-        "planner",
-      );
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: input.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: "Analyzing request",
-            status: "done",
-            timestamp: Date.now(),
-          },
-          update: false,
-        },
-      });
-    }
-
-    if (nodes.length === 0) {
-      try {
+    // ─── Plan decomposition ───
+    try {
         const plannerContract = buildRoleExecutionContract(
           "planner",
           input.settings,
@@ -1388,6 +1309,7 @@ export class Orchestrator {
         const modelOverrides = {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          useNitro: input.settings.useNitro,
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -1488,7 +1410,7 @@ export class Orchestrator {
           },
         });
       }
-    }
+
 
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
@@ -1554,6 +1476,7 @@ export class Orchestrator {
           const replanPlanner = this.deps.createPlanner(input.openRouterApiKey, {
             executorModel: input.settings.executorModel,
             plannerModel: input.settings.plannerModel,
+            useNitro: input.settings.useNitro,
           });
           const replanResult = await replanPlanner.buildNodes(
             revisedQuery,
@@ -1628,6 +1551,7 @@ export class Orchestrator {
     const loopModelOverrides = {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
+      useNitro: input.settings.useNitro,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
@@ -1868,6 +1792,7 @@ export class Orchestrator {
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          useNitro: input.settings.useNitro,
         },
       });
 

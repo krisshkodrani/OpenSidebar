@@ -5,7 +5,7 @@
  * flailing without strategy, premature escalation, and attention dilution from decoys.
  */
 
-import type { E2EElement } from "./e2e-types";
+import type { E2EElement } from "./types";
 
 /** Shape of a curated grounding golden case */
 export interface GroundingGoldenCase {

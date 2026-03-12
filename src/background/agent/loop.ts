@@ -513,6 +513,7 @@ export class AgentLoop {
       approvalTimeoutMs?: number;
       executorModel?: string;
       plannerModel?: string;
+      useNitro?: boolean;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
@@ -540,6 +541,7 @@ export class AgentLoop {
     const modelOverrides = {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
+      useNitro: options?.useNitro,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     if (this.preferredModelTier === "planner") {
@@ -2926,6 +2928,7 @@ export class AgentLoop {
       }
 
       // Recover tool calls from text output (models sometimes emit JSON as text)
+      let toolsRecoveredFromText = false;
       if (
         (!response.tool_calls || response.tool_calls.length === 0) &&
         cleanContent
@@ -2938,6 +2941,7 @@ export class AgentLoop {
             tools: recovered.map((tc) => tc.function.name),
           });
           response.tool_calls = recovered;
+          toolsRecoveredFromText = true;
           // Clear text content — it was tool-call JSON, not real narration.
           // Leaving it causes 422 errors: providers reject assistant messages
           // with both non-null content and tool_calls.
@@ -2979,8 +2983,12 @@ export class AgentLoop {
         // ACTION REQUIRED
         consecutiveTextOnly = 0;
 
-        // Fix 1: Blind Tool Call Guard — track tool calls with no reasoning content
-        if (!cleanContent) {
+        // Blind Tool Call Guard — nudge when tool calls arrive with no reasoning.
+        // Skip for text-recovered tool calls: the model DID produce text, it was just JSON.
+        // Only nudge (no forced escalation) — stagnation monitor and dead-end
+        // detection handle actual stuck loops. Forced escalation caused
+        // escalate→de-escalate loops with models that naturally omit reasoning.
+        if (!cleanContent && !toolsRecoveredFromText) {
           consecutiveBlindToolTurns++;
           if (consecutiveBlindToolTurns === 3) {
             this.log.warn("agent", "Blind tool calls: 3 consecutive turns with no reasoning", {
@@ -2996,39 +3004,17 @@ export class AgentLoop {
                 "WARNING: You have made 3 consecutive tool calls with no reasoning. " +
                 "Include your thinking before calling tools — explain what you observe and why you chose this action.",
             });
-          } else if (consecutiveBlindToolTurns >= 5 && escalationTier < 1 && cooldownRemaining <= 0) {
-            this.log.warn("agent", "Blind tool calls: escalating after 5 consecutive", {
-              turn: this.turnCount,
-            });
-            this.traceRecorder?.recordEvent("blind_tool_call_escalation", {
+          } else if (consecutiveBlindToolTurns > 0 && consecutiveBlindToolTurns % 6 === 0) {
+            // Repeat the nudge every 6 blind turns (no escalation)
+            this.log.warn("agent", "Blind tool calls: repeating nudge", {
               turn: this.turnCount,
               consecutive: consecutiveBlindToolTurns,
             });
-            const blindAttemptSummary = extractAttemptSummary(this.context.getMessages());
-            this.escalateModel();
-            escalationTier = 1;
-            orientationPhase = false;
-            plannerModelStartTurn = this.turnCount;
-            await this.strategyPivot(tabId, blindAttemptSummary);
-            this.stagnation.resetEscalation();
             this.context.addMessage({
               role: "user",
-              content: ESCALATION_REFLECTION(
-                "consecutive blind tool calls with no reasoning content",
-              ),
+              content:
+                "REMINDER: Include reasoning text before tool calls. Explain what you see and your plan.",
             });
-            consecutiveBlindToolTurns = 0;
-            recentSuccesses.length = 0;
-            this.stepHandler(
-              {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: "Switching to smarter model (blind tool calls)",
-                status: "done",
-                timestamp: Date.now(),
-              },
-              false,
-            );
           }
         } else {
           consecutiveBlindToolTurns = 0;

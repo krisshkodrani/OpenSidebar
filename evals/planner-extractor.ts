@@ -246,15 +246,12 @@ export function extractPlannerCaseFromRun(
 
   // Extract key data from events
   const taskStarted = events.find((e: any) => e.type === "task_started") as any;
-  const routeClassified = events.find((e: any) => e.type === "route_classified") as any;
   const planDecomposed = events.find((e: any) => e.type === "plan_decomposed") as any;
   const nodeCompletedEvents = events.filter((e: any) => e.type === "node_completed") as any[];
   const taskCompleted = events.find((e: any) => e.type === "task_completed") as any;
   const taskStopped = events.find((e: any) => e.type === "task_stopped") as any;
 
   const query = taskStarted?.data?.query ?? "";
-  const route = routeClassified?.data?.route ?? "agent";
-  const routeConfidence = routeClassified?.data?.confidence ?? 0;
   const nodeCount = planDecomposed?.data?.nodeCount ?? nodeCompletedEvents.length;
   const planDifficulty = planDecomposed?.data?.difficulty ?? "moderate";
 
@@ -285,7 +282,7 @@ export function extractPlannerCaseFromRun(
   }));
 
   // Derive difficulty
-  const difficulty = deriveDifficultyFromRun(route, nodeCount, escalationCount, sessionOutcome);
+  const difficulty = deriveDifficultyFromRun(nodeCount, escalationCount, sessionOutcome);
 
   // Step count range based on node count
   const stepCountRange = {
@@ -389,14 +386,13 @@ function deriveDifficulty(
 }
 
 function deriveDifficultyFromRun(
-  route: string,
   nodeCount: number,
   escalationCount: number,
   outcome: string,
 ): "simple" | "moderate" | "complex" | "extreme" {
   if (outcome === "max_turns") return "extreme";
-  if (route === "plan" && nodeCount >= 5) return "complex";
-  if (route === "plan" || nodeCount >= 3 || escalationCount > 0) return "moderate";
+  if (nodeCount >= 5) return "complex";
+  if (nodeCount >= 3 || escalationCount > 0) return "moderate";
   return "simple";
 }
 

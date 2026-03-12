@@ -23,11 +23,29 @@ const MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "openrouter",
-    model: "deepseek/deepseek-v3.2",
-    inputUsdPerMillion: 0.25,
-    outputUsdPerMillion: 0.40,
-    effectiveDate: "2026-02-28",
-    sourceUrl: "https://openrouter.ai/deepseek/deepseek-v3.2",
+    model: "minimax/minimax-m2.5",
+    inputUsdPerMillion: 0.27,
+    outputUsdPerMillion: 0.95,
+    effectiveDate: "2026-03-11",
+    sourceUrl: "https://openrouter.ai/minimax/minimax-m2.5",
+    confidence: "official",
+  },
+  {
+    providerId: "openrouter",
+    model: "google/gemini-2.5-flash-lite",
+    inputUsdPerMillion: 0.0,
+    outputUsdPerMillion: 0.0,
+    effectiveDate: "2026-03-11",
+    sourceUrl: "https://openrouter.ai/google/gemini-2.5-flash-lite",
+    confidence: "best_effort",
+  },
+  {
+    providerId: "openrouter",
+    model: "google/gemini-2.5-flash",
+    inputUsdPerMillion: 0.15,
+    outputUsdPerMillion: 0.60,
+    effectiveDate: "2026-03-11",
+    sourceUrl: "https://openrouter.ai/google/gemini-2.5-flash",
     confidence: "official",
   },
 ];
@@ -41,11 +59,14 @@ export function findModelPricing(
   model: string,
 ): ModelPricing | null {
   const normalizedModel = normalizeModel(model);
+  // Also try without :nitro suffix — nitro routing doesn't change pricing
+  const baseModel = normalizedModel.replace(/:nitro$/, "");
   return (
     MODEL_PRICING.find(
       (entry) =>
         entry.providerId === providerId &&
-        normalizeModel(entry.model) === normalizedModel,
+        (normalizeModel(entry.model) === normalizedModel ||
+          normalizeModel(entry.model) === baseModel),
     ) ?? null
   );
 }

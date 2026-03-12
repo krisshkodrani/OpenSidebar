@@ -26,10 +26,12 @@ export interface UserSettings {
   requirePlanConfirmation?: boolean;
   /** Override executor model (default: openai/gpt-oss-120b) */
   executorModel?: string;
-  /** Override planner model (default: deepseek/deepseek-v3.2) */
+  /** Override planner model (default: minimax/minimax-m2.5) */
   plannerModel?: string;
   /** Override perception model (default: google/gemini-2.5-flash) */
   perceptionModel?: string;
+  /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
+  useNitro?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---

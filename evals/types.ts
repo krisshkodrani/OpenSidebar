@@ -392,6 +392,20 @@ export interface StagnationEvalResult {
   error?: string;
 }
 
+// ── Shared element type (used across eval golden cases) ─────────────
+
+/** Tagged DOM element snapshot used in eval golden cases */
+export interface E2EElement {
+  tag: number;
+  tagName: string;
+  role: string;
+  text: string;
+  attributes: Record<string, string>;
+  rect: { x: number; y: number; width: number; height: number };
+  isVisible: boolean;
+  isDisabled: boolean;
+}
+
 // ── Tool eval types ──────────────────────────────────────────────────
 
 /** LLM-as-judge qualitative assessment */

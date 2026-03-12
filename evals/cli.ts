@@ -48,10 +48,6 @@ import {
 } from "./planner-extractor";
 import { runPlannerEvals } from "./planner-runner";
 import { buildPlannerReport } from "./planner-report";
-import { runE2EEvals, type E2EProvider } from "./e2e-runner";
-import { buildE2EReport } from "./e2e-report";
-import { runE2EMultiturnEvals, type E2EMultiturnProvider } from "./e2e-multiturn-runner";
-import { buildE2EMultiturnReport } from "./e2e-multiturn-report";
 import {
   extractAndSaveContextCase,
   extractContextCasesFromSession,
@@ -180,15 +176,6 @@ async function main() {
       break;
     case "stagnation-critique":
       await cmdStagnationCritique(args.slice(1));
-      break;
-    case "e2e-critique":
-      await cmdE2ECritique(args.slice(1));
-      break;
-    case "e2e-validate":
-      await cmdE2EValidate();
-      break;
-    case "e2e-multiturn":
-      await cmdE2EMultiturn(args.slice(1));
       break;
     case "escalation-critique":
       await cmdEscalationCritique(args.slice(1));
@@ -1222,182 +1209,6 @@ async function cmdStagnationCritique(args: string[]) {
   console.log(`Report: ${mdPath}`);
 }
 
-async function cmdE2ECritique(args: string[]) {
-  const judgeFlag = args.includes("--judge");
-  const providerIdx = args.indexOf("--provider");
-  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EProvider : undefined;
-  if (providerArg && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
-    process.exit(1);
-  }
-  const stepIdx = args.indexOf("--step");
-  const stepFilter = stepIdx !== -1 ? parseInt(args[stepIdx + 1], 10) : undefined;
-  const outIdx = args.indexOf("--out");
-  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
-
-  let keys: ApiKeys;
-  try {
-    keys = loadApiKeys();
-  } catch (err: any) {
-    console.error(`${c.red}${err.message}${c.reset}`);
-    process.exit(1);
-  }
-
-  const { readE2EGoldenCases } = await import("./utils");
-  const cases = readE2EGoldenCases();
-
-  if (cases.length === 0) {
-    console.error(`${c.red}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
-    process.exit(1);
-  }
-
-  console.log(`${c.bold}E2E Critique: ${cases.length} golden case(s)${c.reset}\n`);
-
-  const results = await runE2EEvals({
-    keys,
-    provider: providerArg,
-    judge: judgeFlag,
-    stepFilter,
-  });
-
-  if (results.length === 0) return;
-
-  const report = buildE2EReport({ cases, results });
-
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const mdPath = join(outDir, `e2e-critique-${stamp}.md`);
-  writeFileSync(mdPath, report, "utf-8");
-
-  const passed = results.filter((r) => r.status === "pass").length;
-  const failed = results.filter((r) => r.status === "fail").length;
-  const errors = results.filter((r) => r.status === "error").length;
-  console.log(`\n${c.bold}E2E: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`);
-  console.log(`Report: ${mdPath}`);
-}
-
-async function cmdE2EValidate() {
-  const { readE2EGoldenCases } = await import("./utils");
-  const cases = readE2EGoldenCases();
-
-  if (cases.length === 0) {
-    console.log(`${c.yellow}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
-    return;
-  }
-
-  console.log(`${c.bold}Validating ${cases.length} E2E golden case(s)...${c.reset}\n`);
-
-  let valid = 0;
-  let invalid = 0;
-
-  for (const goldenCase of cases) {
-    const errors: string[] = [];
-
-    // Required fields
-    if (!goldenCase.id) errors.push("missing id");
-    if (!goldenCase.sourceSessionId) errors.push("missing sourceSessionId");
-    if (typeof goldenCase.stepNumber !== "number") errors.push("missing/invalid stepNumber");
-    if (!goldenCase.challengeUrl) errors.push("missing challengeUrl");
-
-    // Snapshot
-    if (!goldenCase.entrySnapshot?.url) errors.push("missing entrySnapshot.url");
-    if (!goldenCase.entrySnapshot?.title) errors.push("missing entrySnapshot.title");
-    if (typeof goldenCase.entrySnapshot?.elementCount !== "number") errors.push("missing entrySnapshot.elementCount");
-
-    // Elements
-    if (!Array.isArray(goldenCase.entryElements) || goldenCase.entryElements.length === 0) {
-      errors.push("empty or missing entryElements");
-    }
-
-    // Solution
-    if (!goldenCase.solution?.code) errors.push("missing solution.code");
-    if (typeof goldenCase.solution?.codeInputId !== "number") errors.push("missing solution.codeInputId");
-    if (typeof goldenCase.solution?.submitButtonId !== "number") errors.push("missing solution.submitButtonId");
-
-    // Verify solution elements exist in entryElements
-    if (goldenCase.entryElements?.length > 0 && goldenCase.solution) {
-      const tagIds = new Set(goldenCase.entryElements.map((el) => el.tag));
-      if (!tagIds.has(goldenCase.solution.codeInputId)) {
-        errors.push(`solution.codeInputId [${goldenCase.solution.codeInputId}] not in entryElements`);
-      }
-      if (!tagIds.has(goldenCase.solution.submitButtonId)) {
-        errors.push(`solution.submitButtonId [${goldenCase.solution.submitButtonId}] not in entryElements`);
-      }
-    }
-
-    // Actions
-    if (!goldenCase.actions?.sequence || goldenCase.actions.sequence.length === 0) {
-      errors.push("empty or missing actions.sequence");
-    }
-
-    // Metrics
-    if (typeof goldenCase.metrics?.turnCount !== "number") errors.push("missing metrics.turnCount");
-
-    if (errors.length > 0) {
-      console.log(`  ${c.red}INVALID${c.reset} ${goldenCase.id}: ${errors.join(", ")}`);
-      invalid++;
-    } else {
-      console.log(`  ${c.green}VALID${c.reset}   ${goldenCase.id} (step ${goldenCase.stepNumber}, ${goldenCase.actions.total} actions)`);
-      valid++;
-    }
-  }
-
-  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid${c.reset}`);
-  if (invalid > 0) process.exit(1);
-}
-
-async function cmdE2EMultiturn(args: string[]) {
-  const providerIdx = args.indexOf("--provider");
-  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as E2EMultiturnProvider : undefined;
-  if (providerArg && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
-    process.exit(1);
-  }
-  const stepIdx = args.indexOf("--step");
-  const stepFilter = stepIdx !== -1 ? parseInt(args[stepIdx + 1], 10) : undefined;
-  const outIdx = args.indexOf("--out");
-  const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
-
-  let keys: ApiKeys;
-  try {
-    keys = loadApiKeys();
-  } catch (err: any) {
-    console.error(`${c.red}${err.message}${c.reset}`);
-    process.exit(1);
-  }
-
-  const { readE2EGoldenCases } = await import("./utils");
-  const cases = readE2EGoldenCases();
-
-  if (cases.length === 0) {
-    console.error(`${c.red}No E2E golden cases found in evals/golden/e2e/${c.reset}`);
-    process.exit(1);
-  }
-
-  console.log(`${c.bold}E2E Multi-Turn: ${cases.length} golden case(s)${c.reset}\n`);
-
-  const results = await runE2EMultiturnEvals({
-    keys,
-    provider: providerArg,
-    stepFilter,
-  });
-
-  if (results.length === 0) return;
-
-  const report = buildE2EMultiturnReport({ cases, results });
-
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const mdPath = join(outDir, `e2e-multiturn-${stamp}.md`);
-  writeFileSync(mdPath, report, "utf-8");
-
-  const passed = results.filter((r) => r.status === "pass").length;
-  const failed = results.filter((r) => r.status === "fail").length;
-  const errors = results.filter((r) => r.status === "error").length;
-  const totalTurns = results.reduce((s, r) => s + r.turnCount, 0);
-  console.log(`\n${c.bold}E2E Multi-Turn: ${passed} passed, ${failed} failed, ${errors} errors (${totalTurns} turns)${c.reset}`);
-  console.log(`Report: ${mdPath}`);
-}
 
 function cmdHelp() {
   console.log(`
@@ -1534,20 +1345,6 @@ Stagnation eval commands:
   stagnation-critique [options]          Replay through StagnationMonitor, score, report
     --dimension <d>   Filter by dimension
     --out <dir>       Output directory
-
-E2E eval commands:
-  e2e-critique [options]                 Replay E2E golden cases, score, judge, report
-    --provider <p>    Force provider: openrouter
-    --judge           Enable LLM-as-judge
-    --step <n>        Filter by step number
-    --out <dir>       Output directory (default: evals/reports)
-
-  e2e-validate                           Structural validation of E2E golden cases (offline)
-
-  e2e-multiturn [options]                Oracle-guided multi-turn replay eval
-    --provider <p>    Force provider: openrouter
-    --step <n>        Filter by step number
-    --out <dir>       Output directory (default: evals/reports)
 
 Completion-timing eval commands:
   completion-timing-critique [options]   Replay completion-timing cases, score, judge, report
