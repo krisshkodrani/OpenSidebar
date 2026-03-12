@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KickZone — Premium Sneakers</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #1a1a1a; }
+
+    /* ── Header ── */
+    header { background: #111; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: #ff4d4f; }
+    .header-actions { display: flex; align-items: center; gap: 20px; }
+    .cart-icon { position: relative; cursor: pointer; font-size: 1.1rem; }
+    .cart-icon .badge { position: absolute; top: -8px; right: -10px; background: #ff4d4f; color: #fff; font-size: 0.65rem; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+    .search-box { background: #222; border: 1px solid #333; border-radius: 6px; padding: 8px 14px; color: #fff; width: 260px; font-size: 0.9rem; }
+    .search-box::placeholder { color: #888; }
+
+    /* ── Breadcrumb ── */
+    .breadcrumb { padding: 12px 32px; font-size: 0.85rem; color: #888; }
+    .breadcrumb a { color: #555; text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+
+    /* ── Main Layout ── */
+    .page { display: flex; max-width: 1200px; margin: 0 auto; padding: 0 32px 60px; gap: 28px; }
+    .filters { width: 220px; flex-shrink: 0; }
+    .products-area { flex: 1; }
+
+    /* ── Filters ── */
+    .filter-section { background: #fff; border-radius: 10px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .filter-section h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 12px; }
+    .filter-option { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; font-size: 0.9rem; }
+    .filter-option input[type="checkbox"] { accent-color: #111; width: 16px; height: 16px; }
+
+    /* ── Product Grid ── */
+    .grid-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    .grid-header h2 { font-size: 1.3rem; }
+    .sort-select { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.85rem; background: #fff; }
+    .product-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .product-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.07); transition: transform 0.15s, box-shadow 0.15s; }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+    .product-img { width: 100%; aspect-ratio: 1; background: #f0f0f0; display: flex; align-items: center; justify-content: center; font-size: 3rem; }
+    .product-info { padding: 14px 16px 18px; }
+    .product-brand { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #999; margin-bottom: 4px; }
+    .product-name { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; line-height: 1.3; }
+    .product-price { font-size: 1.1rem; font-weight: 700; color: #111; margin-bottom: 10px; }
+    .product-price .original { text-decoration: line-through; color: #bbb; font-weight: 400; font-size: 0.85rem; margin-left: 6px; }
+    .product-rating { font-size: 0.8rem; color: #f5a623; margin-bottom: 12px; }
+    .product-rating .count { color: #999; margin-left: 4px; }
+
+    /* ── Size Selector ── */
+    .size-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .size-btn { width: 36px; height: 30px; border: 1px solid #ddd; border-radius: 4px; background: #fff; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.1s; }
+    .size-btn:hover { border-color: #111; }
+    .size-btn.selected { background: #111; color: #fff; border-color: #111; }
+    .size-btn.oos { color: #ccc; border-color: #eee; cursor: not-allowed; text-decoration: line-through; }
+
+    /* ── Add to Cart Button ── */
+    .add-to-cart { width: 100%; padding: 10px; border: none; border-radius: 8px; background: #111; color: #fff; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+    .add-to-cart:hover { background: #333; }
+    .add-to-cart:disabled { background: #ccc; cursor: not-allowed; }
+    .add-to-cart.added { background: #52c41a; }
+
+    /* ── Cart Drawer ── */
+    .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: none; }
+    .cart-overlay.open { display: block; }
+    .cart-drawer { position: fixed; right: 0; top: 0; bottom: 0; width: 400px; background: #fff; z-index: 201; transform: translateX(100%); transition: transform 0.25s ease; box-shadow: -4px 0 20px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+    .cart-drawer.open { transform: translateX(0); }
+    .cart-header { padding: 20px 24px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .cart-header h2 { font-size: 1.1rem; }
+    .cart-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; padding: 4px; }
+    .cart-items { flex: 1; overflow-y: auto; padding: 16px 24px; }
+    .cart-empty { text-align: center; color: #999; padding: 40px 0; }
+    .cart-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+    .cart-item-img { width: 64px; height: 64px; background: #f5f5f5; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+    .cart-item-details { flex: 1; }
+    .cart-item-name { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+    .cart-item-meta { font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+    .cart-item-price { font-weight: 700; }
+    .cart-item-remove { background: none; border: none; color: #ff4d4f; font-size: 0.8rem; cursor: pointer; padding: 2px 0; }
+    .cart-footer { padding: 20px 24px; border-top: 1px solid #eee; }
+    .cart-subtotal { display: flex; justify-content: space-between; font-size: 1.05rem; font-weight: 700; margin-bottom: 16px; }
+    .checkout-btn { width: 100%; padding: 14px; border: none; border-radius: 10px; background: #ff4d4f; color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+    .checkout-btn:hover { background: #e8383a; }
+    .checkout-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* ── Toast ── */
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #111; color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 0.9rem; z-index: 300; transition: transform 0.3s ease; pointer-events: none; }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Checkout Confirmation ── */
+    #checkout-confirmation { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; }
+    #checkout-confirmation .modal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 16px; padding: 40px; text-align: center; max-width: 420px; }
+    #checkout-confirmation .modal h2 { margin-bottom: 8px; font-size: 1.4rem; }
+    #checkout-confirmation .modal .check { font-size: 3rem; margin-bottom: 12px; }
+    #checkout-confirmation .modal p { color: #666; line-height: 1.5; }
+    #checkout-confirmation .modal .order-id { font-family: monospace; background: #f5f5f5; padding: 4px 10px; border-radius: 4px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">Kick<span>Zone</span></div>
+    <div class="header-actions">
+      <input class="search-box" type="text" placeholder="Search sneakers..." id="search-input" oninput="filterProducts()" />
+      <div class="cart-icon" id="cart-toggle" onclick="toggleCart()">
+        🛒 Cart <span class="badge" id="cart-badge">0</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="breadcrumb">
+    <a href="#">Home</a> / <a href="#">Sneakers</a> / <strong>All</strong>
+  </div>
+
+  <!-- Main -->
+  <div class="page">
+    <!-- Filters -->
+    <aside class="filters">
+      <div class="filter-section">
+        <h3>Brand</h3>
+        <label class="filter-option"><input type="checkbox" value="Nike" onchange="filterProducts()"> Nike</label>
+        <label class="filter-option"><input type="checkbox" value="Adidas" onchange="filterProducts()"> Adidas</label>
+        <label class="filter-option"><input type="checkbox" value="New Balance" onchange="filterProducts()"> New Balance</label>
+        <label class="filter-option"><input type="checkbox" value="Puma" onchange="filterProducts()"> Puma</label>
+      </div>
+      <div class="filter-section">
+        <h3>Price Range</h3>
+        <label class="filter-option"><input type="checkbox" value="under100" onchange="filterProducts()"> Under $100</label>
+        <label class="filter-option"><input type="checkbox" value="100-150" onchange="filterProducts()"> $100 – $150</label>
+        <label class="filter-option"><input type="checkbox" value="over150" onchange="filterProducts()"> Over $150</label>
+      </div>
+    </aside>
+
+    <!-- Products -->
+    <main class="products-area">
+      <div class="grid-header">
+        <h2>Sneakers <span id="product-count" style="color:#999;font-weight:400;font-size:0.9rem;">(9 items)</span></h2>
+        <select class="sort-select" id="sort-select" onchange="sortProducts()">
+          <option value="featured">Featured</option>
+          <option value="price-low">Price: Low to High</option>
+          <option value="price-high">Price: High to Low</option>
+          <option value="rating">Top Rated</option>
+        </select>
+      </div>
+      <div class="product-grid" id="product-grid"></div>
+    </main>
+  </div>
+
+  <!-- Cart Overlay -->
+  <div class="cart-overlay" id="cart-overlay" onclick="toggleCart()"></div>
+  <div class="cart-drawer" id="cart-drawer">
+    <div class="cart-header">
+      <h2>Your Cart (<span id="cart-count">0</span>)</h2>
+      <button class="cart-close" onclick="toggleCart()">×</button>
+    </div>
+    <div class="cart-items" id="cart-items">
+      <div class="cart-empty" id="cart-empty">Your cart is empty</div>
+    </div>
+    <div class="cart-footer">
+      <div class="cart-subtotal">
+        <span>Subtotal</span>
+        <span id="cart-subtotal">$0.00</span>
+      </div>
+      <button class="checkout-btn" id="checkout-btn" onclick="checkout()" disabled>Proceed to Checkout</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Checkout Confirmation -->
+  <div id="checkout-confirmation">
+    <div class="modal">
+      <div class="check">✅</div>
+      <h2>Order Placed!</h2>
+      <p>Thank you for your purchase.<br>Your order <span class="order-id" id="order-id"></span> is being processed.</p>
+    </div>
+  </div>
+
+  <script>
+    // ── Product Data ──
+    const PRODUCTS = [
+      { id: "air-max-90",       brand: "Nike",        name: "Air Max 90",                 price: 130,  originalPrice: null, rating: 4.5, reviews: 2847, emoji: "👟", sizes: [7,8,9,10,11,12],    oosSize: [] },
+      { id: "ultraboost-22",    brand: "Adidas",      name: "Ultraboost 22",              price: 190,  originalPrice: null, rating: 4.7, reviews: 3102, emoji: "🏃", sizes: [7,8,9,10,11],       oosSize: [11] },
+      { id: "nb-574",           brand: "New Balance", name: "574 Core",                   price: 89.99,originalPrice: null, rating: 4.3, reviews: 1923, emoji: "👞", sizes: [7,8,9,10,11,12,13], oosSize: [] },
+      { id: "puma-suede",       brand: "Puma",        name: "Suede Classic XXI",          price: 75,   originalPrice: null, rating: 4.1, reviews: 1456, emoji: "🔵", sizes: [8,9,10,11],         oosSize: [] },
+      { id: "dunk-low",         brand: "Nike",        name: "Dunk Low Retro",             price: 115,  originalPrice: 130,  rating: 4.6, reviews: 5210, emoji: "🏀", sizes: [7,8,9,10,11,12],    oosSize: [7,12] },
+      { id: "yeezy-350",        brand: "Adidas",      name: "Yeezy Boost 350 V2",         price: 230,  originalPrice: null, rating: 4.8, reviews: 8901, emoji: "🌊", sizes: [8,9,10,11],         oosSize: [8] },
+      { id: "nb-990v6",         brand: "New Balance", name: "990v6 Made in USA",          price: 199.99,originalPrice: null,rating: 4.9, reviews: 987,  emoji: "🇺🇸", sizes: [8,9,10,11,12],     oosSize: [] },
+      { id: "air-force-1",      brand: "Nike",        name: "Air Force 1 '07",            price: 110,  originalPrice: null, rating: 4.4, reviews: 12340,emoji: "⚪", sizes: [7,8,9,10,11,12,13], oosSize: [] },
+      { id: "puma-rs-x",        brand: "Puma",        name: "RS-X Reinvention",           price: 120,  originalPrice: 140,  rating: 4.2, reviews: 876,  emoji: "🟡", sizes: [8,9,10,11],         oosSize: [10] },
+    ];
+
+    let cart = [];
+    let selectedSizes = {}; // productId → size
+
+    // ── Render ──
+    function renderProducts(products) {
+      const grid = document.getElementById("product-grid");
+      grid.innerHTML = "";
+      document.getElementById("product-count").textContent = `(${products.length} items)`;
+      for (const p of products) {
+        const stars = "★".repeat(Math.floor(p.rating)) + (p.rating % 1 >= 0.5 ? "½" : "");
+        const priceHtml = p.originalPrice
+          ? `$${p.price.toFixed(2)} <span class="original">$${p.originalPrice.toFixed(2)}</span>`
+          : `$${p.price.toFixed(2)}`;
+        const sizesHtml = p.sizes.map(s => {
+          const oos = p.oosSize.includes(s);
+          const sel = selectedSizes[p.id] === s;
+          return `<button class="size-btn ${oos ? 'oos' : ''} ${sel ? 'selected' : ''}"
+                    data-product="${p.id}" data-size="${s}"
+                    ${oos ? 'disabled' : ''}
+                    onclick="selectSize('${p.id}', ${s})">${s}</button>`;
+        }).join("");
+        const hasSize = selectedSizes[p.id] !== undefined;
+        grid.innerHTML += `
+          <div class="product-card" data-id="${p.id}" data-brand="${p.brand}" data-price="${p.price}">
+            <div class="product-img">${p.emoji}</div>
+            <div class="product-info">
+              <div class="product-brand">${p.brand}</div>
+              <div class="product-name">${p.name}</div>
+              <div class="product-price">${priceHtml}</div>
+              <div class="product-rating">${stars} <span class="count">(${p.reviews.toLocaleString()})</span></div>
+              <div class="size-row" id="sizes-${p.id}">${sizesHtml}</div>
+              <button class="add-to-cart" id="atc-${p.id}" ${!hasSize ? 'disabled' : ''} onclick="addToCart('${p.id}')">
+                ${hasSize ? 'Add to Cart' : 'Select Size'}
+              </button>
+            </div>
+          </div>`;
+      }
+    }
+
+    function selectSize(productId, size) {
+      selectedSizes[productId] = size;
+      renderProducts(getFilteredProducts());
+    }
+
+    function addToCart(productId) {
+      const product = PRODUCTS.find(p => p.id === productId);
+      const size = selectedSizes[productId];
+      if (!product || !size) return;
+
+      // Check for duplicates
+      const existing = cart.find(c => c.id === productId && c.size === size);
+      if (existing) {
+        existing.qty++;
+      } else {
+        cart.push({ id: productId, name: product.name, brand: product.brand, price: product.price, size, qty: 1, emoji: product.emoji });
+      }
+
+      // Animate button
+      const btn = document.getElementById(`atc-${productId}`);
+      btn.textContent = "✓ Added";
+      btn.classList.add("added");
+      setTimeout(() => { btn.textContent = "Add to Cart"; btn.classList.remove("added"); }, 1200);
+
+      showToast(`${product.name} (Size ${size}) added to cart`);
+      renderCart();
+    }
+
+    function renderCart() {
+      const itemsEl = document.getElementById("cart-items");
+      const emptyEl = document.getElementById("cart-empty");
+      const countEl = document.getElementById("cart-count");
+      const badgeEl = document.getElementById("cart-badge");
+      const subtotalEl = document.getElementById("cart-subtotal");
+      const checkoutBtn = document.getElementById("checkout-btn");
+
+      const totalItems = cart.reduce((s, c) => s + c.qty, 0);
+      const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+
+      badgeEl.textContent = totalItems;
+      countEl.textContent = totalItems;
+      subtotalEl.textContent = `$${subtotal.toFixed(2)}`;
+      checkoutBtn.disabled = cart.length === 0;
+
+      if (cart.length === 0) {
+        itemsEl.innerHTML = '<div class="cart-empty" id="cart-empty">Your cart is empty</div>';
+        return;
+      }
+
+      itemsEl.innerHTML = cart.map((item, i) => `
+        <div class="cart-item">
+          <div class="cart-item-img">${item.emoji}</div>
+          <div class="cart-item-details">
+            <div class="cart-item-name">${item.name}</div>
+            <div class="cart-item-meta">${item.brand} · Size ${item.size} · Qty: ${item.qty}</div>
+            <div class="cart-item-price">$${(item.price * item.qty).toFixed(2)}</div>
+            <button class="cart-item-remove" onclick="removeFromCart(${i})">Remove</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function removeFromCart(index) {
+      cart.splice(index, 1);
+      renderCart();
+    }
+
+    function toggleCart() {
+      document.getElementById("cart-overlay").classList.toggle("open");
+      document.getElementById("cart-drawer").classList.toggle("open");
+    }
+
+    function checkout() {
+      if (cart.length === 0) return;
+      const orderId = "KZ-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+      document.getElementById("order-id").textContent = orderId;
+      document.getElementById("checkout-confirmation").style.display = "block";
+      // Don't clear cart — let tests inspect final state
+    }
+
+    // ── Filtering & Sorting ──
+    function getFilteredProducts() {
+      const brandChecks = [...document.querySelectorAll('.filter-section:first-child input:checked')].map(c => c.value);
+      const priceChecks = [...document.querySelectorAll('.filter-section:last-child input:checked')].map(c => c.value);
+      const search = document.getElementById("search-input").value.toLowerCase();
+
+      return PRODUCTS.filter(p => {
+        if (brandChecks.length && !brandChecks.includes(p.brand)) return false;
+        if (priceChecks.length) {
+          const match = priceChecks.some(r => {
+            if (r === "under100") return p.price < 100;
+            if (r === "100-150") return p.price >= 100 && p.price <= 150;
+            if (r === "over150") return p.price > 150;
+          });
+          if (!match) return false;
+        }
+        if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
+        return true;
+      });
+    }
+
+    function filterProducts() {
+      renderProducts(getFilteredProducts());
+    }
+
+    function sortProducts() {
+      const products = getFilteredProducts();
+      const sort = document.getElementById("sort-select").value;
+      if (sort === "price-low") products.sort((a, b) => a.price - b.price);
+      if (sort === "price-high") products.sort((a, b) => b.price - a.price);
+      if (sort === "rating") products.sort((a, b) => b.rating - a.rating);
+      renderProducts(products);
+    }
+
+    // ── Toast ──
+    function showToast(msg) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2500);
+    }
+
+    // Initial render
+    renderProducts(PRODUCTS);
+  </script>
+</body>
+</html>

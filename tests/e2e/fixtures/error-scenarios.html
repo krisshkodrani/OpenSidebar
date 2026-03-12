@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Error Scenarios</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; }
+      body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; background: #f3f5f8; padding: 24px; }
+      h1 { font-size: 24px; margin-bottom: 8px; }
+      .description { color: #475569; margin-bottom: 20px; }
+      .card { background: #fff; border: 1px solid #dbe2ea; border-radius: 14px; padding: 20px; max-width: 480px; margin-bottom: 16px; }
+      .card h2 { font-size: 18px; margin-bottom: 8px; }
+      .field { display: grid; gap: 6px; margin-bottom: 12px; }
+      .field label { font-size: 13px; color: #64748b; font-weight: 600; }
+      .field input { width: 100%; border: 1px solid #dbe2ea; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+      .btn { border: 0; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+      .btn-primary { background: #0b5fff; color: white; }
+      .error { color: #dc2626; margin-top: 8px; font-weight: 500; }
+      .success { color: #16a34a; margin-top: 8px; font-weight: 500; }
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Error Scenarios Page</h1>
+    <p class="description">A page with intentionally tricky elements for testing agent error handling.</p>
+
+    <!-- Scenario 1: Form with validation -->
+    <div class="card" id="validation-section">
+      <h2>Contact Form</h2>
+      <div class="field">
+        <label for="contact-email">Email address</label>
+        <input id="contact-email" type="email" placeholder="Enter your email" />
+      </div>
+      <div class="field">
+        <label for="contact-message">Message</label>
+        <input id="contact-message" placeholder="Enter a message (min 10 chars)" />
+      </div>
+      <button id="contact-submit" class="btn btn-primary">Send Message</button>
+      <p id="contact-error" class="error hidden"></p>
+      <p id="contact-success" class="success hidden"></p>
+    </div>
+
+    <!-- Scenario 2: Element that appears after delay -->
+    <div class="card" id="delayed-section">
+      <h2>Delayed Content</h2>
+      <p>Click "Load Content" and wait for the result to appear.</p>
+      <button id="load-content" class="btn btn-primary">Load Content</button>
+      <div id="delayed-result" class="hidden" style="margin-top:12px">
+        <p id="delayed-text">Loaded: The answer is 42.</p>
+      </div>
+    </div>
+
+    <!-- Scenario 3: Non-existent target reference -->
+    <div class="card" id="missing-section">
+      <h2>Task Reference</h2>
+      <p>This section has a "Submit Report" button but no "Generate Report" button exists on the page.</p>
+      <button id="submit-report" class="btn btn-primary" disabled>Submit Report</button>
+      <p id="report-status" class="error hidden">Report not generated yet.</p>
+    </div>
+
+    <script>
+      (() => {
+        const $ = (id) => document.getElementById(id);
+
+        // Form validation
+        $("contact-submit").addEventListener("click", () => {
+          $("contact-error").classList.add("hidden");
+          $("contact-success").classList.add("hidden");
+
+          const email = $("contact-email").value.trim();
+          const msg = $("contact-message").value.trim();
+
+          if (!email || !email.includes("@")) {
+            $("contact-error").textContent = "Please enter a valid email address.";
+            $("contact-error").classList.remove("hidden");
+            return;
+          }
+          if (msg.length < 10) {
+            $("contact-error").textContent = "Message must be at least 10 characters.";
+            $("contact-error").classList.remove("hidden");
+            return;
+          }
+
+          $("contact-success").textContent = "Message sent successfully!";
+          $("contact-success").classList.remove("hidden");
+          window.contactResult = { email, message: msg, sent: true };
+        });
+
+        // Delayed content (appears after 2s)
+        $("load-content").addEventListener("click", () => {
+          $("load-content").disabled = true;
+          $("load-content").textContent = "Loading...";
+          setTimeout(() => {
+            $("delayed-result").classList.remove("hidden");
+            $("load-content").textContent = "Loaded";
+            window.delayedLoaded = true;
+          }, 2000);
+        });
+
+        // Submit report — only works if report was "generated" (which can't happen)
+        $("submit-report").addEventListener("click", () => {
+          $("report-status").classList.remove("hidden");
+        });
+      })();
+    </script>
+  </body>
+</html>

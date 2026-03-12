@@ -10,8 +10,9 @@ npm run dev            # Full dev stack: Vite HMR + log server + trace viewer
 npm run build          # Production build (vite build)
 npm run lint           # ESLint (src/**/*.ts,tsx)
 npm run fmt            # Prettier format src/
-npm test               # Run all tests (vitest)
+npm test               # Run all tests (vitest, excludes e2e)
 npx vitest run tests/content/tagging.test.ts  # Run a single test file
+npm run test:e2e       # E2E tests: build + launch Chrome + real agent (requires OPENROUTER_API_KEY)
 
 # Logs & Traces
 npm run logs           # Start log drain server + trace viewer (http://127.0.0.1:7589/viewer)
@@ -130,9 +131,27 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 ## Testing
 
-Tests use **Vitest** with `happy-dom` for DOM simulation. The global test setup (`tests/setup.ts`) mocks `chrome.*` APIs, `getBoundingClientRect`, `scrollIntoView`, etc. Tests live in `tests/` mirroring `src/` structure.
+### Unit Tests
+
+Tests use **Vitest** with `happy-dom` for DOM simulation. The global test setup (`tests/setup.ts`) mocks `chrome.*` APIs, `getBoundingClientRect`, `scrollIntoView`, etc. Tests live in `tests/` mirroring `src/` structure. E2E tests are excluded from `npm test`.
 
 Test files cover: agent loop, context manager, keepalive, navigation bridge, security, streaming, tools, content script (tagging, snapshot, shadow DOM), sidepanel store, and logger.
+
+### E2E Tests (`tests/e2e/`)
+
+Real browser tests using Puppeteer. Launches headed Chrome with the built extension, sends tasks via `chrome.runtime.sendMessage`, and watches the agent interact with fixture pages. Requires `OPENROUTER_API_KEY` (env var or `.env` file); skipped if missing.
+
+- `online-shop.test.ts` — Shopping flow: add to cart, apply coupon, select shipping, checkout.
+- `navigation-challenge.test.ts` — Sequential interaction: click button 3x, read revealed code, enter and submit.
+- `edge-cases.test.ts` — Error recovery (form validation), delayed content, impossible task graceful stop.
+- `helpers/browser.ts` — Puppeteer launch with extension, SW discovery, helper page.
+- `helpers/utils.ts` — `sendUserChat()`, `waitForOutcome()`, `resetExtensionState()`, event monitoring.
+- `helpers/fixture-server.ts` — HTTP server for fixture HTML files (avoids `file://` content script issues).
+- `helpers/diagnostics.ts` — Log server lifecycle, CDP console capture, trace file reading + summary.
+- `fixtures/` — Self-contained HTML pages: `online-shop-pro.html`, `navigation-challenge.html`, `error-scenarios.html`.
+- `vitest.e2e.config.ts` — Separate Vitest config (node env, 360s timeout, single fork, retry:1).
+
+Run: `npm run test:e2e` (builds first, then runs). Each test suite launches its own Chrome instance. `beforeEach` cleanup resets agent state between test cases.
 
 ## Debugging
 
