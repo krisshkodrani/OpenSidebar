@@ -254,23 +254,17 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Solve the puzzle to go to step 21\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User needs to interact with the page (solve a puzzle) to progress, which requires tool actions rather than just reading content.)\n- Executor start (executor): Executor started objective: Solve the puzzle to go to step 21\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
-    "blockers": [],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    "blockers": []
   },
   "reference": {
     "interpretation": "1. LAYOUT: Single prominent challenge section with input field and buttons. \n2. STATE: Active tab appears normal, no open menus, focused input is the code entry field, no loading indicators.\n3. CONTENT: No key text visible only in images.\n4. VISUAL-ONLY: No text in images, canvas, charts, or SVGs.\n5. BLOCKERS: None.\n6. SPATIAL: Submit button below code entry field, multiple \"next\" and \"continue\" buttons at bottom.\n7. HAZARDS: None.\n8. OBJECTIVE_CHECK: NOT_DONE, Puzzle code revealed but not submitted.",

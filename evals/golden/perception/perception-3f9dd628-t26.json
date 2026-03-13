@@ -223,17 +223,15 @@
     "scroll": {
       "y": 2049,
       "maxY": 2049
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -256,8 +254,7 @@
         "type": "nuisance",
         "description": "[86:btn]"
       }
-    ],
-    "completionSignal": null
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Multi-step process page with popups. Centered content area with buttons and inputs.\n\n2. STATE: Active tab, multiple popups open. No focused inputs.\n\n3. CONTENT: None.\n\n4. VISUAL-ONLY: None.\n\n5. BLOCKERS:\n   NUISANCE [70:btn] \"Dismiss\" → click [70:btn]\n   NUISANCE [28:btn] \"Dismiss\" → click [28:btn]\n   NUISANCE [26:btn] \"\" → click [26:btn]\n   RELEVANT [34:div] \"Cookie Consent\" → must make choice\n   NUISANCE [86:btn] \"\" → click [86:btn]\n\n6. SPATIAL: Popups overlap content. Buttons and inputs in content area.\n\n7. HAZARDS: \n   [226:btn] \"Click Here\" \n   [227:btn] \"Click Here\" \n   [41:div] \"Button!\" \n   [247:div] \"Button!\"",

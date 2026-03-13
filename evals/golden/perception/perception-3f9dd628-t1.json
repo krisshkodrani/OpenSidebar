@@ -178,33 +178,28 @@
     "scroll": {
       "y": 222,
       "maxY": 222
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
         "type": "nuisance",
-        "description": "Try This!",
-        "tagId": 184
+        "description": "Try This!"
       },
       {
         "type": "nuisance",
-        "description": "Try This!",
-        "tagId": 185
+        "description": "Try This!"
       },
       {
         "type": "nuisance",
-        "description": "Here!",
-        "tagId": 186
+        "description": "Here!"
       },
       {
         "type": "nuisance",
@@ -212,7 +207,9 @@
         "tagId": 187
       }
     ],
-    "completionSignal": null
+    "mustMentionElements": [
+      187
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Long scrolling page with sections. Multiple navigation buttons.\n\n2. STATE: Active tab appears to be the main content page. No open menus or focused inputs visible.\n\n3. CONTENT: None.\n\n4. VISUAL-ONLY: None.\n\n5. BLOCKERS: \n   NUISANCE [184] \"Try This!\" → click [184]\n   NUISANCE [185] \"Try This!\" → click [185]\n   NUISANCE [186] \"Here!\" → click [186]\n   NUISANCE [187] \"Click Here!\" → click [187]\n\n6. SPATIAL: Navigation buttons scattered throughout sections.\n\n7. HAZARDS: \n   [184] \"suspicious button\"\n   [185] \"suspicious button\"\n   [186] \"vague CTA\"\n   [187] \"vague CTA\"",

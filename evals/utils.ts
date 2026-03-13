@@ -21,6 +21,7 @@ import type { ContextEfficiencyGoldenCase } from "./context-efficiency-types";
 
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const TRACE_DIR = join(PROJECT_ROOT, "traces");
+export const LOG_DIR = join(PROJECT_ROOT, "logs");
 export const CASES_DIR = join(PROJECT_ROOT, "evals", "cases");
 export const RESULTS_DIR = join(PROJECT_ROOT, "evals", "results");
 const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
@@ -48,6 +49,39 @@ export function readSessionIndex(): Record<string, unknown>[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+/** Read session manifests directly from trace files when index.jsonl is stale or incomplete. */
+export function readSessionFiles(): Record<string, unknown>[] {
+  if (!existsSync(TRACE_DIR)) return [];
+
+  const files = readdirSync(TRACE_DIR).filter(
+    (file) => file.endsWith(".jsonl") && file !== "index.jsonl",
+  );
+  const sessions: Record<string, unknown>[] = [];
+
+  for (const file of files) {
+    try {
+      const lines = readFileSync(join(TRACE_DIR, file), "utf-8")
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+      const firstSessionLine = lines.find((line) => {
+        try {
+          const parsed = JSON.parse(line) as Record<string, unknown>;
+          return parsed.traceKind === "agent.session";
+        } catch {
+          return false;
+        }
+      });
+      if (!firstSessionLine) continue;
+      sessions.push(JSON.parse(firstSessionLine));
+    } catch {
+      continue;
+    }
+  }
+
+  return sessions;
 }
 
 /** Read orchestrator run manifests from traces/runs/index.jsonl */
@@ -173,8 +207,17 @@ export function levenshteinDistance(a: string[], b: string[]): number {
 
 /** Find a session ID by prefix match */
 export function resolveSessionId(prefix: string): string {
-  const sessions = readSessionIndex();
-  const match = sessions.find(
+  const sessions = [...readSessionIndex(), ...readSessionFiles()];
+  const seen = new Set<string>();
+  const uniqueSessions = sessions.filter((session: any) => {
+    const sessionId = session?.sessionId;
+    if (typeof sessionId !== "string" || seen.has(sessionId)) {
+      return false;
+    }
+    seen.add(sessionId);
+    return true;
+  });
+  const match = uniqueSessions.find(
     (s: any) => s.sessionId === prefix || s.sessionId.startsWith(prefix),
   );
   if (!match) {

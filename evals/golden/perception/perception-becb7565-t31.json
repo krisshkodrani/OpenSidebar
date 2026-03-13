@@ -240,28 +240,22 @@
     "scroll": {
       "y": 444,
       "maxY": 444
-    },
-    "objective": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
         "type": "prereq",
         "description": "Complete challenge to reveal code"
       }
-    ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: The page appears to be a scrolling challenge with multiple sections of filler content and various buttons. The visible structure consists of a header, a long list of sections with buttons and text.\n\n2. STATE: The active tab seems to be the main content page, with no open menus or focused inputs visible. There are loading indicators (\"Content Block 1 Loaded!\", \"Content Block 2 Loaded!\") and a prominent error message (\"Wrong Button! Try Again!\").\n\n3. CONTENT: No key text is visible only in images.\n\n4. VISUAL-ONLY: No text in images, canvas, charts, or SVGs.\n\n5. BLOCKERS: \n   PREREQ \"Complete challenge to reveal code\"\n\n6. SPATIAL: The navigation buttons are scattered throughout the page, often at the end of sections.\n\n7. HAZARDS: \n   [73] \"suspicious button\"\n   [79] \"suspicious button\"\n\n8. OBJECTIVE_CHECK: NOT_DONE. The user hasn't found the correct navigation element.",

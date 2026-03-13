@@ -223,17 +223,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -243,8 +241,7 @@
       },
       {
         "type": "nuisance",
-        "description": "Dismiss",
-        "tagId": 352
+        "description": "Dismiss"
       },
       {
         "type": "nuisance",
@@ -261,7 +258,13 @@
         "description": "complete challenge to reveal code"
       }
     ],
-    "completionSignal": null
+    "mustMentionElements": [
+      27,
+      84,
+      317,
+      358,
+      360
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Multi-section page with popups. \n2. STATE: Active popups: Cookie Consent, Limited time offer!, Hidden DOM Challenge.\n3. CONTENT: None.\n4. VISUAL-ONLY: None.\n5. BLOCKERS: \n   NUISANCE [358] \"Close\" → click [358]\n   NUISANCE [352] \"Dismiss\" → click [352]\n   NUISANCE [317] \"Close\" → click [317]\n   RELEVANT [360] \"Accept\" \n   PREREQ \"complete challenge to reveal code\"\n6. SPATIAL: Popups overlap content. \n7. HAZARDS: \n   [27] \"code to proceed\" \n   [84] \"Next Section\" \n   [278] \"Move On\" \n   [106] \"Click Here\"",

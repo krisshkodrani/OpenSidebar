@@ -1,18 +1,12 @@
 /**
  * Perception eval markdown report generator.
  *
- * Produces structured reports with:
- * - Summary table (pass rate, avg scores per metric)
- * - Provider comparison
- * - Per-dimension breakdown
- * - Failed case details with judge reasoning
- * - Perception prompt recommendations from judge suggestions
+ * Produces structured reports for the v6 perception contract.
  */
 
 import type {
   PerceptionEvalCase,
   PerceptionEvalResult,
-  PerceptionJudgeScore,
 } from "./types";
 
 export interface PerceptionCritiqueData {
@@ -27,7 +21,6 @@ export function buildPerceptionReport(data: PerceptionCritiqueData): string {
 
   sections.push("# Perception Eval Report\n");
   sections.push(`Generated: ${new Date().toISOString()}\n`);
-
   sections.push(buildSummary(results));
   sections.push(buildProviderComparison(results));
   sections.push(buildDimensionBreakdown(results, caseById));
@@ -37,8 +30,6 @@ export function buildPerceptionReport(data: PerceptionCritiqueData): string {
   return sections.join("\n");
 }
 
-// ── Sections ─────────────────────────────────────────────────────────
-
 function buildSummary(results: PerceptionEvalResult[]): string {
   const total = results.length;
   const passed = results.filter((r) => r.status === "pass").length;
@@ -47,9 +38,9 @@ function buildSummary(results: PerceptionEvalResult[]): string {
   const passRate = total > 0 ? ((passed / total) * 100).toFixed(1) : "0.0";
 
   const avgSec = avg(results.map((r) => r.scores.sectionCompleteness));
-  const avgSig = avg(results.map((r) => r.scores.signalAccuracy));
   const avgBlk = avg(results.map((r) => r.scores.blockerDetection));
-  const avgAct = avg(results.map((r) => r.scores.actionability));
+  const avgAff = avg(results.map((r) => r.scores.affordanceGrounding));
+  const avgVis = avg(results.map((r) => r.scores.visualOnlyRecall));
   const avgHal = avg(results.map((r) => r.scores.hallucination));
   const avgComp = avg(results.map((r) => r.scores.composite));
 
@@ -62,9 +53,9 @@ function buildSummary(results: PerceptionEvalResult[]): string {
 | Failed | ${failed} |
 | Errors | ${errored} |
 | Avg section completeness | ${avgSec.toFixed(3)} |
-| Avg signal accuracy | ${avgSig.toFixed(3)} |
 | Avg blocker detection | ${avgBlk.toFixed(3)} |
-| Avg actionability | ${avgAct.toFixed(3)} |
+| Avg affordance grounding | ${avgAff.toFixed(3)} |
+| Avg visual-only recall | ${avgVis.toFixed(3)} |
 | Avg hallucination | ${avgHal.toFixed(3)} |
 | Avg composite | ${avgComp.toFixed(3)} |
 `;
@@ -76,7 +67,7 @@ function buildProviderComparison(results: PerceptionEvalResult[]): string {
     {
       total: number;
       pass: number;
-      avgAccuracy: number;
+      avgLocation: number;
       avgGroundedness: number;
       avgLatency: number;
       avgComposite: number;
@@ -89,25 +80,26 @@ function buildProviderComparison(results: PerceptionEvalResult[]): string {
       byProvider.set(pid, {
         total: 0,
         pass: 0,
-        avgAccuracy: 0,
+        avgLocation: 0,
         avgGroundedness: 0,
         avgLatency: 0,
         avgComposite: 0,
       });
     }
+
     const rec = byProvider.get(pid)!;
     rec.total++;
     if (r.status === "pass") rec.pass++;
     rec.avgLatency += r.durationMs;
     rec.avgComposite += r.scores.composite;
     if (r.scores.judge) {
-      rec.avgAccuracy += r.scores.judge.accuracy;
+      rec.avgLocation += r.scores.judge.locationAccuracy;
       rec.avgGroundedness += r.scores.judge.groundedness;
     }
   }
 
   if (byProvider.size <= 1) {
-    return "## Provider Comparison\n\nOnly one provider tested — no comparison available.\n";
+    return "## Provider Comparison\n\nOnly one provider tested - no comparison available.\n";
   }
 
   const rows: string[] = [];
@@ -118,14 +110,14 @@ function buildProviderComparison(results: PerceptionEvalResult[]): string {
       (r) => r.provider.providerId === pid && r.scores.judge,
     ).length;
     rows.push(
-      `| ${pid} | ${passRate}% (${rec.pass}/${rec.total}) | ${judged > 0 ? (rec.avgAccuracy / judged).toFixed(1) : "—"} | ${judged > 0 ? (rec.avgGroundedness / judged).toFixed(1) : "—"} | ${(rec.avgComposite / rec.total).toFixed(3)} | ${Math.round(rec.avgLatency / rec.total)}ms |`,
+      `| ${pid} | ${passRate}% (${rec.pass}/${rec.total}) | ${judged > 0 ? (rec.avgLocation / judged).toFixed(1) : "-"} | ${judged > 0 ? (rec.avgGroundedness / judged).toFixed(1) : "-"} | ${(rec.avgComposite / rec.total).toFixed(3)} | ${Math.round(rec.avgLatency / rec.total)}ms |`,
     );
   }
 
   return `## Provider Comparison
 
-| Provider | Pass Rate | Avg Accuracy | Avg Groundedness | Avg Composite | Avg Latency |
-|----------|-----------|-------------|------------------|---------------|-------------|
+| Provider | Pass Rate | Avg Location | Avg Groundedness | Avg Composite | Avg Latency |
+|----------|-----------|--------------|------------------|---------------|-------------|
 ${rows.join("\n")}
 `;
 }
@@ -184,17 +176,15 @@ function buildFailedCases(
     .map((r) => {
       const c = caseById.get(r.caseId);
       const dim = c?.metadata.dimension ?? "untagged";
-
       const judge = r.scores.judge;
       const judgeBlock = judge
-        ? `  - **Judge**: acc=${judge.accuracy} blk=${judge.blockerQuality} gnd=${judge.groundedness} sig=${judge.signalCorrectness} conc=${judge.conciseness}\n` +
+        ? `  - **Judge**: loc=${judge.locationAccuracy} chg=${judge.changeAccuracy} blk=${judge.blockerQuality} aff=${judge.affordanceUsefulness} gnd=${judge.groundedness} conc=${judge.conciseness}\n` +
           `  - **Reasoning**: ${judge.reasoning}\n` +
           (judge.promptFixSuggestion
             ? `  - **Prompt fix**: ${judge.promptFixSuggestion}\n`
             : "")
         : "  - *(not judged)*\n";
 
-      // Show reference vs actual (truncated)
       const refSnippet =
         c?.reference.interpretation.slice(0, 300) ?? "(none)";
       const actSnippet = r.actual.interpretation.slice(0, 300) || "(empty)";
@@ -202,8 +192,8 @@ function buildFailedCases(
       return `### ${r.caseId} [${r.provider.providerId}]
 
 - **Dimension**: ${dim}
-- **Status**: ${r.status}${r.error ? ` — ${r.error}` : ""}
-- **Scores**: sec=${r.scores.sectionCompleteness.toFixed(2)} sig=${r.scores.signalAccuracy.toFixed(2)} blk=${r.scores.blockerDetection.toFixed(2)} act=${r.scores.actionability.toFixed(2)} hal=${r.scores.hallucination.toFixed(2)} comp=${r.scores.composite.toFixed(2)}
+- **Status**: ${r.status}${r.error ? ` - ${r.error}` : ""}
+- **Scores**: sec=${r.scores.sectionCompleteness.toFixed(2)} blk=${r.scores.blockerDetection.toFixed(2)} aff=${r.scores.affordanceGrounding.toFixed(2)} vis=${r.scores.visualOnlyRecall.toFixed(2)} hal=${r.scores.hallucination.toFixed(2)} comp=${r.scores.composite.toFixed(2)}
 ${judgeBlock}
 <details>
 <summary>Reference output</summary>
@@ -243,9 +233,8 @@ function buildRecommendations(
     const dim = c?.metadata.dimension ?? "untagged";
     const key = `${dim}:${judge.promptFixSuggestion.slice(0, 100)}`;
     const existing = suggestions.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
+    if (existing) existing.count++;
+    else {
       suggestions.set(key, {
         suggestion: judge.promptFixSuggestion,
         dimension: dim,
@@ -262,13 +251,11 @@ function buildRecommendations(
     );
 
   if (recs.length === 0) {
-    return "## Perception Prompt Recommendations\n\nNo specific recommendations — all cases passed.\n";
+    return "## Perception Prompt Recommendations\n\nNo specific recommendations - all cases passed.\n";
   }
 
   return `## Perception Prompt Recommendations\n\n${recs.join("\n")}\n`;
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────
 
 function avg(values: number[]): number {
   if (values.length === 0) return 0;

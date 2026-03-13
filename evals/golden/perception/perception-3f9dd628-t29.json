@@ -335,17 +335,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -368,7 +366,14 @@
         "description": "enter code to proceed"
       }
     ],
-    "completionSignal": null
+    "mustMentionElements": [
+      1,
+      34,
+      35,
+      171,
+      259,
+      267
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Central modal window with form. \n2. STATE: Active tab, no open menus, focused input [1], no loading indicators.\n3. CONTENT: None.\n4. VISUAL-ONLY: None.\n5. BLOCKERS: \n   NUISANCE [34] \"Moving!\" → click [34]\n   NUISANCE [35] \"Link!\" → click [35]\n   NUISANCE [267] \"Link!\" → click [267]\n   PREREQ \"enter code to proceed\".\n6. SPATIAL: Buttons below form, various CTAs.\n7. HAZARDS: \n   [259] \"vague CTA\".\n   [171] \"vague CTA\".",

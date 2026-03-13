@@ -230,17 +230,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -256,10 +254,12 @@
         "description": "Complete challenge to reveal code"
       }
     ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    "mustMentionElements": [
+      53
+    ],
+    "visualOnlyContent": [
+      "No specific text in images, canvas, charts, or SVGs was identified beyond what's mentioned in CONTENT."
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: The page appears to be a scrolling challenge with multiple sections of filler content and various buttons. The visible structure suggests a vertical layout with a prominent call-to-action (CTA) buttons scattered throughout.\n\n2. STATE: The active tab seems to be the main content area, with no open menus or focused inputs visible. There are no apparent loading indicators.\n\n3. CONTENT: Key text visible only in images, screenshots, or graphical elements includes \"Click Here!\" and \"Button!\" on orange squares, \"Wrong Button!\" on a red square.\n\n4. VISUAL-ONLY: No specific text in images, canvas, charts, or SVGs was identified beyond what's mentioned in CONTENT.\n\n5. BLOCKERS: \n   - NUISANCE [None] \n   - RELEVANT [None] \n   - PREREQ \"Complete challenge to reveal code\"\n\n6. SPATIAL: The submit buttons appear to be scattered throughout the page, often at the end of sections or randomly placed.\n\n7. HAZARDS: \n   - [88] \"suspicious button\"\n   - [92] \"ambiguous cta\"\n   - [53] \"vague button\"\n\n8. OBJECTIVE_CHECK: NOT_DONE - The user has not yet located and activated the correct navigation element to proceed to the next step.",

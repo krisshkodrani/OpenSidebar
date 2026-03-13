@@ -1,77 +1,72 @@
 /**
  * Perception eval scorer — pure functions, no API calls.
  *
- * Scores perception output against expected annotations across 5 metrics.
+ * Scores v6 perception output against expected annotations.
  */
 
-import type { PerceptionEvalCase, PerceptionEvalResult } from "./types";
+import type { PerceptionEvalCase } from "./types";
 
 const WEIGHTS = {
-  sectionCompleteness: 0.20,
-  signalAccuracy: 0.25,
-  blockerDetection: 0.20,
-  actionability: 0.15,
+  sectionCompleteness: 0.15,
+  blockerDetection: 0.30,
+  affordanceGrounding: 0.25,
+  visualOnlyRecall: 0.10,
   hallucination: 0.20,
 };
 
 const PASS_COMPOSITE = 0.70;
-const PASS_SIGNAL = 0.5;
+const PASS_BLOCKERS = 0.50;
 
 export interface PerceptionScores {
   sectionCompleteness: number;
-  signalAccuracy: number;
   blockerDetection: number;
-  actionability: number;
+  affordanceGrounding: number;
+  visualOnlyRecall: number;
   hallucination: number;
   composite: number;
 }
 
-/**
- * Score a perception output against expected annotations.
- */
 export function scorePerception(
   evalCase: PerceptionEvalCase,
   interpretation: string,
-  completionSignal?: { status: string; evidence: string; scope: string } | null,
 ): PerceptionScores {
   const sc = scoreSectionCompleteness(evalCase.expected.requiredSections, interpretation);
-  const sa = scoreSignalAccuracy(evalCase.expected.completionSignal, completionSignal);
   const bd = scoreBlockerDetection(evalCase.expected.blockers, interpretation);
-  const ac = scoreActionability(evalCase.expected.mustMentionElements, interpretation, evalCase.expected.mode);
+  const ag = scoreAffordanceGrounding(
+    evalCase.input.elements,
+    evalCase.expected.mustMentionElements,
+    interpretation,
+  );
+  const vr = scoreVisualOnlyRecall(evalCase.expected.visualOnlyContent, interpretation);
   const ha = scoreHallucination(evalCase.input.elements, interpretation);
 
   const composite =
     sc * WEIGHTS.sectionCompleteness +
-    sa * WEIGHTS.signalAccuracy +
     bd * WEIGHTS.blockerDetection +
-    ac * WEIGHTS.actionability +
+    ag * WEIGHTS.affordanceGrounding +
+    vr * WEIGHTS.visualOnlyRecall +
     ha * WEIGHTS.hallucination;
 
   return {
     sectionCompleteness: sc,
-    signalAccuracy: sa,
     blockerDetection: bd,
-    actionability: ac,
+    affordanceGrounding: ag,
+    visualOnlyRecall: vr,
     hallucination: ha,
     composite,
   };
 }
 
-/**
- * Determine pass/fail from scores.
- */
 export function isPass(scores: PerceptionScores): boolean {
-  return scores.composite >= PASS_COMPOSITE && scores.signalAccuracy >= PASS_SIGNAL;
+  return scores.composite >= PASS_COMPOSITE && scores.blockerDetection >= PASS_BLOCKERS;
 }
 
-/**
- * Section completeness: ratio of required sections found in output.
- */
 export function scoreSectionCompleteness(
-  requiredSections: string[],
+  requiredSections: readonly string[],
   interpretation: string,
 ): number {
   if (requiredSections.length === 0) return 1.0;
+
   let found = 0;
   for (const section of requiredSections) {
     const pattern = new RegExp(`\\d+\\.\\s*${escapeRegex(section)}\\s*:`, "i");
@@ -80,93 +75,115 @@ export function scoreSectionCompleteness(
   return found / requiredSections.length;
 }
 
-/**
- * Signal accuracy: match expected completion signal status.
- * Exact match = 1.0, partial credit for "unclear" when expected "not_done" = 0.5.
- * No expected signal = default 1.0.
- */
-export function scoreSignalAccuracy(
-  expected?: { status: string; scope: string } | null,
-  actual?: { status: string; scope: string } | null,
-): number {
-  if (!expected) return 1.0; // No signal expected → vacuously correct
-  if (!actual) return 0.0;   // Expected but missing
-
-  if (expected.status === actual.status) return 1.0;
-
-  // Partial credit: "unclear" when expected "not_done" (conservative hedge)
-  if (expected.status === "not_done" && actual.status === "unclear") return 0.5;
-  // Partial credit: "unclear" when expected "done" (less forgiving)
-  if (expected.status === "done" && actual.status === "unclear") return 0.3;
-
-  return 0.0;
-}
-
-/**
- * Blocker detection: fuzzy match expected blockers in BLOCKERS section.
- * Checks both type keyword and description substring.
- */
 export function scoreBlockerDetection(
   expectedBlockers: PerceptionEvalCase["expected"]["blockers"],
   interpretation: string,
 ): number {
   if (!expectedBlockers || expectedBlockers.length === 0) return 1.0;
 
-  const upper = interpretation.toUpperCase();
-  let matched = 0;
+  const blockerSection = extractSection(interpretation, "BLOCKERS").toUpperCase();
+  if (!blockerSection) return 0;
 
+  let matched = 0;
   for (const blocker of expectedBlockers) {
-    const typeFound = upper.includes(blocker.type.toUpperCase());
-    // Check if the description (or a significant substring) appears
+    const typeFound = blockerSection.includes(blocker.type.toUpperCase());
     const descWords = blocker.description
       .split(/\s+/)
-      .filter((w) => w.length > 3)
+      .map((word) => word.replace(/[^A-Za-z0-9-]/g, ""))
+      .filter((word) => word.length > 3)
       .slice(0, 5);
     const descFound =
       descWords.length === 0 ||
-      descWords.some((w) => upper.includes(w.toUpperCase()));
+      descWords.some((word) => blockerSection.includes(word.toUpperCase()));
+    const tagFound =
+      blocker.tagId == null ||
+      blockerSection.includes(`[${blocker.tagId}]`);
 
-    if (typeFound && descFound) matched++;
-    else if (typeFound || descFound) matched += 0.5;
+    if (typeFound && descFound && tagFound) matched += 1;
+    else if ((typeFound && descFound) || (typeFound && tagFound) || (descFound && tagFound)) matched += 0.75;
+    else if (typeFound || descFound || tagFound) matched += 0.4;
   }
 
   return matched / expectedBlockers.length;
 }
 
-/**
- * Actionability: check if must-mention element tag IDs appear in ACTIONABLE section.
- * Only applies to focused mode; default 1.0 for orientation mode.
- */
-export function scoreActionability(
+export function scoreAffordanceGrounding(
+  elements: Array<{ tag: number; tagName: string; text: string; role?: string }>,
   mustMentionElements: number[] | undefined,
   interpretation: string,
-  mode: string,
 ): number {
-  if (mode !== "focused") return 1.0;
-  if (!mustMentionElements || mustMentionElements.length === 0) return 1.0;
+  const affordanceSection = extractSection(interpretation, "AFFORDANCES");
+  if (!affordanceSection) return 0;
 
-  // Extract the ACTIONABLE section
-  const actionableMatch = interpretation.match(
-    /\d+\.\s*ACTIONABLE\s*:([\s\S]*?)(?=\d+\.\s*[A-Z]|\z)/i,
-  );
-  const section = actionableMatch?.[1] ?? interpretation;
+  const validElements = new Map(elements.map((el) => [el.tag, el]));
+  const affordanceLines = affordanceSection
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
-  let found = 0;
-  for (const tagId of mustMentionElements) {
-    // Match [N] pattern
-    if (new RegExp(`\\[${tagId}\\]`).test(section)) found++;
+  if (affordanceLines.length === 1 && /^none\b/i.test(affordanceLines[0])) {
+    return mustMentionElements && mustMentionElements.length > 0 ? 0 : 1;
   }
 
-  return found / mustMentionElements.length;
+  const taggedLines = affordanceLines
+    .map((line) => {
+      const match = line.match(/^\[(\d+)\]\s+(.+)/);
+      return match
+        ? { tagId: parseInt(match[1], 10), description: match[2].trim() }
+        : null;
+    })
+    .filter((line): line is { tagId: number; description: string } => line !== null);
+
+  if (taggedLines.length === 0) return 0;
+
+  let grounded = 0;
+  for (const line of taggedLines) {
+    const element = validElements.get(line.tagId);
+    if (!element) continue;
+    if (descriptionMatchesElement(line.description, element)) grounded++;
+  }
+
+  const groundingScore = grounded / taggedLines.length;
+
+  if (!mustMentionElements || mustMentionElements.length === 0) {
+    return groundingScore;
+  }
+
+  let covered = 0;
+  for (const tagId of mustMentionElements) {
+    if (taggedLines.some((line) => line.tagId === tagId)) covered++;
+  }
+  const coverageScore = covered / mustMentionElements.length;
+
+  return (groundingScore + coverageScore) / 2;
 }
 
-/**
- * Hallucination: penalize phantom tag IDs not present in the element list.
- * Extracts all [N] references from output and checks against known IDs.
- * Score = 1 - (phantom ratio). Capped: up to 3 phantoms is mild penalty.
- */
+export function scoreVisualOnlyRecall(
+  expectedVisualOnly: string[] | undefined,
+  interpretation: string,
+): number {
+  if (!expectedVisualOnly || expectedVisualOnly.length === 0) return 1.0;
+
+  const visualOnlySection = extractSection(interpretation, "VISUAL-ONLY").toUpperCase();
+  if (!visualOnlySection) return 0;
+
+  let matched = 0;
+  for (const expected of expectedVisualOnly) {
+    const words = expected
+      .split(/\s+/)
+      .map((word) => word.replace(/[^A-Za-z0-9-]/g, ""))
+      .filter((word) => word.length > 3)
+      .slice(0, 6);
+    if (words.length === 0 || words.some((word) => visualOnlySection.includes(word.toUpperCase()))) {
+      matched++;
+    }
+  }
+
+  return matched / expectedVisualOnly.length;
+}
+
 export function scoreHallucination(
-  elements: { tag: number }[],
+  elements: Array<{ tag: number }>,
   interpretation: string,
 ): number {
   const validIds = new Set(elements.map((el) => el.tag));
@@ -184,9 +201,36 @@ export function scoreHallucination(
     if (!validIds.has(id)) phantoms++;
   }
 
-  // Penalty: each phantom costs ~0.2, capped at full penalty
   const penalty = Math.min(1.0, phantoms * 0.2);
   return 1.0 - penalty;
+}
+
+function extractSection(text: string, sectionName: string): string {
+  const pattern = new RegExp(
+    `\\d+\\.\\s*${escapeRegex(sectionName)}\\s*:\\s*([\\s\\S]*?)(?=\\n\\d+\\.\\s*[A-Z-]+\\s*:|$)`,
+    "i",
+  );
+  const match = text.match(pattern);
+  return match ? match[1].trim() : "";
+}
+
+function descriptionMatchesElement(
+  description: string,
+  element: { tagName: string; text: string; role?: string },
+): boolean {
+  const lower = description.toLowerCase();
+  const tagName = element.tagName.toLowerCase();
+  const role = element.role?.toLowerCase();
+  const text = element.text.toLowerCase().slice(0, 40);
+
+  const tagMatch = lower.includes(tagName) || (!!role && lower.includes(role));
+  const textMatch =
+    text.length === 0 ||
+    lower.includes(text.slice(0, Math.min(15, text.length))) ||
+    text.includes(lower.slice(0, Math.min(15, lower.length)));
+
+  if (text.length <= 3) return tagMatch;
+  return tagMatch || textMatch;
 }
 
 function escapeRegex(str: string): string {

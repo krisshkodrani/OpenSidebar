@@ -7,7 +7,11 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { PerceptionEvalCase, PerceptionMode } from "./types";
+import type {
+  PerceptionBlockerType,
+  PerceptionEvalCase,
+  PerceptionRequiredSection,
+} from "./types";
 import {
   readTrace,
   readSessionIndex,
@@ -21,7 +25,8 @@ export interface PerceptionExtractOverrides {
   difficulty?: "easy" | "medium" | "hard";
   notes?: string;
   pageType?: string;
-  signal?: { status: "done" | "not_done" | "unclear"; scope: "subtask" | "objective" };
+  mustMentionElements?: number[];
+  visualOnlyContent?: string[];
 }
 
 /**
@@ -78,7 +83,12 @@ export function extractPerceptionCase(
 
   // Apply overrides
   if (overrides?.pageType) derived.pageType = overrides.pageType;
-  if (overrides?.signal) derived.completionSignal = overrides.signal;
+  if (overrides?.mustMentionElements) {
+    derived.mustMentionElements = overrides.mustMentionElements;
+  }
+  if (overrides?.visualOnlyContent) {
+    derived.visualOnlyContent = overrides.visualOnlyContent;
+  }
 
   const caseId =
     overrides?.id ??
@@ -103,16 +113,13 @@ export function extractPerceptionCase(
       url: snapshot.url ?? session.startUrl ?? "",
       title: snapshot.title ?? "",
       scroll: { y: scrollY, maxY: scrollY }, // maxY not stored in trace; approximate
-      subtask: turn.subtask,
-      objective: session.query,
-      toolProfile: turn.toolProfile,
     },
     expected: {
-      mode: derived.mode,
       requiredSections: derived.requiredSections,
       pageType: derived.pageType,
       blockers: derived.blockers,
-      completionSignal: derived.completionSignal,
+      mustMentionElements: derived.mustMentionElements,
+      visualOnlyContent: derived.visualOnlyContent,
       notes: overrides?.notes,
     },
     reference: {
@@ -179,29 +186,28 @@ export function extractAndSavePerceptionCase(
 
 // ── Derivation helpers ───────────────────────────────────────────────
 
-const ORIENTATION_SECTIONS = ["LAYOUT", "STATE", "BLOCKERS", "VISUAL-ONLY", "HAZARDS"];
-const FOCUSED_SECTIONS = ["SUBTASK_STATE", "ACTIONABLE", "BLOCKERS", "VISUAL-ONLY", "COMPLETION_SIGNAL"];
+const V6_SECTIONS: PerceptionRequiredSection[] = [
+  "LOCATION",
+  "CHANGES",
+  "BLOCKERS",
+  "VISUAL-ONLY",
+  "AFFORDANCES",
+];
 
 interface DerivedExpected {
-  mode: PerceptionMode;
-  requiredSections: string[];
+  requiredSections: PerceptionRequiredSection[];
   pageType?: string;
-  blockers: Array<{ type: "nuisance" | "relevant" | "prereq"; description: string; tagId?: number }>;
-  completionSignal?: { status: "done" | "not_done" | "unclear"; scope: "subtask" | "objective" } | null;
+  blockers: Array<{ type: PerceptionBlockerType; description: string; tagId?: number }>;
+  mustMentionElements?: number[];
+  visualOnlyContent?: string[];
 }
 
 function deriveExpected(
   interpretation: string,
   elements: any[],
 ): DerivedExpected {
-  // Detect mode from section headers
-  const hasFocused = /\bSUBTASK_STATE\b/i.test(interpretation);
-  const hasOrientation = /\bLAYOUT\b/i.test(interpretation) && !hasFocused;
-  const mode: PerceptionMode = hasFocused ? "focused" : "orientation";
-
   // Detect present sections
-  const allSections = mode === "focused" ? FOCUSED_SECTIONS : ORIENTATION_SECTIONS;
-  const requiredSections = allSections.filter((section) => {
+  const requiredSections = V6_SECTIONS.filter((section) => {
     const pattern = new RegExp(`\\d+\\.\\s*${section}\\s*:`, "i");
     return pattern.test(interpretation);
   });
@@ -209,31 +215,55 @@ function deriveExpected(
   // Extract blockers
   const blockers: DerivedExpected["blockers"] = [];
   const blockerPattern =
-    /\b(NUISANCE|RELEVANT|PREREQ)\b\s*(?:\[(\d+)\])?\s*"?([^"\n]+)"?/gi;
+    /\b(NUISANCE|RELEVANT|PREREQ|MISMATCH)\b\s*(?:\[(\d+)\])?\s*"?([^"\n]+)"?/gi;
   let match;
   while ((match = blockerPattern.exec(interpretation)) !== null) {
-    const type = match[1].toLowerCase() as "nuisance" | "relevant" | "prereq";
+    const type = match[1].toLowerCase() as PerceptionBlockerType;
     const tagId = match[2] ? parseInt(match[2], 10) : undefined;
     const description = match[3].trim().slice(0, 200);
     blockers.push({ type, description, ...(tagId !== undefined && { tagId }) });
   }
 
-  // Extract completion signal
-  let completionSignal: DerivedExpected["completionSignal"] = null;
-  const signalMatch = interpretation.match(
-    /(?:COMPLETION_SIGNAL|OBJECTIVE_CHECK):\s*(DONE|NOT_DONE|UNCLEAR)\b/i,
-  );
-  if (signalMatch) {
-    const raw = signalMatch[1].toUpperCase();
-    const status = raw === "DONE" ? "done" : raw === "NOT_DONE" ? "not_done" : "unclear";
-    const scope = hasFocused ? "subtask" : "objective";
-    completionSignal = { status, scope } as const;
-  }
+  const mustMentionElements = extractMentionedElementIds(interpretation, elements);
+  const visualOnlyContent = extractVisualOnlyFacts(interpretation);
 
   return {
-    mode,
     requiredSections,
     blockers: blockers.length > 0 ? blockers : [],
-    completionSignal,
+    mustMentionElements: mustMentionElements.length > 0 ? mustMentionElements : undefined,
+    visualOnlyContent: visualOnlyContent.length > 0 ? visualOnlyContent : undefined,
   };
+}
+
+function extractMentionedElementIds(interpretation: string, elements: any[]): number[] {
+  const availableIds = new Set(
+    elements
+      .map((element) => element?.tag)
+      .filter((tag): tag is number => typeof tag === "number"),
+  );
+  const found = new Set<number>();
+
+  for (const match of interpretation.matchAll(/\[(\d+)\]/g)) {
+    const id = Number.parseInt(match[1], 10);
+    if (availableIds.has(id)) {
+      found.add(id);
+    }
+  }
+
+  return Array.from(found).sort((a, b) => a - b);
+}
+
+function extractVisualOnlyFacts(interpretation: string): string[] {
+  const sectionMatch = interpretation.match(
+    /\bVISUAL-ONLY\s*:\s*([\s\S]*?)(?:\n\s*\d+\.\s*[A-Z-]+\s*:|$)/i,
+  );
+  if (!sectionMatch) {
+    return [];
+  }
+
+  return sectionMatch[1]
+    .split("\n")
+    .map((line) => line.replace(/^\s*[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }

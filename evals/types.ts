@@ -67,6 +67,13 @@ export interface EvalResult {
   actual: {
     toolCalls: { toolName: string; args: Record<string, unknown> }[];
     text: string | null;
+    recovery?: {
+      attemptedTurns: number;
+      recovered: boolean;
+      firstTurnToolCalls: { toolName: string; args: Record<string, unknown> }[];
+      finalTurnToolCalls: { toolName: string; args: Record<string, unknown> }[];
+      interventions: string[];
+    };
   };
   scores: {
     toolNameMatch: number;
@@ -80,7 +87,18 @@ export interface EvalResult {
 
 // ── Perception eval types ─────────────────────────────────────────────
 
-export type PerceptionMode = "orientation" | "focused";
+export type PerceptionRequiredSection =
+  | "LOCATION"
+  | "CHANGES"
+  | "BLOCKERS"
+  | "VISUAL-ONLY"
+  | "AFFORDANCES";
+
+export type PerceptionBlockerType =
+  | "nuisance"
+  | "relevant"
+  | "prereq"
+  | "mismatch";
 
 export interface PerceptionEvalCase {
   id: string;
@@ -92,19 +110,13 @@ export interface PerceptionEvalCase {
     url: string;
     title: string;
     scroll: { y: number; maxY: number };
-    subtask?: string;
-    objective?: string;
-    toolProfile?: string;
   };
   expected: {
-    mode: PerceptionMode;
-    requiredSections: string[];
+    requiredSections: PerceptionRequiredSection[];
     pageType?: string;
-    blockers?: Array<{ type: "nuisance" | "relevant" | "prereq"; description: string; tagId?: number }>;
-    completionSignal?: { status: "done" | "not_done" | "unclear"; scope: "subtask" | "objective" } | null;
+    blockers?: Array<{ type: PerceptionBlockerType; description: string; tagId?: number }>;
     mustMentionElements?: number[];
     visualOnlyContent?: string[];
-    hazards?: Array<{ tagId: number; reason: string }>;
     notes?: string;
   };
   reference: {
@@ -118,7 +130,7 @@ export interface PerceptionEvalCase {
     query: string;
     difficulty: "easy" | "medium" | "hard";
     tags: string[];
-    dimension?: "accuracy" | "blockers" | "completion_signal" | "hallucination" | "hazards" | "actionability";
+    dimension?: "accuracy" | "blockers" | "affordances" | "visual_only" | "hallucination";
   };
 }
 
@@ -130,13 +142,12 @@ export interface PerceptionEvalResult {
   provider: { model: string; providerId: string };
   actual: {
     interpretation: string;
-    completionSignal?: { status: string; evidence: string; scope: string } | null;
   };
   scores: {
     sectionCompleteness: number;
-    signalAccuracy: number;
     blockerDetection: number;
-    actionability: number;
+    affordanceGrounding: number;
+    visualOnlyRecall: number;
     hallucination: number;
     composite: number;
     judge?: PerceptionJudgeScore;
@@ -145,10 +156,11 @@ export interface PerceptionEvalResult {
 }
 
 export interface PerceptionJudgeScore {
-  accuracy: number;
+  locationAccuracy: number;
+  changeAccuracy: number;
   blockerQuality: number;
+  affordanceUsefulness: number;
   groundedness: number;
-  signalCorrectness: number;
   conciseness: number;
   reasoning: string;
   promptFixSuggestion?: string;

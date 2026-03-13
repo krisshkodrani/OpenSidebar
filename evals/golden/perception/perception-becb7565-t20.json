@@ -10,28 +10,22 @@
     "scroll": {
       "y": 3580,
       "maxY": 3580
-    },
-    "objective": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
         "type": "prereq",
         "description": "complete challenge to reveal code"
       }
-    ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: The page is a challenge step with a prominent section for a \"Hidden DOM Challenge\" and a scrolling section with filler content. The layout suggests a multi-step process with interactive elements.\n\n2. STATE: The active tab appears to be the main challenge page, with no open menus or focused inputs visible. There are no loading indicators, but there are multiple buttons and interactive elements.\n\n3. CONTENT: Key text visible only in images, screenshots, or graphical elements that DOM text extraction cannot capture: None.\n\n4. VISUAL-ONLY: Text in images, canvas, charts, SVGs — content DOM inspection misses: None.\n\n5. BLOCKERS: \n   PREREQ \"complete challenge to reveal code\" \n\n6. SPATIAL: Notable layout relationships include the \"Continue Journey\" button at the bottom, and multiple \"Click Here!\" and similar buttons throughout the scrolling section.\n\n7. HAZARDS: \n   [51] \"suspicious button with generic text\"\n   [52] \"suspicious button with generic text\"\n   [53] \"suspicious button with generic text\"\n   [54] \"suspicious button with generic text\"\n\n8. OBJECTIVE_CHECK: \nNOT_DONE: The user has not yet found the code to move to the next step. \n\nThe visible page state suggests this objective has been NOT_DONE, as the code to proceed has not been revealed.",
@@ -48,3 +42,4 @@
     ]
   }
 }
+

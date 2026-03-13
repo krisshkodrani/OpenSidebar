@@ -425,17 +425,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -450,8 +448,7 @@
         "type": "relevant",
         "description": "[278:btn]"
       }
-    ],
-    "completionSignal": null
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Multi-step process page with popups. \n2. STATE: Active popups: Cookie Consent, Limited time offer!, Subscribe to our newsletter!. No focused inputs.\n3. CONTENT: None.\n4. VISUAL-ONLY: None.\n5. BLOCKERS: \n   NUISANCE [323:div] \"Limited time offer! This is a popup message. The close button is fake! Look for another way to close.\" → click [333:btn]\n   NUISANCE [138:btn] \"Subscribe to our newsletter! message. Click X to close.\" → click [138:btn]\n   RELEVANT [278:btn] \"Cookie Consent We use cookies to enhance your experience. Do you accept?\" → reason to keep\n6. SPATIAL: Popups overlap page content. \n7. HAZARDS: \n   [333:btn] \"why suspicious\" \n   [138:btn] \"why suspicious\"",
