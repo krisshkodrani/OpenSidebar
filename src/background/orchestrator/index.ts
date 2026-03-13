@@ -23,6 +23,7 @@ import { listPromptDescriptors } from "../../prompts";
 import { workspaceManager } from "../workspaces/manager";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
+import { inferToolProfileForStep } from "../agent/planner";
 import {
   NodeHandoffArtifact,
   OrchestratorCheckpoint,
@@ -87,6 +88,95 @@ import {
   normalizeEscalationOptionId,
   toSubtasks,
 } from "./utils";
+
+export function buildInitialPlanState(
+  task: OrchestratorTask,
+  activeNodeId?: string,
+) {
+  if (task.nodes.length === 1) {
+    const synthesized = synthesizePlanStateFromSingleNode(task.nodes[0]);
+    if (synthesized && synthesized.subtasks.length >= 2) {
+      return synthesized;
+    }
+  }
+
+  const activeIndex =
+    activeNodeId != null
+      ? task.nodes.findIndex((node) => node.id === activeNodeId)
+      : -1;
+  const runningIndex = task.nodes.findIndex((node) => node.status === "running");
+  return {
+    subtasks: task.nodes.map((node) => ({
+      description: node.description,
+      status: node.status,
+      turnsUsed: 0,
+      turnBudget: 0,
+      ...(node.result ? { result: node.result } : {}),
+      ...(node.verificationGate
+        ? { verificationGate: node.verificationGate }
+        : {}),
+      ...(inferToolProfileForStep(node.description, node.successCriteria)
+        ? {
+            toolProfile: inferToolProfileForStep(
+              node.description,
+              node.successCriteria,
+            ),
+          }
+        : {}),
+    })),
+    currentIndex:
+      activeIndex >= 0
+        ? activeIndex
+        : runningIndex >= 0
+          ? runningIndex
+          : Math.max(0, task.currentIndex),
+  };
+}
+
+function getActivePlanObjective(planState: ReturnType<typeof buildInitialPlanState>): string | null {
+  const subtask = planState.subtasks[planState.currentIndex];
+  const description = typeof subtask?.description === "string" ? subtask.description.trim() : "";
+  return description || null;
+}
+
+function synthesizePlanStateFromSingleNode(node: TaskNode) {
+  const stepPattern =
+    /(?:^|\n)\s*Step\s+(\d+)\s*:\s*([\s\S]*?)(?=(?:\n\s*Step\s+\d+\s*:)|$)/gi;
+  const matches = [...node.description.matchAll(stepPattern)];
+  if (matches.length < 2) return null;
+
+  const currentIndex = 0;
+  const baseStatus =
+    node.status === "completed" || node.status === "failed" ? node.status : "pending";
+
+  return {
+    subtasks: matches.map((match, index) => {
+      const description = match[2]?.trim();
+      if (!description) return null;
+      const toolProfile = inferToolProfileForStep(description, node.successCriteria);
+      return {
+        description,
+        status:
+          node.status === "completed"
+            ? "completed"
+            : index < currentIndex
+              ? "completed"
+              : index === currentIndex
+                ? node.status === "running"
+                  ? "running"
+                  : baseStatus
+                : "pending",
+        turnsUsed: 0,
+        turnBudget: 0,
+        ...(index === matches.length - 1 && node.verificationGate
+          ? { verificationGate: node.verificationGate }
+          : {}),
+        ...(toolProfile ? { toolProfile } : {}),
+      };
+    }).filter((subtask): subtask is NonNullable<typeof subtask> => subtask !== null),
+    currentIndex,
+  };
+}
 
 export * from "./lane-types";
 export * from "./sanitizers";
@@ -1675,7 +1765,16 @@ export class Orchestrator {
           assumptionCount: node.assumptions.length,
         });
       }
-      const taskStateBrief = buildTaskStateBrief(task.nodes, node.id);
+      const taskStateBrief = buildTaskStateBrief(
+        task.nodes,
+        node.id,
+        "executor",
+      );
+      const verifierTaskStateBrief = buildTaskStateBrief(
+        task.nodes,
+        node.id,
+        "verifier",
+      );
       const executorContract = buildRoleExecutionContract(
         "executor",
         input.settings,
@@ -1691,6 +1790,7 @@ export class Orchestrator {
         taskStateContextChars: taskStateBrief.length,
       });
 
+      const initialPlanState = buildInitialPlanState(task, node.id);
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
         callbacks: {
@@ -1788,6 +1888,8 @@ export class Orchestrator {
                 }
               }
             : undefined,
+          initialPlanState:
+            initialPlanState.subtasks.length >= 2 ? initialPlanState : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
@@ -1813,10 +1915,16 @@ export class Orchestrator {
       });
 
       try {
+        const activePlanObjective =
+          initialPlanState.subtasks.length >= 2
+            ? getActivePlanObjective(initialPlanState)
+            : null;
+
         let executorInstruction = buildExecutorInstruction(
           node,
           taskStateBrief,
           driftSignal,
+          activePlanObjective || undefined,
         );
 
         if (
@@ -1967,7 +2075,7 @@ export class Orchestrator {
           } else {
             const verifierHandoffContext = buildVerifierContext(
               node,
-              taskStateBrief,
+              verifierTaskStateBrief,
             );
             // Capture post-execution URL/title for programmatic verification
             let currentUrl: string | undefined;

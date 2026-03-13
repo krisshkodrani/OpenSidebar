@@ -548,6 +548,34 @@ describe("collapseNearIdentical (WI-1 dedup)", () => {
     // All 10 should be kept because they have name attributes
     expect(tagged.length).toBe(10);
   });
+
+  test("does not collapse distinct visible inputs that differ by placeholder or aria-label", () => {
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.id = "checkout-name";
+    nameInput.placeholder = "Full name";
+    nameInput.setAttribute("aria-label", "Full name");
+
+    const emailInput = document.createElement("input");
+    emailInput.type = "email";
+    emailInput.id = "checkout-email";
+    emailInput.placeholder = "Email address";
+    emailInput.setAttribute("aria-label", "Email address");
+
+    const couponInput = document.createElement("input");
+    couponInput.type = "text";
+    couponInput.id = "coupon-input";
+    couponInput.placeholder = "SAVE10";
+
+    document.body.append(nameInput, emailInput, couponInput);
+
+    const tagged = tagElements();
+    const texts = tagged.map((t) => t.text);
+
+    expect(texts).toContain("Full name");
+    expect(texts).toContain("Email address");
+    expect(texts).toContain("SAVE10");
+  });
 });
 
 describe("dynamic tag preservation", () => {
@@ -753,4 +781,3 @@ describe("task-relevance element scoring (WI-3)", () => {
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
   });
 });
-

@@ -69,11 +69,28 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Objective: Fill checkout form");
     expect(instruction).toContain("Success criteria: Checkout form submitted");
     expect(instruction).toContain("Handoff context:");
-    expect(instruction).toContain("Global task context:");
+    expect(instruction).toContain("Step-scoped task context:");
     expect(instruction).toContain("Planner assumptions (validate against current page before acting):");
     expect(instruction).toContain("Reality check signal:");
     expect(instruction).toContain("Execution policy:");
     expect(instruction).toContain("Executor result (executor): Address completed");
+    expect(instruction).toContain("Execute only the current step objective.");
+  });
+
+  test("uses active plan objective override when provided", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      "Click the 'Add to cart' button next to Air Zoom Pegasus 41",
+    );
+
+    expect(instruction).toContain(
+      "Objective: Click the 'Add to cart' button next to Air Zoom Pegasus 41",
+    );
+    expect(instruction).not.toContain("Objective: Fill checkout form");
+    expect(instruction).toContain("Success criteria: Checkout form submitted");
   });
 
   test("builds cross-node task state brief", () => {
@@ -110,9 +127,64 @@ describe("Orchestrator handoff briefing", () => {
       },
     ];
 
-    const brief = buildTaskStateBrief(nodes, "n3");
+    const brief = buildTaskStateBrief(nodes, "n3", "verifier");
     expect(brief).toContain("[completed] Collect shipping options");
     expect(brief).toContain("[failed] Apply discount code");
+  });
+
+  test("builds executor task state brief with compact completed and upcoming sections", () => {
+    const nodes: TaskNode[] = [
+      {
+        id: "n1",
+        role: "executor",
+        description: "Add the item to the cart",
+        successCriteria: "Item appears in cart",
+        allowedTools: [ToolName.CLICK_ELEMENT, ToolName.DONE],
+        dependencies: [],
+        assumptions: [],
+        handoffArtifacts: [],
+        reflexionLog: [],
+        handoffDepth: 0,
+        status: "completed",
+        retries: 0,
+        result: "Pegasus item added to cart.",
+      },
+      {
+        id: "n2",
+        role: "executor",
+        description: "Apply SAVE10 and choose Express shipping",
+        successCriteria: "Discount and shipping are selected",
+        allowedTools: [ToolName.TYPE_TEXT, ToolName.CLICK_ELEMENT, ToolName.DONE],
+        dependencies: [],
+        assumptions: [],
+        handoffArtifacts: [],
+        reflexionLog: [],
+        handoffDepth: 0,
+        status: "pending",
+        retries: 0,
+      },
+      {
+        id: "n3",
+        role: "executor",
+        description: "Fill checkout name and email",
+        successCriteria: "Both fields are filled",
+        allowedTools: [ToolName.TYPE_TEXT, ToolName.DONE],
+        dependencies: [],
+        assumptions: [],
+        handoffArtifacts: [],
+        reflexionLog: [],
+        handoffDepth: 0,
+        status: "pending",
+        retries: 0,
+      },
+    ];
+
+    const brief = buildTaskStateBrief(nodes, "n-current", "executor");
+    expect(brief).toContain("Completed / prior steps:");
+    expect(brief).toContain("[completed] Add the item to the cart");
+    expect(brief).toContain("Upcoming steps (awareness only - do not execute yet):");
+    expect(brief).toContain("Apply SAVE10 and choose Express shipping");
+    expect(brief).toContain("Fill checkout name and email");
   });
 
   test("builds verifier context with node and global handoff", () => {

@@ -52,7 +52,12 @@ import {
   buildElementResolver,
   ElementResolver,
 } from "./step-labels";
-import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
+import {
+  TaskPlanner,
+  inferToolProfileForStep,
+  PlanStep,
+  PlanMonitorResult,
+} from "./planner";
 import { TraceRecorder } from "./trace";
 import { parseNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
@@ -114,6 +119,208 @@ import {
   PIVOT_MESSAGE,
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
+
+const REPEAT_ACTION_WINDOW = 20;
+const REPEAT_ACTION_EXEMPT_TOOLS = new Set<ToolName>([
+  ToolName.DISMISS_OVERLAYS,
+  ToolName.DONE,
+  ToolName.ESCALATE,
+  ToolName.READ_PAGE,
+  ToolName.SCROLL_PAGE,
+]);
+
+function normalizeGuardText(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
+}
+
+function findVisibleElementMatch(
+  snapshot: DomSnapshot | null,
+  rawSearchText: unknown,
+): DomSnapshot["elements"][number] | null {
+  if (!snapshot || typeof rawSearchText !== "string") return null;
+  const query = normalizeGuardText(rawSearchText);
+  if (query.length < 2) return null;
+
+  for (const el of snapshot.elements) {
+    if (el.isVisible === false) continue;
+    const candidates = [
+      el.text,
+      el.attributes["aria-label"],
+      el.attributes.placeholder,
+      el.attributes.value,
+      el.attributes.name,
+    ]
+      .map((value) => normalizeGuardText(value))
+      .filter(Boolean);
+    if (
+      candidates.some(
+        (candidate) =>
+          candidate === query ||
+          candidate.includes(query) ||
+          (query.length >= 4 && query.includes(candidate)),
+      )
+    ) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+function isTextLikeInputElement(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): boolean {
+  if (!element) return false;
+  const tag = element.tagName.toLowerCase();
+  if (tag !== "input" && tag !== "textarea") return false;
+  const type = String(element.attributes.type || "").toLowerCase();
+  return ![
+    "radio",
+    "checkbox",
+    "button",
+    "submit",
+    "reset",
+    "file",
+    "hidden",
+  ].includes(type);
+}
+
+function inferElementInputKind(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): "email" | "name" | "coupon" | null {
+  if (!element) return null;
+  const labels = [
+    element.text,
+    element.attributes["aria-label"],
+    element.attributes.placeholder,
+    element.attributes.id,
+    element.attributes.name,
+  ]
+    .map((value) => normalizeGuardText(value))
+    .filter(Boolean);
+  const labelBlob = labels.join(" ");
+
+  if (labelBlob.includes("email")) {
+    return "email";
+  }
+  if (
+    labelBlob.includes("full name") ||
+    labelBlob.includes("name")
+  ) {
+    return "name";
+  }
+  if (
+    labelBlob.includes("coupon") ||
+    labelBlob.includes("promo") ||
+    /^[A-Z0-9-]{4,12}$/.test(String(element.attributes.placeholder || "")) ||
+    /^[A-Z0-9-]{4,12}$/.test(String(element.attributes.value || ""))
+  ) {
+    return "coupon";
+  }
+
+  return null;
+}
+
+function inferTextValueKind(
+  value: string,
+): "email" | "name" | "coupon" | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(trimmed)) {
+    return "email";
+  }
+  if (/^[A-Z0-9-]{4,12}$/.test(trimmed)) {
+    return "coupon";
+  }
+  if (/^[A-Za-z][A-Za-z .'-]{1,80}$/.test(trimmed)) {
+    return "name";
+  }
+  return null;
+}
+
+function extractExplicitInputValueForElement(
+  objectiveText: string,
+  element: DomSnapshot["elements"][number] | null | undefined,
+): string | null {
+  if (!element || !objectiveText) return null;
+  const objective = objectiveText.trim();
+  if (!objective) return null;
+
+  const labels = [
+    element.text,
+    element.attributes["aria-label"],
+    element.attributes.placeholder,
+    element.attributes.id,
+    element.attributes.name,
+  ]
+    .map((value) => normalizeGuardText(value))
+    .filter(Boolean);
+  const labelBlob = labels.join(" ");
+
+  if (labelBlob.includes("email")) {
+    const emailMatch = objective.match(
+      /email(?: address)?[^.\n]{0,40}\bwith\b\s+([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i,
+    );
+    if (emailMatch?.[1]) return emailMatch[1];
+  }
+
+  if (labelBlob.includes("name")) {
+    const nameMatch = objective.match(
+      /(full name|name)[^.\n]{0,40}\bwith\b\s+([A-Za-z][A-Za-z .'-]{1,80})/i,
+    );
+    if (nameMatch?.[2]) return nameMatch[2].trim();
+  }
+
+  if (
+    labelBlob.includes("coupon") ||
+    labelBlob.includes("promo") ||
+    /^[A-Z0-9-]{4,12}$/.test(String(element.attributes.placeholder || "")) ||
+    /^[A-Z0-9-]{4,12}$/.test(String(element.attributes.value || ""))
+  ) {
+    const codeMatch = objective.match(/\b(?:apply|enter|type)\s+([A-Z0-9-]{4,12})\b/);
+    if (codeMatch?.[1]) return codeMatch[1];
+  }
+
+  return null;
+}
+
+export function validateTextEntryTarget(
+  objectiveText: string,
+  element: DomSnapshot["elements"][number] | null | undefined,
+  typedText: string,
+): string | null {
+  if (!element) return null;
+  if (!isTextLikeInputElement(element)) {
+    return `Error: [${element.tag}] is not a text-entry field. Use a real input like the "${typedText}" field instead.`;
+  }
+
+  const expectedValue = extractExplicitInputValueForElement(objectiveText, element);
+  if (expectedValue && typedText.trim() !== expectedValue) {
+    return (
+      `Error: This step expects "${expectedValue}" in [${element.tag}], not "${typedText.trim()}". ` +
+      `Choose the field that matches the requested value.`
+    );
+  }
+
+  const targetKind = inferElementInputKind(element);
+  const typedKind = inferTextValueKind(typedText);
+  if (targetKind && typedKind && targetKind !== typedKind) {
+    return (
+      `Error: [${element.tag}] looks like a ${targetKind} field, but "${typedText.trim()}" looks like ${typedKind} data. ` +
+      `Type into the matching field instead.`
+    );
+  }
+
+  return null;
+}
+
+function shouldTrackRepeatAction(toolName: ToolName): boolean {
+  return !REPEAT_ACTION_EXEMPT_TOOLS.has(toolName);
+}
 
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
@@ -191,6 +398,25 @@ export class AgentLoop {
     modelTier: "executor" | "planner";
     allowedTools: ToolName[];
   } | null;
+  private initialPlanState:
+    | {
+        subtasks: Array<{
+          description: string;
+          status: SubtaskSummary["status"];
+          turnsUsed?: number;
+          turnBudget?: number;
+          result?: string;
+          completedAtUrl?: string;
+          verificationGate?: {
+            trigger: string;
+            action: "call_done" | "advance_step";
+            pattern?: string;
+          };
+          toolProfile?: ToolProfile;
+        }>;
+        currentIndex: number;
+      }
+    | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
   private onStreamChunk:
@@ -508,6 +734,23 @@ export class AgentLoop {
         replaceContent?: string,
         thinking?: string,
       ) => void;
+      initialPlanState?: {
+        subtasks: Array<{
+          description: string;
+          status: SubtaskSummary["status"];
+          turnsUsed?: number;
+          turnBudget?: number;
+          result?: string;
+          completedAtUrl?: string;
+          verificationGate?: {
+            trigger: string;
+            action: "call_done" | "advance_step";
+            pattern?: string;
+          };
+          toolProfile?: ToolProfile;
+        }>;
+        currentIndex: number;
+      };
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
@@ -519,6 +762,7 @@ export class AgentLoop {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
+    this.initialPlanState = options?.initialPlanState ?? null;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     this.workspaceId = options?.workspaceId ?? null;
     this.workerId = options?.workerId ?? null;
@@ -579,6 +823,92 @@ export class AgentLoop {
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});
     this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
+
+    this.applyInitialPlanState();
+  }
+
+  private applyInitialPlanState(): void {
+    if (!this.initialPlanState || this.initialPlanState.subtasks.length === 0) {
+      return;
+    }
+
+    this.taskId = this.taskIdRef;
+    this.taskStartTime = Date.now();
+    this.planSubtasks = this.initialPlanState.subtasks.map((subtask) => ({
+      description: subtask.description,
+      status: subtask.status,
+      turnsUsed: subtask.turnsUsed ?? 0,
+      turnBudget: subtask.turnBudget ?? 0,
+      ...(subtask.result ? { result: subtask.result } : {}),
+      ...(subtask.completedAtUrl ? { completedAtUrl: subtask.completedAtUrl } : {}),
+    }));
+    this.lastPlanIndex = this.initialPlanState.currentIndex;
+    this.context.setPlanStatus(
+      this.initialPlanState.subtasks.map((subtask) => ({
+        description: subtask.description,
+        status: subtask.status,
+        ...(subtask.result ? { result: subtask.result } : {}),
+        ...(subtask.completedAtUrl ? { completedAtUrl: subtask.completedAtUrl } : {}),
+        ...(subtask.verificationGate
+          ? { verificationGate: subtask.verificationGate }
+          : {}),
+        ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
+      })),
+      this.initialPlanState.currentIndex,
+    );
+  }
+
+  private syncPlanStatus(
+    currentIndex: number,
+    traceEvent?:
+      | "step_advanced_by_gate"
+      | "step_advanced_by_done_rejection"
+      | undefined,
+    traceData: Record<string, unknown> = {},
+  ): void {
+    const existingPlan = this.context.getPlanStatusRaw();
+    const subtasks = this.planSubtasks.map((s, idx) => ({
+      description: s.description,
+      status: s.status,
+      completedAtUrl: s.completedAtUrl,
+      result: s.result,
+      ...(existingPlan?.subtasks[idx]?.verificationGate
+        ? { verificationGate: existingPlan.subtasks[idx].verificationGate }
+        : this.planSteps[idx]?.verifyAfter
+          ? { verificationGate: this.planSteps[idx].verifyAfter }
+          : {}),
+      ...(existingPlan?.subtasks[idx]?.toolProfile
+        ? { toolProfile: existingPlan.subtasks[idx].toolProfile }
+        : this.planSteps[idx]?.toolProfile
+          ? { toolProfile: this.planSteps[idx].toolProfile }
+          : {}),
+    }));
+
+    if (
+      !subtasks.some((subtask) => subtask.status === "running") &&
+      currentIndex < subtasks.length
+    ) {
+      const repairedIndex = subtasks.findIndex(
+        (subtask) => subtask.status !== "completed",
+      );
+      if (repairedIndex >= 0) {
+        subtasks[repairedIndex].status = "running";
+      }
+      this.log.warn("agent", "Plan status missing running subtask", {
+        turn: this.turnCount,
+        currentIndex,
+        repairedIndex,
+      });
+      this.traceRecorder?.recordEvent("plan_status_missing_running_subtask", {
+        currentIndex,
+        repairedIndex,
+      });
+    }
+
+    this.context.setPlanStatus(subtasks, currentIndex);
+    if (traceEvent) {
+      this.traceRecorder?.recordEvent(traceEvent, traceData);
+    }
   }
 
   /**
@@ -1019,6 +1349,7 @@ export class AgentLoop {
       // Restore context from session storage to handle SW restarts
       await this.context.loadState();
     }
+    this.applyInitialPlanState();
 
     // Ensure we have a snapshot — either from the orchestrator, warmup cache, or by fetching our own
     let snapshot = initialSnapshot;
@@ -1255,6 +1586,46 @@ export class AgentLoop {
         );
 
         if (decomposition) {
+          this.log.info("agent", "Planner decomposition outcome", {
+            turn: this.turnCount,
+            outcome:
+              decomposition.instrumentation?.outcome ??
+              (decomposition.steps
+                ? "structured_steps"
+                : decomposition.subtasks.length >= 2
+                  ? "legacy_subtasks"
+                  : "simple_task"),
+            requestedMultiStep:
+              decomposition.instrumentation?.requestedMultiStep ?? null,
+            parsedStepCount:
+              decomposition.instrumentation?.parsedStepCount ??
+              decomposition.steps?.length ??
+              0,
+            parsedSubtaskCount:
+              decomposition.instrumentation?.parsedSubtaskCount ??
+              decomposition.subtasks.length,
+            runtimeSubtaskCount: decomposition.subtasks.length,
+          });
+          this.traceRecorder?.recordEvent("planner_decomposition_outcome", {
+            turn: this.turnCount,
+            outcome:
+              decomposition.instrumentation?.outcome ??
+              (decomposition.steps
+                ? "structured_steps"
+                : decomposition.subtasks.length >= 2
+                  ? "legacy_subtasks"
+                  : "simple_task"),
+            requestedMultiStep:
+              decomposition.instrumentation?.requestedMultiStep ?? null,
+            parsedStepCount:
+              decomposition.instrumentation?.parsedStepCount ??
+              decomposition.steps?.length ??
+              0,
+            parsedSubtaskCount:
+              decomposition.instrumentation?.parsedSubtaskCount ??
+              decomposition.subtasks.length,
+            runtimeSubtaskCount: decomposition.subtasks.length,
+          });
           // Apply difficulty-adaptive runtime limits
           this.difficulty = decomposition.difficulty;
           this.limits = resolveRuntimeLimits(
@@ -1313,6 +1684,22 @@ export class AgentLoop {
               })),
               0,
             );
+            this.log.info("agent", "Runtime plan status initialized", {
+              turn: this.turnCount,
+              subtaskCount: decomposition.subtasks.length,
+              currentIndex: 0,
+              toolProfiles: (decomposition.steps ?? []).map(
+                (step) => step.toolProfile ?? null,
+              ),
+            });
+            this.traceRecorder?.recordEvent("runtime_plan_status_initialized", {
+              turn: this.turnCount,
+              subtaskCount: decomposition.subtasks.length,
+              currentIndex: 0,
+              toolProfiles: (decomposition.steps ?? []).map(
+                (step) => step.toolProfile ?? null,
+              ),
+            });
 
             this.context.addMessage({
               role: "user",
@@ -1346,13 +1733,50 @@ export class AgentLoop {
               },
               false,
             );
+          } else {
+            this.log.info(
+              "agent",
+              "Planner decomposition did not initialize runtime plan",
+              {
+                turn: this.turnCount,
+                runtimeSubtaskCount: decomposition.subtasks.length,
+                outcome:
+                  decomposition.instrumentation?.outcome ??
+                  (decomposition.steps ? "structured_steps" : "simple_task"),
+              },
+            );
+            this.traceRecorder?.recordEvent("runtime_plan_status_skipped", {
+              turn: this.turnCount,
+              runtimeSubtaskCount: decomposition.subtasks.length,
+              outcome:
+                decomposition.instrumentation?.outcome ??
+                (decomposition.steps ? "structured_steps" : "simple_task"),
+            });
           }
+        } else {
+          this.log.warn("agent", "Planner decomposition returned null", {
+            turn: this.turnCount,
+          });
+          this.traceRecorder?.recordEvent("planner_decomposition_outcome", {
+            turn: this.turnCount,
+            outcome: "null",
+          });
         }
       } catch (err: any) {
         this.log.warn("agent", "Planner decompose error (non-fatal)", {
           error: err?.message,
         });
       }
+    } else {
+      this.log.info("agent", "Internal planning disabled for this executor run", {
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
+        originalQueryPreview: initialUserText.slice(0, 200),
+      });
+      this.traceRecorder?.recordEvent("internal_planning_disabled", {
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
+      });
     }
 
     this.statusHandler(AgentStatus.THINKING, "Analyzing...");
@@ -1676,16 +2100,36 @@ export class AgentLoop {
    */
   private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
     const planStatus = this.context.getPlanStatusRaw();
-    if (!planStatus) return tools;
-
-    const currentSubtask = planStatus.subtasks.find(
+    const currentSubtask = planStatus?.subtasks.find(
       (s) => s.status === "running",
     );
-    if (!currentSubtask?.toolProfile) return tools;
+    const fallbackProfile =
+      !currentSubtask?.toolProfile && this.originalQuery
+        ? inferToolProfileForStep(this.originalQuery, "")
+        : undefined;
+    const activeProfile = currentSubtask?.toolProfile ?? fallbackProfile;
+    if (!activeProfile) return tools;
 
-    const allowedNames = resolveToolProfile(
-      currentSubtask.toolProfile as ToolProfile,
-    );
+    if (
+      currentSubtask?.toolProfile &&
+      this.turnsOnCurrentStep >= this.limits.stepWarnTurns
+    ) {
+      this.log.info("agent", "Tool profile widened due to step stagnation", {
+        turn: this.turnCount,
+        profile: activeProfile,
+        turnsOnCurrentStep: this.turnsOnCurrentStep,
+        stepWarnTurns: this.limits.stepWarnTurns,
+      });
+      this.traceRecorder?.recordEvent("tool_profile_widened", {
+        turn: this.turnCount,
+        profile: activeProfile,
+        reason: "step_stagnation",
+        turnsOnCurrentStep: this.turnsOnCurrentStep,
+      });
+      return tools;
+    }
+
+    const allowedNames = resolveToolProfile(activeProfile as ToolProfile);
     if (!allowedNames) return tools; // "full" or unknown → no filtering
 
     const allowedSet = new Set<string>(allowedNames);
@@ -1695,7 +2139,40 @@ export class AgentLoop {
     allowedSet.add(ToolName.CLARIFY);
     allowedSet.add(ToolName.UPDATE_NOTES);
 
-    return tools.filter((t) => allowedSet.has(t.function.name));
+    const filtered = tools.filter((t) => allowedSet.has(t.function.name));
+    const fallbackReason = currentSubtask?.toolProfile
+      ? null
+      : planStatus
+        ? currentSubtask
+          ? "running_subtask_missing_tool_profile"
+          : "no_running_subtask_in_plan_status"
+        : "no_plan_status";
+    this.log.info("agent", "Tool profile applied", {
+      turn: this.turnCount,
+      profile: activeProfile,
+      subtask: currentSubtask?.description ?? this.originalQuery,
+      source: currentSubtask?.toolProfile
+        ? "plan_status"
+        : "fallback_inference",
+      fallbackReason,
+      originalToolCount: tools.length,
+      filteredToolCount: filtered.length,
+      filteredTools: filtered.map((t) => t.function.name),
+    });
+    this.traceRecorder?.recordEvent("tool_profile_applied", {
+      turn: this.turnCount,
+      profile: activeProfile,
+      subtask: currentSubtask?.description ?? this.originalQuery,
+      source: currentSubtask?.toolProfile
+        ? "plan_status"
+        : "fallback_inference",
+      fallbackReason,
+      originalToolCount: tools.length,
+      filteredToolCount: filtered.length,
+      filteredTools: filtered.map((t) => t.function.name),
+    });
+
+    return filtered;
   }
 
   /**
@@ -2376,6 +2853,9 @@ export class AgentLoop {
     // Redundant action detection: sliding window of recent successful tool calls
     const recentSuccesses: RecentAction[] = [];
 
+    // Track all recent tool calls so exact looping can be blocked even when calls "succeed"
+    const recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
+
     // Failed action memory: prevents exact repeats of failed tool calls
     const blockedActions: BlockedAction[] = [];
     let turnsSinceStepEscalation = -1; // -1 = no step escalation active
@@ -2506,6 +2986,34 @@ export class AgentLoop {
           content: `[User feedback]: ${this.pendingFeedback}`,
         });
         this.pendingFeedback = null;
+      }
+
+      const historicalToolCalls = this.context
+        .getMessages()
+        .reduce(
+          (count, msg) =>
+            count +
+            (msg.role === "assistant" && Array.isArray(msg.tool_calls)
+              ? msg.tool_calls.length
+              : 0),
+          0,
+        );
+      const shouldInjectTurnBudgetReminder =
+        (this.turnCount > 0 && this.turnCount % 15 === 0) ||
+        (this.turnCount === 1 && historicalToolCalls >= 15);
+      if (shouldInjectTurnBudgetReminder) {
+        const attemptsSoFar = this.turnCount + historicalToolCalls;
+        this.traceRecorder?.recordEvent("turn_budget_reminder", {
+          turn: this.turnCount,
+          historicalToolCalls,
+        });
+        this.context.addMessage({
+          role: "user",
+          content:
+            `TURN BUDGET: You have already used about ${attemptsSoFar} action turns on this objective. ` +
+            `If the goal is already satisfied, call done(). Otherwise, if you are not making clear progress, ` +
+            `call escalate({"reason": "Stuck after ${attemptsSoFar} turns without completing the goal"}) now. Do not keep cycling.`,
+        });
       }
 
       // Broadcast turn progress to side panel (throttled)
@@ -2682,6 +3190,35 @@ export class AgentLoop {
 
           // Check for empty response (retryable)
           if (!response.content && (!response.tool_calls || response.tool_calls.length === 0)) {
+            const switchedToFallback =
+              !this.llm.isPlannerTier() &&
+              this.llm.activateExecutorFallback("empty_response");
+            if (switchedToFallback) {
+              turnRetryCount++;
+              this.log.warn("agent", "Empty LLM response, switching to executor fallback model", {
+                turn: this.turnCount,
+                retry: turnRetryCount,
+                fallbackModel: this.llm.getCurrentModel(),
+              });
+              this.broadcast({
+                type: "STREAM_CHUNK",
+                payload: { delta: "", done: false, replaceContent: "" },
+              });
+              this.stepHandler({
+                id: crypto.randomUUID(), type: "info",
+                label: `Retrying with fallback model (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
+                status: "running", timestamp: Date.now(),
+              }, false);
+              this.traceRecorder?.recordEvent("executor_empty_response_fallback", {
+                turn: this.turnCount,
+                retry: turnRetryCount,
+                model: this.llm.getCurrentModel(),
+              });
+              const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+              if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
+              this.abortController?.signal.removeEventListener("abort", onMainAbort);
+              continue retryLoop;
+            }
             if (turnRetryCount < MAX_TURN_RETRIES && RETRYABLE_ERRORS.has("empty_response")) {
               turnRetryCount++;
               this.log.warn("agent", "Empty LLM response, retrying", {
@@ -3127,6 +3664,62 @@ export class AgentLoop {
                 // Registry will handle parse error on execute
               }
 
+              const visibleMatch =
+                toolName === ToolName.FIND_ELEMENT
+                  ? findVisibleElementMatch(
+                      this.context.getSnapshot(),
+                      args.searchText ?? args.text,
+                    )
+                  : null;
+              if (visibleMatch) {
+                const blockMsg =
+                  `BLOCKED: Element matching "${String(args.searchText ?? args.text)}" is already visible as ` +
+                  `[${visibleMatch.tag}] ${visibleMatch.tagName} "${visibleMatch.text}". ` +
+                  `Use its visible tag directly instead of find_element.`;
+                this.log.info("agent", "Visible find_element blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  matchedTag: visibleMatch.tag,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent("visible_find_element_blocked", {
+                  turn: this.turnCount,
+                  matchedTag: visibleMatch.tag,
+                  query: String(args.searchText ?? args.text).slice(0, 80),
+                  mode: "parallel",
+                });
+                return { toolCall, result: blockMsg, error: null };
+              }
+
+              if (shouldTrackRepeatAction(toolName)) {
+                const priorRepeatCount = recentToolCalls.filter(
+                  (entry) => entry.tool === toolName && entry.argsKey === argsKey,
+                ).length;
+                if (priorRepeatCount >= 2) {
+                  const repeatCount = priorRepeatCount + 1;
+                  const blockMsg =
+                    `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
+                    `This is cycling. Try a fundamentally different action or call escalate({"reason": "Repeated ${toolName} without progress"})`;
+                  this.log.warn("agent", "Repeat action blocked", {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    repeatCount,
+                    mode: "parallel",
+                  });
+                  this.traceRecorder?.recordEvent("repeat_action_blocked", {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    repeatCount,
+                    mode: "parallel",
+                  });
+                  return { toolCall, result: blockMsg, error: null };
+                }
+                recentToolCalls.push({ tool: toolName, argsKey });
+                if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
+                  recentToolCalls.shift();
+                }
+              }
+
               // Failed-action memory: block exact repeat of a previously failed tool call
               const priorFail = findPriorFailure(
                 blockedActions,
@@ -3215,6 +3808,17 @@ export class AgentLoop {
                   args: JSON.stringify(args).slice(0, 100),
                   mode: "parallel",
                 });
+                this.traceRecorder?.recordEvent("grounding_mismatch", {
+                  turn: this.turnCount,
+                  toolName,
+                  requestedId:
+                    typeof args.id === "number"
+                      ? args.id
+                      : args.sourceId ?? args.targetId ?? null,
+                  currentUrl: this.context.getCurrentUrl(),
+                  reason: "invalid_element_id_pre_dispatch",
+                  mode: "parallel",
+                });
                 return { toolCall, result: null, error: idError };
               }
 
@@ -3232,6 +3836,62 @@ export class AgentLoop {
                   mode: "parallel",
                 });
                 return { toolCall, result: null, error: preflight.error };
+              }
+
+              if (
+                toolName === ToolName.TYPE_TEXT &&
+                typeof args.id === "number" &&
+                typeof args.text === "string"
+              ) {
+                const snapshot = this.context.getSnapshot();
+                const target = snapshot?.elements.find((el) => el.tag === args.id);
+                const planStatus = this.context.getPlanStatusRaw();
+                const activeObjective =
+                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                  this.originalQuery;
+                const targetError = validateTextEntryTarget(
+                  activeObjective,
+                  target,
+                  args.text,
+                );
+                if (targetError) {
+                  this.log.warn("agent", "Text entry target blocked", {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    id: args.id,
+                    mode: "parallel",
+                  });
+                  return { toolCall, result: null, error: targetError };
+                }
+              }
+
+              if (
+                toolName === ToolName.CLICK_ELEMENT &&
+                typeof args.id === "number"
+              ) {
+                const snapshot = this.context.getSnapshot();
+                const target = snapshot?.elements.find((el) => el.tag === args.id);
+                const planStatus = this.context.getPlanStatusRaw();
+                const activeObjective =
+                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                  this.originalQuery;
+                const explicitValue = extractExplicitInputValueForElement(
+                  activeObjective,
+                  target,
+                );
+                if (isTextLikeInputElement(target) && explicitValue) {
+                  const blockReason =
+                    `Error: This step requires entering "${explicitValue}" into [${args.id}]. ` +
+                    `Use type_text instead of click_element on this input.`;
+                  this.log.warn("agent", "Text entry click blocked", {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    id: args.id,
+                    explicitValue,
+                    mode: "parallel",
+                  });
+                  return { toolCall, result: null, error: blockReason };
+                }
               }
 
               const preDecision = this.middleware.evaluatePreTool(
@@ -3416,11 +4076,23 @@ export class AgentLoop {
                 this.context.getCurrentUrl(),
               );
               if (gateResult.matched) {
-                const actionLabel =
-                  currentSub.verificationGate.action === "call_done"
-                    ? `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`
-                    : `CHECKPOINT: Step complete. Evidence: '${gateResult.evidence}'. Advance to next step.`;
-                this.context.addMessage({ role: "user", content: actionLabel });
+                if (currentSub.verificationGate.action === "advance_step") {
+                  const newIdx = this.advanceCompletedSubtasks();
+                  this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
+                    evidence: gateResult.evidence,
+                    mode: "parallel",
+                    advancedTo: newIdx,
+                  });
+                  this.context.addMessage({
+                    role: "user",
+                    content: `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
+                  });
+                } else {
+                  this.context.addMessage({
+                    role: "user",
+                    content: `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`,
+                  });
+                }
                 this.log.info(
                   "agent",
                   "Verification gate triggered (parallel)",
@@ -3451,6 +4123,72 @@ export class AgentLoop {
               args = JSON.parse(toolCall.function.arguments);
             } catch {
               // Registry will handle parse error on execute
+            }
+
+            const visibleMatch =
+              toolName === ToolName.FIND_ELEMENT
+                ? findVisibleElementMatch(
+                    this.context.getSnapshot(),
+                    args.searchText ?? args.text,
+                  )
+                : null;
+            if (visibleMatch) {
+              const blockMsg =
+                `BLOCKED: Element matching "${String(args.searchText ?? args.text)}" is already visible as ` +
+                `[${visibleMatch.tag}] ${visibleMatch.tagName} "${visibleMatch.text}". ` +
+                `Use its visible tag directly instead of find_element.`;
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: blockMsg,
+              });
+              this.log.info("agent", "Visible find_element blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                matchedTag: visibleMatch.tag,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent("visible_find_element_blocked", {
+                turn: this.turnCount,
+                matchedTag: visibleMatch.tag,
+                query: String(args.searchText ?? args.text).slice(0, 80),
+                mode: "sequential",
+              });
+              continue;
+            }
+
+            if (shouldTrackRepeatAction(toolName)) {
+              const priorRepeatCount = recentToolCalls.filter(
+                (entry) => entry.tool === toolName && entry.argsKey === argsKey,
+              ).length;
+              if (priorRepeatCount >= 2) {
+                const repeatCount = priorRepeatCount + 1;
+                const blockMsg =
+                  `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
+                  `This is cycling. Try a fundamentally different action or call escalate({"reason": "Repeated ${toolName} without progress"})`;
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockMsg,
+                });
+                this.log.warn("agent", "Repeat action blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  repeatCount,
+                  mode: "sequential",
+                });
+                this.traceRecorder?.recordEvent("repeat_action_blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  repeatCount,
+                  mode: "sequential",
+                });
+                continue;
+              }
+              recentToolCalls.push({ tool: toolName, argsKey });
+              if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
+                recentToolCalls.shift();
+              }
             }
 
             // Failed-action memory: block exact repeat of a previously failed tool call
@@ -3558,6 +4296,17 @@ export class AgentLoop {
                 args: JSON.stringify(args).slice(0, 100),
                 mode: "sequential",
               });
+              this.traceRecorder?.recordEvent("grounding_mismatch", {
+                turn: this.turnCount,
+                toolName,
+                requestedId:
+                  typeof args.id === "number"
+                    ? args.id
+                    : args.sourceId ?? args.targetId ?? null,
+                currentUrl: this.context.getCurrentUrl(),
+                reason: "invalid_element_id_pre_dispatch",
+                mode: "sequential",
+              });
               continue;
             }
 
@@ -3587,6 +4336,72 @@ export class AgentLoop {
                 role: "user",
                 content: preflight.warning,
               });
+            }
+
+            if (
+              toolName === ToolName.TYPE_TEXT &&
+              typeof args.id === "number" &&
+              typeof args.text === "string"
+            ) {
+              const snapshot = this.context.getSnapshot();
+              const target = snapshot?.elements.find((el) => el.tag === args.id);
+              const planStatus = this.context.getPlanStatusRaw();
+              const activeObjective =
+                planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                this.originalQuery;
+              const targetError = validateTextEntryTarget(
+                activeObjective,
+                target,
+                args.text,
+              );
+              if (targetError) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: targetError,
+                });
+                this.log.warn("agent", "Text entry target blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  id: args.id,
+                  mode: "sequential",
+                });
+                continue;
+              }
+            }
+
+            if (
+              toolName === ToolName.CLICK_ELEMENT &&
+              typeof args.id === "number"
+            ) {
+              const snapshot = this.context.getSnapshot();
+              const target = snapshot?.elements.find((el) => el.tag === args.id);
+              const planStatus = this.context.getPlanStatusRaw();
+              const activeObjective =
+                planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                this.originalQuery;
+              const explicitValue = extractExplicitInputValueForElement(
+                activeObjective,
+                target,
+              );
+              if (isTextLikeInputElement(target) && explicitValue) {
+                const blockReason =
+                  `Error: This step requires entering "${explicitValue}" into [${args.id}]. ` +
+                  `Use type_text instead of click_element on this input.`;
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: blockReason,
+                });
+                this.log.warn("agent", "Text entry click blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  id: args.id,
+                  explicitValue,
+                  mode: "sequential",
+                });
+                continue;
+              }
             }
 
             const preDecision = this.middleware.evaluatePreTool(
@@ -3689,6 +4504,19 @@ export class AgentLoop {
               if (this.taskId && this.planSubtasks.length > 0) {
                 let shouldReject = false;
                 let rejectReason = "";
+                const completedCount = this.planSubtasks.filter(
+                  (s) => s.status === "completed",
+                ).length;
+                const runningIdx = this.planSubtasks.findIndex(
+                  (s) => s.status === "running",
+                );
+                const effectiveCurrentIdx =
+                  runningIdx >= 0 ? runningIdx : completedCount;
+                if (effectiveCurrentIdx < this.planSubtasks.length - 1) {
+                  shouldReject = true;
+                  rejectReason =
+                    `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
+                }
 
                 try {
                   this.stepHandler(
@@ -3702,7 +4530,8 @@ export class AgentLoop {
                     false,
                   );
 
-                  const validation = await this.planner.validateDone(
+                  if (!shouldReject) {
+                    const validation = await this.planner.validateDone(
                     this.originalQuery,
                     this.planSubtasks,
                     summary,
@@ -3712,10 +4541,11 @@ export class AgentLoop {
                     this.perception.getInterpretation() ?? undefined,
                   );
 
-                  if (!validation.approved) {
-                    shouldReject = true;
-                    rejectReason =
-                      validation.reason || "Task is not yet complete.";
+                    if (!validation.approved) {
+                      shouldReject = true;
+                      rejectReason =
+                        validation.reason || "Task is not yet complete.";
+                    }
                   }
                 } catch (_err: any) {
                   // Planner call failed — structural fallback
@@ -3734,17 +4564,13 @@ export class AgentLoop {
                   // Advance completed subtasks and update plan state
                   const newIdx = this.advanceCompletedSubtasks();
                   if (newIdx > 0) {
-                    const existingPlan = this.context.getPlanStatusRaw();
-                    this.context.setPlanStatus(
-                      this.planSubtasks.map((s, idx) => ({
-                        description: s.description,
-                        status: s.status,
-                        completedAtUrl: s.completedAtUrl,
-                        result: s.result,
-                        verificationGate:
-                          existingPlan?.subtasks[idx]?.verificationGate,
-                      })),
+                    this.syncPlanStatus(
                       newIdx,
+                      "step_advanced_by_done_rejection",
+                      {
+                        rejections: this.doneRejections,
+                        advancedTo: newIdx,
+                      },
                     );
                     this.broadcast({
                       type: "TASK_PROGRESS",
@@ -4585,14 +5411,23 @@ export class AgentLoop {
                 this.context.getCurrentUrl(),
               );
               if (seqGateResult.matched) {
-                const seqActionLabel =
-                  currentSubSeq.verificationGate.action === "call_done"
-                    ? `CHECKPOINT: Gate triggered. Evidence: '${seqGateResult.evidence}'. Call done() now.`
-                    : `CHECKPOINT: Step complete. Evidence: '${seqGateResult.evidence}'. Advance to next step.`;
-                this.context.addMessage({
-                  role: "user",
-                  content: seqActionLabel,
-                });
+                if (currentSubSeq.verificationGate.action === "advance_step") {
+                  const newIdx = this.advanceCompletedSubtasks();
+                  this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
+                    evidence: seqGateResult.evidence,
+                    mode: "sequential",
+                    advancedTo: newIdx,
+                  });
+                  this.context.addMessage({
+                    role: "user",
+                    content: `STEP ADVANCED: '${seqGateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
+                  });
+                } else {
+                  this.context.addMessage({
+                    role: "user",
+                    content: `CHECKPOINT: Gate triggered. Evidence: '${seqGateResult.evidence}'. Call done() now.`,
+                  });
+                }
                 this.log.info(
                   "agent",
                   "Verification gate triggered (sequential)",
@@ -5241,6 +6076,60 @@ export class AgentLoop {
                 await this.refreshPerceptionAndTriage(tabId);
               }
 
+              const explicitSuccessSignal =
+                this.detectExplicitSuccessSignalInSnapshot(snap);
+              if (explicitSuccessSignal) {
+                const summary = [
+                  `- Verified "${explicitSuccessSignal}" is visible on the page.`,
+                  `- URL: ${snap.url}`,
+                  `- The task completion state is present in the refreshed page content.`,
+                ].join("\n");
+
+                this.context.clearPlanStatus();
+                this.log.info("agent", "Auto-completing from explicit success signal", {
+                  turn: this.turnCount,
+                  signal: explicitSuccessSignal,
+                  url: snap.url,
+                });
+                this.traceRecorder?.recordEvent("explicit_success_auto_completed", {
+                  turn: this.turnCount,
+                  signal: explicitSuccessSignal,
+                  url: snap.url,
+                });
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: crypto.randomUUID(),
+                  content: summary,
+                });
+                this.stepHandler(
+                  {
+                    id: crypto.randomUUID(),
+                    type: "info",
+                    label: "Task complete",
+                    status: "done",
+                    timestamp: Date.now(),
+                  },
+                  false,
+                );
+                this.broadcast({
+                  type: "STREAM_CHUNK",
+                  payload: { delta: "", done: true, replaceContent: summary },
+                });
+                this.statusHandler(AgentStatus.IDLE, "Done");
+                this.messageHandler(summary, []);
+                doneSummary = summary;
+                doneSignaled = true;
+
+                if (this.showSessionMetrics) {
+                  this.metrics.totalSessionTimeMs =
+                    Date.now() - this.sessionStartTime;
+                  this.broadcast({
+                    type: "SESSION_METRICS",
+                    payload: { ...this.metrics },
+                  });
+                }
+              }
+
               // Retroactive screenshot attachment: update the last DOM-modifying step with the screenshot
               if (this.perception.getLastScreenshot() && this.lastDomStep) {
                 this.stepHandler(
@@ -5864,6 +6753,29 @@ export class AgentLoop {
       failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
     };
+  }
+
+  private detectExplicitSuccessSignalInSnapshot(snap: {
+    title?: string;
+    url?: string;
+    pageContent?: string;
+    visibleContent?: string;
+  }): string | null {
+    const query = this.originalQuery || "";
+    const quotedMatch =
+      query.match(/verify the page shows ['"]([^'"]+)['"]/i) ??
+      query.match(/page shows ['"]([^'"]+)['"]/i);
+    const signal = quotedMatch?.[1]?.trim();
+    if (!signal) return null;
+
+    const haystacks = [
+      snap.title ?? "",
+      snap.pageContent ?? "",
+      snap.visibleContent ?? "",
+      snap.url ?? "",
+    ];
+
+    return haystacks.some((text) => text.includes(signal)) ? signal : null;
   }
 
   /**

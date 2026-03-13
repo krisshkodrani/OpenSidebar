@@ -304,24 +304,43 @@ export async function waitForOutcome<T>(
 ): Promise<{ ok: boolean; reason: string; result: T | null; events: any[] }> {
   const start = Date.now();
   let lastResult: T | null = null;
+  let successObservedAt: number | null = null;
+  let successfulResult: T | null = null;
 
   while (Date.now() - start < timeoutMs) {
     const result = await checkFn();
     if (result) {
-      const events = await getMonitoredEvents(worker);
-      return { ok: true, reason: "done", result, events };
+      successfulResult = result;
+      successObservedAt ??= Date.now();
     }
     lastResult = result ?? null;
 
     const events = await getMonitoredEvents(worker);
+    const lastTaskCompletion = [...events]
+      .reverse()
+      .find((e: any) => e.type === "TASK_COMPLETION");
     const lastStatus = [...events]
       .reverse()
       .find((e: any) => e.type === "AGENT_STATUS");
+
+    if (successfulResult) {
+      const taskCompleted =
+        lastTaskCompletion?.status === "completed" ||
+        lastTaskCompletion?.status === "partial";
+      const agentIdle = lastStatus?.status === "IDLE";
+      const settledLongEnough =
+        successObservedAt !== null && Date.now() - successObservedAt >= 4000;
+
+      if (taskCompleted || agentIdle || settledLongEnough) {
+        return { ok: true, reason: "done", result: successfulResult, events };
+      }
+    }
+
     if (lastStatus?.status === "ERROR") {
       return {
         ok: false,
         reason: `agent_error:${lastStatus.detail || "unknown"}`,
-        result: lastResult,
+        result: successfulResult ?? lastResult,
         events,
       };
     }
@@ -330,5 +349,10 @@ export async function waitForOutcome<T>(
   }
 
   const events = await getMonitoredEvents(worker);
-  return { ok: false, reason: "timeout", result: lastResult, events };
+  return {
+    ok: false,
+    reason: "timeout",
+    result: successfulResult ?? lastResult,
+    events,
+  };
 }

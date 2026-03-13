@@ -4,6 +4,7 @@ import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
+import { inferToolProfileForStep } from "../agent/planner";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
@@ -124,9 +125,15 @@ function stepsToNodes(
     successCriteria:
       step.successCriteria ||
       `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-    allowedTools: resolveToolProfile(step.toolProfile as ToolProfile | undefined) ?? [
-      ...EXECUTOR_DEFAULT_TOOLS,
-    ],
+    allowedTools:
+      resolveToolProfile(
+        (step.toolProfile as ToolProfile | undefined) ||
+          inferToolProfileForStep(
+            step.objective,
+            step.successCriteria ||
+              `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
+          ),
+      ) ?? [...EXECUTOR_DEFAULT_TOOLS],
     dependencies: (step.dependencies || [])
       .filter(
         (depIndex) =>

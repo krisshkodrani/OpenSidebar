@@ -73,15 +73,57 @@ export function formatReflexionContext(entries: ReflexionEntry[]): string {
 export function buildTaskStateBrief(
   nodes: TaskNode[],
   currentNodeId?: string,
+  mode: "executor" | "verifier" = "executor",
 ): string {
   if (nodes.length === 0) return "No task-level context available.";
 
-  const relevant = nodes
-    .filter((node) => node.id !== currentNodeId)
-    .slice(-MAX_TASK_CONTEXT_NODES);
+  const relevant = nodes.filter((node) => node.id !== currentNodeId);
   if (relevant.length === 0) return "No sibling node context yet.";
 
-  return relevant
+  if (mode === "executor") {
+    const completed = relevant.filter(
+      (node) =>
+        node.status === "completed" ||
+        node.status === "failed" ||
+        node.status === "skipped",
+    );
+    const upcoming = relevant.filter(
+      (node) => node.status === "pending" || node.status === "running",
+    );
+
+    const sections: string[] = [];
+
+    if (completed.length > 0) {
+      sections.push(
+        "Completed / prior steps:",
+        ...completed.slice(-4).map((node) => {
+          const status =
+            node.status === "completed"
+              ? "completed"
+              : node.status === "failed"
+                ? "failed"
+                : "skipped";
+          return `- [${status}] ${normalizeNote(node.description)} :: ${normalizeNodeResult(node)}`;
+        }),
+      );
+    }
+
+    if (upcoming.length > 0) {
+      sections.push(
+        "Upcoming steps (awareness only - do not execute yet):",
+        ...upcoming.slice(0, 2).map((node) => `- ${normalizeNote(node.description)}`),
+      );
+      if (upcoming.length > 2) {
+        sections.push(`- ... ${upcoming.length - 2} more upcoming step(s)`);
+      }
+    }
+
+    return sections.join("\n");
+  }
+
+  const verifierRelevant = relevant.slice(-MAX_TASK_CONTEXT_NODES);
+
+  return verifierRelevant
     .map((node) => {
       const status =
         node.status === "completed"
@@ -102,6 +144,7 @@ export function buildExecutorInstruction(
   node: TaskNode,
   taskStateBrief?: string,
   realitySignal?: string,
+  objectiveOverride?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -110,7 +153,7 @@ export function buildExecutorInstruction(
       ? node.assumptions.map((item) => `- ${normalizeNote(item)}`).join("\n")
       : "- No explicit assumptions from planner.";
   const sections = [
-    `Objective: ${node.description}`,
+    `Objective: ${objectiveOverride || node.description}`,
     `Success criteria: ${node.successCriteria}`,
     "",
   ];
@@ -128,16 +171,17 @@ export function buildExecutorInstruction(
     "Handoff context:",
     handoffBrief,
     "",
-    "Global task context:",
+    "Step-scoped task context:",
     taskStateBrief || "No sibling node context yet.",
     "",
     "Reality check signal:",
     realitySignal || "No drift signal recorded.",
     "",
     "Execution policy:",
+    "- Execute only the current step objective. Treat upcoming steps as awareness only.",
     "- Validate planner assumptions against current page and adjust steps if reality changed.",
     "- Continue from prior context; do not repeat completed work.",
-    "- Use global context to avoid duplicating sibling node outcomes.",
+    "- Use completed-step context only to avoid duplicating prior work.",
     "- If verifier requested reroute/retry, adapt strategy before acting.",
     ...(node.reflexionLog.length > 0
       ? [

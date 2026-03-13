@@ -244,7 +244,16 @@ export const CACHEABLE_TOOLS: Map<ToolName, "dom" | "memory" | "static"> =
       .map(([name, m]) => [name, m.cacheable as "dom" | "memory" | "static"]),
   );
 
-export type ToolProfile = "full" | "read_only" | "form_fill" | "navigate";
+export type ToolProfile =
+  | "full"
+  | "read_only"
+  | "form_fill"
+  | "navigate"
+  | "enter_code"
+  | "submit_form"
+  | "inspect_hidden_state"
+  | "recover_from_stuck"
+  | "navigation_only";
 
 export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   full: [], // empty = no filtering, use all tools as-is
@@ -301,6 +310,73 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.LIST_TABS,
     ToolName.CLICK_ELEMENT,
     // System
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  enter_code: [
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.FIND_ELEMENT,
+    ToolName.CLICK_ELEMENT,
+    ToolName.TYPE_TEXT,
+    ToolName.PRESS_KEY,
+    ToolName.SCROLL_PAGE,
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  submit_form: [
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.CLICK_ELEMENT,
+    ToolName.PRESS_KEY,
+    ToolName.SCROLL_PAGE,
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  inspect_hidden_state: [
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.FIND_ELEMENT,
+    ToolName.INSPECT_HIDDEN,
+    ToolName.XRAY_PAGE,
+    ToolName.EXECUTE_JS,
+    ToolName.SCROLL_PAGE,
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  recover_from_stuck: [
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.INSPECT_HIDDEN,
+    ToolName.XRAY_PAGE,
+    ToolName.EXECUTE_JS,
+    ToolName.CLICK_COORDINATES,
+    ToolName.DISMISS_OVERLAYS,
+    ToolName.SCROLL_PAGE,
+    ToolName.GO_BACK,
+    ToolName.ESCALATE,
+    ToolName.DONE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  navigation_only: [
+    ToolName.READ_PAGE,
+    ToolName.SCROLL_PAGE,
+    ToolName.CLICK_ELEMENT,
+    ToolName.NAVIGATE,
+    ToolName.GO_BACK,
+    ToolName.CREATE_TAB,
+    ToolName.SWITCH_TAB,
+    ToolName.CLOSE_TAB,
+    ToolName.LIST_TABS,
     ToolName.DONE,
     ToolName.ESCALATE,
     ToolName.CLARIFY,

@@ -51,7 +51,9 @@ export function validateElementIds(
       `Error: Element ${paramName}=${numId} does not exist on the current page. ` +
       `Valid element IDs: ${[...validIds].slice(0, 20).join(", ")}. ` +
       `Sample elements:\n${sampleElements.join("\n")}\n` +
-      `Use read_page to see all available elements.`
+      `This target may be hidden, inside a closed drawer or accordion, off-screen, or the page state may be stale. ` +
+      `Reveal or refresh the relevant UI first, then retry with a currently visible tag. ` +
+      `Use read_page, scroll_page, or click a control that reveals the target before retrying.`
     );
   };
 

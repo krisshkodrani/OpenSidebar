@@ -30,13 +30,15 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Executor model tier — used for initial turns (OpenRouter) */
-export const MODEL_EXECUTOR = "openai/gpt-oss-120b";
+export const MODEL_EXECUTOR = "openai/gpt-4.1-mini";
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-2.5-flash-lite";
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "minimax/minimax-m2.5";
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
+  executorFallbackModel?: string;
   plannerModel?: string;
   /** Append :nitro routing suffix to all model IDs */
   useNitro?: boolean;
@@ -296,6 +298,8 @@ export class LLMClient {
   private plannerPool: ProviderPool;
   /** Whether the client is currently in planner model tier */
   private _isPlannerTier = false;
+  private executorModelOverride: string | null = null;
+  private executorFallbackModel: string | null = null;
 
   /**
    * Creates a new LLM client with OpenRouter as the sole provider.
@@ -313,6 +317,10 @@ export class LLMClient {
     this.executorPool = new ProviderPool(
       openRouterApiKey,
       { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
+    );
+    this.executorFallbackModel = applyNitro(
+      options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
+      nitro,
     );
 
     // Build planner pool: OpenRouter (MiniMax M2.5)
@@ -348,8 +356,27 @@ export class LLMClient {
     const slot = pool.getActive();
     return {
       providerId: slot.provider.providerId,
-      model: slot.model,
+      model: !this._isPlannerTier && this.executorModelOverride
+        ? this.executorModelOverride
+        : slot.model,
     };
+  }
+
+  public activateExecutorFallback(reason: "empty_response" = "empty_response"): boolean {
+    if (this._isPlannerTier) return false;
+    if (!this.executorFallbackModel) return false;
+    if (this.executorModelOverride === this.executorFallbackModel) return false;
+
+    const previousModel = this.model;
+    this.executorModelOverride = this.executorFallbackModel;
+    this.model = this.executorFallbackModel;
+    logger.warn("agent", "Switching executor model to runtime fallback", {
+      reason,
+      fromModel: previousModel,
+      toModel: this.executorFallbackModel,
+      provider: this.provider.providerId,
+    });
+    return true;
   }
 
   private onProviderFailover?: (from: string, to: string) => void;
@@ -381,6 +408,7 @@ export class LLMClient {
    */
   public switchToExecutor(): void {
     const slot = this.executorPool.getActive();
+    this.executorModelOverride = null;
     logger.info("agent", "Switching back to executor model", {
       fromModel: this.model,
       fromProvider: this.provider.providerId,
@@ -524,7 +552,9 @@ export class LLMClient {
     const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
-    let activeModel = activeSlot.model;
+    let activeModel = !this._isPlannerTier && this.executorModelOverride
+      ? this.executorModelOverride
+      : activeSlot.model;
 
     if (!provider.apiKey) {
       throw new Error(
@@ -741,7 +771,9 @@ export class LLMClient {
     const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
-    let activeModel = activeSlot.model;
+    let activeModel = !this._isPlannerTier && this.executorModelOverride
+      ? this.executorModelOverride
+      : activeSlot.model;
 
     if (!provider.apiKey) {
       throw new Error(

@@ -133,6 +133,7 @@
       <div id="cart-lines" style="margin:12px 0"></div>
 
       <h3>Promo Code</h3>
+      <p class="meta" id="promo-status" style="margin-bottom:8px">Coupon status: none applied yet.</p>
       <div style="display:flex;gap:8px;margin:8px 0">
         <input id="coupon-input" placeholder="SAVE10" style="border:1px solid #dbe2ea;border-radius:10px;padding:10px 12px;font-size:14px" />
         <button id="apply-coupon" class="btn btn-primary">Apply</button>
@@ -140,12 +141,14 @@
       <p id="coupon-message" class="meta" style="margin-bottom:12px"></p>
 
       <h3>Shipping</h3>
+      <p class="meta" id="shipping-status" style="margin-bottom:8px">Shipping selected: Standard (Free)</p>
       <div style="margin:8px 0 12px">
         <label style="display:block;margin-bottom:6px"><input type="radio" name="shipping-method" value="standard" checked /> Standard (Free)</label>
         <label style="display:block"><input type="radio" name="shipping-method" value="express" /> Express ($15)</label>
       </div>
 
       <h3>Checkout</h3>
+      <p class="meta" style="margin-bottom:8px">Checkout fields stay inside this cart drawer. Fill both fields before placing the order.</p>
       <div style="margin-top:8px">
         <div class="field"><input id="checkout-name" placeholder="Full name" aria-label="Full name" /></div>
         <div class="field"><input id="checkout-email" type="email" placeholder="Email address" aria-label="Email address" /></div>
@@ -321,6 +324,14 @@
           $("summary-discount").textContent = s.discount > 0 ? `- ${money(s.discount)}` : money(0);
           $("summary-shipping").textContent = money(s.shipping);
           $("summary-total").textContent = money(s.total);
+          $("promo-status").textContent = state.coupon
+            ? `Coupon status: ${state.coupon} applied successfully.`
+            : "Coupon status: none applied yet.";
+          $("shipping-status").textContent =
+            state.shippingMethod === "express"
+              ? "Shipping selected: Express ($15)"
+              : "Shipping selected: Standard (Free)";
+          $("apply-coupon").disabled = state.coupon === "SAVE10";
         }
 
         function placeOrder() {
@@ -370,8 +381,15 @@
         $("pdp-add-to-cart").addEventListener("click", addToCart);
         $("apply-coupon").addEventListener("click", () => {
           const code = $("coupon-input").value.trim().toUpperCase();
-          if (code === "SAVE10") { state.coupon = "SAVE10"; $("coupon-message").textContent = "Coupon applied: 10% off"; $("coupon-message").className = "ok"; }
-          else { state.coupon = null; $("coupon-message").textContent = "Invalid coupon"; $("coupon-message").className = "error"; }
+          if (code === "SAVE10") {
+            state.coupon = "SAVE10";
+            $("coupon-message").textContent = "Coupon applied: 10% off";
+            $("coupon-message").className = "ok";
+          } else {
+            state.coupon = null;
+            $("coupon-message").textContent = "Invalid coupon";
+            $("coupon-message").className = "error";
+          }
           renderCart();
         });
         $("place-order").addEventListener("click", placeOrder);
