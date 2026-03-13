@@ -160,17 +160,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -185,11 +183,7 @@
         "type": "prereq",
         "description": "Complete challenge to reveal code"
       }
-    ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Linear scrolling page with sections and buttons. Multiple navigation buttons present.\n\n2. STATE: Active tab appears to be the main content page; no open menus or focused inputs visible; no loading indicators.\n\n3. CONTENT: No key text visible only in images.\n\n4. VISUAL-ONLY: No text in images, canvas, charts, or SVGs.\n\n5. BLOCKERS: \n   - NUISANCE [None] \n   - RELEVANT [None] \n   - PREREQ \"Complete challenge to reveal code\"\n\n6. SPATIAL: Navigation buttons scattered throughout sections.\n\n7. HAZARDS: \n   - [ ] \"why suspicious\" → None.\n\n8. OBJECTIVE_CHECK: NOT_DONE - Wrong button interaction resulted in \"Wrong Button! Try Again!\" prompt.",

@@ -310,17 +310,15 @@
     "scroll": {
       "y": 2080,
       "maxY": 2080
-    },
-    "objective": "Objective: ok, find the code to move to the next step and move to the next step\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User wants to locate and activate the navigation element to proceed to the next step, requiring a click or similar interaction rather than just reading page content.)\n- Executor start (executor): Executor started objective: ok, find the code to move to the next step and move to the next step\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -328,10 +326,9 @@
         "description": "Enter 6-character code"
       }
     ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    "visualOnlyContent": [
+      "No specific text in images, canvas, charts, or SVGs is noted beyond the orange square's \"Click Here!\"."
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: The page appears to be a long scrolling page with multiple sections of filler content and various buttons. The main structure consists of a prominent input field and submit button for entering a 6-character code.\n\n2. STATE: The active tab is visible, with no open menus or focused inputs besides the \"Enter 6-character code\" input field. There are no loading indicators or toggle states apparent.\n\n3. CONTENT: Key text visible only in images or graphical elements includes \"Click Here!\" on an orange square and \"Step 1 of 30 - Browser Navigation Challenge\" on the top banner.\n\n4. VISUAL-ONLY: No specific text in images, canvas, charts, or SVGs is noted beyond the orange square's \"Click Here!\".\n\n5. BLOCKERS: \n   - PREREQ \"Enter 6-character code\" → must enter code to proceed\n\n6. SPATIAL: The submit button is located below the input field for the 6-character code. Various navigation buttons (\"Next Page\", \"Proceed Forward\", etc.) are scattered throughout the page.\n\n7. HAZARDS: \n   - [31] \"suspicious button with vague CTA\"\n   - [32] \"multiple similar buttons\"\n\n8. OBJECTIVE_CHECK: NOT_DONE - The user has not entered the 6-character code or proceeded to the next step.",

@@ -24,11 +24,11 @@ export interface UserSettings {
   allowNavigation: boolean;
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
-  /** Override executor model (default: openai/gpt-oss-120b) */
+  /** Override executor model (default: openai/gpt-4.1-mini) */
   executorModel?: string;
   /** Override planner model (default: minimax/minimax-m2.5) */
   plannerModel?: string;
-  /** Override perception model (default: google/gemini-2.5-flash) */
+  /** Override perception model (default: x-ai/grok-4.1-fast) */
   perceptionModel?: string;
   /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
   useNitro?: boolean;

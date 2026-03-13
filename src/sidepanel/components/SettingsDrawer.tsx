@@ -8,7 +8,7 @@ import { MODEL_EXECUTOR, MODEL_PLANNER } from "../../background/llm/client";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
 
-const PERCEPTION_MODEL_DEFAULT = "google/gemini-2.5-flash";
+const PERCEPTION_MODEL_DEFAULT = "x-ai/grok-4.1-fast";
 
 interface Props {
   isOpen: boolean;

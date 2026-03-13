@@ -234,17 +234,15 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Solve the puzzle to go to step 21\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User needs to interact with the page (solve a puzzle) to progress, which requires tool actions rather than just reading content.)\n- Executor start (executor): Executor started objective: Solve the puzzle to go to step 21\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -260,10 +258,9 @@
         "description": "Solve the puzzle and enter the correct code"
       }
     ],
-    "completionSignal": {
-      "status": "not_done",
-      "scope": "objective"
-    }
+    "visualOnlyContent": [
+      "The equation \"10 + 10 = ?\" and the solution attempts and revealed code are presented visually."
+    ]
   },
   "reference": {
     "interpretation": "## Report\n\n1. LAYOUT: The page is a challenge step with a puzzle to solve and a code to enter, structured in a multi-step process. It features a prominent puzzle section and a code entry section.\n\n2. STATE: The active tab appears to be the main challenge page. There are no open menus or loading indicators. The focused input seems to be the puzzle answer field. There is a red overlay notification indicating an incorrect action (\"Wrong Button! Try Again!\").\n\n3. CONTENT: Key text visible only in images or graphical elements: The puzzle question \"10 + 10 = ?\" and the revealed code \"47NV6U\".\n\n4. VISUAL-ONLY: The equation \"10 + 10 = ?\" and the solution attempts and revealed code are presented visually.\n\n5. BLOCKERS: \n   - NUISANCE [None] \n   - RELEVANT [None] \n   - PREREQ \"Solve the puzzle and enter the correct code\"\n\n6. SPATIAL: The submit button is located below the code entry field. There are multiple navigation buttons at the bottom of the page.\n\n7. HAZARDS: \n   - [ ] \"why suspicious\" → None.\n\n8. OBJECTIVE_CHECK: NOT_DONE. The user has not successfully solved the puzzle and entered the correct code to proceed.",

@@ -2,9 +2,12 @@ import "../setup";
 import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { perceive, parseCompletionSignal, buildPerceptionPrompt, type PerceptionInput, type PanoramicShot } from "../../src/background/perception";
 import { PerceptionAgent, formatPriorObservations, validatePerceptionTagIds } from "../../src/background/perception/perception-agent";
+import { buildProductionPerceptionPrompt } from "../../src/background/perception/prompt-builder";
 import type { ObservationEntry, ObserveInput } from "../../src/background/perception/types";
 import { computeSnapshotFingerprint, computeElementSignatures } from "../../src/background/agent/stagnation";
 import type { DomSnapshot, TaggedElement } from "../../src/types";
+import { replayPerceptionCase } from "../../evals/perception-runner";
+import type { PerceptionEvalCase } from "../../evals/types";
 
 // ----- helpers -----
 
@@ -115,7 +118,7 @@ describe("perceive() [legacy]", () => {
             const result = await perceive(makeInput());
             expect(result.cached).toBe(false);
             expect(result.interpretation).toContain("No API key");
-            expect(result.model).toBe("google/gemini-2.5-flash");
+            expect(result.model).toBe("x-ai/grok-4.1-fast");
         } finally {
             cleanup();
         }
@@ -132,7 +135,7 @@ describe("perceive() [legacy]", () => {
             const result = await perceive(makeInput());
             expect(result.interpretation).toContain("LAYOUT:");
             expect(result.providerId).toBe("openrouter");
-            expect(result.model).toBe("google/gemini-2.5-flash");
+            expect(result.model).toBe("x-ai/grok-4.1-fast");
             expect(calledUrl).toContain("openrouter.ai");
         } finally {
             cleanup();
@@ -695,6 +698,28 @@ describe("PerceptionAgent", () => {
         }
     });
 
+    test("shared prompt builder matches production first-observation prompt", async () => {
+        const cleanup = setKeys({ openRouter: "or-key" });
+        let sentBody = "";
+        const input = makeObserveInput();
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse(SAMPLE_RESPONSE);
+        });
+        try {
+            await agent.observe(input, "fp1");
+            const parsed = JSON.parse(sentBody);
+            const actualPrompt = parsed.messages[0].content[0].text;
+            const expectedPrompt = buildProductionPerceptionPrompt(input, {
+                priorObservations: "",
+                isFirstObservation: true,
+            });
+            expect(actualPrompt).toBe(expectedPrompt);
+        } finally {
+            cleanup();
+        }
+    });
+
     test("no API key returns fallback without API call", async () => {
         const cleanup = setKeys({});
         try {
@@ -775,6 +800,74 @@ describe("PerceptionAgent", () => {
         } finally {
             cleanup();
         }
+    });
+});
+
+describe("shared perception prompt path", () => {
+    let originalFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+        originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    test("eval replay uses the shared v6 production prompt", async () => {
+        let sentBody = "";
+        const input = makeObserveInput();
+        const evalCase: PerceptionEvalCase = {
+            id: "perception-test",
+            sourceSessionId: "session-test",
+            sourceTurn: 1,
+            input: {
+                screenshotDataUrl: input.screenshotDataUrl,
+                elements: input.elements.map((el) => ({
+                    tag: el.tag,
+                    tagName: el.tagName,
+                    text: el.text,
+                    role: el.role || undefined,
+                    attributes: el.attributes,
+                })),
+                url: input.url,
+                title: input.title,
+                scroll: input.scroll,
+            },
+            expected: {
+                requiredSections: ["LOCATION", "CHANGES", "BLOCKERS", "VISUAL-ONLY", "AFFORDANCES"],
+            },
+            reference: {
+                interpretation: "",
+                model: "test-model",
+                durationMs: 0,
+            },
+            metadata: {
+                url: input.url,
+                query: "test query",
+                difficulty: "easy",
+                tags: ["perception"],
+            },
+        };
+
+        globalThis.fetch = mockFetch((_url, init) => {
+            sentBody = (init?.body as string) || "";
+            return jsonResponse("1. LOCATION: Test.\n2. CHANGES: None.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: None.");
+        });
+
+        await replayPerceptionCase({ openrouter: "or-key" }, evalCase);
+        const parsed = JSON.parse(sentBody);
+        const actualPrompt = parsed.messages[0].content[0].text;
+        const expectedPrompt = buildProductionPerceptionPrompt(input, {
+            priorObservations: "",
+            isFirstObservation: true,
+        });
+
+        expect(actualPrompt).toBe(expectedPrompt);
+        expect(actualPrompt).toContain("1. LOCATION:");
+        expect(actualPrompt).toContain("5. AFFORDANCES:");
+        expect(actualPrompt).not.toContain("COMPLETION_SIGNAL");
+        expect(actualPrompt).not.toContain("OBJECTIVE_CHECK");
     });
 });
 

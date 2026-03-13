@@ -188,25 +188,22 @@
     "scroll": {
       "y": 1000,
       "maxY": 1000
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
         "type": "prereq",
         "description": "Enter 6-character code"
       }
-    ],
-    "completionSignal": null
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Long scrolling page with prominent call-to-action. Multiple sections with filler text.\n\n2. STATE: Active tab appears normal. No open menus or loading indicators. No focused inputs.\n\n3. CONTENT: None.\n\n4. VISUAL-ONLY: \n- [205:div] \"Link!\"\n- [206:div] \"Here!\"\n\n5. BLOCKERS: \n- PREREQ \"Enter 6-character code\" → must enter code first\n\n6. SPATIAL: \n- Submit button next to code input field.\n- Navigation buttons at bottom.\n\n7. HAZARDS: \n- [211:button] \"Click Here\" → vague CTA.\n- Multiple similar buttons with same actions (\"Next\", \"Continue\", \"Proceed\").",

@@ -16,13 +16,13 @@ import {
 } from "./utils";
 import { scorePerception, isPass } from "./perception-scorer";
 import { judgePerceptionCase } from "./perception-judge";
-import { buildPerceptionPrompt, parseCompletionSignal } from "../src/background/perception";
+import { buildProductionPerceptionPrompt } from "../src/background/perception/prompt-builder";
 import { stripThinkTags } from "../src/background/llm";
 
 export type PerceptionProvider = "openrouter";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 
 interface ProviderConfig {
   apiUrl: string;
@@ -34,11 +34,12 @@ interface ProviderConfig {
 
 function buildProviderConfig(
   keys: ApiKeys,
+  model?: string,
 ): ProviderConfig {
   return {
     apiUrl: OPENROUTER_API_URL,
     apiKey: keys.openrouter,
-    model: OPENROUTER_MODEL,
+    model: model ?? DEFAULT_PERCEPTION_MODEL,
     providerId: "openrouter",
     headers: {
       "HTTP-Referer": "https://opensidebar.dev",
@@ -53,25 +54,24 @@ function buildProviderConfig(
 export async function replayPerceptionCase(
   keys: ApiKeys,
   evalCase: PerceptionEvalCase,
+  model?: string,
 ): Promise<{
   interpretation: string;
-  completionSignal?: { status: string; evidence: string; scope: string } | null;
   model: string;
   providerId: string;
   durationMs: number;
 }> {
-  const config = buildProviderConfig(keys);
+  const config = buildProviderConfig(keys, model);
 
   // Reconstruct the perception prompt
-  const { promptText, mode } = buildPerceptionPrompt({
+  const promptText = buildProductionPerceptionPrompt({
     screenshotDataUrl: evalCase.input.screenshotDataUrl,
     elements: evalCase.input.elements as any,
     url: evalCase.input.url,
     title: evalCase.input.title,
     scroll: evalCase.input.scroll,
-    subtask: evalCase.input.subtask,
-    objective: evalCase.input.objective,
-    toolProfile: evalCase.input.toolProfile,
+  }, {
+    isFirstObservation: true,
   });
 
   const start = Date.now();
@@ -105,7 +105,7 @@ export async function replayPerceptionCase(
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`${provider} API error ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(`${config.providerId} API error ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as any;
@@ -113,15 +113,8 @@ export async function replayPerceptionCase(
   const cleaned = stripThinkTags(text);
   const durationMs = Date.now() - start;
 
-  // Parse completion signal
-  const signalScope = mode === "focused" ? "subtask" : "objective";
-  const completionSignal = parseCompletionSignal(cleaned, signalScope) ?? null;
-
   return {
     interpretation: cleaned,
-    completionSignal: completionSignal
-      ? { status: completionSignal.status, evidence: completionSignal.evidence, scope: completionSignal.scope }
-      : null,
     model: config.model,
     providerId: config.providerId,
     durationMs,
@@ -137,6 +130,7 @@ export async function runPerceptionEvals(options: {
   dimension?: string;
   judge?: boolean;
   outDir?: string;
+  model?: string;
 }): Promise<PerceptionEvalResult[]> {
   const { keys, judge = false } = options;
   let cases = readPerceptionEvalCases();
@@ -159,8 +153,9 @@ export async function runPerceptionEvals(options: {
 
   const results: PerceptionEvalResult[] = [];
 
+  const activeModel = options.model ?? DEFAULT_PERCEPTION_MODEL;
   console.log(
-    `Running ${cases.length} perception case(s) against openrouter...\n`,
+    `Running ${cases.length} perception case(s) against ${activeModel}...\n`,
   );
 
   for (let i = 0; i < cases.length; i++) {
@@ -177,14 +172,10 @@ export async function runPerceptionEvals(options: {
       let result: PerceptionEvalResult;
 
       try {
-        const replay = await replayPerceptionCase(keys, evalCase);
+        const replay = await replayPerceptionCase(keys, evalCase, options.model);
         const durationMs = Date.now() - start;
 
-        const scores = scorePerception(
-          evalCase,
-          replay.interpretation,
-          replay.completionSignal,
-        );
+        const scores = scorePerception(evalCase, replay.interpretation);
         const pass = isPass(scores);
 
         result = {
@@ -195,7 +186,6 @@ export async function runPerceptionEvals(options: {
           provider: { model: replay.model, providerId: replay.providerId },
           actual: {
             interpretation: replay.interpretation,
-            completionSignal: replay.completionSignal,
           },
           scores: {
             ...scores,
@@ -222,8 +212,9 @@ export async function runPerceptionEvals(options: {
         const statusColor = result.status === "pass" ? "\x1b[32m" : "\x1b[31m";
         console.log(
           `${statusColor}${result.status}\x1b[0m ` +
-            `sec=${scores.sectionCompleteness.toFixed(2)} sig=${scores.signalAccuracy.toFixed(2)} ` +
-            `blk=${scores.blockerDetection.toFixed(2)} hal=${scores.hallucination.toFixed(2)} ` +
+            `sec=${scores.sectionCompleteness.toFixed(2)} blk=${scores.blockerDetection.toFixed(2)} ` +
+            `aff=${scores.affordanceGrounding.toFixed(2)} vis=${scores.visualOnlyRecall.toFixed(2)} ` +
+            `hal=${scores.hallucination.toFixed(2)} ` +
             `comp=${scores.composite.toFixed(2)} ${durationMs}ms`,
         );
       } catch (err: any) {
@@ -236,9 +227,9 @@ export async function runPerceptionEvals(options: {
           actual: { interpretation: "" },
           scores: {
             sectionCompleteness: 0,
-            signalAccuracy: 0,
             blockerDetection: 0,
-            actionability: 0,
+            affordanceGrounding: 0,
+            visualOnlyRecall: 0,
             hallucination: 0,
             composite: 0,
           },

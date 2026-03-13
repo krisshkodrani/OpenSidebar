@@ -19,6 +19,7 @@ import { renderPrompt } from "../../prompts";
 import { stripThinkTags } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import { buildElementSummary } from "./perception";
+import { buildProductionPerceptionPrompt } from "./prompt-builder";
 import type { TaggedElement } from "../../types";
 import type {
   ObservationEntry,
@@ -33,7 +34,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_PERCEPTION_MODEL = "google/gemini-2.5-flash";
+const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -468,7 +469,7 @@ export class PerceptionAgent {
 
     // 4. Build prompt with prior observations
     this._turnCounter++;
-    const promptText = this.buildPrompt(input);
+    const promptText = this.buildSharedPrompt(input);
 
     // 5. Call VLM
     const callStart = Date.now();
@@ -510,6 +511,13 @@ export class PerceptionAgent {
   // -------------------------------------------------------------------------
   // Internal: prompt building
   // -------------------------------------------------------------------------
+
+  private buildSharedPrompt(input: ObserveInput): string {
+    return buildProductionPerceptionPrompt(input, {
+      priorObservations: formatPriorObservations(this.observationLog),
+      isFirstObservation: this.observationLog.length === 0,
+    });
+  }
 
   private buildPrompt(input: ObserveInput): string {
     const scrollPct =

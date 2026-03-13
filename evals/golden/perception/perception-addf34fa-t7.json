@@ -234,19 +234,22 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Solve the puzzle to go to step 21\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User needs to interact with the page (solve a puzzle) to progress, which requires tool actions rather than just reading content.)\n- Executor start (executor): Executor started objective: Solve the puzzle to go to step 21\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
-    "requiredSections": [],
+    "requiredSections": [
+      "LOCATION",
+      "CHANGES",
+      "BLOCKERS",
+      "VISUAL-ONLY",
+      "AFFORDANCES"
+    ],
     "blockers": [
       {
         "type": "prereq",
         "description": "Solve the puzzle to reveal the code"
       }
-    ],
-    "completionSignal": null
+    ]
   },
   "reference": {
     "interpretation": "## Report\n\n1. **LAYOUT**: The page is a challenge step in a browser navigation challenge, with a puzzle to solve and a code to enter. The layout is structured with a header, puzzle section, and a section to enter the code.\n\n2. **STATE**: The active tab is the challenge page, with no open menus or loading indicators. The focused input is the puzzle answer field. There are no toggle states mentioned.\n\n3. **CONTENT**: The key text visible only in images or graphical elements is the puzzle question \"10 + 10 = ?\" and the revealed code \"47NV6U\".\n\n4. **VISUAL-ONLY**: There is no text in images, canvas, charts, or SVGs that the DOM inspection misses.\n\n5. **BLOCKERS**: \n   - PREREQ \"Solve the puzzle to reveal the code\" \n\n6. **SPATIAL**: The submit button is below the code entry field, and there are multiple buttons with similar labels at the bottom of the page.\n\n7. **HAZARDS**: \n   - [102] \"suspicious button with generic label\"\n   - [101] \"suspicious button with generic label\"\n\n8. **OBJECTIVE_CHECK**: \nThe agent's current objective is to solve the puzzle to go to step 21. The success criteria are not yet satisfied.\n\n## Reality Check\nNOT_DONE: Puzzle not solved.",

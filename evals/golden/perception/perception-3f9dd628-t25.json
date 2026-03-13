@@ -191,17 +191,15 @@
     "scroll": {
       "y": 2049,
       "maxY": 2049
-    },
-    "objective": "Objective: Enter the code and then hit enter\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User requests an interactive action: entering a code and submitting, which requires a tool call to fill a field and press enter.)\n- Executor start (executor): Executor started objective: Enter the code and then hit enter\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
     "requiredSections": [
-      "LAYOUT",
-      "STATE",
+      "LOCATION",
+      "CHANGES",
       "BLOCKERS",
       "VISUAL-ONLY",
-      "HAZARDS"
+      "AFFORDANCES"
     ],
     "blockers": [
       {
@@ -209,7 +207,9 @@
         "description": "enter code to proceed"
       }
     ],
-    "completionSignal": null
+    "mustMentionElements": [
+      207
+    ]
   },
   "reference": {
     "interpretation": "1. LAYOUT: Long scrolling page with sections of text and buttons. Teal sidebar on left and right.\n\n2. STATE: Active tab appears to be main content; no open menus; input field [207] has text \"D26GC3\"; no loading indicators.\n\n3. CONTENT: None.\n\n4. VISUAL-ONLY: None.\n\n5. BLOCKERS: \n   PREREQ \"enter code to proceed\"\n\n6. SPATIAL: Navigation buttons scattered throughout; submit button below input field.\n\n7. HAZARDS: \n   [220] \"vague CTA\"\n   [168] \"vague CTA\"\n   Multiple similar buttons with unclear purpose.",

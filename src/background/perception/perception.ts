@@ -16,7 +16,7 @@ import { stripThinkTags } from "../llm";
 import { TokenUsage } from "../llm/types";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_PERCEPTION_MODEL = "google/gemini-2.5-flash";
+const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;

@@ -68,6 +68,18 @@ import { runGroundingEvals, type GroundingProvider } from "./grounding-runner";
 import { buildGroundingReport } from "./grounding-report";
 import { runToolConfusionEvals, type ToolConfusionProvider } from "./tool-confusion-runner";
 import { buildToolConfusionReport } from "./tool-confusion-report";
+import {
+  buildLiveBenchmarkReport,
+  collectLiveBenchmarkSessions,
+  summarizeLiveBenchmarkSessions,
+  writeLiveBenchmarkReport,
+} from "./live-benchmark";
+import {
+  buildProviderFailureReport,
+  collectProviderFailureTurns,
+  summarizeProviderFailures,
+  writeProviderFailureReport,
+} from "./provider-failures";
 import { ToolName } from "../src/types";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -126,6 +138,9 @@ async function main() {
     case "critique":
       await cmdCritique(args.slice(1));
       break;
+    case "critique-recovery":
+      await cmdCritiqueRecovery(args.slice(1));
+      break;
     case "stats":
       cmdStats();
       break;
@@ -143,6 +158,9 @@ async function main() {
       break;
     case "perception-critique":
       await cmdPerceptionCritique(args.slice(1));
+      break;
+    case "perception-validate":
+      await cmdPerceptionValidate();
       break;
     case "planner-extract":
       cmdPlannerExtract(args.slice(1));
@@ -206,6 +224,12 @@ async function main() {
       break;
     case "context-efficiency-validate":
       await cmdContextEfficiencyValidate();
+      break;
+    case "live-benchmark":
+      cmdLiveBenchmark(args.slice(1));
+      break;
+    case "provider-failures":
+      cmdProviderFailures(args.slice(1));
       break;
     case "help":
     default:
@@ -755,7 +779,7 @@ function cmdPerceptionExtract(args: string[]) {
   const turnStr = args[1];
   if (!sessionId || !turnStr) {
     console.error(
-      "Usage: evals perception-extract <session-id> <turn> [--id <id>] [--dimension <d>] [--difficulty <d>] [--notes <text>] [--page-type <t>] [--signal <status>]",
+      "Usage: evals perception-extract <session-id> <turn> [--id <id>] [--dimension <d>] [--difficulty <d>] [--notes <text>] [--page-type <t>]",
     );
     process.exit(1);
   }
@@ -771,21 +795,12 @@ function cmdPerceptionExtract(args: string[]) {
     return idx !== -1 ? args[idx + 1] : undefined;
   };
 
-  const signalStatus = getArg("--signal");
-  const signal = signalStatus
-    ? {
-        status: signalStatus as "done" | "not_done" | "unclear",
-        scope: "subtask" as const,
-      }
-    : undefined;
-
   const outputPath = extractAndSavePerceptionCase(sessionId, turnNumber, {
     id: getArg("--id"),
     dimension: getArg("--dimension") as any,
     difficulty: getArg("--difficulty") as any,
     notes: getArg("--notes"),
     pageType: getArg("--page-type"),
-    signal,
   });
 
   console.log(`${c.green}Perception case extracted${c.reset}`);
@@ -840,6 +855,8 @@ async function cmdPerceptionCritique(args: string[]) {
   const dimIdx = args.indexOf("--dimension");
   const dimension = dimIdx !== -1 ? args[dimIdx + 1] : undefined;
   const judgeEnabled = args.includes("--judge");
+  const modelIdx = args.indexOf("--model");
+  const model = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
   const outIdx = args.indexOf("--out");
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
 
@@ -852,7 +869,7 @@ async function cmdPerceptionCritique(args: string[]) {
   }
 
   console.log(
-    `${c.bold}Running perception critique [provider: ${providerArg}]${c.reset}\n`,
+    `${c.bold}Running perception critique [provider: ${providerArg}${model ? `, model: ${model}` : ""}]${c.reset}\n`,
   );
 
   const { readPerceptionEvalCases } = await import("./utils");
@@ -864,6 +881,7 @@ async function cmdPerceptionCritique(args: string[]) {
     dimension,
     judge: judgeEnabled,
     outDir: join("evals", "results", "perception"),
+    model,
   });
 
   if (results.length === 0) {
@@ -885,6 +903,22 @@ async function cmdPerceptionCritique(args: string[]) {
     `\n${c.bold}Results: ${passed} passed, ${failed} failed, ${errors} errors${c.reset}`,
   );
   console.log(`Report: ${mdPath}`);
+}
+
+async function cmdPerceptionValidate() {
+  const { readPerceptionEvalCases } = await import("./utils");
+  const cases = readPerceptionEvalCases();
+
+  if (cases.length === 0) {
+    console.log(`${c.yellow}No perception golden cases found in evals/golden/perception/${c.reset}`);
+    return;
+  }
+
+  const { validatePerceptionGoldenCases } = await import("./perception-validator");
+  console.log(`${c.bold}Validating ${cases.length} perception golden case(s)...${c.reset}\n`);
+  const { valid, invalid, warningCount } = validatePerceptionGoldenCases();
+  console.log(`\n${c.bold}Validation: ${valid} valid, ${invalid} invalid, ${warningCount} warning(s)${c.reset}`);
+  if (invalid > 0) process.exit(1);
 }
 
 // ── Planner pipeline commands ────────────────────────────────────────
@@ -1252,6 +1286,14 @@ Commands:
       --out <dir>           Output directory (default: evals/reports)
       --provider <p>        Force provider (default: openrouter)
 
+  critique-recovery [options]
+    Recovery-aware critique: replay up to 3 guarded turns and score the final recovered action
+    Options:
+      --model <m>           Override replay model
+      --tag <p>             Filter by pathology tag
+      --out <dir>           Output directory (default: evals/reports)
+      --provider <p>        Force provider (default: openrouter)
+
   perception-extract <session-id> <turn> [options]
     Extract a perception eval case from a trace turn
     Options:
@@ -1260,7 +1302,6 @@ Commands:
       --difficulty <d>        easy, medium, or hard
       --notes <text>          Notes for the case
       --page-type <type>      Page type description
-      --signal <status>       Expected completion signal (done, not_done, unclear)
 
   perception-extract-all <session-id> [--max <n>]
     Batch-extract all perception turns from a session
@@ -1268,10 +1309,14 @@ Commands:
   perception-critique [options]
     Replay perception cases, score, judge, generate comparison report
     Options:
-      --provider <p>          openrouter (default: both)
+      --provider <p>          openrouter (default: openrouter)
+      --model <m>             Override VLM model (e.g., qwen/qwen3-vl-32b-instruct)
       --dimension <d>         Filter by dimension tag
       --judge                 Enable LLM-as-judge
       --out <dir>             Output directory (default: evals/reports)
+
+  perception-validate
+    Structural validation of perception golden cases (offline)
 
   results [--session <id>]                Show eval results
   stats                                   Aggregate statistics
@@ -1378,7 +1423,80 @@ Context-efficiency eval commands:
     --scenario <s>    Filter by scenario (observation_masking, attribute_pruning, plan_persistence, time_awareness)
 
   context-efficiency-validate            Structural validation of context-efficiency golden cases (offline)
-`);
+
+  live-benchmark [options]               Summarize recorded live sessions from traces/index.jsonl
+    --limit <n>       Only analyze latest N sessions
+    --days <n>        Only analyze sessions from the last N days
+    --localhost       Only include localhost / fixture sessions
+    --query <text>    Filter query text by substring
+    --url <text>      Filter start URL by substring
+
+  provider-failures [options]           Analyze runtime provider-classified failures from traces
+    --limit <n>       Only analyze latest N failure turns
+    --days <n>        Only analyze sessions from the last N days
+    --localhost       Only include localhost / fixture sessions
+  `);
+}
+
+function cmdLiveBenchmark(args: string[]) {
+  const limitIdx = args.indexOf("--limit");
+  const sinceIdx = args.indexOf("--days");
+  const queryIdx = args.indexOf("--query");
+  const sourceIdx = args.indexOf("--url");
+
+  const limit = limitIdx !== -1 ? Number(args[limitIdx + 1]) : undefined;
+  const sinceDays = sinceIdx !== -1 ? Number(args[sinceIdx + 1]) : undefined;
+  const queryContains = queryIdx !== -1 ? args[queryIdx + 1] : undefined;
+  const sourceContains = sourceIdx !== -1 ? args[sourceIdx + 1] : undefined;
+  const onlyLocalhost = args.includes("--localhost");
+
+  const normalizedLimit = Number.isFinite(limit) ? limit : undefined;
+  const normalizedSinceDays = Number.isFinite(sinceDays) ? sinceDays : undefined;
+  const options = {
+    limit: normalizedLimit,
+    sinceDays: normalizedSinceDays,
+    queryContains,
+    sourceContains,
+    onlyLocalhost,
+  };
+
+  const sessions = collectLiveBenchmarkSessions(options);
+  const summary = summarizeLiveBenchmarkSessions(sessions);
+  const report = buildLiveBenchmarkReport(summary, options);
+  const reportPath = writeLiveBenchmarkReport(report);
+
+  console.log(`${c.bold}Live benchmark${c.reset}`);
+  console.log(`  Sessions: ${summary.totalSessions}`);
+  console.log(`  Success rate: ${(summary.successRate * 100).toFixed(1)}% (${summary.completedSessions}/${summary.totalSessions})`);
+  console.log(`  Avg turns: ${summary.avgTurns.toFixed(1)}`);
+  console.log(`  Avg session time: ${(summary.avgSessionTimeMs / 1000).toFixed(1)}s`);
+  console.log(`  Avg cost: $${summary.avgEstimatedCost.toFixed(6)}`);
+  console.log(`Report: ${reportPath}`);
+}
+
+function cmdProviderFailures(args: string[]) {
+  const limitIdx = args.indexOf("--limit");
+  const sinceIdx = args.indexOf("--days");
+  const limit = limitIdx !== -1 ? Number(args[limitIdx + 1]) : undefined;
+  const sinceDays = sinceIdx !== -1 ? Number(args[sinceIdx + 1]) : undefined;
+  const onlyLocalhost = args.includes("--localhost");
+
+  const options = {
+    limit: Number.isFinite(limit) ? limit : undefined,
+    sinceDays: Number.isFinite(sinceDays) ? sinceDays : undefined,
+    onlyLocalhost,
+  };
+  const turns = collectProviderFailureTurns(options);
+  const summary = summarizeProviderFailures(turns);
+  const report = buildProviderFailureReport(summary, options);
+  const reportPath = writeProviderFailureReport(report);
+
+  console.log(`${c.bold}Provider failures${c.reset}`);
+  console.log(`  Sessions: ${summary.totalSessions}`);
+  console.log(`  Failure turns: ${summary.totalFailureTurns}`);
+  console.log(`  Avg prompt tokens: ${summary.avgPromptTokens.toFixed(1)}`);
+  console.log(`  Avg retry count: ${summary.avgRetryCount.toFixed(1)}`);
+  console.log(`Report: ${reportPath}`);
 }
 
 function compareResults(a: EvalResult, b: EvalResult): "A" | "B" | "tie" {
@@ -1443,6 +1561,17 @@ function cmdExtract(args: string[]) {
 }
 
 async function cmdCritique(args: string[]) {
+  await runCritiqueCommand(args, "single");
+}
+
+async function cmdCritiqueRecovery(args: string[]) {
+  await runCritiqueCommand(args, "recovery");
+}
+
+async function runCritiqueCommand(
+  args: string[],
+  replayMode: "single" | "recovery",
+) {
   const modelIdx = args.indexOf("--model");
   const model = modelIdx !== -1 ? args[modelIdx + 1] : undefined;
   const tagIdx = args.indexOf("--tag");
@@ -1520,7 +1649,8 @@ async function cmdCritique(args: string[]) {
 
   const provider: EvalProvider = providerArg ?? ("openrouter");
 
-  console.log(`${c.bold}Running critique on ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
+  const commandLabel = replayMode === "recovery" ? "critique-recovery" : "critique";
+  console.log(`${c.bold}Running ${commandLabel} on ${cases.length} golden case(s) [provider: ${provider}]${c.reset}\n`);
 
   const results: EvalResult[] = [];
 
@@ -1538,7 +1668,14 @@ async function cmdCritique(args: string[]) {
 
     try {
       // 3. Replay (inject current system prompt so prompt edits are tested)
-      const actual = await replayCase(keys, evalCase, replayModel, currentPrompt, provider);
+      const actual = await replayCase(
+        keys,
+        evalCase,
+        replayModel,
+        currentPrompt,
+        provider,
+        replayMode,
+      );
       const durationMs = Date.now() - start;
 
       // 4. Score
@@ -1605,7 +1742,10 @@ async function cmdCritique(args: string[]) {
 
   mkdirSync(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const mdPath = join(outDir, `critique-${stamp}.md`);
+  const mdPath = join(
+    outDir,
+    `${replayMode === "recovery" ? "critique-recovery" : "critique"}-${stamp}.md`,
+  );
   writeFileSync(mdPath, report, "utf-8");
 
   // Summary

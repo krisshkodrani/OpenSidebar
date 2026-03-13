@@ -50,16 +50,16 @@
   },
   {
     "id": "evals.perception_judge.system",
-    "version": "v1",
-    "hash": "17588636",
-    "description": "System prompt for perception eval LLM-as-judge with 5-dimension rubric.",
+    "version": "v2",
+    "hash": "c8e9ae8b",
+    "description": "System prompt for perception eval LLM-as-judge with a v6 production rubric.",
     "sourcePath": "prompts/evals/perception_judge_system.md"
   },
   {
     "id": "evals.perception_judge.user",
-    "version": "v1",
-    "hash": "56b14dfa",
-    "description": "User prompt template for perception eval judge.",
+    "version": "v2",
+    "hash": "cfa2f91f",
+    "description": "User prompt template for the v6 perception eval judge.",
     "sourcePath": "prompts/evals/perception_judge_user.md"
   },
   {
@@ -107,8 +107,8 @@
   {
     "id": "perception.interpret_page",
     "version": "v6",
-    "hash": "c934f2d3",
-    "description": "Unified stateful perception prompt — 5 goal-free sections, prior observation history, no completion checking.",
+    "hash": "8558966e",
+    "description": "Unified stateful perception prompt - 5 goal-free sections, prior observation history, no completion checking.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
   {

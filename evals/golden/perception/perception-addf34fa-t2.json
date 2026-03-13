@@ -244,12 +244,16 @@
     "scroll": {
       "y": 0,
       "maxY": 0
-    },
-    "objective": "Objective: Solve the puzzle to go to step 21\nSuccess criteria: The user goal is completed.\n\nPlanner assumptions (validate against current page before acting):\n- No explicit assumptions from planner.\n\nHandoff context:\n- Planner (planner): Router: agent (User needs to interact with the page (solve a puzzle) to progress, which requires tool actions rather than just reading content.)\n- Executor start (executor): Executor started objective: Solve the puzzle to go to step 21\n\nGlobal task context:\nNo sibling node context yet.\n\nReality check signal:\nNo assumption drift evaluation available.\n\nExecution policy:\n- Validate planner assumptions against current page and adjust steps if reality changed.\n- Continue from prior context; do not repeat completed work.\n- Use global context to avoid duplicating sibling node outcomes.\n- If verifier requested reroute/retry, adapt strategy before acting.\n- Call done() only when success criteria are satisfied.\n- Call done() only when success criteria are satisfied."
+    }
   },
   "expected": {
-    "mode": "orientation",
-    "requiredSections": [],
+    "requiredSections": [
+      "LOCATION",
+      "CHANGES",
+      "BLOCKERS",
+      "VISUAL-ONLY",
+      "AFFORDANCES"
+    ],
     "blockers": [
       {
         "type": "nuisance",
@@ -259,8 +263,7 @@
         "type": "nuisance",
         "description": "blockers identified."
       }
-    ],
-    "completionSignal": null
+    ]
   },
   "reference": {
     "interpretation": "## Report\n\n1. **LAYOUT**: The page is a challenge step in a browser navigation challenge, with a puzzle to solve and a code to enter. The layout is structured with a puzzle section, a code entry section, and multiple buttons.\n\n2. **STATE**: The active tab is the challenge step 20 page. There are no open menus. The focused input is the puzzle answer field. There is a red error message \"Wrong Button! Try Again!\" indicating an incorrect action. No loading indicators are visible.\n\n3. **CONTENT**: Key text visible only in images or graphical elements: None.\n\n4. **VISUAL-ONLY**: No text in images, canvas, charts, or SVGs that DOM inspection misses.\n\n5. **BLOCKERS**: \n   - NUISANCE [None] \"No nuisance blockers identified.\"\n\n6. **SPATIAL**: The submit button is below the code entry field. There are multiple buttons at the bottom of the page with similar labels.\n\n7. **HAZARDS**: \n   - [82, 78, 83, 84, 60, 85, 67, 86, 87, 88, 52, 89, 62, 90, 91, 54, 68, 69, 64, 49] \"Multiple buttons with similar labels could cause confusion.\"\n\n8. **OBJECTIVE_CHECK**: The agent's current objective is to solve the puzzle to go to step 21. The success criteria are not yet satisfied.\n\n## Conclusion\nNOT_DONE: The puzzle has not been solved yet, and the error message indicates an incorrect action.",
