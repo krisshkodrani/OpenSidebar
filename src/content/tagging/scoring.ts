@@ -14,6 +14,36 @@ export function collapseNearIdentical(elements: Element[]): {
   collapsedCount: number;
   collapsedGroups: string[];
 } {
+  function getActionIdentity(el: Element): string {
+    const attrCandidates = [
+      el.getAttribute("aria-label"),
+      el.getAttribute("placeholder"),
+      el.getAttribute("name"),
+      el.getAttribute("id"),
+      el.getAttribute("title"),
+    ];
+
+    const labelText =
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels &&
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels!.length > 0
+        ? Array.from(
+            (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
+              .labels!,
+          )
+            .map((label) => label.textContent?.trim() || "")
+            .filter(Boolean)
+            .join(" ")
+        : "";
+
+    const text =
+      attrCandidates.find((candidate) => candidate && candidate.trim().length > 0) ||
+      labelText ||
+      el.textContent?.trim() ||
+      "";
+
+    return normalizeText(text.slice(0, 80));
+  }
+
   /** Strip trailing digits/numbers to normalize text for grouping */
   function normalizeText(text: string): string {
     return text
@@ -51,7 +81,7 @@ export function collapseNearIdentical(elements: Element[]): {
     }
     const tag = el.tagName.toLowerCase();
     const role = el.getAttribute("role") || "";
-    const text = normalizeText(el.textContent?.trim().slice(0, 40) || "");
+    const text = getActionIdentity(el);
     const key = `${tag}|${role}|${text}`;
 
     let group = groups.get(key);

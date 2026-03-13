@@ -5,6 +5,7 @@ import {
   stripThinkTags,
   extractThinkContent,
   MODEL_EXECUTOR,
+  MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
   MODEL_PLANNER,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
@@ -352,37 +353,65 @@ describe("LLMClient construction & tier switching", () => {
     expect(plannerInfo.model).toBe(MODEL_PLANNER);
   });
 
-  test("custom model overrides via LLMClientOptions", () => {
-    const client = makeClient({
-      executorModel: "custom/executor",
-      plannerModel: "custom/planner",
+    test("custom model overrides via LLMClientOptions", () => {
+      const client = makeClient({
+        executorModel: "custom/executor",
+        plannerModel: "custom/planner",
+      });
+      expect(client.getCurrentModel()).toBe("custom/executor");
+      client.switchToPlanner();
+      expect(client.getCurrentModel()).toBe("custom/planner");
     });
-    expect(client.getCurrentModel()).toBe("custom/executor");
-    client.switchToPlanner();
-    expect(client.getCurrentModel()).toBe("custom/planner");
+
+    test("activateExecutorFallback switches executor model for runtime anomalies", () => {
+      const client = makeClient();
+      expect(client.activateExecutorFallback("empty_response")).toBe(true);
+      expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
+      expect(client.getActiveProviderInfo().model).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
+    });
+
+    test("switchToExecutor clears executor fallback override", () => {
+      const client = makeClient();
+      client.activateExecutorFallback("empty_response");
+      client.switchToExecutor();
+      expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+      expect(client.getActiveProviderInfo().model).toBe(MODEL_EXECUTOR);
+    });
   });
-});
 
 // ========================================================================
 // Group 4: complete() Payload & Response Handling
 // ========================================================================
 
 describe("complete() payload & response", () => {
-  test("sends correct model from active pool", async () => {
-    const client = makeClient();
-    let sentModel = "";
-    mockFetch((_url, init) => {
-      sentModel = JSON.parse(init!.body as string).model;
+    test("sends correct model from active pool", async () => {
+      const client = makeClient();
+      let sentModel = "";
+      mockFetch((_url, init) => {
+        sentModel = JSON.parse(init!.body as string).model;
       return jsonApiResponse("OK");
     });
 
     await client.complete(baseRequest());
     expect(sentModel).toBe(MODEL_EXECUTOR);
 
-    client.switchToPlanner();
-    await client.complete(baseRequest());
-    expect(sentModel).toBe(MODEL_PLANNER);
-  });
+      client.switchToPlanner();
+      await client.complete(baseRequest());
+      expect(sentModel).toBe(MODEL_PLANNER);
+    });
+
+    test("uses executor fallback model after runtime fallback activation", async () => {
+      const client = makeClient();
+      let sentModel = "";
+      mockFetch((_url, init) => {
+        sentModel = JSON.parse(init!.body as string).model;
+        return jsonApiResponse("OK");
+      });
+
+      client.activateExecutorFallback("empty_response");
+      await client.complete(baseRequest());
+      expect(sentModel).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
+    });
 
   test("sets tool_choice: auto when tools provided", async () => {
     const client = makeClient();

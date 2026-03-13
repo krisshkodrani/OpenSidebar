@@ -110,7 +110,7 @@ describe.skipIf(!API_KEY)("E2E: Online Shopping", () => {
         "",
         "Step 2: FIRST type SAVE10 into the promo code input field (it has placeholder 'SAVE10'), then click the Apply button. After that, click the Express ($15) radio button for shipping.",
         "",
-        "Step 3: Scroll down to the Checkout section. Type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button.",
+        "Step 3: Keep the cart drawer open. In the cart drawer checkout section, type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button.",
       ].join("\n");
 
       await sendUserChat(ctx, prompt, tabId);

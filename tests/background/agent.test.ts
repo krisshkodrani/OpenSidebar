@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
-import { AgentStatus } from "../../src/types";
+import { AgentStatus, ToolName } from "../../src/types";
 
 // Default completeStream implementation (text only, no tool calls)
 const defaultCompleteStreamFn = (
@@ -54,6 +54,10 @@ vi.mock("../../src/background/llm", () => ({
       this.model = "google/gemini-2.5-flash-lite";
       this._isPlannerTier = false;
     });
+    activateExecutorFallback = vi.fn(() => {
+      this.model = "openai/gpt-4.1-mini";
+      return true;
+    });
     isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
@@ -79,10 +83,61 @@ vi.mock("../../src/background/llm", () => ({
   },
 }));
 
-import { AgentLoop } from "../../src/background/agent/loop";
+import { AgentLoop, validateTextEntryTarget } from "../../src/background/agent/loop";
 import { workspaceManager } from "../../src/background/workspaces/manager";
+import type { TaggedElement } from "../../src/types";
 
 describe("AgentLoop", () => {
+  test("blocks typing checkout name into non-text shipping radio input", () => {
+    const target: TaggedElement = {
+      tag: 15,
+      tagName: "input",
+      role: "radio",
+      text: "Standard (Free)",
+      attributes: {
+        type: "radio",
+        name: "shipping-method",
+        value: "standard",
+      },
+      rect: { x: 0, y: 0, width: 20, height: 20 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    const error = validateTextEntryTarget(
+      'In the cart drawer checkout section, type Alex Morgan into the input with placeholder "Full name".',
+      target,
+      "Alex Morgan",
+    );
+
+    expect(error).toContain("not a text-entry field");
+  });
+
+  test("blocks typing email into full-name field", () => {
+    const target: TaggedElement = {
+      tag: 22,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "text",
+        placeholder: "Full name",
+        "aria-label": "Full name",
+      },
+      rect: { x: 0, y: 0, width: 100, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    const error = validateTextEntryTarget(
+      'Type alex.morgan@example.com into the input with placeholder "Email address".',
+      target,
+      "alex.morgan@example.com",
+    );
+
+    expect(error).toContain("looks like a name field");
+  });
+
   test("runs simple conversation with streaming", async () => {
     const onStatus = vi.fn();
     const onMessage = vi.fn();
@@ -169,6 +224,218 @@ describe("AgentLoop", () => {
     const turn4Done = onStep.mock.calls[9];
     expect(turn4Done[0].type).toBe("thinking");
     expect(turn4Done[0].status).toBe("done");
+  });
+
+  test("applies inferred fallback tool profile when no plan status exists", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery = "Enter the secret code into the input and submit it";
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
+
+    const tools = [
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.TYPE_TEXT);
+    expect(names).toContain(ToolName.CLICK_ELEMENT);
+    expect(names).toContain(ToolName.DONE);
+    expect(names).not.toContain(ToolName.EXECUTE_JS);
+  });
+
+  test("records fallback reason when plan status has no running subtask", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    const logInfo = vi.spyOn((agent as any).log, "info");
+    (agent as any).originalQuery =
+      "Enter the secret code into the input and submit it";
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
+      currentIndex: 0,
+      subtasks: [{ description: "Old step", status: "pending" }],
+    }));
+
+    const tools = [
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    (agent as any).applyToolProfile(tools);
+
+    const event = logInfo.mock.calls.find(
+      (call: any[]) => call[1] === "Tool profile applied",
+    );
+    expect(event).toBeDefined();
+    expect(event![2].source).toBe("fallback_inference");
+    expect(event![2].fallbackReason).toBe("no_running_subtask_in_plan_status");
+  });
+
+  test("uses injected plan status before fallback inference", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Enter the secret code",
+              status: "running",
+              toolProfile: "enter_code",
+            },
+            {
+              description: "Submit the form",
+              status: "pending",
+              toolProfile: "submit_form",
+            },
+          ],
+        },
+      },
+    );
+
+    const logInfo = vi.spyOn((agent as any).log, "info");
+    (agent as any).originalQuery = "Do something else entirely";
+
+    const tools = [
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+    const event = logInfo.mock.calls.find(
+      (call: any[]) => call[1] === "Tool profile applied",
+    );
+
+    expect(event).toBeDefined();
+    expect(event![2].source).toBe("plan_status");
+    expect(names).toContain(ToolName.TYPE_TEXT);
+    expect(names).not.toContain(ToolName.EXECUTE_JS);
+  });
+
+  test("widens injected tool profile after step stagnation", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Enter the secret code",
+              status: "running",
+              toolProfile: "enter_code",
+            },
+          ],
+        },
+      },
+    );
+
+    const logInfo = vi.spyOn((agent as any).log, "info");
+    (agent as any).turnsOnCurrentStep = (agent as any).limits.stepWarnTurns;
+
+    const tools = [
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const event = logInfo.mock.calls.find(
+      (call: any[]) =>
+        call[1] === "Tool profile widened due to step stagnation",
+    );
+
+    expect(filtered).toHaveLength(tools.length);
+    expect(event).toBeDefined();
+  });
+
+  test("syncPlanStatus preserves tool profiles when advancing steps", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Add item to cart",
+              status: "running",
+              toolProfile: "form_fill",
+            },
+            {
+              description: "Submit order",
+              status: "pending",
+              toolProfile: "submit_form",
+            },
+          ],
+        },
+      },
+    );
+
+    const newIdx = (agent as any).advanceCompletedSubtasks();
+    (agent as any).syncPlanStatus(newIdx);
+
+    const planStatus = (agent as any).context.getPlanStatusRaw();
+    expect(planStatus.currentIndex).toBe(1);
+    expect(planStatus.subtasks[1].status).toBe("running");
+    expect(planStatus.subtasks[1].toolProfile).toBe("submit_form");
+  });
+
+  test("syncPlanStatus repairs missing running subtask and records it", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    const logWarn = vi.spyOn((agent as any).log, "warn");
+    (agent as any).planSubtasks = [
+      { description: "Step 1", status: "completed", turnsUsed: 0, turnBudget: 0 },
+      { description: "Step 2", status: "pending", turnsUsed: 0, turnBudget: 0 },
+    ];
+
+    (agent as any).syncPlanStatus(1);
+
+    const planStatus = (agent as any).context.getPlanStatusRaw();
+    expect(planStatus.subtasks[1].status).toBe("running");
+    expect(
+      logWarn.mock.calls.find(
+        (call: any[]) => call[1] === "Plan status missing running subtask",
+      ),
+    ).toBeDefined();
   });
 });
 

@@ -4,6 +4,7 @@ import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
+import type { ToolProfile } from "../tools/metadata";
 
 /** Result of task decomposition */
 export interface PlanDecomposition {
@@ -11,6 +12,16 @@ export interface PlanDecomposition {
   steps?: PlanStep[];
   difficulty: Difficulty;
   limitOverrides?: Partial<RuntimeLimits> | null;
+  instrumentation?: {
+    outcome:
+      | "structured_steps"
+      | "legacy_subtasks"
+      | "simple_task"
+      | "insufficient_subtasks";
+    parsedStepCount?: number;
+    parsedSubtaskCount?: number;
+    requestedMultiStep?: boolean;
+  };
 }
 
 export interface PlanStep {
@@ -23,7 +34,7 @@ export interface PlanStep {
     action: "call_done" | "advance_step";
     pattern?: string;
   };
-  toolProfile?: "full" | "read_only" | "form_fill" | "navigate";
+  toolProfile?: ToolProfile;
   expectedState?: {
     description: string; // what perception should show after step completion
     urlPattern?: string; // optional regex for expected URL
@@ -57,6 +68,131 @@ export interface DoneValidation {
 const DECOMPOSE_SYSTEM = renderPrompt("planner.decompose.system");
 const VALIDATE_SYSTEM = renderPrompt("planner.validate_done.system");
 const MONITOR_STEP_SYSTEM = renderPrompt("planner.monitor_step.system");
+const VALID_TOOL_PROFILES = new Set<ToolProfile>([
+  "full",
+  "read_only",
+  "form_fill",
+  "navigate",
+  "enter_code",
+  "submit_form",
+  "inspect_hidden_state",
+  "recover_from_stuck",
+  "navigation_only",
+]);
+
+function extractPrimaryObjective(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+
+  const stopMarkers = [
+    "planner assumptions:",
+    "handoff context:",
+    "global task context:",
+    "reality check signal:",
+    "execution policy:",
+    "constraints:",
+    "notes:",
+  ];
+  const lower = trimmed.toLowerCase();
+  let cutIndex = trimmed.length;
+  for (const marker of stopMarkers) {
+    const idx = lower.indexOf(marker);
+    if (idx >= 0 && idx < cutIndex) cutIndex = idx;
+  }
+
+  const primary = trimmed.slice(0, cutIndex).trim();
+  return primary || trimmed;
+}
+
+export function inferToolProfileForStep(
+  objective: string,
+  successCriteria: string,
+): ToolProfile | undefined {
+  const primaryObjective = extractPrimaryObjective(objective);
+  const primaryText = primaryObjective.toLowerCase();
+  const fullText = `${objective}\n${successCriteria}`.toLowerCase();
+  const requiresFieldEntryBeforeSubmit =
+    /(fill|type|enter|input)[^.\n]{0,80}(name|email|address|checkout|field|form)/.test(
+      primaryText,
+    ) &&
+    /(place (the )?order|submit order|complete checkout|finish checkout|review and place|confirm purchase|confirm order|click submit|submit code)/.test(
+      primaryText,
+    );
+
+  if (requiresFieldEntryBeforeSubmit) {
+    return "form_fill";
+  }
+
+  if (
+    /(place (the )?order|submit order|complete checkout|finish checkout|review and place|confirm purchase|confirm order|click submit|submit code)/.test(
+      primaryText,
+    )
+  ) {
+    return "submit_form";
+  }
+
+  if (
+    /(add to cart|add item|apply coupon|apply promo|apply [a-z0-9-]{4,}|promo code|coupon code|select shipping|choose[^.\n]{0,30}shipping|shipping method|checkout|full name|email address|billing|payment|quantity|cart section|cart overlay|fill.*checkout|enter.*email|enter.*name|select.*option|choose.*option)/.test(
+      primaryText,
+    )
+  ) {
+    return "form_fill";
+  }
+
+  if (
+    /((enter|type|fill|input)[^.\n]{0,80}(secret code|verification code|otp|passcode|code))|(6-character code)|(\btype\b[^.\n]{0,40}\bsubmit\b)|(\benter\b[^.\n]{0,40}\bsubmit\b)/.test(
+      primaryText,
+    )
+  ) {
+    return "enter_code";
+  }
+
+  if (
+    /(submit|confirm|send|finish the form|proceed to step|click submit|submit code)/.test(
+      primaryText,
+    )
+  ) {
+    return "submit_form";
+  }
+
+  if (
+    /(hidden|aria|attribute|meta tag|inspect dom|inspect the dom|xray|find the code|discover the code)/.test(
+      primaryText,
+    )
+  ) {
+    return "inspect_hidden_state";
+  }
+
+  if (
+    /(navigate|open|go to|switch tab|new tab|back to|return to|visit|load url)/.test(
+      primaryText,
+    )
+  ) {
+    return "navigation_only";
+  }
+
+  if (/(read|observe|inspect page|summarize|identify|check)/.test(primaryText)) {
+    return "read_only";
+  }
+
+  if (
+    /(stuck|blocked|intercept|overlay|covered by|not responding|retry|recover)/.test(
+      primaryText,
+    )
+  ) {
+    return "recover_from_stuck";
+  }
+
+  if (
+    /(stuck|blocked|intercept|overlay|covered by|not responding|retry|recover)/.test(
+      fullText,
+    )
+  ) {
+    return "recover_from_stuck";
+  }
+
+  return undefined;
+}
 
 export class TaskPlanner {
   private llm: LLMClient;
@@ -185,6 +321,12 @@ export class TaskPlanner {
           subtasks: singleSubtasks.slice(0, 1),
           difficulty,
           limitOverrides,
+          instrumentation: {
+            outcome: "simple_task",
+            parsedStepCount: singleSteps.length,
+            parsedSubtaskCount: singleSubtasks.length,
+            requestedMultiStep: false,
+          },
         };
       }
 
@@ -252,18 +394,17 @@ export class TaskPlanner {
           }
 
           // Parse optional tool profile
-          const VALID_PROFILES = new Set([
-            "full",
-            "read_only",
-            "form_fill",
-            "navigate",
-          ]);
           let toolProfile: PlanStep["toolProfile"];
           if (
             typeof obj.toolProfile === "string" &&
-            VALID_PROFILES.has(obj.toolProfile)
+            VALID_TOOL_PROFILES.has(obj.toolProfile as ToolProfile)
           ) {
             toolProfile = obj.toolProfile as PlanStep["toolProfile"];
+          } else {
+            toolProfile = inferToolProfileForStep(
+              obj.objective.trim(),
+              successCriteria,
+            );
           }
 
           // Parse optional expectedState
@@ -323,7 +464,27 @@ export class TaskPlanner {
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
       if (subtasks.length < 2) {
         // Simple task — return difficulty but no plan
-        return { subtasks: [], difficulty, limitOverrides };
+        logger.info(
+          "agent",
+          "Planner returned insufficient subtasks for runtime plan",
+          {
+            requestedMultiStep: true,
+            parsedStepCount: steps?.length ?? 0,
+            parsedLegacySubtaskCount: legacySubtasks.length,
+            difficulty,
+          },
+        );
+        return {
+          subtasks: [],
+          difficulty,
+          limitOverrides,
+          instrumentation: {
+            outcome: "insufficient_subtasks",
+            parsedStepCount: steps?.length ?? 0,
+            parsedSubtaskCount: legacySubtasks.length,
+            requestedMultiStep: true,
+          },
+        };
       }
 
       // Hard cap: truncate to 8 subtasks max
@@ -351,9 +512,25 @@ export class TaskPlanner {
             steps: cappedSteps,
             difficulty,
             limitOverrides,
+            instrumentation: {
+              outcome: "structured_steps",
+              parsedStepCount: cappedSteps.length,
+              parsedSubtaskCount: cappedSteps.length,
+              requestedMultiStep: true,
+            },
           };
         }
-        return { subtasks: subtasks.slice(0, 8), difficulty, limitOverrides };
+        return {
+          subtasks: subtasks.slice(0, 8),
+          difficulty,
+          limitOverrides,
+          instrumentation: {
+            outcome: "legacy_subtasks",
+            parsedStepCount: 0,
+            parsedSubtaskCount: Math.min(subtasks.length, 8),
+            requestedMultiStep: true,
+          },
+        };
       }
 
       if (steps) {
@@ -366,6 +543,12 @@ export class TaskPlanner {
           steps,
           difficulty,
           limitOverrides,
+          instrumentation: {
+            outcome: "structured_steps",
+            parsedStepCount: steps.length,
+            parsedSubtaskCount: steps.length,
+            requestedMultiStep: true,
+          },
         };
       }
 
@@ -373,7 +556,17 @@ export class TaskPlanner {
         subtaskCount: subtasks.length,
         difficulty,
       });
-      return { subtasks, difficulty, limitOverrides };
+      return {
+        subtasks,
+        difficulty,
+        limitOverrides,
+        instrumentation: {
+          outcome: "legacy_subtasks",
+          parsedStepCount: 0,
+          parsedSubtaskCount: subtasks.length,
+          requestedMultiStep: true,
+        },
+      };
     } catch (err: any) {
       logger.warn(
         "agent",

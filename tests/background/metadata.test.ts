@@ -198,8 +198,54 @@ describe("Tool Metadata", () => {
       expect(tools).not.toContain(ToolName.TYPE_TEXT);
     });
 
+    test('resolveToolProfile("enter_code") keeps typing tools but drops heavy investigation', () => {
+      const tools = resolveToolProfile("enter_code");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.TYPE_TEXT);
+      expect(tools).toContain(ToolName.PRESS_KEY);
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).not.toContain(ToolName.EXECUTE_JS);
+      expect(tools).not.toContain(ToolName.XRAY_PAGE);
+    });
+
+    test('resolveToolProfile("inspect_hidden_state") keeps investigation tools', () => {
+      const tools = resolveToolProfile("inspect_hidden_state");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.INSPECT_HIDDEN);
+      expect(tools).toContain(ToolName.XRAY_PAGE);
+      expect(tools).toContain(ToolName.EXECUTE_JS);
+      expect(tools).not.toContain(ToolName.TYPE_TEXT);
+    });
+
+    test('resolveToolProfile("submit_form") keeps submit actions narrow', () => {
+      const tools = resolveToolProfile("submit_form");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).toContain(ToolName.PRESS_KEY);
+      expect(tools).not.toContain(ToolName.TYPE_TEXT);
+      expect(tools).not.toContain(ToolName.EXECUTE_JS);
+    });
+
+    test('resolveToolProfile("recover_from_stuck") includes recovery tools and escalation', () => {
+      const tools = resolveToolProfile("recover_from_stuck");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.DISMISS_OVERLAYS);
+      expect(tools).toContain(ToolName.CLICK_COORDINATES);
+      expect(tools).toContain(ToolName.EXECUTE_JS);
+      expect(tools).toContain(ToolName.ESCALATE);
+    });
+
     test("all profiles include done and escalate", () => {
-      for (const profile of ["read_only", "form_fill", "navigate"] as const) {
+      for (const profile of [
+        "read_only",
+        "form_fill",
+        "navigate",
+        "enter_code",
+        "submit_form",
+        "inspect_hidden_state",
+        "recover_from_stuck",
+        "navigation_only",
+      ] as const) {
         const tools = resolveToolProfile(profile);
         expect(tools).toContain(ToolName.DONE);
         expect(tools).toContain(ToolName.ESCALATE);

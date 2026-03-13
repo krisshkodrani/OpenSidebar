@@ -85,9 +85,9 @@
   },
   {
     "id": "agent.system",
-    "version": "v3",
-    "hash": "96073ed6",
-    "description": "Core executor system prompt for browser automation turns. v3: perception-grounded guidance.",
+    "version": "v4",
+    "hash": "65e62b2f",
+    "description": "Core executor system prompt for browser automation turns. v4: shorter direct-action priority.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
