@@ -4,15 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **35 tools** organized into categories:
-
-- **DOM Interaction** (17 tools)
-- **Navigation** (8 tools)
-- **Browser Management** (12 tools)
-- **Page Analysis** (4 tools)
-- **Control Flow** (1 tool)
-- **Audio/Video** (1 tool)
-- **Utilities** (1 tool)
+OpenSidebar provides **38 tools** organized into categories such as DOM interaction, navigation, browser management, page analysis, and control flow.
 
 ---
 
@@ -580,7 +572,7 @@ Switch to a smarter, slower model for complex reasoning.
 | --------- | ------ | -------- | --------------------------------------- |
 | reason    | string | Yes      | Why the current model can't handle this |
 
-**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches to the planner model (DeepSeek V3.2 with native reasoning).
+**Note:** Use when stuck on riddles, puzzles, math, or multi-step logic. Switches execution onto the planner tier.
 
 ---
 
@@ -646,8 +638,8 @@ OpenSidebar uses two LLM tiers via OpenRouter:
 
 | Model Tier | Model ID                           | Provider    | Use Case                           |
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
-| **Executor** | `openai/gpt-oss-120b`              | OpenRouter  | Executor, everyday tasks (default) |
-| **Planner**  | `deepseek/deepseek-v3.2`          | OpenRouter  | Complex reasoning, escalated tasks |
-| **Perception** | `google/gemini-2.5-flash`        | OpenRouter  | Vision-based page understanding    |
+| **Executor** | `openai/gpt-4.1-mini`              | OpenRouter  | Executor, everyday tasks (default) |
+| **Planner**  | `minimax/minimax-m2.5`             | OpenRouter  | Complex reasoning, escalated tasks |
+| **Perception** | `x-ai/grok-4.1-fast`            | OpenRouter  | Vision-based page understanding    |
 
-The `escalate` tool switches to the planner model (DeepSeek V3.2 with native reasoning) when needed.
+The `escalate` tool switches execution onto the planner tier when needed.

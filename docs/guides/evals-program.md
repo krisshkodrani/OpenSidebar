@@ -1,126 +1,86 @@
-# Evals Program For Prompt Quality
+# Evals Program
 
-This guide defines an eval program aligned with the current orchestrator roadmap and provides a repeatable loop for improving prompt quality.
+This guide covers the current eval surface used to track OpenSidebar quality.
 
-## Tracks
+## Main Tracks
 
-Use six tracks that map directly to current architecture work:
+- critique evals: action selection and runtime decision quality
+- recovery critique: guarded multi-turn recovery behavior
+- perception evals: screenshot and page-state interpretation quality
+- live benchmark summaries: aggregate signals from recorded traces
 
-1. `orchestrator_lane_isolation`
-2. `verifier_critic`
-3. `human_escalation`
-4. `budget_and_termination`
-5. `checkpoint_resume`
-6. `core_task_success`
-7. `conversation_collaboration` — structured evidence, cross-role reflexion, pre-flight review, advocate triad, retrospective
-
-## Case Schema
-
-`EvalCase` now supports `promptQuality` metadata:
-
-- `promptVersion`
-- `track`
-- `expectedPlanShape`
-- `expectedLaneEvents`
-- `expectedEscalation`
-- `expectedVerifierDecision`
-- `mustNot`
-- `notes`
-
-Legacy cases continue to run because the section is optional.
-
-## CLI Workflow
-
-Manual-first recommended order:
-
-1. `npm run logs`
-2. Run manual task in extension
-3. `npm run traces -- list`
-4. `npx tsx evals/cli.ts convert <session-id> --strategy all`
-5. `npx tsx evals/cli.ts run --all --prompt-id orchestrator.verifier.system`
-6. `npm run evals:critique`
-
-1. Convert traces to cases:
+## Baseline Commands
 
 ```bash
-npx tsx evals/cli.ts convert <session-id> --strategy all
+npm run ci:evals:offline
+npx tsx evals/cli.ts perception-validate
+npm run evals:critique
+npm run evals:perception
 ```
 
-2. Run baseline:
+CI-safe commands:
+
+- `npm run ci:evals:offline`
+- `npx tsx evals/cli.ts perception-validate`
+
+## Perception Workflow
+
+1. Validate the perception dataset.
+2. Run the perception suite.
+3. Compare against the frozen baseline.
 
 ```bash
-npx tsx evals/cli.ts run --all
+npx tsx evals/cli.ts perception-validate
+npm run evals:perception
 ```
 
-3. Run candidate prompt:
+Current frozen baseline:
 
-```bash
-npx tsx evals/cli.ts run --all --prompt-file prompts/candidate.txt --prompt-variant candidate
-```
+- model: `x-ai/grok-4.1-fast`
+- harness: corrected v6 production-aligned contract
+- result: `18/20` pass
 
-Or run against shared production prompts:
+The current perception contract is:
 
-```bash
-npx tsx evals/cli.ts run --all --prompt-id orchestrator.verifier.system --prompt-variant baseline
-```
+- `LOCATION`
+- `CHANGES`
+- `BLOCKERS`
+- `VISUAL-ONLY`
+- `AFFORDANCES`
 
-4. Run A/B directly:
-
-```bash
-npx tsx evals/cli.ts ab --prompt-a prompts/baseline.txt --prompt-b prompts/candidate.txt --all
-```
-
-Mixed-source A/B is supported:
-
-```bash
-npx tsx evals/cli.ts ab --prompt-id-a orchestrator.verifier.system --prompt-b prompts/candidate.txt --all
-```
-
-5. Analyze failure clusters:
-
-```bash
-npx tsx evals/cli.ts analyze
-```
-
-6. Generate AI-readable critique artifacts:
+## Action Critique Workflow
 
 ```bash
 npm run evals:critique
+npx tsx evals/cli.ts critique-recovery --tag <pathology>
+npx tsx evals/cli.ts live-benchmark --localhost --limit 20
 ```
 
-See the strict operator checklist in:
-- `docs/guides/manual-evals-runbook.md`
+Use critique evals when changing:
 
-## Scoring
+- executor prompts
+- planner prompts
+- tool-profile policies
+- recovery and anti-loop logic
+- post-action verification behavior
 
-The runner emits:
+## Operating Rules
 
-- `toolNameMatch`
-- `toolParamMatch`
-- `sequenceMatch`
-- `composite` (weighted aggregate)
+- Prefer offline validation in CI.
+- Treat online evals as opt-in gates when provider credentials are present.
+- Validate fixtures before comparing score movement.
+- Do not compare current perception scores to legacy pre-v6 reports.
+- Prefer large, obvious wins over tiny deltas when judging prompt or model changes.
 
-A/B winner logic prioritizes:
+## Artifacts
 
-1. status (`pass` > `fail` > `error`)
-2. composite score
+- `evals/golden/`: checked-in fixture data
+- `evals/results/`: raw run outputs
+- `evals/reports/`: markdown reports
+- `traces/`: live session traces used for extraction and benchmarking
 
-## Run-Trace Signals To Watch
+## Related Docs
 
-Use run traces (`traces/runs/<run-id>.jsonl`) to track behavior changes:
-
-- `task_completed`
-- `evidence_attached`
-- `cross_role_reflexion`
-- `plan_reviewed`
-- `advocate_challenge`
-
-These are summarized in critique output so prompt changes can be tied to deltas in duration/tokens.
-
-## Operating Cadence
-
-1. Run full tracks weekly.
-2. Pick top 1-2 failure clusters only.
-3. Patch prompts.
-4. Re-run A/B.
-5. Promote only if no critical regressions and net win-rate improves.
+- [Evals README](../../evals/README.md)
+- [Manual Evals Runbook](./manual-evals-runbook.md)
+- [Perception Layer](../architecture/perception-layer.md)

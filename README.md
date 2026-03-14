@@ -12,30 +12,22 @@
 
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
-  Navigate, click, type, and automate web tasks from a side panel — bring your own API key via <a href="https://openrouter.ai">OpenRouter</a>.
+  Navigate, click, type, and automate web tasks from a side panel using your own <a href="https://openrouter.ai">OpenRouter</a> key.
 </p>
-
-<video src="docs/assets/demo-agent.mp4" width="100%" autoplay loop muted></video>
 
 ---
 
 ## Features
 
-- **Natural language browser automation** — click, type, scroll, navigate, drag-and-drop, draw on canvas.
-- **Visual DOM understanding** — Vimium-style element tagging with label association and inline clickable detection.
-- **Perception layer** — vision-based page understanding via Gemini 2.5 Flash.
-- **Two-tier LLM architecture** — fast executor model for observe-act cycles, planner model for complex reasoning. Automatic escalation when the executor gets stuck.
-- **36 generic tools** — no site-specific heuristics. The agent adapts through prompting, not code.
-- **Plan confirmation** — the agent pauses to show its plan before executing multi-step tasks.
-- **Clarification** — the agent asks when something is ambiguous instead of guessing.
-- **Stagnation detection** — snapshot fingerprinting detects stuck loops with graduated intervention.
-- **Navigation survival** — persists state across page loads and service worker restarts.
-- **Workspaces** — auto-managed via Chrome Tab Groups, each with isolated agent state.
-- **Built-in observability** — full execution traces, trace viewer UI, structured logs, and an eval pipeline for testing agent quality.
-- **Real-time streaming** — SSE-based responses with token usage and cost tracking.
-- **Your keys, your data** — all inference through OpenRouter. No telemetry or analytics.
-
----
+- Natural language browser automation: click, type, scroll, navigate, drag and drop, upload, inspect, and recover.
+- Vision-backed perception: stateful page understanding with a structured five-section report.
+- Multi-step orchestration: planner, executor, and verifier roles for harder tasks.
+- 38 browser tools: generic primitives instead of site-specific flows.
+- Plan confirmation and approval gates for sensitive operations.
+- Auto-recovery: stale element handling, loop detection, and escalation when stuck.
+- Built-in observability: traces, logs, trace viewer, and offline evals.
+- Workspaces: isolated tab-group-backed runtime state.
+- Bring your own key: no subscription, no hosted control plane, no telemetry.
 
 ## Quick Start
 
@@ -66,65 +58,72 @@ npm run build
 2. Open **Settings**.
 3. Enter your OpenRouter API key.
 
----
-
 ## How It Works
 
-```
-Side Panel (React/Zustand) <--> Service Worker (Agent Loop) <--> Content Script (DOM)
+```text
+Side Panel (React/Zustand) <-> Service Worker <-> Content Script (DOM)
 ```
 
-The extension runs in three isolated Chrome contexts. The **service worker** orchestrates the agent loop (LLM → tool → LLM cycle), the **content script** generates DOM snapshots and executes actions on the page, and the **side panel** provides the chat interface.
+The extension runs in three isolated Chrome contexts. The service worker owns the agent loop and orchestrator, the content script reads and manipulates the page, and the side panel renders chat, plans, approvals, and traces.
 
-| Component | Technology |
+| Component | Current Default |
 | --- | --- |
-| Executor LLM | `openai/gpt-oss-120b` via OpenRouter |
-| Planner LLM | `deepseek/deepseek-v3.2` via OpenRouter |
-| Perception | Gemini 2.5 Flash via OpenRouter |
+| Executor LLM | `openai/gpt-4.1-mini` via OpenRouter |
+| Executor fallback | `google/gemini-2.5-flash-lite` via OpenRouter |
+| Planner LLM | `minimax/minimax-m2.5` via OpenRouter |
+| Perception | `x-ai/grok-4.1-fast` via OpenRouter |
 | UI | React 18 + Tailwind CSS + Zustand |
 | Build | Vite |
 
----
+## Evals
+
+OpenSidebar ships with trace-based evals for both action quality and perception quality.
+
+```bash
+npm run ci:evals:offline
+npx tsx evals/cli.ts perception-validate
+npm run evals:critique
+npm run evals:perception
+```
+
+Frozen perception baseline:
+
+- default model: `x-ai/grok-4.1-fast`
+- corrected v6 harness
+- `18/20` pass on the checked-in perception suite
+
+See [evals/README.md](./evals/README.md) for the current eval workflow.
 
 ## Security
 
-- API keys stored in `chrome.storage.sync` — never sent anywhere except OpenRouter.
-- All data stays in local browser storage and local files.
+- API keys are stored in Chrome storage and only sent to configured model providers.
 - No telemetry or analytics.
 - URL sanitization blocks non-http(s) protocols.
-- Tool risk classification (low/medium/high) with approval gates for destructive actions.
-- See [SECURITY.md](SECURITY.md) for the full security policy.
-
----
+- High-risk tools can require explicit approval.
+- See [SECURITY.md](./SECURITY.md) for the security policy.
 
 ## Documentation
 
+- [Docs Index](./docs/README.md)
 - [Architecture Overview](./docs/architecture/overview.md)
-- [Agent Loop](./docs/architecture/agent-loop.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)
-- [Navigation Bridge](./docs/architecture/navigation-bridge.md)
-- [Message Protocol](./docs/architecture/message-protocol.md)
-- [Tools Reference](./docs/features/tools.md)
-- [Security](./docs/features/security.md)
+- [Developer Guide](./docs/developer-guide.md)
 - [Evals Guide](./docs/guides/evals-program.md)
-
----
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide, including architecture, observability tooling, the eval pipeline, and how to add new tools.
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+Useful commands:
 
 ```bash
-git clone https://github.com/krisshkodrani/OpenSidebar.git
-cd OpenSidebar
-npm install
-npm run dev     # full dev stack: Vite HMR + log server + trace viewer
-npm test        # make sure tests pass
-npm run lint    # make sure linter passes
+npm run ci:lint
+npm run ci:test
+npm run ci:evals:offline
+npm run ci:build
+npm run test:e2e
 ```
-
----
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](./LICENSE).
