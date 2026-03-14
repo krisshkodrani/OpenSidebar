@@ -3,8 +3,14 @@
  */
 
 import { HideElementArgs } from "../../types";
-import { getTagMap, getVisibleText, addDynamicTag } from "../tagging";
-import { staleIdError, describeElement, isLikelyOverlay } from "./helpers";
+import { getVisibleText, addDynamicTag } from "../tagging";
+import {
+  staleIdError,
+  describeElement,
+  getTaggedElement,
+  isLikelyOverlay,
+  normalizeTagId,
+} from "./helpers";
 
 /**
  * Walk up from an element to find the nearest overlay ancestor.
@@ -34,15 +40,15 @@ export function executeHideElement(args: HideElementArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
   if (!(el instanceof HTMLElement)) {
     return {
       success: false,
-      result: `Element [${args.id}] is not an HTMLElement`,
+      result: `Element [${tagId}] is not an HTMLElement`,
       navigated: false,
     };
   }
@@ -56,7 +62,7 @@ export function executeHideElement(args: HideElementArgs): {
     if (!ancestor) {
       return {
         success: false,
-        result: `Element [${args.id}] <${el.tagName.toLowerCase()}> is not an overlay and has no overlay ancestor. Try press_key("Escape") or click a close button.`,
+        result: `Element [${tagId}] <${el.tagName.toLowerCase()}> is not an overlay and has no overlay ancestor. Try press_key("Escape") or click a close button.`,
         navigated: false,
       };
     }
@@ -72,12 +78,12 @@ export function executeHideElement(args: HideElementArgs): {
     document.body.style.overflow = "";
   }
 
-  const targetTag = ancestorUsed ? addDynamicTag(target) : args.id;
+  const targetTag = ancestorUsed ? addDynamicTag(target) : tagId;
   const targetText = getVisibleText(target).slice(0, 40);
   const textSnippet = targetText ? ` "${targetText}"` : "";
   const msg = ancestorUsed
-    ? `Hidden overlay ancestor [${targetTag}] <${target.tagName.toLowerCase()}>${textSnippet} (parent of [${args.id}])`
-    : `Hidden element [${args.id}] <${target.tagName.toLowerCase()}>${textSnippet}`;
+    ? `Hidden overlay ancestor [${targetTag}] <${target.tagName.toLowerCase()}>${textSnippet} (parent of [${tagId}])`
+    : `Hidden element [${tagId}] <${target.tagName.toLowerCase()}>${textSnippet}`;
 
   return { success: true, result: msg, navigated: false };
 }
@@ -87,8 +93,8 @@ export function executeUploadFile(args: Record<string, unknown>): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id as number);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -96,7 +102,7 @@ export function executeUploadFile(args: Record<string, unknown>): {
   if (!(el instanceof HTMLInputElement) || el.type !== "file") {
     return {
       success: false,
-      result: `Element [${args.id}] is not a file input`,
+      result: `Element [${tagId}] is not a file input`,
       navigated: false,
     };
   }
@@ -124,13 +130,13 @@ export function executeUploadFile(args: Record<string, unknown>): {
 
     return {
       success: true,
-      result: `Uploaded "${filename}" (${byteArray.length} bytes) to ${describeElement(el, args.id as number)}`,
+      result: `Uploaded "${filename}" (${byteArray.length} bytes) to ${describeElement(el, tagId)}`,
       navigated: false,
     };
   } catch (e: any) {
     return {
       success: false,
-      result: `Failed to set file on [${args.id}]: ${e.message}`,
+      result: `Failed to set file on [${tagId}]: ${e.message}`,
       navigated: false,
     };
   }

@@ -332,6 +332,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.READ_PAGE,
     ToolName.READ_ELEMENT,
     ToolName.CLICK_ELEMENT,
+    ToolName.TYPE_TEXT,
     ToolName.PRESS_KEY,
     ToolName.SCROLL_PAGE,
     ToolName.DONE,
@@ -355,6 +356,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   recover_from_stuck: [
     ToolName.READ_PAGE,
     ToolName.READ_ELEMENT,
+    ToolName.CLICK_ELEMENT,
     ToolName.INSPECT_HIDDEN,
     ToolName.XRAY_PAGE,
     ToolName.EXECUTE_JS,

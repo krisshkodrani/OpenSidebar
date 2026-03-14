@@ -13,7 +13,13 @@ import {
   SetCheckboxArgs,
 } from "../../types";
 import { getTagMap, getVisibleText, addDynamicTag } from "../tagging";
-import { staleIdError, describeElement, isLikelyOverlay } from "./helpers";
+import {
+  staleIdError,
+  describeElement,
+  getTaggedElement,
+  isLikelyOverlay,
+  normalizeTagId,
+} from "./helpers";
 
 /**
  * Use the native prototype value setter to bypass React/Vue controlled input interception.
@@ -42,8 +48,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   navigated: boolean;
 }> {
   const count = Math.min(Math.max((args.count as number) || 1, 1), 10);
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -116,8 +122,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const blockingTagName = finalTop.tagName.toLowerCase();
     const overlayLikely = isLikelyOverlay(finalTop);
     const result = overlayLikely
-      ? `Click intercepted! Element [${args.id}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Use hide_element(${blockingTag}) to remove it, or press_key("Escape").`
-      : `Click intercepted! Element [${args.id}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: hide_element(${blockingTag}) to remove it, scroll_page to reposition, or execute_js to click programmatically.`;
+      ? `Click intercepted! Element [${tagId}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Use hide_element(${blockingTag}) to remove it, or press_key("Escape").`
+      : `Click intercepted! Element [${tagId}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: hide_element(${blockingTag}) to remove it, scroll_page to reposition, or execute_js to click programmatically.`;
     return { success: false, result, navigated: false };
   }
 
@@ -154,7 +160,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   const countSuffix = count > 1 ? ` (${count} times)` : "";
   return {
     success: true,
-    result: `Clicked [${args.id}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}"${countSuffix}`,
+    result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}"${countSuffix}`,
     navigated: willNavigate,
   };
 }
@@ -164,8 +170,8 @@ export function executeType(args: TypeTextArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -179,7 +185,7 @@ export function executeType(args: TypeTextArgs): {
   ) {
     return {
       success: false,
-      result: `Element [${args.id}] is not a text input`,
+      result: `Element [${tagId}] is not a text input`,
       navigated: false,
     };
   }
@@ -261,7 +267,7 @@ export function executeType(args: TypeTextArgs): {
 
   return {
     success: true,
-    result: `Typed "${args.text}" into ${describeElement(el, args.id)}${args.pressEnter ? " and pressed Enter" : ""}`,
+    result: `Typed "${args.text}" into ${describeElement(el, tagId)}${args.pressEnter ? " and pressed Enter" : ""}`,
     navigated,
   };
 }
@@ -271,8 +277,8 @@ export function executeHover(args: { id: number }): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) return staleIdError(args.id);
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
@@ -282,7 +288,7 @@ export function executeHover(args: { id: number }): {
 
   return {
     success: true,
-    result: `Hovered over ${describeElement(el, args.id)}`,
+    result: `Hovered over ${describeElement(el, tagId)}`,
     navigated: false,
   };
 }
@@ -292,8 +298,8 @@ export function executeSelectOption(args: SelectOptionArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -301,7 +307,7 @@ export function executeSelectOption(args: SelectOptionArgs): {
   if (!(el instanceof HTMLSelectElement)) {
     return {
       success: false,
-      result: `Element [${args.id}] is not a <select> element`,
+      result: `Element [${tagId}] is not a <select> element`,
       navigated: false,
     };
   }
@@ -320,7 +326,7 @@ export function executeSelectOption(args: SelectOptionArgs): {
       .join(", ");
     return {
       success: false,
-      result: `No option matching "${args.value}" in [${args.id}]. Available options: ${available}`,
+      result: `No option matching "${args.value}" in [${tagId}]. Available options: ${available}`,
       navigated: false,
     };
   }
@@ -333,7 +339,7 @@ export function executeSelectOption(args: SelectOptionArgs): {
 
   return {
     success: true,
-    result: `Selected "${match.textContent?.trim()}" in ${describeElement(el, args.id)}`,
+    result: `Selected "${match.textContent?.trim()}" in ${describeElement(el, tagId)}`,
     navigated: false,
   };
 }
@@ -490,8 +496,8 @@ export function executeRightClick(args: RightClickArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -503,7 +509,7 @@ export function executeRightClick(args: RightClickArgs): {
 
   return {
     success: true,
-    result: `Right-clicked ${describeElement(el, args.id)}`,
+    result: `Right-clicked ${describeElement(el, tagId)}`,
     navigated: false,
   };
 }
@@ -513,8 +519,8 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -525,7 +531,7 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
   ) {
     return {
       success: false,
-      result: `Element [${args.id}] is not a checkbox or radio input`,
+      result: `Element [${tagId}] is not a checkbox or radio input`,
       navigated: false,
     };
   }
@@ -537,7 +543,7 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
 
   return {
     success: true,
-    result: `Set ${describeElement(el, args.id)} checked=${args.checked}`,
+    result: `Set ${describeElement(el, tagId)} checked=${args.checked}`,
     navigated: false,
   };
 }

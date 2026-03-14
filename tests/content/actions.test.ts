@@ -207,6 +207,38 @@ describe("Content Actions", () => {
         });
     });
 
+    describe("tag ID normalization", () => {
+        test("click_element accepts string tag IDs", async () => {
+            document.body.innerHTML = `<button id="btn1">Submit</button>`;
+            resetStableIds();
+            tagElements();
+
+            const buttonId = Number(document.getElementById("btn1")?.getAttribute("data-os-tag"));
+            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: String(buttonId) });
+
+            expect(result.success).toBe(true);
+            expect(result.result).toContain(`Clicked [${buttonId}] button "Submit"`);
+        });
+
+        test("type_text accepts string tag IDs", async () => {
+            document.body.innerHTML = `<input id="email" type="email" />`;
+            resetStableIds();
+            tagElements();
+
+            const input = document.getElementById("email") as HTMLInputElement;
+            const inputId = Number(input.getAttribute("data-os-tag"));
+            const result = await executeAction(ToolName.TYPE_TEXT, {
+                id: String(inputId),
+                text: "test@example.com",
+                pressEnter: false,
+            });
+
+            expect(result.success).toBe(true);
+            expect(input.value).toBe("test@example.com");
+            expect(result.result).toContain(`[${inputId}] <input>`);
+        });
+    });
+
     describe("isLikelyOverlay", () => {
         test("returns true for fixed + high z-index element", () => {
             document.body.innerHTML = '<div id="test" style="position: fixed; z-index: 200;">Overlay</div>';

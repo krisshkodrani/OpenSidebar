@@ -14,7 +14,12 @@ import {
   truncateText,
 } from "../tagging";
 import { buildSnapshot } from "../snapshot";
-import { staleIdError, describeElement } from "./helpers";
+import {
+  staleIdError,
+  describeElement,
+  getTaggedElement,
+  normalizeTagId,
+} from "./helpers";
 
 export function executeScroll(args: ScrollPageArgs): {
   success: boolean;
@@ -33,16 +38,16 @@ export function executeScroll(args: ScrollPageArgs): {
   // Absolute Y scroll (from @y hints)
   if (args.y != null) {
     if (args.id !== undefined) {
-      const tagMap = getTagMap();
-      const el = tagMap.get(args.id);
+      const tagId = normalizeTagId(args.id);
+      const el = getTaggedElement(args.id);
       if (!el) return staleIdError(args.id);
       if (!(el instanceof HTMLElement)) {
-        return { success: false, result: `Element [${args.id}] is not scrollable`, navigated: false };
+        return { success: false, result: `Element [${tagId}] is not scrollable`, navigated: false };
       }
       el.scrollTo({ top: args.y, behavior: "instant" });
       return {
         success: true,
-        result: `Scrolled [${args.id}] to y=${args.y}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+        result: `Scrolled [${tagId}] to y=${args.y}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
         navigated: false,
       };
     }
@@ -61,15 +66,15 @@ export function executeScroll(args: ScrollPageArgs): {
     args.direction === ScrollDirection.BOTTOM;
 
   if (args.id !== undefined) {
-    const tagMap = getTagMap();
-    const el = tagMap.get(args.id);
+    const tagId = normalizeTagId(args.id);
+    const el = getTaggedElement(args.id);
     if (!el) {
       return staleIdError(args.id);
     }
     if (!(el instanceof HTMLElement)) {
       return {
         success: false,
-        result: `Element [${args.id}] is not scrollable`,
+        result: `Element [${tagId}] is not scrollable`,
         navigated: false,
       };
     }
@@ -90,8 +95,8 @@ export function executeScroll(args: ScrollPageArgs): {
     return {
       success: true,
       result: isAbsolute
-        ? `Scrolled [${args.id}] to ${args.direction}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`
-        : `Scrolled [${args.id}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+        ? `Scrolled [${tagId}] to ${args.direction}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`
+        : `Scrolled [${tagId}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
       navigated: false,
     };
   }
@@ -319,8 +324,8 @@ export function executeReadElement(args: ReadElementArgs): {
   result: string;
   navigated: boolean;
 } {
-  const tagMap = getTagMap();
-  const el = tagMap.get(args.id);
+  const tagId = normalizeTagId(args.id);
+  const el = getTaggedElement(args.id);
   if (!el) {
     return staleIdError(args.id);
   }
@@ -337,11 +342,11 @@ export function executeReadElement(args: ReadElementArgs): {
         .join(", ");
       return {
         success: false,
-        result: `Element [${args.id}] has no attribute "${args.attribute}". Available: ${available || "(none)"}`,
+        result: `Element [${tagId}] has no attribute "${args.attribute}". Available: ${available || "(none)"}`,
         navigated: false,
       };
     }
-    const desc = describeElement(el, args.id);
+    const desc = describeElement(el, tagId);
     return {
       success: true,
       result: `${desc} ${args.attribute}="${truncateText(value, 2000)}"`,
@@ -349,7 +354,7 @@ export function executeReadElement(args: ReadElementArgs): {
     };
   }
 
-  const desc = describeElement(el, args.id);
+  const desc = describeElement(el, tagId);
   const text = el.textContent || "";
   return {
     success: true,
