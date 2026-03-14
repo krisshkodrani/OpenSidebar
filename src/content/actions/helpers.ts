@@ -4,13 +4,28 @@
 
 import { getTagMap, getVisibleText } from "../tagging";
 
+export function normalizeTagId(id: number | string | unknown): number {
+  if (typeof id === "number" && Number.isFinite(id)) return id;
+  if (typeof id === "string") {
+    const parsed = Number(id.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Number.NaN;
+}
+
+export function getTaggedElement(id: number | string | unknown): Element | null {
+  const tagId = normalizeTagId(id);
+  if (!Number.isFinite(tagId)) return null;
+  return getTagMap().get(tagId) ?? null;
+}
+
 /** Build a "No element with tag" error with nearby ID hints for LLM recovery */
 export function staleIdError(id: number | unknown): {
   success: false;
   result: string;
   navigated: false;
 } {
-  const numId = typeof id === "number" ? id : Number(id);
+  const numId = normalizeTagId(id);
   const tagMap = getTagMap();
   const available = Array.from(tagMap.keys())
     .sort((a, b) => Math.abs(a - numId) - Math.abs(b - numId))

@@ -222,7 +222,7 @@ describe("Tool Metadata", () => {
       expect(tools).not.toBeNull();
       expect(tools).toContain(ToolName.CLICK_ELEMENT);
       expect(tools).toContain(ToolName.PRESS_KEY);
-      expect(tools).not.toContain(ToolName.TYPE_TEXT);
+      expect(tools).toContain(ToolName.TYPE_TEXT);
       expect(tools).not.toContain(ToolName.EXECUTE_JS);
     });
 
@@ -231,6 +231,7 @@ describe("Tool Metadata", () => {
       expect(tools).not.toBeNull();
       expect(tools).toContain(ToolName.DISMISS_OVERLAYS);
       expect(tools).toContain(ToolName.CLICK_COORDINATES);
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
       expect(tools).toContain(ToolName.EXECUTE_JS);
       expect(tools).toContain(ToolName.ESCALATE);
     });
