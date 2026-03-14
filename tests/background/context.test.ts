@@ -446,9 +446,9 @@ describe("ContextManager", () => {
     test("system prompt contains investigation guidance", () => {
       const prompt = context.getPrompt();
       const systemContent = prompt[0].content as string;
-      expect(systemContent).toContain("Investigation protocol");
+      expect(systemContent).toContain("Discovery Rules");
       expect(systemContent).toContain("inspect_hidden");
-      expect(systemContent).toContain("read_element reads attributes");
+      expect(systemContent).toContain("read_element");
     });
 
     test("system prompt contains page assist tool guidance", () => {

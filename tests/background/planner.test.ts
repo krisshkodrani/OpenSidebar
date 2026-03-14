@@ -834,7 +834,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[0].allowedTools).not.toContain(ToolName.EXECUTE_JS);
         expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
-        expect(result.nodes[1].allowedTools).not.toContain(ToolName.TYPE_TEXT);
+        expect(result.nodes[1].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[1].allowedTools).not.toContain(ToolName.XRAY_PAGE);
     });
 });

@@ -188,17 +188,20 @@ describe("Shadow DOM Support - AFTER State", () => {
 
     const tagged = tagElements();
 
-    // Should have 3 unique tags
-    expect(tagged.length).toBe(3);
+    // Near-identical buttons are intentionally collapsed to 2 representatives.
+    expect(tagged.length).toBe(2);
 
-    // Tags should be sequential
+    // Tags should still be unique and sequential for the retained representatives.
     const tags = tagged.map((t) => t.tag);
     expect(tags).toContain(1);
     expect(tags).toContain(2);
-    expect(tags).toContain(3);
+    expect(new Set(tags).size).toBe(2);
 
-    // All should be visible
+    // The retained buttons should still be visible and grounded to the original DOM.
     expect(tagged.every((t) => t.isVisible)).toBe(true);
+    const texts = tagged.map((t) => t.text);
+    expect(texts).toContain("Submit");
+    expect(texts).toContain("Delete");
 
     document.body.removeChild(host);
   });

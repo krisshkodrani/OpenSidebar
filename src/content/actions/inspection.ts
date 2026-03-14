@@ -8,7 +8,6 @@ import {
   ReadElementArgs,
 } from "../../types";
 import {
-  getTagMap,
   getVisibleText,
   addDynamicTag,
   truncateText,

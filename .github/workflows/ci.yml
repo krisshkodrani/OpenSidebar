@@ -23,13 +23,13 @@ jobs:
         run: npm ci
 
       - name: Run linter
-        run: npm run lint
+        run: npm run ci:lint
 
       - name: Run tests
-        run: npm test
+        run: npm run ci:test
 
       - name: Validate eval golden cases (structural)
-        run: npm run evals:regression -- --offline
+        run: npm run ci:evals:offline
 
       - name: Run eval regression suite
         if: ${{ secrets.OPENROUTER_API_KEY != '' }}
@@ -38,7 +38,7 @@ jobs:
         run: npm run evals:regression -- --threshold=0.8
 
       - name: Build project
-        run: npm run build
+        run: npm run ci:build
 
       - name: Verify dist folder
         run: |
