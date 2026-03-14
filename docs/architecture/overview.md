@@ -1,270 +1,58 @@
 # Architecture Overview
 
-OpenSidebar is an AI-powered Chrome extension that transforms the browser into an agentic workspace. This document provides a high-level overview of the system architecture.
+OpenSidebar is a Manifest V3 Chrome extension with three runtime contexts:
 
-## System Components
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Side Panel                           │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  Chat UI    │  │   Settings   │  │  Orchestrator    │  │
-│  │  (React)    │  │   Drawer     │  │     Console      │  │
-│  └──────┬──────┘  └──────────────┘  └──────────────────┘  │
-│         │                                                   │
-│         ▼                                                   │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │              Zustand Store + Immer                  │    │
-│  └────────────────────────────────────────────────────┘    │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │     Metrics Bar (token usage, cost tracking)        │    │
-│  └────────────────────────────────────────────────────┘    │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ Chrome Extension Messaging
-┌───────────────────────────▼─────────────────────────────────┐
-│                    Service Worker                            │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │                  Orchestrator                         │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-│  │  │ Planner  │  │ Executor │  │    Verifier       │   │   │
-│  │  │(planner) │  │(executor)│  │ (planner+critic) │   │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-│  │  │ Retry    │  │ Handoff  │  │   Sanitizers    │   │   │
-│  │  │ Policy   │  │ Context  │  │   (lane types)  │   │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │                  Agent Loop                           │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-│  │  │  LLM     │  │ Context  │  │   Tool Registry   │   │   │
-│  │  │ Client   │  │ Manager  │  │   (35 tools)      │   │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │   │
-│  │  │ Progress │  │  Prompt  │  │   Trace           │   │   │
-│  │  │ Tracker  │  │ Registry │  │   Recorder        │   │   │
-│  │  └──────────┘  └──────────┘  └──────────────────┘   │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌────────────┐  ┌────────────┐                              │
-│  │ Navigation │  │  Workspace │                              │
-│  │  Bridge    │  │  Manager   │                              │
-│  └────────────┘  └────────────┘                              │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │          Storage Logger (JSONL rotation)              │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                               │ Chrome Tabs API
-┌──────────────────────────────▼──────────────────────────────┐
-│                  Content Script (per tab)                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐   │
-│  │  Element    │  │   DOM       │  │   Action          │   │
-│  │  Tagging    │  │  Snapshot   │  │   Execution       │   │
-│  └─────────────┘  └─────────────┘  └──────────────────┘   │
-│  ┌──────────────────────────────────┐                       │
-│  │  Auto-dismiss (modals/banners)   │                       │
-│  └──────────────────────────────────┘                       │
-└─────────────────────────────────────────────────────────────┘
+```text
+Side Panel <-> Service Worker <-> Content Script
 ```
 
-## Communication Flow
+## Runtime Roles
 
-### 1. User Sends Message
+- Side panel: React UI, approvals, plans, streaming output, settings.
+- Service worker: agent loop, orchestrator, model routing, tracing, eval-facing instrumentation.
+- Content script: DOM snapshotting, element tagging, and tool execution in the page context.
 
-```
-Side Panel → Background: USER_CHAT
-Background: Orchestrator decides → single-step (AgentLoop) or multi-step (Planner)
-Background → Content Script: DOM_SNAPSHOT_REQUEST
-Content Script → Background: DOM_SNAPSHOT_RESPONSE
-Background → LLM API: Streaming request
-LLM API → Background: SSE chunks
-Background → Side Panel: STREAM_CHUNK (real-time)
-```
+## Model Stack
 
-### 2. Tool Execution
+| Role | Current Default |
+| --- | --- |
+| Executor | `openai/gpt-4.1-mini` |
+| Executor fallback | `google/gemini-2.5-flash-lite` |
+| Planner | `minimax/minimax-m2.5` |
+| Perception | `x-ai/grok-4.1-fast` |
 
-```
-Background → Content Script: TOOL_EXECUTE
-Content Script → Background: TOOL_RESULT
-Background → LLM: Include result in next prompt
-```
+All models are routed through OpenRouter by default.
 
-### 3. Orchestrator Pipeline
+## Core Subsystems
 
-```
-Planner (planner LLM) → TaskNode graph
-  [Pre-flight Review] ← Verifier validates plan (≥3 nodes)
-Executor (executor LLM via AgentLoop) → result + StructuredEvidence
-Verifier (planner LLM) → accept / retry / reroute
-  [Advocate] challenges retries (low confidence)
-  [Retrospective] planner learns from failures
-  Task complete
-```
+- `src/background/agent/`: main execution loop, context management, recovery, tracing.
+- `src/background/orchestrator/`: planner/executor/verifier pipeline for multi-step tasks.
+- `src/background/perception/`: stateful visual interpretation and prompt construction.
+- `src/background/tools/`: tool registry, schemas, risk metadata, and routing.
+- `src/content/`: page snapshotting, tagging, and DOM actions.
+- `src/sidepanel/`: chat UI, settings, approvals, plan display, and trace views.
+- `src/prompts/`: compiled prompt registry and render helpers.
 
-### 4. Navigation
+## Execution Flow
 
-```
-Background → Chrome Tabs: tabs.update (navigate)
-Background → Storage: Save state
-Chrome → Background: webNavigation.onCompleted
-Background → Content Script: DOM_SNAPSHOT_REQUEST (new page)
-Background → Agent Loop: Resumed with new snapshot
-```
+1. User submits a task from the side panel.
+2. Service worker captures page state from the content script.
+3. Planner decides whether the task is single-step or orchestrated.
+4. Executor runs tools against tagged DOM elements.
+5. Perception refreshes visual grounding when the page changes.
+6. Verifier or runtime checks decide whether to continue, retry, reroute, escalate, or finish.
 
-### 5. Session Metrics
+## Quality and Safety
 
-```
-Background → Side Panel: SESSION_METRICS (every 3 turns + on completion)
-Background → Side Panel: TASK_COMPLETION (with metrics summary)
-```
-
-## Technology Stack
-
-| Layer               | Technology                                      |
-| ------------------- | ----------------------------------------------- |
-| **Platform**        | Chrome Extension Manifest V3                    |
-| **Build**           | Vite 5 + @crxjs/vite-plugin                     |
-| **Language**        | TypeScript 5.7 (strict mode)                    |
-| **Package Manager** | npm                                             |
-| **UI**              | React 18 + Tailwind CSS 3.4                     |
-| **State**           | Zustand + Immer                                 |
-| **Executor LLM**    | GPT-OSS-120B (OpenRouter)                         |
-| **Planner LLM**     | DeepSeek V3.2 (OpenRouter), native reasoning      |
-| **Perception**      | Gemini 2.5 Flash (OpenRouter)                     |
-| **Tests**           | Vitest + Happy DOM                               |
-
-## Directory Structure
-
-```
-src/
-├── background/          # Service worker code
-│   ├── background.ts    # Entry point, message router
-│   ├── agent/           # Agent loop (single-step execution)
-│   │   ├── loop.ts      # AgentLoop (LLM→tool→LLM cycle)
-│   │   ├── context.ts   # ContextManager (sliding window + distillation)
-│   │   ├── stagnation.ts # StagnationMonitor (stuck detection)
-│   │   ├── step-labels.ts
-│   │   ├── tool-recovery.ts
-│   │   └── trace.ts     # TraceRecorder
-│   ├── orchestrator/    # Multi-step task pipeline
-│   │   ├── index.ts     # Main orchestrator (planner→executor→verifier)
-│   │   ├── types.ts     # OrchestratorTask, TaskNode, evidence types
-│   │   ├── planner.ts   # Task decomposition + retrospective
-│   │   ├── verifier.ts  # Validation + dialogue + advocate
-│   │   ├── handoff.ts   # Role transition context
-│   │   ├── retry-policy.ts
-│   │   ├── scheduling.ts
-│   │   ├── sanitizers.ts
-│   │   └── lane-types.ts
-│   ├── llm/
-│   │   ├── client.ts    # LLM client (OpenRouter, two-tier)
-│   │   └── types.ts     # LLM types, ProviderConfig, TokenUsage
-│   ├── tools/
-│   │   ├── index.ts     # 35 tool definitions
-│   │   ├── registry.ts  # ToolRegistry
-│   │   └── metadata.ts  # ToolMeta, pre-computed sets
-│   ├── workspaces/      # Workspace/Tab Group management
-│   ├── perception.ts    # Perception layer (vision-based page understanding)
-│   ├── navigation.ts    # Navigation Bridge
-│   ├── keepalive.ts     # SW keepalive alarm
-│   ├── streaming.ts     # SSE parser with usage capture
-│   └── security.ts      # Risk classification
-├── content/             # Content script (DOM access)
-│   ├── content.ts       # Message listener + auto-dismiss
-│   ├── snapshot.ts      # DOM distillation
-│   ├── tagging.ts       # Element tagging (stable hash IDs)
-│   └── actions.ts       # Tool execution (DOM actions)
-├── prompts/             # Prompt registry
-│   ├── registry.ts      # Versioned prompt templates
-│   ├── types.ts         # PromptId union type
-│   └── render.ts        # Template rendering
-├── sidepanel/           # React UI
-│   ├── App.tsx          # Main component
-│   ├── store.ts         # Zustand state
-│   ├── bridge.ts        # Message routing
-│   ├── hooks/           # Custom hooks
-│   └── components/      # 20+ UI components
-├── types/               # TypeScript types
-│   └── index.ts         # Single source of truth
-└── utils/               # Shared utilities
-
-tests/                   # Test files mirror src structure (1100+ tests)
-docs/                    # Documentation
-evals/                   # Offline evaluation framework
-scripts/                 # Build/dev scripts
-traces/                  # Recorded agent sessions
-logs/                    # Application logs
-```
-
-## Key Design Patterns
-
-### 1. Message Passing
-
-All inter-context communication uses typed discriminated unions (`RuntimeMessage`, 27+ members). Every message has `type` (discriminant), `requestId` (UUID), `source` (origin context), and optional `workspaceId`.
-
-### 2. Two-Tier LLM Architecture
-
-Independent provider pools for executor (GPT-OSS-120B) and planner (DeepSeek V3.2) tiers, both via OpenRouter. Planner tier uses native reasoning (no reasoning parameter).
-
-### 3. Orchestrator Pipeline
-
-Complex tasks decomposed via planner→executor→verifier with:
-- **Structured evidence** attached to every completion
-- **Cross-role reflexion** from verifier to planner on failures
-- **Pre-flight review** for plans with 3+ nodes
-- **Advocate triad** for balanced deliberation on low-confidence retries
-- **Retrospective** for planner learning after task completion
-
-### 4. Lane Isolation
-
-Each orchestrator role (planner, executor, verifier) runs in its own isolated lane via `runInLane()`, preventing context contamination.
-
-### 5. Streaming Architecture
-
-SSE from LLM → parseSSEStream → STREAM_CHUNK → Zustand → React. Real-time text streaming with token usage capture.
-
-### 6. Navigation Persistence
-
-Agent state saved to `chrome.storage.local` before navigation, restored via `webNavigation.onCompleted` after page load.
-
-### 7. Session Tracing
-
-Full-fidelity recording of agent sessions for offline evaluation replay. Traces drain to `traces/` via log server.
-
-## Security
-
-### Risk Classification
-
-Tools classified by risk level (LOW/MEDIUM/HIGH). Risk is informational — the agent operates autonomously with the stop button as safety mechanism.
-
-### Input Sanitization
-
-- User input truncated to 10k chars, null bytes stripped
-- URLs validated (http/https only)
-- API keys auto-redacted from logs
-
-## Testing Strategy
-
-| Test Type         | Location                     |
-| ----------------- | ---------------------------- |
-| Unit tests        | `tests/**/*.test.ts`         |
-| Component tests   | `tests/sidepanel/*.test.tsx`  |
-| Integration tests | `tests/background/orchestrator-*.test.ts` |
-| Eval replay       | `evals/`                      |
-
-**Coverage:** 1100+ tests
+- 38 generic tools with risk metadata and focused tool profiles.
+- Approval gates for higher-risk actions.
+- Stale element recovery and repeated-action blocking.
+- Structured traces in `traces/` and logs in `logs/`.
+- Offline and trace-based evals under `evals/`.
 
 ## See Also
 
-- [Project Setup](./project-setup.md) - Build configuration
-- [Content Script](./content-script.md) - DOM interaction
-- [Agent Loop](./agent-loop.md) - Core execution engine
-- [Navigation Bridge](./navigation-bridge.md) - State persistence
-- [Tools](./tools.md) - Tool system architecture
-- [Types Reference](./types-reference.md) - TypeScript types
-- [Message Protocol](./message-protocol.md) - Message passing
-- [Side Panel UI](./sidepanel-ui.md) - React UI
-- [Executor-Planner Collaboration](./fast-smart-collaboration.md) - Two-tier LLM system
+- [Developer Guide](../developer-guide.md)
+- [Perception Layer](./perception-layer.md)
+- [Tools](./tools.md)
+- [Evals Program](../guides/evals-program.md)
