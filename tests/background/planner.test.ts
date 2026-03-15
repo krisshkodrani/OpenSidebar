@@ -394,6 +394,24 @@ Execution policy:
         ).toBe("enter_code");
     });
 
+    test("prefers read_only for summarize tasks even when navigation verbs appear first", () => {
+        expect(
+            inferToolProfileForStep(
+                "Open the repository page and summarize the README",
+                "The key setup steps are reported back",
+            ),
+        ).toBe("read_only");
+    });
+
+    test("prefers read_only for verification tasks", () => {
+        expect(
+            inferToolProfileForStep(
+                "Check whether the summary is complete and report any missing points",
+                "The summary is verified against the page",
+            ),
+        ).toBe("read_only");
+    });
+
     test("keeps recover_from_stuck for explicitly recovery-focused objectives", () => {
         expect(
             inferToolProfileForStep(

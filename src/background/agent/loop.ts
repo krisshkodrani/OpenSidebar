@@ -96,10 +96,13 @@ import {
   buildHandoffBriefing,
   classifyTurnError,
   detectInstructionContradiction,
+  detectPendingAsyncChange,
+  detectStructuralStepAdvance,
   extractAttemptSummary,
   findPriorFailure,
   formatActionEffect,
   getSnapshotFingerprint,
+  isPendingAsyncChangeSatisfied,
   isFillerText,
   isHallucinatedToolCall,
   MAX_TURN_RETRIES,
@@ -128,6 +131,32 @@ const REPEAT_ACTION_EXEMPT_TOOLS = new Set<ToolName>([
   ToolName.READ_PAGE,
   ToolName.SCROLL_PAGE,
 ]);
+const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
+
+export function isPerceptionFailurePlaceholder(
+  interpretation: string | null | undefined,
+): boolean {
+  if (!interpretation) return false;
+  return /\[visual perception failed:/i.test(interpretation);
+}
+
+export function shouldOmitPerceptionForDoneValidation(args: {
+  interpretation: string | null | undefined;
+  hasReadPage: boolean;
+  originalQuery: string;
+  activeStepDescription?: string;
+  activeStepToolProfile?: ToolProfile;
+}): boolean {
+  if (!args.hasReadPage) return false;
+  if (!isPerceptionFailurePlaceholder(args.interpretation)) return false;
+
+  const activeProfile =
+    args.activeStepToolProfile ??
+    inferToolProfileForStep(args.activeStepDescription || args.originalQuery, "");
+  if (activeProfile === "read_only") return true;
+
+  return inferToolProfileForStep(args.originalQuery, "") === "read_only";
+}
 
 function normalizeGuardText(value: unknown): string {
   return String(value ?? "")
@@ -499,6 +528,12 @@ export class AgentLoop {
   /** Off-domain navigation detection */
   private startingOrigin: string | null = null;
   private offDomainWarned = false;
+  private pendingAsyncVerification: {
+    stepIndex: number;
+    expectedTokens: string[];
+    reason: string;
+    startedTurn: number;
+  } | null = null;
 
   /** Collected source citations (deduplicated by URL) */
   private citations: Citation[] = [];
@@ -1304,6 +1339,7 @@ export class AgentLoop {
     this.replanCount = 0;
     this.startingOrigin = null;
     this.offDomainWarned = false;
+    this.pendingAsyncVerification = null;
     this.perception.reset();
     this.metrics = AgentLoop.emptyMetrics();
     this.sessionStartTime = Date.now();
@@ -2235,7 +2271,7 @@ export class AgentLoop {
       await this.scrollContentScript(tabId, pos.y);
       // Brief settle time for rendering
       await new Promise((r) => setTimeout(r, 150));
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      const dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
         format: "jpeg",
         quality: 50, // Lower quality for context shots
       });
@@ -2245,6 +2281,30 @@ export class AgentLoop {
     // Restore original scroll position
     await this.scrollContentScript(tabId, originalY);
     return shots;
+  }
+
+  private async captureVisibleTabWithRetry(
+    windowId: number,
+    options: chrome.tabs.ImageDetails,
+  ): Promise<string> {
+    try {
+      return await chrome.tabs.captureVisibleTab(windowId, options);
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      const isQuotaError =
+        /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(message) ||
+        /\bquota\b/i.test(message);
+      if (!isQuotaError) throw error;
+
+      this.log.warn("agent", "captureVisibleTab quota hit, retrying once", {
+        error: message,
+        delayMs: CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS,
+      });
+      await new Promise((resolve) =>
+        setTimeout(resolve, CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS),
+      );
+      return await chrome.tabs.captureVisibleTab(windowId, options);
+    }
   }
 
   /**
@@ -2276,7 +2336,7 @@ export class AgentLoop {
         // captureVisibleTab returns the wrong page or a black frame.
         const tab = await chrome.tabs.get(tabId);
         if (tab.active) {
-          dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
             format: "jpeg",
             quality: 70,
           });
@@ -2688,6 +2748,65 @@ export class AgentLoop {
     return prevCount; // Keep existing count if both attempts fail
   }
 
+  private async waitForPendingAsyncChange(
+    tabId: number,
+    prevCount: number,
+    expectation: {
+      stepIndex: number;
+      expectedTokens: string[];
+      reason: string;
+      startedTurn: number;
+    },
+  ): Promise<DomSnapshot | null> {
+    const maxCycles = 3;
+    const waitMs = 900;
+
+    for (let cycle = 1; cycle <= maxCycles; cycle++) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await waitForDomReady(tabId, {
+        timeoutMs: waitMs,
+        waitForElements: true,
+      });
+      await this.refreshSnapshotWithRetry(tabId, prevCount);
+      const refreshed = this.context.getSnapshot();
+      if (!refreshed) continue;
+      prevCount = refreshed.elements.length;
+
+      if (
+        isPendingAsyncChangeSatisfied({
+          snapshot: refreshed,
+          expectedTokens: expectation.expectedTokens,
+        })
+      ) {
+        this.pendingAsyncVerification = null;
+        this.context.addMessage({
+          role: "user",
+          content:
+            "ASYNC RESULT: The expected delayed page update is now visible. Continue from the refreshed state.",
+        });
+        this.traceRecorder?.recordEvent("pending_async_change_resolved", {
+          turn: this.turnCount,
+          cycle,
+          stepIndex: expectation.stepIndex,
+          expectedTokens: expectation.expectedTokens,
+        });
+        return refreshed;
+      }
+    }
+
+    this.context.addMessage({
+      role: "user",
+      content:
+        `ASYNC CHECKPOINT: ${expectation.reason} Keep verifying the result of the last action before calling done().`,
+    });
+    this.traceRecorder?.recordEvent("pending_async_change_unresolved", {
+      turn: this.turnCount,
+      stepIndex: expectation.stepIndex,
+      expectedTokens: expectation.expectedTokens,
+    });
+    return this.context.getSnapshot();
+  }
+
   /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
@@ -2751,6 +2870,48 @@ export class AgentLoop {
       this.turnsOnCurrentStep = 0;
     }
     return advancedTo;
+  }
+
+  /**
+   * Complete exactly one plan subtask and move the running pointer forward.
+   * This is safer than walking all subtasks when advancement is triggered by
+   * local structural evidence from the current page.
+   */
+  private completeSingleSubtask(currentIndex: number): number {
+    if (currentIndex < 0 || currentIndex >= this.planSubtasks.length) {
+      return currentIndex;
+    }
+
+    const target = this.planSubtasks[currentIndex];
+    if (target.status !== "completed") {
+      target.status = "completed";
+      target.result = target.result || this.captureSubtaskResult();
+      target.completedAtUrl = this.context.getCurrentUrl() || undefined;
+    }
+
+    for (let i = currentIndex + 1; i < this.planSubtasks.length; i++) {
+      if (this.planSubtasks[i].status !== "completed") {
+        this.planSubtasks[i].status = "pending";
+      }
+    }
+
+    const nextIndex = this.planSubtasks.findIndex(
+      (subtask, idx) => idx > currentIndex && subtask.status !== "completed",
+    );
+    if (nextIndex >= 0) {
+      this.planSubtasks[nextIndex].status = "running";
+    }
+
+    const resolvedIndex =
+      nextIndex >= 0 ? nextIndex : this.planSubtasks.length;
+
+    if (resolvedIndex !== this.lastPlanIndex) {
+      this.lastPlanIndex = resolvedIndex;
+      this.perception.invalidateCache();
+      this.turnsOnCurrentStep = 0;
+    }
+
+    return resolvedIndex;
   }
 
   /**
@@ -4518,6 +4679,31 @@ export class AgentLoop {
                     `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
                 }
 
+                const activeAsyncExpectation =
+                  this.pendingAsyncVerification &&
+                  this.pendingAsyncVerification.stepIndex === effectiveCurrentIdx
+                    ? this.pendingAsyncVerification
+                    : null;
+                if (
+                  this.pendingAsyncVerification &&
+                  this.pendingAsyncVerification.stepIndex !== effectiveCurrentIdx
+                ) {
+                  this.pendingAsyncVerification = null;
+                }
+                if (
+                  activeAsyncExpectation &&
+                  !isPendingAsyncChangeSatisfied({
+                    snapshot: this.context.getSnapshot(),
+                    expectedTokens: activeAsyncExpectation.expectedTokens,
+                  })
+                ) {
+                  shouldReject = true;
+                  rejectReason =
+                    `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
+                } else if (activeAsyncExpectation) {
+                  this.pendingAsyncVerification = null;
+                }
+
                 try {
                   this.stepHandler(
                     {
@@ -4531,15 +4717,30 @@ export class AgentLoop {
                   );
 
                   if (!shouldReject) {
+                    const currentSubtask =
+                      effectiveCurrentIdx >= 0
+                        ? this.planSubtasks[effectiveCurrentIdx]
+                        : undefined;
+                    const interpretation = this.perception.getInterpretation();
+                    const validationPerception =
+                      shouldOmitPerceptionForDoneValidation({
+                        interpretation,
+                        hasReadPage: this.hasReadPage,
+                        originalQuery: this.originalQuery,
+                        activeStepDescription: currentSubtask?.description,
+                        activeStepToolProfile: currentSubtask?.toolProfile,
+                      })
+                        ? undefined
+                        : interpretation ?? undefined;
                     const validation = await this.planner.validateDone(
-                    this.originalQuery,
-                    this.planSubtasks,
-                    summary,
-                    this.context.getSnapshot()?.title || "",
-                    this.context.getSnapshot()?.url || "",
-                    this.abortController!.signal,
-                    this.perception.getInterpretation() ?? undefined,
-                  );
+                      this.originalQuery,
+                      this.planSubtasks,
+                      summary,
+                      this.context.getSnapshot()?.title || "",
+                      this.context.getSnapshot()?.url || "",
+                      this.abortController!.signal,
+                      validationPerception,
+                    );
 
                     if (!validation.approved) {
                       shouldReject = true;
@@ -6198,6 +6399,115 @@ export class AgentLoop {
                     elementsRemoved: actionEffect.elementsRemoved,
                   });
                 }
+
+                const planAfterAction = this.context.getPlanStatusRaw();
+                if (
+                  this.taskId &&
+                  planAfterAction &&
+                  !doneSignaled &&
+                  planAfterAction.currentIndex < planAfterAction.subtasks.length
+                ) {
+                  const currentSubtask =
+                    planAfterAction.subtasks[planAfterAction.currentIndex];
+                  const lastToolName =
+                    response.tool_calls[response.tool_calls.length - 1]?.function.name;
+
+                  if (currentSubtask && lastToolName) {
+                    const asyncSignal = detectPendingAsyncChange({
+                      currentStepDescription: currentSubtask.description,
+                      currentStepSuccessCriteria:
+                        this.planSteps[planAfterAction.currentIndex]?.successCriteria,
+                      currentSnapshot: snap,
+                      actionEffect,
+                      toolName: lastToolName,
+                    });
+
+                    if (asyncSignal) {
+                      this.pendingAsyncVerification = {
+                        stepIndex: planAfterAction.currentIndex,
+                        expectedTokens: asyncSignal.expectedTokens,
+                        reason: asyncSignal.reason,
+                        startedTurn: this.turnCount,
+                      };
+                      this.context.addMessage({
+                        role: "user",
+                        content:
+                          `ASYNC CHECKPOINT: ${asyncSignal.reason} ` +
+                          "Wait for the page update and verify the new content before continuing.",
+                      });
+                      this.traceRecorder?.recordEvent("pending_async_change_detected", {
+                        turn: this.turnCount,
+                        stepIndex: planAfterAction.currentIndex,
+                        expectedTokens: asyncSignal.expectedTokens,
+                        loadingIndicator: asyncSignal.loadingIndicator,
+                      });
+
+                      const awaitedSnapshot = await this.waitForPendingAsyncChange(
+                        tabId,
+                        prevElementCount,
+                        this.pendingAsyncVerification,
+                      );
+                      if (awaitedSnapshot) {
+                        snap = awaitedSnapshot;
+                        prevElementCount = awaitedSnapshot.elements.length;
+                      }
+                    } else if (
+                      this.pendingAsyncVerification &&
+                      this.pendingAsyncVerification.stepIndex ===
+                        planAfterAction.currentIndex &&
+                      isPendingAsyncChangeSatisfied({
+                        snapshot: snap,
+                        expectedTokens: this.pendingAsyncVerification.expectedTokens,
+                      })
+                    ) {
+                      this.pendingAsyncVerification = null;
+                    }
+                  }
+
+                  const nextSubtask =
+                    planAfterAction.subtasks[planAfterAction.currentIndex + 1];
+                  if (currentSubtask && nextSubtask && lastToolName) {
+                    const advanceSignal = detectStructuralStepAdvance({
+                      currentStepDescription: currentSubtask.description,
+                      currentStepSuccessCriteria:
+                        this.planSteps[planAfterAction.currentIndex]?.successCriteria,
+                      nextStepDescription: nextSubtask.description,
+                      currentSnapshot: snap,
+                      actionEffect,
+                      toolName: lastToolName,
+                    });
+
+                    if (advanceSignal) {
+                      const newIdx = this.completeSingleSubtask(
+                        planAfterAction.currentIndex,
+                      );
+                      this.syncPlanStatus(newIdx, "step_advanced_by_structure", {
+                        reason: advanceSignal.reason,
+                        matchedTokens: advanceSignal.matchedTokens,
+                        advancedTo: newIdx,
+                      });
+                      this.context.addMessage({
+                        role: "user",
+                        content:
+                          `STEP ADVANCED: ${advanceSignal.reason}. ` +
+                          `Continue with step ${Math.min(newIdx + 1, this.planSubtasks.length)}.`,
+                      });
+                      this.log.info("agent", "Structural step advance triggered", {
+                        turn: this.turnCount,
+                        fromStep: planAfterAction.currentIndex,
+                        toStep: newIdx,
+                        matchedTokens: advanceSignal.matchedTokens,
+                      });
+                      this.traceRecorder?.recordEvent("structural_step_advance", {
+                        fromStep: planAfterAction.currentIndex,
+                        toStep: newIdx,
+                        matchedTokens: advanceSignal.matchedTokens,
+                        reason: advanceSignal.reason,
+                      });
+                    }
+                  }
+                }
+
                 // P1b: Track consecutive zero-effect turns for dual-gating
                 if (
                   actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&

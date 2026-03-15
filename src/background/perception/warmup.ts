@@ -18,6 +18,27 @@ import { computeSnapshotFingerprint } from "../agent/stagnation";
 
 /** Maximum age (ms) before a warmup entry is considered stale. */
 const WARMUP_STALE_MS = 30_000;
+const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
+
+async function captureVisibleTabWithRetry(
+  windowId: number,
+  options: chrome.tabs.ImageDetails,
+): Promise<string> {
+  try {
+    return await chrome.tabs.captureVisibleTab(windowId, options);
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    const isQuotaError =
+      /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(message) ||
+      /\bquota\b/i.test(message);
+    if (!isQuotaError) throw error;
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS),
+    );
+    return await chrome.tabs.captureVisibleTab(windowId, options);
+  }
+}
 
 export interface WarmupEntry {
   tabId: number;
@@ -137,7 +158,7 @@ class PerceptionWarmup {
             await new Promise((r) => setTimeout(r, 150));
           }
 
-          screenshotUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          screenshotUrl = await captureVisibleTabWithRetry(tab.windowId, {
             format: "jpeg",
             quality: 70,
           });

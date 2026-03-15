@@ -111,6 +111,10 @@ export function inferToolProfileForStep(
   const primaryObjective = extractPrimaryObjective(objective);
   const primaryText = primaryObjective.toLowerCase();
   const fullText = `${objective}\n${successCriteria}`.toLowerCase();
+  const isReadFocusedObjective =
+    /(read|observe|inspect page|summarize|summary|identify|check|verify|review|report|extract|compare)/.test(
+      primaryText,
+    );
   const requiresFieldEntryBeforeSubmit =
     /(fill|type|enter|input)[^.\n]{0,80}(name|email|address|checkout|field|form)/.test(
       primaryText,
@@ -163,16 +167,16 @@ export function inferToolProfileForStep(
     return "inspect_hidden_state";
   }
 
+  if (isReadFocusedObjective) {
+    return "read_only";
+  }
+
   if (
     /(navigate|open|go to|switch tab|new tab|back to|return to|visit|load url)/.test(
       primaryText,
     )
   ) {
     return "navigation_only";
-  }
-
-  if (/(read|observe|inspect page|summarize|identify|check)/.test(primaryText)) {
-    return "read_only";
   }
 
   if (
