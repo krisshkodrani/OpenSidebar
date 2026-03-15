@@ -8,7 +8,7 @@
  * Run: npm run test:e2e
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import {
   launchWithExtension,
   closeExtension,
@@ -18,6 +18,7 @@ import {
 import {
   getActiveTabId,
   navigateAndWait,
+  resetExtensionState,
   sendUserChat,
   setupEventMonitor,
   waitForOutcome,
@@ -67,7 +68,8 @@ describe.skipIf(!API_KEY)("E2E: Online Shopping", () => {
     detachConsole = await attachSwConsole(ctx.browser);
 
     const pages = await ctx.browser.pages();
-    page = pages[0] || (await ctx.browser.newPage());
+    page = pages.find((candidate) => !candidate.url().startsWith("chrome-extension://"))
+      || (await ctx.browser.newPage());
 
     const helper = await openHelperPage(ctx);
     await helper.evaluate(async (key: string) => {
@@ -85,8 +87,19 @@ describe.skipIf(!API_KEY)("E2E: Online Shopping", () => {
     await helper.close();
 
     await setupEventMonitor(ctx.serviceWorker);
-    tracesBefore = snapshotTraceFiles();
   }, 60_000);
+
+  beforeEach(async () => {
+    await resetExtensionState(ctx);
+    tracesBefore = snapshotTraceFiles();
+    if (page.isClosed()) {
+      page = await ctx.browser.newPage();
+    }
+  });
+
+  afterEach(async () => {
+    await resetExtensionState(ctx);
+  });
 
   afterAll(async () => {
     if (detachConsole) detachConsole();
@@ -106,14 +119,14 @@ describe.skipIf(!API_KEY)("E2E: Online Shopping", () => {
       const prompt = [
         "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
         "",
-        "Step 1: Click the 'Add to cart' button next to Air Zoom Pegasus 41. The cart section will appear automatically.",
+        "Step 1: In the Air Zoom Pegasus 41 product card, click its 'Add to cart' button. Do NOT click the header 'Open Cart' button. The cart drawer should appear automatically after the correct Add to cart click.",
         "",
-        "Step 2: FIRST type SAVE10 into the promo code input field (it has placeholder 'SAVE10'), then click the Apply button. After that, click the Express ($15) radio button for shipping.",
+        "Step 2: In the cart drawer, FIRST type SAVE10 into the promo code input field (it has placeholder 'SAVE10'), then click the Apply button. After that, select the Express ($15) shipping radio option in the cart drawer.",
         "",
-        "Step 3: Keep the cart drawer open. In the cart drawer checkout section, type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button.",
+        "Step 3: Keep the cart drawer open. In the cart drawer checkout section, type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button in the cart drawer.",
       ].join("\n");
 
-      await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(ctx, prompt, tabId);
 
       const outcome = await waitForOutcome(
         page,
@@ -125,6 +138,7 @@ describe.skipIf(!API_KEY)("E2E: Online Shopping", () => {
           return order || null;
         },
         300_000,
+        workspaceId,
       );
 
       // Always print trace summary

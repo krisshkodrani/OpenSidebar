@@ -7,7 +7,7 @@
 
 import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
-import { openHelperPage } from "./browser";
+import { closeNonExtensionPages, openHelperPage } from "./browser";
 
 /**
  * Set up event monitoring in the service worker context.
@@ -19,7 +19,10 @@ import { openHelperPage } from "./browser";
 export async function setupEventMonitor(worker: WebWorker): Promise<void> {
   await worker.evaluate(async () => {
     const g = self as any;
-    if (g.__agentEvents) return; // already set up
+    if (g.__e2eEventMonitorInstalled) {
+      g.__agentEvents = [];
+      return;
+    }
 
     // Poll until chrome.runtime.sendMessage is available (SW may still be initializing)
     for (let i = 0; i < 40; i++) {
@@ -35,6 +38,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
     g.__agentEvents = [];
     const runtime = g.chrome.runtime;
     const origSend = runtime.sendMessage.bind(runtime);
+    g.__e2eOrigSendMessage = origSend;
     runtime.sendMessage = function (...args: any[]) {
       const message = args[0];
       if (message && typeof message === "object" && typeof message.type === "string") {
@@ -59,6 +63,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
       }
       return origSend(...args);
     };
+    g.__e2eEventMonitorInstalled = true;
   });
 }
 
@@ -122,7 +127,7 @@ export async function requestSnapshot(
       }, tabId);
     } catch (err: any) {
       if (attempt < maxRetries && err.message?.includes("Receiving end does not exist")) {
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => globalThis.setTimeout(r, 1000));
         continue;
       }
       throw err;
@@ -171,7 +176,7 @@ export async function sendToolExecute(
       );
     } catch (err: any) {
       if (attempt < maxRetries && err.message?.includes("Receiving end does not exist")) {
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => globalThis.setTimeout(r, 1000));
         continue;
       }
       throw err;
@@ -227,7 +232,8 @@ export async function sendUserChat(
   message: string,
   tabId: number,
   workspaceId: string | null = null,
-): Promise<void> {
+): Promise<string> {
+  const effectiveWorkspaceId = workspaceId ?? `e2e-${crypto.randomUUID()}`;
   const helperPage = await openHelperPage(ctx);
   try {
     await helperPage.evaluate(
@@ -241,11 +247,12 @@ export async function sendUserChat(
       },
       message,
       tabId,
-      workspaceId,
+      effectiveWorkspaceId,
     );
   } finally {
     await helperPage.close().catch(() => {});
   }
+  return effectiveWorkspaceId;
 }
 
 /**
@@ -258,6 +265,31 @@ export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
   });
 }
 
+async function waitForAgentIdle(
+  worker: WebWorker,
+  timeoutMs: number = 10_000,
+): Promise<void> {
+  const start = Date.now();
+  let observedStatus = false;
+
+  while (Date.now() - start < timeoutMs) {
+    const events = await getMonitoredEvents(worker, 30);
+    const lastStatus = [...events]
+      .reverse()
+      .find((event: any) => event.type === "AGENT_STATUS");
+
+    if (lastStatus) observedStatus = true;
+    if (
+      observedStatus &&
+      (lastStatus?.status === "IDLE" || lastStatus?.status === "ERROR")
+    ) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+
 /**
  * Reset extension state between tests.
  * Clears agent events and stops any running agent loop.
@@ -265,9 +297,9 @@ export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
 export async function resetExtensionState(
   ctx: ExtensionContext,
 ): Promise<void> {
-  await clearMonitoredEvents(ctx.serviceWorker);
+  if (!ctx.browser.connected) return;
 
-  // Send STOP_AGENT to kill any running loop
+  await setupEventMonitor(ctx.serviceWorker);
   const helperPage = await openHelperPage(ctx);
   try {
     await helperPage.evaluate(async () => {
@@ -283,8 +315,31 @@ export async function resetExtensionState(
   } finally {
     await helperPage.close().catch(() => {});
   }
-  // Let the stop propagate
-  await new Promise((r) => setTimeout(r, 500));
+  await waitForAgentIdle(ctx.serviceWorker);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  const cleanupPage = await openHelperPage(ctx);
+  try {
+    await cleanupPage.evaluate(async () => {
+      const sessionData = await chrome.storage.session.get(null);
+      const keys = Object.keys(sessionData).filter(
+        (key) => key === "agent_context" || key.startsWith("agent_context:"),
+      );
+      if (keys.length > 0) {
+        await chrome.storage.session.remove(keys);
+      }
+    });
+  } finally {
+    await cleanupPage.close().catch(() => {});
+  }
+
+  await clearMonitoredEvents(ctx.serviceWorker);
+  const pages = await ctx.browser.pages();
+  const anchorPage = pages.find((page) => !page.url().startsWith("chrome-extension://"));
+  if (anchorPage) {
+    await anchorPage.goto("about:blank", { waitUntil: "domcontentloaded" }).catch(() => {});
+    await closeNonExtensionPages(ctx, [anchorPage]);
+  }
 }
 
 /**
@@ -301,6 +356,7 @@ export async function waitForOutcome<T>(
   worker: WebWorker,
   checkFn: () => Promise<T | null | undefined>,
   timeoutMs: number,
+  workspaceId?: string | null,
 ): Promise<{ ok: boolean; reason: string; result: T | null; events: any[] }> {
   const start = Date.now();
   let lastResult: T | null = null;
@@ -315,7 +371,14 @@ export async function waitForOutcome<T>(
     }
     lastResult = result ?? null;
 
-    const events = await getMonitoredEvents(worker);
+    const rawEvents = await getMonitoredEvents(worker);
+    const events =
+      workspaceId == null
+        ? rawEvents
+        : rawEvents.filter(
+            (event: any) =>
+              event.workspaceId == null || event.workspaceId === workspaceId,
+          );
     const lastTaskCompletion = [...events]
       .reverse()
       .find((e: any) => e.type === "TASK_COMPLETION");
@@ -348,7 +411,14 @@ export async function waitForOutcome<T>(
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  const events = await getMonitoredEvents(worker);
+  const rawEvents = await getMonitoredEvents(worker);
+  const events =
+    workspaceId == null
+      ? rawEvents
+      : rawEvents.filter(
+          (event: any) =>
+            event.workspaceId == null || event.workspaceId === workspaceId,
+        );
   return {
     ok: false,
     reason: "timeout",

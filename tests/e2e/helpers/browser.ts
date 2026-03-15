@@ -68,6 +68,24 @@ export async function closeExtension(ctx: ExtensionContext): Promise<void> {
 }
 
 /**
+ * Close non-extension pages to keep E2E cases isolated.
+ */
+export async function closeNonExtensionPages(
+  ctx: ExtensionContext,
+  keep: Page[] = [],
+): Promise<void> {
+  const keepTargets = new Set(keep);
+  const pages = await ctx.browser.pages();
+  await Promise.all(
+    pages.map(async (page) => {
+      if (keepTargets.has(page)) return;
+      if (page.url().startsWith("chrome-extension://")) return;
+      await page.close().catch(() => {});
+    }),
+  );
+}
+
+/**
  * Open the minimal extension helper page (no React bootstrapping).
  * Useful for stable chrome.runtime/chrome.storage interactions in E2E tests.
  */

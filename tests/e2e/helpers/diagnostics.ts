@@ -8,7 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from "child_process";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
 import type { Browser } from "puppeteer";
@@ -39,15 +39,16 @@ export async function startLogServer(): Promise<void> {
     // Not running — start it
   }
 
-  logServerProcess = spawn("npx tsx " + LOG_SERVER_SCRIPT, [], {
+  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  logServerProcess = spawn(command, ["tsx", LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
-    shell: true,
   });
 
   // Wait for the server to be ready
   const started = await waitForServer(LOG_SERVER_PORT, 10_000);
   if (!started) {
+    await stopLogServer();
     throw new Error("Log server failed to start within 10s");
   }
   console.log("[e2e] Log server started on port", LOG_SERVER_PORT);
@@ -55,10 +56,25 @@ export async function startLogServer(): Promise<void> {
 
 export async function stopLogServer(): Promise<void> {
   if (!logServerProcess) return;
-  logServerProcess.kill("SIGTERM");
+  const proc = logServerProcess;
   logServerProcess = null;
-  // Give it a moment to flush
-  await new Promise((r) => setTimeout(r, 500));
+
+  const exited = new Promise<void>((resolve) => {
+    proc.once("exit", () => resolve());
+    proc.once("close", () => resolve());
+  });
+
+  proc.kill("SIGTERM");
+
+  await Promise.race([
+    exited,
+    new Promise<void>((resolve) => {
+      setTimeout(() => {
+        proc.kill("SIGKILL");
+        resolve();
+      }, 3_000);
+    }),
+  ]);
   console.log("[e2e] Log server stopped");
 }
 
@@ -94,13 +110,24 @@ export function snapshotTraceFiles(): Set<string> {
 
 export function findNewTraceFile(before: Set<string>): string | null {
   if (!existsSync(TRACE_DIR)) return null;
-  const after = readdirSync(TRACE_DIR).filter(
-    (f) => f.endsWith(".jsonl") && f !== "index.jsonl",
-  );
-  for (const f of after) {
-    if (!before.has(f)) return join(TRACE_DIR, f);
-  }
-  return null;
+  const candidates = readdirSync(TRACE_DIR)
+    .filter((f) => f.endsWith(".jsonl") && f !== "index.jsonl")
+    .filter((f) => !before.has(f))
+    .map((f) => ({
+      filePath: join(TRACE_DIR, f),
+      mtimeMs: statSync(join(TRACE_DIR, f)).mtimeMs,
+    }))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return candidates[0]?.filePath ?? null;
+}
+
+export function findAllNewTraceFiles(before: Set<string>): string[] {
+  if (!existsSync(TRACE_DIR)) return [];
+  return readdirSync(TRACE_DIR)
+    .filter((f) => f.endsWith(".jsonl") && f !== "index.jsonl")
+    .filter((f) => !before.has(f))
+    .map((f) => join(TRACE_DIR, f))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
 }
 
 // ── Trace reader + formatter ──────────────────────────────────────

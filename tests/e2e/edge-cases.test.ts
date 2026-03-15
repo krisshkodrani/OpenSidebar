@@ -9,7 +9,7 @@
  * Run: npm run test:e2e
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import {
   launchWithExtension,
   closeExtension,
@@ -69,7 +69,8 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
     detachConsole = await attachSwConsole(ctx.browser);
 
     const pages = await ctx.browser.pages();
-    page = pages[0] || (await ctx.browser.newPage());
+    page = pages.find((candidate) => !candidate.url().startsWith("chrome-extension://"))
+      || (await ctx.browser.newPage());
 
     const helper = await openHelperPage(ctx);
     await helper.evaluate(async (key: string) => {
@@ -92,6 +93,13 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
   beforeEach(async () => {
     await resetExtensionState(ctx);
     tracesBefore = snapshotTraceFiles();
+    if (page.isClosed()) {
+      page = await ctx.browser.newPage();
+    }
+  });
+
+  afterEach(async () => {
+    await resetExtensionState(ctx);
   });
 
   afterAll(async () => {
@@ -130,7 +138,7 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
         "Verify the page shows 'Message sent successfully!'.",
       ].join("\n");
 
-      await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(ctx, prompt, tabId);
 
       const outcome = await waitForOutcome(
         page,
@@ -141,6 +149,7 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
           );
         },
         180_000,
+        workspaceId,
       );
 
       await printTrace("validation-recovery");
@@ -172,12 +181,13 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
         "You are on an Error Scenarios page. Complete this task:",
         "",
         "1. Find the 'Delayed Content' section.",
-        "2. Click the 'Load Content' button.",
-        "3. Wait for the content to appear (it loads after a short delay).",
-        "4. Read the loaded text and report what it says.",
+        "2. In that section, click the 'Load Content' button. Do NOT just inspect or summarize the section before clicking the button.",
+        "3. Wait for the delayed text to appear after the click.",
+        "4. Do NOT call done until the loaded text is visible and begins with 'Loaded:'.",
+        "5. Read the loaded text and report exactly what it says.",
       ].join("\n");
 
-      await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(ctx, prompt, tabId);
 
       const outcome = await waitForOutcome(
         page,
@@ -188,6 +198,7 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
           );
         },
         180_000,
+        workspaceId,
       );
 
       await printTrace("delayed-content");
@@ -226,7 +237,7 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
         "the task cannot be completed and explain why.",
       ].join("\n");
 
-      await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(ctx, prompt, tabId);
 
       // For impossible tasks, we wait for the agent to finish (done/give-up).
       // The agent should NOT set any window result — it should just stop.
@@ -240,6 +251,7 @@ describe.skipIf(!API_KEY)("E2E: Edge Cases", () => {
           return null;
         },
         120_000,
+        workspaceId,
       );
 
       await printTrace("impossible-task");

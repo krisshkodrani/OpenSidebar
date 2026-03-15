@@ -6,11 +6,12 @@ export default defineConfig({
     environment: "node",
     testTimeout: 360_000,
     hookTimeout: 60_000,
+    fileParallelism: false,
     pool: "forks",
     poolOptions: {
       forks: { singleFork: true },
     },
-    retry: 1,
+    retry: 0,
     include: ["tests/e2e/**/*.test.ts"],
   },
   resolve: {

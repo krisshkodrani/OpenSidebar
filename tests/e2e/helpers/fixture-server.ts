@@ -31,6 +31,10 @@ export function getFixtureUrl(filename: string): string {
 }
 
 export async function startFixtureServer(): Promise<number> {
+  if (server && serverPort) {
+    return serverPort;
+  }
+
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       const urlPath = req.url?.split("?")[0] ?? "/";
