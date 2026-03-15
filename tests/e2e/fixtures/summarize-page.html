@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OpenSidebar Summary Fixture</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.5;
+      margin: 0;
+      background: #f5f7fb;
+      color: #1f2937;
+    }
+    main {
+      max-width: 760px;
+      margin: 32px auto;
+      padding: 32px;
+      background: #ffffff;
+      border: 1px solid #dbe3f0;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+    h1, h2 {
+      margin-top: 0;
+    }
+    .lede {
+      font-size: 18px;
+      color: #334155;
+    }
+    .fact-list {
+      padding-left: 20px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>OpenSidebar Overview</h1>
+    <p class="lede">
+      OpenSidebar is a browser extension that turns a side panel into an AI
+      workspace for reading pages, planning steps, and completing browser tasks.
+    </p>
+
+    <h2>What It Does</h2>
+    <p>
+      The extension can read page content, inspect the DOM, click visible
+      controls, type into fields, and keep a running plan while it works.
+      It uses a perception layer to describe the current page before the
+      executor takes action.
+    </p>
+
+    <h2>Key Facts</h2>
+    <ul class="fact-list">
+      <li>It supports planning, execution, and verification roles.</li>
+      <li>It includes 38 browser tools.</li>
+      <li>The default perception model is x-ai/grok-4.1-fast.</li>
+      <li>It ships with offline evals, traces, and E2E tests.</li>
+    </ul>
+
+    <h2>Why It Matters</h2>
+    <p>
+      The goal is to make browser automation transparent and reviewable instead
+      of hiding actions behind an opaque script.
+    </p>
+  </main>
+</body>
+</html>
