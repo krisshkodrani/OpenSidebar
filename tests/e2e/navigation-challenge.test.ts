@@ -10,7 +10,7 @@
  * Run: npm run test:e2e
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import {
   launchWithExtension,
   closeExtension,
@@ -20,6 +20,7 @@ import {
 import {
   getActiveTabId,
   navigateAndWait,
+  resetExtensionState,
   sendUserChat,
   setupEventMonitor,
   waitForOutcome,
@@ -69,7 +70,8 @@ describe.skipIf(!API_KEY)("E2E: Navigation Challenge", () => {
     detachConsole = await attachSwConsole(ctx.browser);
 
     const pages = await ctx.browser.pages();
-    page = pages[0] || (await ctx.browser.newPage());
+    page = pages.find((candidate) => !candidate.url().startsWith("chrome-extension://"))
+      || (await ctx.browser.newPage());
 
     const helper = await openHelperPage(ctx);
     await helper.evaluate(async (key: string) => {
@@ -87,8 +89,19 @@ describe.skipIf(!API_KEY)("E2E: Navigation Challenge", () => {
     await helper.close();
 
     await setupEventMonitor(ctx.serviceWorker);
-    tracesBefore = snapshotTraceFiles();
   }, 60_000);
+
+  beforeEach(async () => {
+    await resetExtensionState(ctx);
+    tracesBefore = snapshotTraceFiles();
+    if (page.isClosed()) {
+      page = await ctx.browser.newPage();
+    }
+  });
+
+  afterEach(async () => {
+    await resetExtensionState(ctx);
+  });
 
   afterAll(async () => {
     if (detachConsole) detachConsole();
@@ -115,7 +128,7 @@ describe.skipIf(!API_KEY)("E2E: Navigation Challenge", () => {
         "5. Verify the page shows 'Challenge Complete!' to confirm success.",
       ].join("\n");
 
-      await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(ctx, prompt, tabId);
 
       const outcome = await waitForOutcome(
         page,
@@ -124,6 +137,7 @@ describe.skipIf(!API_KEY)("E2E: Navigation Challenge", () => {
           return page.evaluate(() => (window as any).challengeResult ?? null);
         },
         300_000,
+        workspaceId,
       );
 
       // Print trace summary
