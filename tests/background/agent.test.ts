@@ -83,7 +83,12 @@ vi.mock("../../src/background/llm", () => ({
   },
 }));
 
-import { AgentLoop, validateTextEntryTarget } from "../../src/background/agent/loop";
+import {
+  AgentLoop,
+  isPerceptionFailurePlaceholder,
+  shouldOmitPerceptionForDoneValidation,
+  validateTextEntryTarget,
+} from "../../src/background/agent/loop";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
 
@@ -250,6 +255,62 @@ describe("AgentLoop", () => {
     expect(names).toContain(ToolName.CLICK_ELEMENT);
     expect(names).toContain(ToolName.DONE);
     expect(names).not.toContain(ToolName.EXECUTE_JS);
+  });
+
+  test("applies read_only fallback profile for summarize tasks", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery =
+      "Open the GitHub repository page and summarize the README";
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.NAVIGATE } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.READ_PAGE);
+    expect(names).toContain(ToolName.DONE);
+    expect(names).not.toContain(ToolName.NAVIGATE);
+    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+  });
+
+  test("treats the provider-exhausted marker as a perception failure placeholder", () => {
+    expect(
+      isPerceptionFailurePlaceholder(
+        "[Visual perception failed: all providers exhausted]",
+      ),
+    ).toBe(true);
+    expect(
+      isPerceptionFailurePlaceholder("LOCATION:\n- GitHub README is visible"),
+    ).toBe(false);
+  });
+
+  test("omits failed perception during done validation for read-only tasks after read_page", () => {
+    expect(
+      shouldOmitPerceptionForDoneValidation({
+        interpretation: "[Visual perception failed: all providers exhausted]",
+        hasReadPage: true,
+        originalQuery: "Open the repository and summarize the README",
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldOmitPerceptionForDoneValidation({
+        interpretation: "[Visual perception failed: all providers exhausted]",
+        hasReadPage: true,
+        originalQuery: "Open checkout and place the order",
+      }),
+    ).toBe(false);
   });
 
   test("records fallback reason when plan status has no running subtask", () => {

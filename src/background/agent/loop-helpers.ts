@@ -51,6 +51,8 @@ export function validateElementIds(
       `Error: Element ${paramName}=${numId} does not exist on the current page. ` +
       `Valid element IDs: ${[...validIds].slice(0, 20).join(", ")}. ` +
       `Sample elements:\n${sampleElements.join("\n")}\n` +
+      `Important: IDs mentioned by discovery tools like find_element may be locator references, not current visible tags. ` +
+      `Do not pass them directly into click_element/read_element unless they appear in the current Visible Elements list. ` +
       `This target may be hidden, inside a closed drawer or accordion, off-screen, or the page state may be stale. ` +
       `Reveal or refresh the relevant UI first, then retry with a currently visible tag. ` +
       `Use read_page, scroll_page, or click a control that reveals the target before retrying.`
@@ -87,6 +89,281 @@ export function formatActionEffect(effect: ActionEffect): string | null {
   if (effect.elementsRemoved > 0)
     parts.push(`-${effect.elementsRemoved} removed`);
   return `[Action effect: ${parts.join(", ")}]`;
+}
+
+export interface StepAdvanceSignal {
+  matchedTokens: string[];
+  reason: string;
+}
+
+export interface PendingAsyncChangeSignal {
+  expectedTokens: string[];
+  loadingIndicator: string | null;
+  reason: string;
+}
+
+const STRUCTURAL_ADVANCE_TOOLS = new Set<string>([
+  ToolName.CLICK_ELEMENT,
+  ToolName.TYPE_TEXT,
+  ToolName.SELECT_OPTION,
+  ToolName.SET_CHECKBOX,
+  ToolName.PRESS_KEY,
+  ToolName.XRAY_PAGE,
+  ToolName.DISMISS_OVERLAYS,
+]);
+
+const STEP_TOKEN_STOPWORDS = new Set([
+  "the",
+  "and",
+  "then",
+  "into",
+  "with",
+  "that",
+  "this",
+  "from",
+  "your",
+  "you",
+  "are",
+  "for",
+  "step",
+  "click",
+  "type",
+  "read",
+  "find",
+  "open",
+  "close",
+  "button",
+  "input",
+  "field",
+  "section",
+  "page",
+  "next",
+  "current",
+  "visible",
+  "order",
+  "verify",
+  "successfully",
+]);
+
+const ASYNC_TRIGGER_TOOLS = new Set<string>([
+  ToolName.CLICK_ELEMENT,
+  ToolName.PRESS_KEY,
+  ToolName.SELECT_OPTION,
+  ToolName.SET_CHECKBOX,
+  ToolName.EXECUTE_JS,
+]);
+
+const ASYNC_INTENT_KEYWORDS = [
+  "wait",
+  "appears",
+  "appear",
+  "after click",
+  "after the click",
+  "after pressing",
+  "after button click",
+  "loaded",
+  "loading",
+  "load ",
+  "reveal",
+  "reveals",
+  "show ",
+  "shown",
+  "becomes visible",
+  "become visible",
+  "generate",
+  "fetch",
+  "result appears",
+];
+
+const LOADING_UI_KEYWORDS = [
+  "loading",
+  "please wait",
+  "processing",
+  "generating",
+  "fetching",
+  "working",
+  "submitting",
+];
+
+const ASYNC_TOKEN_STOPWORDS = new Set([
+  ...STEP_TOKEN_STOPWORDS,
+  "wait",
+  "loaded",
+  "loading",
+  "result",
+  "appears",
+  "appear",
+  "visible",
+  "content",
+  "after",
+  "click",
+]);
+
+function tokenizeStepText(stepText: string): string[] {
+  return [...new Set(
+    stepText
+      .toLowerCase()
+      .match(/[a-z0-9$@._-]{3,}/g) ?? [],
+  )].filter((token) => !STEP_TOKEN_STOPWORDS.has(token));
+}
+
+function snapshotSearchText(snapshot: DomSnapshot | null): string {
+  if (!snapshot) return "";
+  const elementText = snapshot.elements
+    .flatMap((element) => [
+      element.text,
+      element.tagName,
+      element.attributes.id,
+      element.attributes.name,
+      element.attributes.placeholder,
+      element.attributes["aria-label"],
+      element.attributes.label,
+      element.attributes.value,
+    ])
+    .filter(Boolean)
+    .join(" ");
+  return [
+    snapshot.title,
+    snapshot.url,
+    snapshot.pageContent,
+    snapshot.visibleContent,
+    elementText,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function tokenizeAsyncExpectationText(text: string): string[] {
+  return [...new Set(
+    text.toLowerCase().match(/[a-z0-9$@._-]{2,}/g) ?? [],
+  )].filter((token) => !ASYNC_TOKEN_STOPWORDS.has(token));
+}
+
+function findLoadingIndicator(snapshot: DomSnapshot | null): string | null {
+  const searchText = snapshotSearchText(snapshot);
+  return (
+    LOADING_UI_KEYWORDS.find((keyword) => searchText.includes(keyword)) ?? null
+  );
+}
+
+function matchStepTokens(
+  stepText: string,
+  snapshot: DomSnapshot | null,
+): string[] {
+  const searchText = snapshotSearchText(snapshot);
+  return tokenizeStepText(stepText).filter((token) => searchText.includes(token));
+}
+
+export function detectStructuralStepAdvance(params: {
+  currentStepDescription: string;
+  currentStepSuccessCriteria?: string;
+  nextStepDescription?: string;
+  currentSnapshot: DomSnapshot | null;
+  actionEffect: ActionEffect | null;
+  toolName: string;
+}): StepAdvanceSignal | null {
+  const {
+    currentStepDescription,
+    currentStepSuccessCriteria,
+    nextStepDescription,
+    currentSnapshot,
+    actionEffect,
+    toolName,
+  } = params;
+
+  if (!nextStepDescription || !currentSnapshot || !actionEffect) return null;
+  if (!STRUCTURAL_ADVANCE_TOOLS.has(toolName)) return null;
+
+  const materiallyChanged =
+    actionEffect.urlChanged || actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
+  if (!materiallyChanged) return null;
+
+  const currentMatches = matchStepTokens(currentStepDescription, currentSnapshot);
+  const successMatches = currentStepSuccessCriteria
+    ? matchStepTokens(currentStepSuccessCriteria, currentSnapshot)
+    : [];
+  const nextMatches = matchStepTokens(nextStepDescription, currentSnapshot);
+
+  const hasCurrentSuccessEvidence =
+    successMatches.length >= 2 ||
+    (successMatches.length >= 1 && currentMatches.length >= 1);
+  if (!hasCurrentSuccessEvidence) return null;
+
+  const hasDistinctNextEvidence = nextMatches.some(
+    (token) => !currentMatches.includes(token),
+  );
+  if (nextMatches.length >= 2 && hasDistinctNextEvidence) {
+    const evidence = [...new Set([...successMatches, ...nextMatches])];
+    return {
+      matchedTokens: evidence,
+      reason:
+        `Current step now appears satisfied and exposed the next planned step: ` +
+        evidence.slice(0, 4).join(", "),
+    };
+  }
+
+  return null;
+}
+
+export function isPendingAsyncChangeSatisfied(params: {
+  snapshot: DomSnapshot | null;
+  expectedTokens: string[];
+}): boolean {
+  const { snapshot, expectedTokens } = params;
+  if (!snapshot) return false;
+  if (findLoadingIndicator(snapshot)) return false;
+  if (expectedTokens.length === 0) return false;
+  const searchText = snapshotSearchText(snapshot);
+  const matched = expectedTokens.filter((token) => searchText.includes(token));
+  const threshold =
+    expectedTokens.length >= 4 ? 2 : Math.min(1, expectedTokens.length);
+  return matched.length >= threshold;
+}
+
+export function detectPendingAsyncChange(params: {
+  currentStepDescription: string;
+  currentStepSuccessCriteria?: string;
+  currentSnapshot: DomSnapshot | null;
+  actionEffect: ActionEffect | null;
+  toolName: string;
+}): PendingAsyncChangeSignal | null {
+  const {
+    currentStepDescription,
+    currentStepSuccessCriteria,
+    currentSnapshot,
+    actionEffect,
+    toolName,
+  } = params;
+  if (!currentSnapshot || !actionEffect) return null;
+  if (!ASYNC_TRIGGER_TOOLS.has(toolName)) return null;
+
+  const combinedText =
+    `${currentStepDescription}\n${currentStepSuccessCriteria ?? ""}`.toLowerCase();
+  const loadingIndicator = findLoadingIndicator(currentSnapshot);
+  const hasAsyncIntent =
+    loadingIndicator !== null ||
+    ASYNC_INTENT_KEYWORDS.some((keyword) => combinedText.includes(keyword));
+  if (!hasAsyncIntent) return null;
+
+  const materiallyChanged =
+    actionEffect.urlChanged || actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
+  if (!materiallyChanged && !loadingIndicator) return null;
+
+  const expectedTokens = tokenizeAsyncExpectationText(
+    currentStepSuccessCriteria || currentStepDescription,
+  ).slice(0, 8);
+  if (isPendingAsyncChangeSatisfied({ snapshot: currentSnapshot, expectedTokens })) {
+    return null;
+  }
+
+  return {
+    expectedTokens,
+    loadingIndicator,
+    reason: loadingIndicator
+      ? `The page is still showing "${loadingIndicator}", so the result of the last action is still pending.`
+      : "The current step expects content to appear after the last action, but the result is not visible yet.",
+  };
 }
 
 /** Tools that require a pre-action feasibility check on the target element. */

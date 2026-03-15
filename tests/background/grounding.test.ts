@@ -1,12 +1,17 @@
 import { describe, it, expect } from "vitest";
 import {
+  detectPendingAsyncChange,
+  detectStructuralStepAdvance,
   extractStepIndicator,
   detectInstructionContradiction,
   GROUNDING_OBSERVATION_TOOLS,
   buildFailureBrief,
+  isPendingAsyncChangeSatisfied,
+  validateElementIds,
   type ContradictionResult,
   type SubgoalAttempt,
 } from "../../src/background/agent/loop-helpers";
+import { ToolName } from "../../src/types";
 import type { DomSnapshot } from "../../src/types";
 
 function makeSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
@@ -302,5 +307,233 @@ describe("buildFailureBrief", () => {
     );
     const brief = buildFailureBrief(attempts);
     expect(brief.length).toBeLessThanOrEqual(600);
+  });
+});
+
+describe("validateElementIds", () => {
+  it("explains that discovery ids are not guaranteed actionable tags", () => {
+    const snapshot = makeSnapshot({
+      elements: [
+        {
+          tag: 5,
+          tagName: "button",
+          role: "button",
+          text: "Open Cart",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const error = validateElementIds(
+      ToolName.CLICK_ELEMENT,
+      { id: 28 },
+      snapshot,
+    );
+
+    expect(error).toContain("locator references");
+    expect(error).toContain("current Visible Elements list");
+  });
+});
+
+describe("detectStructuralStepAdvance", () => {
+  it("advances when the next step becomes directly grounded after a material change", () => {
+    const signal = detectStructuralStepAdvance({
+      currentStepDescription:
+        "Click the Add to cart button next to the Air Zoom Pegasus 41 running shoe",
+      currentStepSuccessCriteria:
+        "Cart section appears automatically with the item visible",
+      nextStepDescription:
+        "Type SAVE10 into the promo code input field, click Apply button, then click the Express radio button for shipping",
+      currentSnapshot: makeSnapshot({
+        pageContent:
+          "Your Cart Air Zoom Pegasus 41 Promo Code SAVE10 Apply Shipping Express Checkout",
+        elements: [
+          {
+            tag: 19,
+            tagName: "input",
+            role: "text",
+            text: "SAVE10",
+            attributes: { placeholder: "SAVE10" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 22,
+            tagName: "button",
+            role: "button",
+            text: "Apply",
+            attributes: { id: "apply-coupon" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 18,
+            tagName: "input",
+            role: "radio",
+            text: "Express",
+            attributes: { value: "express" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      }),
+      actionEffect: {
+        deltaPercent: 0.35,
+        urlChanged: false,
+        currentUrl: "https://example.com/shop",
+        elementsAdded: 5,
+        elementsRemoved: 2,
+        prevCount: 10,
+        currentCount: 13,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(signal).not.toBeNull();
+    expect(signal!.matchedTokens).toEqual(
+      expect.arrayContaining(["save10", "apply", "express"]),
+    );
+  });
+
+  it("does not advance when only the next-step affordances are visible without current-step success evidence", () => {
+    const signal = detectStructuralStepAdvance({
+      currentStepDescription:
+        "Click the Add to cart button next to the Air Zoom Pegasus 41 running shoe",
+      currentStepSuccessCriteria:
+        "Cart section appears automatically with the item visible",
+      nextStepDescription:
+        "Type SAVE10 into the promo code input field, click Apply button, then click the Express radio button for shipping",
+      currentSnapshot: makeSnapshot({
+        pageContent: "Promo Code SAVE10 Apply Shipping Express Checkout",
+        elements: [
+          {
+            tag: 19,
+            tagName: "input",
+            role: "text",
+            text: "SAVE10",
+            attributes: { placeholder: "SAVE10" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 22,
+            tagName: "button",
+            role: "button",
+            text: "Apply",
+            attributes: { id: "apply-coupon" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      }),
+      actionEffect: {
+        deltaPercent: 0.35,
+        urlChanged: false,
+        currentUrl: "https://example.com/shop",
+        elementsAdded: 5,
+        elementsRemoved: 2,
+        prevCount: 10,
+        currentCount: 13,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(signal).toBeNull();
+  });
+
+  it("does not advance on minor or irrelevant changes", () => {
+    const signal = detectStructuralStepAdvance({
+      currentStepDescription: "Click the continue button",
+      nextStepDescription: "Type the verification code and submit",
+      currentSnapshot: makeSnapshot({
+        pageContent: "Continue button still visible",
+      }),
+      actionEffect: {
+        deltaPercent: 0,
+        urlChanged: false,
+        currentUrl: "https://example.com",
+        elementsAdded: 0,
+        elementsRemoved: 0,
+        prevCount: 10,
+        currentCount: 10,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(signal).toBeNull();
+  });
+});
+
+describe("detectPendingAsyncChange", () => {
+  it("detects unresolved delayed content after a triggering click", () => {
+    const signal = detectPendingAsyncChange({
+      currentStepDescription:
+        "Click the Load Content button and wait for the loaded text to appear.",
+      currentStepSuccessCriteria:
+        "The page shows Loaded: The answer is 42.",
+      currentSnapshot: makeSnapshot({
+        pageContent: "Delayed Content Load Content Loading...",
+        elements: [
+          {
+            tag: 4,
+            tagName: "button",
+            role: "button",
+            text: "Loading...",
+            attributes: { id: "load-content" },
+            rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+            isVisible: true,
+            isDisabled: true,
+          },
+        ],
+      }),
+      actionEffect: {
+        deltaPercent: 0.2,
+        urlChanged: false,
+        currentUrl: "https://example.com/error-scenarios",
+        elementsAdded: 0,
+        elementsRemoved: 0,
+        prevCount: 8,
+        currentCount: 8,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(signal).not.toBeNull();
+    expect(signal!.reason).toContain("still pending");
+    expect(signal!.expectedTokens).toContain("answer");
+    expect(signal!.expectedTokens.some((token) => token.startsWith("42"))).toBe(true);
+  });
+
+  it("treats the async expectation as satisfied once the expected content is visible", () => {
+    const snapshot = makeSnapshot({
+      pageContent: "Delayed Content Loaded: The answer is 42.",
+      elements: [
+        {
+          tag: 8,
+          tagName: "p",
+          role: "text",
+          text: "Loaded: The answer is 42.",
+          attributes: { id: "delayed-text" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    expect(
+      isPendingAsyncChangeSatisfied({
+        snapshot,
+        expectedTokens: ["answer", "42"],
+      }),
+    ).toBe(true);
   });
 });
