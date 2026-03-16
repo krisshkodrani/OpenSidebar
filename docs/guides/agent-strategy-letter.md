@@ -14,8 +14,8 @@ The entire LLM pipeline runs through a single provider, **OpenRouter**, with two
 
 | Tier | Model | Role |
 |------|-------|------|
-| Executor | `openai/gpt-oss-120b` | Default for all turns — fast, cheap, good enough for most DOM interactions |
-| Planner | `deepseek/deepseek-v3.2` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
+| Executor | `openai/gpt-4.1-mini` | Default for all turns — fast, cheap, good enough for most DOM interactions |
+| Planner | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
 
 Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.
 
@@ -91,7 +91,7 @@ The agent loop (`AgentLoop.loop()`) is a while-loop bounded by `maxTurns` (defau
 
 Streaming is always enabled. The LLM response is streamed via SSE, with text deltas forwarded to the side panel in real time via `STREAM_CHUNK` messages. `max_tokens` is set to 4096. `tool_choice: "auto"` is sent whenever tools are present.
 
-DeepSeek V3.2 emits `<think>...</think>` reasoning blocks inline. These are handled at three levels:
+Some models emit `<think>...</think>` reasoning blocks inline. These are handled at three levels:
 
 - **Streaming UI**: A `createThinkFilter()` state machine suppresses think blocks from the text deltas sent to the side panel. It tracks chunk boundaries to avoid cutting in the middle of a tag.
 - **Conversation history**: Think blocks are preserved **raw** in the message history. This is critical — the planner's reasoning chain continuity improves significantly when it can see its own prior reasoning.
@@ -99,9 +99,9 @@ DeepSeek V3.2 emits `<think>...</think>` reasoning blocks inline. These are hand
 
 ---
 
-## 4. The 35-Tool Ecosystem
+## 4. The 38-Tool Ecosystem
 
-The agent has 35 tools organized into categories:
+The agent has 38 tools organized into categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |
@@ -376,7 +376,7 @@ Instead of a manual `take_screenshot` tool, OpenSidebar uses an automatic **perc
 2. Sends the screenshot + element summary to a vision model for structured interpretation
 3. Returns a compact 6-section interpretation (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens — replacing ~4K of raw visible text
 
-The perception layer uses OpenRouter with `google/gemini-2.5-flash` for vision-based page understanding. 429/4xx errors trigger retry with exponential backoff.
+The perception layer uses OpenRouter with `x-ai/grok-4.1-fast` for vision-based page understanding. 429/4xx errors trigger retry with exponential backoff.
 
 Response parameters: `max_tokens: 600`, `temperature: 0.1`, timeout 20s. Up to 2 retries with 800ms base delay and exponential backoff plus jitter. Fingerprint-based caching (via `computeSnapshotFingerprint()`) avoids redundant calls when the page hasn't changed.
 
@@ -423,7 +423,7 @@ For longer-term state preservation, the `ContextManager` auto-saves conversation
 
 - **50-element cap**: Pages with hundreds of interactive elements (e.g., complex dashboards, data tables) will only see the first 50 visible elements. The agent can mitigate this with `scroll_page` and `find_element`, but may miss elements entirely.
 - **Perception latency**: Each perception call adds 1-3 seconds of latency for the vision model round-trip, though fingerprint-based caching avoids redundant calls.
-- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. GPT-OSS-120B handles routine interactions well but struggles with complex multi-step logic. DeepSeek V3.2 is stronger but slower and more expensive.
+- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. GPT-4.1 Mini handles routine interactions well but struggles with complex multi-step logic. MiniMax M2.5 is stronger but slower and more expensive.
 - **No iframe support**: The content script only sees the top-level document. Elements inside iframes are invisible to the agent.
 - **Single-tab focus**: While tab management tools exist, the agent can only actively observe one tab at a time. Cross-tab coordination requires explicit switching.
 - **No file upload/download**: The agent cannot interact with native file dialogs or manage downloads.

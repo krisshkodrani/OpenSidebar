@@ -287,7 +287,7 @@ async function parseSSEStream(
 
 ## Tool Execution
 
-The agent supports **35 tools** across four categories:
+The agent supports **38 tools** across four categories:
 
 ### Content Script Tools (DOM)
 
@@ -484,10 +484,10 @@ interface TraceEntry {
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
 ### Executor Tier (observe→act cycles)
-- **OpenRouter** (`openai/gpt-oss-120b`)
+- **OpenRouter** (`openai/gpt-4.1-mini`)
 
 ### Planner Tier (reasoning/escalation)
-- **OpenRouter** (`deepseek/deepseek-v3.2`) — Single provider
+- **OpenRouter** (`minimax/minimax-m2.5`) — Single provider
 
 Both pools use `ProviderPool` with `PoolConfig` for generic configuration. The `TaskPlanner` also uses the planner pool.
 
@@ -517,7 +517,7 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/agent/trace.ts`       | TraceRecorder - session recording    |
 | `src/background/llm/client.ts`        | LLM API client (multi-provider)      |
 | `src/background/streaming.ts`         | SSE parser                           |
-| `src/background/tools/index.ts`       | Tool definitions (35 tools)          |
+| `src/background/tools/index.ts`       | Tool definitions (38 tools)          |
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
 | `src/background/perception/`          | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |

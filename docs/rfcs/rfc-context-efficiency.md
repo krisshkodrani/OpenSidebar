@@ -36,7 +36,7 @@ A comparative study of Claude Code's architecture and recent academic literature
 
 ### Cost Impact (Estimated)
 
-Based on a typical 15-turn session with 35 tools at 32K context:
+Based on a typical 15-turn session with 38 tools at 32K context:
 - **System prompt**: ~12K tokens/turn (tools ~8K + persona ~1K + rules ~3K)
 - **DOM snapshot**: ~2-4K tokens/turn
 - **History**: ~8-16K tokens/turn (grows, then compressed)

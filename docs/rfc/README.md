@@ -7,11 +7,23 @@ Feature proposals and technical decisions for OpenSidebar.
 | RFC | Status | Summary |
 |-----|--------|---------|
 | [Multi-Turn Conversation Resilience](./rfc-multi-turn-resilience.md) | **Proposed** | Rolling distillation, pinned goal, fresh-start recovery, episodic subtasks — based on "LLMs Get Lost In Multi-Turn Conversation" (arXiv:2505.06120) |
-| [Programmatic Verification](./rfc-programmatic-verification.md) | **Proposed** | Replace LLM-based node verification with DOM-state checks; eliminate critic/advocate debate — based on Dibia Ch 10, Gulli Ch 4, Rothman Ch 2 |
 | [Batched Action Execution](./rfc-batched-actions.md) | **Proposed** | Reduce LLM round trips for predictable workflows (forms, logins) via batch hints + `fill_form` tool — based on Dibia Ch 5, Gulli Ch 3/6, Rothman Ch 4 |
 | [Orchestrator Call Reduction](./rfc-orchestrator-call-reduction.md) | **Proposed** | Remove deliberation, plan review, debate rounds, retrospective LLM calls; replace with programmatic checks — based on Dibia Ch 11, Gulli Ch 7/17, Rothman Ch 4/8 |
-| [Centralized Prompt Management](./rfc-centralized-prompt-management.md) | **Proposed** | Move all prompts into root `prompts/`, compile at build time, and share one prompt manifest across runtime + evals |
-| [First-Turn Scope Discipline](./rfc-first-turn-scope-discipline.md) | **Proposed** | Structured completion predicates, perception cache invalidation on URL change, invisible-element suppression, goal-relevance check &mdash; based on trace `0793f95c`, Dibia Ch 5/11/15, Gulli Ch 1/20, Rothman Ch 5 |
+| [Centralized Prompt Management](./rfc-centralized-prompt-management.md) | **Partially implemented** | Move all prompts into root `prompts/`, compile at build time, and share one prompt manifest across runtime + evals |
+| [First-Turn Scope Discipline](./rfc-first-turn-scope-discipline.md) | **Partially implemented** | Structured completion predicates, perception cache invalidation on URL change, invisible-element suppression, goal-relevance check |
+| [Goal-Conditioned Perception](./rfc-goal-conditioned-perception.md) | **Partially implemented** | Subtask-focused perception mode with tailored observation sections |
+| [Post-Action Verification](./rfc-post-action-verification.md) | **Partially implemented** | Verify DOM state after actions via `ActionEffect` tracking and zero-effect detection |
+| [Strategic Resilience](./rfc-strategic-resilience.md) | **Proposed** | Fallback plans and state checkpointing for recovery from failed strategies |
+| [Context Efficiency](../rfcs/rfc-context-efficiency.md) | **Proposed** | Prompt-first optimizations from literature review — caching, compression, context management |
+
+## Retired RFCs (implemented and deleted per process)
+
+| RFC | Implemented In |
+|-----|---------------|
+| Adaptive Runtime Limits | `src/background/agent/constants.ts` — `RuntimeLimits`, `DIFFICULTY_PROFILES`, `resolveRuntimeLimits()` |
+| Demo Labels & Post-Recording Modal | `src/sidepanel/components/DemoSaveModal.tsx` — structured demo metadata capture |
+| Programmatic Verification | `src/background/orchestrator/verifier.ts` — `programmaticVerify()` with DOM-state checks |
+| Grounding Loop | `evals/grounding-*.ts` + `evals/golden/grounding/` — grounding eval infrastructure |
 
 ## Orchestrator Design
 

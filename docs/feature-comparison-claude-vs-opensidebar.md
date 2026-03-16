@@ -92,7 +92,7 @@ Neither product is strictly superior. They serve different users with different 
 
 | Capability | Claude in Chrome | OpenSidebar |
 |---|---|---|
-| Available models | Haiku 4.5, Sonnet 4.5, Opus 4.6 (plan-gated) | GPT-OSS-120B (executor), DeepSeek V3.2 (planner), Gemini 2.5 Flash (perception) |
+| Available models | Haiku 4.5, Sonnet 4.5, Opus 4.6 (plan-gated) | GPT-4.1 Mini (executor), MiniMax M2.5 (planner), Grok 4.1 Fast (perception) |
 | Model selection | Plan-tier gated (Pro = Haiku only) | Automatic (executor for routine, planner for complex) |
 | Automatic escalation | Unknown | Yes (executor -> planner at stagnation or text-only loops) |
 | Stagnation detection | Unknown | Yes (fingerprint-based, nudge at 6 turns, escalate at 12) |

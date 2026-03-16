@@ -94,13 +94,14 @@ Frozen perception baseline:
 
 See [evals/README.md](./evals/README.md) for the current eval workflow.
 
-## Security
+## Security & Privacy
 
 - API keys are stored in Chrome storage and only sent to configured model providers.
 - No telemetry or analytics.
 - URL sanitization blocks non-http(s) protocols.
 - High-risk tools can require explicit approval.
 - See [SECURITY.md](./SECURITY.md) for the security policy.
+- See [PRIVACY_POLICY.md](./PRIVACY_POLICY.md) for the full privacy policy.
 
 ## Documentation
 
