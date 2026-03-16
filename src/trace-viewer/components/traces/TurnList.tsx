@@ -7,6 +7,7 @@ const ESTIMATED_TURN_HEIGHT = 200;
 
 export default function TurnList() {
   const entries = useStore((s) => s.currentEntries);
+  const sessionId = useStore((s) => s.currentSessionId) ?? "";
   const searchQuery = useStore((s) => s.searchQuery);
   const tierFilter = useStore((s) => s.filters.tier);
 
@@ -91,7 +92,7 @@ export default function TurnList() {
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <TurnCard entry={entry} index={virtualRow.index} />
+              <TurnCard entry={entry} index={virtualRow.index} sessionId={sessionId} />
             </div>
           );
         })}

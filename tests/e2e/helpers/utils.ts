@@ -24,10 +24,12 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
       return;
     }
 
-    // Poll until chrome.runtime.sendMessage is available (SW may still be initializing)
-    for (let i = 0; i < 40; i++) {
-      if (g.chrome?.runtime?.sendMessage) break;
-      await new Promise((r) => setTimeout(r, 250));
+    // Check that chrome.runtime.sendMessage is available (SW should be initialized by now)
+    // Note: setTimeout is unavailable in Puppeteer's CDP evaluate context for service workers,
+    // so we cannot poll. If sendMessage isn't ready, we proceed without it.
+    if (!g.chrome?.runtime?.sendMessage) {
+      // One retry via microtask yield
+      await Promise.resolve();
     }
     if (!g.chrome?.runtime?.sendMessage) {
       console.warn("[e2e] chrome.runtime.sendMessage unavailable — event monitor disabled");
@@ -340,6 +342,65 @@ export async function resetExtensionState(
     await anchorPage.goto("about:blank", { waitUntil: "domcontentloaded" }).catch(() => {});
     await closeNonExtensionPages(ctx, [anchorPage]);
   }
+}
+
+/**
+ * Wait for the agent to complete a task (no page-level check needed).
+ * Polls monitored events for TASK_COMPLETION, "Task complete" step, IDLE, or ERROR.
+ * Useful for tasks where success is judged by trace output, not DOM state.
+ */
+export async function waitForTaskCompletion(
+  ctx: ExtensionContext,
+  timeoutMs: number,
+  workspaceId: string,
+): Promise<{ ok: boolean; reason: string; events: any[] }> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const events = (await getMonitoredEvents(ctx.serviceWorker, 80)).filter(
+      (event: any) =>
+        event.workspaceId == null || event.workspaceId === workspaceId,
+    );
+    const completion = [...events]
+      .reverse()
+      .find((event: any) => event.type === "TASK_COMPLETION");
+    if (completion?.status === "completed" || completion?.status === "partial") {
+      return { ok: true, reason: String(completion.status), events };
+    }
+
+    const taskCompleteStep = [...events]
+      .reverse()
+      .find(
+        (event: any) =>
+          event.type === "AGENT_STEP" &&
+          String(event.stepLabel || "").includes("Task complete"),
+      );
+    if (taskCompleteStep) {
+      return { ok: true, reason: "task_complete_step", events };
+    }
+
+    const lastStatus = [...events]
+      .reverse()
+      .find((event: any) => event.type === "AGENT_STATUS");
+    if (lastStatus?.status === "IDLE") {
+      return { ok: true, reason: "idle", events };
+    }
+    if (lastStatus?.status === "ERROR") {
+      return {
+        ok: false,
+        reason: `agent_error:${lastStatus.detail || "unknown"}`,
+        events,
+      };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  return {
+    ok: false,
+    reason: "timeout",
+    events: await getMonitoredEvents(ctx.serviceWorker, 80),
+  };
 }
 
 /**

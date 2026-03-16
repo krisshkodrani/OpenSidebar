@@ -2,73 +2,247 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Navigation Challenge</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
-    h1 { margin-bottom: 8px; }
-    .instructions { color: #555; margin-bottom: 24px; }
-    #progress { font-size: 1.1em; margin-bottom: 16px; color: #333; }
-    #advance-btn {
-      padding: 10px 24px;
-      font-size: 1em;
-      cursor: pointer;
-      background: #2563eb;
-      color: #fff;
-      border: none;
-      border-radius: 6px;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+    /* Header */
+    .header { background: #0f172a; color: #f8fafc; padding: 16px 24px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+
+    /* Layout */
+    .container { max-width: 640px; margin: 0 auto; padding: 32px 24px; }
+
+    /* Card */
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+      padding: 32px;
     }
-    #advance-btn:hover { background: #1d4ed8; }
+
+    /* Instructions */
+    .instructions {
+      color: #64748b;
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 28px;
+    }
+
+    /* Step progress indicator */
+    .step-indicator {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+
+    .step-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+      flex: 0 0 auto;
+    }
+
+    .step-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background: #d1d5db;
+      transition: background 0.25s;
+    }
+
+    .step-circle.active {
+      background: #3b82f6;
+    }
+
+    .step-circle.completed {
+      background: #16a34a;
+    }
+
+    .step-label {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #6b7280;
+      text-align: center;
+      white-space: nowrap;
+      transition: color 0.25s;
+    }
+
+    .step-label.active {
+      color: #3b82f6;
+      font-weight: 600;
+    }
+
+    .step-label.completed {
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      background: #d1d5db;
+      margin-top: 17px;
+      min-width: 40px;
+      max-width: 100px;
+      transition: background 0.25s;
+    }
+
+    .step-connector.completed {
+      background: #16a34a;
+    }
+
+    /* Progress text */
+    #progress {
+      font-size: 15px;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 20px;
+    }
+
+    /* Advance button */
+    #advance-btn {
+      padding: 10px 28px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #3b82f6;
+      color: #fff;
+      border: 1px solid #3b82f6;
+      border-radius: 8px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #advance-btn:hover { background: #2563eb; border-color: #2563eb; }
+
+    /* Code section */
     #code-section {
-      margin-top: 24px;
-      padding: 16px;
+      margin-top: 28px;
+      padding: 24px;
       background: #f8fafc;
       border: 1px solid #e2e8f0;
-      border-radius: 6px;
+      border-radius: 12px;
     }
-    #code-section label { display: block; margin-bottom: 8px; font-weight: 500; }
+    #code-section label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+    }
+    #code-section .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #secret-code {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+    }
+
     #code-input {
-      padding: 8px;
-      font-size: 1em;
-      width: 220px;
-      margin-right: 8px;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
+      padding: 10px 12px;
+      font-size: 14px;
+      width: 240px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      outline: none;
+      color: #1f2937;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
+    #code-input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+    }
+
     #submit-code {
-      padding: 8px 18px;
-      font-size: 1em;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       background: #16a34a;
       color: #fff;
-      border: none;
-      border-radius: 6px;
+      border: 1px solid #16a34a;
+      border-radius: 8px;
+      transition: background 0.15s, border-color 0.15s;
     }
-    #submit-code:hover { background: #15803d; }
+    #submit-code:hover { background: #15803d; border-color: #15803d; }
+
     #code-error {
       margin-top: 10px;
       color: #dc2626;
-      font-weight: 500;
+      font-size: 13px;
+      font-weight: 600;
     }
+
+    /* Success banner */
     #success-banner {
-      margin-top: 20px;
-      padding: 16px;
-      background: #dcfce7;
+      margin-top: 24px;
+      padding: 20px;
+      background: #f0fdf4;
       border: 2px solid #22c55e;
-      border-radius: 8px;
-      font-size: 1.3em;
-      font-weight: bold;
+      border-radius: 12px;
+      font-size: 20px;
+      font-weight: 700;
       color: #166534;
       text-align: center;
     }
   </style>
 </head>
 <body>
-  <h1>Navigation Challenge</h1>
-  <p class="instructions">Click the "Advance" button 3 times to reveal the secret code.</p>
+  <div class="header">
+    <h1>Navigation Challenge</h1>
+  </div>
 
-  <div id="progress">Step 0 of 3</div>
-  <button id="advance-btn" type="button">Advance</button>
-  <div id="challenge-stage"></div>
+  <div class="container">
+    <div class="card">
+      <p class="instructions">Click the "Advance" button 3 times to reveal the secret code, then enter it and submit.</p>
+
+      <!-- Step indicator -->
+      <div class="step-indicator">
+        <div class="step-node">
+          <div class="step-circle active" id="step-circle-1">1</div>
+          <div class="step-label active" id="step-label-1">Click</div>
+        </div>
+        <div class="step-connector" id="step-conn-1"></div>
+        <div class="step-node">
+          <div class="step-circle" id="step-circle-2">2</div>
+          <div class="step-label" id="step-label-2">Click</div>
+        </div>
+        <div class="step-connector" id="step-conn-2"></div>
+        <div class="step-node">
+          <div class="step-circle" id="step-circle-3">3</div>
+          <div class="step-label" id="step-label-3">Click</div>
+        </div>
+        <div class="step-connector" id="step-conn-3"></div>
+        <div class="step-node">
+          <div class="step-circle" id="step-circle-4">4</div>
+          <div class="step-label" id="step-label-4">Submit</div>
+        </div>
+      </div>
+
+      <div id="progress">Step 0 of 3</div>
+      <button id="advance-btn" type="button">Advance</button>
+      <div id="challenge-stage"></div>
+    </div>
+  </div>
 
   <script>
     var SECRET = 'ALPHA-7492';
@@ -81,13 +255,56 @@
     var codeErrorEl = null;
     var successBannerEl = null;
 
+    /* Step indicator update */
+    function updateStepIndicator(currentStep, codePhase) {
+      for (var i = 1; i <= 4; i++) {
+        var circle = document.getElementById('step-circle-' + i);
+        var label = document.getElementById('step-label-' + i);
+        if (!circle || !label) continue;
+
+        circle.classList.remove('active', 'completed');
+        label.classList.remove('active', 'completed');
+
+        if (codePhase && i <= 3) {
+          circle.classList.add('completed');
+          label.classList.add('completed');
+        } else if (i <= currentStep) {
+          circle.classList.add('completed');
+          label.classList.add('completed');
+        } else if (i === currentStep + 1 && !codePhase) {
+          circle.classList.add('active');
+          label.classList.add('active');
+        }
+      }
+      if (codePhase) {
+        var c4 = document.getElementById('step-circle-4');
+        var l4 = document.getElementById('step-label-4');
+        if (c4 && l4) {
+          c4.classList.remove('completed');
+          c4.classList.add('active');
+          l4.classList.remove('completed');
+          l4.classList.add('active');
+        }
+      }
+      for (var c = 1; c <= 3; c++) {
+        var conn = document.getElementById('step-conn-' + c);
+        if (!conn) continue;
+        conn.classList.remove('completed');
+        if (codePhase && c <= 3) {
+          conn.classList.add('completed');
+        } else if (c <= currentStep) {
+          conn.classList.add('completed');
+        }
+      }
+    }
+
     function renderEntryStage() {
       if (document.getElementById('code-section')) return;
       stageEl.innerHTML =
         '<div id="secret-code">Secret code: ' + SECRET + '</div>' +
         '<div id="code-section">' +
         '  <label for="code-input">Enter the secret code</label>' +
-        '  <div>' +
+        '  <div class="input-row">' +
         '    <input id="code-input" type="text" placeholder="Enter the secret code" />' +
         '    <button id="submit-code" type="button">Submit Code</button>' +
         '  </div>' +
@@ -105,6 +322,18 @@
       successBannerEl.id = 'success-banner';
       successBannerEl.textContent = 'Challenge Complete!';
       stageEl.appendChild(successBannerEl);
+
+      /* Mark all steps completed */
+      for (var i = 1; i <= 4; i++) {
+        var circle = document.getElementById('step-circle-' + i);
+        var label = document.getElementById('step-label-' + i);
+        if (circle) { circle.classList.remove('active'); circle.classList.add('completed'); }
+        if (label) { label.classList.remove('active'); label.classList.add('completed'); }
+      }
+      for (var c = 1; c <= 3; c++) {
+        var conn = document.getElementById('step-conn-' + c);
+        if (conn) conn.classList.add('completed');
+      }
     }
 
     function submitCode() {
@@ -126,12 +355,17 @@
     advanceBtn.addEventListener('click', function () {
       step++;
       progressEl.textContent = 'Step ' + step + ' of 3';
+      updateStepIndicator(step, false);
 
       if (step >= 3) {
         advanceBtn.style.display = 'none';
         renderEntryStage();
+        updateStepIndicator(3, true);
       }
     });
+
+    /* Initialize indicator */
+    updateStepIndicator(0, false);
   </script>
 </body>
 </html>

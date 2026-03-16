@@ -17,9 +17,10 @@ import {
 interface TurnCardProps {
   entry: TraceEntry;
   index: number;
+  sessionId: string;
 }
 
-export default function TurnCard({ entry, index }: TurnCardProps) {
+export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
   const turnNum = entry.turnNumber ?? index + 1;
   const model = entry.llmRequest?.model ?? "";
   const llmResponse = entry.llmResponse;
@@ -95,7 +96,7 @@ export default function TurnCard({ entry, index }: TurnCardProps) {
           toolCalls={toolCalls}
         />
         <TurnToolResultsSection toolExecutions={toolExecutions} />
-        <TurnSnapshotSection snapshot={snapshot} perception={entry.perception} />
+        <TurnSnapshotSection snapshot={snapshot} perception={entry.perception} sessionId={sessionId} turnNumber={turnNum} />
         {progressState && (
           <TurnProgressState progressState={progressState} />
         )}

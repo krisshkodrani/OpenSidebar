@@ -1,119 +1,28 @@
 /**
- * E2E: Dashboard — read table data, apply filters, switch tabs, save settings.
- *
- * Tests the agent on a dense interactive page with a data table, tab panels,
- * and a settings form hidden behind a tab. Targets grounding on dense pages,
- * perception of hidden-tab content, and element ID stability across state changes.
+ * E2E: Dashboard — switch to Settings tab, enter email, save settings.
  *
  * Run: npm run test:e2e
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import {
-  launchWithExtension,
-  closeExtension,
-  openHelperPage,
-  type ExtensionContext,
-} from "./helpers/browser";
-import {
-  getActiveTabId,
-  navigateAndWait,
-  resetExtensionState,
-  sendUserChat,
-  setupEventMonitor,
-  waitForOutcome,
-} from "./helpers/utils";
-import {
-  startFixtureServer,
-  stopFixtureServer,
-  getFixtureUrl,
-} from "./helpers/fixture-server";
-import {
-  startLogServer,
-  stopLogServer,
-  snapshotTraceFiles,
-  findNewTraceFile,
-  readTrace,
-  formatTraceSummary,
-  attachSwConsole,
-} from "./helpers/diagnostics";
-import type { Page } from "puppeteer";
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
-import { fileURLToPath } from "url";
+import { createE2EHarness } from "./helpers/harness";
+import { getActiveTabId, navigateAndWait, sendUserChat, waitForOutcome } from "./helpers/utils";
+import { getFixtureUrl } from "./helpers/fixture-server";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const h = createE2EHarness({ maxTurns: 20, testLabel: "dashboard" });
 
-function loadApiKey(): string | undefined {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  const envPath = resolve(__dirname, "../../.env");
-  if (!existsSync(envPath)) return undefined;
-  const content = readFileSync(envPath, "utf-8");
-  const match = content.match(/OPENROUTER_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-const API_KEY = loadApiKey();
-
-describe.skipIf(!API_KEY)("E2E: Dashboard", () => {
-  let ctx: ExtensionContext;
-  let page: Page;
-  let detachConsole: (() => void) | null = null;
-  let tracesBefore: Set<string>;
-
-  beforeAll(async () => {
-    await startLogServer();
-    await startFixtureServer();
-    ctx = await launchWithExtension();
-    detachConsole = await attachSwConsole(ctx.browser);
-
-    const pages = await ctx.browser.pages();
-    page = pages.find((candidate) => !candidate.url().startsWith("chrome-extension://"))
-      || (await ctx.browser.newPage());
-
-    const helper = await openHelperPage(ctx);
-    await helper.evaluate(async (key: string) => {
-      await chrome.storage.local.set({ openRouterApiKey_local: key });
-      await chrome.storage.sync.set({
-        userSettings: {
-          requireApprovals: false,
-          allowNavigation: false,
-          requirePlanConfirmation: false,
-          showElementTags: false,
-          maxTurns: 20,
-        },
-      });
-    }, API_KEY!);
-    await helper.close();
-
-    await setupEventMonitor(ctx.serviceWorker);
-  }, 60_000);
-
-  beforeEach(async () => {
-    await resetExtensionState(ctx);
-    tracesBefore = snapshotTraceFiles();
-    if (page.isClosed()) {
-      page = await ctx.browser.newPage();
-    }
-  });
-
-  afterEach(async () => {
-    await resetExtensionState(ctx);
-  });
-
-  afterAll(async () => {
-    if (detachConsole) detachConsole();
-    if (ctx) await closeExtension(ctx);
-    await stopFixtureServer();
-    await stopLogServer();
-  });
+describe.skipIf(!h.apiKey)("E2E: Dashboard", () => {
+  beforeAll(() => h.beforeAllHook(), 60_000);
+  beforeEach(() => h.beforeEachHook());
+  afterEach(() => h.afterEachHook("dashboard"));
+  afterAll(() => h.afterAllHook());
 
   it(
     "agent reads table data, switches to Settings tab, and saves settings",
     async () => {
-      await navigateAndWait(page, getFixtureUrl("dashboard.html"));
-      await page.bringToFront();
-      const tabId = await getActiveTabId(ctx.serviceWorker);
+      await navigateAndWait(h.page, getFixtureUrl("dashboard.html"));
+      await h.page.bringToFront();
+      const tabId = await getActiveTabId(h.ctx.serviceWorker);
       expect(tabId).toBeGreaterThan(0);
 
       const prompt = [
@@ -128,13 +37,13 @@ describe.skipIf(!API_KEY)("E2E: Dashboard", () => {
         "Verify the success toast 'Settings saved successfully!' appears.",
       ].join("\n");
 
-      const workspaceId = await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
       const outcome = await waitForOutcome(
-        page,
-        ctx.serviceWorker,
+        h.page,
+        h.ctx.serviceWorker,
         async () => {
-          const settings = await page.evaluate(
+          const settings = await h.page.evaluate(
             () => (window as any).dashboardSettings ?? null,
           );
           return settings || null;
@@ -143,19 +52,10 @@ describe.skipIf(!API_KEY)("E2E: Dashboard", () => {
         workspaceId,
       );
 
-      // Always print trace summary
-      await new Promise((r) => setTimeout(r, 2_000));
-      const traceFile = findNewTraceFile(tracesBefore);
-      if (traceFile) {
-        const turns = readTrace(traceFile);
-        console.log(formatTraceSummary(turns));
-        console.log(`[e2e] Trace file: ${traceFile}`);
-      } else {
-        console.log("[e2e] No trace file found");
-      }
+      await h.printTraceSummary();
 
       if (!outcome.ok) {
-        const ui = await page.evaluate(() => ({
+        const ui = await h.page.evaluate(() => ({
           activeTab: document.querySelector(".tab-btn.active")?.textContent?.trim() || "",
           toastVisible: !document.getElementById("settings-toast")?.classList.contains("hidden"),
           settingsEmail: (document.getElementById("settings-email") as HTMLInputElement)?.value || "",
