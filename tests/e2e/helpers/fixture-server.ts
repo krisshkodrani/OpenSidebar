@@ -38,7 +38,7 @@ export async function startFixtureServer(): Promise<number> {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       const urlPath = req.url?.split("?")[0] ?? "/";
-      const filename = urlPath === "/" ? "test-page.html" : urlPath.slice(1);
+      const filename = urlPath === "/" ? "summarize-page.html" : urlPath.slice(1);
       const filePath = path.join(FIXTURES_DIR, filename);
 
       if (!fs.existsSync(filePath)) {

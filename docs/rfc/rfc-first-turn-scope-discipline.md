@@ -8,7 +8,7 @@ Proposed
 - **Book 2**: Antonio Gulli, *Agentic Design Patterns* (2025). Ch "Prompt Chaining" (lines 192-193) &mdash; decompose into unambiguous single-predicate steps. Ch "Contractor Model" (lines 3440-3442) &mdash; formalized contracts with negotiation phase to resolve ambiguity before execution. Ch 20 "Prioritization" (lines 3484-3489) &mdash; rank actions by significance to primary objective.
 - **Book 3**: Denis Rothman, *Context Engineering for Multi-Agent Systems* (Packt, 2025). Ch "Ambiguous Requests" (lines 5309-5318) &mdash; enrich context library with recognized goal templates; surface ambiguity rather than guessing.
 - **Internal trace**: `0793f95c-0adb-41dc-9eec-c1141c91fb34` &mdash; step 5 challenge page. 24 turns, 8 turns to solve step 5 (should be 3), 16 wasted turns continuing on step 6 after objective was met.
-- **Related RFC**: [Programmatic Verification](./rfc-programmatic-verification.md) &mdash; overlaps on the completion-gate mechanism (S1 there is prerequisite for F2 here).
+- **Related workstream**: Programmatic verification overlaps on the completion-gate mechanism; the shared verification signals should be implemented together with the predicate work described here.
 
 ## Context
 
@@ -103,7 +103,7 @@ This is the structural equivalent of DMA Ch 15 &sect;15.5.1's TaskStatusTool &md
 
 **Files**: `src/background/orchestrator/planner.ts` (emit predicates), `src/background/agent/loop.ts` (check after each tool execution), `src/types/index.ts` (extend `PlanNode`).
 
-**Interaction with Programmatic Verification RFC**: The predicates proposed here are the same signals that RFC's `programmaticVerify()` function would check. F1 here provides the per-step predicates; the Programmatic Verification RFC provides the verification gate that consumes them.
+**Interaction with programmatic verification work**: The predicates proposed here are the same signals that a future `programmaticVerify()` function would check. F1 here provides the per-step predicates; the verification layer would consume them.
 
 ### F2: Perception cache invalidation on URL change
 
@@ -206,7 +206,7 @@ These require coordinated changes across planner, loop, and types.
 | F1: Predicate type + loop check | ~80 lines | `types/index.ts`, `loop.ts`, `orchestrator/planner.ts` | Medium &mdash; planner prompt change may affect decomposition quality |
 | F3: Decomposition guideline | ~20 lines | `decompose_system.md`, `planner.ts` (prompt only) | Medium &mdash; may increase node count, need eval coverage |
 
-**Dependency**: F1's loop-side predicate check should reuse the same signal infrastructure proposed in the [Programmatic Verification RFC](./rfc-programmatic-verification.md). Implement them together or sequence F1 after that RFC's S1.
+**Dependency**: F1's loop-side predicate check should reuse the same verification-signal infrastructure planned for programmatic verification. Implement them together or sequence F1 after that foundation lands.
 
 ## Testing
 
