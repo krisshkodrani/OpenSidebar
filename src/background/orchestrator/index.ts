@@ -139,6 +139,19 @@ function getActivePlanObjective(planState: ReturnType<typeof buildInitialPlanSta
   return description || null;
 }
 
+function isTabOccupiedByRunningNode(
+  tabId: number,
+  nodeTabMap: Map<string, number>,
+  nodes: TaskNode[],
+): boolean {
+  for (const [nodeId, assignedTabId] of nodeTabMap) {
+    if (assignedTabId !== tabId) continue;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (node?.status === "running") return true;
+  }
+  return false;
+}
+
 function synthesizePlanStateFromSingleNode(node: TaskNode) {
   const stepPattern =
     /(?:^|\n)\s*Step\s+(\d+)\s*:\s*([\s\S]*?)(?=(?:\n\s*Step\s+\d+\s*:)|$)/gi;
@@ -1736,19 +1749,51 @@ export class Orchestrator {
       let tabId: number;
       const previousTabId = nodeTabMap.get(node.id);
       if (previousTabId != null) {
-        // Retry: reuse tab from previous attempt (validate it still exists)
+        // 1. Retry: reuse tab from previous attempt (validate it still exists)
         try {
           await chrome.tabs.get(previousTabId);
           tabId = previousTabId;
         } catch {
-          tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
+          tabId = input.tabId; // Fallback to user's tab
         }
       } else if (nodeTabMap.size === 0) {
-        // First node: use the user's original tab
+        // 2. First node: use the user's original tab
         tabId = input.tabId;
       } else {
-        // Additional parallel node: create a new worker tab
-        tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
+        // 3. Sequential dependency: reuse the predecessor's tab
+        const depTabId = node.dependencies
+          .map((depId) => nodeTabMap.get(depId))
+          .find((id) => id != null);
+        if (depTabId != null) {
+          try {
+            await chrome.tabs.get(depTabId);
+            tabId = depTabId;
+          } catch {
+            tabId = input.tabId; // Fallback to user's tab
+          }
+        } else if (input.settings.allowNavigation === false) {
+          // allowNavigation disabled: never create new tabs
+          tabId = input.tabId;
+        } else if (
+          isTabOccupiedByRunningNode(input.tabId, nodeTabMap, task.nodes)
+        ) {
+          // 4. User's tab is occupied by a running node — create if under cap
+          const createdCount = task.createdWorkerTabIds?.length ?? 0;
+          if (createdCount < task.maxWorkers - 1) {
+            tabId = await this.createWorkerTab(
+              initialTabUrl,
+              task.workspaceId,
+            );
+            if (!task.createdWorkerTabIds) task.createdWorkerTabIds = [];
+            task.createdWorkerTabIds.push(tabId);
+          } else {
+            // Over cap: fallback to user's tab
+            tabId = input.tabId;
+          }
+        } else {
+          // 5. User's tab is free: reuse it
+          tabId = input.tabId;
+        }
       }
       nodeTabMap.set(node.id, tabId);
 
@@ -2755,6 +2800,7 @@ export class Orchestrator {
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
       this.sendTerminationCompletion(task, "Stopped by user during execution");
+      await this.closeWorkerTabs(task);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
@@ -2843,6 +2889,7 @@ export class Orchestrator {
     );
 
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
+    await this.closeWorkerTabs(task);
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
@@ -2969,6 +3016,7 @@ export class Orchestrator {
     if (task.nodes.length > 0) {
       this.sendTerminationCompletion(task, "Stopped by user");
     }
+    void this.closeWorkerTabs(task);
     void this.persistTaskCheckpoint(task);
     const pools = this.workersByWorkspace.get(workspaceId);
     const workers = pools?.executor;
@@ -3002,6 +3050,17 @@ export class Orchestrator {
     if (!tab.id) throw new Error("Failed to create worker tab");
     await this.deps.workspaceManager.addTabToWorkspace(tab.id, workspaceId);
     return tab.id;
+  }
+
+  private async closeWorkerTabs(task: OrchestratorTask): Promise<void> {
+    for (const tabId of task.createdWorkerTabIds ?? []) {
+      if (tabId === task.rootTabId) continue;
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch {
+        /* tab already closed */
+      }
+    }
   }
 
   private async getSnapshot(
