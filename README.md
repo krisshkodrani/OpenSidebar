@@ -75,9 +75,72 @@ The extension runs in three isolated Chrome contexts. The service worker owns th
 | UI | React 18 + Tailwind CSS + Zustand |
 | Build | Vite |
 
-## Evals
+## Common Workflows
 
-OpenSidebar ships with trace-based evals for both action quality and perception quality.
+### Run the app locally
+
+Use this when you want the extension, log drain, and trace viewer running together.
+
+```bash
+npm run dev
+```
+
+What you get:
+
+- Vite build/watch for the extension
+- log server
+- trace viewer at `http://127.0.0.1:7589/viewer`
+
+### Build the extension
+
+Use this before loading `dist/` into Chrome or before running the E2E suite manually.
+
+```bash
+npm run build
+```
+
+### Run unit and integration tests
+
+Use this for the normal fast test pass.
+
+```bash
+npm test
+```
+
+### Run E2E tests
+
+Use this when validating real browser behavior with the built extension.
+
+Prerequisite:
+
+- `OPENROUTER_API_KEY`
+
+```bash
+npm run test:e2e
+```
+
+Related surfaces:
+
+- fixture pages under `tests/e2e/fixtures/`
+- trace viewer
+- dated reports under `docs/e2e-report-YYYY-MM-DD.md`
+
+### Inspect logs and traces
+
+Use this when debugging the agent loop, tool execution, or E2E runs.
+
+```bash
+npm run logs
+npm run traces
+```
+
+Viewer:
+
+- `http://127.0.0.1:7589/viewer`
+
+### Run evals
+
+Use this when measuring regressions or reviewing perception/action quality.
 
 ```bash
 npm run ci:evals:offline
@@ -93,6 +156,32 @@ Frozen perception baseline:
 - `18/20` pass on the checked-in perception suite
 
 See [evals/README.md](./evals/README.md) for the current eval workflow.
+
+## Developer Surfaces
+
+### App runtime
+
+- side panel UI
+- service worker agent loop
+- content script DOM actions
+
+### E2E harness
+
+- real Chrome run with the built extension
+- fixture server and task helpers
+- dated report convention in `docs/`
+
+### Observability
+
+- structured logs
+- JSONL traces
+- trace viewer
+
+### Evals
+
+- offline structural validation
+- critique runs
+- perception validation
 
 ## Security & Privacy
 
@@ -110,20 +199,21 @@ See [evals/README.md](./evals/README.md) for the current eval workflow.
 - [Perception Layer](./docs/architecture/perception-layer.md)
 - [Developer Guide](./docs/developer-guide.md)
 - [Evals Guide](./docs/guides/evals-program.md)
+- [Dated E2E Report Example](./docs/e2e-report-2026-03-15.md)
 
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-Useful commands:
+Most contributors will want:
 
 ```bash
-npm run ci:lint
-npm run ci:test
-npm run ci:evals:offline
-npm run ci:build
+npm run dev
+npm test
 npm run test:e2e
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow-oriented command guide.
 
 ## License
 

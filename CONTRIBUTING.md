@@ -43,7 +43,55 @@ For deep architecture docs, see [`CLAUDE.md`](./CLAUDE.md) and [`docs/architectu
 
 ---
 
-## Commands
+## Common Workflows
+
+### Run the project locally
+
+Use this when you want the extension, logs, and trace viewer together.
+
+```bash
+npm run dev
+```
+
+### Run normal tests
+
+Use this for the default fast validation loop.
+
+```bash
+npm test
+```
+
+### Run the real-browser E2E suite
+
+Use this when validating end-to-end browser behavior.
+
+Prerequisite:
+
+- `OPENROUTER_API_KEY`
+
+```bash
+npm run test:e2e
+```
+
+### Inspect logs and traces
+
+Use this when debugging agent behavior or reviewing E2E runs.
+
+```bash
+npm run logs
+npm run traces
+```
+
+### Run evals
+
+Use this when measuring regressions or replaying golden cases.
+
+```bash
+npm run evals:critique
+npm run evals:validate
+```
+
+## Command Reference
 
 | Command | Description |
 | --- | --- |
