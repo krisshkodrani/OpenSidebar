@@ -128,6 +128,8 @@ export interface OrchestratorTask {
   };
   /** Internal: tracks whether onStreamChunk forwarded non-empty content (for dedup) */
   _streamHasContent?: boolean;
+  /** Tab IDs created by the orchestrator for worker nodes (cleaned up on task end) */
+  createdWorkerTabIds?: number[];
 }
 
 export interface OrchestratorCheckpoint {

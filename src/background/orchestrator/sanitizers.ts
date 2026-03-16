@@ -298,6 +298,12 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     if (typeof raw.terminationReason !== "string") return null;
     task.terminationReason = raw.terminationReason;
   }
+  if (Array.isArray(raw.createdWorkerTabIds)) {
+    const tabIds = raw.createdWorkerTabIds.filter(
+      (id): id is number => isNonNegativeInteger(id),
+    );
+    if (tabIds.length > 0) task.createdWorkerTabIds = tabIds;
+  }
 
   return task;
 }
