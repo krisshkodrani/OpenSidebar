@@ -6,13 +6,13 @@ How two LLM tiers work together inside a single `AgentLoop` to solve browser aut
 
 | | Executor Model | Planner Model |
 |---|---|---|
-| **Models** | `gpt-oss-120b` (OpenRouter) | `deepseek-v3.2` (OpenRouter) |
+| **Models** | `gpt-4.1-mini` (OpenRouter) | `minimax-m2.5` (OpenRouter) |
 | **Provider Pool** | `ProviderPool` — OpenRouter | `ProviderPool` — OpenRouter |
 | **Reasoning** | Standard completion | Native reasoning (enabled by default) |
 | **Persona** | "sharp, resourceful web automation expert" | "seasoned systems thinker" |
 | **Role** | Handles routine observe→act cycles quickly | Breaks through when the executor model gets stuck |
 
-The executor model runs by default. It's cheap, fast, and handles the vast majority of turns — clicking, typing, navigating, reading pages. The planner model (DeepSeek V3.2) has native reasoning enabled by default and is called in only when the executor model demonstrably can't make progress.
+The executor model runs by default. It's cheap, fast, and handles the vast majority of turns — clicking, typing, navigating, reading pages. The planner model (MiniMax M2.5) is called in when the executor model demonstrably can't make progress.
 
 ### Pool Architecture
 
@@ -27,8 +27,8 @@ interface PoolConfig {
 Both pools use OpenRouter as the single provider.
 
 ```
-Executor Pool:  OpenRouter (openai/gpt-oss-120b)
-Planner Pool:   OpenRouter (deepseek/deepseek-v3.2)
+Executor Pool:  OpenRouter (openai/gpt-4.1-mini)
+Planner Pool:   OpenRouter (minimax/minimax-m2.5)
 ```
 
 ## Escalation Triggers
@@ -138,9 +138,9 @@ The `ESCALATION_REFLECTION` is critical. It tells the planner model:
 > 3. Call the appropriate tool to advance the task.
 > If the page state is unclear, start with read_page.
 
-### DeepSeek V3.2 Native Reasoning
+### Planner Model
 
-DeepSeek V3.2 has reasoning enabled by default. Unlike some models that require a `reasoning: { effort }` parameter, DeepSeek V3.2 thinks natively — no special API parameters needed. Sending reasoning parameters would cause API errors. This simplifies the escalation path: switching to the planner model is sufficient to get reasoning capabilities.
+The planner model (MiniMax M2.5) provides stronger reasoning for complex multi-step tasks. Switching to the planner model is sufficient to get enhanced reasoning capabilities.
 
 ## De-escalation
 
@@ -212,19 +212,19 @@ Both tiers use OpenRouter as the single provider:
 
 ### Executor Tier
 ```
-OpenRouter (openai/gpt-oss-120b)
+OpenRouter (openai/gpt-4.1-mini)
 ```
 
 ### Planner Tier
 ```
-OpenRouter (deepseek/deepseek-v3.2, native reasoning)
+OpenRouter (minimax/minimax-m2.5)
 ```
 
 `fetchWithRetry` returns `{ response, actualProviderId, actualModel }` so metrics are attributed correctly.
 
 ## Key Design Decisions
 
-1. **Two-tier, not three-tier.** DeepSeek V3.2 has native reasoning, so there's no need for a separate "planner-with-reasoning" tier. The system is simpler: executor (no reasoning) → planner (reasoning built-in).
+1. **Two-tier, not three-tier.** The system is simple: executor (fast, cheap) → planner (stronger reasoning).
 
 2. **Context distillation over context expansion.** Instead of expanding to 64K tokens and passing raw history, the system distills 40K+ tokens into ~1K of structured timeline, giving the planner model a cleaner signal.
 
@@ -240,7 +240,7 @@ OpenRouter (deepseek/deepseek-v3.2, native reasoning)
 
 ## Planner Integration
 
-The `TaskPlanner` (task decomposition and completion validation) also uses DeepSeek V3.2 via the planner pool:
+The `TaskPlanner` (task decomposition and completion validation) also uses MiniMax M2.5 via the planner pool:
 
 ```typescript
 constructor(openRouterApiKey: string) {

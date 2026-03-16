@@ -26,9 +26,9 @@ Side Panel (React/Zustand) <--> Service Worker (Agent Loop) <--> Content Script 
 
 | Component | Technology |
 | --- | --- |
-| Executor LLM | `openai/gpt-oss-120b` via OpenRouter |
-| Planner LLM | `deepseek/deepseek-v3.2` via OpenRouter |
-| Perception | Gemini 2.5 Flash via OpenRouter |
+| Executor LLM | `openai/gpt-4.1-mini` via OpenRouter |
+| Planner LLM | `minimax/minimax-m2.5` via OpenRouter |
+| Perception | `x-ai/grok-4.1-fast` via OpenRouter |
 | UI | React 18 + Tailwind CSS + Zustand |
 | Build | Vite + `@crxjs/vite-plugin` |
 | Tests | Vitest + happy-dom |
@@ -59,6 +59,8 @@ For deep architecture docs, see [`CLAUDE.md`](./CLAUDE.md) and [`docs/architectu
 | `npm run evals` | Eval CLI help |
 | `npm run evals:critique` | Replay golden cases + judge + generate report |
 | `npm run evals:validate` | Structural validation (offline, no API key) |
+| `npm run fixtures` | Serve demo fixture pages on `http://localhost:3333` |
+| `npm run test:e2e` | Build + E2E tests (requires `OPENROUTER_API_KEY`) |
 
 ---
 
@@ -187,6 +189,18 @@ npm run evals:validate       # Structural validation of golden cases (offline, n
 ```
 
 Golden cases live in `evals/golden/`. The eval pipeline source is in `evals/`.
+
+---
+
+## Demo Fixtures
+
+Interactive test pages live in `tests/e2e/fixtures/`. They serve double duty: E2E testing and live demos for screenshots/videos.
+
+```bash
+npm run fixtures    # Serves fixtures on http://localhost:3333 with a landing page
+```
+
+Open any fixture page, then use the OpenSidebar side panel to give the agent a task. The online shop is the best showcase — the agent adds a product to cart, applies a coupon code, selects shipping, fills checkout, and places an order.
 
 ---
 

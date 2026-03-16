@@ -13,6 +13,7 @@ npm run fmt            # Prettier format src/
 npm test               # Run all tests (vitest, excludes e2e)
 npx vitest run tests/content/tagging.test.ts  # Run a single test file
 npm run test:e2e       # E2E tests: build + launch Chrome + real agent (requires OPENROUTER_API_KEY)
+npm run fixtures       # Serve demo fixture pages on http://localhost:3333 (for screenshots/videos)
 
 # Logs & Traces
 npm run logs           # Start log drain server + trace viewer (http://127.0.0.1:7589/viewer)
@@ -29,6 +30,37 @@ npm run evals:validate # Structural validation of golden cases (offline, no API 
 `npm run dev` automatically clears stale processes on ports 5173/7589 before starting, preventing "port in use" errors from orphaned Vite processes.
 
 Scripts use `tsx` for TypeScript execution and `vitest` for testing. The `tsconfig.json` only includes `src/` — test files under `tests/` are not type-checked by `tsc`.
+
+## E2E Report Format
+
+When Claude runs the E2E suite or prepares an E2E summary report, write a dated markdown report in `docs/` using this filename pattern:
+
+- `docs/e2e-report-YYYY-MM-DD.md`
+
+Do not create or maintain an undated `docs/e2e-report.md`.
+
+Use this structure:
+
+1. `# E2E Final Report`
+2. `Date: YYYY-MM-DD`
+3. `Scope: ...`
+4. `Overall result: ...`
+5. A markdown table with columns:
+   - `Case`
+   - `Success`
+   - `Turns`
+   - `Perceptions`
+   - `Traces`
+   - `Prompt used`
+6. `## Metric Definitions`
+7. `## Stability Notes`
+
+Metric conventions:
+
+- `Turns`: total recorded trace turns across the trace file(s) for that case.
+- `Perceptions`: turns where the trace input included `Page Interpretation`.
+- `Traces`: number of trace sessions produced for that case, including replans or retries.
+- `Success`: whether the case completed successfully in the run.
 
 ## Architecture
 

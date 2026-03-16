@@ -742,7 +742,7 @@ export interface JsonSchemaProperty {
 
 ### Tool Argument Interfaces
 
-Each tool has a typed argument interface (35 tools):
+Each tool has a typed argument interface (38 tools):
 
 ```typescript
 /** Arguments for click_element */

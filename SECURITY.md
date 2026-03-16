@@ -14,9 +14,9 @@
 
 ### API Key Storage
 
-- API keys are stored in `chrome.storage.sync`
+- API keys are stored in `chrome.storage.local`
 - Chrome encrypts this data at rest
-- Keys never leave your browser
+- Keys are only sent to OpenRouter over HTTPS for authentication
 - No telemetry or external logging
 
 ### Data Privacy
