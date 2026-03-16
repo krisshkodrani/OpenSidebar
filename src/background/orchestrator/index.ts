@@ -3116,11 +3116,10 @@ export class Orchestrator {
       return lastCompleted.result;
     }
 
-    // Multi-node or partial: return empty — the TASK_COMPLETION card
-    // handles the structured display (subtask list, metrics, status).
-    // Avoids a redundant text dump above the card.
+    // Multi-node or partial: show the last completed node's result in full.
+    // The TASK_COMPLETION card below provides subtask list + metrics.
     if (completed > 0 && lastCompleted?.result) {
-      return lastCompleted.result.slice(0, 500);
+      return lastCompleted.result;
     }
 
     return "";
