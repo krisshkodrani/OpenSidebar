@@ -11,8 +11,9 @@ export default defineConfig({
     poolOptions: {
       forks: { singleFork: true },
     },
-    retry: 0,
+    retry: 1,
     include: ["tests/e2e/**/*.test.ts"],
+    globalSetup: ["tests/e2e/global-setup.ts"],
   },
   resolve: {
     alias: {

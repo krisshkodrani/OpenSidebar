@@ -378,6 +378,43 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         sendText(res, "Missing sessionId", 400);
         return;
       }
+
+      // Auto-extract inline screenshots to files (keeps JSONL compact)
+      const perception = entry?.perception as Record<string, unknown> | undefined;
+      const turnNumber = entry?.turnNumber;
+      if (perception && typeof turnNumber === "number") {
+        const dataUrl = perception.screenshotDataUrl;
+        if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
+          try {
+            const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+            const buffer = Buffer.from(base64, "base64");
+            const filename = `${sessionId}-T${turnNumber}.jpg`;
+            await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+          } catch { /* best-effort */ }
+          // Strip inline data URL — viewer will use the file-based API instead
+          delete perception.screenshotDataUrl;
+        }
+
+        // Also extract panoramic shots to files
+        const panoramicShots = perception.panoramicShots as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(panoramicShots)) {
+          for (let i = 0; i < panoramicShots.length; i++) {
+            const shot = panoramicShots[i];
+            const shotUrl = shot?.dataUrl;
+            if (typeof shotUrl === "string" && shotUrl.startsWith("data:image/")) {
+              try {
+                const base64 = shotUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+                const buffer = Buffer.from(base64, "base64");
+                const filename = `${sessionId}-T${turnNumber}-pan${i}.jpg`;
+                await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+                // Replace inline data URL with file reference
+                shot.dataUrl = `/api/traces/${sessionId}/screenshots/${turnNumber}-pan${i}`;
+              } catch { /* best-effort */ }
+            }
+          }
+        }
+      }
+
       const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
       await appendFile(traceFile, JSON.stringify(entry) + "\n");
       traceEntryCount++;
@@ -688,8 +725,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // GET /api/traces/:sessionId/screenshots/:turn — serve screenshot image
+  // Supports both primary (T3) and panoramic (T3-pan0) filenames
   const screenshotMatch = url.pathname.match(
-    /^\/api\/traces\/([a-zA-Z0-9_-]+)\/screenshots\/(\d+)$/,
+    /^\/api\/traces\/([a-zA-Z0-9_-]+)\/screenshots\/(\d+(?:-pan\d+)?)$/,
   );
   if (screenshotMatch && req.method === "GET") {
     const sessionId = screenshotMatch[1];

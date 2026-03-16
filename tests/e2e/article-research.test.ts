@@ -1,172 +1,29 @@
 /**
  * E2E: Article Research — scroll a long page to find a footnote citation.
  *
- * Tests scroll-dependent perception, read_page on long content,
- * and the agent's ability to locate specific information below the fold.
- *
  * Run: npm run test:e2e
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import {
-  launchWithExtension,
-  closeExtension,
-  openHelperPage,
-  type ExtensionContext,
-} from "./helpers/browser";
-import {
-  getActiveTabId,
-  getMonitoredEvents,
-  navigateAndWait,
-  resetExtensionState,
-  sendUserChat,
-  setupEventMonitor,
-} from "./helpers/utils";
-import {
-  startFixtureServer,
-  stopFixtureServer,
-  getFixtureUrl,
-} from "./helpers/fixture-server";
-import {
-  attachSwConsole,
-  findAllNewTraceFiles,
-  formatTraceSummary,
-  readTrace,
-  snapshotTraceFiles,
-  startLogServer,
-  stopLogServer,
-} from "./helpers/diagnostics";
-import type { Page } from "puppeteer";
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
-import { fileURLToPath } from "url";
+import { createE2EHarness } from "./helpers/harness";
+import { getActiveTabId, navigateAndWait, sendUserChat, waitForTaskCompletion } from "./helpers/utils";
+import { getFixtureUrl } from "./helpers/fixture-server";
+import { findAllNewTraceFiles, readTrace, formatTraceSummary } from "./helpers/diagnostics";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const h = createE2EHarness({ maxTurns: 12, testLabel: "article-research" });
 
-function loadApiKey(): string | undefined {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  const envPath = resolve(__dirname, "../../.env");
-  if (!existsSync(envPath)) return undefined;
-  const content = readFileSync(envPath, "utf-8");
-  const match = content.match(/OPENROUTER_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-async function waitForTaskCompletion(
-  ctx: ExtensionContext,
-  timeoutMs: number,
-  workspaceId: string,
-): Promise<{ ok: boolean; reason: string; events: any[] }> {
-  const start = Date.now();
-
-  while (Date.now() - start < timeoutMs) {
-    const events = (await getMonitoredEvents(ctx.serviceWorker, 80)).filter(
-      (event: any) =>
-        event.workspaceId == null || event.workspaceId === workspaceId,
-    );
-    const completion = [...events]
-      .reverse()
-      .find((event: any) => event.type === "TASK_COMPLETION");
-    if (completion?.status === "completed" || completion?.status === "partial") {
-      return { ok: true, reason: String(completion.status), events };
-    }
-
-    const taskCompleteStep = [...events]
-      .reverse()
-      .find(
-        (event: any) =>
-          event.type === "AGENT_STEP" &&
-          String(event.stepLabel || "").includes("Task complete"),
-      );
-    if (taskCompleteStep) {
-      return { ok: true, reason: "task_complete_step", events };
-    }
-
-    const lastStatus = [...events]
-      .reverse()
-      .find((event: any) => event.type === "AGENT_STATUS");
-    if (lastStatus?.status === "IDLE") {
-      return { ok: true, reason: "idle", events };
-    }
-    if (lastStatus?.status === "ERROR") {
-      return {
-        ok: false,
-        reason: `agent_error:${lastStatus.detail || "unknown"}`,
-        events,
-      };
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-  }
-
-  return {
-    ok: false,
-    reason: "timeout",
-    events: await getMonitoredEvents(ctx.serviceWorker, 80),
-  };
-}
-
-const API_KEY = loadApiKey();
-
-describe.skipIf(!API_KEY)("E2E: Article Research", () => {
-  let ctx: ExtensionContext;
-  let page: Page;
-  let detachConsole: (() => void) | null = null;
-  let tracesBefore: Set<string>;
-
-  beforeAll(async () => {
-    await startLogServer();
-    await startFixtureServer();
-    ctx = await launchWithExtension();
-    detachConsole = await attachSwConsole(ctx.browser);
-
-    const pages = await ctx.browser.pages();
-    page = pages.find((candidate) => !candidate.url().startsWith("chrome-extension://"))
-      || (await ctx.browser.newPage());
-
-    const helper = await openHelperPage(ctx);
-    await helper.evaluate(async (key: string) => {
-      await chrome.storage.local.set({ openRouterApiKey_local: key });
-      await chrome.storage.sync.set({
-        userSettings: {
-          requireApprovals: false,
-          allowNavigation: false,
-          requirePlanConfirmation: false,
-          showElementTags: false,
-          maxTurns: 12,
-        },
-      });
-    }, API_KEY!);
-    await helper.close();
-
-    await setupEventMonitor(ctx.serviceWorker);
-  }, 60_000);
-
-  beforeEach(async () => {
-    await resetExtensionState(ctx);
-    tracesBefore = snapshotTraceFiles();
-    if (page.isClosed()) {
-      page = await ctx.browser.newPage();
-    }
-  });
-
-  afterEach(async () => {
-    await resetExtensionState(ctx);
-  });
-
-  afterAll(async () => {
-    if (detachConsole) detachConsole();
-    if (ctx) await closeExtension(ctx);
-    await stopFixtureServer();
-    await stopLogServer();
-  });
+describe.skipIf(!h.apiKey)("E2E: Article Research", () => {
+  beforeAll(() => h.beforeAllHook(), 60_000);
+  beforeEach(() => h.beforeEachHook());
+  afterEach(() => h.afterEachHook("article-research"));
+  afterAll(() => h.afterAllHook());
 
   it(
     "agent scrolls to find a footnote source and reports it",
     async () => {
-      await navigateAndWait(page, getFixtureUrl("article-research.html"));
-      await page.bringToFront();
-      const tabId = await getActiveTabId(ctx.serviceWorker);
+      await navigateAndWait(h.page, getFixtureUrl("article-research.html"));
+      await h.page.bringToFront();
+      const tabId = await getActiveTabId(h.ctx.serviceWorker);
       expect(tabId).toBeGreaterThan(0);
 
       const prompt = [
@@ -175,14 +32,13 @@ describe.skipIf(!API_KEY)("E2E: Article Research", () => {
         "Report the full citation text.",
       ].join(" ");
 
-      const workspaceId = await sendUserChat(ctx, prompt, tabId);
+      const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
-      const outcome = await waitForTaskCompletion(ctx, 120_000, workspaceId);
+      const outcome = await waitForTaskCompletion(h.ctx, 120_000, workspaceId);
       expect(outcome.ok, JSON.stringify(outcome.events.slice(-10), null, 2)).toBe(true);
 
-      // Print trace summaries for diagnostics
       await new Promise((resolve) => setTimeout(resolve, 2_000));
-      const traceFiles = findAllNewTraceFiles(tracesBefore);
+      const traceFiles = findAllNewTraceFiles(h.tracesBefore);
 
       const allTurns = traceFiles.flatMap((f) => readTrace(f));
       for (const f of traceFiles) {
@@ -191,14 +47,12 @@ describe.skipIf(!API_KEY)("E2E: Article Research", () => {
         console.log(`[e2e:article-research] Trace: ${f}`);
       }
 
-      // Check done() summaries across all trace sessions for the footnote content
       const allToolCalls = allTurns.flatMap((turn) => turn.toolCalls);
       const doneCalls = allToolCalls.filter((tc) => tc.name === "done");
       const summaries = doneCalls.map(
         (tc) => String(tc.args?.summary ?? tc.args?.result ?? ""),
       );
 
-      // Also check LLM text content from all turns (agent may report via text, not done args)
       const allContent = allTurns
         .map((t) => t.llmContent ?? "")
         .filter(Boolean);
@@ -222,10 +76,6 @@ describe.skipIf(!API_KEY)("E2E: Article Research", () => {
       console.log(`[e2e] Total turns across ${traceFiles.length} sessions: ${allTurns.length}`);
       console.log(`[e2e] Done calls found: ${doneCalls.length}`);
 
-      // Primary assertion: task completed (already checked above).
-      // Secondary: agent found the footnote content somewhere in its output.
-      // This is best-effort since the planner may decompose into subtasks
-      // where the final synthesis happens at orchestrator level (not in traces).
       if (found) {
         console.log(`[e2e] PASS — Footnote [2] source found`);
         console.log(`[e2e]   Match: ${String(bestMatch).substring(0, 120)}...`);

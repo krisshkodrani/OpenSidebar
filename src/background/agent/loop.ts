@@ -133,6 +133,28 @@ const REPEAT_ACTION_EXEMPT_TOOLS = new Set<ToolName>([
 ]);
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
+/**
+ * Module-level screenshot cache: allows parallel agent loops on the same tab
+ * to share captured screenshots instead of each hitting the captureVisibleTab
+ * quota (2/sec). Cached entries expire after 3 seconds.
+ */
+const SCREENSHOT_CACHE_TTL_MS = 3000;
+const screenshotCache = new Map<number, { dataUrl: string; capturedAt: number }>();
+
+function getCachedScreenshot(tabId: number): string | undefined {
+  const entry = screenshotCache.get(tabId);
+  if (!entry) return undefined;
+  if (Date.now() - entry.capturedAt > SCREENSHOT_CACHE_TTL_MS) {
+    screenshotCache.delete(tabId);
+    return undefined;
+  }
+  return entry.dataUrl;
+}
+
+function setCachedScreenshot(tabId: number, dataUrl: string): void {
+  screenshotCache.set(tabId, { dataUrl, capturedAt: Date.now() });
+}
+
 export function isPerceptionFailurePlaceholder(
   interpretation: string | null | undefined,
 ): boolean {
@@ -2332,18 +2354,33 @@ export class AgentLoop {
           primaryScrollY = 0;
         }
 
-        // Only capture if the agent's tab is the visible one — otherwise
-        // captureVisibleTab returns the wrong page or a black frame.
+        // Ensure the agent's tab is the visible one before capturing —
+        // captureVisibleTab captures whatever tab is active in the window.
         const tab = await chrome.tabs.get(tabId);
-        if (tab.active) {
-          dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
-            format: "jpeg",
-            quality: 70,
-          });
+        if (!tab.active) {
+          try {
+            await chrome.tabs.update(tabId, { active: true });
+          } catch {
+            // Tab may have been closed — fall back to cache
+          }
+        }
+
+        try {
+          const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
+          dataUrl = await this.captureVisibleTabWithRetry(
+            refreshedTab.windowId,
+            { format: "jpeg", quality: 70 },
+          );
+          setCachedScreenshot(tabId, dataUrl);
+        } catch {
+          // Quota or other capture error — fall back to shared cache
+          dataUrl = getCachedScreenshot(tabId);
+        }
+        if (dataUrl) {
           this.perception.setScreenshotUrl(dataUrl);
         }
 
-        // No screenshot available (tab not active) — use element-only fallback
+        // No screenshot available — use element-only fallback
         // instead of calling VLM with an invalid image URL.
         if (!dataUrl) {
           if (isFirstPerception) {
