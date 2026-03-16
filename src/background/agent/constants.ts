@@ -217,7 +217,7 @@ export const FRESH_START = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Difficulty-Adaptive Runtime Limits (RFC: rfc-adaptive-runtime-limits.md)
+// Difficulty-Adaptive Runtime Limits
 // ---------------------------------------------------------------------------
 
 /** Task difficulty level assessed by the planner at plan time */
