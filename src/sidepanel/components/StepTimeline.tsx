@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -28,6 +28,8 @@ import {
   ArrowLeft,
   Layers,
   MonitorCheck,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { AgentStep, ToolName } from "../../types";
 import { clsx } from "clsx";
@@ -150,7 +152,7 @@ function StepRow({ step }: { step: AgentStep }) {
           <img
             src={step.screenshotUrl}
             alt="Page screenshot"
-            className="max-h-20 rounded border border-warm-200/60 dark:border-warm-700/40 cursor-pointer opacity-90 hover:opacity-100 transition-opacity"
+            className="max-h-28 rounded border border-warm-200/60 dark:border-warm-700/40 cursor-pointer opacity-90 hover:opacity-100 transition-opacity"
             onClick={() => window.open(step.screenshotUrl, "_blank")}
           />
         </div>
@@ -164,18 +166,47 @@ function StepRow({ step }: { step: AgentStep }) {
   );
 }
 
+/** Threshold above which older steps are collapsed by default */
+const COLLAPSE_THRESHOLD = 5;
+/** How many recent steps remain visible when collapsed */
+const VISIBLE_TAIL = 3;
+
 export const StepTimeline = React.memo(function StepTimeline({
   steps,
 }: {
   steps: AgentStep[];
   defaultCollapsed?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (steps.length === 0) return null;
 
+  const hasRunning = steps.some((s) => s.status === "running");
+  const shouldCollapse = !expanded && !hasRunning && steps.length > COLLAPSE_THRESHOLD;
+  const visibleSteps = shouldCollapse ? steps.slice(-VISIBLE_TAIL) : steps;
+  const hiddenCount = steps.length - visibleSteps.length;
+
   return (
-    <div className="max-w-[90%] mb-1">
+    <div className="max-w-[92%] mb-1">
       <div className="ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-px">
-        {steps.map((step) => (
+        {shouldCollapse && (
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
+          >
+            <ChevronRight size={11} />
+            <span>{hiddenCount} earlier step{hiddenCount > 1 ? "s" : ""}</span>
+          </button>
+        )}
+        {expanded && hiddenCount === 0 && steps.length > COLLAPSE_THRESHOLD && (
+          <button
+            onClick={() => setExpanded(false)}
+            className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
+          >
+            <ChevronDown size={11} />
+            <span>Collapse</span>
+          </button>
+        )}
+        {visibleSteps.map((step) => (
           <StepRow key={step.id} step={step} />
         ))}
       </div>

@@ -250,16 +250,14 @@ export class ContextManager {
     const doneList =
       doneSteps.length > 0 ? doneSteps.map(formatDoneItem).join(", ") : "";
 
-    const nextStep =
-      currentIndex + 1 < total ? subtasks[currentIndex + 1] : null;
-
     let block = `## Plan [${currentIndex + 1}/${total}] "${currentDesc}"\n`;
     if (doneList) {
       block += `Done: ${doneList}\n`;
       block += `Do NOT revisit completed step URLs.\n`;
     }
-    if (nextStep) {
-      block += `Next: ${currentIndex + 2}. ${nextStep.description}\n`;
+    const remainingSteps = Math.max(total - currentIndex - 1, 0);
+    if (remainingSteps > 0) {
+      block += `Remaining after this step: ${remainingSteps}\n`;
     }
     // Append verification gate for current subtask
     const currentSubtask = subtasks[currentIndex];
@@ -856,7 +854,7 @@ Do NOT call done() until every planned step is complete.
   }
 
   /** Maximum items shown per group before collapsing the rest into a summary. */
-  private static readonly GROUP_COLLAPSE_THRESHOLD = 8;
+  private static readonly GROUP_COLLAPSE_THRESHOLD = 100;
 
   /**
    * Apply compression to elements based on current level.
@@ -872,9 +870,9 @@ Do NOT call done() until every planned step is complete.
     if (level === CompressionLevel.HEAVY) {
       // Keep only top 10 by navigation relevance
       processed = this.selectRelevantElements(elements, 10);
-    } else if (level === CompressionLevel.NONE && processed.length > 60) {
-      // Hard cap at 60 elements even at NONE to prevent pathological 3000+ token lists
-      processed = this.selectRelevantElements(elements, 60);
+    } else if (level === CompressionLevel.NONE && processed.length > 200) {
+      // Hard cap at 200 elements at NONE — token savings from compact format offset the budget
+      processed = this.selectRelevantElements(elements, 200);
     }
 
     // Determine text/attr compression per level

@@ -20,6 +20,32 @@ export const DEESCALATION_REFLECTION = renderPrompt("agent.reflection.deescalati
 export const HANDOFF_REFLECTION = (briefing: string) =>
   renderPrompt("agent.reflection.handoff", { briefing });
 
+/** Recovery message for repeated escalations on the same step — forces a strategy break. */
+export const ESCALATION_RECOVERY = (count: number, stepLabel?: string) =>
+  `RECOVERY REQUIRED (escalation #${count}${stepLabel ? ` on ${stepLabel}` : ""}): Previous escalations did not resolve this. You MUST either:\n` +
+  `1. Navigate to a different page (go_to_url, go_back).\n` +
+  `2. Call done() explaining this step is blocked.\n` +
+  `3. Call clarify() to ask the user.\n` +
+  `Do NOT repeat the same investigation — the information is not on this page.`;
+
 /** Message injected during a strategy pivot — tells the agent what NOT to retry. */
 export const PIVOT_MESSAGE = (attemptSummary: string) =>
   renderPrompt("agent.reflection.pivot", { attemptSummary });
+
+/** Built-in demonstration for multi-item shopping flows. */
+export const BUILTIN_DEMO_MULTI_ITEM_SHOPPING = renderPrompt(
+  "demos.multi_item_shopping",
+);
+
+/** Check if a query matches the multi-item shopping pattern. */
+export function matchesMultiItemPattern(query: string): boolean {
+  const q = query.toLowerCase();
+  const hasMultipleItems =
+    /add\b.*\band\b/i.test(q) ||
+    /step\s*1.*step\s*2/i.test(q) ||
+    /two\s+items|2\s+items|multiple\s+items/i.test(q) ||
+    /\badd\b.*\bthen\b.*\badd\b/i.test(q);
+  const hasShoppingContext =
+    /cart|shop|buy|order|checkout|add to cart/i.test(q);
+  return hasMultipleItems && hasShoppingContext;
+}

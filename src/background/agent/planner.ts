@@ -314,7 +314,18 @@ export class TaskPlanner {
         }
       }
 
-      if (!parsed.isMultiStep) {
+      // Guard: if difficulty is "simple" but model said isMultiStep, override.
+      // Simple tasks (read, summarize, single interactions) should never be decomposed.
+      const forceSimple = parsed.isMultiStep && difficulty === "simple";
+      if (forceSimple) {
+        logger.info(
+          "agent",
+          "Planner returned isMultiStep=true but difficulty=simple — overriding to single-step",
+          { originalStepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0 },
+        );
+      }
+
+      if (!parsed.isMultiStep || forceSimple) {
         // Simple task — extract single step if provided, otherwise empty
         const singleSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
         const singleSubtasks = singleSteps
@@ -329,7 +340,7 @@ export class TaskPlanner {
             outcome: "simple_task",
             parsedStepCount: singleSteps.length,
             parsedSubtaskCount: singleSubtasks.length,
-            requestedMultiStep: false,
+            requestedMultiStep: forceSimple,
           },
         };
       }
@@ -837,6 +848,7 @@ Current perception:\n${perception.slice(0, 800)}`,
     perception: string,
     pageUrl: string,
     signal?: AbortSignal,
+    failureContext?: string,
   ): Promise<ReplanResult | null> {
     try {
       const REPLAN_SYSTEM = renderPrompt("planner.replan.system");
@@ -857,7 +869,7 @@ Current perception:\n${perception.slice(0, 800)}`,
           { role: "system", content: REPLAN_SYSTEM },
           {
             role: "user",
-            content: `Original task: ${originalQuery}\n\nCompleted steps:\n${completedText}\n\nDeviated at step ${failedStep.index + 1}: "${failedStep.objective}"\n\nCurrent URL: ${pageUrl}\nCurrent perception:\n${perception.slice(0, 1000)}`,
+            content: `Original task: ${originalQuery}\n\nCompleted steps:\n${completedText}\n\nDeviated at step ${failedStep.index + 1}: "${failedStep.objective}"${failureContext ? `\n\nFailure analysis:\n${failureContext}` : ""}\n\nCurrent URL: ${pageUrl}\nCurrent perception:\n${perception.slice(0, 1000)}`,
           },
         ],
         max_tokens: 4096,
@@ -933,6 +945,24 @@ Current perception:\n${perception.slice(0, 800)}`,
           }
         }
 
+        // Infer tool profile for replan steps (same logic as decompose)
+        let toolProfile: PlanStep["toolProfile"];
+        if (
+          typeof obj.toolProfile === "string" &&
+          VALID_TOOL_PROFILES.has(obj.toolProfile as ToolProfile)
+        ) {
+          toolProfile = obj.toolProfile as PlanStep["toolProfile"];
+        } else {
+          const sc =
+            typeof obj.successCriteria === "string"
+              ? obj.successCriteria.trim()
+              : "Step completed.";
+          toolProfile = inferToolProfileForStep(
+            (obj.objective as string).trim(),
+            sc,
+          );
+        }
+
         newSteps.push({
           objective: (obj.objective as string).trim(),
           successCriteria:
@@ -945,6 +975,7 @@ Current perception:\n${perception.slice(0, 800)}`,
                 .filter((a): a is string => typeof a === "string")
                 .map((a) => a.trim())
             : [],
+          ...(toolProfile ? { toolProfile } : {}),
           ...(expectedState ? { expectedState } : {}),
         });
       }

@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.resolve(__dirname, "../fixtures");
+const REACT_APP_DIR = path.join(FIXTURES_DIR, "online-shop-pro", "dist");
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -20,14 +21,29 @@ const MIME_TYPES: Record<string, string> = {
   ".json": "application/json",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 let server: http.Server | null = null;
 let serverPort = 0;
 
-export function getFixtureUrl(filename: string): string {
+export function getFixtureUrl(route: string): string {
   if (!serverPort) throw new Error("Fixture server not started");
-  return `http://127.0.0.1:${serverPort}/${filename}`;
+  // Remove leading slash if present
+  const path = route.startsWith("/") ? route.slice(1) : route;
+  return `http://127.0.0.1:${serverPort}/${path}`;
+}
+
+function serveReactApp(res: http.ServerResponse) {
+  const indexPath = path.join(REACT_APP_DIR, "index.html");
+  if (fs.existsSync(indexPath)) {
+    const content = fs.readFileSync(indexPath);
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(content);
+    return true;
+  }
+  return false;
 }
 
 export async function startFixtureServer(): Promise<number> {
@@ -38,20 +54,27 @@ export async function startFixtureServer(): Promise<number> {
   return new Promise((resolve, reject) => {
     server = http.createServer((req, res) => {
       const urlPath = req.url?.split("?")[0] ?? "/";
-      const filename = urlPath === "/" ? "summarize-page.html" : urlPath.slice(1);
-      const filePath = path.join(FIXTURES_DIR, filename);
+      const filename = urlPath.slice(1); // Remove leading slash
 
-      if (!fs.existsSync(filePath)) {
-        res.writeHead(404);
-        res.end("Not found");
-        return;
+      // Serve React app assets directly
+      if (filename.startsWith("assets/")) {
+        const assetPath = path.join(REACT_APP_DIR, filename);
+        if (fs.existsSync(assetPath)) {
+          const ext = path.extname(assetPath);
+          const contentType = MIME_TYPES[ext] || "application/octet-stream";
+          const content = fs.readFileSync(assetPath);
+          res.writeHead(200, { "Content-Type": contentType });
+          res.end(content);
+          return;
+        }
       }
 
-      const ext = path.extname(filePath);
-      const contentType = MIME_TYPES[ext] || "application/octet-stream";
-      const content = fs.readFileSync(filePath);
-      res.writeHead(200, { "Content-Type": contentType });
-      res.end(content);
+      // For any other path, serve the React app (SPA routing)
+      // This handles all the routes: /summarize, /article, /navigation, /dashboard, /shop, /form, /errors
+      if (!serveReactApp(res)) {
+        res.writeHead(404);
+        res.end("Not found");
+      }
     });
 
     server.listen(0, "127.0.0.1", () => {

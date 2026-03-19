@@ -25,6 +25,8 @@ const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 interface FixtureInfo {
@@ -37,51 +39,56 @@ interface FixtureInfo {
 
 const FIXTURES: FixtureInfo[] = [
   {
-    filename: "summarize-page.html",
-    title: "Page Summarization",
-    description: "Static article page. Ask the agent to summarize it — tests read-only comprehension with no clicks needed.",
-    difficulty: "Simple",
-    color: "#22c55e",
-  },
-  {
-    filename: "article-research.html",
-    title: "Article Research",
-    description: "Long article with footnotes below the fold. Ask the agent to find a specific citation — tests scrolling and information extraction.",
-    difficulty: "Simple",
-    color: "#22c55e",
-  },
-  {
-    filename: "navigation-challenge.html",
-    title: "Navigation Challenge",
-    description: "Click a button 3 times, read a revealed code, type it in, and submit. Tests sequential interaction and reading dynamic content.",
-    difficulty: "Medium",
-    color: "#eab308",
-  },
-  {
-    filename: "dashboard.html",
-    title: "Analytics Dashboard",
-    description: "Data tables, tab panels, and a settings form behind a tab. Ask the agent to switch tabs and save settings.",
-    difficulty: "Medium",
-    color: "#eab308",
-  },
-  {
-    filename: "online-shop-pro.html",
+    filename: "shop",
     title: "Online Shopping",
-    description: "Full e-commerce store with 8 products, Unsplash photos, filters, cart, coupon codes, shipping, and checkout. Great for demo videos.",
+    description:
+      "Full e-commerce store with cart, checkout, coupon codes, shipping, and order history.",
     difficulty: "Complex",
     color: "#f97316",
   },
   {
-    filename: "multi-step-form.html",
+    filename: "summarize",
+    title: "Page Summarization",
+    description: "Static article page. Ask the agent to summarize it.",
+    difficulty: "Simple",
+    color: "#22c55e",
+  },
+  {
+    filename: "article",
+    title: "Article Research",
+    description:
+      "Long article with footnotes. Ask the agent to find a specific citation.",
+    difficulty: "Simple",
+    color: "#22c55e",
+  },
+  {
+    filename: "navigation",
+    title: "Navigation Challenge",
+    description:
+      "Click a button 3 times, read a revealed code, type it in, and submit.",
+    difficulty: "Medium",
+    color: "#eab308",
+  },
+  {
+    filename: "dashboard",
+    title: "Analytics Dashboard",
+    description: "Data tables, tab panels, and a settings form behind a tab.",
+    difficulty: "Medium",
+    color: "#eab308",
+  },
+  {
+    filename: "form",
     title: "Multi-Step Form Wizard",
-    description: "3-step wizard with conditional fields (dropdown reveals extra inputs), validation, and a review step.",
+    description:
+      "3-step wizard with conditional fields, validation, and a review step.",
     difficulty: "Complex",
     color: "#f97316",
   },
   {
-    filename: "error-scenarios.html",
+    filename: "errors",
     title: "Error Scenarios",
-    description: "Form validation errors, delayed content loading, and an impossible task. Tests error recovery and graceful failure.",
+    description:
+      "Form validation errors, delayed content loading, and an impossible task.",
     difficulty: "Edge Cases",
     color: "#ef4444",
   },
@@ -255,26 +262,32 @@ const server = http.createServer((req, res) => {
 
   // Serve fixture files
   const filename = urlPath.slice(1);
-  const filePath = path.join(FIXTURES_DIR, filename);
+  const REACT_DIST = path.join(FIXTURES_DIR, "online-shop-pro", "dist");
 
-  // Block path traversal
-  if (!filePath.startsWith(FIXTURES_DIR)) {
-    res.writeHead(403);
-    res.end("Forbidden");
+  // Serve React app assets directly
+  if (filename.startsWith("assets/")) {
+    const assetPath = path.join(REACT_DIST, filename);
+    if (fs.existsSync(assetPath)) {
+      const ext = path.extname(assetPath);
+      const contentType = MIME_TYPES[ext] || "application/octet-stream";
+      const content = fs.readFileSync(assetPath);
+      res.writeHead(200, { "Content-Type": contentType });
+      res.end(content);
+      return;
+    }
+  }
+
+  // For any other path, serve the React app (SPA routing)
+  const indexPath = path.join(REACT_DIST, "index.html");
+  if (fs.existsSync(indexPath)) {
+    const content = fs.readFileSync(indexPath);
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(content);
     return;
   }
 
-  if (!fs.existsSync(filePath)) {
-    res.writeHead(404);
-    res.end("Not found");
-    return;
-  }
-
-  const ext = path.extname(filePath);
-  const contentType = MIME_TYPES[ext] || "application/octet-stream";
-  const content = fs.readFileSync(filePath);
-  res.writeHead(200, { "Content-Type": contentType });
-  res.end(content);
+  res.writeHead(404);
+  res.end("Not found");
 });
 
 server.listen(PORT, "127.0.0.1", () => {

@@ -134,12 +134,22 @@ function stepsToNodes(
               `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
           ),
       ) ?? [...EXECUTOR_DEFAULT_TOOLS],
-    dependencies: (step.dependencies || [])
-      .filter(
-        (depIndex) =>
-          Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
-      )
-      .map((depIndex) => nodeIds[depIndex]),
+    dependencies: (() => {
+      const explicit = (step.dependencies || [])
+        .filter(
+          (depIndex) =>
+            Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
+        )
+        .map((depIndex) => nodeIds[depIndex]);
+      // If the LLM provided no valid dependencies for a non-first step,
+      // default to sequential chaining (depend on previous step).
+      // This prevents accidental parallel launches (e.g. "apply coupon"
+      // running before "add to cart").
+      if (explicit.length === 0 && index > 0) {
+        return [nodeIds[index - 1]];
+      }
+      return explicit;
+    })(),
     assumptions: step.assumptions || [],
     verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
   }));
@@ -209,9 +219,12 @@ export class OrchestratorPlanner {
       const subtasks = decomposition?.subtasks?.length
         ? decomposition.subtasks
         : [query];
-      const fallbackSteps: DecompositionStep[] = subtasks.map((step) => ({
+      // Chain legacy subtasks sequentially: each step depends on the previous.
+      // Without this, all nodes launch in parallel (e.g. "apply coupon" runs
+      // before "add to cart" finishes → empty cart failure).
+      const fallbackSteps: DecompositionStep[] = subtasks.map((step, i) => ({
         objective: step,
-        dependencies: [],
+        dependencies: i > 0 ? [i - 1] : [],
         assumptions: [],
       }));
       nodes = stepsToNodes(fallbackSteps);

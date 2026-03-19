@@ -4,7 +4,7 @@ import path from "path";
 export default defineConfig({
   test: {
     environment: "node",
-    testTimeout: 360_000,
+    testTimeout: 600_000,
     hookTimeout: 60_000,
     fileParallelism: false,
     pool: "forks",

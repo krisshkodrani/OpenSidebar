@@ -80,7 +80,7 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier, both via OpenRouter. Executor pool: `openai/gpt-oss-120b`. Planner pool: `minimax/minimax-m2.5`. `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `applyNitro()` appends `:nitro` suffix when `useNitro` setting is enabled. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier, both via OpenRouter. Executor pool: `google/gemini-3-flash-preview:nitro`. Planner pool: `minimax/minimax-m2.5`. Executor fallback: `google/gemini-3.1-flash-lite-preview`. `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `applyNitro()` appends `:nitro` suffix when `useNitro` setting is enabled. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 51 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
@@ -173,14 +173,20 @@ Test files cover: agent loop, context manager, keepalive, navigation bridge, sec
 
 Real browser tests using Puppeteer. Launches headed Chrome with the built extension, sends tasks via `chrome.runtime.sendMessage`, and watches the agent interact with fixture pages. Requires `OPENROUTER_API_KEY` (env var or `.env` file); skipped if missing.
 
-- `online-shop.test.ts` — Shopping flow: add to cart, apply coupon, select shipping, checkout.
-- `navigation-challenge.test.ts` — Sequential interaction: click button 3x, read revealed code, enter and submit.
+- `online-shop.test.ts` — Shopping flow (5 variants): add to cart, apply coupon, select shipping, checkout. Includes multi-item, quantity change, and apparel tests.
+- `online-shop-natural.test.ts` — Natural language checkout prompt (no structured steps).
+- `online-shop-boundaries.test.ts` — Step advancement without done() rejection churn.
+- `navigation-challenge.test.ts` — Sequential interaction: click Advance 3x, read revealed code, enter and submit.
+- `multi-step-form.test.ts` — 3-step wizard with conditional fields (Enterprise → Company Name).
+- `dashboard.test.ts` — Tab switch to Settings, type email, save settings.
 - `edge-cases.test.ts` — Error recovery (form validation), delayed content, impossible task graceful stop.
+- `summarize.test.ts` — Read-only page summarization in ≤2 turns.
+- `article-research.test.ts` — Scroll to find footnote source and report it.
 - `helpers/browser.ts` — Puppeteer launch with extension, SW discovery, helper page.
 - `helpers/utils.ts` — `sendUserChat()`, `waitForOutcome()`, `resetExtensionState()`, event monitoring.
 - `helpers/fixture-server.ts` — HTTP server for fixture HTML files (avoids `file://` content script issues).
 - `helpers/diagnostics.ts` — Log server lifecycle, CDP console capture, trace file reading + summary.
-- `fixtures/` — Self-contained HTML pages: `online-shop-pro.html`, `navigation-challenge.html`, `error-scenarios.html`.
+- `fixtures/` — Single React app: `online-shop-pro/` with routes for all fixtures (`/shop`, `/summarize`, `/article`, `/navigation`, `/dashboard`, `/form`, `/errors`)
 - `vitest.e2e.config.ts` — Separate Vitest config (node env, 360s timeout, single fork, retry:1).
 
 Run: `npm run test:e2e` (builds first, then runs). Each test suite launches its own Chrome instance. `beforeEach` cleanup resets agent state between test cases.
@@ -198,6 +204,18 @@ When investigating errors (build failures, runtime exceptions, unexpected behavi
 The extension's `StorageLogger` captures structured logs from all three execution contexts (background, content, sidepanel) with auto-redacted secrets. When `npm run logs` is running, entries drain to disk in real time; otherwise they accumulate in `chrome.storage.local` (ring buffer, 2000 entries).
 
 For build errors, also check `npm run build` output directly — Vite/Rollup surface missing exports, unresolved imports, and type mismatches there.
+
+## Prompt Change Workflow
+
+When modifying agent prompts or LLM-facing behavior (system prompts, tool descriptions, reflection messages, demos):
+
+1. **Baseline**: Run `npm run evals:validate` (structural) + `npm run test:e2e` and record pass/fail counts.
+2. **Change**: Make the prompt change.
+3. **Re-eval**: Run `npm run evals:validate` again — structural validation must still pass.
+4. **E2E gate**: Run `npm run test:e2e` — compare with baseline. No regression on previously passing tests.
+5. **Document**: Write a dated report in `docs/e2e-report-YYYY-MM-DD.md` with a comparison table.
+
+Key principle: **The planner should plan, not execute.** When the executor gets stuck, the planner produces a revised plan and hands back to the executor — it does not execute tools directly. This is enforced by `replanOnEscalation()` in `loop.ts`.
 
 ## Design Principles
 

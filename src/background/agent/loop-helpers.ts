@@ -199,7 +199,7 @@ const ASYNC_TOKEN_STOPWORDS = new Set([
   "click",
 ]);
 
-function tokenizeStepText(stepText: string): string[] {
+export function tokenizeStepText(stepText: string): string[] {
   return [...new Set(
     stepText
       .toLowerCase()
@@ -207,7 +207,7 @@ function tokenizeStepText(stepText: string): string[] {
   )].filter((token) => !STEP_TOKEN_STOPWORDS.has(token));
 }
 
-function snapshotSearchText(snapshot: DomSnapshot | null): string {
+export function snapshotSearchText(snapshot: DomSnapshot | null): string {
   if (!snapshot) return "";
   const elementText = snapshot.elements
     .flatMap((element) => [
@@ -232,6 +232,38 @@ function snapshotSearchText(snapshot: DomSnapshot | null): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+export interface SuccessCriteriaResult {
+  satisfied: boolean;
+  matchedTokens: string[];
+  totalTokens: number;
+}
+
+/**
+ * Check whether success criteria tokens are present in the current DOM snapshot.
+ * Steps without successCriteria always pass (satisfied: true).
+ */
+export function matchSuccessCriteria(params: {
+  successCriteria: string | undefined;
+  snapshot: DomSnapshot | null;
+}): SuccessCriteriaResult {
+  const { successCriteria, snapshot } = params;
+  if (!successCriteria || successCriteria.trim().length === 0) {
+    return { satisfied: true, matchedTokens: [], totalTokens: 0 };
+  }
+  const tokens = tokenizeStepText(successCriteria);
+  if (tokens.length === 0) {
+    return { satisfied: true, matchedTokens: [], totalTokens: 0 };
+  }
+  const searchText = snapshotSearchText(snapshot);
+  const matched = tokens.filter((token) => searchText.includes(token));
+  const threshold = Math.max(1, Math.ceil(tokens.length * 0.4));
+  return {
+    satisfied: matched.length >= threshold,
+    matchedTokens: matched,
+    totalTokens: tokens.length,
+  };
 }
 
 function tokenizeAsyncExpectationText(text: string): string[] {
@@ -888,6 +920,77 @@ export function detectInstructionContradiction(
   }
 
   return null;
+}
+
+// ─── Structured Failure Context (for escalation → replan) ───────────
+
+/** Structured analysis of why the executor got stuck, passed to the planner on replan. */
+export interface StructuredFailureContext {
+  stuckStepGoal: string;
+  stuckStepIndex: number;
+  turnsSpent: number;
+  toolsAttempted: string[];
+  specificErrors: string[];
+  untriedAlternatives: string[];
+  pageState: string; // current URL + brief page description
+}
+
+/**
+ * Build structured failure context from subgoal attempts for the planner.
+ * This gives the planner model precise information about what was tried and
+ * what failed, so it can produce a better replan.
+ */
+export function buildStructuredFailureContext(
+  attempts: SubgoalAttempt[],
+  stuckStepGoal: string,
+  stuckStepIndex: number,
+  turnsSpent: number,
+  pageUrl: string,
+): StructuredFailureContext {
+  const toolsAttempted = [...new Set(attempts.map((a) => a.tool))];
+  const specificErrors: string[] = [];
+  for (const a of attempts) {
+    if (a.wasFailure) {
+      const errorLine = `${a.tool}(${a.args}) → ${a.outcome}`;
+      if (!specificErrors.some((e) => e.startsWith(a.tool + "("))) {
+        specificErrors.push(errorLine.slice(0, 120));
+      }
+    }
+  }
+  const untriedAlternatives = ALTERNATIVE_TOOLS.filter(
+    (t) => !toolsAttempted.includes(t),
+  );
+
+  return {
+    stuckStepGoal,
+    stuckStepIndex,
+    turnsSpent,
+    toolsAttempted,
+    specificErrors: specificErrors.slice(0, 5),
+    untriedAlternatives,
+    pageState: pageUrl,
+  };
+}
+
+/**
+ * Format a StructuredFailureContext into a string for inclusion in the replan prompt.
+ */
+export function formatStructuredFailureContext(
+  ctx: StructuredFailureContext,
+): string {
+  const lines: string[] = [
+    `Stuck step ${ctx.stuckStepIndex + 1}: "${ctx.stuckStepGoal}"`,
+    `Turns spent: ${ctx.turnsSpent}`,
+    `Tools attempted: ${ctx.toolsAttempted.join(", ")}`,
+  ];
+  if (ctx.specificErrors.length > 0) {
+    lines.push(`Errors:\n${ctx.specificErrors.map((e) => `  - ${e}`).join("\n")}`);
+  }
+  if (ctx.untriedAlternatives.length > 0) {
+    lines.push(`Untried alternatives: ${ctx.untriedAlternatives.join(", ")}`);
+  }
+  lines.push(`Current page: ${ctx.pageState}`);
+  return lines.join("\n");
 }
 
 // ─── Cumulative Failure Brief (§3.4) ────────────────────────────────

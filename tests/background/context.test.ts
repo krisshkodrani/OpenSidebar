@@ -653,6 +653,23 @@ describe("ContextManager", () => {
       expect(doneLineMatch![0]).not.toContain("→");
     });
 
+    test("formatPlanStatus hides next-step description", () => {
+      context.setPlanStatus(
+        [
+          { description: "Step 1", status: "completed", completedAtUrl: "https://example.com/a" },
+          { description: "Step 2", status: "running" },
+          { description: "Step 3", status: "pending" },
+        ],
+        1,
+      );
+
+      const prompt = context.getPrompt();
+      const sys = prompt[0].content as string;
+      expect(sys).toContain("Remaining after this step: 1");
+      expect(sys).not.toContain("Next:");
+      expect(sys).not.toContain("Next: 3. Step 3");
+    });
+
     test("summarizeTrajectory includes plan state", () => {
       context.setPlanStatus(
         [

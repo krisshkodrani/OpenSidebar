@@ -4,16 +4,23 @@ import { Bookmark, Settings } from "lucide-react";
 interface Props {
   onOpenSettings: () => void;
   onOpenSavedPrompts: () => void;
-  showApprovalBypassBadge?: boolean;
+  modeBadgeLabel?: string | null;
 }
 
 export function Header({
   onOpenSettings,
   onOpenSavedPrompts,
+  modeBadgeLabel,
 }: Props) {
   return (
     <header className="flex items-center justify-between px-3 py-1.5 bg-warm-50 dark:bg-warm-900 border-b border-warm-100 dark:border-warm-800 sticky top-0 z-10">
-      <div className="w-8" />
+      <div className="w-16">
+        {modeBadgeLabel ? (
+          <span className="inline-flex rounded-full bg-warm-100 dark:bg-warm-800 px-2 py-0.5 text-[10px] font-medium text-warm-600 dark:text-warm-300">
+            {modeBadgeLabel}
+          </span>
+        ) : null}
+      </div>
 
       <span className="text-[11px] font-medium text-warm-400 dark:text-warm-500 tracking-wide select-none">
         OpenSidebar

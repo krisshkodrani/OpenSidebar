@@ -26,6 +26,8 @@ export function formatElementCompact(
   const attrParts: string[] = [];
   for (const [k, v] of Object.entries(el.attributes)) {
     if (k === "id") continue;
+    if (k === "bg-color" || k === "text-color") continue; // visual-only, kept for invisible-text detection
+    if (k === "aria-label" && v === text) continue; // already shown as quoted text
     if (attrFilter && !attrFilter(k)) continue;
     attrParts.push(v.includes(" ") ? `${k}="${v}"` : `${k}=${v}`);
   }

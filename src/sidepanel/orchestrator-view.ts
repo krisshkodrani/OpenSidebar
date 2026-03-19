@@ -46,10 +46,10 @@ export function getLatestAssistantSteps(messages: ChatEntry[]): AgentStep[] {
 export function inferConsoleRole(
   state: Pick<
     SidePanelState,
-    "agentStatus" | "statusDetail" | "pendingApproval" | "messages"
+    "agentStatus" | "statusDetail" | "pendingApproval" | "pendingPlanConfirmation" | "messages"
   >,
 ): ConsoleRole {
-  if (state.pendingApproval) return "policy";
+  if (state.pendingApproval || state.pendingPlanConfirmation) return "policy";
   if (state.agentStatus === AgentStatus.ACTING) return "executor";
   if (
     state.agentStatus === AgentStatus.IDLE ||

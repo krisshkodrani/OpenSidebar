@@ -27,7 +27,10 @@ async function isServerRunning(): Promise<boolean> {
   }
 }
 
-async function waitForServer(port: number, timeoutMs: number): Promise<boolean> {
+async function waitForServer(
+  port: number,
+  timeoutMs: number,
+): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -45,14 +48,19 @@ async function waitForServer(port: number, timeoutMs: number): Promise<boolean> 
 
 export async function setup(): Promise<void> {
   if (await isServerRunning()) {
-    console.log("[global-setup] Log server already running on port", LOG_SERVER_PORT);
+    console.log(
+      "[global-setup] Log server already running on port",
+      LOG_SERVER_PORT,
+    );
     return;
   }
 
-  const command = process.platform === "win32" ? "npx.cmd" : "npx";
+  const isWin = process.platform === "win32";
+  const command = isWin ? "npx.cmd" : "npx";
   logServerProcess = spawn(command, ["tsx", LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
+    shell: isWin,
   });
 
   const started = await waitForServer(LOG_SERVER_PORT, 10_000);

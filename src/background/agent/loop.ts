@@ -35,7 +35,7 @@ import {
 import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
-import { checkVerificationGate, detectAdmission } from "./verification";
+import { assessDoneSummary, checkSummaryStepCoherence, checkVerificationGate, detectAdmission } from "./verification";
 import {
   StagnationMonitor,
   computeSnapshotFingerprint,
@@ -94,6 +94,7 @@ import {
   buildFailureBrief,
   buildFailureRecovery,
   buildHandoffBriefing,
+  buildStructuredFailureContext,
   classifyTurnError,
   detectInstructionContradiction,
   detectPendingAsyncChange,
@@ -101,10 +102,12 @@ import {
   extractAttemptSummary,
   findPriorFailure,
   formatActionEffect,
+  formatStructuredFailureContext,
   getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   isHallucinatedToolCall,
+  matchSuccessCriteria,
   MAX_TURN_RETRIES,
   normalizeOutcome,
   preflightElementCheck,
@@ -116,9 +119,12 @@ import {
   validateElementIds,
 } from "./loop-helpers";
 import {
+  BUILTIN_DEMO_MULTI_ITEM_SHOPPING,
   DEESCALATION_REFLECTION,
+  ESCALATION_RECOVERY,
   ESCALATION_REFLECTION,
   HANDOFF_REFLECTION,
+  matchesMultiItemPattern,
   PIVOT_MESSAGE,
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
@@ -517,6 +523,10 @@ export class AgentLoop {
   private turnsOnCurrentStep = 0;
   /** Last plan index — used to detect step transitions */
   private lastPlanIndex = 0;
+  /** Escalation count on current plan step — resets on step advancement */
+  private escalationsOnCurrentStep = 0;
+  /** Consecutive done()-based auto-advances without a DOM-modifying action in between */
+  private consecutiveAutoAdvances = 0;
 
   /** Task planning state */
   private taskId: string | null = null;
@@ -1355,8 +1365,10 @@ export class AgentLoop {
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
+    this.consecutiveAutoAdvances = 0;
     this.turnsOnCurrentStep = 0;
     this.lastPlanIndex = 0;
+    this.escalationsOnCurrentStep = 0;
     this.turnsSinceLastMonitor = 0;
     this.replanCount = 0;
     this.startingOrigin = null;
@@ -1613,6 +1625,13 @@ export class AgentLoop {
           demoName: matchedDemo.demo.name,
           score: matchedDemo.score,
           actionCount: matchedDemo.demo.actions.length,
+        });
+      } else if (matchesMultiItemPattern(initialUserText)) {
+        // Fallback: inject built-in demo for multi-item shopping
+        this.context.setDemonstrations(BUILTIN_DEMO_MULTI_ITEM_SHOPPING);
+        this.log.info("agent", "Built-in multi-item shopping demo injected");
+        this.traceRecorder?.recordEvent("builtin_demo_injected" as any, {
+          pattern: "multi_item_shopping",
         });
       }
     } catch (err: any) {
@@ -2161,10 +2180,14 @@ export class AgentLoop {
     const currentSubtask = planStatus?.subtasks.find(
       (s) => s.status === "running",
     );
+    // When a plan step exists but has no explicit profile, default to form_fill
+    // (16 tools instead of 38) to reduce tool confusion for the executor model.
     const fallbackProfile =
-      !currentSubtask?.toolProfile && this.originalQuery
-        ? inferToolProfileForStep(this.originalQuery, "")
-        : undefined;
+      !currentSubtask?.toolProfile && currentSubtask
+        ? ("form_fill" as ToolProfile)
+        : !currentSubtask?.toolProfile && this.originalQuery
+          ? inferToolProfileForStep(this.originalQuery, "")
+          : undefined;
     const activeProfile = currentSubtask?.toolProfile ?? fallbackProfile;
     if (!activeProfile) return tools;
 
@@ -2771,6 +2794,201 @@ export class AgentLoop {
     });
   }
 
+  /**
+   * Attempt replan-on-escalation: instead of switching the planner model to execute
+   * tools directly, ask it to produce a revised plan, then hand back to executor.
+   *
+   * Returns true if replan succeeded (caller should skip old escalation behavior).
+   * Returns false if replan is not applicable or fails (caller falls through to old behavior).
+   */
+  private async replanOnEscalation(
+    tabId: number,
+    subgoalAttempts: SubgoalAttempt[],
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    // Guard: replan cap
+    if (this.replanCount >= 3) {
+      this.log.info("agent", "replanOnEscalation: cap reached", {
+        replanCount: this.replanCount,
+      });
+      return false;
+    }
+
+    // Guard: must have a plan with steps
+    if (this.planSteps.length === 0 || this.planSubtasks.length === 0) {
+      this.log.info("agent", "replanOnEscalation: no plan exists");
+      return false;
+    }
+
+    // Find running step
+    const runningIdx = this.planSubtasks.findIndex(
+      (s) => s.status === "running",
+    );
+    if (runningIdx < 0) {
+      this.log.info("agent", "replanOnEscalation: no running step");
+      return false;
+    }
+
+    const stuckStep = this.planSubtasks[runningIdx];
+    const stuckStepGoal = stuckStep.description;
+
+    // Build structured failure context from subgoal attempts
+    const failureContext = buildStructuredFailureContext(
+      subgoalAttempts,
+      stuckStepGoal,
+      runningIdx,
+      this.turnsOnCurrentStep,
+      this.context.getSnapshot()?.url || "",
+    );
+    const failureContextStr = formatStructuredFailureContext(failureContext);
+
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "thinking",
+        label: "Replanning stuck step...",
+        status: "running",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+
+    // Get fresh perception for the replan prompt
+    await this.refreshSnapshotWithRetry(tabId, -1);
+    this.perception.invalidateCache();
+    await this.refreshPerceptionAndTriage(tabId);
+
+    const perception = this.perception.getInterpretation() || "";
+    const pageUrl = this.context.getSnapshot()?.url || "";
+
+    // Build completed steps summary
+    const completedSteps = this.planSubtasks
+      .map((s, i) => ({
+        index: i,
+        objective: s.description,
+        result: s.result,
+      }))
+      .filter((s) => this.planSubtasks[s.index].status === "completed");
+
+    const failedStep = {
+      index: runningIdx,
+      objective: stuckStepGoal,
+    };
+
+    // Call the planner to replan (temporarily — no model switch needed, planner has its own LLM)
+    const replanResult = await this.planner.replanFrom(
+      this.originalQuery,
+      completedSteps,
+      failedStep,
+      perception,
+      pageUrl,
+      signal,
+      failureContextStr,
+    );
+
+    if (!replanResult || replanResult.newSteps.length === 0) {
+      this.log.warn("agent", "replanOnEscalation: replan produced no steps");
+      return false;
+    }
+
+    this.replanCount++;
+
+    // Replace steps from stuck point onward
+    const keptSubtasks = this.planSubtasks.slice(0, runningIdx);
+    const newSubtasks: SubtaskSummary[] = replanResult.newSteps.map(
+      (step, i) => ({
+        description: step.objective,
+        status: i === 0 ? ("running" as const) : ("pending" as const),
+        turnsUsed: 0,
+        turnBudget: 0,
+      }),
+    );
+
+    this.planSubtasks = [...keptSubtasks, ...newSubtasks];
+    this.planSteps = [
+      ...this.planSteps.slice(0, runningIdx),
+      ...replanResult.newSteps,
+    ];
+
+    // Update context with new plan
+    this.context.setPlanStatus(
+      this.planSubtasks.map((s, idx) => ({
+        description: s.description,
+        status: s.status,
+        completedAtUrl: s.completedAtUrl,
+        result: s.result,
+        ...(this.planSteps[idx]?.verifyAfter
+          ? { verificationGate: this.planSteps[idx].verifyAfter }
+          : {}),
+        ...(this.planSteps[idx]?.toolProfile
+          ? { toolProfile: this.planSteps[idx].toolProfile }
+          : {}),
+      })),
+      runningIdx,
+    );
+
+    // Clear history and inject fresh context with the new plan
+    this.context.clearHistory();
+    this.context.addMessage({
+      role: "user",
+      content: this.originalQuery,
+    });
+    this.context.addMessage({
+      role: "user",
+      content:
+        `[Plan Revised]: Step ${runningIdx + 1} was stuck. New plan:\n` +
+        replanResult.newSteps
+          .map((s, i) => `${runningIdx + i + 1}. ${s.objective}`)
+          .join("\n") +
+        `\n\nReason: ${replanResult.reason}\n` +
+        `Execute step ${runningIdx + 1} now.`,
+    });
+
+    // Reset step tracking for the new step
+    this.turnsOnCurrentStep = 0;
+    this.escalationsOnCurrentStep = 0;
+    this.lastPlanIndex = runningIdx;
+
+    // Broadcast updated progress
+    this.broadcast({
+      type: "TASK_PROGRESS",
+      payload: {
+        taskId: this.taskId!,
+        subtasks: this.planSubtasks,
+        currentIndex: runningIdx,
+        totalTurnsUsed: this.turnCount,
+      },
+    });
+
+    this.traceRecorder?.recordEvent("replan_on_escalation", {
+      fromIndex: runningIdx,
+      newStepCount: replanResult.newSteps.length,
+      reason: replanResult.reason,
+      replanNumber: this.replanCount,
+      failureContext: failureContextStr.slice(0, 300),
+    });
+
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: `Replanned from step ${runningIdx + 1} (${replanResult.newSteps.length} new steps)`,
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+
+    this.log.info("agent", "replanOnEscalation succeeded", {
+      fromIndex: runningIdx,
+      newStepCount: replanResult.newSteps.length,
+      replanCount: this.replanCount,
+      reason: replanResult.reason.slice(0, 200),
+    });
+
+    return true;
+  }
+
   /** Refresh snapshot with retry — used after model escalation where fresh context is critical. */
   private async refreshSnapshotWithRetry(
     tabId: number,
@@ -2905,6 +3123,7 @@ export class AgentLoop {
       this.lastPlanIndex = advancedTo;
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
+      this.escalationsOnCurrentStep = 0;
     }
     return advancedTo;
   }
@@ -2946,6 +3165,7 @@ export class AgentLoop {
       this.lastPlanIndex = resolvedIndex;
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
+      this.escalationsOnCurrentStep = 0;
     }
 
     return resolvedIndex;
@@ -3063,6 +3283,10 @@ export class AgentLoop {
 
     // Blind tool call detection: tool_calls present but no reasoning content
     let consecutiveBlindToolTurns = 0;
+
+    // read_element same-ID tracker: detects repeated reads on the same element
+    let lastReadElementId: number | null = null;
+    let consecutiveReadElementSameId = 0;
 
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
@@ -3737,7 +3961,7 @@ export class AgentLoop {
               role: "user",
               content:
                 "WARNING: You have made 3 consecutive tool calls with no reasoning. " +
-                "Include your thinking before calling tools — explain what you observe and why you chose this action.",
+                "Include your Think step before calling tools — state what you observe, your plan, and why this action.",
             });
           } else if (consecutiveBlindToolTurns > 0 && consecutiveBlindToolTurns % 6 === 0) {
             // Repeat the nudge every 6 blind turns (no escalation)
@@ -3916,6 +4140,28 @@ export class AgentLoop {
                 if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
                   recentToolCalls.shift();
                 }
+              }
+
+              // read_element same-ID nudge (parallel path)
+              if (toolName === ToolName.READ_ELEMENT) {
+                const elemId = typeof args.id === "number" ? args.id : Number(args.id);
+                if (elemId === lastReadElementId) {
+                  consecutiveReadElementSameId++;
+                  if (consecutiveReadElementSameId >= 2) {
+                    const nudgeMsg =
+                      `You have called read_element on element [${elemId}] ${consecutiveReadElementSameId + 1} times. ` +
+                      `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`;
+                    this.log.warn("agent", "read_element same-ID nudge", { turn: this.turnCount, elementId: elemId, consecutive: consecutiveReadElementSameId + 1 });
+                    this.traceRecorder?.recordEvent("read_element_same_id_nudge", { elementId: elemId, consecutive: consecutiveReadElementSameId + 1 });
+                    return { toolCall, result: nudgeMsg, error: null };
+                  }
+                } else {
+                  lastReadElementId = elemId;
+                  consecutiveReadElementSameId = 0;
+                }
+              } else {
+                lastReadElementId = null;
+                consecutiveReadElementSameId = 0;
               }
 
               // Failed-action memory: block exact repeat of a previously failed tool call
@@ -4275,6 +4521,7 @@ export class AgentLoop {
               );
               if (gateResult.matched) {
                 if (currentSub.verificationGate.action === "advance_step") {
+                  this.consecutiveAutoAdvances = 0;
                   const newIdx = this.advanceCompletedSubtasks();
                   this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
                     evidence: gateResult.evidence,
@@ -4387,6 +4634,29 @@ export class AgentLoop {
               if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
                 recentToolCalls.shift();
               }
+            }
+
+            // read_element same-ID nudge (sequential path)
+            if (toolName === ToolName.READ_ELEMENT) {
+              const elemId = typeof args.id === "number" ? args.id : Number(args.id);
+              if (elemId === lastReadElementId) {
+                consecutiveReadElementSameId++;
+                if (consecutiveReadElementSameId >= 2) {
+                  const nudgeMsg =
+                    `You have called read_element on element [${elemId}] ${consecutiveReadElementSameId + 1} times. ` +
+                    `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`;
+                  this.log.warn("agent", "read_element same-ID nudge", { turn: this.turnCount, elementId: elemId, consecutive: consecutiveReadElementSameId + 1 });
+                  this.traceRecorder?.recordEvent("read_element_same_id_nudge", { elementId: elemId, consecutive: consecutiveReadElementSameId + 1 });
+                  this.context.addMessage({ role: "tool", tool_call_id: toolCall.id, content: nudgeMsg });
+                  continue;
+                }
+              } else {
+                lastReadElementId = elemId;
+                consecutiveReadElementSameId = 0;
+              }
+            } else {
+              lastReadElementId = null;
+              consecutiveReadElementSameId = 0;
             }
 
             // Failed-action memory: block exact repeat of a previously failed tool call
@@ -4671,7 +4941,9 @@ export class AgentLoop {
               // Fix 3: Done() Content Verification Guard
               // Reject done() if the agent never called read_page/xray_page and the page
               // has substantive content — prevents hallucinated summaries from filename/URL alone.
-              if (!this.hasReadPage) {
+              // Only enforce for multi-step (plan) tasks where premature done() corrupts
+              // step advancement. Planless tasks (summarize, simple Q&A) can complete in 1 turn.
+              if (!this.hasReadPage && this.taskId) {
                 const snap = this.context.getSnapshot();
                 const elementCount = snap?.elements?.length ?? 0;
                 const visibleLen = (snap?.visibleContent || snap?.pageContent || "").length;
@@ -4797,34 +5069,114 @@ export class AgentLoop {
                 }
 
                 if (shouldReject) {
-                  this.doneRejections++;
+                  const planIncompleteOnly = rejectReason.startsWith(
+                    "Plan incomplete.",
+                  );
+                  const canAdvanceStep =
+                    planIncompleteOnly &&
+                    effectiveCurrentIdx >= 0 &&
+                    effectiveCurrentIdx < this.planSubtasks.length - 1;
 
-                  // Advance completed subtasks and update plan state
-                  const newIdx = this.advanceCompletedSubtasks();
-                  if (newIdx > 0) {
-                    this.syncPlanStatus(
-                      newIdx,
-                      "step_advanced_by_done_rejection",
-                      {
-                        rejections: this.doneRejections,
-                        advancedTo: newIdx,
-                      },
-                    );
-                    this.broadcast({
-                      type: "TASK_PROGRESS",
-                      payload: {
-                        taskId: this.taskId!,
-                        subtasks: this.planSubtasks,
-                        currentIndex: newIdx,
-                        totalTurnsUsed: this.turnCount,
-                      },
+                  if (canAdvanceStep) {
+                    // Three-layer verification gate before auto-advance
+                    const sentiment = assessDoneSummary(summary);
+                    const criteriaCheck = matchSuccessCriteria({
+                      successCriteria: this.planSteps[effectiveCurrentIdx]?.successCriteria,
+                      snapshot: this.context.getSnapshot(),
                     });
+                    const rateLimited = this.consecutiveAutoAdvances >= 2;
+
+                    const coherence = checkSummaryStepCoherence({
+                      summary,
+                      currentStepIndex: effectiveCurrentIdx,
+                      stepDescriptions: this.planSubtasks.map(s => s.description),
+                    });
+
+                    let gateBlockReason: string | null = null;
+                    if (!sentiment.confident) {
+                      gateBlockReason = `Summary admits failure: ${sentiment.reason}`;
+                    } else if (!coherence.coherent) {
+                      gateBlockReason = `Summary doesn't match current step: ${coherence.reason}`;
+                    } else if (!criteriaCheck.satisfied) {
+                      gateBlockReason = `Success criteria not met (${criteriaCheck.matchedTokens.length}/${criteriaCheck.totalTokens} tokens matched)`;
+                    } else if (rateLimited) {
+                      gateBlockReason = `Rate limited: ${this.consecutiveAutoAdvances} consecutive auto-advances without DOM action`;
+                    }
+
+                    if (gateBlockReason) {
+                      // Gate blocked — fall through to rejection path below
+                      this.log.warn("agent", "Auto-advance blocked by verification gate", {
+                        turn: this.turnCount,
+                        step: effectiveCurrentIdx,
+                        reason: gateBlockReason,
+                        sentiment: sentiment.confident,
+                        criteriaMatched: criteriaCheck.matchedTokens,
+                        criteriaTotal: criteriaCheck.totalTokens,
+                        consecutiveAutoAdvances: this.consecutiveAutoAdvances,
+                      });
+                      this.traceRecorder?.recordEvent("auto_advance_blocked", {
+                        step: effectiveCurrentIdx,
+                        reason: gateBlockReason,
+                        summary: summary.slice(0, 200),
+                      });
+                      // Fall through to doneRejections++ below
+                    } else {
+                      // Gate passed — proceed with auto-advance
+                      this.consecutiveAutoAdvances++;
+                      const previousIdx = effectiveCurrentIdx;
+                      const newIdx = this.advanceCompletedSubtasks();
+                      const completedStep =
+                        this.planSubtasks[previousIdx]?.description ||
+                        `Step ${previousIdx + 1}`;
+                      const nextStep =
+                        this.planSubtasks[newIdx]?.description ||
+                        "Finish the remaining plan";
+
+                      this.syncPlanStatus(
+                        newIdx,
+                        "step_advanced_by_done_rejection",
+                        {
+                          rejections: this.doneRejections,
+                          advancedTo: newIdx,
+                          convertedFromDone: true,
+                        },
+                      );
+                      this.broadcast({
+                        type: "TASK_PROGRESS",
+                        payload: {
+                          taskId: this.taskId!,
+                          subtasks: this.planSubtasks,
+                          currentIndex: newIdx,
+                          totalTurnsUsed: this.turnCount,
+                        },
+                      });
+                      this.log.info(
+                        "agent",
+                        "DONE converted into step completion",
+                        {
+                          turn: this.turnCount,
+                          completedStep: completedStep.slice(0, 200),
+                          nextStep: nextStep.slice(0, 200),
+                        },
+                      );
+                      this.context.addMessage({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content:
+                          `Step ${previousIdx + 1} verified complete.\n\n` +
+                          `Now active: Step ${newIdx + 1} — ${nextStep}.\n` +
+                          "Observe the page with read_page first, then act. Do NOT call done() until this step is completed and verified.",
+                      });
+                      continue; // Resume executor loop on the next active step
+                    }
                   }
+
+                  this.doneRejections++;
 
                   this.log.warn("agent", "DONE rejected", {
                     turn: this.turnCount,
                     rejections: this.doneRejections,
-                    advancedTo: newIdx,
+                    advancedTo: effectiveCurrentIdx,
                     reason: rejectReason.slice(
                       0,
                       STRING_LIMITS.REJECTION_REASON,
@@ -4833,7 +5185,7 @@ export class AgentLoop {
                   this.traceRecorder?.recordEvent("done_rejected", {
                     rejections: this.doneRejections,
                     reason: rejectReason,
-                    advancedTo: newIdx,
+                    advancedTo: effectiveCurrentIdx,
                   });
 
                   if (this.doneRejections >= this.limits.maxDoneRejections) {
@@ -4846,7 +5198,10 @@ export class AgentLoop {
                     this.context.addMessage({
                       role: "tool",
                       tool_call_id: toolCall.id,
-                      content: `done() REJECTED: ${rejectReason}\n\nContinue working. Do NOT call done() until all steps are complete.`,
+                      content:
+                        `done() REJECTED: ${rejectReason}\n\n` +
+                        "Take concrete actions to complete this step. Do NOT call done() again " +
+                        "until you have performed actions and verified with read_page.",
                     });
                     this.stepHandler(
                       {
@@ -5539,6 +5894,7 @@ export class AgentLoop {
               !result.includes("Click intercepted")
             ) {
               domModified = true;
+              this.consecutiveAutoAdvances = 0;
               if (toolName !== ToolName.READ_PAGE) {
                 visuallyModified = true;
               }
@@ -5650,6 +6006,7 @@ export class AgentLoop {
               );
               if (seqGateResult.matched) {
                 if (currentSubSeq.verificationGate.action === "advance_step") {
+                  this.consecutiveAutoAdvances = 0;
                   const newIdx = this.advanceCompletedSubtasks();
                   this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
                     evidence: seqGateResult.evidence,
@@ -6080,10 +6437,27 @@ export class AgentLoop {
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
               });
+
+              // Try replan-on-escalation first: planner replans, executor continues
+              const replanSucceeded = await this.replanOnEscalation(
+                tabId,
+                subgoalAttempts,
+                this.abortController?.signal,
+              );
+              if (replanSucceeded) {
+                this.stagnation.resetEscalation();
+                subgoalAttempts.length = 0;
+                recentOutcomes.length = 0;
+                consecutiveTextOnly = 0;
+                recentSuccesses.length = 0;
+                turnsSinceStepEscalation = -1;
+              } else {
+              // Fallback: old escalation behavior
               const stepAttemptSummary = extractAttemptSummary(
                 this.context.getMessages(),
               );
               this.escalateModel();
+              this.escalationsOnCurrentStep++;
               escalationTier = 1;
               orientationPhase = false;
               plannerModelStartTurn = this.turnCount;
@@ -6092,7 +6466,9 @@ export class AgentLoop {
               this.stagnation.resetEscalation();
               this.context.addMessage({
                 role: "user",
-                content: `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_REFLECTION("stuck on step " + (this.lastPlanIndex + 1) + " for " + this.turnsOnCurrentStep + " turns")}\nEither complete this step and move forward, or revise the plan if the step is impossible.`,
+                content: this.escalationsOnCurrentStep >= 2
+                  ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep, `step ${this.lastPlanIndex + 1}`)
+                  : `STEP WATCHDOG: You spent ${this.turnsOnCurrentStep} turns on step ${this.lastPlanIndex + 1} without advancing. ${ESCALATION_REFLECTION("stuck on step " + (this.lastPlanIndex + 1) + " for " + this.turnsOnCurrentStep + " turns")}\nEither complete this step and move forward, or revise the plan if the step is impossible.`,
               });
               this.stepHandler(
                 {
@@ -6104,6 +6480,7 @@ export class AgentLoop {
                 },
                 false,
               );
+              }
             } else if (this.turnsOnCurrentStep === this.limits.stepWarnTurns) {
               this.log.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
@@ -6138,10 +6515,26 @@ export class AgentLoop {
             sameUrlTurns: this.stagnation.sameUrlTurns,
             threshold: this.limits.sameUrlEscalate,
           });
+
+          // Try replan-on-escalation first
+          const sameUrlReplanOk = await this.replanOnEscalation(
+            tabId,
+            subgoalAttempts,
+            this.abortController?.signal,
+          );
+          if (sameUrlReplanOk) {
+            this.stagnation.resetEscalation();
+            subgoalAttempts.length = 0;
+            recentOutcomes.length = 0;
+            consecutiveTextOnly = 0;
+            recentSuccesses.length = 0;
+          } else {
+          // Fallback: old escalation behavior
           const urlAttemptSummary = extractAttemptSummary(
             this.context.getMessages(),
           );
           this.escalateModel();
+          this.escalationsOnCurrentStep++;
           escalationTier = 1;
           orientationPhase = false;
           plannerModelStartTurn = this.turnCount;
@@ -6149,7 +6542,9 @@ export class AgentLoop {
           this.stagnation.resetEscalation();
           this.context.addMessage({
             role: "user",
-            content: `SAME-URL ESCALATION: You spent ${this.stagnation.sameUrlTurns} turns on this page without navigating away. ${ESCALATION_REFLECTION("same URL for " + this.stagnation.sameUrlTurns + " turns without progress")}`,
+            content: this.escalationsOnCurrentStep >= 2
+              ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
+              : `SAME-URL ESCALATION: You spent ${this.stagnation.sameUrlTurns} turns on this page without navigating away. ${ESCALATION_REFLECTION("same URL for " + this.stagnation.sameUrlTurns + " turns without progress")}`,
           });
           consecutiveTextOnly = 0;
           recentSuccesses.length = 0;
@@ -6163,6 +6558,7 @@ export class AgentLoop {
             },
             false,
           );
+          }
         }
 
         // Force snapshot refresh when tools hit stale element IDs
@@ -6515,6 +6911,7 @@ export class AgentLoop {
                     });
 
                     if (advanceSignal) {
+                      this.consecutiveAutoAdvances = 0;
                       const newIdx = this.completeSingleSubtask(
                         planAfterAction.currentIndex,
                       );
@@ -6659,6 +7056,9 @@ export class AgentLoop {
                   consecutiveAllFailTurns = 0;
                   escalationCycles = 0;
                   cooldownRemaining = 0;
+                  this.escalationsOnCurrentStep = 0;
+                  lastReadElementId = null;
+                  consecutiveReadElementSameId = 0;
 
                   // Ensure planner tier
                   if (escalationTier === 0) {
@@ -6694,14 +7094,31 @@ export class AgentLoop {
                   continue;
                 }
 
-                // Escalate: executor → planner
+                // Escalate: executor → planner (try replan first)
                 else if (escalationTier === 0 && cooldownRemaining <= 0) {
+                  // Try replan-on-escalation first
+                  const stagnationReplanOk = await this.replanOnEscalation(
+                    tabId,
+                    subgoalAttempts,
+                    this.abortController?.signal,
+                  );
+                  if (stagnationReplanOk) {
+                    this.stagnation.resetEscalation();
+                    subgoalAttempts.length = 0;
+                    recentOutcomes.length = 0;
+                    consecutiveTextOnly = 0;
+                    recentSuccesses.length = 0;
+                    consecutiveProgressSignals = 0;
+                    wasStuck = false;
+                  } else {
+                  // Fallback: old escalation behavior
                   // Invalidate perception cache so the planner model gets a fresh interpretation
                   this.perception.invalidateCache();
                   const attemptSummary = extractAttemptSummary(
                     this.context.getMessages(),
                   );
                   this.escalateModel();
+                  this.escalationsOnCurrentStep++;
                   escalationTier = 1;
                   orientationPhase = false;
                   plannerModelStartTurn = this.turnCount;
@@ -6709,9 +7126,9 @@ export class AgentLoop {
                   this.stagnation.resetEscalation();
                   this.context.addMessage({
                     role: "user",
-                    content: ESCALATION_REFLECTION(
-                      "no DOM progress detected by stagnation monitor",
-                    ),
+                    content: this.escalationsOnCurrentStep >= 2
+                      ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
+                      : ESCALATION_REFLECTION("no DOM progress detected by stagnation monitor"),
                   });
                   consecutiveTextOnly = 0;
                   recentSuccesses.length = 0;
@@ -6726,6 +7143,7 @@ export class AgentLoop {
                     },
                     false,
                   );
+                  }
                 }
               } else if (wasStuck) {
                 // Only count as recovery if the page actually changed (stagnantTurns reset to 0).
@@ -6947,6 +7365,26 @@ export class AgentLoop {
           cooldownRemaining <= 0 &&
           this.turnCount >= 4
         ) {
+          // Try replan-on-escalation first
+          const textReplanOk = await this.replanOnEscalation(
+            tabId,
+            subgoalAttempts,
+            this.abortController?.signal,
+          );
+          if (textReplanOk) {
+            this.stagnation.resetEscalation();
+            subgoalAttempts.length = 0;
+            recentOutcomes.length = 0;
+            consecutiveTextOnly = 0;
+            recentSuccesses.length = 0;
+            this.broadcast({
+              type: "STREAM_CHUNK",
+              payload: { delta: "", done: true },
+            });
+            continue;
+          }
+
+          // Fallback: old escalation behavior
           const textOnlyAttemptSummary = extractAttemptSummary(
             this.context.getMessages(),
           );

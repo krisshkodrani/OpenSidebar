@@ -1,6 +1,8 @@
 import { describe, test, expect } from "vitest";
 import "../setup";
 import {
+  assessDoneSummary,
+  checkSummaryStepCoherence,
   checkVerificationGate,
   detectAdmission,
 } from "../../src/background/agent/verification";
@@ -122,6 +124,182 @@ describe("checkVerificationGate", () => {
     // "ok" and "yes" are <=3 chars, only "successfully saved" should be checked
     const result = checkVerificationGate(["Data ok"], gate);
     expect(result.matched).toBe(false);
+  });
+});
+
+describe("assessDoneSummary", () => {
+  // --- Layer 1: should BLOCK (confident: false) ---
+  test("detects 'didn't update' as failure", () => {
+    const r = assessDoneSummary("Attempted to add to cart but cart count didn't update");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'not visible' as failure", () => {
+    const r = assessDoneSummary("The item is not visible in the cart");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'could not verify' as failure", () => {
+    const r = assessDoneSummary("Could not verify the coupon was applied");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'unable to' as failure", () => {
+    const r = assessDoneSummary("Unable to complete the checkout step");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'no change' as failure", () => {
+    const r = assessDoneSummary("Clicked the button but no change occurred");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'attempt failed' as failure", () => {
+    const r = assessDoneSummary("The attempt failed to add the second item");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'not added' as failure", () => {
+    const r = assessDoneSummary("Second item not added to the cart");
+    expect(r.confident).toBe(false);
+  });
+
+  test("detects 'error with' as failure", () => {
+    const r = assessDoneSummary("There was an error with the form submission");
+    expect(r.confident).toBe(false);
+  });
+
+  // --- Should PASS (confident: true) ---
+  test("passes clean success summary", () => {
+    const r = assessDoneSummary("Added both items to cart and applied the coupon code");
+    expect(r.confident).toBe(true);
+  });
+
+  test("passes neutral summary", () => {
+    const r = assessDoneSummary("Completed checkout with express shipping selected");
+    expect(r.confident).toBe(true);
+  });
+
+  test("passes empty summary", () => {
+    const r = assessDoneSummary("");
+    expect(r.confident).toBe(true);
+  });
+
+  // --- Success override: hedged language should PASS ---
+  test("success override: 'successfully added' overrides 'didn't update'", () => {
+    const r = assessDoneSummary(
+      "Successfully added the item to cart, though the counter didn't update visually",
+    );
+    expect(r.confident).toBe(true);
+  });
+
+  test("success override: 'has been applied' overrides 'not visible'", () => {
+    const r = assessDoneSummary(
+      "The coupon has been applied, discount not visible in total yet",
+    );
+    expect(r.confident).toBe(true);
+  });
+
+  test("success override: 'is now in' overrides failure signal", () => {
+    const r = assessDoneSummary(
+      "Item is now in the cart, but cart count didn't update",
+    );
+    expect(r.confident).toBe(true);
+  });
+
+  test("success override: 'done the step' overrides failure signal", () => {
+    const r = assessDoneSummary(
+      "Done this step, though no confirmation was visible",
+    );
+    expect(r.confident).toBe(true);
+  });
+
+  // --- Pure failure without success override stays blocked ---
+  test("failure without override: 'cart count didn't update' stays blocked", () => {
+    const r = assessDoneSummary("The cart count didn't update after clicking add");
+    expect(r.confident).toBe(false);
+  });
+});
+
+describe("checkSummaryStepCoherence", () => {
+  const shopSteps = [
+    "Add Novablast 4 to cart",
+    "Add CloudStrike 8 to cart",
+    "Apply coupon SAVE10",
+    "Checkout",
+  ];
+
+  test("blocks when summary mentions wrong step's distinctive token", () => {
+    const r = checkSummaryStepCoherence({
+      summary: "Novablast 4 successfully added to cart",
+      currentStepIndex: 1, // CloudStrike step
+      stepDescriptions: shopSteps,
+    });
+    expect(r.coherent).toBe(false);
+    expect(r.reason).toContain("novablast");
+    expect(r.reason).toContain("step 1");
+  });
+
+  test("passes when summary matches current step", () => {
+    const r = checkSummaryStepCoherence({
+      summary: "CloudStrike 8 added to cart successfully",
+      currentStepIndex: 1,
+      stepDescriptions: shopSteps,
+    });
+    expect(r.coherent).toBe(true);
+  });
+
+  test("passes when current step has no distinctive tokens", () => {
+    // "Checkout" → tokenizeStepText returns ["checkout"], which is unique
+    // Use a step that shares all its tokens
+    const steps = ["Click next button", "Click submit button", "Verify result"];
+    const r = checkSummaryStepCoherence({
+      summary: "Clicked the button",
+      currentStepIndex: 0,
+      stepDescriptions: steps,
+    });
+    // "click" and "button" are stopwords, "next"/"submit" are distinctive
+    // but summary doesn't mention "next" either — however current step has distinctive "next"
+    // and summary doesn't have it, but also no wrong-step token → coherent
+    expect(r.coherent).toBe(true);
+  });
+
+  test("passes for single-step plan", () => {
+    const r = checkSummaryStepCoherence({
+      summary: "Done with everything",
+      currentStepIndex: 0,
+      stepDescriptions: ["Add item to cart"],
+    });
+    expect(r.coherent).toBe(true);
+  });
+
+  test("passes for negative step index", () => {
+    const r = checkSummaryStepCoherence({
+      summary: "Wrong step",
+      currentStepIndex: -1,
+      stepDescriptions: shopSteps,
+    });
+    expect(r.coherent).toBe(true);
+  });
+
+  test("passes when summary mentions current step AND wrong step", () => {
+    // If summary mentions both, it has current step tokens → pass
+    const r = checkSummaryStepCoherence({
+      summary: "CloudStrike 8 added. Previously added Novablast 4.",
+      currentStepIndex: 1,
+      stepDescriptions: shopSteps,
+    });
+    expect(r.coherent).toBe(true);
+  });
+
+  test("blocks coupon summary on cart step", () => {
+    const r = checkSummaryStepCoherence({
+      summary: "Applied coupon SAVE10 successfully",
+      currentStepIndex: 0, // Novablast step
+      stepDescriptions: shopSteps,
+    });
+    expect(r.coherent).toBe(false);
+    expect(r.reason).toContain("step 3"); // coupon is step index 2 → "step 3"
   });
 });
 
