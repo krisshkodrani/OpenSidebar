@@ -27,7 +27,7 @@ Each subtask should be completable using these primitives in 1-5 tool calls.
 
 Response Rules:
 - EVERY plan MUST contain at least one step, UNLESS the goal is already achieved (see empty plan rule below).
-- Simple tasks: return {"isMultiStep": false, "steps": [{"objective": "the single action to perform", "successCriteria": "how to verify it worked"}]}
+- Simple tasks: return {"isMultiStep": false, "steps": [{"objective": "the single action to perform", "successCriteria": "DOM-observable completion signal"}]}
 - Multi-step tasks: return {"isMultiStep": true, "subtasks": ["step 1", ...]}
 - Prefer structured plans when possible:
 {
@@ -55,6 +55,16 @@ Response Rules:
 - Group related actions into single steps (but keep one success predicate per step).
 - Last subtask should verify the overall goal was achieved.
 - Dependencies must reference earlier step indexes only.
+
+SUCCESS CRITERIA (critical — controls automatic step advancement):
+Every successCriteria MUST contain concrete, DOM-observable tokens — product names, field values, button labels, page headings, or URL fragments that will appear on the page when the step is done. The execution engine tokenizes these criteria and matches them against the live DOM to detect completion.
+- BAD: "The user goal is completed and verified" (no observable tokens)
+- BAD: "Step is done" (no observable tokens)
+- GOOD: "Cart shows Pegasus 41, cart counter displays 1+"
+- GOOD: "Coupon SAVE10 applied, discount line visible"
+- GOOD: "Form shows Step 2 heading, category dropdown visible"
+- GOOD: "Order confirmation page with order ID visible"
+Extract key nouns and values from the objective to build the criteria.
 - STOP CONDITIONS: If the user specifies a stop condition ("stop at X", "report when Y"), the LAST subtask must be the stop/report action. Do NOT add subtasks beyond the user's stop point. Add a verifyAfter gate with action "call_done" on the final stop subtask.
 - SUBTASK INDEPENDENCE: Each subtask description must be self-contained.
   - A subtask should be completable using the DOM state and its own description.

@@ -5,6 +5,31 @@ import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 import type { ToolProfile } from "../tools/metadata";
+import { tokenizeStepText } from "./loop-helpers";
+
+/** Generic criteria patterns that have no DOM-observable tokens */
+const GENERIC_CRITERIA = [
+  /^the user goal is/i,
+  /^the subtask outcome for/i,
+  /^step .* is completed/i,
+  /^step completed/i,
+  /^completed and verified/i,
+  /^task (is )?(completed|done|finished)/i,
+];
+
+/**
+ * Ensure successCriteria contains DOM-observable tokens.
+ * If the planner provides generic criteria, derive better ones from the objective.
+ */
+function ensureObservableCriteria(criteria: string, objective: string): string {
+  const isGeneric = GENERIC_CRITERIA.some((p) => p.test(criteria));
+  if (!isGeneric) return criteria;
+
+  // Derive from objective: extract meaningful tokens and rebuild
+  const tokens = tokenizeStepText(objective);
+  if (tokens.length === 0) return criteria; // can't improve, keep original
+  return `Page shows: ${tokens.slice(0, 6).join(", ")}`;
+}
 
 /** Result of task decomposition */
 export interface PlanDecomposition {
@@ -358,11 +383,12 @@ export class TaskPlanner {
           ) {
             return null;
           }
-          const successCriteria =
+          const rawCriteria =
             typeof obj.successCriteria === "string" &&
             obj.successCriteria.trim().length > 0
               ? obj.successCriteria.trim()
               : `Step "${obj.objective.trim()}" is completed and verified.`;
+          const successCriteria = ensureObservableCriteria(rawCriteria, obj.objective.trim());
 
           const dependencies: number[] = [];
           if (Array.isArray(obj.dependencies)) {
@@ -963,12 +989,14 @@ Current perception:\n${perception.slice(0, 800)}`,
           );
         }
 
+        const replanObjective = (obj.objective as string).trim();
+        const replanRawCriteria =
+          typeof obj.successCriteria === "string"
+            ? obj.successCriteria.trim()
+            : `Step completed.`;
         newSteps.push({
-          objective: (obj.objective as string).trim(),
-          successCriteria:
-            typeof obj.successCriteria === "string"
-              ? obj.successCriteria.trim()
-              : `Step completed.`,
+          objective: replanObjective,
+          successCriteria: ensureObservableCriteria(replanRawCriteria, replanObjective),
           dependencies: [],
           assumptions: Array.isArray(obj.assumptions)
             ? (obj.assumptions as unknown[])
