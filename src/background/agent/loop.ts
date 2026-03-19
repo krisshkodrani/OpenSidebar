@@ -930,6 +930,8 @@ export class AgentLoop {
     traceEvent?:
       | "step_advanced_by_gate"
       | "step_advanced_by_done_rejection"
+      | "structural_step_advance"
+      | "passive_step_advance"
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
@@ -6910,33 +6912,68 @@ export class AgentLoop {
                       toolName: lastToolName,
                     });
 
-                    if (advanceSignal) {
+                    // Passive step advancement: if structural advance didn't fire,
+                    // check if the current step's success criteria are satisfied in DOM.
+                    // Advances silently so the agent continues acting instead of calling done().
+                    const passiveCriteria = !advanceSignal
+                      ? matchSuccessCriteria({
+                          successCriteria: this.planSteps[planAfterAction.currentIndex]?.successCriteria,
+                          snapshot: snap,
+                        })
+                      : null;
+                    const shouldPassiveAdvance = passiveCriteria?.satisfied
+                      && passiveCriteria.totalTokens > 0
+                      && passiveCriteria.matchedTokens.length >= 2;
+
+                    if (advanceSignal || shouldPassiveAdvance) {
                       this.consecutiveAutoAdvances = 0;
-                      const newIdx = this.completeSingleSubtask(
-                        planAfterAction.currentIndex,
-                      );
-                      this.syncPlanStatus(newIdx, "step_advanced_by_structure", {
-                        reason: advanceSignal.reason,
-                        matchedTokens: advanceSignal.matchedTokens,
+                      const fromStep = planAfterAction.currentIndex;
+                      const newIdx = this.completeSingleSubtask(fromStep);
+                      const isStructural = !!advanceSignal;
+                      const reason = isStructural
+                        ? advanceSignal!.reason
+                        : `Step criteria satisfied (${passiveCriteria!.matchedTokens.join(", ")})`;
+                      const matchedTokens = isStructural
+                        ? advanceSignal!.matchedTokens
+                        : passiveCriteria!.matchedTokens;
+                      const traceEvent = isStructural
+                        ? "structural_step_advance" as const
+                        : "passive_step_advance" as const;
+
+                      this.syncPlanStatus(newIdx, traceEvent, {
+                        reason,
+                        matchedTokens,
                         advancedTo: newIdx,
                       });
+                      const nextStepDesc = this.planSubtasks[newIdx]?.description
+                        || "Finish the remaining plan";
                       this.context.addMessage({
                         role: "user",
                         content:
-                          `STEP ADVANCED: ${advanceSignal.reason}. ` +
-                          `Continue with step ${Math.min(newIdx + 1, this.planSubtasks.length)}.`,
+                          `STEP COMPLETED: ${reason}. ` +
+                          `Continue with the next step: ${nextStepDesc}. ` +
+                          `Do NOT call done() — keep acting.`,
                       });
-                      this.log.info("agent", "Structural step advance triggered", {
+                      this.broadcast({
+                        type: "TASK_PROGRESS",
+                        payload: {
+                          taskId: this.taskId!,
+                          subtasks: this.planSubtasks,
+                          currentIndex: newIdx,
+                          totalTurnsUsed: this.turnCount,
+                        },
+                      });
+                      this.log.info("agent", `${traceEvent} triggered`, {
                         turn: this.turnCount,
-                        fromStep: planAfterAction.currentIndex,
+                        fromStep,
                         toStep: newIdx,
-                        matchedTokens: advanceSignal.matchedTokens,
+                        matchedTokens,
                       });
-                      this.traceRecorder?.recordEvent("structural_step_advance", {
-                        fromStep: planAfterAction.currentIndex,
+                      this.traceRecorder?.recordEvent(traceEvent, {
+                        fromStep,
                         toStep: newIdx,
-                        matchedTokens: advanceSignal.matchedTokens,
-                        reason: advanceSignal.reason,
+                        matchedTokens,
+                        reason,
                       });
                     }
                   }
