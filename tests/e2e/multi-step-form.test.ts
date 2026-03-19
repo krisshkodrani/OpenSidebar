@@ -37,15 +37,18 @@ describe.skipIf(!h.apiKey)("E2E: Multi-Step Form", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "You are on a multi-step form wizard. Complete ALL steps IN ORDER. Do NOT navigate away.",
+      "Complete this 3-step form. Do NOT navigate away from this page.",
       "",
-      "Step 1 (Personal Info): Type 'Jane Smith' in the name field, 'jane@example.com' in the email field, '555-0123' in the phone field. Then click Next.",
+      "Fill the form with these values:",
+      "- Name: Jane Smith",
+      "- Email: jane@example.com",
+      "- Phone: 555-0123",
+      "- Category: Enterprise (this will reveal a Company Name field)",
+      "- Company Name: Acme Corp",
+      "- Budget: Premium ($2,000+)",
+      "- Special Requirements: Priority support needed",
       "",
-      "Step 2 (Preferences): Select 'Enterprise' from the category dropdown. A 'Company Name' field should appear — type 'Acme Corp' into it. Select the 'Premium ($2,000+)' budget radio option. Type 'Priority support needed' in the special requirements field. Then click Next.",
-      "",
-      "Step 3 (Review & Submit): Check the confirmation checkbox ('I confirm the above information is correct'), then click Submit.",
-      "",
-      "Wait for the confirmation panel with a reference number to appear.",
+      "Click Next after each step. On the final Review step, check the confirmation checkbox and click Submit.",
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);

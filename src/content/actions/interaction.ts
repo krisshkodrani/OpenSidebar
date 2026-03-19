@@ -537,9 +537,24 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
-  el.checked = args.checked;
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+
+  // Use click() for React/framework compatibility — direct property assignment
+  // doesn't trigger synthetic event handlers. click() toggles the native state
+  // AND fires the full event pipeline (mousedown, mouseup, click, change).
+  if (el.type === "radio") {
+    // Radio: click to select (only if not already in desired state)
+    if (args.checked && !el.checked) el.click();
+  } else {
+    // Checkbox: click toggles, so only click if current state differs
+    if (el.checked !== args.checked) el.click();
+  }
+
+  // Fallback: ensure the DOM property matches the requested state
+  if (el.checked !== args.checked) {
+    el.checked = args.checked;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
 
   return {
     success: true,
