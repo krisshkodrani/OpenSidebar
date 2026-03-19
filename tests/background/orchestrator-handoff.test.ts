@@ -132,7 +132,7 @@ describe("Orchestrator handoff briefing", () => {
     expect(brief).toContain("[failed] Apply discount code");
   });
 
-  test("builds executor task state brief with compact completed and upcoming sections", () => {
+  test("builds executor task state brief without leaking future step details", () => {
     const nodes: TaskNode[] = [
       {
         id: "n1",
@@ -182,9 +182,12 @@ describe("Orchestrator handoff briefing", () => {
     const brief = buildTaskStateBrief(nodes, "n-current", "executor");
     expect(brief).toContain("Completed / prior steps:");
     expect(brief).toContain("[completed] Add the item to the cart");
-    expect(brief).toContain("Upcoming steps (awareness only - do not execute yet):");
-    expect(brief).toContain("Apply SAVE10 and choose Express shipping");
-    expect(brief).toContain("Fill checkout name and email");
+    expect(brief).toContain("Remaining future steps: 2");
+    expect(brief).toContain(
+      "Do NOT execute them until the current objective is verified complete.",
+    );
+    expect(brief).not.toContain("Apply SAVE10 and choose Express shipping");
+    expect(brief).not.toContain("Fill checkout name and email");
   });
 
   test("builds verifier context with node and global handoff", () => {

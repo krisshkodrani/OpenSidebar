@@ -87,10 +87,6 @@ export function buildTaskStateBrief(
         node.status === "failed" ||
         node.status === "skipped",
     );
-    const upcoming = relevant.filter(
-      (node) => node.status === "pending" || node.status === "running",
-    );
-
     const sections: string[] = [];
 
     if (completed.length > 0) {
@@ -108,14 +104,14 @@ export function buildTaskStateBrief(
       );
     }
 
-    if (upcoming.length > 0) {
+    const remainingCount = relevant.filter(
+      (node) => node.status === "pending" || node.status === "running",
+    ).length;
+    if (remainingCount > 0) {
       sections.push(
-        "Upcoming steps (awareness only - do not execute yet):",
-        ...upcoming.slice(0, 2).map((node) => `- ${normalizeNote(node.description)}`),
+        `Remaining future steps: ${remainingCount}`,
+        "Do NOT execute them until the current objective is verified complete.",
       );
-      if (upcoming.length > 2) {
-        sections.push(`- ... ${upcoming.length - 2} more upcoming step(s)`);
-      }
     }
 
     return sections.join("\n");
@@ -178,7 +174,8 @@ export function buildExecutorInstruction(
     realitySignal || "No drift signal recorded.",
     "",
     "Execution policy:",
-    "- Execute only the current step objective. Treat upcoming steps as awareness only.",
+    "- Execute only the current step objective.",
+    "- Treat all later steps as out of scope until this step is verified complete.",
     "- Validate planner assumptions against current page and adjust steps if reality changed.",
     "- Continue from prior context; do not repeat completed work.",
     "- Use completed-step context only to avoid duplicating prior work.",

@@ -10,6 +10,7 @@ The agent's plan has deviated from expectations. You must replace steps from the
 Constraints:
 - Output ONLY the replacement steps (not the completed ones).
 - Maximum 8 replacement steps.
+- When failure analysis data is provided, use it: avoid tools that already failed, try untried alternatives, and address specific errors in your new plan.
 - Each step follows the same format as the original plan:
   {
     "objective": "concrete step objective",

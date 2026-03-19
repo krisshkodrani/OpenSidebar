@@ -261,7 +261,7 @@ function CitationList({ citations }: { citations: Citation[] }) {
   };
 
   return (
-    <div className="flex flex-wrap gap-1.5 max-w-[85%] mt-1">
+    <div className="flex flex-wrap gap-1.5 max-w-[92%] mt-1">
       {citations.map((c, i) => (
         <a
           key={i}
@@ -316,15 +316,25 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (isUser || renderedHtml || message.thinking || message.completionData)
       return null;
     // Steps already have resolved labels from the background (with element names)
+    let labels: string[];
     const toolSteps = message.steps?.filter((s) => s.type === "tool");
     if (toolSteps && toolSteps.length > 0) {
-      return toolSteps.map((s) => s.label).join(" → ");
+      labels = toolSteps.map((s) => s.label);
+    } else if (message.toolCalls.length > 0) {
+      // Fallback: raw tool calls without element resolution
+      labels = message.toolCalls.map((tc: ToolCallSummary) =>
+        formatStepLabel(tc.toolName, tc.args),
+      );
+    } else {
+      return null;
     }
-    // Fallback: raw tool calls without element resolution
-    if (message.toolCalls.length === 0) return null;
-    return message.toolCalls
-      .map((tc: ToolCallSummary) => formatStepLabel(tc.toolName, tc.args))
-      .join(" → ");
+    // Truncate long chains so they stay readable
+    const MAX_VISIBLE = 3;
+    if (labels.length > MAX_VISIBLE) {
+      const tail = labels.slice(-MAX_VISIBLE);
+      return `... +${labels.length - MAX_VISIBLE} → ${tail.join(" → ")}`;
+    }
+    return labels.join(" → ");
   }, [
     isUser,
     renderedHtml,
@@ -345,14 +355,24 @@ export const MessageBubble = React.memo(function MessageBubble({
   return (
     <div
       className={clsx(
-        "group flex flex-col gap-1 mb-6 message-enter",
+        "group flex flex-col gap-1 mb-4 message-enter",
         isUser ? "items-end" : "items-start",
       )}
     >
+      {/* Steps render above the content bubble so the final summary is at the bottom (closest to input) */}
+      {!isUser && message.steps && message.steps.length > 0 && (
+        <StepTimeline steps={message.steps} />
+      )}
+
+      {/* Separator between steps and summary content */}
+      {!isUser && message.steps && message.steps.length > 0 && showBubble && !message.isStreaming && (
+        <div className="w-[60%] h-px bg-warm-200/50 dark:bg-warm-700/30 my-0.5" />
+      )}
+
       {showBubble && (
         <div
           className={clsx(
-            "max-w-[85%] text-sm",
+            "max-w-[92%] text-sm",
             isUser
               ? clsx(
                   "px-3 py-2 rounded-2xl whitespace-pre-wrap",
@@ -415,12 +435,8 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
-      {!isUser && message.steps && message.steps.length > 0 && (
-        <StepTimeline steps={message.steps} />
-      )}
-
       {showDetailsByDefault && message.toolCalls.length > 0 && (
-        <div className="flex flex-col gap-2 w-full max-w-[85%] mt-1">
+        <div className="flex flex-col gap-2 w-full max-w-[92%] mt-1">
           {message.toolCalls.map((tool, idx) => (
             <ToolCallBadge key={idx} tool={tool} />
           ))}

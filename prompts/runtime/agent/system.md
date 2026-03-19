@@ -66,9 +66,13 @@ Before calling any tool, apply this order:
 - Use `AFFORDANCES` as hints, but confirm actions against `Visible Elements`.
 
 ## done() Requirements
+Before calling `done()`:
+- Verify completion: check the Page Interpretation or use `read_page` to confirm the task outcome is visible on the current page.
+- Do not call `done()` based on assumptions — confirm the result is observable.
+
 When calling `done()`:
 - Write for the user, not for the system.
-- Summarize what was accomplished and cite observable evidence.
+- Summarize what was accomplished and cite observable evidence from the current page state.
 - Use clean Markdown.
 
 ## Tool Reminders

@@ -1,4 +1,86 @@
 import type { VerificationGate } from "../orchestrator/types";
+import { tokenizeStepText } from "./loop-helpers";
+
+export interface StepCoherenceResult {
+  coherent: boolean;
+  reason?: string;
+}
+
+/**
+ * Cross-step coherence check for done() summaries (Layer 4).
+ *
+ * Detects when the model's done() summary describes completing a DIFFERENT step
+ * than the one it's currently on (e.g., "Novablast added" while on the CloudStrike step).
+ *
+ * Algorithm:
+ * 1. Tokenize all step descriptions → find distinctive tokens per step (unique to that step)
+ * 2. Tokenize the summary
+ * 3. Block if summary contains distinctive tokens from a different step but not the current one
+ */
+export function checkSummaryStepCoherence(params: {
+  summary: string;
+  currentStepIndex: number;
+  stepDescriptions: string[];
+}): StepCoherenceResult {
+  const { summary, currentStepIndex, stepDescriptions } = params;
+
+  if (stepDescriptions.length < 2 || currentStepIndex < 0) {
+    return { coherent: true };
+  }
+
+  // Tokenize all steps
+  const stepTokenSets = stepDescriptions.map((desc) => new Set(tokenizeStepText(desc)));
+
+  // Find distinctive tokens per step: tokens that appear in this step but no other
+  const distinctiveTokens: Set<string>[] = stepTokenSets.map((tokens, idx) => {
+    const distinctive = new Set<string>();
+    for (const token of tokens) {
+      const appearsElsewhere = stepTokenSets.some(
+        (other, otherIdx) => otherIdx !== idx && other.has(token),
+      );
+      if (!appearsElsewhere) {
+        distinctive.add(token);
+      }
+    }
+    return distinctive;
+  });
+
+  const currentDistinctive = distinctiveTokens[currentStepIndex];
+  if (!currentDistinctive || currentDistinctive.size === 0) {
+    // Current step has no distinctive tokens (generic step like "Checkout") → pass
+    return { coherent: true };
+  }
+
+  // Tokenize the summary
+  const summaryTokens = new Set(tokenizeStepText(summary));
+
+  // Check: does the summary mention the current step's distinctive tokens?
+  const hasCurrentStepTokens = [...currentDistinctive].some((t) => summaryTokens.has(t));
+
+  // Check: does the summary mention a different step's distinctive tokens?
+  let wrongStepIdx = -1;
+  let wrongStepToken = "";
+  for (let i = 0; i < distinctiveTokens.length; i++) {
+    if (i === currentStepIndex) continue;
+    for (const token of distinctiveTokens[i]) {
+      if (summaryTokens.has(token)) {
+        wrongStepIdx = i;
+        wrongStepToken = token;
+        break;
+      }
+    }
+    if (wrongStepIdx >= 0) break;
+  }
+
+  if (!hasCurrentStepTokens && wrongStepIdx >= 0) {
+    return {
+      coherent: false,
+      reason: `Summary mentions "${wrongStepToken}" (step ${wrongStepIdx + 1}) but not current step ${currentStepIndex + 1}`,
+    };
+  }
+
+  return { coherent: true };
+}
 
 export interface GateCheckResult {
   matched: boolean;
@@ -96,6 +178,51 @@ const FAILURE_PATTERNS = [
   /no\s+(way|method|approach)\s+(to|for)/i,
   /this\s+(task|action)\s+is\s+not\s+possible/i,
 ];
+
+export interface DoneSentimentResult {
+  confident: boolean;
+  reason?: string;
+}
+
+/** Failure/uncertainty patterns in done() summaries — generic verb-outcome pairs. */
+const DONE_FAILURE_PATTERNS: RegExp[] = [
+  /didn['']?t\s+(update|change|work|succeed|complete|add|remove|appear|load|submit)/i,
+  /attempt(?:ed)?\s+(?:to\s+)?(?:failed|unsuccessful)/i,
+  /(?:could|was)\s+not\s+(?:verify|confirm|complete|find|add|remove|submit|load)/i,
+  /not\s+(?:visible|confirmed|updated|added|removed|completed|successful|found|present)/i,
+  /no\s+(?:change|update|confirmation|evidence|result|response|effect)/i,
+  /unable\s+to/i,
+  /(?:fail|error|issue|problem)\s+(?:with|in|during|while)/i,
+];
+
+/** Strong success signals that override failure patterns (reduces false positives). */
+const DONE_SUCCESS_OVERRIDES: RegExp[] = [
+  /successfully\s+(added|completed|submitted|applied|removed|updated|placed)/i,
+  /\b(done|finished|completed)\s+(the|this)\s+step/i,
+  /\bis\s+(now|already)\s+(in|on|at|applied|selected|checked|submitted)/i,
+  /\bhas\s+been\s+(added|applied|selected|submitted|completed|updated)/i,
+];
+
+/**
+ * Scan the `summary` text passed to done() for failure/uncertainty signals.
+ * If the model's own words admit failure, returns `{ confident: false }`.
+ * If a failure pattern is matched but a strong success override is also present,
+ * the summary is treated as confident (avoids false positives on hedged language).
+ * Returns `{ confident: true }` when no failure signals found.
+ */
+export function assessDoneSummary(summary: string): DoneSentimentResult {
+  for (const pattern of DONE_FAILURE_PATTERNS) {
+    if (pattern.test(summary)) {
+      // Check for success overrides — hedged language like "added item though counter didn't update"
+      const hasSuccessOverride = DONE_SUCCESS_OVERRIDES.some((sp) => sp.test(summary));
+      if (hasSuccessOverride) {
+        return { confident: true };
+      }
+      return { confident: false, reason: pattern.source };
+    }
+  }
+  return { confident: true };
+}
 
 /**
  * Detect when the LLM's text output contains an admission of success or failure.

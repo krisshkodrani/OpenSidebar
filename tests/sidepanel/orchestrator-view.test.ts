@@ -34,6 +34,23 @@ describe("orchestrator-view helpers", () => {
         timeoutMs: 30000,
         requestedAt: Date.now(),
       },
+      pendingPlanConfirmation: null,
+      messages: [],
+    });
+    expect(role).toBe("policy");
+  });
+
+  test("inferConsoleRole prioritizes policy when plan confirmation is pending", () => {
+    const role = inferConsoleRole({
+      agentStatus: AgentStatus.THINKING,
+      statusDetail: "Planning",
+      pendingApproval: null,
+      pendingPlanConfirmation: {
+        confirmationId: "pc-1",
+        nodes: [{ description: "Step 1", successCriteria: "Done" }],
+        query: "Do something complex",
+        requestedAt: Date.now(),
+      },
       messages: [],
     });
     expect(role).toBe("policy");
@@ -44,6 +61,7 @@ describe("orchestrator-view helpers", () => {
       agentStatus: AgentStatus.THINKING,
       statusDetail: "Verifying completion...",
       pendingApproval: null,
+      pendingPlanConfirmation: null,
       messages: [],
     });
     expect(role).toBe("verifier");

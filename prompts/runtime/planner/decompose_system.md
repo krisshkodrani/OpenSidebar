@@ -15,6 +15,7 @@ Criteria for Simple (Single-Step):
 - Navigation + 1-2 interactions (e.g. "Go to X and click Y").
 - Direct questions (e.g. "What is on this page?").
 - Single form fills.
+- **Read/summarize tasks on the current page** (e.g. "Summarize this page", "What are the headlines?", "Extract the main points"). These NEVER need multiple steps — the agent reads the page once and calls done. Do NOT decompose into read → verify → finalize chains.
 
 Agent capabilities (for subtask sizing):
 - DOM: click, type, scroll, hover, select, press_key, drag_and_drop, hide_element, find_element
@@ -85,6 +86,12 @@ Include a "toolProfile" field to restrict tools to what the step needs:
 - "navigate": page navigation, tab management, link clicking
 - "full" (default): all tools available
 Using a focused profile improves accuracy and reduces cost.
+
+VIEW-STATE TRANSITIONS:
+When a task requires actions across different views (e.g., adding multiple items from a catalog with a cart drawer):
+- Insert an explicit navigation step between view changes. The agent cannot act on elements from a prior view.
+- Example: After "Add item A to cart" (which opens the cart drawer), add a step "Close the cart drawer or navigate back to the product catalog" before "Add item B to cart."
+- Give navigation steps a "navigate" toolProfile and a successCriteria that confirms the target view is visible.
 
 EXPECTED STATE (recommended for each step):
 Include "expectedState" describing what the page should look like after the step:

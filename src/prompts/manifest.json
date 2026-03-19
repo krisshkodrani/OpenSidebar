@@ -86,9 +86,16 @@
   {
     "id": "agent.system",
     "version": "v4",
-    "hash": "65e62b2f",
+    "hash": "c58d3b51",
     "description": "Core executor system prompt for browser automation turns. v4: shorter direct-action priority.",
     "sourcePath": "prompts/runtime/agent/system.md"
+  },
+  {
+    "id": "demos.multi_item_shopping",
+    "version": "v2",
+    "hash": "7981a852",
+    "description": "Built-in demonstration for multi-item shopping: add multiple products, apply coupon, checkout.",
+    "sourcePath": "prompts/runtime/demos/multi_item_shopping.md"
   },
   {
     "id": "orchestrator.advisory.system",
@@ -114,7 +121,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "2acae85a",
+    "hash": "edf1f747",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
@@ -128,7 +135,7 @@
   {
     "id": "planner.replan.system",
     "version": "v1",
-    "hash": "5e733b13",
+    "hash": "c1a26202",
     "description": "Selective replan system prompt for plan repair after deviation.",
     "sourcePath": "prompts/runtime/planner/replan_system.md"
   },

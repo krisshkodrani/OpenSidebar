@@ -18,6 +18,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { PlanTimelineCard } from "./components/PlanTimelineCard";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
+import { getInteractionMode, getInteractionModeBadge } from "./interaction-mode";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import { parseSlashCommand } from "./slash-commands";
@@ -78,6 +79,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldFollowLatestRef = useRef(true);
 
   // Dark Mode Logic
   useEffect(() => {
@@ -282,20 +284,43 @@ export default function App() {
 
   // Auto-scroll — uses message count + streaming flag as lightweight trigger
   // instead of the full messages array reference (which changes on every delta).
-  const messageCount = useStore((s) => s.messages.length);
-  const isStreaming = useStore(
-    (s) => s.messages[s.messages.length - 1]?.isStreaming ?? false,
+  const lastVisibleMessage = visibleMessages[visibleMessages.length - 1];
+  const scrollSignal = useMemo(
+    () =>
+      [
+        visibleMessages.length,
+        isAgentRunning ? 1 : 0,
+        lastVisibleMessage?.id ?? "",
+        lastVisibleMessage?.content.length ?? 0,
+        lastVisibleMessage?.isStreaming ? 1 : 0,
+        lastVisibleMessage?.steps?.length ?? 0,
+        lastVisibleMessage?.thinking?.length ?? 0,
+      ].join(":"),
+    [visibleMessages, isAgentRunning, lastVisibleMessage],
   );
   useEffect(() => {
-    if (scrollTimerRef.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const updateFollowState = () => {
+      const distanceFromBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      shouldFollowLatestRef.current = distanceFromBottom < 120;
+    };
+
+    updateFollowState();
+    el.addEventListener("scroll", updateFollowState);
+    return () => el.removeEventListener("scroll", updateFollowState);
+  }, []);
+
+  useEffect(() => {
+    if (scrollTimerRef.current) {
+      clearTimeout(scrollTimerRef.current);
+    }
     scrollTimerRef.current = setTimeout(() => {
       const el = scrollRef.current;
-      if (el) {
-        const distanceFromBottom =
-          el.scrollHeight - el.scrollTop - el.clientHeight;
-        if (distanceFromBottom < 150) {
-          el.scrollTop = el.scrollHeight;
-        }
+      if (el && (shouldFollowLatestRef.current || isAgentRunning)) {
+        el.scrollTop = el.scrollHeight;
       }
       scrollTimerRef.current = null;
     }, 100);
@@ -305,7 +330,24 @@ export default function App() {
         scrollTimerRef.current = null;
       }
     };
-  }, [messageCount, isStreaming]);
+  }, [scrollSignal, isAgentRunning]);
+
+  // Force-scroll to bottom on task completion so the summary is visible.
+  // Uses a ref to track the previous running state and detect the transition.
+  const prevRunningRef = useRef(isAgentRunning);
+  useEffect(() => {
+    const wasRunning = prevRunningRef.current;
+    prevRunningRef.current = isAgentRunning;
+    if (wasRunning && !isAgentRunning) {
+      // Agent just finished — scroll to bottom after a short delay
+      // so the final message / completion summary has rendered.
+      setTimeout(() => {
+        const el = scrollRef.current;
+        shouldFollowLatestRef.current = true;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 250);
+    }
+  }, [isAgentRunning]);
 
   // Auto-dismiss error after 8 seconds (persistent errors stay until user acts)
   const errorPersistent = useStore((s) => s.errorPersistent);
@@ -576,7 +618,7 @@ export default function App() {
           setSavedPromptsPrefill(undefined);
           setIsSavedPromptsOpen(true);
         }}
-        showApprovalBypassBadge={!settings.requireApprovals}
+        modeBadgeLabel={getInteractionModeBadge(getInteractionMode(settings))}
       />
 
       <SettingsDrawer

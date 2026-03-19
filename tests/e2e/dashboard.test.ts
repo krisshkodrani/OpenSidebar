@@ -4,9 +4,22 @@
  * Run: npm run test:e2e
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import { createE2EHarness } from "./helpers/harness";
-import { getActiveTabId, navigateAndWait, sendUserChat, waitForOutcome } from "./helpers/utils";
+import {
+  getActiveTabId,
+  navigateAndWait,
+  sendUserChat,
+  waitForOutcome,
+} from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 
 const h = createE2EHarness({ maxTurns: 20, testLabel: "dashboard" });
@@ -17,69 +30,70 @@ describe.skipIf(!h.apiKey)("E2E: Dashboard", () => {
   afterEach(() => h.afterEachHook("dashboard"));
   afterAll(() => h.afterAllHook());
 
-  it(
-    "agent reads table data, switches to Settings tab, and saves settings",
-    async () => {
-      await navigateAndWait(h.page, getFixtureUrl("dashboard.html"));
-      await h.page.bringToFront();
-      const tabId = await getActiveTabId(h.ctx.serviceWorker);
-      expect(tabId).toBeGreaterThan(0);
+  it("agent reads table data, switches to Settings tab, and saves settings", async () => {
+    await navigateAndWait(h.page, getFixtureUrl("dashboard"));
+    await h.page.bringToFront();
+    const tabId = await getActiveTabId(h.ctx.serviceWorker);
+    expect(tabId).toBeGreaterThan(0);
 
-      const prompt = [
-        "You are on an analytics dashboard. Complete these steps IN ORDER. Do NOT navigate away.",
-        "",
-        "Step 1: Click the 'Settings' tab button to switch to the Settings panel.",
-        "",
-        "Step 2: In the Settings form, type 'admin@test.com' into the notification email input field (it has placeholder 'admin@example.com'). Make sure to use type_text to enter the email, not just click the field.",
-        "",
-        "Step 3: Click the Save button.",
-        "",
-        "Verify the success toast 'Settings saved successfully!' appears.",
-      ].join("\n");
+    const prompt = [
+      "You are on an analytics dashboard. Complete these steps IN ORDER. Do NOT navigate away.",
+      "",
+      "Step 1: Click the 'Settings' tab button to switch to the Settings panel.",
+      "",
+      "Step 2: In the Settings form, type 'admin@test.com' into the notification email input field (it has placeholder 'admin@example.com'). Make sure to use type_text to enter the email, not just click the field.",
+      "",
+      "Step 3: Click the Save button.",
+      "",
+      "Verify the success toast 'Settings saved successfully!' appears.",
+    ].join("\n");
 
-      const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
+    const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
-      const outcome = await waitForOutcome(
-        h.page,
-        h.ctx.serviceWorker,
-        async () => {
-          const settings = await h.page.evaluate(
-            () => (window as any).dashboardSettings ?? null,
-          );
-          return settings || null;
-        },
-        240_000,
-        workspaceId,
-      );
-
-      await h.printTraceSummary();
-
-      if (!outcome.ok) {
-        const ui = await h.page.evaluate(() => ({
-          activeTab: document.querySelector(".tab-btn.active")?.textContent?.trim() || "",
-          toastVisible: !document.getElementById("settings-toast")?.classList.contains("hidden"),
-          settingsEmail: (document.getElementById("settings-email") as HTMLInputElement)?.value || "",
-        }));
-        console.log(
-          "[e2e] FAILURE DIAGNOSTICS:",
-          JSON.stringify(
-            { reason: outcome.reason, ui, events: outcome.events.slice(-10) },
-            null,
-            2,
-          ),
+    const outcome = await waitForOutcome(
+      h.page,
+      h.ctx.serviceWorker,
+      async () => {
+        const settings = await h.page.evaluate(
+          () => (window as any).dashboardSettings ?? null,
         );
-      }
-      expect(outcome.ok, outcome.reason).toBe(true);
+        return settings || null;
+      },
+      240_000,
+      workspaceId,
+    );
 
-      const settings = outcome.result as any;
-      expect(settings).toBeTruthy();
-      expect(settings.email).toBe("admin@test.com");
-      expect(settings.savedAt).toBeTruthy();
+    await h.printTraceSummary();
 
-      console.log(`\n[e2e] PASS — Settings saved`);
-      console.log(`[e2e]   Email: ${settings.email}`);
-      console.log(`[e2e]   Timezone: ${settings.timezone}`);
-    },
-    300_000,
-  );
+    if (!outcome.ok) {
+      const ui = await h.page.evaluate(() => ({
+        activeTab:
+          document.querySelector(".tab-btn.active")?.textContent?.trim() || "",
+        toastVisible: !document
+          .getElementById("settings-toast")
+          ?.classList.contains("hidden"),
+        settingsEmail:
+          (document.getElementById("settings-email") as HTMLInputElement)
+            ?.value || "",
+      }));
+      console.log(
+        "[e2e] FAILURE DIAGNOSTICS:",
+        JSON.stringify(
+          { reason: outcome.reason, ui, events: outcome.events.slice(-10) },
+          null,
+          2,
+        ),
+      );
+    }
+    expect(outcome.ok, outcome.reason).toBe(true);
+
+    const settings = outcome.result as any;
+    expect(settings).toBeTruthy();
+    expect(settings.email).toBe("admin@test.com");
+    expect(settings.savedAt).toBeTruthy();
+
+    console.log(`\n[e2e] PASS — Settings saved`);
+    console.log(`[e2e]   Email: ${settings.email}`);
+    console.log(`[e2e]   Timezone: ${settings.timezone}`);
+  }, 300_000);
 });

@@ -29,9 +29,9 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Executor model tier — used for initial turns (OpenRouter) */
-export const MODEL_EXECUTOR = "openai/gpt-4.1-mini";
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-2.5-flash-lite";
+/** Executor model tier — used for initial turns (OpenRouter, :nitro for fast routing) */
+export const MODEL_EXECUTOR = "google/gemini-3-flash-preview:nitro";
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-3.1-flash-lite-preview";
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "minimax/minimax-m2.5";
 

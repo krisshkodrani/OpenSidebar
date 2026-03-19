@@ -10,6 +10,13 @@ import {
   getCommandCompletions,
   CommandHint,
 } from "../slash-commands";
+import {
+  applyInteractionMode,
+  InteractionMode,
+  getInteractionMode,
+  getInteractionModeDescription,
+  getInteractionModeLabel,
+} from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
 
 import { clsx } from "clsx";
@@ -39,15 +46,12 @@ export function InputArea({
   const manualRecording = useStore((s) => s.manualRecording);
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
-  const autonomousMode = !settings.requireApprovals;
+  const interactionMode = getInteractionMode(settings);
+  const autonomousMode = interactionMode === "autonomous";
   const [autonomyMenuOpen, setAutonomyMenuOpen] = useState(false);
 
-  const setAutonomyMode = useCallback((autonomous: boolean) => {
-    const next = {
-      ...settings,
-      requireApprovals: !autonomous,
-      requirePlanConfirmation: !autonomous,
-    };
+  const setInteractionMode = useCallback((mode: InteractionMode) => {
+    const next = applyInteractionMode(settings, mode);
     updateSettings(next);
     void saveSettings(next);
   }, [settings, updateSettings]);
@@ -338,7 +342,7 @@ export function InputArea({
                   )}
                 >
                   {autonomousMode ? <Play size={10} className="shrink-0" /> : <ShieldCheck size={10} className="shrink-0" />}
-                  <span>{autonomousMode ? "Act without asking" : "Ask before acting"}</span>
+                  <span>{getInteractionModeLabel(interactionMode)}</span>
                   <ChevronDown size={10} className="shrink-0" />
                 </button>
                 {autonomyMenuOpen && (
@@ -346,10 +350,10 @@ export function InputArea({
                     <div className="fixed inset-0 z-40" onClick={() => setAutonomyMenuOpen(false)} />
                     <div className="absolute bottom-full left-0 mb-1.5 w-64 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg z-50 overflow-hidden">
                       <button
-                        onClick={() => { setAutonomyMode(false); setAutonomyMenuOpen(false); }}
+                        onClick={() => { setInteractionMode("confirm_all"); setAutonomyMenuOpen(false); }}
                         className={clsx(
                           "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          !autonomousMode
+                          interactionMode === "confirm_all"
                             ? "bg-warm-100 dark:bg-warm-700/50"
                             : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
                         )}
@@ -357,15 +361,47 @@ export function InputArea({
                         <ShieldCheck size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Ask before acting</div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent asks for approval before taking actions</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">{getInteractionModeDescription("confirm_all")}</div>
                         </div>
-                        {!autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                        {interactionMode === "confirm_all" && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
                       </button>
                       <button
-                        onClick={() => { setAutonomyMode(true); setAutonomyMenuOpen(false); }}
+                        onClick={() => { setInteractionMode("confirm_high_risk_only"); setAutonomyMenuOpen(false); }}
                         className={clsx(
                           "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          autonomousMode
+                          interactionMode === "confirm_high_risk_only"
+                            ? "bg-warm-100 dark:bg-warm-700/50"
+                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
+                        )}
+                      >
+                        <ShieldAlert size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Ask for risky actions</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">{getInteractionModeDescription("confirm_high_risk_only")}</div>
+                        </div>
+                        {interactionMode === "confirm_high_risk_only" && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                      </button>
+                      <button
+                        onClick={() => { setInteractionMode("confirm_plans_only"); setAutonomyMenuOpen(false); }}
+                        className={clsx(
+                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
+                          interactionMode === "confirm_plans_only"
+                            ? "bg-warm-100 dark:bg-warm-700/50"
+                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
+                        )}
+                      >
+                        <ShieldCheck size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Confirm plans only</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">{getInteractionModeDescription("confirm_plans_only")}</div>
+                        </div>
+                        {interactionMode === "confirm_plans_only" && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                      </button>
+                      <button
+                        onClick={() => { setInteractionMode("autonomous"); setAutonomyMenuOpen(false); }}
+                        className={clsx(
+                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
+                          interactionMode === "autonomous"
                             ? "bg-warm-100 dark:bg-warm-700/50"
                             : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
                         )}
@@ -373,9 +409,9 @@ export function InputArea({
                         <Play size={14} className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400" />
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-medium text-warm-800 dark:text-warm-100">Act without asking</div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">Agent takes actions without asking for permission</div>
+                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">{getInteractionModeDescription("autonomous")}</div>
                         </div>
-                        {autonomousMode && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
+                        {interactionMode === "autonomous" && <Check size={14} className="shrink-0 mt-0.5 text-primary-500" />}
                       </button>
                     </div>
                   </>
