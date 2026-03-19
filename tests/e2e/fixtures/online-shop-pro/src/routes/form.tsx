@@ -20,11 +20,8 @@ export default function MultiStepForm() {
   // Result
   const [refNumber, setRefNumber] = useState("");
 
-  const canProceed1 = name && email.includes("@") && phone;
-  const canProceed2 = category && budget;
-
-  const next = () => setStep((s) => s + 1);
-  const back = () => setStep((s) => Math.max(s - 1, 1));
+  const canProceed1 = name.length > 0 && email.includes("@") && phone.length > 0;
+  const canProceed2 = category.length > 0 && budget.length > 0;
 
   const submit = () => {
     const ref = `REF-${Date.now().toString(36).toUpperCase()}`;
@@ -56,36 +53,34 @@ export default function MultiStepForm() {
         <h1>Multi-Step Form</h1>
 
         <div className="step-indicator">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="step-node">
+          {["Personal Info", "Preferences", "Review"].map((label, i) => (
+            <div key={i} className="step-node">
               <div
-                className={`step-circle ${step >= s ? "active" : ""} ${step > s ? "completed" : ""}`}
+                className={`step-circle ${step >= i + 1 ? "active" : ""} ${step > i + 1 ? "completed" : ""}`}
               >
-                {step > s ? "✓" : s}
+                {step > i + 1 ? "✓" : i + 1}
               </div>
-              <div className="step-label">
-                {s === 1 && "Personal"}
-                {s === 2 && "Preferences"}
-                {s === 3 && "Review"}
-              </div>
+              <div className="step-label">{label}</div>
             </div>
           ))}
         </div>
 
         {step === 1 && (
           <div id="step-1">
-            <h2>Personal Information</h2>
+            <h2>Step 1: Personal Information</h2>
             <div className="field" style={{ marginTop: 16 }}>
-              <label>Full Name</label>
+              <label htmlFor="field-name">Full Name</label>
               <input
+                id="field-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter your name"
               />
             </div>
             <div className="field">
-              <label>Email Address</label>
+              <label htmlFor="field-email">Email Address</label>
               <input
+                id="field-email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
@@ -93,33 +88,33 @@ export default function MultiStepForm() {
               />
             </div>
             <div className="field">
-              <label>Phone Number</label>
+              <label htmlFor="field-phone">Phone Number</label>
               <input
+                id="field-phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 type="tel"
                 placeholder="555-0123"
               />
             </div>
-            <div style={{ marginTop: 24 }}>
-              <button
-                className="btn btn-primary"
-                disabled={!canProceed1}
-                onClick={next}
-                style={{ width: "100%" }}
-              >
-                Next
-              </button>
-            </div>
+            <button
+              className="btn btn-primary"
+              disabled={!canProceed1}
+              onClick={() => setStep(2)}
+              style={{ width: "100%", marginTop: 24 }}
+            >
+              Next
+            </button>
           </div>
         )}
 
         {step === 2 && (
           <div id="step-2">
-            <h2>Preferences</h2>
+            <h2>Step 2: Preferences</h2>
             <div className="field" style={{ marginTop: 16 }}>
-              <label>Category</label>
+              <label htmlFor="field-category">Category</label>
               <select
+                id="field-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 style={{
@@ -138,8 +133,9 @@ export default function MultiStepForm() {
 
             {category === "Enterprise" && (
               <div className="field">
-                <label>Company Name</label>
+                <label htmlFor="field-company">Company Name</label>
                 <input
+                  id="field-company"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="Your company name"
@@ -147,18 +143,17 @@ export default function MultiStepForm() {
               </div>
             )}
 
-            <div style={{ marginTop: 16 }}>
-              <label
+            <fieldset style={{ marginTop: 16, border: "none", padding: 0 }}>
+              <legend
                 style={{
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#64748b",
-                  display: "block",
                   marginBottom: 8,
                 }}
               >
                 Budget
-              </label>
+              </legend>
               {[
                 { value: "basic", label: "Basic (Free)" },
                 { value: "standard", label: "Standard ($500)" },
@@ -177,21 +172,23 @@ export default function MultiStepForm() {
                   <input
                     type="radio"
                     name="budget"
+                    value={opt.value}
                     checked={budget === opt.value}
                     onChange={() => setBudget(opt.value)}
                   />
                   {opt.label}
                 </label>
               ))}
-            </div>
+            </fieldset>
 
             <div className="field">
-              <label>Special Requirements</label>
+              <label htmlFor="field-requirements">Special Requirements (optional)</label>
               <textarea
+                id="field-requirements"
                 value={requirements}
                 onChange={(e) => setRequirements(e.target.value)}
                 placeholder="Any special requirements..."
-                rows={3}
+                rows={2}
                 style={{
                   width: "100%",
                   padding: 10,
@@ -206,7 +203,7 @@ export default function MultiStepForm() {
             <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
               <button
                 className="btn btn-ghost"
-                onClick={back}
+                onClick={() => setStep(1)}
                 style={{ flex: 1 }}
               >
                 Back
@@ -214,7 +211,7 @@ export default function MultiStepForm() {
               <button
                 className="btn btn-primary"
                 disabled={!canProceed2}
-                onClick={next}
+                onClick={() => setStep(3)}
                 style={{ flex: 1 }}
               >
                 Next
@@ -225,7 +222,7 @@ export default function MultiStepForm() {
 
         {step === 3 && (
           <div id="step-3">
-            <h2>Review & Submit</h2>
+            <h2>Step 3: Review &amp; Submit</h2>
             <div
               style={{
                 marginTop: 16,
@@ -234,34 +231,35 @@ export default function MultiStepForm() {
                 borderRadius: 8,
               }}
             >
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>Name:</strong> {name}
               </div>
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>Email:</strong> {email}
               </div>
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>Phone:</strong> {phone}
               </div>
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>Category:</strong> {category}
               </div>
               {company && (
-                <div style={{ marginBottom: 12 }}>
+                <div style={{ marginBottom: 8 }}>
                   <strong>Company:</strong> {company}
                 </div>
               )}
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>Budget:</strong> {budget}
               </div>
               {requirements && (
-                <div style={{ marginBottom: 12 }}>
+                <div style={{ marginBottom: 8 }}>
                   <strong>Requirements:</strong> {requirements}
                 </div>
               )}
             </div>
 
             <label
+              htmlFor="field-confirm"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -271,6 +269,7 @@ export default function MultiStepForm() {
               }}
             >
               <input
+                id="field-confirm"
                 type="checkbox"
                 checked={confirmed}
                 onChange={(e) => setConfirmed(e.target.checked)}
@@ -281,7 +280,7 @@ export default function MultiStepForm() {
             <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
               <button
                 className="btn btn-ghost"
-                onClick={back}
+                onClick={() => setStep(2)}
                 style={{ flex: 1 }}
               >
                 Back
