@@ -17,6 +17,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -73,7 +74,9 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     expect(result.message.length).toBeGreaterThanOrEqual(10);
 
     console.log(`[e2e] PASS — Contact form submitted: ${result.email}`);
-  }, 240_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 260_000);
 
   it("agent handles delayed content that appears after button click", async () => {
     await navigateAndWait(h.page, getFixtureUrl("errors"));
@@ -119,7 +122,9 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     expect(text).toContain("The answer is 42");
 
     console.log(`[e2e] PASS — Delayed content loaded: "${text}"`);
-  }, 240_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 260_000);
 
   it("agent stops gracefully when task is impossible", async () => {
     await navigateAndWait(h.page, getFixtureUrl("errors"));
