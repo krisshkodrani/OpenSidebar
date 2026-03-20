@@ -125,15 +125,11 @@ function stepsToNodes(
     successCriteria:
       step.successCriteria ||
       `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-    allowedTools:
-      resolveToolProfile(
-        (step.toolProfile as ToolProfile | undefined) ||
-          inferToolProfileForStep(
-            step.objective,
-            step.successCriteria ||
-              `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-          ),
-      ) ?? [...EXECUTOR_DEFAULT_TOOLS],
+    // Always use the full default tool set for orchestrator nodes.
+    // Per-step profile filtering is handled by applyToolProfile() inside
+    // the agent loop — restricting here causes permanent tool blocking
+    // when the loop internally advances past the node's original objective.
+    allowedTools: [...EXECUTOR_DEFAULT_TOOLS],
     dependencies: (() => {
       const explicit = (step.dependencies || [])
         .filter(

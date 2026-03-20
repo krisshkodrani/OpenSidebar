@@ -821,7 +821,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.isSingleNode).toBe(true);
     });
 
-    test("narrows allowed tools on nodes when planner steps imply focused profiles", async () => {
+    test("all nodes get full default tools (profile filtering at loop level)", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: JSON.stringify({
@@ -849,11 +849,13 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         const result = await planner.buildNodes("Enter code and submit", "Page", "https://example.com");
 
         expect(result.nodes).toHaveLength(2);
+        // All nodes get the full default tool set — per-step profile filtering
+        // is handled by applyToolProfile() inside the agent loop, not at the
+        // orchestrator node level (prevents permanent tool blocking on replan).
         expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
-        expect(result.nodes[0].allowedTools).not.toContain(ToolName.EXECUTE_JS);
-        expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
         expect(result.nodes[1].allowedTools).toContain(ToolName.TYPE_TEXT);
-        expect(result.nodes[1].allowedTools).not.toContain(ToolName.XRAY_PAGE);
+        expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
     });
 });
 
