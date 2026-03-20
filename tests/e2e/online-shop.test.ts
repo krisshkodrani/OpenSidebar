@@ -15,8 +15,10 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNodeIsolation,
   assertNoGhostSession,
   getActiveTabId,
+  getMonitoredEvents,
   navigateAndWait,
   sendUserChat,
   waitForOutcome,
@@ -104,6 +106,12 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     console.log(`[e2e]   Total: $${order.total}`);
 
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
+
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
   }, 380_000);
 
@@ -188,6 +196,20 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     console.log(`[e2e]   Total: $${order.total}`);
 
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
+
+    // Structural node isolation check (multi-item = likely multi-node orchestration)
+    const { traceFiles } = await h.printTraceSummary();
+    const allEvents = await getMonitoredEvents(h.ctx.serviceWorker, 200);
+    const wsEvents = allEvents.filter(
+      (e: any) => e.workspaceId == null || e.workspaceId === workspaceId,
+    );
+    assertNodeIsolation(wsEvents, traceFiles);
+
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
   }, 380_000);
 
@@ -265,6 +287,12 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
+
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
   }, 380_000);
@@ -346,6 +374,12 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     console.log(`[e2e]   Total: $${order.total}`);
 
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
+
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
   }, 380_000);
 
@@ -422,6 +456,12 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon || "none"}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
+
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
   }, 380_000);
@@ -503,6 +543,20 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
+
+    // Regression guard: exactly 1 order (no double execution from node bleed)
+    const orderCount = await h.page.evaluate(
+      () => (window as any).previousOrders?.length ?? 0,
+    );
+    expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
+
+    // Structural node isolation check (multi-item = likely multi-node orchestration)
+    const { traceFiles } = await h.printTraceSummary();
+    const allEvents = await getMonitoredEvents(h.ctx.serviceWorker, 200);
+    const wsEvents = allEvents.filter(
+      (e: any) => e.workspaceId == null || e.workspaceId === workspaceId,
+    );
+    assertNodeIsolation(wsEvents, traceFiles);
 
     // Verify no ghost session starts after order completion
     console.log("[e2e] Watching for ghost sessions (12s quiet period)...");

@@ -59,6 +59,10 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
             stepDetail: message?.payload?.step?.detail,
             workspaceId: message?.workspaceId ?? null,
             timestamp: Date.now(),
+            // Node progression data (null for AGENT_STATUS/AGENT_STEP)
+            subtasks: message?.payload?.subtasks ?? null,
+            currentIndex: message?.payload?.currentIndex ?? null,
+            subtaskResults: message?.payload?.subtaskResults ?? null,
           });
           if (g.__agentEvents.length > 400) g.__agentEvents.shift();
         }
@@ -302,6 +306,69 @@ export async function assertNoGhostSession(
     throw new Error(
       `Ghost session detected: ${ghostEvents.length} ACTING/THINKING status event(s) ` +
         `appeared ${quietPeriodMs / 1000}s after task completion`,
+    );
+  }
+}
+
+/**
+ * Assert node isolation: no single executor completed multiple orchestrator nodes.
+ * Validates TASK_PROGRESS events show one-at-a-time progression and trace count
+ * matches expected node count.
+ */
+export function assertNodeIsolation(
+  events: any[],
+  traceFiles: string[],
+  expectedNodeCount?: number,
+): void {
+  // 1. One-at-a-time progression: check TASK_PROGRESS events with subtasks
+  const progressEvents = events.filter(
+    (e: any) => e.type === "TASK_PROGRESS" && Array.isArray(e.subtasks),
+  );
+
+  for (let i = 1; i < progressEvents.length; i++) {
+    const prev = progressEvents[i - 1].subtasks as any[];
+    const curr = progressEvents[i].subtasks as any[];
+    const len = Math.min(prev.length, curr.length);
+    let changedCount = 0;
+    for (let j = 0; j < len; j++) {
+      if (prev[j]?.status !== curr[j]?.status) changedCount++;
+    }
+    if (changedCount > 2) {
+      throw new Error(
+        `Node isolation violation: ${changedCount} subtask statuses changed between ` +
+          `consecutive TASK_PROGRESS events (expected ≤2). ` +
+          `Prev: ${JSON.stringify(prev.map((s: any) => s?.status))}, ` +
+          `Curr: ${JSON.stringify(curr.map((s: any) => s?.status))}`,
+      );
+    }
+  }
+
+  // 2. TASK_COMPLETION consistency
+  const completionEvents = events.filter(
+    (e: any) => e.type === "TASK_COMPLETION",
+  );
+  const lastCompletion = completionEvents[completionEvents.length - 1];
+  if (lastCompletion?.subtaskResults && expectedNodeCount != null) {
+    const results = lastCompletion.subtaskResults as any[];
+    if (results.length !== expectedNodeCount) {
+      throw new Error(
+        `Node isolation: expected ${expectedNodeCount} subtask results, ` +
+          `got ${results.length}`,
+      );
+    }
+    const failed = results.filter((r: any) => r?.status === "failed");
+    if (failed.length > 0) {
+      throw new Error(
+        `Node isolation: ${failed.length} subtask(s) failed unexpectedly`,
+      );
+    }
+  }
+
+  // 3. Trace count sanity: at least as many traces as expected nodes
+  if (expectedNodeCount != null && traceFiles.length < expectedNodeCount) {
+    throw new Error(
+      `Node isolation: expected ≥${expectedNodeCount} trace files (one per node), ` +
+        `got ${traceFiles.length}`,
     );
   }
 }
