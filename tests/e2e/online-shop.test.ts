@@ -468,6 +468,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     expect(order).toBeTruthy();
     expect(order.shippingMethod).toBe("express");
     expect(order.coupon).toBe("SAVE10");
+    expect(order.name).toBe("Alex Morgan");
+    expect(order.email).toBe("alex.morgan@example.com");
 
     const pegasus = order.items.find((item: any) => item.id === "pegasus-41");
     const novablast = order.items.find(
@@ -480,6 +482,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     expect(order.total).toBeCloseTo(275.1, 1);
 
     console.log(`\n[e2e] PASS — Order ${order.orderId}`);
+    console.log(
+      `[e2e]   Name: ${order.name}, Email: ${order.email}`,
+    );
     console.log(
       `[e2e]   Items: ${pegasus.name}, ${novablast.name}`,
     );

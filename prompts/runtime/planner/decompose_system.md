@@ -73,6 +73,14 @@ Extract key nouns and values from the objective to build the criteria.
     write "Click the 'Settings' link in the navigation menu."
   - If a subtask truly depends on a prior subtask's runtime output,
     note this explicitly as: [DEPENDS: step N output].
+- USER-PROVIDED VALUES: When the user provides specific values (names, emails,
+  phone numbers, addresses, coupon codes, quantities), these are durable context
+  that must survive across sub-task handoffs. Inline them into every sub-task
+  description that uses them.
+  BAD:  "Enter contact information and checkout"
+  GOOD: "Enter Alex Morgan (alex.morgan@example.com) in the checkout form"
+  BAD:  "Apply the coupon code"
+  GOOD: "Apply coupon code SAVE10 in the promo input"
 
 DIFFICULTY ASSESSMENT (required):
 Always include a "difficulty" field in your response. Assess the task as one of:

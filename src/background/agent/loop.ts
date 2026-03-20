@@ -4530,6 +4530,15 @@ export class AgentLoop {
                     mode: "parallel",
                     advancedTo: newIdx,
                   });
+                  this.broadcast({
+                    type: "TASK_PROGRESS",
+                    payload: {
+                      taskId: this.taskId!,
+                      subtasks: this.planSubtasks,
+                      currentIndex: newIdx,
+                      totalTurnsUsed: this.turnCount,
+                    },
+                  });
                   this.context.addMessage({
                     role: "user",
                     content: `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
@@ -6014,6 +6023,15 @@ export class AgentLoop {
                     evidence: seqGateResult.evidence,
                     mode: "sequential",
                     advancedTo: newIdx,
+                  });
+                  this.broadcast({
+                    type: "TASK_PROGRESS",
+                    payload: {
+                      taskId: this.taskId!,
+                      subtasks: this.planSubtasks,
+                      currentIndex: newIdx,
+                      totalTurnsUsed: this.turnCount,
+                    },
                   });
                   this.context.addMessage({
                     role: "user",
