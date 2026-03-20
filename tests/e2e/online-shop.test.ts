@@ -488,4 +488,5 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     console.log(`[e2e]   Total: $${order.total}`);
   }, 360_000);
+
 });
