@@ -15,6 +15,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -95,5 +96,7 @@ describe.skipIf(!h.apiKey)("E2E: Dashboard", () => {
     console.log(`\n[e2e] PASS — Settings saved`);
     console.log(`[e2e]   Email: ${settings.email}`);
     console.log(`[e2e]   Timezone: ${settings.timezone}`);
-  }, 300_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 320_000);
 });

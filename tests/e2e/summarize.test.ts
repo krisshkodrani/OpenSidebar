@@ -15,6 +15,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -75,5 +76,7 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
       ["click_element", "type_text", "navigate", "scroll_page"].includes(name),
     );
     expect(forbiddenActionTools).toEqual([]);
-  }, 120_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 8_000, workspaceId);
+  }, 150_000);
 });

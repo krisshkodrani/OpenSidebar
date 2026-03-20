@@ -15,6 +15,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -88,5 +89,7 @@ describe.skipIf(!h.apiKey)("E2E: Navigation Challenge", () => {
 
     console.log(`\n[e2e] PASS — Navigation Challenge completed`);
     console.log(`[e2e]   Code: ${result.code}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 });

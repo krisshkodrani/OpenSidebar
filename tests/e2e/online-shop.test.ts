@@ -103,7 +103,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 
   it("agent adds two items to cart, no coupon, standard shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));
@@ -185,7 +187,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon || "none"}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 
   it("agent adds accessory, applies coupon, express shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));
@@ -261,7 +265,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 
   it("agent adds item, changes quantity to 3, applies coupon, standard shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));
@@ -339,7 +345,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 
   it("agent adds apparel item, no coupon, express shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));
@@ -414,7 +422,9 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon || "none"}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 380_000);
 
   it("agent handles natural two-item order with coupon and express shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));

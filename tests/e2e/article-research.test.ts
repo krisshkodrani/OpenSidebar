@@ -15,6 +15,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -119,5 +120,7 @@ describe.skipIf(!h.apiKey)("E2E: Article Research", () => {
         `[e2e]   (Orchestrator-level synthesis may not appear in per-session traces)`,
       );
     }
-  }, 180_000);
+
+    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+  }, 210_000);
 });
