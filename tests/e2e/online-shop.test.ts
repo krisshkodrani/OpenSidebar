@@ -15,6 +15,7 @@ import {
 } from "vitest";
 import { createE2EHarness } from "./helpers/harness";
 import {
+  assertNoGhostSession,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
@@ -492,6 +493,11 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
       `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
     );
     console.log(`[e2e]   Total: $${order.total}`);
-  }, 360_000);
+
+    // Verify no ghost session starts after order completion
+    console.log("[e2e] Watching for ghost sessions (12s quiet period)...");
+    await assertNoGhostSession(h.ctx.serviceWorker, 12_000, workspaceId);
+    console.log("[e2e] No ghost session detected — OK");
+  }, 420_000);
 
 });

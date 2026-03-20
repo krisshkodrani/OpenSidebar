@@ -267,6 +267,45 @@ export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
   });
 }
 
+/**
+ * Assert no ghost session starts after task completion.
+ * Clears monitored events, waits `quietPeriodMs`, then checks for any
+ * AGENT_STATUS events with ACTING or THINKING status — which would
+ * indicate the orchestrator launched a new node after the task was done.
+ */
+export async function assertNoGhostSession(
+  worker: WebWorker,
+  quietPeriodMs: number = 12_000,
+  workspaceId?: string | null,
+): Promise<void> {
+  await clearMonitoredEvents(worker);
+  await new Promise((r) => setTimeout(r, quietPeriodMs));
+  const rawEvents = await getMonitoredEvents(worker, 100);
+  const events =
+    workspaceId == null
+      ? rawEvents
+      : rawEvents.filter(
+          (e: any) => e.workspaceId == null || e.workspaceId === workspaceId,
+        );
+  const ghostEvents = events.filter(
+    (e: any) =>
+      e.type === "AGENT_STATUS" &&
+      (e.status === "ACTING" || e.status === "THINKING"),
+  );
+  if (ghostEvents.length > 0) {
+    console.log(
+      "[e2e] GHOST SESSION DETECTED:",
+      JSON.stringify(ghostEvents, null, 2),
+    );
+  }
+  if (ghostEvents.length > 0) {
+    throw new Error(
+      `Ghost session detected: ${ghostEvents.length} ACTING/THINKING status event(s) ` +
+        `appeared ${quietPeriodMs / 1000}s after task completion`,
+    );
+  }
+}
+
 async function waitForAgentIdle(
   worker: WebWorker,
   timeoutMs: number = 10_000,
