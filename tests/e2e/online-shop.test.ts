@@ -414,4 +414,78 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     console.log(`[e2e]   Total: $${order.total}`);
   }, 360_000);
+
+  it("agent handles natural two-item order with coupon and express shipping", async () => {
+    await navigateAndWait(h.page, getFixtureUrl("shop"));
+    await h.page.bringToFront();
+    const tabId = await getActiveTabId(h.ctx.serviceWorker);
+    expect(tabId).toBeGreaterThan(0);
+
+    const prompt =
+      "I'd like to order the Pegasus 41 shoes and the Novablast 4 shoes. " +
+      "Use coupon SAVE10 for the discount. Ship express please. " +
+      "Name: Alex Morgan, email: alex.morgan@example.com.";
+
+    const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
+
+    const outcome = await waitForOutcome(
+      h.page,
+      h.ctx.serviceWorker,
+      async () => {
+        const order = await h.page.evaluate(
+          () => (window as any).lastOrder ?? null,
+        );
+        return order || null;
+      },
+      300_000,
+      workspaceId,
+    );
+
+    await h.printTraceSummary();
+
+    if (!outcome.ok) {
+      const ui = await h.page.evaluate(() => ({
+        orderError:
+          (
+            document.getElementById("order-error") as HTMLElement | null
+          )?.textContent?.trim() || "",
+        cartVisible: !document
+          .getElementById("cart-drawer")
+          ?.classList.contains("hidden"),
+      }));
+      console.log(
+        "[e2e] FAILURE DIAGNOSTICS:",
+        JSON.stringify(
+          { reason: outcome.reason, ui, events: outcome.events },
+          null,
+          2,
+        ),
+      );
+    }
+    expect(outcome.ok, outcome.reason).toBe(true);
+
+    const order = outcome.result as any;
+    expect(order).toBeTruthy();
+    expect(order.shippingMethod).toBe("express");
+    expect(order.coupon).toBe("SAVE10");
+
+    const pegasus = order.items.find((item: any) => item.id === "pegasus-41");
+    const novablast = order.items.find(
+      (item: any) => item.id === "novablast-4",
+    );
+    expect(pegasus).toBeDefined();
+    expect(novablast).toBeDefined();
+    expect(order.items.length).toBe(2);
+    // Pegasus $149 + Novablast $140 = $289, -10% = $260.10, +$15 express = $275.10
+    expect(order.total).toBeCloseTo(275.1, 1);
+
+    console.log(`\n[e2e] PASS — Order ${order.orderId}`);
+    console.log(
+      `[e2e]   Items: ${pegasus.name}, ${novablast.name}`,
+    );
+    console.log(
+      `[e2e]   Coupon: ${order.coupon}, Shipping: ${order.shippingMethod}`,
+    );
+    console.log(`[e2e]   Total: $${order.total}`);
+  }, 360_000);
 });
