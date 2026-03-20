@@ -48,6 +48,7 @@ import {
   buildTaskStateBrief,
   buildVerifierContext,
 } from "./handoff";
+import { matchSuccessCriteria } from "../agent/loop-helpers";
 import { buildRoleExecutionContract } from "./contracts";
 import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
@@ -1970,6 +1971,7 @@ export class Orchestrator {
           taskStateBrief,
           driftSignal,
           activePlanObjective || undefined,
+          task.query,
         );
 
         if (
@@ -2647,6 +2649,60 @@ export class Orchestrator {
         runnable: runnable.length,
         schedulerConcurrency,
       });
+
+      // Global goal gate: if a node just completed and the final node's
+      // success criteria are already satisfied on the page, skip remaining nodes.
+      const completedNodes = task.nodes.filter((n) => n.status === "completed");
+      const remainingPending = task.nodes.filter((n) => n.status === "pending");
+      if (completedNodes.length > 0 && remainingPending.length > 0) {
+        const finalNode = task.nodes[task.nodes.length - 1];
+        if (
+          finalNode.status === "pending" &&
+          finalNode.successCriteria
+        ) {
+          try {
+            const goalSnap = await this.getSnapshot(input.tabId);
+            if (goalSnap) {
+              const goalCheck = matchSuccessCriteria({
+                successCriteria: finalNode.successCriteria,
+                snapshot: goalSnap,
+              });
+              if (goalCheck.satisfied && goalCheck.matchedTokens.length >= 2) {
+                logger.info(
+                  "orchestrator",
+                  "Global goal already met, skipping remaining nodes",
+                  {
+                    taskId: task.id,
+                    matchedTokens: goalCheck.matchedTokens,
+                    totalTokens: goalCheck.totalTokens,
+                    remainingNodes: remainingPending.length,
+                  },
+                );
+                for (const pending of remainingPending) {
+                  pending.status = "skipped";
+                  pending.result = "Skipped: global goal already achieved";
+                }
+                this.emitTraceEvent(
+                  task,
+                  "global_goal_gate",
+                  {
+                    matchedTokens: goalCheck.matchedTokens,
+                    skippedNodes: remainingPending.length,
+                  },
+                  "system",
+                );
+                break;
+              }
+            }
+          } catch (err) {
+            // Snapshot failure is non-fatal — continue normal scheduling
+            logger.debug("orchestrator", "Global goal gate snapshot failed", {
+              taskId: task.id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
 
       // Emit budget_warning at 80% thresholds (at most once per metric)
       const elapsedMs = Date.now() - (task.startedAt || task.createdAt);

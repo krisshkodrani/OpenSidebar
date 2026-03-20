@@ -141,6 +141,7 @@ export function buildExecutorInstruction(
   taskStateBrief?: string,
   realitySignal?: string,
   objectiveOverride?: string,
+  originalQuery?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -200,6 +201,14 @@ export function buildExecutorInstruction(
       `After each action, check: ${gate.trigger}`,
       `If triggered: ${actionText}.`,
       "Do NOT continue executing additional tools once this condition is met.",
+    );
+  }
+
+  if (originalQuery) {
+    sections.push(
+      "",
+      "Original user request (reference for specific values — names, emails, codes):",
+      originalQuery.slice(0, 500),
     );
   }
 
