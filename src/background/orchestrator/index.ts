@@ -1934,8 +1934,15 @@ export class Orchestrator {
                 }
               }
             : undefined,
-          initialPlanState:
-            initialPlanState.subtasks.length >= 2 ? initialPlanState : undefined,
+          // Multi-node tasks: do NOT pass the full plan — the orchestrator
+          // owns step sequencing.  Giving the agent loop all nodes causes
+          // step_advanced_by_done_rejection to bleed across node boundaries,
+          // making one executor complete the entire plan.
+          // Single-node tasks: synthesize plan state from the node description
+          // so the loop's done() guards (plan completeness, validateDone) activate.
+          initialPlanState: task.planClassification?.isSingleNode
+            ? synthesizePlanStateFromSingleNode(node) ?? undefined
+            : undefined,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
@@ -1961,16 +1968,11 @@ export class Orchestrator {
       });
 
       try {
-        const activePlanObjective =
-          initialPlanState.subtasks.length >= 2
-            ? getActivePlanObjective(initialPlanState)
-            : null;
-
         let executorInstruction = buildExecutorInstruction(
           node,
           taskStateBrief,
           driftSignal,
-          activePlanObjective || undefined,
+          undefined, // node.description used directly
           task.query,
         );
 
@@ -2099,27 +2101,7 @@ export class Orchestrator {
           "executor",
         );
         if (result.outcome === "completed") {
-          // Fast-path: single-node tasks skip the entire verification pipeline
-          const isSingleNodeTask =
-            task.planClassification?.isSingleNode === true;
-          if (isSingleNodeTask) {
-            this.appendHandoffArtifact(node, {
-              role: "verifier",
-              phase: "verifier_accept",
-              note: "Single-node task: executor completed, verification skipped.",
-            });
-            node.status = "completed";
-            node.result = result.summary;
-            this.emitTraceEvent(
-              task,
-              "verification_skipped",
-              {
-                nodeId: node.id,
-                reason: "single_node_task",
-              },
-              "verifier",
-            );
-          } else {
+          {
             const verifierHandoffContext = buildVerifierContext(
               node,
               verifierTaskStateBrief,
@@ -2549,7 +2531,7 @@ export class Orchestrator {
               node.error = `Verifier ${verification.decision}: ${verification.reason}`;
 
             }
-          } // end else (multi-node verification)
+          } // end verification pipeline
         } else {
           const retryDecision = decideRetryPolicy(
             {
@@ -3192,6 +3174,9 @@ export class Orchestrator {
 
     const completedNodes = task.nodes.filter((n) => n.status === "completed");
     if (completedNodes.length === 0) return false;
+
+    // All nodes completed — goal achieved, no expansion needed
+    if (task.nodes.every((n) => n.status === "completed")) return false;
 
     // Check budget near exhaustion (>90%)
     const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
