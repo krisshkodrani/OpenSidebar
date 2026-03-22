@@ -6,7 +6,7 @@ How two LLM tiers work together inside a single `AgentLoop` to solve browser aut
 
 | | Executor Model | Planner Model |
 |---|---|---|
-| **Models** | `gpt-4.1-mini` (OpenRouter) | `minimax-m2.5` (OpenRouter) |
+| **Models** | `gemini-3-flash-preview` (OpenRouter) | `minimax-m2.5` (OpenRouter) |
 | **Provider Pool** | `ProviderPool` — OpenRouter | `ProviderPool` — OpenRouter |
 | **Reasoning** | Standard completion | Native reasoning (enabled by default) |
 | **Persona** | "sharp, resourceful web automation expert" | "seasoned systems thinker" |
@@ -27,7 +27,7 @@ interface PoolConfig {
 Both pools use OpenRouter as the single provider.
 
 ```
-Executor Pool:  OpenRouter (openai/gpt-4.1-mini)
+Executor Pool:  OpenRouter (google/gemini-3-flash-preview)
 Planner Pool:   OpenRouter (minimax/minimax-m2.5)
 ```
 
@@ -212,7 +212,7 @@ Both tiers use OpenRouter as the single provider:
 
 ### Executor Tier
 ```
-OpenRouter (openai/gpt-4.1-mini)
+OpenRouter (google/gemini-3-flash-preview)
 ```
 
 ### Planner Tier

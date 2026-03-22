@@ -26,7 +26,7 @@ Side Panel (React/Zustand) <--> Service Worker (Agent Loop) <--> Content Script 
 
 | Component | Technology |
 | --- | --- |
-| Executor LLM | `openai/gpt-4.1-mini` via OpenRouter |
+| Executor LLM | `google/gemini-3-flash-preview` via OpenRouter |
 | Planner LLM | `minimax/minimax-m2.5` via OpenRouter |
 | Perception | `x-ai/grok-4.1-fast` via OpenRouter |
 | UI | React 18 + Tailwind CSS + Zustand |
@@ -135,8 +135,6 @@ Every LLM request/response, tool execution, DOM snapshot, event, and screenshot 
 ### Trace viewer
 
 A built-in React UI for inspecting recorded sessions, served at `http://127.0.0.1:7589/viewer`.
-
-<video src="docs/assets/demo-trace-viewer.mp4" width="100%" autoplay loop muted></video>
 
 What you can inspect:
 

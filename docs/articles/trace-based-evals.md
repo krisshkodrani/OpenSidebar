@@ -56,7 +56,7 @@ This is the most common failure mode. The agent has been trained on patterns whe
 
 ### 2. Post-escalation repetition
 
-When the executor model (GPT-4.1 Mini) fails, it escalates to the planner model (MiniMax M2.5). The planner model receives a distilled context summary of what happened. And then it repeats the exact same failing tool call. Same tool, same arguments, same result. The escalation bought a more capable model but the model didn't *read* the context telling it what already failed.
+When the executor model (Gemini 3 Flash) fails, it escalates to the planner model (MiniMax M2.5). The planner model receives a distilled context summary of what happened. And then it repeats the exact same failing tool call. Same tool, same arguments, same result. The escalation bought a more capable model but the model didn't *read* the context telling it what already failed.
 
 ### 3. Disabled button clicking
 
@@ -100,7 +100,7 @@ The structure of a golden case:
   input: {
     systemPrompt: "You are OpenSidebar, an autonomous browser agent...",  // 12K+ chars
     conversationHistory: [...],  // real messages from the trace
-    model: "openai/gpt-4.1-mini",
+    model: "google/gemini-3-flash-preview",
   },
   expected: {
     toolCalls: [{ toolName: "click_element", args: { id: 14 } }],  // corrected

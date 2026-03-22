@@ -5,7 +5,7 @@
  * by `PerceptionAgent` (perception-agent.ts) which accumulates observations across turns.
  * This file is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
  *
- * Provider: OpenRouter (Gemini 2.5 Flash).
+ * Provider: OpenRouter (Grok 4.1 Fast).
  */
 
 import { TaggedElement, PageSkeletonNode, UserSettings } from "../../types";
@@ -345,7 +345,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
  * Perceive the current page state by sending a screenshot + element metadata
  * to a vision model for structured interpretation.
  *
- * Provider: OpenRouter (Gemini 2.5 Flash).
+ * Provider: OpenRouter (Grok 4.1 Fast).
  */
 export async function perceive(
   input: PerceptionInput,

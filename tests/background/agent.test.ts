@@ -55,7 +55,7 @@ vi.mock("../../src/background/llm", () => ({
       this._isPlannerTier = false;
     });
     activateExecutorFallback = vi.fn(() => {
-      this.model = "openai/gpt-4.1-mini";
+      this.model = "google/gemini-3-flash-preview";
       return true;
     });
     isPlannerTier = () => this._isPlannerTier;

@@ -399,7 +399,7 @@ Snapshot fingerprinting hashes `url + element count + sorted element signatures 
 
 ## Perception Layer
 
-The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Uses OpenRouter Gemini 2.5 Flash. Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
+The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Uses OpenRouter Grok 4.1 Fast. Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
 
 ## Pause / Resume
 
@@ -484,7 +484,7 @@ interface TraceEntry {
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
 ### Executor Tier (observe→act cycles)
-- **OpenRouter** (`openai/gpt-4.1-mini`)
+- **OpenRouter** (`google/gemini-3-flash-preview`)
 
 ### Planner Tier (reasoning/escalation)
 - **OpenRouter** (`minimax/minimax-m2.5`) — Single provider

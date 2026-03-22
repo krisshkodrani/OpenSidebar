@@ -12,9 +12,9 @@ OpenSidebar streams model output into the side panel in real time.
 
 ## Current Model Routing
 
-- executor turns default to `openai/gpt-4.1-mini`
+- executor turns default to `google/gemini-3-flash-preview`
 - planner turns default to `minimax/minimax-m2.5`
-- runtime can temporarily fall back to `google/gemini-2.5-flash-lite`
+- runtime can temporarily fall back to `google/gemini-3.1-flash-lite-preview`
 
 ## Technical Flow
 

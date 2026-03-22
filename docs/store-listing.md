@@ -25,7 +25,7 @@ What it does
 
 Current architecture
 
-- Executor model: GPT-4.1 Mini via OpenRouter
+- Executor model: Gemini 3 Flash via OpenRouter
 - Planner model: MiniMax M2.5 via OpenRouter
 - Perception model: Grok 4.1 Fast via OpenRouter
 - Visual perception layer for location, changes, blockers, visual-only cues, and affordances
@@ -50,11 +50,11 @@ Safety notes
 
 Browser AI can still encounter prompt injection and confusing page state. Start with trusted sites, review sensitive actions, and use approvals for higher-risk operations.
 
-Source code: https://github.com/OpenSidebar/OpenSidebar
+Source code: https://github.com/krisshkodrani/OpenSidebar
 ```
 
 ## Positioning Notes
 
 - Say "38 browser tools" if a numeric claim is needed.
 - Do not claim console/network debugging or scheduled tasks.
-- Do not describe Gemini as the current perception default.
+
