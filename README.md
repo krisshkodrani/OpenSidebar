@@ -18,9 +18,7 @@
 
 ---
 
-<p align="center">
-  <video src="docs/assets/demo.mp4" width="100%" autoplay loop muted></video>
-</p>
+<https://github.com/krisshkodrani/OpenSidebar/raw/main/docs/assets/demo.mp4>
 
 ---
 
