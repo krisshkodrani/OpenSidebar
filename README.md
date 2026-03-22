@@ -18,7 +18,7 @@
 
 ---
 
-<https://github.com/krisshkodrani/OpenSidebar/raw/main/docs/assets/demo.mp4>
+<!-- TODO: Upload demo.mp4 to a GitHub Issue, then paste the user-attachments URL here -->
 
 ---
 
