@@ -21,7 +21,7 @@ const STORY_MODELS = [
   "x-ai/grok-4.1-fast",
   "anthropic/claude-sonnet-4",
   "google/gemini-2.5-flash",
-  "openai/gpt-4.1-mini",
+  "google/gemini-3-flash-preview",
 ];
 
 function getApiKey(): string {

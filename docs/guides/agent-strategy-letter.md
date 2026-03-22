@@ -14,7 +14,7 @@ The entire LLM pipeline runs through a single provider, **OpenRouter**, with two
 
 | Tier | Model | Role |
 |------|-------|------|
-| Executor | `openai/gpt-4.1-mini` | Default for all turns — fast, cheap, good enough for most DOM interactions |
+| Executor | `google/gemini-3-flash-preview` | Default for all turns — fast, cheap, good enough for most DOM interactions |
 | Planner | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
 
 Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.
@@ -423,7 +423,7 @@ For longer-term state preservation, the `ContextManager` auto-saves conversation
 
 - **50-element cap**: Pages with hundreds of interactive elements (e.g., complex dashboards, data tables) will only see the first 50 visible elements. The agent can mitigate this with `scroll_page` and `find_element`, but may miss elements entirely.
 - **Perception latency**: Each perception call adds 1-3 seconds of latency for the vision model round-trip, though fingerprint-based caching avoids redundant calls.
-- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. GPT-4.1 Mini handles routine interactions well but struggles with complex multi-step logic. MiniMax M2.5 is stronger but slower and more expensive.
+- **Model-dependent reasoning quality**: The agent is only as good as the underlying LLMs. Gemini 3 Flash handles routine interactions well but struggles with complex multi-step logic. MiniMax M2.5 is stronger but slower and more expensive.
 - **No iframe support**: The content script only sees the top-level document. Elements inside iframes are invisible to the agent.
 - **Single-tab focus**: While tab management tools exist, the agent can only actively observe one tab at a time. Cross-tab coordination requires explicit switching.
 - **No file upload/download**: The agent cannot interact with native file dialogs or manage downloads.

@@ -104,8 +104,8 @@ npx tsx evals/cli.ts perception-validate
 
 | Role | Default |
 | --- | --- |
-| Executor | `openai/gpt-4.1-mini` |
-| Executor fallback | `google/gemini-2.5-flash-lite` |
+| Executor | `google/gemini-3-flash-preview` |
+| Executor fallback | `google/gemini-3.1-flash-lite-preview` |
 | Planner | `minimax/minimax-m2.5` |
 | Perception | `x-ai/grok-4.1-fast` |
 

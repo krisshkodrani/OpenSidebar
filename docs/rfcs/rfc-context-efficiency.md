@@ -329,7 +329,7 @@ NONE:    ACTION_RELEVANT_ATTRS whitelist (change from "all")
 **Type**: Config tuning
 **Effort**: Low (~10 lines)
 
-**Problem**: The `PerceptionAgent` uses `STALE_THRESHOLD = 2` (perception-agent.ts:44) — after 2 turns with the same fingerprint, perception is re-invoked. For routine actions (click, type, scroll) that produce predictable DOM changes, this is unnecessarily frequent. Each perception call costs ~1K tokens + a Gemini 2.5 Flash API call (~$0.001).
+**Problem**: The `PerceptionAgent` uses `STALE_THRESHOLD = 2` (perception-agent.ts:44) — after 2 turns with the same fingerprint, perception is re-invoked. For routine actions (click, type, scroll) that produce predictable DOM changes, this is unnecessarily frequent. Each perception call costs ~1K tokens + a Grok 4.1 Fast API call (~$0.001).
 
 **Proposed**: Differentiate stale threshold based on the last tool executed:
 

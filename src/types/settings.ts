@@ -24,7 +24,7 @@ export interface UserSettings {
   allowNavigation: boolean;
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
-  /** Override executor model (default: openai/gpt-4.1-mini) */
+  /** Override executor model (default: google/gemini-3-flash-preview) */
   executorModel?: string;
   /** Override planner model (default: minimax/minimax-m2.5) */
   plannerModel?: string;

@@ -81,7 +81,7 @@ The orchestrator. Receives user messages from the side panel, runs the agent loo
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
 - `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier, both via OpenRouter. Executor pool: `google/gemini-3-flash-preview:nitro`. Planner pool: `minimax/minimax-m2.5`. Executor fallback: `google/gemini-3.1-flash-lite-preview`. `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `applyNitro()` appends `:nitro` suffix when `useNitro` setting is enabled. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
-- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 51 tools and bridges to content script.
+- `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 38 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
@@ -102,10 +102,10 @@ Injected into every page at `document_idle`. Handles DOM snapshot generation and
 
 React 18 + Tailwind CSS UI rendered in Chrome's side panel.
 
-- `App.tsx` — Root component. Composes Header, StallBanner, TaskProgressPanel, MessageBubble, ControlBar, InputArea.
+- `App.tsx` — Root component. Composes Header, StatusLine, PlanStrip, MessageBubble, InputArea.
 - `store.ts` — Zustand + Immer store. Holds `SidePanelState` (messages, agent status, settings, error, taskProgress, taskCompletion, stagnationState, turnProgress).
 - `bridge.ts` — `initializeBridge()`. Centralized message router with exhaustive `never` check. Routes all `RuntimeMessage` types to store actions. Sends `USER_CHAT`, `STOP_AGENT`, `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK` messages.
-- `components/` — `Header`, `MessageBubble`, `InputArea`, `ControlBar` (barrel-exported), plus `SettingsDrawer`, `StatusBar`, `ToolCallBadge`, `StallBanner`, `TaskProgressPanel`, `CompletionSummary`.
+- `components/` — `Header`, `MessageBubble`, `InputArea` (barrel-exported), plus `SettingsDrawer`, `ToolCallBadge`, `StatusLine`, `PlanStrip`, `PlanTimelineCard`, `StepTimeline`, `ApprovalOverlay`, `ClarificationOverlay`, `EscalationOverlay`, `DemoLibrary`, `DemoRecordButton`, `DemoSaveModal`, `ErrorBoundary`, `ModelSelector`, `PlanStepIcon`, `SavedPromptsDrawer`, `ScreenshotLightbox`.
 
 ### Utilities (`src/utils/`)
 
@@ -182,6 +182,11 @@ Real browser tests using Puppeteer. Launches headed Chrome with the built extens
 - `edge-cases.test.ts` — Error recovery (form validation), delayed content, impossible task graceful stop.
 - `summarize.test.ts` — Read-only page summarization in ≤2 turns.
 - `article-research.test.ts` — Scroll to find footnote source and report it.
+- `execute-js.test.ts` — JavaScript execution in page context.
+- `go-back-navigation.test.ts` — Browser back navigation across pages.
+- `scroll-find.test.ts` — Scroll and find element tests.
+- `sequential-tasks.test.ts` — Sequential task execution.
+- `tab-management.test.ts` — Tab creation, switching, and closing.
 - `helpers/browser.ts` — Puppeteer launch with extension, SW discovery, helper page.
 - `helpers/utils.ts` — `sendUserChat()`, `waitForOutcome()`, `resetExtensionState()`, event monitoring.
 - `helpers/fixture-server.ts` — HTTP server for fixture HTML files (avoids `file://` content script issues).

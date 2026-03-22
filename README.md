@@ -12,22 +12,37 @@
 
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
-  Navigate, click, type, and automate web tasks from a side panel using your own <a href="https://openrouter.ai">OpenRouter</a> key.
+  Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows autonomously.<br />
+  Bring your own <a href="https://openrouter.ai">OpenRouter</a> key. No subscription, no telemetry, no hosted backend.
 </p>
 
 ---
 
-## Features
+<p align="center">
+  <video src="docs/assets/demo.mp4" width="100%" autoplay loop muted></video>
+</p>
 
-- Natural language browser automation: click, type, scroll, navigate, drag and drop, upload, inspect, and recover.
-- Vision-backed perception: stateful page understanding with a structured five-section report.
-- Multi-step orchestration: planner, executor, and verifier roles for harder tasks.
-- 38 browser tools: generic primitives instead of site-specific flows.
-- Plan confirmation and approval gates for sensitive operations.
-- Auto-recovery: stale element handling, loop detection, and escalation when stuck.
-- Built-in observability: traces, logs, trace viewer, and offline evals.
-- Workspaces: isolated tab-group-backed runtime state.
-- Bring your own key: no subscription, no hosted control plane, no telemetry.
+---
+
+## What It Does
+
+OpenSidebar runs an autonomous agent loop inside a Chrome side panel. You describe what you want done — "buy the running shoes, apply coupon SAVE10, use express shipping" — and the agent perceives the page through vision and DOM snapshots, reasons about what to do, executes actions through 38 browser tools, and verifies the result. It repeats this cycle until the task is complete.
+
+For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on. When the executor gets stuck, it escalates to a stronger reasoning model automatically.
+
+Everything runs locally in your browser. The only external calls are to the LLM providers you configure through OpenRouter.
+
+## Capabilities
+
+**Automation** — 38 generic browser tools: click, type, scroll, hover, drag and drop, select, upload files, execute JavaScript, manage tabs, read PDFs, and more. No site-specific code. Works on any website.
+
+**Intelligence** — Two-tier LLM architecture (fast executor + strong planner) with automatic escalation. Vision-backed perception interprets the page visually every turn. Stagnation detection, strategy pivots, and graduated intervention when stuck.
+
+**Orchestration** — Planner decomposes complex tasks into subtasks. Plan confirmation lets you review before execution. Approval gates for sensitive actions. Pause, resume, or stop at any time.
+
+**Observability** — Full-fidelity trace recording of every agent session. Built-in trace viewer with turn-by-turn LLM I/O, tool calls, screenshots, perception output, token usage, and cost. Structured logs. Offline eval pipeline with LLM-as-judge scoring.
+
+**Privacy** — API keys stay in Chrome storage. No analytics, no telemetry, no data leaves your browser except LLM API calls to your configured provider.
 
 ## Quick Start
 
@@ -58,130 +73,61 @@ npm run build
 2. Open **Settings**.
 3. Enter your OpenRouter API key.
 
-## How It Works
+## Architecture
 
 ```text
-Side Panel (React/Zustand) <-> Service Worker <-> Content Script (DOM)
+Side Panel (React/Zustand) <-> Service Worker (Agent Loop) <-> Content Script (DOM)
 ```
 
-The extension runs in three isolated Chrome contexts. The service worker owns the agent loop and orchestrator, the content script reads and manipulates the page, and the side panel renders chat, plans, approvals, and traces.
+Three isolated Chrome contexts. The service worker owns the agent loop and orchestrator, the content script reads and manipulates the page, and the side panel renders chat, plans, approvals, and session metrics.
 
-| Component | Current Default |
+| Component | Default |
 | --- | --- |
-| Executor LLM | `openai/gpt-4.1-mini` via OpenRouter |
-| Executor fallback | `google/gemini-2.5-flash-lite` via OpenRouter |
-| Planner LLM | `minimax/minimax-m2.5` via OpenRouter |
+| Executor | `google/gemini-3-flash-preview` via OpenRouter |
+| Executor fallback | `google/gemini-3.1-flash-lite-preview` via OpenRouter |
+| Planner | `minimax/minimax-m2.5` via OpenRouter |
 | Perception | `x-ai/grok-4.1-fast` via OpenRouter |
 | UI | React 18 + Tailwind CSS + Zustand |
 | Build | Vite |
 
-## Common Workflows
+All models are configurable in Settings. The Nitro toggle appends `:nitro` for faster inference on supported models.
 
-### Run the app locally
+## Trace Viewer
 
-Use this when you want the extension, log drain, and trace viewer running together.
-
-```bash
-npm run dev
-```
-
-What you get:
-
-- Vite build/watch for the extension
-- log server
-- trace viewer at `http://127.0.0.1:7589/viewer`
-
-### Build the extension
-
-Use this before loading `dist/` into Chrome or before running the E2E suite manually.
+Every agent session is recorded with full fidelity — DOM snapshots, LLM requests/responses, tool executions, screenshots, perception output, token usage, and cost. The built-in trace viewer lets you inspect everything.
 
 ```bash
-npm run build
+npm run dev    # starts the extension + trace viewer
+# or
+npm run logs   # starts just the log server + trace viewer
 ```
 
-### Run unit and integration tests
+Open `http://127.0.0.1:7589/viewer` to browse sessions.
 
-Use this for the normal fast test pass.
+**Session list with filters and per-turn tool/cost breakdown:**
+
+<img src="docs/assets/trace-viewer-1.png" alt="Trace viewer — session list and turn detail" width="100%" />
+
+**Perception view — page screenshot with visual grounding output:**
+
+<img src="docs/assets/trace-viewer-3.png" alt="Trace viewer — perception view" width="100%" />
+
+**Structured logs with level filtering:**
+
+<img src="docs/assets/trace-viewer-2.png" alt="Trace viewer — logs" width="100%" />
+
+## Development
 
 ```bash
-npm test
+npm run dev        # Full dev stack: Vite HMR + log server + trace viewer
+npm run build      # Production build
+npm test           # Unit + integration tests (Vitest)
+npm run test:e2e   # Real-browser E2E tests (requires OPENROUTER_API_KEY)
+npm run lint       # ESLint
+npm run fmt        # Prettier
 ```
 
-### Run E2E tests
-
-Use this when validating real browser behavior with the built extension.
-
-Prerequisite:
-
-- `OPENROUTER_API_KEY`
-
-```bash
-npm run test:e2e
-```
-
-Related surfaces:
-
-- fixture pages under `tests/e2e/fixtures/`
-- trace viewer
-- dated reports under `docs/e2e-report-YYYY-MM-DD.md`
-
-### Inspect logs and traces
-
-Use this when debugging the agent loop, tool execution, or E2E runs.
-
-```bash
-npm run logs
-npm run traces
-```
-
-Viewer:
-
-- `http://127.0.0.1:7589/viewer`
-
-### Run evals
-
-Use this when measuring regressions or reviewing perception/action quality.
-
-```bash
-npm run ci:evals:offline
-npx tsx evals/cli.ts perception-validate
-npm run evals:critique
-npm run evals:perception
-```
-
-Frozen perception baseline:
-
-- default model: `x-ai/grok-4.1-fast`
-- corrected v6 harness
-- `18/20` pass on the checked-in perception suite
-
-See [evals/README.md](./evals/README.md) for the current eval workflow.
-
-## Developer Surfaces
-
-### App runtime
-
-- side panel UI
-- service worker agent loop
-- content script DOM actions
-
-### E2E harness
-
-- real Chrome run with the built extension
-- fixture server and task helpers
-- dated report convention in `docs/`
-
-### Observability
-
-- structured logs
-- JSONL traces
-- trace viewer
-
-### Evals
-
-- offline structural validation
-- critique runs
-- perception validation
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development guide.
 
 ## Security & Privacy
 
@@ -189,31 +135,15 @@ See [evals/README.md](./evals/README.md) for the current eval workflow.
 - No telemetry or analytics.
 - URL sanitization blocks non-http(s) protocols.
 - High-risk tools can require explicit approval.
-- See [SECURITY.md](./SECURITY.md) for the security policy.
-- See [PRIVACY_POLICY.md](./PRIVACY_POLICY.md) for the full privacy policy.
+- See [SECURITY.md](./SECURITY.md) and [PRIVACY_POLICY.md](./PRIVACY_POLICY.md).
 
 ## Documentation
 
-- [Docs Index](./docs/README.md)
 - [Architecture Overview](./docs/architecture/overview.md)
-- [Perception Layer](./docs/architecture/perception-layer.md)
 - [Developer Guide](./docs/developer-guide.md)
+- [Perception Layer](./docs/architecture/perception-layer.md)
+- [Tools Reference](./docs/features/tools.md)
 - [Evals Guide](./docs/guides/evals-program.md)
-- [Dated E2E Report Example](./docs/e2e-report-2026-03-15.md)
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-Most contributors will want:
-
-```bash
-npm run dev
-npm test
-npm run test:e2e
-```
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow-oriented command guide.
 
 ## License
 

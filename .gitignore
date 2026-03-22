@@ -63,5 +63,13 @@ analyze-log.js
 *.key
 credentials.json
 
+# Internal planning docs
+plans/
+
+# E2E reports (generated per run, not checked in)
+docs/e2e-*
+docs/shopping-trace-*
+docs/test-prompt.md
+
 # Test results
 test-results/
