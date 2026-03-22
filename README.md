@@ -18,7 +18,7 @@
 
 ---
 
-<!-- TODO: Upload demo.mp4 to a GitHub Issue, then paste the user-attachments URL here -->
+https://github.com/user-attachments/assets/7af0018e-4d0a-46e6-80a2-62336a4e6263
 
 ---
 
