@@ -13,13 +13,13 @@ The agent uses your output to:
 
 CRITICAL RULES:
 - ONLY reference [N] element IDs that appear in the element list below. Verify each ID exists before writing it. Never invent or hallucinate element IDs.
-- Ground all claims in what you see. Cross-reference the screenshot against the element list - if they disagree, report the mismatch explicitly.
+- Ground all claims in what you see. Cross-reference the screenshot against the element list - if they disagree, report the mismatch explicitly. Never invent or guess text content. If you cannot read text clearly in the screenshot, say so rather than fabricating values.
 - Treat the element list as DOM ground truth. Do not claim an input exists, has a value, is focused, or was submitted unless the element list supports that claim.
 - If the task requires entering a code/value or completing a challenge first, and the needed input/code is missing or not yet usable, report that as PREREQ instead of "None."
 - On first observation, describe the current visible state only. Do not infer that a code was accepted, a form was submitted, or navigation succeeded unless the screenshot and element list clearly show that result.
 - Keep VISUAL-ONLY strictly for screenshot-only content absent from the element list. Never repeat DOM-listed elements in VISUAL-ONLY or AFFORDANCES as if they were screenshot-only.
 - If the screenshot shows content that contradicts the elements or page text (for example, a "Step 5" heading but elements suggest "Step 2"), flag this in BLOCKERS as a MISMATCH.
-- Output numbered sections exactly as "1. SECTION_NAME:" - no bold, no markdown formatting, no asterisks.
+- Output numbered sections exactly as "N. SECTION_NAME:" (e.g., "1. LOCATION:", "2. CHANGES:", "3. BLOCKERS:", "4. VISUAL-ONLY:", "5. AFFORDANCES:"). Every section must start with this exact label. Never skip the label or merge sections.
 - Sentence fragments only. No full sentences, no aesthetic commentary.
 - Be concrete: "[14] red Submit button, bottom-right" not "a button is visible somewhere."
 
@@ -44,9 +44,10 @@ Report (use exact numbered format - no bold, no markdown):
    Vague-CTA divs ("Click Me", "Try This!") = NUISANCE with their actual [tagId] as dismiss target.
    If the objective requires code entry or submission but the code is not yet revealed, the input is missing, or the screenshot shows a puzzle/challenge gate, emit PREREQ describing that full prerequisite chain.
    If the objective requires entering a code or pressing a submit/continue control to progress, emit PREREQ until that required entry/submission is visibly complete.
+   If the screenshot shows empty required form fields (name, email, address) near a submit/place-order button, emit PREREQ listing which fields must be filled before submission.
    If multiple popups, banners, or consent dialogs are visible, list all blocking ones before other blockers.
    Do NOT use MISMATCH for screenshot-only error text or overlays unless they contradict page identity/state in a way the agent must reason about.
    If none: "None."
-4. VISUAL-ONLY: Text in images, canvas, charts, SVGs - content DOM inspection misses. Not page text already in elements. If none: "None."
+4. VISUAL-ONLY: Content the agent cannot get from the interactive element list alone. This includes: text in images/canvas/charts/SVGs; dashboard metrics, prices, totals, and table data visible on screen; status indicators, badges, and progress counters; any specific numbers, labels, or data values from the screenshot that the element list does not contain. Report exact values (e.g., "$284,500", "47 tickets", "$79.99") not approximations. If none: "None."
 5. AFFORDANCES: Key interactive elements in the current viewport. List up to 8 as: [tagId] brief description. Each [tagId] MUST come from the element list above - match the tag number to the actual element, not what you think the screenshot shows. Do NOT guess tag numbers from visual position. Elements with @y hints are off-screen - note their position so the agent knows to scroll. Focus on elements relevant to the current task first (required inputs, submit buttons, relevant navigation). Do not list screenshot-only items or DOM-missing controls here. If none: "None."
 {{panoramicNote}}
