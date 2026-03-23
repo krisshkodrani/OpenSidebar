@@ -34,6 +34,7 @@ vi.mock("../../src/background/llm", () => ({
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
     setFailoverCallback = vi.fn(() => {});
+    resetExecutorFallback = vi.fn();
     getActiveProviderInfo = () => ({
       providerId: "openrouter",
       model: this.model,

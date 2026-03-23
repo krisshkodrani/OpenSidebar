@@ -31,7 +31,8 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** Executor model tier — used for initial turns (OpenRouter, :nitro for fast routing) */
 export const MODEL_EXECUTOR = "google/gemini-3-flash-preview:nitro";
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-3.1-flash-lite-preview";
+/** Fallback: same model without :nitro — routes through different OpenRouter infrastructure */
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-3-flash-preview";
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "minimax/minimax-m2.5";
 
@@ -318,10 +319,11 @@ export class LLMClient {
       openRouterApiKey,
       { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
     );
-    this.executorFallbackModel = applyNitro(
-      options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
-      nitro,
-    );
+    // Fallback intentionally skips applyNitro — the default fallback is the same
+    // model without :nitro, routing through different OpenRouter infrastructure.
+    // User-provided overrides are used as-is (they chose a specific model).
+    this.executorFallbackModel =
+      options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
 
     // Build planner pool: OpenRouter (MiniMax M2.5)
     this.plannerPool = new ProviderPool(
@@ -377,6 +379,22 @@ export class LLMClient {
       provider: this.provider.providerId,
     });
     return true;
+  }
+
+  /**
+   * Reset executor fallback after a successful response, restoring the
+   * primary model. Keeps the fallback non-sticky so a transient empty
+   * response doesn't permanently downgrade the session.
+   */
+  public resetExecutorFallback(): void {
+    if (!this.executorModelOverride) return;
+    const slot = this.executorPool.getActive();
+    logger.info("agent", "Resetting executor fallback to primary model", {
+      fromModel: this.executorModelOverride,
+      toModel: slot.model,
+    });
+    this.executorModelOverride = null;
+    this.model = slot.model;
   }
 
   private onProviderFailover?: (from: string, to: string) => void;
