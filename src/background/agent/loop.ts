@@ -3685,6 +3685,8 @@ export class AgentLoop {
 
           // Success — exit retry loop
           this.abortController?.signal.removeEventListener("abort", onMainAbort);
+          // Reset fallback to primary model after a successful response
+          this.llm.resetExecutorFallback();
           break;
 
         } catch (llmError: any) {

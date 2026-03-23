@@ -58,6 +58,7 @@ vi.mock("../../src/background/llm", () => ({
       this.model = "google/gemini-3-flash-preview";
       return true;
     });
+    resetExecutorFallback = vi.fn();
     isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
     getCurrentProvider = () => "openrouter";
