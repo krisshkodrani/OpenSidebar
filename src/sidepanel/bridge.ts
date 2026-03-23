@@ -47,7 +47,7 @@ export function initializeBridge(
       }
     }
 
-    logger.debug("ui", "Received message", { type: message.type });
+    logger.debug("ui", "Received message", { type: message.type, wsId: message.workspaceId });
     const state = store.getState();
 
     switch (message.type) {
@@ -66,6 +66,8 @@ export function initializeBridge(
           state.clearPendingClarification();
           state.clearTaskRecovery();
           state.clearLaneTelemetry();
+          state.clearLatestStepLabel();
+          state.setIsPlanning(false);
           // Clear stale task progress if no TASK_COMPLETION was received
           if (state.taskProgress) {
             state.clearTaskProgress();
@@ -77,6 +79,7 @@ export function initializeBridge(
           if (message.payload.status === AgentStatus.THINKING) {
             state.clearTaskProgress(); // clears both taskProgress and taskCompletion
             state.clearSessionMetrics();
+            state.setIsPlanning(true);
           }
         }
         break;
@@ -104,6 +107,7 @@ export function initializeBridge(
         break;
 
       case "PLAN_CONFIRMATION_REQUEST":
+        state.setIsPlanning(false);
         state.setPendingPlanConfirmation({
           ...message.payload,
           requestedAt: Date.now(),
@@ -145,6 +149,9 @@ export function initializeBridge(
         } else {
           state.addStep(message.payload.step);
         }
+        if (message.payload.step.status === "running") {
+          state.setLatestStepLabel(message.payload.step.label);
+        }
         break;
 
       case "SCREENSHOT_CAPTURED":
@@ -180,6 +187,10 @@ export function initializeBridge(
 
       case "TASK_PROGRESS":
         state.setTaskProgress(message.payload);
+        // Clear stale confirmation so PlanStrip transitions to progress mode
+        if (state.pendingPlanConfirmation) {
+          state.clearPendingPlanConfirmation();
+        }
         break;
 
       case "TASK_COMPLETION":

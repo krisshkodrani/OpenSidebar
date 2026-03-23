@@ -44,6 +44,8 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   pendingClarification: null,
   sessionMetrics: null,
   laneTelemetry: null,
+  latestStepLabel: null,
+  isPlanning: false,
 
   updateStatus: (status, detail) => {
     set((state) => {
@@ -86,6 +88,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   setTaskProgress: (payload) =>
     set((state) => {
       state.taskProgress = payload;
+      state.isPlanning = false;
     }),
 
   setTaskCompletion: (payload) =>
@@ -98,6 +101,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
     set((state) => {
       state.taskProgress = null;
       state.taskCompletion = null;
+      state.latestStepLabel = null;
     }),
 
   setStagnationState: (stagnationState) =>
@@ -160,6 +164,16 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
       state.pendingClarification = null;
     }),
 
+  setLatestStepLabel: (label) =>
+    set((state) => {
+      state.latestStepLabel = label;
+    }),
+
+  clearLatestStepLabel: () =>
+    set((state) => {
+      state.latestStepLabel = null;
+    }),
+
   setTaskRecovery: (recovery) =>
     set((state) => {
       state.taskRecovery = recovery;
@@ -188,5 +202,10 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   clearLaneTelemetry: () =>
     set((state) => {
       state.laneTelemetry = null;
+    }),
+
+  setIsPlanning: (planning) =>
+    set((state) => {
+      state.isPlanning = planning;
     }),
 });

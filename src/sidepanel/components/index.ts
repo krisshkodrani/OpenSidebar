@@ -7,6 +7,7 @@ export * from "./ApprovalOverlay";
 export * from "./EscalationOverlay";
 export * from "./PlanStepIcon";
 export * from "./PlanTimelineCard";
+export * from "./PlanStrip";
 
 export * from "./SavedPromptsDrawer";
 export * from "./ClarificationOverlay";
