@@ -5637,7 +5637,17 @@ export class AgentLoop {
                 continue;
               }
 
-              const targetTabId = args.tabId as number;
+              // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
+              const rawId = args.tabId ?? args.id;
+              const targetTabId = typeof rawId === "string" ? parseInt(rawId, 10) : (rawId as number);
+              if (!targetTabId || isNaN(targetTabId)) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: `Error: Invalid tab ID. Use switch_tab({"tabId": <integer>}) with the numeric tab ID from create_tab or list_tabs.`,
+                });
+                continue;
+              }
               const wsTabIds = await this.getWorkspaceTabIds();
 
               if (wsTabIds && !wsTabIds.includes(targetTabId)) {
@@ -5721,7 +5731,10 @@ export class AgentLoop {
                 continue;
               }
 
-              const targetTabId = (args.tabId as number) || tabId;
+              // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
+              const rawCloseId = args.tabId ?? args.id;
+              const parsedCloseId = typeof rawCloseId === "string" ? parseInt(rawCloseId, 10) : (rawCloseId as number);
+              const targetTabId = (parsedCloseId && !isNaN(parsedCloseId)) ? parsedCloseId : tabId;
 
               if (targetTabId === tabId) {
                 this.context.addMessage({
