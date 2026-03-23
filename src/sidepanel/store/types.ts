@@ -58,6 +58,8 @@ export interface AgentSlice {
   pendingClarification: PendingClarification | null;
   sessionMetrics: SessionMetrics | null;
   laneTelemetry: LaneTelemetrySnapshot | null;
+  latestStepLabel: string | null;
+  isPlanning: boolean;
   updateStatus: (status: AgentStatus, detail: string) => void;
   setAgentRunning: (isRunning: boolean) => void;
   loadAgentStateFromStorage: () => Promise<void>;
@@ -76,12 +78,15 @@ export interface AgentSlice {
   clearPendingPlanConfirmation: () => void;
   setPendingClarification: (clarification: PendingClarification) => void;
   clearPendingClarification: () => void;
+  setLatestStepLabel: (label: string) => void;
+  clearLatestStepLabel: () => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setLaneTelemetry: (telemetry: LaneTelemetrySnapshot | null) => void;
   clearLaneTelemetry: () => void;
+  setIsPlanning: (planning: boolean) => void;
 }
 
 export interface SettingsSlice {

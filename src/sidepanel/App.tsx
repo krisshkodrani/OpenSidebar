@@ -9,13 +9,12 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { X, Sparkles } from "lucide-react";
+import { X, Sparkles, ClipboardList } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
-import { Header, MessageBubble, InputArea } from "./components";
+import { Header, MessageBubble, InputArea, PlanStrip } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { PlanTimelineCard } from "./components/PlanTimelineCard";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
 import { getInteractionMode, getInteractionModeBadge } from "./interaction-mode";
@@ -60,6 +59,35 @@ export default function App() {
       ),
     [messages],
   );
+
+  // Plan strip state
+  const pendingPlanConfirmation = useStore((s) => s.pendingPlanConfirmation);
+  const taskProgress = useStore((s) => s.taskProgress);
+  const taskCompletion = useStore((s) => s.taskCompletion);
+  const isPlanning = useStore((s) => s.isPlanning);
+  const [isPlanExpanded, setIsPlanExpanded] = useState(false);
+  const planExpandedOnceRef = useRef(false);
+
+  // Auto-expand on confirmation arrival
+  useEffect(() => {
+    if (pendingPlanConfirmation) setIsPlanExpanded(true);
+  }, [pendingPlanConfirmation]);
+
+  // Auto-expand on first taskProgress arrival
+  useEffect(() => {
+    if (taskProgress && !planExpandedOnceRef.current) {
+      setIsPlanExpanded(true);
+      planExpandedOnceRef.current = true;
+    }
+  }, [taskProgress]);
+
+  // Auto-collapse when all plan data clears; reset ref for next run
+  useEffect(() => {
+    if (!pendingPlanConfirmation && !taskProgress && !taskCompletion && !isPlanning) {
+      setIsPlanExpanded(false);
+      planExpandedOnceRef.current = false;
+    }
+  }, [pendingPlanConfirmation, taskProgress, taskCompletion, isPlanning]);
 
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -640,6 +668,11 @@ export default function App() {
         prefillContent={savedPromptsPrefill}
       />
 
+      <PlanStrip
+        isExpanded={isPlanExpanded}
+        onToggle={() => setIsPlanExpanded((v) => !v)}
+      />
+
       <main className="flex-1 overflow-hidden relative flex flex-col">
         {blockedSiteWarning && (
           <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
@@ -708,7 +741,14 @@ export default function App() {
           ) : (
             visibleMessages.map((msg) =>
               msg.isPlanCard ? (
-                <PlanTimelineCard key={msg.id} />
+                <button
+                  key={msg.id}
+                  onClick={() => setIsPlanExpanded(true)}
+                  className="w-full text-left px-3 py-1.5 my-1 rounded border border-warm-200 dark:border-warm-700 bg-warm-50/60 dark:bg-warm-800/40 text-[11px] text-warm-500 dark:text-warm-400 hover:bg-warm-100 dark:hover:bg-warm-800/60 transition-colors flex items-center gap-1.5"
+                >
+                  <ClipboardList size={11} className="shrink-0" />
+                  Plan created — tap to view
+                </button>
               ) : (
                 <MessageBubble key={msg.id} message={msg} />
               ),
