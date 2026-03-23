@@ -9,6 +9,12 @@ import Dashboard from "./routes/dashboard";
 import Shop from "./routes/shop";
 import Form from "./routes/form";
 import Errors from "./routes/errors";
+import DashboardSales from "./routes/dashboard-sales";
+import DashboardSupport from "./routes/dashboard-support";
+import DashboardMarketing from "./routes/dashboard-marketing";
+import ScrollCatalog from "./routes/scroll-catalog";
+import GoBackChain from "./routes/go-back-chain";
+import DynamicCompute from "./routes/dynamic-compute";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -18,6 +24,12 @@ const routes = [
   { path: "/shop", label: "Shop", title: "Northstar Outfitters - Performance Running", component: Shop },
   { path: "/form", label: "Form", title: "Multi-Step Form", component: Form },
   { path: "/errors", label: "Errors", title: "Error Recovery Test", component: Errors },
+  { path: "/dashboard-sales", label: "Sales", title: "Sales Dashboard", component: DashboardSales },
+  { path: "/dashboard-support", label: "Support", title: "Support Dashboard", component: DashboardSupport },
+  { path: "/dashboard-marketing", label: "Marketing", title: "Marketing Dashboard", component: DashboardMarketing },
+  { path: "/scroll-catalog", label: "Scroll", title: "Office Equipment Catalog", component: ScrollCatalog },
+  { path: "/go-back-chain", label: "GoBack", title: "Navigation Chain", component: GoBackChain },
+  { path: "/dynamic-compute", label: "Compute", title: "Custom Product Configurator", component: DynamicCompute },
 ];
 
 function Layout({ children, currentPath }) {
