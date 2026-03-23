@@ -129,6 +129,22 @@ import {
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
 
+/**
+ * Count explicit numbered steps in a user query.
+ * Matches patterns like "Step 1:", "1.", "1)", and sequential markers.
+ * Returns the number of distinct steps detected.
+ */
+function countExplicitSteps(query: string): number {
+  // Match numbered patterns: "Step 1", "Step 2", "1.", "2.", "1)", "2)"
+  const numberedStepPattern = /(?:^|\n)\s*(?:step\s+)?(\d+)[.):\s]/gim;
+  const numbers = new Set<number>();
+  let match: RegExpExecArray | null;
+  while ((match = numberedStepPattern.exec(query)) !== null) {
+    numbers.add(parseInt(match[1], 10));
+  }
+  return numbers.size;
+}
+
 const REPEAT_ACTION_WINDOW = 20;
 const REPEAT_ACTION_EXEMPT_TOOLS = new Set<ToolName>([
   ToolName.DISMISS_OVERLAYS,
@@ -4949,11 +4965,11 @@ export class AgentLoop {
                 continue;
               }
 
-              // Fix 3: Done() Content Verification Guard
+              // Done() Content Verification Guard
               // Reject done() if the agent never called read_page/xray_page and the page
               // has substantive content — prevents hallucinated summaries from filename/URL alone.
-              // Only enforce for multi-step (plan) tasks where premature done() corrupts
-              // step advancement. Planless tasks (summarize, simple Q&A) can complete in 1 turn.
+              // Only enforce for plan-based tasks. Planless tasks (summarize, Q&A) can
+              // complete in 1 turn since the system prompt already includes the snapshot.
               if (!this.hasReadPage && this.taskId) {
                 const snap = this.context.getSnapshot();
                 const elementCount = snap?.elements?.length ?? 0;
@@ -4976,6 +4992,38 @@ export class AgentLoop {
                     content:
                       "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
                       "Do NOT summarize from the page title or URL alone.",
+                  });
+                  continue;
+                }
+              }
+
+              // Multi-step early done() guard (works without plan state)
+              // If the user's query has numbered steps and the agent has barely
+              // started, reject once. Uses doneRejections so maxDoneRejections
+              // cap prevents ghost sessions.
+              if (this.doneRejections === 0 && this.originalQuery) {
+                const stepCount = countExplicitSteps(this.originalQuery);
+                // Activate for queries with 3+ explicit steps where the agent
+                // has spent very few turns (turnCount includes planner's ~2 turns,
+                // so turnCount <= 3 means the executor ran at most 1 turn)
+                if (stepCount >= 3 && this.turnCount <= 3) {
+                  this.doneRejections++;
+                  this.log.warn("agent", "DONE rejected: multi-step query, too few turns", {
+                    turn: this.turnCount,
+                    stepCount,
+                    doneRejections: this.doneRejections,
+                    summary: summary.slice(0, 150),
+                  });
+                  this.traceRecorder?.recordEvent("done_rejected_early_multistep", {
+                    turn: this.turnCount,
+                    stepCount,
+                  });
+                  this.context.addMessage({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content:
+                      `done() REJECTED: The task has ${stepCount} steps but you have only completed the first action. ` +
+                      "Continue working through the remaining steps before calling done().",
                   });
                   continue;
                 }
