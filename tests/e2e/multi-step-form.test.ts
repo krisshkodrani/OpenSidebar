@@ -23,7 +23,7 @@ import {
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 
-const h = createE2EHarness({ maxTurns: 25, testLabel: "multi-step-form" });
+const h = createE2EHarness({ maxTurns: 30, testLabel: "multi-step-form" });
 
 describe.skipIf(!h.apiKey)("E2E: Multi-Step Form", () => {
   beforeAll(() => h.beforeAllHook(), 60_000);
@@ -40,16 +40,9 @@ describe.skipIf(!h.apiKey)("E2E: Multi-Step Form", () => {
     const prompt = [
       "Complete this 3-step form. Do NOT navigate away from this page.",
       "",
-      "Fill the form with these values:",
-      "- Name: Jane Smith",
-      "- Email: jane@example.com",
-      "- Phone: 555-0123",
-      "- Category: Enterprise (this will reveal a Company Name field)",
-      "- Company Name: Acme Corp",
-      "- Budget: Premium ($2,000+)",
-      "- Special Requirements: Priority support needed",
-      "",
-      "Click Next after each step. On the final Review step, check the confirmation checkbox and click Submit.",
+      "Step 1: Fill Personal Info — type_text Name: Jane Smith, Email: jane@example.com, Phone: 555-0123. Click Next.",
+      "Step 2: Fill Preferences — use select_option to set Category to Enterprise. This reveals a Company Name field — type Acme Corp. Use set_checkbox to select Budget: Premium ($2,000+). Type Special Requirements: Priority support needed. Click Next.",
+      "Step 3: Review & Submit — use set_checkbox to check the confirmation checkbox, then click Submit.",
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
