@@ -192,6 +192,42 @@ export function inferToolProfileForStep(
     return "inspect_hidden_state";
   }
 
+  // Tab management takes precedence over read-only: steps that involve
+  // switching/creating/closing tabs need both navigation AND read tools.
+  const isTabRelated =
+    /(create_tab|switch_tab|close_tab|list_tabs|new tab|open.*tab|switch.*tab|close.*tab|tab.*open|tab.*switch|tab.*close|separate tab|another tab|each tab|multiple tab|across tab)/.test(
+      primaryText,
+    ) ||
+    /(create_tab|switch_tab|close_tab|new tab|open.*tab|separate tab|another tab|each tab|multiple tab|across tab)/.test(
+      fullText,
+    );
+
+  if (isTabRelated) {
+    return "navigate";
+  }
+
+  // execute_js / data attribute / JS extraction → need inspect_hidden_state profile
+  const isJsRelated =
+    /(execute_js|javascript|data.attribute|dataset|computed.*value|window\.|document\.get|querySelector|programmatic|console)/.test(
+      primaryText,
+    ) ||
+    /(execute_js|data.attribute|dataset)/.test(fullText);
+
+  if (isJsRelated) {
+    return "inspect_hidden_state";
+  }
+
+  // go_back / browser history navigation → need navigate profile
+  const isBackNavigation =
+    /(go_back|go back|browser back|history back|back button|return.*previous|previous page)/.test(
+      primaryText,
+    ) ||
+    /(go_back|go back|browser back)/.test(fullText);
+
+  if (isBackNavigation) {
+    return "navigate";
+  }
+
   if (isReadFocusedObjective) {
     return "read_only";
   }
