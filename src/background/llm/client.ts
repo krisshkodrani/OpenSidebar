@@ -630,9 +630,13 @@ export class LLMClient {
       );
     }
 
+    // Skip cache_control annotation for Groq (unsupported)
+    const messages = provider.providerId === "groq"
+      ? request.messages
+      : annotateCacheControl(request.messages);
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: annotateCacheControl(request.messages),
+      messages,
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
@@ -849,9 +853,13 @@ export class LLMClient {
       );
     }
 
+    // Skip cache_control annotation for Groq (unsupported)
+    const streamMessages = provider.providerId === "groq"
+      ? request.messages
+      : annotateCacheControl(request.messages);
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: annotateCacheControl(request.messages),
+      messages: streamMessages,
       tools: request.tools,
       tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0,

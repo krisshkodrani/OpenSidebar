@@ -62,11 +62,21 @@ export function loadApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+export function loadGroqApiKey(): string | undefined {
+  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
+  const envPath = resolve(__dirname, "../../../.env");
+  if (!existsSync(envPath)) return undefined;
+  const content = readFileSync(envPath, "utf-8");
+  const match = content.match(/GROQ_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const maxTurns = options.maxTurns ?? 20;
   const testLabel = options.testLabel ?? "e2e";
 
   const apiKey = loadApiKey();
+  const groqApiKey = loadGroqApiKey();
 
   let ctx: ExtensionContext;
   let page: Page;
@@ -105,20 +115,25 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
 
       const helper = await openHelperPage(ctx);
       await helper.evaluate(
-        async (key: string, turns: number) => {
+        async (key: string, turns: number, groqKey: string | null) => {
           await chrome.storage.local.set({ openRouterApiKey_local: key });
-          await chrome.storage.sync.set({
-            userSettings: {
-              requireApprovals: false,
-              allowNavigation: false,
-              requirePlanConfirmation: false,
-              showElementTags: false,
-              maxTurns: turns,
-            },
-          });
+          const settings: Record<string, unknown> = {
+            requireApprovals: false,
+            allowNavigation: false,
+            requirePlanConfirmation: false,
+            showElementTags: false,
+            maxTurns: turns,
+          };
+          // When Groq key is available, use Groq as provider
+          if (groqKey) {
+            settings.provider = "groq";
+            settings.groqApiKey = groqKey;
+          }
+          await chrome.storage.sync.set({ userSettings: settings });
         },
         apiKey!,
         maxTurns,
+        groqApiKey || null,
       );
       await helper.close();
 
