@@ -298,9 +298,9 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: \"Transformer Architecture in Modern AI\" page, http://127.0.0.1:59695/summarize. h1 \"Understanding Transformer Architecture in Modern AI\". Sections h2 \"1. The Attention Mechanism\", \"2. Encoder-Decoder Structure\", \"3. Positional Encoding\". Bottom p test prompt \"Summarize this article in 2-3 sentences.\"\n2. CHANGES: First observation. Top dark blue nav bar left-to-right: span \"OpenSidebar Fixtures\", links [1]-[10]. White main content below: tall h1 centered, three h2+paragraph blocks stacked vertically, light blue rounded box bottom-center with test prompt. No scroll needed, full page visible.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: [1] Summarize link top nav active-style. [2] Article link top nav. [3] Navigation link top nav. [4] Dashboard link top nav. [5] Shop link top nav. [6] Form link top nav. [7] Errors link top nav. [8] Sales link top nav. All viewport top bar.",
-    "model": "google/gemini-2.5-flash",
-    "providerId": "openrouter",
+    "interpretation": "1. LOCATION: Understanding Transformer Architecture in Modern AI at /summarize. Summarize tab active.\n2. CHANGES: First observation. Article page with heading and 3 numbered sections. Dark header bar. White content card center.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Article: \"Understanding Transformer Architecture in Modern AI\". 1. The Attention Mechanism — attention allows models to weigh importance of input parts, enables parallel processing. 2. Encoder-Decoder Structure — encoder processes input, decoder generates output. 3. Positional Encoding — positional encodings added to embeddings for sequence order. Test prompt: \"Summarize this article in 2-3 sentences.\"\n5. AFFORDANCES: [1] Summarize tab active top nav. [2] Article link top nav.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
     "durationMs": 0
   },
   "metadata": {

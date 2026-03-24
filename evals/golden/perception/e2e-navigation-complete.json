@@ -340,10 +340,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Navigation Challenge page at http://127.0.0.1:51136/navigation, Step counter 4/3.\n2. CHANGES: Removed p \"The secret code is: ALPHA-7492\". Removed [16] input, [17] button. Yellow-bordered area now green \"Complete\" box center.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Centered green box \"Complete\". Yellow border around green box.\n5. AFFORDANCES: [1] Summarize link top-right. [2] Article link top-right. [3] Navigation link top-right. [4] Dashboard link top-right. [5] Shop link top-right. [6] Form link top-right. [7] Errors link top-right. [8] Sales link top-right.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 7867
+    "interpretation": "1. LOCATION: Navigation Challenge at /navigation. Navigation tab active. Step counter 4/3.\n2. CHANGES: Challenge completed. Green \"Challenge Complete!\" banner visible center. Step counter shows 4/3 (beyond target).\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Instruction: \"Click the Advance button 3 times. A secret code will appear. Enter the code and submit it.\" Step counter: 4/3. Green banner: \"Challenge Complete!\"\n5. AFFORDANCES: [16] code input \"Enter the secret code\". [17] Submit Code button.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "navigation",

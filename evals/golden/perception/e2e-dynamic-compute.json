@@ -366,10 +366,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Custom Product Configurator - Premium Water Bottle, http://127.0.0.1:57304/dynamic-compute, Procurement tab active.\n2. CHANGES: Size [1] visually Large (32 oz) selected, color [2] Matte Black selected, [3] checkbox checked blue, configuration p large/black/engraved, price $118.50 added.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Total price $118.50 bottom-right.\n5. AFFORDANCES: [1] size select Large selected, [2] color select Matte Black selected, [3] engraving checkbox checked, [16] Compute link, [17] Procurement nav active blue, [7] Dashboard nav, [8] Shop nav, [15] GoBack link.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 12106
+    "interpretation": "1. LOCATION: Custom Product Configurator at /dynamic-compute. Compute tab active.\n2. CHANGES: First observation. Product card center with Premium Water Bottle heading. Size and Color dropdowns, engraving checkbox. Computed price displayed.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Premium Water Bottle. Size: Large (32 oz) selected. Color: Matte Black selected. Add custom engraving (+$15) checked. Configuration: large / black / engraved. Price: $112.50.\n5. AFFORDANCES: [1] Size select dropdown (Large 32 oz). [2] Color select dropdown (Matte Black). [3] Engraving checkbox checked. [16] Compute tab active.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "dynamic-compute",

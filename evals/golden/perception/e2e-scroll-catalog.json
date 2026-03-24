@@ -358,9 +358,9 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Office Equipment Catalog, http://127.0.0.1:65181/scroll-catalog, h1 \"Office Equipment Catalog\", top nav \"OpenSidebar Fixtures\".\n2. CHANGES: First observation. Top black nav bar with tabs/links left-to-right. White page body with intro paragraph. Vertical product list, each image+name+price+\"View Details\" button. Image 1 (scroll 0): top 5 products. Image 2 (scroll 741): bottom products including Laptop Stand, Ergonomic Chair, Privacy Screen Filter. Scrollable 0/741px, more below.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Image 1 products: Wireless Mouse $29, Mechanical Keyboard $89, USB-C Hub $49, Monitor Stand $79, Desk Mat $19. Image 2 products: Laptop Stand $45, Noise Cancelling Headphones $129, Ergonomic Chair $299, Portable Charger $39, Blue Light Glasses $25, Floor Lamp Pro $199, Privacy Screen Filter $59.\n5. AFFORDANCES: [1] Summarize link top nav, [2] Article link top nav, [3] Navigation link top nav, [4] Dashboard link top nav, [5] Shop link top nav, [14] Procurement link top nav, [15] View Details button Image 1 top products, [16] View Details button @y1592 Image 2 bottom, [17] View Specs button @y1396 offscreen.",
-    "model": "google/gemini-2.5-flash",
-    "providerId": "openrouter",
+    "interpretation": "1. LOCATION: Office Equipment Catalog at /scroll-catalog. Scroll tab active.\n2. CHANGES: First observation. Long product list visible. Items stacked vertically with View Details buttons.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Wireless Mouse Accessories $29.99. Mechanical Keyboard Accessories $89.99. USB-C Hub Accessories $49.99. Monitor Stand Furniture $39.99. Webcam HD Electronics $59.99. Desk Lamp Furniture $34.99. Cable Organizer Accessories $12.99. Laptop Riser Furniture $44.99. More items below fold.\n5. AFFORDANCES: [15] View Details button first product. [16] View Details button second product. [17] View Specs button. [11] Scroll tab active top nav.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
     "durationMs": 0
   },
   "metadata": {
