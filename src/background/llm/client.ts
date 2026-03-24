@@ -631,7 +631,7 @@ export class LLMClient {
     }
 
     // Skip cache_control annotation for Groq (unsupported)
-    const messages = provider.providerId === "groq"
+    const messages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
     const payload: Record<string, unknown> = {
@@ -854,7 +854,7 @@ export class LLMClient {
     }
 
     // Skip cache_control annotation for Groq (unsupported)
-    const streamMessages = provider.providerId === "groq"
+    const streamMessages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
     const payload: Record<string, unknown> = {
