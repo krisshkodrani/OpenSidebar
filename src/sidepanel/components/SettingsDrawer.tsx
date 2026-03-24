@@ -4,13 +4,7 @@ import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
-import {
-  MODEL_EXECUTOR,
-  MODEL_PLANNER,
-  GROQ_MODEL_EXECUTOR,
-  GROQ_MODEL_PLANNER,
-  GROQ_MODEL_PERCEPTION,
-} from "../../background/llm/client";
+import { MODEL_EXECUTOR, MODEL_PLANNER } from "../../background/llm/client";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
 
@@ -409,68 +403,29 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
           {activeTab === "models" && (
             <>
-              {/* PROVIDER SELECTOR */}
-              <section className="space-y-3">
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Provider
-                </h3>
-                <select
-                  value={formState.provider || "openrouter"}
-                  onChange={(e) =>
-                    handleChange("provider", e.target.value as "openrouter" | "groq")
-                  }
-                  className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                >
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="groq">Groq</option>
-                </select>
-              </section>
-
-              {/* API KEY — adapts to selected provider */}
+              {/* API KEY */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
                   API Key
                 </h3>
-                {(formState.provider || "openrouter") === "openrouter" ? (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      OpenRouter API Key
-                      <span className="text-xs text-warm-400 ml-2">(required)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.openRouterApiKey}
-                      onChange={(e) =>
-                        handleChange("openRouterApiKey", e.target.value)
-                      }
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="sk-or-..."
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Groq API Key
-                      <span className="text-xs text-warm-400 ml-2">(required)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.groqApiKey || ""}
-                      onChange={(e) =>
-                        handleChange("groqApiKey", e.target.value)
-                      }
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="gsk_..."
-                    />
-                    <p className="text-xs text-warm-400 dark:text-warm-500 mt-1">
-                      Faster inference via Groq LPU hardware. Get a key at groq.com
-                    </p>
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    OpenRouter API Key
+                    <span className="text-xs text-warm-400 ml-2">(required)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={formState.openRouterApiKey}
+                    onChange={(e) =>
+                      handleChange("openRouterApiKey", e.target.value)
+                    }
+                    className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                    placeholder="sk-or-..."
+                  />
+                </div>
               </section>
 
-              {/* NITRO TOGGLE — OpenRouter only */}
-              {(formState.provider || "openrouter") === "openrouter" && (
+              {/* NITRO TOGGLE */}
               <section className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -491,7 +446,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   />
                 </div>
               </section>
-              )}
 
               {/* EXECUTOR MODEL */}
               <section className="space-y-2">
@@ -504,7 +458,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.executorModel || ""}
                   onChange={(v) => handleChange("executorModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "groq" ? GROQ_MODEL_EXECUTOR : MODEL_EXECUTOR}
+                  defaultModel={MODEL_EXECUTOR}
                   models={models}
                   loading={modelsLoading}
                 />
@@ -521,7 +475,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.plannerModel || ""}
                   onChange={(v) => handleChange("plannerModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "groq" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
+                  defaultModel={MODEL_PLANNER}
                   models={models}
                   loading={modelsLoading}
                 />
@@ -538,7 +492,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.perceptionModel || ""}
                   onChange={(v) => handleChange("perceptionModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "groq" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
+                  defaultModel={PERCEPTION_MODEL_DEFAULT}
                   models={models}
                   loading={modelsLoading}
                   filterVisionOnly

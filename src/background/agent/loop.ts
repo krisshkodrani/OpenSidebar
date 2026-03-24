@@ -840,8 +840,6 @@ export class AgentLoop {
       executorModel?: string;
       plannerModel?: string;
       useNitro?: boolean;
-      provider?: "openrouter" | "groq";
-      groqApiKey?: string;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
@@ -867,12 +865,10 @@ export class AgentLoop {
       workerId: this.workerId,
       maxSessionMs: MAX_SESSION_MS,
     });
-    const modelOverrides: import("../llm").LLMClientOptions = {
+    const modelOverrides = {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
       useNitro: options?.useNitro,
-      provider: options?.provider,
-      groqApiKey: options?.groqApiKey,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     if (this.preferredModelTier === "planner") {

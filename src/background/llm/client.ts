@@ -36,33 +36,13 @@ export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-3-flash-pre
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "minimax/minimax-m2.5";
 
-/** Groq API base URL (OpenAI-compatible) */
-const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-/** Groq model defaults */
-export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
-export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
-export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
-
-function groqProvider(apiKey: string): ProviderConfig {
-  return {
-    baseUrl: GROQ_BASE_URL,
-    apiKey,
-    headers: {},
-    providerId: "groq",
-  };
-}
-
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
   executorFallbackModel?: string;
   plannerModel?: string;
-  /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
+  /** Append :nitro routing suffix to all model IDs */
   useNitro?: boolean;
-  /** LLM provider selection */
-  provider?: "openrouter" | "groq";
-  /** Groq API key (required when provider is "groq") */
-  groqApiKey?: string;
 }
 
 /** Append `:nitro` suffix if enabled and not already present */
@@ -214,42 +194,28 @@ export interface ProviderSlot {
   model: string;
 }
 
-/** @deprecated Use ProviderPool(provider, model) constructor instead */
+/** Model identifier for a provider pool tier. */
 export interface PoolConfig {
   openRouterModel: string;
 }
 
 /**
- * Provider pool with priority-based failover.
- * Supports any OpenAI-compatible provider (OpenRouter, Groq, etc.).
+ * Provider pool. Currently single-provider (OpenRouter).
+ * Retains multi-slot structure for future provider additions.
  */
 export class ProviderPool {
   private slots: ProviderSlot[];
 
-  constructor(provider: ProviderConfig, model: string);
-  /** @deprecated Legacy constructor for backward compat */
-  constructor(openRouterKey: string, config: PoolConfig);
   constructor(
-    providerOrKey: ProviderConfig | string,
-    modelOrConfig: string | PoolConfig,
+    openRouterKey: string,
+    config: PoolConfig,
   ) {
     this.slots = [];
-    if (typeof providerOrKey === "string") {
-      // Legacy: (openRouterKey, { openRouterModel })
-      const config = modelOrConfig as PoolConfig;
-      this.slots.push({
-        provider: openRouterProvider(providerOrKey),
-        cooldownUntil: 0,
-        model: config.openRouterModel,
-      });
-    } else {
-      // New: (provider, model)
-      this.slots.push({
-        provider: providerOrKey,
-        cooldownUntil: 0,
-        model: modelOrConfig as string,
-      });
-    }
+    this.slots.push({
+      provider: openRouterProvider(openRouterKey),
+      cooldownUntil: 0,
+      model: config.openRouterModel,
+    });
   }
 
   /** Returns highest-priority provider not on cooldown */
@@ -337,9 +303,9 @@ export class LLMClient {
   private executorFallbackModel: string | null = null;
 
   /**
-   * Creates a new LLM client.
-   * @param openRouterApiKey - OpenRouter key (required as fallback, primary when provider is "openrouter")
-   * @param options - Provider selection, model overrides, and feature flags
+   * Creates a new LLM client with OpenRouter as the sole provider.
+   * @param openRouterApiKey - OpenRouter key (required)
+   * @param options - Optional model overrides for executor and planner tiers
    */
   constructor(
     openRouterApiKey: string,
@@ -347,39 +313,23 @@ export class LLMClient {
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    const useGroq = options?.provider === "groq" && !!options?.groqApiKey;
+    const nitro = options?.useNitro;
+    // Build executor pool: OpenRouter
+    this.executorPool = new ProviderPool(
+      openRouterApiKey,
+      { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
+    );
+    // Fallback intentionally skips applyNitro — the default fallback is the same
+    // model without :nitro, routing through different OpenRouter infrastructure.
+    // User-provided overrides are used as-is (they chose a specific model).
+    this.executorFallbackModel =
+      options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
 
-    if (useGroq) {
-      // Groq path: use Groq provider + Groq model defaults, no :nitro
-      const gProvider = groqProvider(options!.groqApiKey!);
-      this.executorPool = new ProviderPool(
-        gProvider,
-        options?.executorModel || GROQ_MODEL_EXECUTOR,
-      );
-      // Groq fallback: same model (different from OpenRouter pattern where
-      // fallback routes differently — on Groq the infra is homogeneous)
-      this.executorFallbackModel =
-        options?.executorFallbackModel || GROQ_MODEL_EXECUTOR;
-      this.plannerPool = new ProviderPool(
-        gProvider,
-        options?.plannerModel || GROQ_MODEL_PLANNER,
-      );
-    } else {
-      // OpenRouter path: existing behavior, unchanged
-      const nitro = options?.useNitro;
-      this.executorPool = new ProviderPool(
-        openRouterProvider(openRouterApiKey),
-        applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro),
-      );
-      // Fallback intentionally skips applyNitro — routes through different
-      // OpenRouter infrastructure for empty-response recovery.
-      this.executorFallbackModel =
-        options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
-      this.plannerPool = new ProviderPool(
-        openRouterProvider(openRouterApiKey),
-        applyNitro(options?.plannerModel || MODEL_PLANNER, nitro),
-      );
-    }
+    // Build planner pool: OpenRouter (MiniMax M2.5)
+    this.plannerPool = new ProviderPool(
+      openRouterApiKey,
+      { openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro) },
+    );
 
     // Initialize from executor pool's top priority
     const initialSlot = this.executorPool.getActive();
@@ -630,26 +580,16 @@ export class LLMClient {
       );
     }
 
-    // Skip cache_control annotation for Groq (unsupported)
-    const messages = provider.providerId !== "openrouter"
-      ? request.messages
-      : annotateCacheControl(request.messages);
-    const toolChoice = request.tools?.length ? ("auto" as const) : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages,
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
-      tool_choice: toolChoice,
+      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
       response_format: request.response_format,
     };
-
-    // Add reasoning effort for gpt-oss models on non-OpenRouter providers (e.g. Groq)
-    if (provider.providerId !== "openrouter" && (payload.model as string).includes("gpt-oss")) {
-      payload.reasoning_effort = "high";
-    }
 
     logger.debug("agent", "LLM Request", {
       model: payload.model,
@@ -859,16 +799,11 @@ export class LLMClient {
       );
     }
 
-    // Skip cache_control annotation for Groq (unsupported)
-    const streamMessages = provider.providerId !== "openrouter"
-      ? request.messages
-      : annotateCacheControl(request.messages);
-    const streamToolChoice = request.tools?.length ? ("auto" as const) : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: streamMessages,
+      messages: annotateCacheControl(request.messages),
       tools: request.tools,
-      tool_choice: streamToolChoice,
+      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
       temperature: request.temperature ?? 0.0,
       max_tokens: request.max_tokens,
       stop: request.stop,
@@ -876,11 +811,6 @@ export class LLMClient {
       stream_options: { include_usage: true },
       response_format: request.response_format,
     };
-
-    // Add reasoning effort for gpt-oss models on non-OpenRouter providers (e.g. Groq)
-    if (provider.providerId !== "openrouter" && (payload.model as string).includes("gpt-oss")) {
-      payload.reasoning_effort = "high";
-    }
 
     logger.debug("agent", "LLM Stream Request", {
       model: payload.model,
