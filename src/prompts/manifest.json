@@ -114,7 +114,7 @@
   {
     "id": "perception.interpret_page",
     "version": "v6",
-    "hash": "bc14748c",
+    "hash": "dbb15fc6",
     "description": "Unified stateful perception prompt - 5 goal-free sections, prior observation history, no completion checking.",
     "sourcePath": "prompts/runtime/perception/interpret_page.md"
   },
