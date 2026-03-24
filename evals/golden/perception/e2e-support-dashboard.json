@@ -299,10 +299,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Support Dashboard (http://127.0.0.1:61537/dashboard-support), h1 \"Support Dashboard\", h3 \"Recent Tickets\" section.\n2. CHANGES: Navigated from Sales Dashboard. h1 changed \"Sales Dashboard\" to \"Support Dashboard\". h3 changed \"Top Products\" to \"Recent Tickets\". New metrics cards left-to-right. New table rows with tickets.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Metrics \"47 tickets\", \"4.2 hours\", \"92%\", \"Open Tickets\". Table headers \"Ticket ID\", \"Subject\", \"Status\", \"Priority\". Rows \"#123 Payment not processed Open High\", \"#456 Shipping delay inquiry In Progress Med\", \"#789 Return request Closed Low\".\n5. AFFORDANCES: [1] Summarize link navbar. [2] Article link navbar. [3] Navigation link navbar. [4] Dashboard link navbar. [8] Sales link navbar. [9] Support link navbar active. [10] Marketing link navbar. [12] GoBack link navbar.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 6614
+    "interpretation": "1. LOCATION: Support Dashboard at /dashboard-support. Support tab active in top nav.\n2. CHANGES: First observation. Dark top nav bar with fixture links. Four metric cards center. Recent Tickets table below.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Open Tickets 47 (-12% from last week). Avg Resolution Time 4.2 hours (-8% from last month). Satisfaction Score 92% (+3% from last quarter). Top Issue Billing Inquiries. Recent Tickets: #4521 \"Payment not processed\" Open High; #4520 \"Shipping delay inquiry\" In Progress Medium; #4519 \"Return request\" Resolved Low.\n5. AFFORDANCES: [9] Support link active top nav. [8] Sales link top nav. [10] Marketing link top nav.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "dashboard-support",

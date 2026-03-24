@@ -298,10 +298,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Support Dashboard at http://127.0.0.1:61537/dashboard-support, h1 \"Support Dashboard\", h3 \"Recent Tickets\"\n2. CHANGES: Navigated back from Marketing Dashboard, h1 \"Support Dashboard\" replaces \"Marketing Dashboard\", h3 \"Recent Tickets\" replaces \"Campaign Performance\", metric cards center \"47\" \"4.2 hours\" \"92%\" replace prior metrics, table bottom half Recent Tickets with rows \"Payment not processed\" \"Shipping delay inquiry\" \"In Progress\" \"Return request\"\n3. BLOCKERS: None.\n4. VISUAL-ONLY: metric cards center-top \"47\" \"4.2 hours\" \"92%\", table headers \"Subject\" \"ID\" \"Status\" \"Priority\", ticket IDs \"1001\" \"1002\" \"1003\", statuses \"Open\" \"High\" \"In Progress\" \"Medium\" \"Closed\" \"Low\"\n5. AFFORDANCES: [9] \"Support\" link highlighted blue top nav, [8] \"Sales\" link top nav left of Support, [10] \"Marketing\" link top nav right of Support, [1] \"Summarize\" link top nav right end, [4] \"Dashboard\" link top nav, [5] \"Shop\" link top nav, [6] \"Form\" link top nav, [7] \"Errors\" link top nav",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 8252
+    "interpretation": "1. LOCATION: Support Dashboard visible at /dashboard-marketing URL. Support tab active.\n2. CHANGES: First observation. Screenshot shows Support Dashboard content despite URL being /dashboard-marketing.\n3. BLOCKERS: MISMATCH \"URL is /dashboard-marketing but screenshot shows Support Dashboard with ticket data\".\n4. VISUAL-ONLY: Open Tickets 47. Avg Resolution Time 4.2 hours. Satisfaction Score 92%. Top Issue Billing Inquiries. Recent Tickets table with 3 rows.\n5. AFFORDANCES: [9] Support link active top nav. [10] Marketing link top nav. [8] Sales link top nav.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "dashboard-marketing",

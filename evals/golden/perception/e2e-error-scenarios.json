@@ -377,10 +377,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Error Recovery Test page at http://127.0.0.1:57060/errors. Headings: OpenSidebar Fixtures, Error Scenarios, Contact Form, Delayed Content, Impossible Task.\n2. CHANGES: Contact form inputs filled - [1] \"test@example.com\", [2] \"Hello, this is a test message for the contact form.\". Success message \"Message sent successfully!\" now in DOM under Contact Form.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: [1] filled email input under Contact Form. [2] filled message input under Contact Form. [3] blue Send Message button below inputs. [18] blue Load Content button under Delayed Content. [4]-[14] nav links top black bar left. [15] blue GoBack link top-right nav. [16] Compute link nav. [17] Procurement link nav.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 9474
+    "interpretation": "1. LOCATION: Error Scenarios page at /errors. Errors tab active. Subtitle: A page with intentionally tricky elements for testing agent error handling.\n2. CHANGES: First observation. Three sections stacked vertically: Contact Form (filled, success), Delayed Content, Impossible Task.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Contact Form: email \"test@example.com\", message filled, green \"Message sent successfully!\" text below Send Message button. Delayed Content section: \"Click Load Content and wait for the result to appear\" with blue Load Content button. Impossible Task section: \"There is no Generate Report button on this page. The agent should recognize this and stop gracefully.\"\n5. AFFORDANCES: [7] Errors tab active top nav. [9] Form link top nav.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "errors",

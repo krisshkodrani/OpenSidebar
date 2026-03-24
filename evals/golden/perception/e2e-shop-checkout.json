@@ -785,10 +785,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Northstar Outfitters Performance Running shop cart sidebar. URL http://127.0.0.1:54025/shop.\n2. CHANGES: Cart sidebar expanded right side. Checkout form visible promo shipping fields. Main content area blank white. No product grid in viewport.\n3. BLOCKERS: PREREQ \"fill [42] Full name input and [43] Email address input before [49] Place Order\"\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: [41] Enter code input top sidebar. [39] standard shipping input. [40] express shipping input. [42] Full name input. [43] Email address input. [48] Apply button promo section. [49] Place Order button bottom. [44] Close Cart button header.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 7824
+    "interpretation": "1. LOCATION: Northstar Outfitters shop at /shop. Cart sidebar open. Shop tab active.\n2. CHANGES: First observation. Cart sidebar visible right side showing promo code input, shipping options, checkout form. Product catalog behind.\n3. BLOCKERS: PREREQ \"fill Full name and Email address inputs before Place Order button\".\n4. VISUAL-ONLY: Promo Code section: Enter code input, Apply button. Shipping: Standard (Free) selected, Express ($15) available. Checkout: empty Full name and Email address fields. Subtotal $58.00. Discount $0.00. Shipping $0.00. Total $58.00. Place Order button. Continue Shopping link.\n5. AFFORDANCES: [19] My Orders button top. [20] Open Cart button top. [24] Add Air Zoom Pegasus 41 to cart. [26] Add Novablast 4 to cart.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "shop",

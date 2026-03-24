@@ -386,10 +386,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: Multi-Step Form (http://127.0.0.1:60319/form), Step 1: Personal Information\n2. CHANGES: Inputs [1] \"Jane Smith\", [2] \"jane@example.com\", [3] \"555-0123\" now filled\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Progress dots - first blue active, two gray inactive (Step 1 of 3)\n5. AFFORDANCES: [1] name input filled \"Jane Smith\" center-top form, [2] email input filled \"jane@example.com\" center form, [3] phone input filled \"555-0123\" center-bottom form, [18] blue Next button form bottom",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 11201
+    "interpretation": "1. LOCATION: Multi-Step Form page at /form. Step 1: Personal Information. Form tab active.\n2. CHANGES: First observation. Step indicator shows 1 of 3 (Personal Info, Preferences, Review). Three input fields with pre-filled values. Next button below.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: Step 1 of 3. Step indicator circles: 1 active blue, 2 gray, 3 gray. Labels: Personal Info, Preferences, Review. Fields show: \"Jane Smith\", \"jane@example.com\", \"555-0123\".\n5. AFFORDANCES: [1] Full Name input pre-filled. [2] Email input pre-filled. [3] Phone input pre-filled. [18] Next button blue below fields.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "form",

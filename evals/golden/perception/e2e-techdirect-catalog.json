@@ -425,10 +425,10 @@
     ]
   },
   "reference": {
-    "interpretation": "1. LOCATION: TechDirect store page (http://127.0.0.1:61823/procurement?store=techdirect), h1 \"TechDirect\", product list 4 items.\n2. CHANGES: Navigated from Procurement List to TechDirect store, replaced 3-row table with 4-product list and add buttons, added \"Out of stock\" on second product, no progress indicator visible.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: None.\n5. AFFORDANCES: [14] Procurement nav link top-right, [15] Add Ergonomic Keyboard to cart button top product, [16] Add Mechanical Keyboard to cart button second product, [17] Add USB-C Monitor Cable to cart button third product, [18] Add HDMI Cable 6ft to cart button bottom product.",
-    "model": "x-ai/grok-4.1-fast",
-    "providerId": "openrouter",
-    "durationMs": 9132
+    "interpretation": "1. LOCATION: Procurement List page at /procurement. Procurement tab active blue.\n2. CHANGES: First observation. Top nav bar. Procurement table center with 3 items, checkboxes, and store links.\n3. BLOCKERS: None.\n4. VISUAL-ONLY: 0 of 3 items completed. Table: Ergonomic Keyboard / TechDirect / qty 2 / budget $89. Standing Desk Mat / OfficeHub / qty 1 / budget $45. USB-C Monitor Cable / TechDirect / qty 5 / budget $15.\n5. AFFORDANCES: [1] checkbox Mark Ergonomic Keyboard as done. [2] checkbox Mark Standing Desk Mat as done. [3] checkbox Mark USB-C Monitor Cable as done. [18] Open TechDirect link. [20] Open OfficeHub link. [17] Procurement tab active.",
+    "model": "human-verified-opus-4.6",
+    "providerId": "human",
+    "durationMs": 0
   },
   "metadata": {
     "url": "procurement",
