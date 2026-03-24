@@ -9,7 +9,7 @@ export interface ProviderConfig {
   /** Extra headers (e.g. OpenRouter's HTTP-Referer, X-Title) */
   headers: Record<string, string>;
   /** Provider identifier for logging and metrics */
-  providerId: "openrouter" | "groq";
+  providerId: "openrouter";
 }
 
 export type ContentPart =
