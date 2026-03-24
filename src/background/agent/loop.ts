@@ -3621,16 +3621,39 @@ export class AgentLoop {
         };
 
         try {
-          response = await this.llm.completeStream(
-            {
+          // Use non-streaming for Groq — enables json_object + tools combination
+          // for reliable tool calling without constrained decoding.
+          // Groq LPU is fast enough (~475 t/s) that non-streaming is barely noticeable.
+          const useStreaming = this.llm.getCurrentProvider() !== "groq";
+
+          if (useStreaming) {
+            response = await this.llm.completeStream(
+              {
+                messages,
+                tools,
+                max_tokens: LLM_CONFIG.MAX_TOKENS,
+                stop: ["Observation:"],
+                signal: turnAbortController.signal,
+              },
+              onTextDelta,
+            );
+          } else {
+            response = await this.llm.complete({
               messages,
               tools,
               max_tokens: LLM_CONFIG.MAX_TOKENS,
-              stop: ["Observation:"], // ReAct pattern stop token just in case
+              stop: ["Observation:"],
               signal: turnAbortController.signal,
-            },
-            onTextDelta,
-          );
+            });
+            // Broadcast the full response as a single chunk to the UI
+            if (response.content) {
+              this.broadcast({
+                type: "STREAM_CHUNK",
+                payload: { delta: response.content, done: false },
+              });
+              streamedTextAccumulator = response.content;
+            }
+          }
 
           // Check for empty response (retryable)
           if (!response.content && (!response.tool_calls || response.tool_calls.length === 0)) {

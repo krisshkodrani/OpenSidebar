@@ -39,7 +39,7 @@ export const MODEL_PLANNER = "minimax/minimax-m2.5";
 /** Groq API base URL (OpenAI-compatible) */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 /** Groq model defaults */
-export const GROQ_MODEL_EXECUTOR = "llama-3.3-70b-versatile";
+export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
 
@@ -634,11 +634,17 @@ export class LLMClient {
     const messages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
+    // For non-OpenRouter providers (e.g. Groq), use tool_choice: "required"
+    // to force tool calling — compensates for missing constrained decoding.
+    // Since done() is always in the tool set, the model uses it for text responses.
+    const toolChoice = request.tools?.length
+      ? (provider.providerId !== "openrouter" ? ("required" as const) : ("auto" as const))
+      : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages,
       tools: request.tools,
-      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
+      tool_choice: toolChoice,
       temperature: request.temperature ?? 0.0, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
@@ -857,11 +863,14 @@ export class LLMClient {
     const streamMessages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
+    const streamToolChoice = request.tools?.length
+      ? (provider.providerId !== "openrouter" ? ("required" as const) : ("auto" as const))
+      : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: streamMessages,
       tools: request.tools,
-      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
+      tool_choice: streamToolChoice,
       temperature: request.temperature ?? 0.0,
       max_tokens: request.max_tokens,
       stop: request.stop,
