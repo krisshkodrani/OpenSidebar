@@ -16,10 +16,10 @@ Commit: `cae67d3` — "feat: switch executor to GPT-5.4 Mini, planner to MiniMax
 
 | Config | Pass | Shop | Tabs | Proc | Plans | Duration | Cost/session |
 |--------|------|------|------|------|-------|----------|-------------|
-| Gemini Flash:nitro + MiniMax M2.5 (previous) | 7-8/9 | 4-5/6 | 2/2 | 1/1 | 100% | ~600-800s | ~$0.175 |
+| Gemini Flash:nitro + MiniMax M2.5 (previous) | 7-8/9 | 4-5/6 | 2/2 | 1/1 | 100% | ~600-800s | ~$0.165 |
 | Gemini Flash unified (no nitro) | 8/9 | 5/6 | 2/2 | 1/1 | 100% | 1849s | ~$0.165 |
-| GPT-5.4 Mini unified (no nitro) | 8/9 | **6/6** | 2/2 | 0/1 | 100% | 1781s | ~$0.108 |
-| **GPT-5.4 Mini:nitro + MiniMax M2.7:nitro** | **8/9** | **6/6** | **2/2** | 0/1 | **100%** | 1907s | **~$0.118** |
+| GPT-5.4 Mini unified (no nitro) | 8/9 | **6/6** | 2/2 | 0/1 | 100% | 1781s | ~$0.248 |
+| **GPT-5.4 Mini:nitro + MiniMax M2.7:nitro** | **8/9** | **6/6** | **2/2** | 0/1 | **100%** | 1907s | **~$0.248** |
 
 ## Groq Provider Evaluation (Rejected)
 
@@ -65,7 +65,7 @@ llama-4-scout matched Grok on fixture pages but dropped on complex external-site
 
 3. **The system is model-agnostic by design** — No model-specific prompts, no conditional logic on model names. GPT-5.4 Mini works without any prompt tuning.
 
-4. **Cost reduction** — GPT-5.4 Mini is 35% cheaper per session ($0.108 vs $0.175 with Gemini Flash).
+4. **Cost trade-off** — GPT-5.4 Mini is ~50% more expensive per session ($0.248 vs $0.165 with Gemini Flash) but has higher quality on shopping flows (6/6 vs 4-5/6).
 
 5. **Groq is not viable** — Missing constrained decoding makes tool calling unreliable regardless of model choice. Best Groq result (5-6/8) is below the OpenRouter baseline.
 
@@ -75,7 +75,7 @@ llama-4-scout matched Grok on fixture pages but dropped on complex external-site
 
 | Model | Input $/M | Output $/M | Role |
 |-------|-----------|------------|------|
-| openai/gpt-5.4-mini | $0.40 | $1.60 | Executor |
+| openai/gpt-5.4-mini | $0.75 | $4.50 | Executor |
 | minimax/minimax-m2.7 | — | — | Planner |
 | x-ai/grok-4.1-fast | $0.20 | $0.50 | Perception |
 | google/gemini-3-flash-preview | $0.50 | $3.00 | (previous executor) |
