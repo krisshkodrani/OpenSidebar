@@ -89,9 +89,9 @@ Three isolated Chrome contexts. The service worker owns the agent loop and orche
 
 | Component | Default |
 | --- | --- |
-| Executor | `google/gemini-3-flash-preview` via OpenRouter |
-| Executor fallback | `google/gemini-3.1-flash-lite-preview` via OpenRouter |
-| Planner | `minimax/minimax-m2.5` via OpenRouter |
+| Executor | `openai/gpt-5.4-mini` via OpenRouter |
+| Executor fallback | `openai/gpt-5.4-mini` via OpenRouter |
+| Planner | `minimax/minimax-m2.7` via OpenRouter |
 | Perception | `x-ai/grok-4.1-fast` via OpenRouter |
 | UI | React 18 + Tailwind CSS + Zustand |
 | Build | Vite |
