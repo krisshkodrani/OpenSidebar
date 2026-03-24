@@ -8,6 +8,10 @@ import type { AgentLoopState } from "./agent";
 
 export interface UserSettings {
   openRouterApiKey: string;
+  /** LLM provider: "openrouter" (default) or "groq" */
+  provider?: "openrouter" | "groq";
+  /** Groq API key (optional — enables Groq as provider) */
+  groqApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
@@ -24,13 +28,13 @@ export interface UserSettings {
   allowNavigation: boolean;
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
-  /** Override executor model (default: google/gemini-3-flash-preview) */
+  /** Override executor model (default depends on provider) */
   executorModel?: string;
-  /** Override planner model (default: minimax/minimax-m2.5) */
+  /** Override planner model (default depends on provider) */
   plannerModel?: string;
-  /** Override perception model (default: x-ai/grok-4.1-fast) */
+  /** Override perception model (default depends on provider) */
   perceptionModel?: string;
-  /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
+  /** Append :nitro variant suffix to all model IDs for faster inference (default: false, OpenRouter only) */
   useNitro?: boolean;
 }
 
