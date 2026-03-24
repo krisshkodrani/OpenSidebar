@@ -30,11 +30,11 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Executor model tier — used for initial turns (OpenRouter, :nitro for fast routing) */
-export const MODEL_EXECUTOR = "google/gemini-3-flash-preview:nitro";
+export const MODEL_EXECUTOR = "openai/gpt-5.4-mini:nitro";
 /** Fallback: same model without :nitro — routes through different OpenRouter infrastructure */
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "google/gemini-3-flash-preview";
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "openai/gpt-5.4-mini";
 /** Planner model tier — used after escalation (OpenRouter) */
-export const MODEL_PLANNER = "minimax/minimax-m2.5";
+export const MODEL_PLANNER = "minimax/minimax-m2.7:nitro";
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {

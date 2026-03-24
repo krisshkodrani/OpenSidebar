@@ -196,8 +196,8 @@ The agent uses two LLM tiers:
 
 | Tier | Default Model | Role |
 |------|--------------|------|
-| **Executor** | google/gemini-3-flash-preview | Fast, cheap. Handles routine interactions — clicking, typing, scrolling, reading. |
-| **Planner** | minimax/minimax-m2.5 | Stronger reasoning. Decomposes complex tasks, recovers from stuck states, creates revised plans. |
+| **Executor** | openai/gpt-5.4-mini | Fast, cheap. Handles routine interactions — clicking, typing, scrolling, reading. |
+| **Planner** | minimax/minimax-m2.7 | Stronger reasoning. Decomposes complex tasks, recovers from stuck states, creates revised plans. |
 
 The agent starts on the executor. If it gets stuck (repeated failures, no progress), it **escalates** to the planner automatically. After the planner orients and produces a strategy, it **hands off** back to the executor.
 
@@ -361,8 +361,8 @@ When set to "Block listed domains," the agent will not interact with pages on th
 |---------|---------|-------------|
 | API Key | *(required)* | Your OpenRouter API key. Stored locally in Chrome storage. |
 | Nitro | Off | Appends `:nitro` to model IDs for faster inference on supported models. |
-| Executor Model | google/gemini-3-flash-preview | The fast model used for routine tool execution. |
-| Planner Model | minimax/minimax-m2.5 | The reasoning model used for task decomposition and recovery. |
+| Executor Model | openai/gpt-5.4-mini | The fast model used for routine tool execution. |
+| Planner Model | minimax/minimax-m2.7 | The reasoning model used for task decomposition and recovery. |
 | Perception Model | x-ai/grok-4.1-fast | The vision model used to interpret page screenshots. |
 
 Each model selector shows a searchable dropdown with available models and their pricing (input/output cost per token). You can also type a custom model ID if your desired model isn't listed.
