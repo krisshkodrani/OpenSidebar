@@ -634,12 +634,7 @@ export class LLMClient {
     const messages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
-    // For non-OpenRouter providers (e.g. Groq), use tool_choice: "required"
-    // to force tool calling — compensates for missing constrained decoding.
-    // Since done() is always in the tool set, the model uses it for text responses.
-    const toolChoice = request.tools?.length
-      ? (provider.providerId !== "openrouter" ? ("required" as const) : ("auto" as const))
-      : undefined;
+    const toolChoice = request.tools?.length ? ("auto" as const) : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages,
@@ -650,6 +645,11 @@ export class LLMClient {
       stop: request.stop,
       response_format: request.response_format,
     };
+
+    // Add reasoning effort for gpt-oss models on non-OpenRouter providers (e.g. Groq)
+    if (provider.providerId !== "openrouter" && (payload.model as string).includes("gpt-oss")) {
+      payload.reasoning_effort = "high";
+    }
 
     logger.debug("agent", "LLM Request", {
       model: payload.model,
@@ -863,9 +863,7 @@ export class LLMClient {
     const streamMessages = provider.providerId !== "openrouter"
       ? request.messages
       : annotateCacheControl(request.messages);
-    const streamToolChoice = request.tools?.length
-      ? (provider.providerId !== "openrouter" ? ("required" as const) : ("auto" as const))
-      : undefined;
+    const streamToolChoice = request.tools?.length ? ("auto" as const) : undefined;
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: streamMessages,
@@ -878,6 +876,11 @@ export class LLMClient {
       stream_options: { include_usage: true },
       response_format: request.response_format,
     };
+
+    // Add reasoning effort for gpt-oss models on non-OpenRouter providers (e.g. Groq)
+    if (provider.providerId !== "openrouter" && (payload.model as string).includes("gpt-oss")) {
+      payload.reasoning_effort = "high";
+    }
 
     logger.debug("agent", "LLM Stream Request", {
       model: payload.model,
