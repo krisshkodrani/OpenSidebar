@@ -39,7 +39,7 @@ export const MODEL_PLANNER = "minimax/minimax-m2.5";
 /** Groq API base URL (OpenAI-compatible) */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 /** Groq model defaults */
-export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
+export const GROQ_MODEL_EXECUTOR = "llama-3.3-70b-versatile";
 export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
 
