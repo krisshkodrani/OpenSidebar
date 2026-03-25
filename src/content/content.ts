@@ -569,36 +569,13 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           return true;
         }
 
-        // Track in-flight network requests (fetch + XHR)
-        let inFlightRequests = 0;
-        const origFetch = window.fetch;
-        const patchedFetch: typeof fetch = function (...args) {
-          inFlightRequests++;
-          return origFetch.apply(window, args).finally(() => { inFlightRequests--; });
-        };
-        window.fetch = patchedFetch;
-
-        const origXhrOpen = XMLHttpRequest.prototype.open;
-        const origXhrSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.open = function (...args: any) {
-          return origXhrOpen.apply(this, args);
-        };
-        XMLHttpRequest.prototype.send = function (...args: any) {
-          inFlightRequests++;
-          this.addEventListener("loadend", () => { inFlightRequests--; }, { once: true });
-          return origXhrSend.apply(this, args);
-        };
-
-        const restoreNetwork = () => {
-          window.fetch = origFetch;
-          XMLHttpRequest.prototype.open = origXhrOpen;
-          XMLHttpRequest.prototype.send = origXhrSend;
-        };
-
-        // Watch for DOM mutations + network idle, respond after 2 idle frames with 0 in-flight
+        // Watch for DOM mutations, respond after 3 idle frames or timeout.
+        // Using 3 frames (vs previous 2) gives AJAX responses ~50ms to arrive
+        // and trigger DOM mutations, closing the snapshot/screenshot timing gap
+        // without invasive fetch/XHR interception.
         let idleFrames = 0;
         let settled = false;
-        const cap = Math.min(timeoutMs || 150, 500); // hard cap 500ms
+        const cap = Math.min(timeoutMs || 200, 500); // hard cap 500ms, default 200ms (was 150ms)
 
         const observer = new MutationObserver(() => {
           idleFrames = 0; // reset on any mutation
@@ -613,29 +590,21 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           if (!settled) {
             settled = true;
             observer.disconnect();
-            restoreNetwork();
             respond();
           }
         }, cap);
 
         const checkIdle = () => {
           if (settled) return;
-          // Reset idle count if network requests are still in flight
-          if (inFlightRequests > 0) {
-            idleFrames = 0;
-            requestAnimationFrame(checkIdle);
-            return;
-          }
           idleFrames++;
-          if (idleFrames >= 2) {
-            // 2 consecutive animation frames with no mutations AND no in-flight requests
+          if (idleFrames >= 3) {
+            // 3 consecutive animation frames with no mutations (~50ms at 60fps)
             const elCount = document.querySelectorAll(
               "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
             ).length;
             if (!waitForElements || elCount > 0) {
               settled = true;
               observer.disconnect();
-              restoreNetwork();
               clearTimeout(timer);
               respond();
               return;
