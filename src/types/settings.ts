@@ -8,6 +8,10 @@ import type { AgentLoopState } from "./agent";
 
 export interface UserSettings {
   openRouterApiKey: string;
+  /** LLM provider: "openrouter" (default) or "openai" (direct) */
+  provider?: "openrouter" | "openai";
+  /** OpenAI API key (required when provider is "openai") */
+  openaiApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
