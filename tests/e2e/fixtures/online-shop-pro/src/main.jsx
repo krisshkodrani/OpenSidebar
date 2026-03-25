@@ -16,6 +16,7 @@ import ScrollCatalog from "./routes/scroll-catalog";
 import GoBackChain from "./routes/go-back-chain";
 import DynamicCompute from "./routes/dynamic-compute";
 import ProcurementList from "./routes/procurement-list";
+import DelayedContent from "./routes/delayed-content";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -32,6 +33,7 @@ const routes = [
   { path: "/go-back-chain", label: "GoBack", title: "Navigation Chain", component: GoBackChain },
   { path: "/dynamic-compute", label: "Compute", title: "Custom Product Configurator", component: DynamicCompute },
   { path: "/procurement", label: "Procurement", title: "Procurement List", component: ProcurementList },
+  { path: "/delayed-content", label: "Delayed", title: "Delayed Content Test", component: DelayedContent },
 ];
 
 function Layout({ children, currentPath }) {
