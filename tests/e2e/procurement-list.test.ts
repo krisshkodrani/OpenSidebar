@@ -82,15 +82,16 @@ describe.skipIf(!h.apiKey)("E2E: Procurement List", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "You are on a Procurement List page. It has a table of items to purchase from different stores.",
-      "For EACH item in the list:",
+      "BUY items from the Procurement List on this page. Do NOT just read the list — you must actually purchase each item.",
+      "",
+      "For the first two items in the table, perform these steps:",
       "  1. Open the store link in a NEW tab (use create_tab with the store URL from the link).",
       "  2. In that store tab, find the matching product and click 'Add to Cart'.",
       "  3. Click 'Place Order' to complete the purchase.",
       "  4. Close the store tab (close_tab) and switch back to the procurement list tab.",
       "  5. Check the checkbox next to that item to mark it as done.",
       "",
-      "Process at least the first two items. When done, call done() reporting which items you completed.",
+      "You MUST complete at least two purchases. Reading the list is NOT enough — items must be bought and checked off.",
       "IMPORTANT: You must use create_tab to open stores and close_tab when finished with each store.",
     ].join("\n");
 
