@@ -34,7 +34,7 @@ export const MODEL_EXECUTOR = "openai/gpt-5.4-mini:nitro";
 /** Fallback: same model without :nitro — routes through different OpenRouter infrastructure */
 export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "openai/gpt-5.4-mini";
 /** Planner model tier — used after escalation (OpenRouter) */
-export const MODEL_PLANNER = "minimax/minimax-m2.7:nitro";
+export const MODEL_PLANNER = "openai/gpt-5.4-mini:nitro";
 
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
