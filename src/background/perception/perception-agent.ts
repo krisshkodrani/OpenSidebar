@@ -35,6 +35,8 @@ import type {
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_PERCEPTION_MODEL = "gpt-5.4-mini";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -75,6 +77,19 @@ interface PerceptionProvider {
 
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
+
+  // When OpenAI is selected, use OpenAI as primary perception provider
+  if (settings.provider === "openai" && settings.openaiApiKey) {
+    providers.push({
+      baseUrl: OPENAI_API_URL,
+      apiKey: settings.openaiApiKey,
+      headers: {},
+      model: settings.perceptionModel || OPENAI_PERCEPTION_MODEL,
+      providerId: "openai",
+    });
+  }
+
+  // OpenRouter as fallback (or primary when no OpenAI)
   const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
     providers.push({

@@ -1414,6 +1414,8 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           useNitro: input.settings.useNitro,
+          provider: input.settings.provider,
+          openaiApiKey: input.settings.openaiApiKey,
         };
         const planner = this.deps.createPlanner(
           input.openRouterApiKey,
@@ -1948,6 +1950,8 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           useNitro: input.settings.useNitro,
+          provider: input.settings.provider,
+          openaiApiKey: input.settings.openaiApiKey,
         },
       });
 

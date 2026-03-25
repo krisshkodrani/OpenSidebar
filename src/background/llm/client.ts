@@ -36,13 +36,32 @@ export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "openai/gpt-5.4-mini";
 /** Planner model tier — used after escalation (OpenRouter) */
 export const MODEL_PLANNER = "openai/gpt-5.4-mini:nitro";
 
+/** OpenAI direct API */
+const OPENAI_BASE_URL = "https://api.openai.com/v1/chat/completions";
+export const OPENAI_MODEL_EXECUTOR = "gpt-5.4-mini";
+export const OPENAI_MODEL_PLANNER = "gpt-5.4-mini";
+export const OPENAI_MODEL_PERCEPTION = "gpt-5.4-mini";
+
+function openAIProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: OPENAI_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "openai",
+  };
+}
+
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
   executorFallbackModel?: string;
   plannerModel?: string;
-  /** Append :nitro routing suffix to all model IDs */
+  /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
+  /** LLM provider selection */
+  provider?: "openrouter" | "openai";
+  /** OpenAI API key (required when provider is "openai") */
+  openaiApiKey?: string;
 }
 
 /** Append `:nitro` suffix if enabled and not already present */
@@ -303,9 +322,9 @@ export class LLMClient {
   private executorFallbackModel: string | null = null;
 
   /**
-   * Creates a new LLM client with OpenRouter as the sole provider.
-   * @param openRouterApiKey - OpenRouter key (required)
-   * @param options - Optional model overrides for executor and planner tiers
+   * Creates a new LLM client.
+   * @param openRouterApiKey - OpenRouter key (required as default provider)
+   * @param options - Provider selection, model overrides, and feature flags
    */
   constructor(
     openRouterApiKey: string,
@@ -313,23 +332,34 @@ export class LLMClient {
   ) {
     this.openRouterApiKey = openRouterApiKey;
 
-    const nitro = options?.useNitro;
-    // Build executor pool: OpenRouter
-    this.executorPool = new ProviderPool(
-      openRouterApiKey,
-      { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
-    );
-    // Fallback intentionally skips applyNitro — the default fallback is the same
-    // model without :nitro, routing through different OpenRouter infrastructure.
-    // User-provided overrides are used as-is (they chose a specific model).
-    this.executorFallbackModel =
-      options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+    const useOpenAI = options?.provider === "openai" && !!options?.openaiApiKey;
 
-    // Build planner pool: OpenRouter (MiniMax M2.5)
-    this.plannerPool = new ProviderPool(
-      openRouterApiKey,
-      { openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro) },
-    );
+    if (useOpenAI) {
+      // OpenAI direct: no :nitro, no prefix, native prompt caching
+      const oaiKey = options!.openaiApiKey!;
+      const oaiProvider = openAIProvider(oaiKey);
+      const executorModel = options?.executorModel || OPENAI_MODEL_EXECUTOR;
+      const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
+      // Build pools with OpenRouter constructor, then override provider to OpenAI
+      this.executorPool = new ProviderPool(oaiKey, { openRouterModel: executorModel });
+      this.executorPool.getSlots()[0].provider = oaiProvider;
+      this.executorFallbackModel = options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
+      this.plannerPool = new ProviderPool(oaiKey, { openRouterModel: plannerModel });
+      this.plannerPool.getSlots()[0].provider = oaiProvider;
+    } else {
+      // OpenRouter (default): apply :nitro, prefix model IDs
+      const nitro = options?.useNitro;
+      this.executorPool = new ProviderPool(
+        openRouterApiKey,
+        { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
+      );
+      this.executorFallbackModel =
+        options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+      this.plannerPool = new ProviderPool(
+        openRouterApiKey,
+        { openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro) },
+      );
+    }
 
     // Initialize from executor pool's top priority
     const initialSlot = this.executorPool.getActive();
