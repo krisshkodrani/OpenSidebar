@@ -10,6 +10,7 @@
  * Communication: Receives messages from background via chrome.runtime.onMessage
  */
 
+import { detectFramework } from "./framework-detect";
 import { logger } from "../utils";
 import {
   RuntimeMessage,
@@ -569,7 +570,12 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           return true;
         }
 
-        // Watch for DOM mutations, respond after 2 idle frames or timeout
+        // Watch for DOM mutations. Use requestIdleCallback (when available) for
+        // framework-aware settling — the browser confirms the main thread is idle,
+        // meaning React/Vue/Angular commits are done. Falls back to 2-frame idle
+        // detection on older browsers.
+        const framework = detectFramework();
+        const hasIdleCallback = typeof requestIdleCallback === "function";
         let idleFrames = 0;
         let settled = false;
         const cap = Math.min(timeoutMs || 150, 500); // hard cap 500ms
@@ -583,6 +589,19 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           attributes: true,
         });
 
+        const settle = () => {
+          if (settled) return;
+          const elCount = document.querySelectorAll(
+            "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
+          ).length;
+          if (!waitForElements || elCount > 0) {
+            settled = true;
+            observer.disconnect();
+            clearTimeout(timer);
+            respond();
+          }
+        };
+
         const timer = setTimeout(() => {
           if (!settled) {
             settled = true;
@@ -594,18 +613,16 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         const checkIdle = () => {
           if (settled) return;
           idleFrames++;
+          if (idleFrames >= 1 && hasIdleCallback) {
+            // 1 idle frame + requestIdleCallback: browser confirms main thread
+            // is free — framework render commits (React, Vue, Angular) are done.
+            requestIdleCallback(() => settle(), { timeout: 50 });
+            return;
+          }
           if (idleFrames >= 2) {
-            // 2 consecutive animation frames with no mutations → DOM is stable
-            const elCount = document.querySelectorAll(
-              "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
-            ).length;
-            if (!waitForElements || elCount > 0) {
-              settled = true;
-              observer.disconnect();
-              clearTimeout(timer);
-              respond();
-              return;
-            }
+            // Fallback: 2 consecutive animation frames with no mutations
+            settle();
+            return;
           }
           requestAnimationFrame(checkIdle);
         };
