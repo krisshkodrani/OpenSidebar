@@ -569,13 +569,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           return true;
         }
 
-        // Watch for DOM mutations, respond after 3 idle frames or timeout.
-        // Using 3 frames (vs previous 2) gives AJAX responses ~50ms to arrive
-        // and trigger DOM mutations, closing the snapshot/screenshot timing gap
-        // without invasive fetch/XHR interception.
+        // Watch for DOM mutations, respond after 2 idle frames or timeout
         let idleFrames = 0;
         let settled = false;
-        const cap = Math.min(timeoutMs || 200, 500); // hard cap 500ms, default 200ms (was 150ms)
+        const cap = Math.min(timeoutMs || 150, 500); // hard cap 500ms
 
         const observer = new MutationObserver(() => {
           idleFrames = 0; // reset on any mutation
@@ -597,8 +594,8 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         const checkIdle = () => {
           if (settled) return;
           idleFrames++;
-          if (idleFrames >= 3) {
-            // 3 consecutive animation frames with no mutations (~50ms at 60fps)
+          if (idleFrames >= 2) {
+            // 2 consecutive animation frames with no mutations → DOM is stable
             const elCount = document.querySelectorAll(
               "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
             ).length;
