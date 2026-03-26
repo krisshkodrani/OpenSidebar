@@ -133,9 +133,15 @@ export class StagnationMonitor {
 
     this.lastSignatures = currSigs;
 
-    // Same-URL counter: independent of DOM delta, tracks absolute URL stability
+    // Same-URL counter: tracks turns on the same URL without meaningful DOM change.
+    // Reset when the DOM changes significantly (SPA form steps, tab switches, etc.)
+    // to avoid false-positive escalations on single-page apps.
     if (url === this.lastUrl) {
-      this._sameUrlTurns++;
+      if (delta >= PROGRESS_DELTA_THRESHOLD) {
+        this._sameUrlTurns = 0; // real DOM change on same URL → not stuck
+      } else {
+        this._sameUrlTurns++;
+      }
     } else {
       this._sameUrlTurns = 0;
     }

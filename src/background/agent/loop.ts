@@ -21,6 +21,7 @@ import {
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
   resolveToolProfile,
+  buildDomAwareProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
@@ -2194,88 +2195,91 @@ export class AgentLoop {
 
   /**
    * Apply tool profile filtering based on the current plan step.
-   * If the running subtask has a toolProfile, only include matching tools
-   * (plus always keep done and escalate).
+   * If the running subtask has an explicit toolProfile, use it.
+   * Otherwise, use DOM-aware profiling: inspect the current snapshot's
+   * elements to determine which tools are relevant (e.g., draggable
+   * elements → include drag_and_drop, file inputs → include upload_file).
    */
   private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
     const planStatus = this.context.getPlanStatusRaw();
     const currentSubtask = planStatus?.subtasks.find(
       (s) => s.status === "running",
     );
-    // When a plan step exists but has no explicit profile, default to form_fill
-    // (16 tools instead of 38) to reduce tool confusion for the executor model.
-    const fallbackProfile =
-      !currentSubtask?.toolProfile && currentSubtask
-        ? ("form_fill" as ToolProfile)
-        : !currentSubtask?.toolProfile && this.originalQuery
-          ? inferToolProfileForStep(this.originalQuery, "")
-          : undefined;
-    const activeProfile = currentSubtask?.toolProfile ?? fallbackProfile;
-    if (!activeProfile) return tools;
 
-    if (
-      currentSubtask?.toolProfile &&
-      this.turnsOnCurrentStep >= this.limits.stepWarnTurns
-    ) {
-      this.log.info("agent", "Tool profile widened due to step stagnation", {
+    // If planner assigned an explicit profile, use it (with stagnation widening)
+    const explicitProfile = currentSubtask?.toolProfile;
+    if (explicitProfile) {
+      if (this.turnsOnCurrentStep >= this.limits.stepWarnTurns) {
+        this.log.info("agent", "Tool profile widened due to step stagnation", {
+          turn: this.turnCount,
+          profile: explicitProfile,
+          turnsOnCurrentStep: this.turnsOnCurrentStep,
+          stepWarnTurns: this.limits.stepWarnTurns,
+        });
+        this.traceRecorder?.recordEvent("tool_profile_widened", {
+          turn: this.turnCount,
+          profile: explicitProfile,
+          reason: "step_stagnation",
+          turnsOnCurrentStep: this.turnsOnCurrentStep,
+        });
+        return tools;
+      }
+
+      const allowedNames = resolveToolProfile(explicitProfile as ToolProfile);
+      if (!allowedNames) return tools; // "full" or unknown → no filtering
+
+      const allowedSet = new Set<string>(allowedNames);
+      allowedSet.add(ToolName.DONE);
+      allowedSet.add(ToolName.ESCALATE);
+      allowedSet.add(ToolName.CLARIFY);
+      allowedSet.add(ToolName.UPDATE_NOTES);
+
+      const filtered = tools.filter((t) => allowedSet.has(t.function.name));
+      this.log.info("agent", "Tool profile applied", {
         turn: this.turnCount,
-        profile: activeProfile,
-        turnsOnCurrentStep: this.turnsOnCurrentStep,
-        stepWarnTurns: this.limits.stepWarnTurns,
+        profile: explicitProfile,
+        subtask: currentSubtask?.description,
+        source: "plan_status",
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
       });
-      this.traceRecorder?.recordEvent("tool_profile_widened", {
+      this.traceRecorder?.recordEvent("tool_profile_applied", {
         turn: this.turnCount,
-        profile: activeProfile,
-        reason: "step_stagnation",
-        turnsOnCurrentStep: this.turnsOnCurrentStep,
+        profile: explicitProfile,
+        source: "plan_status",
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
       });
-      return tools;
+      return filtered;
     }
 
-    const allowedNames = resolveToolProfile(activeProfile as ToolProfile);
-    if (!allowedNames) return tools; // "full" or unknown → no filtering
+    // No explicit profile — use DOM-aware profiling based on current snapshot
+    const snapshot = this.context.getSnapshot();
+    if (snapshot?.elements) {
+      const allowedSet = buildDomAwareProfile(snapshot.elements);
+      const filtered = tools.filter((t) =>
+        allowedSet.has(t.function.name as ToolName),
+      );
+      this.log.info("agent", "Tool profile applied", {
+        turn: this.turnCount,
+        profile: "dom_aware",
+        subtask: currentSubtask?.description ?? this.originalQuery,
+        source: "dom_snapshot",
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
+      });
+      this.traceRecorder?.recordEvent("tool_profile_applied", {
+        turn: this.turnCount,
+        profile: "dom_aware",
+        source: "dom_snapshot",
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
+      });
+      return filtered;
+    }
 
-    const allowedSet = new Set<string>(allowedNames);
-    // Always ensure done, escalate, clarify, and update_notes are available
-    allowedSet.add(ToolName.DONE);
-    allowedSet.add(ToolName.ESCALATE);
-    allowedSet.add(ToolName.CLARIFY);
-    allowedSet.add(ToolName.UPDATE_NOTES);
-
-    const filtered = tools.filter((t) => allowedSet.has(t.function.name));
-    const fallbackReason = currentSubtask?.toolProfile
-      ? null
-      : planStatus
-        ? currentSubtask
-          ? "running_subtask_missing_tool_profile"
-          : "no_running_subtask_in_plan_status"
-        : "no_plan_status";
-    this.log.info("agent", "Tool profile applied", {
-      turn: this.turnCount,
-      profile: activeProfile,
-      subtask: currentSubtask?.description ?? this.originalQuery,
-      source: currentSubtask?.toolProfile
-        ? "plan_status"
-        : "fallback_inference",
-      fallbackReason,
-      originalToolCount: tools.length,
-      filteredToolCount: filtered.length,
-      filteredTools: filtered.map((t) => t.function.name),
-    });
-    this.traceRecorder?.recordEvent("tool_profile_applied", {
-      turn: this.turnCount,
-      profile: activeProfile,
-      subtask: currentSubtask?.description ?? this.originalQuery,
-      source: currentSubtask?.toolProfile
-        ? "plan_status"
-        : "fallback_inference",
-      fallbackReason,
-      originalToolCount: tools.length,
-      filteredToolCount: filtered.length,
-      filteredTools: filtered.map((t) => t.function.name),
-    });
-
-    return filtered;
+    // No snapshot available — use all tools
+    return tools;
   }
 
   /**

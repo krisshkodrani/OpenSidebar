@@ -393,3 +393,65 @@ export function resolveToolProfile(
   if (!profile || profile === "full") return null;
   return TOOL_PROFILES[profile] ?? null;
 }
+
+/**
+ * Build a tool set based on what elements actually exist in the DOM snapshot.
+ * Starts with a base set of common interaction tools, then adds extras
+ * based on detected element types (draggable, file inputs, canvas, links).
+ */
+export function buildDomAwareProfile(
+  elements: { tagName: string; attributes?: Record<string, string> }[],
+): Set<ToolName> {
+  // Base set — always available for any interactive page
+  const tools = new Set<ToolName>([
+    // Observe
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.FIND_ELEMENT,
+    ToolName.SCROLL_PAGE,
+    // Interact
+    ToolName.CLICK_ELEMENT,
+    ToolName.TYPE_TEXT,
+    ToolName.PRESS_KEY,
+    ToolName.SELECT_OPTION,
+    ToolName.SET_CHECKBOX,
+    ToolName.HOVER_ELEMENT,
+    ToolName.DISMISS_OVERLAYS,
+    ToolName.WAIT,
+    // Navigate — always available; agent may need go_back from any page
+    ToolName.NAVIGATE,
+    ToolName.GO_BACK,
+    ToolName.CREATE_TAB,
+    ToolName.SWITCH_TAB,
+    ToolName.CLOSE_TAB,
+    ToolName.LIST_TABS,
+    // System
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.UPDATE_NOTES,
+    // Inspection — low-risk, help recovery
+    ToolName.INSPECT_HIDDEN,
+    ToolName.XRAY_PAGE,
+    ToolName.EXECUTE_JS,
+    ToolName.RIGHT_CLICK,
+    ToolName.CLICK_COORDINATES,
+    ToolName.HIDE_ELEMENT,
+  ]);
+
+  let hasDraggable = false;
+  let hasFileInput = false;
+  let hasCanvas = false;
+
+  for (const el of elements) {
+    if (el.attributes?.draggable === "true") hasDraggable = true;
+    if (el.tagName === "input" && el.attributes?.type === "file") hasFileInput = true;
+    if (el.tagName === "canvas") hasCanvas = true;
+  }
+
+  if (hasDraggable) tools.add(ToolName.DRAG_AND_DROP);
+  if (hasFileInput) tools.add(ToolName.UPLOAD_FILE);
+  if (hasCanvas) tools.add(ToolName.CLICK_COORDINATES);
+
+  return tools;
+}

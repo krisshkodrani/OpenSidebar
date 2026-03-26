@@ -90,6 +90,7 @@ import {
   shouldOmitPerceptionForDoneValidation,
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
+import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
 
@@ -232,7 +233,7 @@ describe("AgentLoop", () => {
     expect(turn4Done[0].status).toBe("done");
   });
 
-  test("applies inferred fallback tool profile when no plan status exists", () => {
+  test("uses DOM-aware profiling when no plan status exists", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
@@ -241,11 +242,18 @@ describe("AgentLoop", () => {
 
     (agent as any).originalQuery = "Enter the secret code into the input and submit it";
     (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
+    // Provide a snapshot with a draggable element — drag_and_drop should be included
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      elements: [
+        { tagName: "input", attributes: { type: "text" } },
+        { tagName: "div", attributes: { draggable: "true" } },
+      ],
+    }));
 
     const tools = [
       { function: { name: ToolName.TYPE_TEXT } },
       { function: { name: ToolName.CLICK_ELEMENT } },
-      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DRAG_AND_DROP } },
       { function: { name: ToolName.DONE } },
     ] as any;
 
@@ -254,24 +262,29 @@ describe("AgentLoop", () => {
 
     expect(names).toContain(ToolName.TYPE_TEXT);
     expect(names).toContain(ToolName.CLICK_ELEMENT);
+    expect(names).toContain(ToolName.DRAG_AND_DROP); // DOM-aware: draggable detected
     expect(names).toContain(ToolName.DONE);
-    expect(names).not.toContain(ToolName.EXECUTE_JS);
   });
 
-  test("applies read_only fallback profile for summarize tasks", () => {
+  test("DOM-aware profiling always includes nav tools", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
       onStep: vi.fn(),
     });
 
-    (agent as any).originalQuery =
-      "Open the GitHub repository page and summarize the README";
+    (agent as any).originalQuery = "Go back to previous page";
     (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      elements: [
+        { tagName: "button", attributes: {} }, // no links, just buttons
+      ],
+    }));
 
     const tools = [
       { function: { name: ToolName.READ_PAGE } },
       { function: { name: ToolName.NAVIGATE } },
+      { function: { name: ToolName.GO_BACK } },
       { function: { name: ToolName.CLICK_ELEMENT } },
       { function: { name: ToolName.DONE } },
     ] as any;
@@ -279,10 +292,9 @@ describe("AgentLoop", () => {
     const filtered = (agent as any).applyToolProfile(tools);
     const names = filtered.map((t: any) => t.function.name);
 
-    expect(names).toContain(ToolName.READ_PAGE);
-    expect(names).toContain(ToolName.DONE);
-    expect(names).not.toContain(ToolName.NAVIGATE);
-    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+    expect(names).toContain(ToolName.NAVIGATE); // always in base set
+    expect(names).toContain(ToolName.GO_BACK);   // always in base set
+    expect(names).toContain(ToolName.CLICK_ELEMENT);
   });
 
   test("treats the provider-exhausted marker as a perception failure placeholder", () => {
@@ -314,7 +326,7 @@ describe("AgentLoop", () => {
     ).toBe(false);
   });
 
-  test("records fallback reason when plan status has no running subtask", () => {
+  test("uses DOM-aware profiling when plan status has no running subtask", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
@@ -327,6 +339,9 @@ describe("AgentLoop", () => {
     (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
       currentIndex: 0,
       subtasks: [{ description: "Old step", status: "pending" }],
+    }));
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      elements: [{ tagName: "input", attributes: { type: "text" } }],
     }));
 
     const tools = [
@@ -342,8 +357,8 @@ describe("AgentLoop", () => {
       (call: any[]) => call[1] === "Tool profile applied",
     );
     expect(event).toBeDefined();
-    expect(event![2].source).toBe("fallback_inference");
-    expect(event![2].fallbackReason).toBe("no_running_subtask_in_plan_status");
+    expect(event![2].profile).toBe("dom_aware");
+    expect(event![2].source).toBe("dom_snapshot");
   });
 
   test("uses injected plan status before fallback inference", () => {
@@ -910,5 +925,86 @@ describe("Workspace-scoped tab operations", () => {
     expect(toolResult.content).toContain("Tab 456");
 
     (chrome.tabs as any).query = originalQuery;
+  });
+
+  test("applyToolProfile returns all tools when no snapshot available", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery = "Do something";
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
+    (agent as any).context.getSnapshot = vi.fn(() => null);
+
+    const tools = [
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.DRAG_AND_DROP } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    expect(filtered).toHaveLength(tools.length); // all tools pass through
+  });
+});
+
+describe("buildDomAwareProfile", () => {
+  test("empty elements returns base set without extras", () => {
+    const profile = buildDomAwareProfile([]);
+    expect(profile.has(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(profile.has(ToolName.TYPE_TEXT)).toBe(true);
+    expect(profile.has(ToolName.DONE)).toBe(true);
+    expect(profile.has(ToolName.NAVIGATE)).toBe(true); // nav always in base
+    expect(profile.has(ToolName.GO_BACK)).toBe(true);
+    // Extras not included without matching elements
+    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(false);
+    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(false);
+  });
+
+  test("draggable elements add drag_and_drop", () => {
+    const profile = buildDomAwareProfile([
+      { tagName: "div", attributes: { draggable: "true" } },
+    ]);
+    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(true);
+  });
+
+  test("file input adds upload_file", () => {
+    const profile = buildDomAwareProfile([
+      { tagName: "input", attributes: { type: "file" } },
+    ]);
+    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(true);
+  });
+
+  test("canvas adds click_coordinates", () => {
+    const profile = buildDomAwareProfile([
+      { tagName: "canvas", attributes: {} },
+    ]);
+    expect(profile.has(ToolName.CLICK_COORDINATES)).toBe(true);
+  });
+
+  test("navigation tools always in base set regardless of elements", () => {
+    // Nav tools are always available — agent may need go_back from any page
+    const profile = buildDomAwareProfile([]);
+    expect(profile.has(ToolName.NAVIGATE)).toBe(true);
+    expect(profile.has(ToolName.GO_BACK)).toBe(true);
+    expect(profile.has(ToolName.CREATE_TAB)).toBe(true);
+    expect(profile.has(ToolName.SWITCH_TAB)).toBe(true);
+    expect(profile.has(ToolName.CLOSE_TAB)).toBe(true);
+    expect(profile.has(ToolName.LIST_TABS)).toBe(true);
+  });
+
+  test("mixed elements include all relevant extras", () => {
+    const profile = buildDomAwareProfile([
+      { tagName: "div", attributes: { draggable: "true" } },
+      { tagName: "input", attributes: { type: "file" } },
+      { tagName: "a", attributes: { href: "/page" } },
+      { tagName: "canvas", attributes: {} },
+    ]);
+    expect(profile.has(ToolName.DRAG_AND_DROP)).toBe(true);
+    expect(profile.has(ToolName.UPLOAD_FILE)).toBe(true);
+    expect(profile.has(ToolName.NAVIGATE)).toBe(true);
+    expect(profile.has(ToolName.CLICK_COORDINATES)).toBe(true);
   });
 });

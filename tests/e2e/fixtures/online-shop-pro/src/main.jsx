@@ -17,6 +17,19 @@ import GoBackChain from "./routes/go-back-chain";
 import DynamicCompute from "./routes/dynamic-compute";
 import ProcurementList from "./routes/procurement-list";
 import DelayedContent from "./routes/delayed-content";
+import ModalOverlays from "./routes/modal-overlays";
+import HoverMenus from "./routes/hover-menus";
+import AutocompleteSearch from "./routes/autocomplete";
+import DataTable from "./routes/data-table";
+import Login from "./routes/login";
+import Kanban from "./routes/kanban";
+import FaqAccordion from "./routes/faq-accordion";
+import FileUpload from "./routes/file-upload";
+import ContextMenuPage from "./routes/context-menu";
+import InfiniteScroll from "./routes/infinite-scroll";
+import DatePickerPage from "./routes/date-picker";
+import WebComponents from "./routes/web-components";
+import KeyboardNav from "./routes/keyboard-nav";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -34,6 +47,19 @@ const routes = [
   { path: "/dynamic-compute", label: "Compute", title: "Custom Product Configurator", component: DynamicCompute },
   { path: "/procurement", label: "Procurement", title: "Procurement List", component: ProcurementList },
   { path: "/delayed-content", label: "Delayed", title: "Delayed Content Test", component: DelayedContent },
+  { path: "/modal-overlays", label: "Modals", title: "Modal & Overlay Test", component: ModalOverlays },
+  { path: "/hover-menus", label: "Hover", title: "Hover Menus & Tooltips", component: HoverMenus },
+  { path: "/autocomplete", label: "Autocomplete", title: "Autocomplete & Typeahead", component: AutocompleteSearch },
+  { path: "/data-table", label: "Table", title: "Employee Directory", component: DataTable },
+  { path: "/login", label: "Login", title: "Sign In", component: Login },
+  { path: "/kanban", label: "Kanban", title: "Kanban Board", component: Kanban },
+  { path: "/faq-accordion", label: "FAQ", title: "Frequently Asked Questions", component: FaqAccordion },
+  { path: "/file-upload", label: "Upload", title: "Support Ticket", component: FileUpload },
+  { path: "/context-menu", label: "CtxMenu", title: "Document Manager", component: ContextMenuPage },
+  { path: "/infinite-scroll", label: "Feed", title: "Social Feed", component: InfiniteScroll },
+  { path: "/date-picker", label: "DatePick", title: "Booking Form", component: DatePickerPage },
+  { path: "/web-components", label: "WebComp", title: "Web Components", component: WebComponents },
+  { path: "/keyboard-nav", label: "Keyboard", title: "Spreadsheet Editor", component: KeyboardNav },
 ];
 
 function Layout({ children, currentPath }) {
