@@ -17,8 +17,8 @@ const STORAGE_KEY = "openrouter_api_key";
 const MODEL_STORAGE_KEY = "story_model";
 
 const STORY_MODELS = [
+  "openai/gpt-5.4-mini",
   "minimax/minimax-m2.5",
-  "x-ai/grok-4.1-fast",
   "anthropic/claude-sonnet-4",
   "google/gemini-2.5-flash",
   "google/gemini-3-flash-preview",

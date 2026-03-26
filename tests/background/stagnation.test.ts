@@ -491,23 +491,23 @@ describe("StagnationMonitor — sameUrlTurns", () => {
     tracker = new StagnationMonitor();
   });
 
-  it("sameUrlTurns increments on same URL regardless of content delta", () => {
+  it("sameUrlTurns resets on meaningful DOM change even on same URL", () => {
     const snap1 = makeSnap();
     tracker.onSnapshotRefresh(snap1); // baseline — sameUrlTurns = 0 (first call, no prev URL)
     expect(tracker.sameUrlTurns).toBe(0);
 
-    // Same URL, same content
+    // Same URL, same content → increments
     tracker.onSnapshotRefresh(snap1);
     expect(tracker.sameUrlTurns).toBe(1);
 
-    // Same URL, different content (content change resets stagnantTurns but NOT sameUrlTurns)
+    // Same URL, different content → resets (SPA form step change, tab switch, etc.)
     const snap2 = makeSnap({ elements: [makeElement({ text: "Changed" })] });
     tracker.onSnapshotRefresh(snap2);
-    expect(tracker.sameUrlTurns).toBe(2);
+    expect(tracker.sameUrlTurns).toBe(0);
 
-    // Same URL again
+    // Same URL, same content again → increments from 0
     tracker.onSnapshotRefresh(snap2);
-    expect(tracker.sameUrlTurns).toBe(3);
+    expect(tracker.sameUrlTurns).toBe(1);
   });
 
   it("sameUrlTurns resets on URL change", () => {
@@ -525,6 +525,24 @@ describe("StagnationMonitor — sameUrlTurns", () => {
     // Same new URL
     tracker.onSnapshotRefresh(snap2);
     expect(tracker.sameUrlTurns).toBe(1);
+  });
+
+  it("sameUrlTurns still increments on same URL with small DOM changes below threshold", () => {
+    // Page with many elements — a tiny text change is below PROGRESS_DELTA_THRESHOLD (0.1)
+    // delta = diffCount / max(prev, curr). Need diffCount/size < 0.1.
+    // 30 elements, change 1 → diffCount=2 (1 removed + 1 added), delta=2/30≈0.067 < 0.1
+    const elements = Array.from({ length: 30 }, (_, i) =>
+      makeElement({ text: `Item ${i}` }),
+    );
+    const snap1 = makeSnap({ elements });
+    tracker.onSnapshotRefresh(snap1); // baseline
+    expect(tracker.sameUrlTurns).toBe(0);
+
+    const tweaked = [...elements];
+    tweaked[0] = makeElement({ text: "Modified" });
+    const snap2 = makeSnap({ elements: tweaked });
+    tracker.onSnapshotRefresh(snap2);
+    expect(tracker.sameUrlTurns).toBe(1); // still increments — change too small
   });
 
   it("sameUrlTurns resets on full reset() but NOT on resetEscalation()", () => {

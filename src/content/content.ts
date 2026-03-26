@@ -613,9 +613,11 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         const checkIdle = () => {
           if (settled) return;
           idleFrames++;
-          if (idleFrames >= 1 && hasIdleCallback) {
-            // 1 idle frame + requestIdleCallback: browser confirms main thread
+          if (idleFrames >= 2 && hasIdleCallback) {
+            // 2 idle frames + requestIdleCallback: browser confirms main thread
             // is free — framework render commits (React, Vue, Angular) are done.
+            // 2 frames (not 1) ensures React's batched state updates from synthetic
+            // events have committed before we snapshot.
             requestIdleCallback(() => settle(), { timeout: 50 });
             return;
           }
