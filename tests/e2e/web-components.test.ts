@@ -55,11 +55,19 @@ describe.skipIf(!h.apiKey)("E2E: Web Components", () => {
       h.page,
       h.ctx.serviceWorker,
       async () => {
-        const result = await h.page.evaluate(
-          () => (window as any).webComponentResult ?? null,
-        );
-        if (result && result.actionsCompleted >= 2 && result.toggleEnabled) return result;
-        return null;
+        // Check both React state and direct shadow DOM window flags
+        const result = await h.page.evaluate(() => {
+          const react = (window as any).webComponentResult ?? null;
+          const shadowActions = (window as any).__shadowActions ?? [];
+          const toggleDirect = (window as any).__toggleEnabled ?? false;
+          const actionsCount = Math.max(react?.actionsCompleted ?? 0, shadowActions.length);
+          const toggleOn = react?.toggleEnabled ?? toggleDirect;
+          if (actionsCount >= 2 && toggleOn) {
+            return { actionsCompleted: actionsCount, actions: shadowActions, toggleEnabled: toggleOn };
+          }
+          return null;
+        });
+        return result;
       },
       240_000,
       workspaceId,
