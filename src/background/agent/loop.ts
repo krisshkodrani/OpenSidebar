@@ -211,40 +211,6 @@ function normalizeGuardText(value: unknown): string {
     .trim();
 }
 
-function findVisibleElementMatch(
-  snapshot: DomSnapshot | null,
-  rawSearchText: unknown,
-): DomSnapshot["elements"][number] | null {
-  if (!snapshot || typeof rawSearchText !== "string") return null;
-  const query = normalizeGuardText(rawSearchText);
-  if (query.length < 2) return null;
-
-  for (const el of snapshot.elements) {
-    if (el.isVisible === false) continue;
-    const candidates = [
-      el.text,
-      el.attributes["aria-label"],
-      el.attributes.placeholder,
-      el.attributes.value,
-      el.attributes.name,
-    ]
-      .map((value) => normalizeGuardText(value))
-      .filter(Boolean);
-    if (
-      candidates.some(
-        (candidate) =>
-          candidate === query ||
-          candidate.includes(query) ||
-          (query.length >= 4 && query.includes(candidate)),
-      )
-    ) {
-      return el;
-    }
-  }
-
-  return null;
-}
-
 function isTextLikeInputElement(
   element: DomSnapshot["elements"][number] | null | undefined,
 ): boolean {
