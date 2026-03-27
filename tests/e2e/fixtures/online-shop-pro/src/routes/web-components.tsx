@@ -56,7 +56,7 @@ function registerCustomElements() {
       btn.addEventListener("click", () => {
         status.style.display = "block";
         status.textContent = "Action completed!";
-        this.dispatchEvent(new CustomEvent("card-action", { bubbles: true }));
+        this.dispatchEvent(new CustomEvent("card-action", { bubbles: true, composed: true }));
       });
     }
   }
@@ -100,6 +100,7 @@ function registerCustomElements() {
         this.dispatchEvent(
           new CustomEvent("value-change", {
             bubbles: true,
+            composed: true,
             detail: { value: this._input!.value },
           }),
         );
@@ -168,6 +169,7 @@ function registerCustomElements() {
         this.dispatchEvent(
           new CustomEvent("toggle-change", {
             bubbles: true,
+            composed: true,
             detail: { checked: this._checked },
           }),
         );
@@ -184,13 +186,41 @@ function registerCustomElements() {
   customElements.define("custom-toggle", CustomToggle);
 }
 
+// Register custom elements once at module level (before any render)
+registerCustomElements();
+
 export default function WebComponents() {
   const [actions, setActions] = useState<string[]>([]);
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [toggleState, setToggleState] = useState(false);
 
+  // React doesn't support custom element events via onXxx props.
+  // Use DOM addEventListener after mount for custom events.
   useEffect(() => {
-    registerCustomElements();
+    const notif = document.getElementById("card-notifications");
+    const privacy = document.getElementById("card-privacy");
+    const toggle = document.getElementById("toggle-darkmode");
+    const handlers: Array<[HTMLElement, string, EventListener]> = [];
+
+    if (notif) {
+      const h = () => setActions((prev) => [...prev, "notifications"]);
+      notif.addEventListener("card-action", h);
+      handlers.push([notif, "card-action", h]);
+    }
+    if (privacy) {
+      const h = () => setActions((prev) => [...prev, "privacy"]);
+      privacy.addEventListener("card-action", h);
+      handlers.push([privacy, "card-action", h]);
+    }
+    if (toggle) {
+      const h = ((e: Event) =>
+        setToggleState((e as CustomEvent).detail.checked)) as EventListener;
+      toggle.addEventListener("toggle-change", h);
+      handlers.push([toggle, "toggle-change", h]);
+    }
+    return () => {
+      for (const [el, evt, fn] of handlers) el.removeEventListener(evt, fn);
+    };
   }, []);
 
   useEffect(() => {
@@ -220,8 +250,6 @@ export default function WebComponents() {
         {/* Custom cards */}
         <custom-card
           id="card-notifications"
-          // @ts-ignore
-          onCard-action={() => setActions((prev) => [...prev, "notifications"])}
         >
           <span slot="title">Notification Settings</span>
           Configure how you receive notifications from the platform.
@@ -229,8 +257,6 @@ export default function WebComponents() {
 
         <custom-card
           id="card-privacy"
-          // @ts-ignore
-          onCard-action={() => setActions((prev) => [...prev, "privacy"])}
         >
           <span slot="title">Privacy Settings</span>
           Manage your data sharing and privacy preferences.
@@ -254,8 +280,6 @@ export default function WebComponents() {
         <div style={{ marginTop: 20, padding: "12px 0" }}>
           <custom-toggle
             id="toggle-darkmode"
-            // @ts-ignore
-            onToggle-change={(e: CustomEvent) => setToggleState(e.detail.checked)}
           >
             Enable Dark Mode
           </custom-toggle>

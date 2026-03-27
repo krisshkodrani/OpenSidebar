@@ -124,7 +124,12 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     // inside a modal overlay), the click is safe — proceed with native .click().
     const blockerIsChild = el.contains(finalTop);
     const targetInsideBlocker = finalTop.contains(el);
-    if (blockerIsChild || targetInsideBlocker) {
+    // Shadow DOM: elementFromPoint returns the host, but our target is inside
+    // its shadow tree. host.contains(shadowChild) is false across boundaries,
+    // but host.shadowRoot.contains(shadowChild) is true for open roots.
+    const targetInShadowOfBlocker =
+      (finalTop as HTMLElement).shadowRoot?.contains(el) ?? false;
+    if (blockerIsChild || targetInsideBlocker || targetInShadowOfBlocker) {
       for (let i = 0; i < count; i++) {
         el.dispatchEvent(
           new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
