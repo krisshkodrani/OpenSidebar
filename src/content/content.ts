@@ -589,12 +589,29 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           attributes: true,
         });
 
+        // Safety net: always wait at least MIN_SETTLE_MS even if the smart
+        // detection fires early. Catches React/Vue microtask state flushes
+        // that complete between animation frames.
+        const MIN_SETTLE_MS = 50;
+
         const settle = () => {
           if (settled) return;
           const elCount = document.querySelectorAll(
             "a, button, input, select, textarea, [role='button'], [role='link'], [role='textbox'], [tabindex]",
           ).length;
           if (!waitForElements || elCount > 0) {
+            const elapsed = performance.now() - probeStart;
+            if (elapsed < MIN_SETTLE_MS) {
+              // Smart detection fired early — wait for the safety floor
+              setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                observer.disconnect();
+                clearTimeout(timer);
+                respond();
+              }, MIN_SETTLE_MS - elapsed);
+              return;
+            }
             settled = true;
             observer.disconnect();
             clearTimeout(timer);
@@ -716,53 +733,114 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 // --- Agent Activity Border Overlay ---
 
 const BORDER_ID = "opensidebar-agent-border";
+const STOP_BTN_ID = "opensidebar-stop-btn";
 let borderAnimation: Animation | null = null;
 
 function setAgentBorder(active: boolean) {
   const existing = document.getElementById(BORDER_ID);
+  const existingBtn = document.getElementById(STOP_BTN_ID);
 
   if (active) {
-    if (existing) return; // Already showing
+    // --- Border overlay ---
+    if (!existing) {
+      const overlay = document.createElement("div");
+      overlay.id = BORDER_ID;
+      Object.assign(overlay.style, {
+        position: "fixed",
+        inset: "0",
+        zIndex: "2147483646",
+        pointerEvents: "none",
+        border: "4px solid #06b6d4",
+        borderRadius: "4px",
+        opacity: "1",
+      });
+      document.documentElement.appendChild(overlay);
 
-    const overlay = document.createElement("div");
-    overlay.id = BORDER_ID;
-    Object.assign(overlay.style, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "2147483646",
-      pointerEvents: "none",
-      border: "3px dashed #f59e0b",
-      borderRadius: "4px",
-      opacity: "1",
-    });
-    document.documentElement.appendChild(overlay);
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      if (!reducedMotion) {
+        borderAnimation = overlay.animate(
+          [
+            { boxShadow: "inset 0 0 20px rgba(6,182,212,0.35)" },
+            { boxShadow: "inset 0 0 30px rgba(6,182,212,0.15)" },
+            { boxShadow: "inset 0 0 20px rgba(6,182,212,0.35)" },
+          ],
+          { duration: 2000, iterations: Infinity },
+        );
+      }
+    }
 
-    // Subtle pulsing glow unless user prefers reduced motion
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (!reducedMotion) {
-      borderAnimation = overlay.animate(
-        [
-          { boxShadow: "inset 0 0 8px rgba(245,158,11,0.3)" },
-          { boxShadow: "inset 0 0 16px rgba(245,158,11,0.15)" },
-          { boxShadow: "inset 0 0 8px rgba(245,158,11,0.3)" },
-        ],
-        { duration: 2000, iterations: Infinity },
-      );
+    // --- Floating stop button ---
+    if (!existingBtn) {
+      const btn = document.createElement("button");
+      btn.id = STOP_BTN_ID;
+      btn.innerHTML =
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' +
+        '<span style="margin-left:6px">Stop OpenSidebar</span>';
+      Object.assign(btn.style, {
+        position: "fixed",
+        bottom: "24px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: "2147483647",
+        pointerEvents: "auto",
+        display: "flex",
+        alignItems: "center",
+        padding: "8px 18px",
+        background: "rgba(30,30,30,0.85)",
+        backdropFilter: "blur(8px)",
+        color: "#fff",
+        fontSize: "13px",
+        fontWeight: "500",
+        fontFamily:
+          '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+        border: "1px solid rgba(255,255,255,0.15)",
+        borderRadius: "24px",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+        cursor: "pointer",
+        opacity: "0",
+        transition: "background 0.15s, opacity 0.3s",
+      });
+      btn.addEventListener("mouseenter", () => {
+        btn.style.background = "rgba(50,50,50,0.9)";
+      });
+      btn.addEventListener("mouseleave", () => {
+        btn.style.background = "rgba(30,30,30,0.85)";
+      });
+      btn.addEventListener("click", () => {
+        chrome.runtime
+          .sendMessage({
+            type: "STOP_AGENT",
+            requestId: crypto.randomUUID(),
+            source: "content",
+            payload: {},
+          })
+          .catch(() => {});
+      });
+      document.documentElement.appendChild(btn);
+      // Fade in
+      requestAnimationFrame(() => {
+        btn.style.opacity = "1";
+      });
     }
   } else {
-    if (!existing) return;
-
-    if (borderAnimation) {
-      borderAnimation.cancel();
-      borderAnimation = null;
+    // --- Remove border ---
+    if (existing) {
+      if (borderAnimation) {
+        borderAnimation.cancel();
+        borderAnimation = null;
+      }
+      existing.animate([{ opacity: "1" }, { opacity: "0" }], {
+        duration: 300,
+        fill: "forwards",
+      }).onfinish = () => existing.remove();
     }
 
-    // Fade out then remove
-    existing.animate([{ opacity: "1" }, { opacity: "0" }], {
-      duration: 300,
-      fill: "forwards",
-    }).onfinish = () => existing.remove();
+    // --- Remove stop button ---
+    if (existingBtn) {
+      existingBtn.style.opacity = "0";
+      setTimeout(() => existingBtn.remove(), 300);
+    }
   }
 }
