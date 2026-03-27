@@ -664,6 +664,7 @@ export class TaskPlanner {
     pageUrl: string,
     signal?: AbortSignal,
     perception?: string,
+    successCriteria?: string,
   ): Promise<DoneValidation> {
     try {
       const planText = plan
@@ -671,6 +672,9 @@ export class TaskPlanner {
         .join("\n");
 
       let userContent = `Original task: ${query}\n\nPlan:\n${planText}\n\nAgent summary: ${doneSummary}\n\nCurrent page: ${pageTitle} (${pageUrl})`;
+      if (successCriteria) {
+        userContent += `\n\nSuccess criteria (from planner — ALL must be satisfied):\n${successCriteria}`;
+      }
       if (perception) {
         userContent += `\n\nCurrent page perception:\n${perception}`;
       }
