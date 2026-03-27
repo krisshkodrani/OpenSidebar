@@ -477,8 +477,8 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 3 });
             expect(result.success).toBe(true);
             expect(result.result).toContain("(3 times)");
-            // Each iteration dispatches click event + el.click() = 2 per iteration
-            expect(clickEvents.length).toBe(6);
+            // Each iteration dispatches el.click() = 1 per iteration
+            expect(clickEvents.length).toBe(3);
         });
 
         test("defaults to 1 click when count is omitted", async () => {
@@ -498,7 +498,7 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag });
             expect(result.success).toBe(true);
             expect(result.result).not.toContain("times");
-            expect(clickEvents.length).toBe(2); // click event + el.click()
+            expect(clickEvents.length).toBe(1); // el.click() only
         });
 
         test("clamps count to max 10", async () => {
@@ -518,7 +518,7 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 50 });
             expect(result.success).toBe(true);
             expect(result.result).toContain("(10 times)");
-            expect(clickEvents.length).toBe(20); // 10 * 2
+            expect(clickEvents.length).toBe(10); // 10 * 1
         });
     });
 

@@ -146,10 +146,13 @@ export async function executeClick(args: ClickElementArgs): Promise<{
         el.dispatchEvent(
           new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
         );
-        el.dispatchEvent(
-          new MouseEvent("click", { bubbles: true, cancelable: true }),
-        );
-        if (el instanceof HTMLElement) el.click();
+        if (el instanceof HTMLElement) {
+          el.click();
+        } else {
+          el.dispatchEvent(
+            new MouseEvent("click", { bubbles: true, cancelable: true }),
+          );
+        }
         if (i < count - 1) {
           await new Promise((r) => setTimeout(r, 150));
         }
@@ -177,7 +180,10 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       !(el as HTMLAnchorElement).target) ||
     el.closest("form")?.querySelector("[type='submit']") === el;
 
-  // Dispatch click events (possibly multiple times)
+  // Dispatch click events (possibly multiple times).
+  // Use el.click() as the single click source (native, trusted) — the Playwright
+  // approach. Do NOT also dispatch synthetic MouseEvent("click") as that causes
+  // double-processing on toggle elements (accordions, checkboxes, tabs).
   for (let i = 0; i < count; i++) {
     el.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
@@ -185,13 +191,13 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     el.dispatchEvent(
       new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
     );
-    el.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true }),
-    );
-
-    // Also call .click() for elements that handle it natively
     if (el instanceof HTMLElement) {
-      el.click();
+      el.click(); // Native click — trusted, works with React/Vue/Angular
+    } else {
+      // SVG/non-HTML elements don't have .click() — synthetic fallback
+      el.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     }
 
     // Delay between clicks for multi-click (let event handlers process)
@@ -644,11 +650,11 @@ export function executeClickCoordinates(args: ClickCoordinatesArgs): {
 
   target.dispatchEvent(new MouseEvent("mousedown", eventOpts));
   target.dispatchEvent(new MouseEvent("mouseup", eventOpts));
-  target.dispatchEvent(new MouseEvent("click", eventOpts));
-
-  // Also call .click() for native handling on HTMLElements
+  // Single click event — native .click() for HTMLElements, synthetic fallback for SVG
   if (el instanceof HTMLElement) {
     el.click();
+  } else {
+    target.dispatchEvent(new MouseEvent("click", eventOpts));
   }
 
   // Detect navigation
