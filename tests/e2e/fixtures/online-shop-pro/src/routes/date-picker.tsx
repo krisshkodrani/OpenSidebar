@@ -18,7 +18,7 @@ function getFirstDayOfWeek(year: number, month: number): number {
 export default function DatePicker() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [viewYear, setViewYear] = useState(2026);
-  const [viewMonth, setViewMonth] = useState(2); // March 2026
+  const [viewMonth, setViewMonth] = useState(4); // May 2026
   const [selectedDate, setSelectedDate] = useState("");
   const [name, setName] = useState("");
   const [submitted, setSubmitted] = useState(false);

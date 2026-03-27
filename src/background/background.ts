@@ -404,7 +404,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     // 2. Stop Agent
-    if (message.source === MessageSource.SIDEPANEL && message.type === "STOP_AGENT") {
+    if ((message.source === MessageSource.SIDEPANEL || message.source === MessageSource.CONTENT) && message.type === "STOP_AGENT") {
       const wsId = message.payload?.workspaceId;
       (async () => {
         await orchestrator.stopTask(wsId ?? undefined);

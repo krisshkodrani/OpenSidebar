@@ -18,10 +18,6 @@
 
 ---
 
-<p align="center">
-  <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar — agent browsing a shop" width="100%" />
-</p>
-
 https://github.com/user-attachments/assets/7af0018e-4d0a-46e6-80a2-62336a4e6263
 
 <p align="center">

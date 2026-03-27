@@ -39,11 +39,11 @@ describe.skipIf(!h.apiKey)("E2E: Data Table", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "This is a paginated employee directory with 50 employees, 5 per page.",
+      "This is a paginated employee directory with a search field at the top.",
       "",
-      "Find the employee named 'Diana Chen'. She is NOT on the first page — you will need to click through the pagination buttons (Next or page numbers) to find her.",
+      "Type 'Diana' into the search field to filter the table, then find Diana Chen in the results and report her salary.",
       "",
-      "Once you find Diana Chen, report her salary. Then call done() with her salary in the summary.",
+      "Call done() with her salary in the summary.",
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
