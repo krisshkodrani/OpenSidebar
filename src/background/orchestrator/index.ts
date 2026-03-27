@@ -21,6 +21,10 @@ import {
 import { loadSettings } from "../../utils/settings-storage";
 import { listPromptDescriptors } from "../../prompts";
 import { workspaceManager } from "../workspaces/manager";
+import {
+  updateTabGroupAppearance,
+  resetTabGroupAppearance,
+} from "../workspaces/tab-group-appearance";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
 import { inferToolProfileForStep } from "../agent/planner";
@@ -1396,6 +1400,10 @@ export class Orchestrator {
       AgentStatus.THINKING,
       "Planning task...",
     );
+    updateTabGroupAppearance(input.workspaceId, {
+      title: input.query,
+      status: AgentStatus.THINKING,
+    });
 
     let nodes: TaskNode[] = [];
 
@@ -1533,6 +1541,7 @@ export class Orchestrator {
         "system",
       );
       this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+      resetTabGroupAppearance(task.workspaceId);
       return;
     }
 
@@ -1571,6 +1580,7 @@ export class Orchestrator {
           "system",
         );
         this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
+        resetTabGroupAppearance(task.workspaceId);
         return;
       }
 
@@ -1632,6 +1642,7 @@ export class Orchestrator {
         `Task failed: ${error instanceof Error ? error.message : "unexpected error"}`,
       );
       this.sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
+      resetTabGroupAppearance(input.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
       await this.clearTaskCheckpoint(task.workspaceId);
@@ -1936,15 +1947,20 @@ export class Orchestrator {
                 }
               }
             : undefined,
-          // Multi-node tasks: do NOT pass the full plan — the orchestrator
-          // owns step sequencing.  Giving the agent loop all nodes causes
-          // step_advanced_by_done_rejection to bleed across node boundaries,
-          // making one executor complete the entire plan.
           // Single-node tasks: synthesize plan state from the node description
           // so the loop's done() guards (plan completeness, validateDone) activate.
+          // Multi-node tasks: pass a single-subtask plan state representing the
+          // current node. This activates done() validation (the planner verifies
+          // the node objective was actually met) without exposing sibling nodes.
           initialPlanState: task.planClassification?.isSingleNode
             ? synthesizePlanStateFromSingleNode(node) ?? undefined
-            : undefined,
+            : {
+                currentIndex: 0,
+                subtasks: [{
+                  description: node.description,
+                  status: "running" as const,
+                }],
+              },
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
@@ -2853,6 +2869,7 @@ export class Orchestrator {
         "system",
       );
       this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+      resetTabGroupAppearance(task.workspaceId);
       return;
     }
 
@@ -2930,7 +2947,7 @@ export class Orchestrator {
       "system",
     );
 
-    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete");
+    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete", completionStatus);
     await this.closeWorkerTabs(task);
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -3704,12 +3721,14 @@ export class Orchestrator {
     workspaceId: string,
     status: AgentStatus,
     detail: string,
+    completionStatus?: "completed" | "partial" | "failed",
   ): void {
     this.sendMessage({
       type: "AGENT_STATUS",
       workspaceId,
       payload: { status, detail },
     });
+    updateTabGroupAppearance(workspaceId, { status, completionStatus });
   }
 
   private sendMessage(message: {
