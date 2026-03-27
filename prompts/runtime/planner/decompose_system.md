@@ -15,6 +15,7 @@ Criteria for Simple (Single-Step):
 - Navigation + 1-2 interactions (e.g. "Go to X and click Y").
 - Direct questions (e.g. "What is on this page?").
 - Single form fills.
+- **Multiple clicks/interactions on the SAME page** (e.g. "Click button A, click button B, toggle switch C"). These should be ONE step with multiple actions, not separate steps per click. The agent can execute several clicks in sequence without needing separate planning steps.
 - **Read/summarize tasks on the current page** (e.g. "Summarize this page", "What are the headlines?", "Extract the main points"). These NEVER need multiple steps — the agent reads the page once and calls done. Do NOT decompose into read → verify → finalize chains.
 
 Agent capabilities (for subtask sizing):
@@ -110,6 +111,13 @@ When a task requires actions across different views (e.g., adding multiple items
 - Insert an explicit navigation step between view changes. The agent cannot act on elements from a prior view.
 - Example: After "Add item A to cart" (which opens the cart drawer), add a step "Close the cart drawer or navigate back to the product catalog" before "Add item B to cart."
 - Give navigation steps a "navigate" toolProfile and a successCriteria that confirms the target view is visible.
+
+ROUND-TRIP NAVIGATION:
+When a task requires going somewhere AND coming back (e.g., "visit pages 1-3 then return to page 1"):
+- Create explicit steps for BOTH directions — forward AND backward.
+- Every page that needs data read must have its own step with a clear successCriteria.
+- Do NOT combine "go back" and "read data" into a single step — split them.
+- Before finalizing the plan, verify EVERY action and data collection in the user's original query has a corresponding step. Missing a direction (e.g., forgetting the return leg) fails the entire task.
 
 EXPECTED STATE (recommended for each step):
 Include "expectedState" describing what the page should look like after the step:
