@@ -4118,33 +4118,6 @@ export class AgentLoop {
                 // Registry will handle parse error on execute
               }
 
-              const visibleMatch =
-                toolName === ToolName.FIND_ELEMENT
-                  ? findVisibleElementMatch(
-                      this.context.getSnapshot(),
-                      args.searchText ?? args.text,
-                    )
-                  : null;
-              if (visibleMatch) {
-                const blockMsg =
-                  `BLOCKED: Element matching "${String(args.searchText ?? args.text)}" is already visible as ` +
-                  `[${visibleMatch.tag}] ${visibleMatch.tagName} "${visibleMatch.text}". ` +
-                  `Use its visible tag directly instead of find_element.`;
-                this.log.info("agent", "Visible find_element blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  matchedTag: visibleMatch.tag,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent("visible_find_element_blocked", {
-                  turn: this.turnCount,
-                  matchedTag: visibleMatch.tag,
-                  query: String(args.searchText ?? args.text).slice(0, 80),
-                  mode: "parallel",
-                });
-                return { toolCall, result: blockMsg, error: null };
-              }
-
               if (shouldTrackRepeatAction(toolName)) {
                 const priorRepeatCount = recentToolCalls.filter(
                   (entry) => entry.tool === toolName && entry.argsKey === argsKey,
@@ -4609,38 +4582,6 @@ export class AgentLoop {
               args = JSON.parse(toolCall.function.arguments);
             } catch {
               // Registry will handle parse error on execute
-            }
-
-            const visibleMatch =
-              toolName === ToolName.FIND_ELEMENT
-                ? findVisibleElementMatch(
-                    this.context.getSnapshot(),
-                    args.searchText ?? args.text,
-                  )
-                : null;
-            if (visibleMatch) {
-              const blockMsg =
-                `BLOCKED: Element matching "${String(args.searchText ?? args.text)}" is already visible as ` +
-                `[${visibleMatch.tag}] ${visibleMatch.tagName} "${visibleMatch.text}". ` +
-                `Use its visible tag directly instead of find_element.`;
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: blockMsg,
-              });
-              this.log.info("agent", "Visible find_element blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                matchedTag: visibleMatch.tag,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent("visible_find_element_blocked", {
-                turn: this.turnCount,
-                matchedTag: visibleMatch.tag,
-                query: String(args.searchText ?? args.text).slice(0, 80),
-                mode: "sequential",
-              });
-              continue;
             }
 
             if (shouldTrackRepeatAction(toolName)) {
