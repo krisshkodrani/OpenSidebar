@@ -57,6 +57,15 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   // Scroll into view if needed
   el.scrollIntoView({ behavior: "instant", block: "center" });
 
+  // Our own injected elements (agent border, stop button) must be excluded from
+  // elementFromPoint checks — they cover the viewport at max z-index but have
+  // pointer-events:none. elementFromPoint doesn't respect pointer-events.
+  const isOwnOverlay = (node: Element | null): boolean =>
+    !!node &&
+    (node.id === "opensidebar-agent-border" ||
+      node.id === "opensidebar-stop-btn" ||
+      node.classList?.contains("opensidebar-tag"));
+
   // Z-Index Check: Auto-hide covering overlays (up to 3 layers) before clicking
   const MAX_OVERLAY_RETRIES = 3;
   for (let attempt = 0; attempt < MAX_OVERLAY_RETRIES; attempt++) {
@@ -65,8 +74,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const y = rect.top + rect.height / 2;
     const topEl = document.elementFromPoint(x, y);
 
-    if (!topEl || el.contains(topEl) || topEl.contains(el)) {
-      break; // Clear to click
+    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl)) {
+      break; // Clear to click (or our own overlay — transparent to interaction)
     }
 
     // Auto-hide the covering element only if it looks like an overlay
@@ -106,7 +115,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
 
   for (const point of points) {
     const topEl = document.elementFromPoint(point.x, point.y);
-    if (!topEl || el.contains(topEl) || topEl.contains(el)) {
+    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl)) {
       cleanClick = true;
       break;
     }
