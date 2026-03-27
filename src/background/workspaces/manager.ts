@@ -384,6 +384,7 @@ export class WorkspaceManager {
     const workspace: Workspace = {
       id: crypto.randomUUID(),
       name,
+      baseName: name,
       color,
       tabGroupId: groupId,
       tabIds,
@@ -505,9 +506,11 @@ export class WorkspaceManager {
     const match = group.title?.match(/(?:OpenSidebar|OS) (\d+)/);
     const num = match ? parseInt(match[1]) : this.nextWorkspaceNum;
 
+    const baseName = `OS ${num}`;
     const workspace: Workspace = {
       id: crypto.randomUUID(),
-      name: group.title || `OS ${num}`,
+      name: group.title || baseName,
+      baseName,
       color: group.color || "blue",
       tabGroupId: group.id,
       tabIds,

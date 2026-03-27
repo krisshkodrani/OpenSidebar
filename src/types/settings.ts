@@ -43,6 +43,8 @@ export interface UserSettings {
 export interface Workspace {
   id: string;
   name: string;
+  /** Original "OS N" name, preserved for restoration after tasks complete */
+  baseName?: string;
   color:
     | "grey"
     | "blue"

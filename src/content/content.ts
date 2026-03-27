@@ -741,7 +741,7 @@ function setAgentBorder(active: boolean) {
   const existingBtn = document.getElementById(STOP_BTN_ID);
 
   if (active) {
-    // --- Border overlay ---
+    // --- Warm ambient glow overlay ---
     if (!existing) {
       const overlay = document.createElement("div");
       overlay.id = BORDER_ID;
@@ -750,8 +750,10 @@ function setAgentBorder(active: boolean) {
         inset: "0",
         zIndex: "2147483646",
         pointerEvents: "none",
-        border: "4px solid #06b6d4",
+        border: "2px solid rgba(217,170,100,0.4)",
         borderRadius: "4px",
+        boxShadow:
+          "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
         opacity: "1",
       });
       document.documentElement.appendChild(overlay);
@@ -762,11 +764,23 @@ function setAgentBorder(active: boolean) {
       if (!reducedMotion) {
         borderAnimation = overlay.animate(
           [
-            { boxShadow: "inset 0 0 20px rgba(6,182,212,0.35)" },
-            { boxShadow: "inset 0 0 30px rgba(6,182,212,0.15)" },
-            { boxShadow: "inset 0 0 20px rgba(6,182,212,0.35)" },
+            {
+              boxShadow:
+                "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
+              borderColor: "rgba(217,170,100,0.4)",
+            },
+            {
+              boxShadow:
+                "inset 0 0 45px rgba(217,170,100,0.18), inset 0 0 80px rgba(196,140,80,0.08)",
+              borderColor: "rgba(217,170,100,0.55)",
+            },
+            {
+              boxShadow:
+                "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
+              borderColor: "rgba(217,170,100,0.4)",
+            },
           ],
-          { duration: 2000, iterations: Infinity },
+          { duration: 3000, iterations: Infinity, easing: "ease-in-out" },
         );
       }
     }

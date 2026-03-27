@@ -1442,6 +1442,12 @@ export class Orchestrator {
           isSingleNode: buildResult.isSingleNode,
           difficulty: buildResult.difficulty,
         };
+        // Use the first node's planner-derived objective as a meaningful title
+        if (nodes.length > 0) {
+          updateTabGroupAppearance(input.workspaceId, {
+            title: nodes[0].description,
+          });
+        }
         this.emitTraceEvent(
           task,
           "plan_decomposed",
@@ -1604,6 +1610,9 @@ export class Orchestrator {
             nodes = replanResult.nodes;
             task.replansUsed += 1;
             this.sendProgress(task);
+            updateTabGroupAppearance(input.workspaceId, {
+              title: nodes[0].description,
+            });
           }
         } catch (err) {
           logger.warn("orchestrator", "Replan after feedback failed", { error: err });

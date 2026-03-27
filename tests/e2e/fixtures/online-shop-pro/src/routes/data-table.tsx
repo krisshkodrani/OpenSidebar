@@ -3,22 +3,22 @@ import { useState, useEffect, useMemo } from "react";
 // Generate 50 employees with deterministic data
 const DEPARTMENTS = ["Engineering", "Sales", "Marketing", "HR", "Finance", "Operations", "Legal", "Support"];
 const FIRST_NAMES = [
-  "Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Henry",
+  "Alice", "Bob", "Carol", "David", "Eve", "Frank", "Diana", "Henry",
   "Ivy", "Jack", "Karen", "Leo", "Mona", "Nick", "Olivia", "Paul",
-  "Quinn", "Diana", "Sam", "Tina", "Uma", "Vic", "Wendy", "Xander",
+  "Quinn", "Rita", "Sam", "Tina", "Uma", "Vic", "Wendy", "Xander",
   "Yara", "Zach", "Aria", "Blake", "Clara", "Derek", "Elena", "Felix",
   "Gina", "Hugo", "Isla", "Jude", "Kara", "Liam", "Mia", "Noel",
   "Opal", "Pete", "Rosa", "Sean", "Tara", "Uri", "Vera", "Wade",
   "Xena", "Yuri",
 ];
 const LAST_NAMES = [
-  "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+  "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Chen", "Davis",
   "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas",
-  "Taylor", "Chen", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White",
+  "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White",
   "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young",
   "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores",
   "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell",
-  "Carter", "Moore",
+  "Carter", "Quinn",
 ];
 
 interface Employee {
@@ -41,7 +41,7 @@ function generateEmployees(): Employee[] {
       name: `${firstName} ${lastName}`,
       email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@company.com`,
       department: dept,
-      salary: `$${baseSalary.toLocaleString()}`,
+      salary: `$${baseSalary.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`,
     });
   }
   return employees;

@@ -42,13 +42,11 @@ describe.skipIf(!h.apiKey)("E2E: Date Picker", () => {
       "",
       "Step 1: Type 'John Smith' into the Full Name field.",
       "",
-      "Step 2: Click the date field ('Click to select a date...') to open the calendar.",
+      "Step 2: Click the date field ('Click to select a date...') to open the calendar widget.",
       "",
-      "Step 3: The calendar starts on March 2026. Navigate forward to June 2026 by clicking the '>' (next month) button 3 times.",
+      "Step 3: In the calendar, navigate to June 2026 if not already showing, then click on day 15 to select it.",
       "",
-      "Step 4: Once you see 'June 2026', click on day 15.",
-      "",
-      "Step 5: Click 'Book Appointment'.",
+      "Step 4: Click 'Book Appointment'.",
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);

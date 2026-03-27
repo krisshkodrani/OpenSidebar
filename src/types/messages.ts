@@ -168,10 +168,10 @@ export interface StreamChunkMessage extends BaseMessage {
   };
 }
 
-/** User requests the agent loop to stop */
+/** User requests the agent loop to stop (from side panel or in-page stop button) */
 export interface StopAgentMessage extends BaseMessage {
   type: "STOP_AGENT";
-  source: MessageSource.SIDEPANEL;
+  source: MessageSource.SIDEPANEL | MessageSource.CONTENT;
   payload: {
     workspaceId?: string | null;
   };
