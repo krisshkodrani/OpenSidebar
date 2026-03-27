@@ -5063,6 +5063,7 @@ export class AgentLoop {
                       this.context.getSnapshot()?.url || "",
                       this.abortController!.signal,
                       validationPerception,
+                      this.planSteps[effectiveCurrentIdx]?.successCriteria,
                     );
 
                     if (!validation.approved) {
