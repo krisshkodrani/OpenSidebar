@@ -118,6 +118,35 @@ export async function executeClick(args: ClickElementArgs): Promise<{
 
   if (!cleanClick && blockingDetails) {
     const finalTop = blockingDetails as HTMLElement;
+
+    // Fallback: if the blocking element is a child of the target (e.g., a span
+    // inside a button) or the target is inside the blocker (e.g., a button
+    // inside a modal overlay), the click is safe — proceed with native .click().
+    const blockerIsChild = el.contains(finalTop);
+    const targetInsideBlocker = finalTop.contains(el);
+    if (blockerIsChild || targetInsideBlocker) {
+      for (let i = 0; i < count; i++) {
+        el.dispatchEvent(
+          new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+        );
+        el.dispatchEvent(
+          new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
+        );
+        el.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+        if (el instanceof HTMLElement) el.click();
+        if (i < count - 1) {
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      }
+      return {
+        success: true,
+        result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}" (overlay pass-through)`,
+        navigated: false,
+      };
+    }
+
     const blockingTag = addDynamicTag(finalTop);
     const blockingTagName = finalTop.tagName.toLowerCase();
     const overlayLikely = isLikelyOverlay(finalTop);
@@ -361,8 +390,22 @@ export function executePressKey(args: PressKeyArgs): {
     metaKey: modifiers.includes("meta"),
   };
 
-  window.dispatchEvent(new KeyboardEvent("keydown", opts));
-  window.dispatchEvent(new KeyboardEvent("keyup", opts));
+  // Dispatch to the focused element (or document.body as fallback).
+  // If nothing is focused, try to focus the most relevant interactive element.
+  let target: EventTarget = document.activeElement ?? document.body;
+  if (target === document.body) {
+    // No element focused — try to focus a focusable element near the viewport center
+    const focusable = document.querySelector<HTMLElement>(
+      "[tabindex], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable='true']",
+    );
+    if (focusable) {
+      focusable.focus();
+      target = focusable;
+    }
+  }
+
+  target.dispatchEvent(new KeyboardEvent("keydown", opts));
+  target.dispatchEvent(new KeyboardEvent("keyup", opts));
 
   const modStr = modifiers.length > 0 ? ` (${modifiers.join("+")})` : "";
   return {

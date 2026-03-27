@@ -13,6 +13,7 @@
 import { DomSnapshot } from "../types";
 import { tagElements, getCachedElements, getOverflowMetadata, extractPageSkeleton } from "./tagging";
 import { extractPageContent, extractVisibleText } from "./readability";
+import { detectFramework } from "./framework-detect";
 
 export function buildSnapshot(
   refresh: boolean,
@@ -51,6 +52,12 @@ export function buildSnapshot(
 
   if (overflow) {
     snapshot.overflow = overflow;
+  }
+
+  // Include detected SPA framework for diagnostics and heuristics
+  const framework = detectFramework();
+  if (framework !== "unknown") {
+    snapshot.framework = framework;
   }
 
   // Extract page skeleton (headings, landmarks, status, text) on refresh

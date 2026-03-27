@@ -32,6 +32,8 @@ export interface DomSnapshot {
   overflow?: { shown: number; total: number; collapsedGroups?: string[] };
   /** Lightweight page skeleton: headings, landmarks, status, and content text */
   skeleton?: PageSkeletonNode[];
+  /** Detected SPA framework — "react", "vue", "angular", or "unknown" */
+  framework?: string;
 }
 
 /** A structural (non-interactive) DOM node for page skeleton */
