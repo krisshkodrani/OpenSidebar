@@ -244,6 +244,7 @@ export default function DatePicker() {
                           key={day}
                           type="button"
                           data-date={dateStr}
+                          aria-label={`${MONTHS[viewMonth]} ${day}, ${viewYear}`}
                           onClick={() => selectDay(day)}
                           style={{
                             padding: "6px 0",
