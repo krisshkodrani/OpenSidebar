@@ -6653,19 +6653,39 @@ export class AgentLoop {
             let snap = snapResponse?.payload?.snapshot;
 
             // Retry once if elements dropped to 0 (SPA still rendering)
-            if (snap && snap.elements.length === 0 && prevElementCount > 0) {
+            // or if a visual action produced no element count change (framework
+            // state update hasn't committed — React setState, Vue reactivity, etc.)
+            const noChangeAfterVisualAction =
+              snap &&
+              snap.elements.length > 0 &&
+              snap.elements.length === prevElementCount &&
+              visuallyModified;
+            if (
+              (snap && snap.elements.length === 0 && prevElementCount > 0) ||
+              noChangeAfterVisualAction
+            ) {
+              const isEmpty = snap!.elements.length === 0;
               this.log.info(
                 "agent",
-                "Empty snapshot after action, waiting for elements",
+                isEmpty
+                  ? "Empty snapshot after action, waiting for elements"
+                  : "No DOM change after visual action, retrying snapshot",
                 {
                   turn: this.turnCount,
+                  elements: snap!.elements.length,
                   prevElements: prevElementCount,
                 },
               );
-              // Use DOM probe with waitForElements — content script watches for element insertion
+              if (!isEmpty) {
+                this.traceRecorder?.recordEvent("snapshot_retry_no_change", {
+                  turn: this.turnCount,
+                  elements: snap!.elements.length,
+                });
+              }
+              // Wait for framework state commit: 500ms for empty page, 300ms for no-change
               await waitForDomReady(tabId, {
-                timeoutMs: 500,
-                waitForElements: true,
+                timeoutMs: isEmpty ? 500 : 300,
+                waitForElements: isEmpty,
               });
               snapResponse = await chrome.tabs.sendMessage(tabId, {
                 type: "DOM_SNAPSHOT_REQUEST",
