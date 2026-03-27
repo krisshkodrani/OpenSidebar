@@ -38,8 +38,8 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    // Wait for cookie banner + newsletter modal to appear
-    await new Promise((r) => setTimeout(r, 3000));
+    // Brief wait for React to render overlays
+    await new Promise((r) => setTimeout(r, 500));
 
     const prompt = [
       "This page has popup overlays blocking the content. Complete these steps:",

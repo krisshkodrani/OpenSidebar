@@ -8,14 +8,9 @@ export default function ModalOverlays() {
   const [deleted, setDeleted] = useState(false);
 
   useEffect(() => {
-    // Cookie banner appears after 500ms (simulating async third-party injection)
-    const cookieTimer = setTimeout(() => setCookieVisible(true), 500);
-    // Newsletter modal appears after 2s
-    const newsletterTimer = setTimeout(() => setNewsletterVisible(true), 2000);
-    return () => {
-      clearTimeout(cookieTimer);
-      clearTimeout(newsletterTimer);
-    };
+    // Both overlays appear immediately on mount
+    setCookieVisible(true);
+    setNewsletterVisible(true);
   }, []);
 
   // Track results on window for test assertions
