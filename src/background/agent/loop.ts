@@ -278,7 +278,11 @@ function inferElementInputKind(
     .filter(Boolean);
   const labelBlob = labels.join(" ");
 
-  if (labelBlob.includes("email")) {
+  // Only classify as "email" if it's specifically an email input, not a
+  // search/filter field that mentions email as one of several criteria.
+  const inputType = element.attributes?.type?.toLowerCase();
+  if (inputType === "email") return "email";
+  if (labelBlob.includes("email") && !labelBlob.includes("search")) {
     return "email";
   }
   if (
