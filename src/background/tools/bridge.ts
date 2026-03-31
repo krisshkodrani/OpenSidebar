@@ -4,7 +4,12 @@
 
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
-import { waitForContentScriptReady } from "../tab-ready";
+import {
+  ensureContentScript,
+  probeContentScript,
+  waitForContentScriptReady,
+  waitForDomReady,
+} from "../tab-ready";
 
 export function formatUnknownError(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -21,21 +26,34 @@ export function isBridgeDisconnect(errorMsg: string): boolean {
 }
 
 /** Re-inject the content script into a tab after a bridge disconnect */
-export async function reinjectContentScript(tabId: number): Promise<boolean> {
+export async function reinjectContentScript(
+  tabId: number,
+  options: { allowReloadFallback?: boolean } = {},
+): Promise<boolean> {
+  const { allowReloadFallback = false } = options;
   // Attempt 1: file-based injection from manifest
   try {
     const manifest = chrome.runtime.getManifest();
     const files = manifest.content_scripts?.[0]?.js;
     if (files?.length) {
       await chrome.scripting.executeScript({ target: { tabId }, files });
-      await waitForContentScriptReady(tabId, 3000);
-      return true;
+      const ready = await ensureContentScript(tabId, 3000);
+      if (ready || (await probeContentScript(tabId, 150))) {
+        return true;
+      }
     }
   } catch (e: any) {
-    logger.warn("tools", "File-based reinjection failed, trying tab reload", {
+    logger.warn("tools", "File-based reinjection failed", {
       tabId,
       error: e.message,
     });
+  }
+
+  if (!allowReloadFallback) {
+    logger.warn("tools", "Content script reinjection failed without reload fallback", {
+      tabId,
+    });
+    return false;
   }
 
   // Attempt 2: reload the tab so Chrome re-injects content scripts via manifest
@@ -60,7 +78,7 @@ export async function reinjectContentScript(tabId: number): Promise<boolean> {
       const timer = setTimeout(done, 10_000);
     });
     await waitForContentScriptReady(tabId, 5000);
-    return true;
+    return await ensureContentScript(tabId, 1000);
   } catch (e: any) {
     logger.error("tools", "Content script reinjection failed (file + reload)", {
       tabId,
@@ -68,6 +86,56 @@ export async function reinjectContentScript(tabId: number): Promise<boolean> {
     });
     return false;
   }
+}
+
+/**
+ * Re-establish a responsive content-script bridge after navigation/disconnect.
+ * This adds a DOM-ready/probe phase after reinjection so callers do not race
+ * an immediately reloaded or history-restored page.
+ */
+export async function recoverContentScriptBridge(
+  tabId: number,
+  options: {
+    allowReloadFallback?: boolean;
+    ensureTimeoutMs?: number;
+    domReadyTimeoutMs?: number;
+  } = {},
+): Promise<boolean> {
+  const {
+    allowReloadFallback = false,
+    ensureTimeoutMs = 3000,
+    domReadyTimeoutMs = 400,
+  } = options;
+
+  const reinjected = await reinjectContentScript(tabId, { allowReloadFallback });
+  if (!reinjected) {
+    return false;
+  }
+
+  const ready = await ensureContentScript(tabId, ensureTimeoutMs);
+  if (!ready) {
+    return false;
+  }
+
+  await waitForDomReady(tabId, {
+    timeoutMs: domReadyTimeoutMs,
+    waitForElements: true,
+  });
+
+  if (await probeContentScript(tabId, 150)) {
+    return true;
+  }
+
+  const rechecked = await ensureContentScript(tabId, Math.min(ensureTimeoutMs, 2000));
+  if (!rechecked) {
+    return false;
+  }
+
+  await waitForDomReady(tabId, {
+    timeoutMs: domReadyTimeoutMs,
+    waitForElements: true,
+  });
+  return probeContentScript(tabId, 150);
 }
 
 export async function executeContentTool(
@@ -114,8 +182,13 @@ export async function executeContentTool(
     }
 
     // Tab alive — reinject content script and retry once
-    const reinjected = await reinjectContentScript(tabId);
-    if (!reinjected) {
+    // Allow reload fallback: file-based injection fails in CRXJS dev builds,
+    // and a page reload (which re-injects via manifest) is better than a
+    // permanent disconnect that leaves the agent unable to interact.
+    const recovered = await recoverContentScriptBridge(tabId, {
+      allowReloadFallback: true,
+    });
+    if (!recovered) {
       return `Error: Content script disconnected and reinjection failed. Try refreshing the page.`;
     }
 
@@ -137,7 +210,10 @@ export async function executeContentTool(
 }
 
 /** Wait for a tab navigation to complete (webNavigation.onCompleted or timeout). */
-export function waitForNavigation(tabId: number, timeoutMs = 5000): Promise<void> {
+export function waitForNavigation(
+  tabId: number,
+  timeoutMs = 5000,
+): Promise<void> {
   return new Promise<void>((resolve) => {
     let resolved = false;
 
