@@ -23,19 +23,13 @@ export function detectFramework(): Framework {
   }
 
   // Vue: global __VUE__ or devtools hook
-  if (
-    (window as any).__VUE__ ||
-    (window as any).__VUE_DEVTOOLS_GLOBAL_HOOK__
-  ) {
+  if ((window as any).__VUE__ || (window as any).__VUE_DEVTOOLS_GLOBAL_HOOK__) {
     cached = "vue";
     return cached;
   }
 
   // Angular: testability API or ng global
-  if (
-    (window as any).getAllAngularTestabilities ||
-    (window as any).ng
-  ) {
+  if ((window as any).getAllAngularTestabilities || (window as any).ng) {
     cached = "angular";
     return cached;
   }

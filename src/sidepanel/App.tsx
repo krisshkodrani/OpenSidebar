@@ -8,7 +8,13 @@
  * State: Managed via Zustand store
  */
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { X, Sparkles, ClipboardList } from "lucide-react";
 import { logger } from "../utils";
 import { useStore } from "./store";
@@ -17,7 +23,10 @@ import { Header, MessageBubble, InputArea, PlanStrip } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
-import { getInteractionMode, getInteractionModeBadge } from "./interaction-mode";
+import {
+  getInteractionMode,
+  getInteractionModeBadge,
+} from "./interaction-mode";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import { parseSlashCommand } from "./slash-commands";
@@ -40,7 +49,9 @@ export default function App() {
   const error = useStore((s) => s.error);
   const loadSettingsFromStorage = useStore((s) => s.loadSettingsFromStorage);
   const loadMessagesFromStorage = useStore((s) => s.loadMessagesFromStorage);
-  const loadAgentStateFromStorage = useStore((s) => s.loadAgentStateFromStorage);
+  const loadAgentStateFromStorage = useStore(
+    (s) => s.loadAgentStateFromStorage,
+  );
   const setReady = useStore((s) => s.setReady);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
@@ -83,7 +94,12 @@ export default function App() {
 
   // Auto-collapse when all plan data clears; reset ref for next run
   useEffect(() => {
-    if (!pendingPlanConfirmation && !taskProgress && !taskCompletion && !isPlanning) {
+    if (
+      !pendingPlanConfirmation &&
+      !taskProgress &&
+      !taskCompletion &&
+      !isPlanning
+    ) {
       setIsPlanExpanded(false);
       planExpandedOnceRef.current = false;
     }
@@ -629,172 +645,169 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-    <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
-      {/* Ambient activity bar — thin animated gradient when agent is running */}
-      {isAgentRunning && (
-        <div
-          className="h-0.5 shrink-0 animate-shimmer"
-          style={{
-            background: "linear-gradient(90deg, transparent, var(--tw-gradient-via, #0d9488), transparent)",
-            backgroundSize: "200% 100%",
-          }}
-        />
-      )}
-      <Header
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenSavedPrompts={() => {
-          setSavedPromptsPrefill(undefined);
-          setIsSavedPromptsOpen(true);
-        }}
-        modeBadgeLabel={getInteractionModeBadge(getInteractionMode(settings))}
-      />
-
-      <SettingsDrawer
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
-
-      <SavedPromptsDrawer
-        isOpen={isSavedPromptsOpen}
-        onClose={() => {
-          setIsSavedPromptsOpen(false);
-          setSavedPromptsPrefill(undefined);
-        }}
-        onSelectPrompt={(content) => {
-          setInputText(content);
-          setIsSavedPromptsOpen(false);
-          setSavedPromptsPrefill(undefined);
-        }}
-        prefillContent={savedPromptsPrefill}
-      />
-
-      <PlanStrip
-        isExpanded={isPlanExpanded}
-        onToggle={() => setIsPlanExpanded((v) => !v)}
-      />
-
-      <main className="flex-1 overflow-hidden relative flex flex-col">
-        {blockedSiteWarning && (
-          <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-            {blockedSiteWarning}
-          </div>
-        )}
-        {error && (
+      <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
+        {/* Ambient activity bar — thin animated gradient when agent is running */}
+        {isAgentRunning && (
           <div
-            role="alert"
-            className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
-          >
-            <span>{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded"
-            >
-              <X size={14} />
-            </button>
-          </div>
+            className="h-0.5 shrink-0 animate-shimmer"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, var(--tw-gradient-via, #0d9488), transparent)",
+              backgroundSize: "200% 100%",
+            }}
+          />
         )}
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto p-4"
-        >
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8">
-              <div className="max-w-[260px]">
-                <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
-                  <Sparkles size={24} className="text-primary-500" />
-                </div>
-                {!settings.openRouterApiKey ? (
-                  <>
-                    <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
-                      Welcome to OpenSidebar
-                    </h2>
-                    <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
-                      Add your OpenRouter API key to get started.
-                    </p>
-                    <button
-                      onClick={() => setIsSettingsOpen(true)}
-                      className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
-                    >
-                      Open Settings
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
-                      Hi! What can I help with?
-                    </h2>
-                    <div className="flex flex-wrap gap-2 justify-center mt-4">
-                      {SUGGESTED_ACTIONS.map((action) => (
-                        <button
-                          key={action}
-                          onClick={() => setInputText(action)}
-                          className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                        >
-                          {action}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            visibleMessages.map((msg) =>
-              msg.isPlanCard ? (
-                <button
-                  key={msg.id}
-                  onClick={() => setIsPlanExpanded(true)}
-                  className="w-full text-left px-3 py-1.5 my-1 rounded border border-warm-200 dark:border-warm-700 bg-warm-50/60 dark:bg-warm-800/40 text-[11px] text-warm-500 dark:text-warm-400 hover:bg-warm-100 dark:hover:bg-warm-800/60 transition-colors flex items-center gap-1.5"
-                >
-                  <ClipboardList size={11} className="shrink-0" />
-                  Plan created — tap to view
-                </button>
-              ) : (
-                <MessageBubble key={msg.id} message={msg} />
-              ),
-            )
-          )}
-        </div>
-
-      </main>
-
-      <div className="flex flex-col shrink-0 z-20">
-        <InputArea
-          onSend={handleSend}
-          onSendFeedback={handleSendFeedback}
-          onSendAnnotation={handleSendAnnotation}
-          onManualCommand={handleManualCommand}
-          onStop={handleStop}
+        <Header
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenSavedPrompts={() => {
+            setSavedPromptsPrefill(undefined);
+            setIsSavedPromptsOpen(true);
+          }}
+          modeBadgeLabel={getInteractionModeBadge(getInteractionMode(settings))}
         />
-      </div>
 
-      {screenshot && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-md">
-          <div className="bg-warm-50 dark:bg-warm-800 rounded-lg shadow-xl border border-warm-200 dark:border-warm-700 overflow-hidden">
-            <div className="p-2 bg-warm-100 dark:bg-warm-900 border-b border-warm-200 dark:border-warm-700 flex justify-between items-center">
-              <span className="text-xs font-medium text-warm-600 dark:text-warm-400">
-                Debug Screenshot
-              </span>
+        <SettingsDrawer
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+
+        <SavedPromptsDrawer
+          isOpen={isSavedPromptsOpen}
+          onClose={() => {
+            setIsSavedPromptsOpen(false);
+            setSavedPromptsPrefill(undefined);
+          }}
+          onSelectPrompt={(content) => {
+            setInputText(content);
+            setIsSavedPromptsOpen(false);
+            setSavedPromptsPrefill(undefined);
+          }}
+          prefillContent={savedPromptsPrefill}
+        />
+
+        <PlanStrip
+          isExpanded={isPlanExpanded}
+          onToggle={() => setIsPlanExpanded((v) => !v)}
+        />
+
+        <main className="flex-1 overflow-hidden relative flex flex-col">
+          {blockedSiteWarning && (
+            <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              {blockedSiteWarning}
+            </div>
+          )}
+          {error && (
+            <div
+              role="alert"
+              className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+            >
+              <span>{error}</span>
               <button
-                onClick={() => setScreenshot(null)}
-                className="p-0.5 hover:bg-warm-200 dark:hover:bg-warm-700 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-300"
+                onClick={() => setError(null)}
+                className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded"
               >
                 <X size={14} />
               </button>
             </div>
-            <img
-              src={screenshot.dataUrl}
-              alt="Debug screenshot with element tags"
-              className="max-h-48 w-full object-contain"
-            />
-            <div className="p-2 text-xs text-warm-500 dark:text-warm-400">
-              {screenshot.context}
+          )}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <div className="max-w-[260px]">
+                  <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
+                    <Sparkles size={24} className="text-primary-500" />
+                  </div>
+                  {!settings.openRouterApiKey ? (
+                    <>
+                      <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                        Welcome to OpenSidebar
+                      </h2>
+                      <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
+                        Add your OpenRouter API key to get started.
+                      </p>
+                      <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-600/20"
+                      >
+                        Open Settings
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
+                        Hi! What can I help with?
+                      </h2>
+                      <div className="flex flex-wrap gap-2 justify-center mt-4">
+                        {SUGGESTED_ACTIONS.map((action) => (
+                          <button
+                            key={action}
+                            onClick={() => setInputText(action)}
+                            className="text-xs px-3 py-1.5 rounded-full border border-warm-200 dark:border-warm-700 text-warm-600 dark:text-warm-300 hover:bg-primary-50 hover:text-primary-600 hover:border-primary-200 dark:hover:bg-primary-900/20 dark:hover:text-primary-300 dark:hover:border-primary-800 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                          >
+                            {action}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              visibleMessages.map((msg) =>
+                msg.isPlanCard ? (
+                  <button
+                    key={msg.id}
+                    onClick={() => setIsPlanExpanded(true)}
+                    className="w-full text-left px-3 py-1.5 my-1 rounded border border-warm-200 dark:border-warm-700 bg-warm-50/60 dark:bg-warm-800/40 text-[11px] text-warm-500 dark:text-warm-400 hover:bg-warm-100 dark:hover:bg-warm-800/60 transition-colors flex items-center gap-1.5"
+                  >
+                    <ClipboardList size={11} className="shrink-0" />
+                    Plan created — tap to view
+                  </button>
+                ) : (
+                  <MessageBubble key={msg.id} message={msg} />
+                ),
+              )
+            )}
+          </div>
+        </main>
+
+        <div className="flex flex-col shrink-0 z-20">
+          <InputArea
+            onSend={handleSend}
+            onSendFeedback={handleSendFeedback}
+            onSendAnnotation={handleSendAnnotation}
+            onManualCommand={handleManualCommand}
+            onStop={handleStop}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+          />
+        </div>
+
+        {screenshot && (
+          <div className="fixed bottom-4 right-4 z-50 max-w-md">
+            <div className="bg-warm-50 dark:bg-warm-800 rounded-lg shadow-xl border border-warm-200 dark:border-warm-700 overflow-hidden">
+              <div className="p-2 bg-warm-100 dark:bg-warm-900 border-b border-warm-200 dark:border-warm-700 flex justify-between items-center">
+                <span className="text-xs font-medium text-warm-600 dark:text-warm-400">
+                  Debug Screenshot
+                </span>
+                <button
+                  onClick={() => setScreenshot(null)}
+                  className="p-0.5 hover:bg-warm-200 dark:hover:bg-warm-700 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-300"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <img
+                src={screenshot.dataUrl}
+                alt="Debug screenshot with element tags"
+                className="max-h-48 w-full object-contain"
+              />
+              <div className="p-2 text-xs text-warm-500 dark:text-warm-400">
+                {screenshot.context}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </ErrorBoundary>
   );
 }

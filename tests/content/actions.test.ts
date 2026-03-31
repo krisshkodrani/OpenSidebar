@@ -744,4 +744,47 @@ describe("Content Actions", () => {
             scrollToSpy.mockRestore();
         });
     });
+
+    describe("right-click and keyboard realism", () => {
+        test("right_click dispatches context menu with coordinates", async () => {
+            document.body.innerHTML = '<div id="doc">Q3 Report.pdf</div>';
+            resetStableIds();
+            tagElements();
+            const docTag = addDynamicTag(document.getElementById("doc")!);
+            expect(docTag).toBeGreaterThan(0);
+
+            let captured: MouseEvent | null = null;
+            document.getElementById("doc")!.addEventListener("contextmenu", (event) => {
+                captured = event as MouseEvent;
+            });
+
+            const result = await executeAction(ToolName.RIGHT_CLICK, { id: docTag });
+            expect(result.success).toBe(true);
+            expect(captured).not.toBeNull();
+            expect(captured!.clientX).toBeGreaterThan(0);
+            expect(captured!.clientY).toBeGreaterThan(0);
+            expect(captured!.button).toBe(2);
+        });
+
+        test("press_key enter submits the focused form", async () => {
+            document.body.innerHTML = `
+                <form id="rename-form">
+                    <input id="rename-input" type="text" value="Q3 Report.pdf" />
+                </form>
+            `;
+            const input = document.getElementById("rename-input") as HTMLInputElement;
+            input.focus();
+
+            let submitted = false;
+            const form = document.getElementById("rename-form") as HTMLFormElement;
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                submitted = true;
+            });
+
+            const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
+            expect(result.success).toBe(true);
+            expect(submitted).toBe(true);
+        });
+    });
 });

@@ -22,8 +22,7 @@ export async function fetchTraceSessions(
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (filters.domain) params.set("domain", filters.domain);
-  if (filters.mode && filters.mode !== "all")
-    params.set("mode", filters.mode);
+  if (filters.mode && filters.mode !== "all") params.set("mode", filters.mode);
   if (filters.model && filters.model !== "all")
     params.set("model", filters.model);
   params.set("limit", "1000");

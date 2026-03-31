@@ -9,6 +9,17 @@ import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
 import { closeNonExtensionPages, openHelperPage } from "./browser";
 
+type TaskCompletionState = "completed" | "partial" | "none";
+
+function getLatestTaskCompletionState(events: any[]): TaskCompletionState {
+  const completion = [...events]
+    .reverse()
+    .find((event: any) => event.type === "TASK_COMPLETION");
+  if (completion?.status === "completed") return "completed";
+  if (completion?.status === "partial") return "partial";
+  return "none";
+}
+
 /**
  * Set up event monitoring in the service worker context.
  * Wraps `chrome.runtime.sendMessage` to capture AGENT_STATUS, AGENT_STEP,
@@ -470,8 +481,11 @@ export async function waitForTaskCompletion(
     const completion = [...events]
       .reverse()
       .find((event: any) => event.type === "TASK_COMPLETION");
-    if (completion?.status === "completed" || completion?.status === "partial") {
+    if (completion?.status === "completed") {
       return { ok: true, reason: String(completion.status), events };
+    }
+    if (completion?.status === "partial") {
+      return { ok: false, reason: "task_partial", events };
     }
 
     const taskCompleteStep = [...events]
@@ -482,15 +496,21 @@ export async function waitForTaskCompletion(
           String(event.stepLabel || "").includes("Task complete"),
       );
     if (taskCompleteStep) {
+      if (getLatestTaskCompletionState(events) === "partial") {
+        return { ok: false, reason: "task_partial", events };
+      }
       return { ok: true, reason: "task_complete_step", events };
     }
 
-    const lastStatus = [...events]
-      .reverse()
-      .find((event: any) => event.type === "AGENT_STATUS");
-    if (lastStatus?.status === "IDLE") {
-      return { ok: true, reason: "idle", events };
-    }
+      const lastStatus = [...events]
+        .reverse()
+        .find((event: any) => event.type === "AGENT_STATUS");
+      if (lastStatus?.status === "IDLE") {
+        if (getLatestTaskCompletionState(events) === "partial") {
+          return { ok: false, reason: "task_partial", events };
+        }
+        return { ok: false, reason: "idle_without_completion", events };
+      }
     if (lastStatus?.status === "ERROR") {
       return {
         ok: false,
@@ -504,7 +524,12 @@ export async function waitForTaskCompletion(
 
   return {
     ok: false,
-    reason: "timeout",
+    reason:
+      getLatestTaskCompletionState(await getMonitoredEvents(ctx.serviceWorker, 80).then((all) =>
+        all.filter((event: any) => event.workspaceId == null || event.workspaceId === workspaceId),
+      )) === "partial"
+        ? "task_partial"
+        : "timeout",
     events: await getMonitoredEvents(ctx.serviceWorker, 80),
   };
 }
@@ -555,11 +580,20 @@ export async function waitForOutcome<T>(
 
     if (successfulResult) {
       const taskCompleted =
-        lastTaskCompletion?.status === "completed" ||
-        lastTaskCompletion?.status === "partial";
+        lastTaskCompletion?.status === "completed";
+      const taskPartial = lastTaskCompletion?.status === "partial";
       const agentIdle = lastStatus?.status === "IDLE";
       const settledLongEnough =
         successObservedAt !== null && Date.now() - successObservedAt >= 4000;
+
+      if (taskPartial) {
+        return {
+          ok: false,
+          reason: "task_partial",
+          result: successfulResult,
+          events,
+        };
+      }
 
       if (taskCompleted || agentIdle || settledLongEnough) {
         return { ok: true, reason: "done", result: successfulResult, events };
@@ -588,8 +622,13 @@ export async function waitForOutcome<T>(
         );
   return {
     ok: false,
-    reason: "timeout",
+    reason:
+      getLatestTaskCompletionState(events) === "partial" ? "task_partial" : "timeout",
     result: successfulResult ?? lastResult,
     events,
   };
 }
+
+export const __testOnly = {
+  getLatestTaskCompletionState,
+};

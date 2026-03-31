@@ -58,9 +58,7 @@ export function ModelSelector({
     return m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
   });
 
-  const selectedModel = value
-    ? models.find((m) => m.id === value)
-    : null;
+  const selectedModel = value ? models.find((m) => m.id === value) : null;
 
   const displayName = selectedModel
     ? selectedModel.name

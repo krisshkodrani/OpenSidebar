@@ -1,11 +1,13 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { ClipboardList, ChevronDown, SkipForward, RotateCcw } from "lucide-react";
+import {
+  ClipboardList,
+  ChevronDown,
+  SkipForward,
+  RotateCcw,
+} from "lucide-react";
 import { useStore } from "../store";
 import { PlanStepIcon } from "./PlanStepIcon";
-import {
-  buildRecoveryHint,
-  derivePlanRows,
-} from "../plan-board-view";
+import { buildRecoveryHint, derivePlanRows } from "../plan-board-view";
 import { MessageSource } from "../../types";
 import { logger } from "../../utils";
 
@@ -83,9 +85,13 @@ export function PlanTimelineCard() {
 
   // --- Progress bar ---
   const completedCount = rows.filter(
-    (r) => r.status === "completed" || r.status === "failed" || r.status === "skipped",
+    (r) =>
+      r.status === "completed" ||
+      r.status === "failed" ||
+      r.status === "skipped",
   ).length;
-  const progressPct = rows.length > 0 ? (completedCount / rows.length) * 100 : 0;
+  const progressPct =
+    rows.length > 0 ? (completedCount / rows.length) * 100 : 0;
   const canSkip =
     mode === "progress" && rows.some((r) => r.status === "running");
 
@@ -238,8 +244,8 @@ export function PlanTimelineCard() {
             <div className="mb-2 rounded border border-primary-200 dark:border-primary-800 bg-primary-50/70 dark:bg-primary-900/20 px-2 py-1.5 text-[11px] text-primary-700 dark:text-primary-300 flex items-center gap-1.5">
               <span>
                 Recovered: {taskRecovery.completedSubtasks}/
-                {taskRecovery.totalSubtasks} done, {taskRecovery.pendingSubtasks}{" "}
-                pending
+                {taskRecovery.totalSubtasks} done,{" "}
+                {taskRecovery.pendingSubtasks} pending
               </span>
               <button
                 onClick={() => setInputText(buildRecoveryHint(taskRecovery))}

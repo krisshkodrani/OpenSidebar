@@ -198,9 +198,8 @@ class PerceptionWarmup {
       }
 
       // Tell perception the screenshot is from y=0 if we scrolled to top
-      const scrollOverride = originalScrollY > 0
-        ? { ...snapshot.scroll, y: 0 }
-        : snapshot.scroll;
+      const scrollOverride =
+        originalScrollY > 0 ? { ...snapshot.scroll, y: 0 } : snapshot.scroll;
 
       const result = await perceive({
         screenshotDataUrl: screenshotUrl,

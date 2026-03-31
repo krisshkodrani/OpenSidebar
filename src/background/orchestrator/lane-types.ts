@@ -103,7 +103,10 @@ export class LaneTimeoutError extends Error {
   }
 }
 
-export type PlannerLike = Pick<OrchestratorPlanner, "buildNodes" | "expandNode">;
+export type PlannerLike = Pick<
+  OrchestratorPlanner,
+  "buildNodes" | "expandNode"
+>;
 export type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
   Partial<Pick<OrchestratorVerifier, "advise">>;
 

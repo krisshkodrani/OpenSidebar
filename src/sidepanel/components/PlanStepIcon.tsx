@@ -30,9 +30,6 @@ export function PlanStepIcon({
     return <SkipForward size={size} className="text-warm-400 shrink-0" />;
   }
   return (
-    <Circle
-      size={size}
-      className="text-warm-300 dark:text-warm-600 shrink-0"
-    />
+    <Circle size={size} className="text-warm-300 dark:text-warm-600 shrink-0" />
   );
 }

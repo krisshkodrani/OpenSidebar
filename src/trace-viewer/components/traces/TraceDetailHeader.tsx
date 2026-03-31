@@ -44,7 +44,9 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
     for (const entry of currentEntries) {
       lines.push(JSON.stringify(entry));
     }
-    const blob = new Blob([lines.join("\n") + "\n"], { type: "application/x-ndjson" });
+    const blob = new Blob([lines.join("\n") + "\n"], {
+      type: "application/x-ndjson",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -65,7 +67,14 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           onClick={handleCopy}
         >
           {copied ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           ) : (
@@ -109,9 +118,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         <span>{duration}</span>
         {tokens && <span>{tokens}</span>}
         {cost && <span>{cost}</span>}
-        {session.startUrl && (
-          <span>{truncate(session.startUrl, 50)}</span>
-        )}
+        {session.startUrl && <span>{truncate(session.startUrl, 50)}</span>}
       </div>
       <PlanSection session={session} />
     </div>

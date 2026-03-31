@@ -42,7 +42,11 @@ export default function App() {
       parts.push(`view=${activeSubview}`);
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
     if (window.location.hash !== newHash) {
-      window.history.replaceState(null, "", newHash || window.location.pathname);
+      window.history.replaceState(
+        null,
+        "",
+        newHash || window.location.pathname,
+      );
     }
   }, [currentSessionId, activeSubview]);
 

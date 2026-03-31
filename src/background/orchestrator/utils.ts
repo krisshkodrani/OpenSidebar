@@ -44,7 +44,10 @@ export function clampInteger(value: number, min: number, max?: number): number {
   return typeof max === "number" ? Math.min(max, lowerBounded) : lowerBounded;
 }
 
-export function isLaneIsolationError(error: unknown, lane?: RuntimeLane): boolean {
+export function isLaneIsolationError(
+  error: unknown,
+  lane?: RuntimeLane,
+): boolean {
   if (!(error instanceof LaneIsolationError)) return false;
   return lane ? error.lane === lane : true;
 }

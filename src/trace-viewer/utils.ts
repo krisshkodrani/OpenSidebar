@@ -42,9 +42,10 @@ export function truncate(s: string | undefined | null, len: number): string {
 }
 
 /** Extract a clean title from a query — strips "Objective:" prefix, takes first line. */
-export function extractQueryTitle(
-  query: string | undefined | null,
-): { title: string; hasMore: boolean } {
+export function extractQueryTitle(query: string | undefined | null): {
+  title: string;
+  hasMore: boolean;
+} {
   if (!query) return { title: "(no query)", hasMore: false };
   const match = query.match(/^Objective:\s*(.+?)(?:\n|$)/);
   if (match) {

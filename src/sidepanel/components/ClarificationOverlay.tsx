@@ -18,10 +18,7 @@ export function ClarificationOverlay() {
 
   const progressPct = useMemo(() => {
     if (!pending || pending.timeoutMs <= 0) return 0;
-    return Math.max(
-      0,
-      Math.min(100, (remainingMs / pending.timeoutMs) * 100),
-    );
+    return Math.max(0, Math.min(100, (remainingMs / pending.timeoutMs) * 100));
   }, [pending, remainingMs]);
 
   useEffect(() => {

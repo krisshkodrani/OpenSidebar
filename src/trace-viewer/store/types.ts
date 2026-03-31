@@ -30,9 +30,9 @@ export interface TraceFilters {
   from: string;
   to: string;
   domain: string;
-  mode: string;   // "all" | "agent" | "recording" | "manual"
-  model: string;  // "all" | specific model name
-  tier: string;   // "all" | "executor" | "planner"
+  mode: string; // "all" | "agent" | "recording" | "manual"
+  model: string; // "all" | specific model name
+  tier: string; // "all" | "executor" | "planner"
 }
 
 // ── Slice Interfaces ───────────────────────────────────────────

@@ -167,7 +167,8 @@ function CompletionSummary({
     );
 
   const summaryHtml = useMemo(
-    () => (data.summary ? sanitizeHtml(marked.parse(data.summary) as string) : ""),
+    () =>
+      data.summary ? sanitizeHtml(marked.parse(data.summary) as string) : "",
     [data.summary],
   );
 
@@ -184,7 +185,11 @@ function CompletionSummary({
       <div className="flex items-center gap-1.5 mb-1.5">
         {statusIcon}
         <span className="text-xs font-medium text-warm-500 dark:text-warm-400">
-          {data.status === "completed" ? "Done" : data.status === "partial" ? "Partially done" : "Failed"}
+          {data.status === "completed"
+            ? "Done"
+            : data.status === "partial"
+              ? "Partially done"
+              : "Failed"}
         </span>
       </div>
 
@@ -210,7 +215,18 @@ function CompletionSummary({
         <div className="mt-2 ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-0.5">
           {data.subtaskResults.map((sr, i) => (
             <div key={i} className="flex items-center gap-1.5 text-xs">
-              <PlanStepIcon status={sr.status === "completed" ? "completed" : sr.status === "failed" ? "failed" : sr.status === "skipped" ? "skipped" : "pending"} size={10} />
+              <PlanStepIcon
+                status={
+                  sr.status === "completed"
+                    ? "completed"
+                    : sr.status === "failed"
+                      ? "failed"
+                      : sr.status === "skipped"
+                        ? "skipped"
+                        : "pending"
+                }
+                size={10}
+              />
               <span className="text-warm-500 dark:text-warm-400 truncate">
                 {sr.description}
               </span>
@@ -365,9 +381,13 @@ export const MessageBubble = React.memo(function MessageBubble({
       )}
 
       {/* Separator between steps and summary content */}
-      {!isUser && message.steps && message.steps.length > 0 && showBubble && !message.isStreaming && (
-        <div className="w-[60%] h-px bg-warm-200/50 dark:bg-warm-700/30 my-0.5" />
-      )}
+      {!isUser &&
+        message.steps &&
+        message.steps.length > 0 &&
+        showBubble &&
+        !message.isStreaming && (
+          <div className="w-[60%] h-px bg-warm-200/50 dark:bg-warm-700/30 my-0.5" />
+        )}
 
       {showBubble && (
         <div
@@ -386,7 +406,8 @@ export const MessageBubble = React.memo(function MessageBubble({
                 )
               : clsx(
                   "text-warm-800 dark:text-warm-100",
-                  isManualCommand && "px-3 py-2 rounded-2xl border border-warm-300/40 dark:border-warm-600/40",
+                  isManualCommand &&
+                    "px-3 py-2 rounded-2xl border border-warm-300/40 dark:border-warm-600/40",
                 ),
             !isUser && message.isStreaming && "streaming-cursor",
           )}

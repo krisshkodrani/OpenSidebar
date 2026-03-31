@@ -14,7 +14,9 @@ export const ESCALATION_REFLECTION = (reason: string = "repeated failures") =>
   renderPrompt("agent.reflection.escalation", { escalationReason: reason });
 
 /** Reflection injected when de-escalating back to the executor model. */
-export const DEESCALATION_REFLECTION = renderPrompt("agent.reflection.deescalation");
+export const DEESCALATION_REFLECTION = renderPrompt(
+  "agent.reflection.deescalation",
+);
 
 /** Reflection injected when plan-then-act handoff completes (orientation phase ends). */
 export const HANDOFF_REFLECTION = (briefing: string) =>
@@ -45,7 +47,8 @@ export function matchesMultiItemPattern(query: string): boolean {
     /step\s*1.*step\s*2/i.test(q) ||
     /two\s+items|2\s+items|multiple\s+items/i.test(q) ||
     /\badd\b.*\bthen\b.*\badd\b/i.test(q);
-  const hasShoppingContext =
-    /cart|shop|buy|order|checkout|add to cart/i.test(q);
+  const hasShoppingContext = /cart|shop|buy|order|checkout|add to cart/i.test(
+    q,
+  );
   return hasMultipleItems && hasShoppingContext;
 }

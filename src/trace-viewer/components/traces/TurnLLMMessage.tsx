@@ -73,7 +73,10 @@ export default function TurnLLMMessage({
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[#a8a29e]">
           {preview}
         </span>
-        <span className="shrink-0 font-mono text-[#57534e] text-[10px]" title="Estimated from character count">
+        <span
+          className="shrink-0 font-mono text-[#57534e] text-[10px]"
+          title="Estimated from character count"
+        >
           ~{formatTokens(tokEst)} tok
         </span>
       </div>

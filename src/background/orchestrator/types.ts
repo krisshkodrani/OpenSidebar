@@ -86,6 +86,8 @@ export interface TaskNode {
   retries: number;
   result?: string;
   error?: string;
+  /** Condensed action history from the executor for same-tab handoff */
+  trajectory?: string[];
 }
 
 export interface BuildNodesResult {
@@ -152,4 +154,3 @@ export interface OrchestratorStartInput {
   settings: UserSettings;
   openRouterApiKey: string;
 }
-

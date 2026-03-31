@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from "vitest";
+import { describe, test, expect, beforeAll, beforeEach, vi } from "vitest";
 import "../setup";
 import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
@@ -8,6 +8,33 @@ import { ToolName } from "../../src/types";
 beforeAll(() => {
     toolRegistry.clear();
     registerTools();
+});
+
+beforeEach(() => {
+    (chrome.webNavigation as any).onCompleted = {
+        addListener: (cb: (details: { tabId: number; frameId: number }) => void) =>
+            setTimeout(() => cb({ tabId: 123, frameId: 0 }), 0),
+        removeListener: () => {},
+    };
+    (chrome.webNavigation as any).onErrorOccurred = {
+        addListener: () => {},
+        removeListener: () => {},
+    };
+    (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+        id: 123,
+        url: "https://example.com/start",
+        title: "Start",
+        groupId: -1,
+    }));
+    (chrome.tabs as any).goBack = vi.fn(async () => {});
+    (chrome.scripting as any).executeScript = vi.fn(async () => [{ result: undefined }]);
+    (chrome.tabs as any).sendMessage = vi.fn(async (tabId: number, message: any) => {
+        if (message?.type === "DOM_READY_PROBE") {
+            return { payload: { waitedMs: 10, elementCount: 4 } };
+        }
+        return { payload: { result: "ok", success: true } };
+    });
+    (chrome.storage.sync as any).get = vi.fn(async () => ({ userSettings: {} }));
 });
 
 describe("Tool Registration", () => {
@@ -254,6 +281,118 @@ describe("Tool Registration", () => {
         expect(def!.function.parameters.required).toContain("note");
         expect(def!.function.parameters.properties.note.type).toBe("string");
         expect(def!.function.description).toContain("persistent working memory");
+    });
+
+    test("go_back reports the destination URL after history navigation changes the page", async () => {
+        let currentUrl = "https://example.com/step-3";
+        (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+            id: 123,
+            url: currentUrl,
+            title: "History page",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).goBack = vi.fn(async () => {
+            currentUrl = "https://example.com/step-2";
+        });
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-1",
+                type: "function",
+                function: {
+                    name: ToolName.GO_BACK,
+                    arguments: "{}",
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toContain("Navigated back to https://example.com/step-2");
+    });
+
+    test("go_back returns an error when browser history stays on the same URL", async () => {
+        const currentUrl = "https://example.com/step-2";
+        (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+            id: 123,
+            url: currentUrl,
+            title: "History page",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).goBack = vi.fn(async () => {});
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-2",
+                type: "function",
+                function: {
+                    name: ToolName.GO_BACK,
+                    arguments: "{}",
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toContain("browser remained on https://example.com/step-2");
+    }, 8000);
+
+    test("go_back falls back to in-page history.back when tabs.goBack does not move", async () => {
+        let currentUrl = "https://example.com/step-3";
+        (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+            id: 123,
+            url: currentUrl,
+            title: "History page",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).goBack = vi.fn(async () => {});
+        (chrome.scripting as any).executeScript = vi.fn(async () => {
+            currentUrl = "https://example.com/step-2";
+            return [{ result: undefined }];
+        });
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-2b",
+                type: "function",
+                function: {
+                    name: ToolName.GO_BACK,
+                    arguments: "{}",
+                },
+            } as any,
+            123,
+        );
+
+        expect(chrome.scripting.executeScript).toHaveBeenCalled();
+        expect(result).toContain("Navigated back to https://example.com/step-2");
+    });
+
+    test("go_back ignores transient about:blank and waits for the final destination URL", async () => {
+        const urls = [
+            "https://example.com/step-3",
+            "about:blank",
+            "https://example.com/step-2",
+        ];
+        (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
+            id: 123,
+            url: urls.length > 1 ? urls.shift() : urls[0],
+            title: "History page",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).goBack = vi.fn(async () => {});
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-3",
+                type: "function",
+                function: {
+                    name: ToolName.GO_BACK,
+                    arguments: "{}",
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toContain("Navigated back to https://example.com/step-2");
+        expect(result).not.toContain("about:blank");
     });
 
 });

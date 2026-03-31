@@ -11,13 +11,16 @@
  */
 
 import { DomSnapshot } from "../types";
-import { tagElements, getCachedElements, getOverflowMetadata, extractPageSkeleton } from "./tagging";
+import {
+  tagElements,
+  getCachedElements,
+  getOverflowMetadata,
+  extractPageSkeleton,
+} from "./tagging";
 import { extractPageContent, extractVisibleText } from "./readability";
 import { detectFramework } from "./framework-detect";
 
-export function buildSnapshot(
-  refresh: boolean,
-): DomSnapshot {
+export function buildSnapshot(refresh: boolean): DomSnapshot {
   const elements = refresh ? tagElements() : getCachedElements();
 
   const overflow = getOverflowMetadata();

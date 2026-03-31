@@ -2,6 +2,7 @@ import { LLMClient, LLMClientOptions } from "../llm";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
+import { tokenizeStepText } from "../agent/loop-helpers";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -29,6 +30,7 @@ export interface NodeVerificationResult {
 
 export interface ProgrammaticVerificationInput {
   output: string;
+  objective?: string;
   successCriteria: string;
   evidence?: StructuredEvidence[];
   previousUrl?: string;
@@ -61,6 +63,57 @@ const ERROR_MARKERS = [
   "cannot",
 ];
 
+const GOAL_TOKEN_STOPWORDS = new Set([
+  "page",
+  "pages",
+  "step",
+  "steps",
+  "task",
+  "goal",
+  "done",
+  "show",
+  "shows",
+  "visible",
+  "verify",
+  "verified",
+  "complete",
+  "completed",
+  "success",
+  "successful",
+  "navigate",
+  "navigated",
+  "navigation",
+  "return",
+  "returned",
+  "report",
+  "reported",
+  "inventory",
+  "count",
+  "counts",
+  "warehouse",
+]);
+
+function hasGoalTokenSupport(
+  text: string,
+  objective: string,
+  successCriteria: string,
+  evidence?: StructuredEvidence[],
+): boolean {
+  const corpus = [text, ...(evidence ?? []).map((item) => item.claim || "")]
+    .join(" ")
+    .trim();
+  const outputTokens = new Set(tokenizeStepText(corpus));
+  const goalTokens = [
+    ...tokenizeStepText(objective || ""),
+    ...tokenizeStepText(successCriteria || ""),
+  ].filter(
+    (token) => token.length >= 4 && !GOAL_TOKEN_STOPWORDS.has(token),
+  );
+
+  if (goalTokens.length === 0) return true;
+  return goalTokens.some((token) => outputTokens.has(token));
+}
+
 /**
  * Programmatic DOM-state verification that short-circuits the LLM verifier
  * for clear-cut cases. Returns null when the case is ambiguous and needs
@@ -88,6 +141,12 @@ export function programmaticVerify(
 
   const hasSuccessMarker = SUCCESS_MARKERS.some((m) => text.includes(m));
   const hasErrorMarker = ERROR_MARKERS.some((m) => text.includes(m));
+  const hasGoalSupport = hasGoalTokenSupport(
+    input.output,
+    input.objective || "",
+    input.successCriteria,
+    input.evidence,
+  );
 
   const urlChanged =
     input.previousUrl != null &&
@@ -118,7 +177,7 @@ export function programmaticVerify(
   }
 
   // Success keywords + DOM change evidence → accept
-  if (hasSuccessMarker && domChanged) {
+  if (hasSuccessMarker && domChanged && hasGoalSupport) {
     return {
       decision: "accept",
       reason: "Output indicates success with corroborating DOM change.",
@@ -127,7 +186,7 @@ export function programmaticVerify(
   }
 
   // Success keywords + structured evidence → accept
-  if (hasSuccessMarker && hasStructuredEvidence) {
+  if (hasSuccessMarker && hasStructuredEvidence && hasGoalSupport) {
     return {
       decision: "accept",
       reason: "Output indicates success with structured evidence support.",

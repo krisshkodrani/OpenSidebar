@@ -43,7 +43,7 @@ const MODEL_PRICING: ModelPricing[] = [
     providerId: "openrouter",
     model: "google/gemini-2.5-flash",
     inputUsdPerMillion: 0.15,
-    outputUsdPerMillion: 0.60,
+    outputUsdPerMillion: 0.6,
     effectiveDate: "2026-03-11",
     sourceUrl: "https://openrouter.ai/google/gemini-2.5-flash",
     confidence: "official",

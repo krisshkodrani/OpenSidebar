@@ -2,16 +2,8 @@
  * Inspection actions - scroll, read page, find element, read element
  */
 
-import {
-  ScrollPageArgs,
-  ScrollDirection,
-  ReadElementArgs,
-} from "../../types";
-import {
-  getVisibleText,
-  addDynamicTag,
-  truncateText,
-} from "../tagging";
+import { ScrollPageArgs, ScrollDirection, ReadElementArgs } from "../../types";
+import { getVisibleText, addDynamicTag, truncateText } from "../tagging";
 import { buildSnapshot } from "../snapshot";
 import {
   staleIdError,
@@ -29,7 +21,8 @@ export function executeScroll(args: ScrollPageArgs): {
   if (args.y == null && args.direction == null) {
     return {
       success: false,
-      result: "Error: scroll_page requires either 'y' (absolute position) or 'direction'.",
+      result:
+        "Error: scroll_page requires either 'y' (absolute position) or 'direction'.",
       navigated: false,
     };
   }
@@ -41,7 +34,11 @@ export function executeScroll(args: ScrollPageArgs): {
       const el = getTaggedElement(args.id);
       if (!el) return staleIdError(args.id);
       if (!(el instanceof HTMLElement)) {
-        return { success: false, result: `Element [${tagId}] is not scrollable`, navigated: false };
+        return {
+          success: false,
+          result: `Element [${tagId}] is not scrollable`,
+          navigated: false,
+        };
       }
       el.scrollTo({ top: args.y, behavior: "instant" });
       return {
@@ -163,7 +160,10 @@ export function executeRead(): {
   };
 }
 
-export function executeFindElement(args: { text: string; searchText?: string }): {
+export function executeFindElement(args: {
+  text: string;
+  searchText?: string;
+}): {
   success: boolean;
   result: string;
   navigated: boolean;

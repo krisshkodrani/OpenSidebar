@@ -45,15 +45,23 @@ const BASE_DELAY_MS = 800;
 const OBSERVATION_WINDOW = 5;
 
 /** Tool-aware stale thresholds: routine actions need vision less frequently. */
-const STALE_THRESHOLD_ROUTINE = 4;   // click, type, scroll, press_key, select_option, set_checkbox
+const STALE_THRESHOLD_ROUTINE = 4; // click, type, scroll, press_key, select_option, set_checkbox
 const STALE_THRESHOLD_NAVIGATION = 1; // navigate, go_back, create_tab, switch_tab
-const STALE_THRESHOLD_DEFAULT = 2;    // everything else
+const STALE_THRESHOLD_DEFAULT = 2; // everything else
 
 const ROUTINE_TOOLS = new Set([
-  "click_element", "type_text", "scroll_page", "press_key", "select_option", "set_checkbox",
+  "click_element",
+  "type_text",
+  "scroll_page",
+  "press_key",
+  "select_option",
+  "set_checkbox",
 ]);
 const NAVIGATION_TOOLS = new Set([
-  "navigate", "go_back", "create_tab", "switch_tab",
+  "navigate",
+  "go_back",
+  "create_tab",
+  "switch_tab",
 ]);
 
 function getStaleThreshold(lastToolName?: string): number {
@@ -101,7 +109,9 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
       },
       model: (() => {
         const base = settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL;
-        return settings.useNitro && !base.endsWith(":nitro") ? `${base}:nitro` : base;
+        return settings.useNitro && !base.endsWith(":nitro")
+          ? `${base}:nitro`
+          : base;
       })(),
       providerId: "openrouter",
     });
@@ -127,7 +137,9 @@ function formatObservationLine(entry: ObservationEntry): string {
  * Build the `{{priorObservations}}` template value from the observation log.
  * Returns empty string on first call (no prior history).
  */
-export function formatPriorObservations(log: readonly ObservationEntry[]): string {
+export function formatPriorObservations(
+  log: readonly ObservationEntry[],
+): string {
   if (log.length === 0) return "";
 
   const lines: string[] = [];
@@ -251,7 +263,8 @@ export function validatePerceptionTagIds(
     // or at least part of the actual text content. If neither matches, flag it.
     const tagNameMatch =
       vlmLower.includes(actualTagLower) ||
-      (actualElement.role && vlmLower.includes(actualElement.role.toLowerCase()));
+      (actualElement.role &&
+        vlmLower.includes(actualElement.role.toLowerCase()));
     const textOverlap =
       actualTextLower.length > 0 &&
       (vlmLower.includes(actualTextLower.slice(0, 15)) ||
@@ -269,18 +282,16 @@ export function validatePerceptionTagIds(
   if (correctionsMade === 0) return interpretation;
 
   // Rebuild the AFFORDANCES section
-  const correctedBody = correctedLines.length > 0
-    ? correctedLines.join("\n")
-    : "None (all VLM references were invalid).";
+  const correctedBody =
+    correctedLines.length > 0
+      ? correctedLines.join("\n")
+      : "None (all VLM references were invalid).";
 
   logger.warn("perception", "Corrected AFFORDANCES tag IDs", {
     corrections: correctionsMade,
   });
 
-  return interpretation.replace(
-    affordancesMatch[0],
-    prefix + correctedBody,
-  );
+  return interpretation.replace(affordancesMatch[0], prefix + correctedBody);
 }
 
 // ---------------------------------------------------------------------------
@@ -443,11 +454,9 @@ export class PerceptionAgent {
           cached: true,
         };
       }
-      logger.info(
-        "perception",
-        "Forced re-interpret after stale fingerprint",
-        { age: this.fingerprintAge },
-      );
+      logger.info("perception", "Forced re-interpret after stale fingerprint", {
+        age: this.fingerprintAge,
+      });
     } else {
       this.fingerprintAge = 0;
     }
@@ -545,15 +554,18 @@ export class PerceptionAgent {
     const viewport = input.scroll.viewportHeight
       ? { height: input.scroll.viewportHeight, scrollY: input.scroll.y }
       : undefined;
-    const elementSummary = buildElementSummary(input.elements, input.skeleton, viewport);
+    const elementSummary = buildElementSummary(
+      input.elements,
+      input.skeleton,
+      viewport,
+    );
 
     // Build panoramic note
     let panoramicNote = "";
     if (input.panoramicScreenshots?.length) {
       const imageLabels = input.panoramicScreenshots
         .map(
-          (s, i) =>
-            `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`,
+          (s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`,
         )
         .join("\n");
       panoramicNote = [
@@ -694,9 +706,7 @@ export class PerceptionAgent {
               break;
             }
 
-            throw new Error(
-              `Perception API error ${response.status}: ${body}`,
-            );
+            throw new Error(`Perception API error ${response.status}: ${body}`);
           }
 
           const json = await response.json();

@@ -29,7 +29,9 @@ export function checkSummaryStepCoherence(params: {
   }
 
   // Tokenize all steps
-  const stepTokenSets = stepDescriptions.map((desc) => new Set(tokenizeStepText(desc)));
+  const stepTokenSets = stepDescriptions.map(
+    (desc) => new Set(tokenizeStepText(desc)),
+  );
 
   // Find distinctive tokens per step: tokens that appear in this step but no other
   const distinctiveTokens: Set<string>[] = stepTokenSets.map((tokens, idx) => {
@@ -55,7 +57,9 @@ export function checkSummaryStepCoherence(params: {
   const summaryTokens = new Set(tokenizeStepText(summary));
 
   // Check: does the summary mention the current step's distinctive tokens?
-  const hasCurrentStepTokens = [...currentDistinctive].some((t) => summaryTokens.has(t));
+  const hasCurrentStepTokens = [...currentDistinctive].some((t) =>
+    summaryTokens.has(t),
+  );
 
   // Check: does the summary mention a different step's distinctive tokens?
   let wrongStepIdx = -1;
@@ -107,9 +111,7 @@ export function checkVerificationGate(
 
   // URL-based trigger check: extract "URL contains X" patterns from trigger
   if (currentUrl) {
-    const urlContainsMatch = gate.trigger.match(
-      /url\s+contains?\s+(\S+)/i,
-    );
+    const urlContainsMatch = gate.trigger.match(/url\s+contains?\s+(\S+)/i);
     if (urlContainsMatch) {
       const urlFragment = urlContainsMatch[1].toLowerCase();
       if (currentUrl.toLowerCase().includes(urlFragment)) {
@@ -122,9 +124,7 @@ export function checkVerificationGate(
   }
 
   // Try regex pattern first (check against both tool results and URL)
-  const corpusWithUrl = currentUrl
-    ? corpus + "\nURL: " + currentUrl
-    : corpus;
+  const corpusWithUrl = currentUrl ? corpus + "\nURL: " + currentUrl : corpus;
   if (gate.pattern) {
     try {
       const re = new RegExp(gate.pattern, "i");
@@ -214,7 +214,9 @@ export function assessDoneSummary(summary: string): DoneSentimentResult {
   for (const pattern of DONE_FAILURE_PATTERNS) {
     if (pattern.test(summary)) {
       // Check for success overrides — hedged language like "added item though counter didn't update"
-      const hasSuccessOverride = DONE_SUCCESS_OVERRIDES.some((sp) => sp.test(summary));
+      const hasSuccessOverride = DONE_SUCCESS_OVERRIDES.some((sp) =>
+        sp.test(summary),
+      );
       if (hasSuccessOverride) {
         return { confident: true };
       }

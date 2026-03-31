@@ -9,11 +9,18 @@
 
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import type { Browser } from "puppeteer";
+import {
+  analyzeAgentRuntimeDiagnostics,
+  formatRuntimeDiagnostics,
+} from "../../../evals/runtime-diagnostics";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const moduleDir = import.meta.url.startsWith("file:")
+  ? dirname(fileURLToPath(import.meta.url))
+  : dirname(import.meta.url);
+const __dirname = moduleDir;
 const PROJECT_ROOT = resolve(__dirname, "../../..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
@@ -130,6 +137,34 @@ export function findAllNewTraceFiles(before: Set<string>): string[] {
     .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
 }
 
+export function filterTraceFilesByWorkspace(
+  traceFiles: string[],
+  workspaceId?: string | null,
+): string[] {
+  if (!workspaceId) return traceFiles;
+
+  return traceFiles.filter((filePath) => traceFileBelongsToWorkspace(filePath, workspaceId));
+}
+
+function traceFileBelongsToWorkspace(filePath: string, workspaceId: string): boolean {
+  if (!existsSync(filePath)) return false;
+
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      const entry = JSON.parse(line);
+      if (entry?.workspaceId === workspaceId) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 // ── Trace reader + formatter ──────────────────────────────────────
 
 interface TraceTurn {
@@ -232,6 +267,12 @@ export function formatTraceSummary(turns: TraceTurn[]): string {
       const detail = tr.error ? ` err=${tr.error}` : "";
       lines.push(`           ${icon}: ${tr.result}${detail}`);
     }
+  }
+
+  const diagnostics = analyzeAgentRuntimeDiagnostics(turns as never[]);
+  const diagnosticSummary = formatRuntimeDiagnostics(diagnostics);
+  if (diagnosticSummary) {
+    lines.push(diagnosticSummary);
   }
 
   lines.push(`${"=".repeat(60)}\n`);

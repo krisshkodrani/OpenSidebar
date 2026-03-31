@@ -63,7 +63,8 @@ export const SCROLL_PAGE_DEF: ToolDefinition = {
       properties: {
         y: {
           type: "integer",
-          description: "Absolute Y position (from @y hints). Scrolls directly to this page offset.",
+          description:
+            "Absolute Y position (from @y hints). Scrolls directly to this page offset.",
         },
         direction: {
           type: "string",

@@ -14,4 +14,7 @@ export interface LoopResult {
   failure?: TraceFailureInfo;
   /** Session token/cost/time metrics */
   metrics?: SessionMetrics;
+  /** Condensed action history for handoff to next node on the same tab.
+   *  Produced by summarizeHistory() — e.g. "T1: click [39] → Added to cart." */
+  trajectory?: string[];
 }

@@ -60,4 +60,3 @@ export function isBackground(): boolean {
 export function isSidepanel(): boolean {
   return getExecutionContext() === "sidepanel";
 }
-

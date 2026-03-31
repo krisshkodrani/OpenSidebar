@@ -120,7 +120,8 @@ function toolIcon(step: AgentStep): React.ReactNode {
     case ToolName.DISMISS_OVERLAYS:
       return <XIcon size={sz} className={iconCls} />;
     default:
-      if (step.type === "thinking") return <History size={sz} className={iconCls} />;
+      if (step.type === "thinking")
+        return <History size={sz} className={iconCls} />;
       return <Wrench size={sz} className={iconCls} />;
   }
 }
@@ -132,9 +133,7 @@ function StepRow({ step }: { step: AgentStep }) {
     <div
       className={clsx("transition-all duration-200", isRunning && "step-enter")}
     >
-      <div
-        className="flex items-center gap-2 w-full text-left py-0.5 px-1 rounded text-xs"
-      >
+      <div className="flex items-center gap-2 w-full text-left py-0.5 px-1 rounded text-xs">
         {toolIcon(step)}
         <span
           className={clsx(
@@ -181,7 +180,8 @@ export const StepTimeline = React.memo(function StepTimeline({
   if (steps.length === 0) return null;
 
   const hasRunning = steps.some((s) => s.status === "running");
-  const shouldCollapse = !expanded && !hasRunning && steps.length > COLLAPSE_THRESHOLD;
+  const shouldCollapse =
+    !expanded && !hasRunning && steps.length > COLLAPSE_THRESHOLD;
   const visibleSteps = shouldCollapse ? steps.slice(-VISIBLE_TAIL) : steps;
   const hiddenCount = steps.length - visibleSteps.length;
 
@@ -194,7 +194,9 @@ export const StepTimeline = React.memo(function StepTimeline({
             className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
           >
             <ChevronRight size={11} />
-            <span>{hiddenCount} earlier step{hiddenCount > 1 ? "s" : ""}</span>
+            <span>
+              {hiddenCount} earlier step{hiddenCount > 1 ? "s" : ""}
+            </span>
           </button>
         )}
         {expanded && hiddenCount === 0 && steps.length > COLLAPSE_THRESHOLD && (

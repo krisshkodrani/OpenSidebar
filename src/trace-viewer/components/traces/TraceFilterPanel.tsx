@@ -28,12 +28,21 @@ export default function TraceFilterPanel({
       const hasManual = models.includes("manual");
       if (hasRecording) counts["recording"] = (counts["recording"] || 0) + 1;
       if (hasManual) counts["manual"] = (counts["manual"] || 0) + 1;
-      if (!hasRecording && !hasManual) counts["agent"] = (counts["agent"] || 0) + 1;
+      if (!hasRecording && !hasManual)
+        counts["agent"] = (counts["agent"] || 0) + 1;
     }
-    const labels: Record<string, string> = { agent: "Agent", recording: "Recording", manual: "Manual" };
+    const labels: Record<string, string> = {
+      agent: "Agent",
+      recording: "Recording",
+      manual: "Manual",
+    };
     return Object.entries(counts)
       .filter(([, count]) => count > 0)
-      .map(([value, count]) => ({ value, label: labels[value] || value, count }));
+      .map(([value, count]) => ({
+        value,
+        label: labels[value] || value,
+        count,
+      }));
   }, [sessions]);
 
   // Derive available outcomes from session data
@@ -44,10 +53,17 @@ export default function TraceFilterPanel({
       counts[outcome] = (counts[outcome] || 0) + 1;
     }
     const labels: Record<string, string> = {
-      completed: "Completed", stopped: "Stopped", max_turns: "Max Turns", error: "Error",
+      completed: "Completed",
+      stopped: "Stopped",
+      max_turns: "Max Turns",
+      error: "Error",
     };
     return Object.entries(counts)
-      .map(([value, count]) => ({ value, label: labels[value] || value, count }))
+      .map(([value, count]) => ({
+        value,
+        label: labels[value] || value,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
   }, [sessions]);
 
@@ -225,7 +241,13 @@ export default function TraceFilterPanel({
           className="flex-1 min-w-0 bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1.5 text-xs outline-none transition-colors focus:border-trace-accent"
         />
         <div className="flex gap-1 shrink-0">
-          {([["Today", 0], ["7d", 6], ["30d", 29]] as const).map(([label, days]) => (
+          {(
+            [
+              ["Today", 0],
+              ["7d", 6],
+              ["30d", 29],
+            ] as const
+          ).map(([label, days]) => (
             <button
               key={label}
               onClick={() => handleDatePreset(days, 0)}

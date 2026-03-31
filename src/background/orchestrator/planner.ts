@@ -110,7 +110,11 @@ interface DecompositionStep {
   successCriteria?: string;
   dependencies?: number[];
   assumptions?: string[];
-  verifyAfter?: { trigger: string; action: "call_done" | "advance_step"; pattern?: string };
+  verifyAfter?: {
+    trigger: string;
+    action: "call_done" | "advance_step";
+    pattern?: string;
+  };
   toolProfile?: string;
 }
 
@@ -271,9 +275,9 @@ export class OrchestratorPlanner {
       successCriteria:
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: resolveToolProfile(step.toolProfile as ToolProfile | undefined) ?? [
-        ...node.allowedTools,
-      ],
+      allowedTools: resolveToolProfile(
+        step.toolProfile as ToolProfile | undefined,
+      ) ?? [...node.allowedTools],
       dependencies: [
         ...(index === 0 ? node.dependencies : []),
         ...(step.dependencies || [])
@@ -322,7 +326,7 @@ export class OrchestratorPlanner {
       completedSummary,
       "",
       "Plan the NEXT 1-3 steps from the current page state.",
-      'If the goal is already achieved, return an empty plan (steps: []).',
+      "If the goal is already achieved, return an empty plan (steps: []).",
     ].join("\n");
 
     const decomposition = await this.planner.decompose(

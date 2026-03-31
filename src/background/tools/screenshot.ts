@@ -33,7 +33,11 @@ export async function takeScreenshotWithTags(
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab.active) {
-      return { dataUrl: "", success: false, error: "Tab is not active (screenshot would capture wrong tab)" };
+      return {
+        dataUrl: "",
+        success: false,
+        error: "Tab is not active (screenshot would capture wrong tab)",
+      };
     }
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format: options.format,

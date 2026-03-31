@@ -8,6 +8,11 @@ import { LLMMessage } from "../llm/types";
 import { stripThinkTags } from "../llm";
 import { ActionEffect } from "./stagnation";
 import { ACTION_EFFECT } from "./constants";
+import {
+  assessTaskContractCoverage,
+  buildTaskContract,
+  TaskContractCoverage,
+} from "./task-contract";
 
 /** Tools that require a valid element `id` param — validated before dispatch. */
 export const ELEMENT_ID_TOOLS = new Set<string>([
@@ -108,6 +113,9 @@ const STRUCTURAL_ADVANCE_TOOLS = new Set<string>([
   ToolName.SELECT_OPTION,
   ToolName.SET_CHECKBOX,
   ToolName.PRESS_KEY,
+  ToolName.RIGHT_CLICK,
+  ToolName.SCROLL_PAGE,
+  ToolName.GO_BACK,
   ToolName.XRAY_PAGE,
   ToolName.DISMISS_OVERLAYS,
 ]);
@@ -143,6 +151,12 @@ const STEP_TOKEN_STOPWORDS = new Set([
   "order",
   "verify",
   "successfully",
+  "requested",
+  "result",
+  "results",
+  "value",
+  "values",
+  "there",
 ]);
 
 const ASYNC_TRIGGER_TOOLS = new Set<string>([
@@ -150,6 +164,10 @@ const ASYNC_TRIGGER_TOOLS = new Set<string>([
   ToolName.PRESS_KEY,
   ToolName.SELECT_OPTION,
   ToolName.SET_CHECKBOX,
+  ToolName.RIGHT_CLICK,
+  ToolName.HOVER_ELEMENT,
+  ToolName.SCROLL_PAGE,
+  ToolName.GO_BACK,
   ToolName.EXECUTE_JS,
 ]);
 
@@ -173,6 +191,21 @@ const ASYNC_INTENT_KEYWORDS = [
   "generate",
   "fetch",
   "result appears",
+  "dialog",
+  "modal",
+  "popup",
+  "menu",
+  "context menu",
+  "confirmation",
+  "confirm",
+  "rename",
+  "editor",
+  "inline input",
+  "scroll down",
+  "load more",
+  "lazy load",
+  "feed",
+  "more posts",
 ];
 
 const LOADING_UI_KEYWORDS = [
@@ -200,11 +233,9 @@ const ASYNC_TOKEN_STOPWORDS = new Set([
 ]);
 
 export function tokenizeStepText(stepText: string): string[] {
-  return [...new Set(
-    stepText
-      .toLowerCase()
-      .match(/[a-z0-9$@._-]{3,}/g) ?? [],
-  )].filter((token) => !STEP_TOKEN_STOPWORDS.has(token));
+  return [
+    ...new Set(stepText.toLowerCase().match(/[a-z0-9$@._-]{3,}/g) ?? []),
+  ].filter((token) => !STEP_TOKEN_STOPWORDS.has(token));
 }
 
 export function snapshotSearchText(snapshot: DomSnapshot | null): string {
@@ -238,6 +269,59 @@ export interface SuccessCriteriaResult {
   satisfied: boolean;
   matchedTokens: string[];
   totalTokens: number;
+  matchedQuotedPhrases: string[];
+  requiredQuotedPhrases: string[];
+  matchedNamedPhrases: string[];
+  requiredNamedPhrases: string[];
+  matchedNumbers: string[];
+  requiredNumbers: string[];
+}
+
+function extractQuotedPhrases(text: string): string[] {
+  return [
+    ...new Set(
+      [...text.matchAll(/["']([^"']{3,120})["']/g)]
+        .map((match) => match[1]?.trim().toLowerCase())
+        .filter((value): value is string => !!value),
+    ),
+  ];
+}
+
+function extractNumericLiterals(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .match(/\b\d[\d,./-]*\b/g)
+        ?.map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length >= 2) ?? [],
+    ),
+  ];
+}
+
+function extractNamedPhrases(text: string): string[] {
+  const blacklist = new Set([
+    "page",
+    "step",
+    "task",
+    "goal",
+    "done",
+    "final",
+    "answer",
+    "confirmation",
+  ]);
+
+  return [
+    ...new Set(
+      (
+        text.match(
+          /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}|[A-Z]{2,}(?:\s+[A-Z][a-z]+){0,3})\b/g,
+        ) ?? []
+      )
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length >= 4)
+        .filter((value) => !blacklist.has(value)),
+    ),
+  ];
 }
 
 /**
@@ -250,26 +334,79 @@ export function matchSuccessCriteria(params: {
 }): SuccessCriteriaResult {
   const { successCriteria, snapshot } = params;
   if (!successCriteria || successCriteria.trim().length === 0) {
-    return { satisfied: true, matchedTokens: [], totalTokens: 0 };
+    return {
+      satisfied: true,
+      matchedTokens: [],
+      totalTokens: 0,
+      matchedQuotedPhrases: [],
+      requiredQuotedPhrases: [],
+      matchedNamedPhrases: [],
+      requiredNamedPhrases: [],
+      matchedNumbers: [],
+      requiredNumbers: [],
+    };
   }
   const tokens = tokenizeStepText(successCriteria);
+  const requiredQuotedPhrases = extractQuotedPhrases(successCriteria);
+  const requiredNamedPhrases = extractNamedPhrases(successCriteria).filter(
+    (phrase) => !requiredQuotedPhrases.includes(phrase),
+  );
+  const requiredNumbers = extractNumericLiterals(successCriteria);
   if (tokens.length === 0) {
-    return { satisfied: true, matchedTokens: [], totalTokens: 0 };
+    return {
+      satisfied: true,
+      matchedTokens: [],
+      totalTokens: 0,
+      matchedQuotedPhrases: [],
+      requiredQuotedPhrases,
+      matchedNamedPhrases: [],
+      requiredNamedPhrases,
+      matchedNumbers: [],
+      requiredNumbers,
+    };
   }
   const searchText = snapshotSearchText(snapshot);
   const matched = tokens.filter((token) => searchText.includes(token));
+  const matchedQuotedPhrases = requiredQuotedPhrases.filter((phrase) =>
+    searchText.includes(phrase),
+  );
+  const matchedNamedPhrases = requiredNamedPhrases.filter((phrase) =>
+    searchText.includes(phrase),
+  );
+  const matchedNumbers = requiredNumbers.filter((value) =>
+    searchText.includes(value),
+  );
   const threshold = Math.max(1, Math.ceil(tokens.length * 0.4));
+  const quotesSatisfied =
+    requiredQuotedPhrases.length === 0 ||
+    matchedQuotedPhrases.length === requiredQuotedPhrases.length;
+  const namesSatisfied =
+    requiredNamedPhrases.length === 0 ||
+    matchedNamedPhrases.length === requiredNamedPhrases.length;
+  const numbersSatisfied =
+    requiredNumbers.length === 0 ||
+    matchedNumbers.length === requiredNumbers.length;
   return {
-    satisfied: matched.length >= threshold,
+    satisfied:
+      matched.length >= threshold &&
+      quotesSatisfied &&
+      namesSatisfied &&
+      numbersSatisfied,
     matchedTokens: matched,
     totalTokens: tokens.length,
+    matchedQuotedPhrases,
+    requiredQuotedPhrases,
+    matchedNamedPhrases,
+    requiredNamedPhrases,
+    matchedNumbers,
+    requiredNumbers,
   };
 }
 
 function tokenizeAsyncExpectationText(text: string): string[] {
-  return [...new Set(
-    text.toLowerCase().match(/[a-z0-9$@._-]{2,}/g) ?? [],
-  )].filter((token) => !ASYNC_TOKEN_STOPWORDS.has(token));
+  return [
+    ...new Set(text.toLowerCase().match(/[a-z0-9$@._-]{2,}/g) ?? []),
+  ].filter((token) => !ASYNC_TOKEN_STOPWORDS.has(token));
 }
 
 function findLoadingIndicator(snapshot: DomSnapshot | null): string | null {
@@ -284,7 +421,9 @@ function matchStepTokens(
   snapshot: DomSnapshot | null,
 ): string[] {
   const searchText = snapshotSearchText(snapshot);
-  return tokenizeStepText(stepText).filter((token) => searchText.includes(token));
+  return tokenizeStepText(stepText).filter((token) =>
+    searchText.includes(token),
+  );
 }
 
 export function detectStructuralStepAdvance(params: {
@@ -308,10 +447,14 @@ export function detectStructuralStepAdvance(params: {
   if (!STRUCTURAL_ADVANCE_TOOLS.has(toolName)) return null;
 
   const materiallyChanged =
-    actionEffect.urlChanged || actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
+    actionEffect.urlChanged ||
+    actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
   if (!materiallyChanged) return null;
 
-  const currentMatches = matchStepTokens(currentStepDescription, currentSnapshot);
+  const currentMatches = matchStepTokens(
+    currentStepDescription,
+    currentSnapshot,
+  );
   const successMatches = currentStepSuccessCriteria
     ? matchStepTokens(currentStepSuccessCriteria, currentSnapshot)
     : [];
@@ -379,13 +522,16 @@ export function detectPendingAsyncChange(params: {
   if (!hasAsyncIntent) return null;
 
   const materiallyChanged =
-    actionEffect.urlChanged || actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
+    actionEffect.urlChanged ||
+    actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
   if (!materiallyChanged && !loadingIndicator) return null;
 
   const expectedTokens = tokenizeAsyncExpectationText(
     currentStepSuccessCriteria || currentStepDescription,
   ).slice(0, 8);
-  if (isPendingAsyncChangeSatisfied({ snapshot: currentSnapshot, expectedTokens })) {
+  if (
+    isPendingAsyncChangeSatisfied({ snapshot: currentSnapshot, expectedTokens })
+  ) {
     return null;
   }
 
@@ -728,10 +874,18 @@ export function classifyTurnError(
   const status = (error as any)?.status;
   if (status === 402) return "credits_exhausted";
   if (status === 400 || status === 422) return "bad_request";
-  if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) return "network";
+  if (
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  )
+    return "network";
 
   // Fetch/network failures
-  if (error instanceof TypeError && error.message.includes("fetch")) return "network";
+  if (error instanceof TypeError && error.message.includes("fetch"))
+    return "network";
 
   return "unknown";
 }
@@ -829,6 +983,137 @@ export function userExplicitlyRequestedTabManagement(query: string): boolean {
   );
 }
 
+/**
+ * Determine whether a planless task still requires an explicit page-grounding
+ * read before done(). This targets summarize/read/report style tasks where the
+ * model otherwise tends to answer from URL/title alone.
+ */
+export function requiresGroundingReadBeforeDone(query: string): boolean {
+  const normalized = query.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+
+  const trivialPageQuestions = [
+    /\bwhat(?:'s| is) the title\b/,
+    /\bwhat(?:'s| is) the url\b/,
+    /\bwhat page is this\b/,
+    /\bwhich page is this\b/,
+    /\bwhat site is this\b/,
+    /\bwhat domain is this\b/,
+  ];
+  if (trivialPageQuestions.some((pattern) => pattern.test(normalized))) {
+    return false;
+  }
+
+  const pageReadTasks = [
+    /\bsummari[sz]e\b/,
+    /\bsummary\b/,
+    /\bdescribe (?:this|the) page\b/,
+    /\breport (?:on|about) (?:this|the) page\b/,
+    /\breview (?:this|the) page\b/,
+    /\bextract\b.+\b(page|article|post|document|readme|content)\b/,
+    /\bmain points?\b/,
+    /\bkey points?\b/,
+    /\bheadlines?\b/,
+    /\bwhat does (?:this|the) page say\b/,
+    /\bread (?:this|the) page\b/,
+    /\bfrom (?:this|the) page\b/,
+    /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
+  ];
+
+  return pageReadTasks.some((pattern) => pattern.test(normalized));
+}
+
+export interface DoneTaskContractGuardResult {
+  blocked: boolean;
+  reason: string | null;
+  summaryCoverage: TaskContractCoverage;
+  missingReturnTarget: boolean;
+}
+
+/**
+ * Reject done() when the final summary drops required task entities/results or
+ * when a round-trip task has not actually returned to the required page.
+ */
+export function evaluateDoneTaskContractGuard(params: {
+  query: string;
+  summary: string;
+  snapshot: DomSnapshot | null;
+}): DoneTaskContractGuardResult {
+  const contract = buildTaskContract(params.query);
+  const hasObligations =
+    contract.requiresRoundTrip ||
+    contract.requiredEntities.length > 0 ||
+    contract.requiredNumbers.length > 0;
+
+  const summaryCoverage = assessTaskContractCoverage({
+    contract,
+    text: params.summary,
+  });
+
+  if (!hasObligations) {
+    return {
+      blocked: false,
+      reason: null,
+      summaryCoverage,
+      missingReturnTarget: false,
+    };
+  }
+
+  const returnTargetCoverage = contract.requiresRoundTrip
+    ? assessTaskContractCoverage({
+        contract: {
+          ...contract,
+          requiredEntities: [],
+          requiredNumbers: [],
+        },
+        text: snapshotSearchText(params.snapshot),
+        requireReturnTarget: true,
+      })
+    : null;
+
+  const reasons: string[] = [];
+  if (summaryCoverage.missingEntities.length > 0) {
+    reasons.push(
+      `final summary is missing required targets: ${summaryCoverage.missingEntities.join(", ")}`,
+    );
+  }
+  if (summaryCoverage.missingNumbers.length > 0) {
+    reasons.push(
+      `final summary is missing required values: ${summaryCoverage.missingNumbers.join(", ")}`,
+    );
+  }
+  if (returnTargetCoverage?.missingReturnTarget) {
+    reasons.push(
+      `you have not actually returned to the required page before finishing`,
+    );
+  }
+
+  return {
+    blocked: reasons.length > 0,
+    reason: reasons.length > 0 ? reasons.join("; ") : null,
+    summaryCoverage,
+    missingReturnTarget: Boolean(returnTargetCoverage?.missingReturnTarget),
+  };
+}
+
+/**
+ * Build the first-turn recovery nudge for text-only responses.
+ * Summarize/report tasks should re-ground with read_page before done().
+ */
+export function buildFirstTurnTextOnlyNudge(query: string): string {
+  if (requiresGroundingReadBeforeDone(query)) {
+    return (
+      "Your response was text only. This task requires grounding from the current page. " +
+      "Call read_page first, then call done({\"summary\": \"...\"}) once you have verified the page content."
+    );
+  }
+
+  return (
+    "If that was your answer to the user's question, wrap it in done({\"summary\": \"...\"}) to deliver it. " +
+    "If you need to act on the page, call the appropriate tool."
+  );
+}
+
 // ─── Grounding helpers ───────────────────────────────────────────────
 
 /** Tools that count as "observing the page" — used by the blind-action gate. */
@@ -866,13 +1151,15 @@ const PAGE_TYPE_RULES: Array<{
 }> = [
   {
     // instruction says checkout/form, but page is a cart
-    instructionKeywords: /\b(checkout|check out|fill out|complete the form|payment)\b/i,
+    instructionKeywords:
+      /\b(checkout|check out|fill out|complete the form|payment)\b/i,
     pageKeywords: /\b(cart|shopping cart|your cart|bag)\b/i,
     pageExclude: /\bcheckout\b/i,
   },
   {
     // instruction says search, but page is a product/article
-    instructionKeywords: /\b(search for|search the|find results|search results)\b/i,
+    instructionKeywords:
+      /\b(search for|search the|find results|search results)\b/i,
     pageKeywords: /\b(product|article|item detail|order confirmation)\b/i,
   },
 ];
@@ -891,7 +1178,11 @@ export function detectInstructionContradiction(
   instruction: string,
   snapshot: DomSnapshot,
 ): ContradictionResult | null {
-  const pageText = [snapshot.url, snapshot.title, snapshot.pageContent ?? ""].join(" ");
+  const pageText = [
+    snapshot.url,
+    snapshot.title,
+    snapshot.pageContent ?? "",
+  ].join(" ");
 
   // 1. Step mismatch: instruction says step N, page says step M
   const instrStep = extractStepIndicator(instruction);
@@ -984,7 +1275,9 @@ export function formatStructuredFailureContext(
     `Tools attempted: ${ctx.toolsAttempted.join(", ")}`,
   ];
   if (ctx.specificErrors.length > 0) {
-    lines.push(`Errors:\n${ctx.specificErrors.map((e) => `  - ${e}`).join("\n")}`);
+    lines.push(
+      `Errors:\n${ctx.specificErrors.map((e) => `  - ${e}`).join("\n")}`,
+    );
   }
   if (ctx.untriedAlternatives.length > 0) {
     lines.push(`Untried alternatives: ${ctx.untriedAlternatives.join(", ")}`);

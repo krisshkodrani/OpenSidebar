@@ -16,9 +16,7 @@ export async function isUsableTab(tabId: number): Promise<boolean> {
 }
 
 interface TabResolver {
-  getWorkspaceById(
-    id: string,
-  ): Promise<{ tabIds: number[] } | null>;
+  getWorkspaceById(id: string): Promise<{ tabIds: number[] } | null>;
 }
 
 /**

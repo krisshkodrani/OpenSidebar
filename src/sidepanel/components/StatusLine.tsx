@@ -201,7 +201,6 @@ export function StatusLine() {
           <Play size={10} />
         </button>
       )}
-
     </div>
   );
 }

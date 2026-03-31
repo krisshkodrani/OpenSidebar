@@ -5,7 +5,9 @@ interface PanoramicThumbnailsProps {
   shots: TracePanoramicShot[];
 }
 
-export default function PanoramicThumbnails({ shots }: PanoramicThumbnailsProps) {
+export default function PanoramicThumbnails({
+  shots,
+}: PanoramicThumbnailsProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   if (shots.length === 0) return null;

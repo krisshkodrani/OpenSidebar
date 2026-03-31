@@ -261,6 +261,56 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[1].instruction).toContain("Objective: summarize data");
   });
 
+  test("does not skip remaining nodes when local success matches but root task contract is incomplete", async () => {
+    const first = makeNode("n1", "Navigate to Warehouse Beta");
+    first.successCriteria = "Page shows Warehouse Beta and page 2 of 3";
+    const second = makeNode("n2", "Read Warehouse Gamma inventory");
+    second.successCriteria = "Page shows Warehouse Beta and page 2 of 3";
+    const third = makeNode("n3", "Return to Warehouse Alpha and report Alpha inventory");
+    third.successCriteria = "Page shows Warehouse Beta and page 2 of 3";
+    plannerBuildNodesImpl = async () => [first, second, third];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Navigation Chain",
+          url: "http://127.0.0.1:61549/go-back-chain?step=2",
+          visibleContent: "Warehouse Beta page 2 of 3 inventory count hidden",
+          pageContent: "Warehouse Beta page 2 of 3 inventory count hidden",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 2000 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "Go to Warehouse Beta, then Warehouse Gamma, then return to Warehouse Alpha and report both Gamma and Alpha inventory counts.",
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n2", "n3"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("partial");
+    expect(String(completion?.payload?.terminationReason || "")).toContain(
+      "Task contract incomplete",
+    );
+    expect(
+      completion?.payload?.subtaskResults?.some(
+        (item: any) =>
+          String(item.result || "").includes("Skipped: global goal already achieved"),
+      ),
+    ).toBe(false);
+  });
+
   test("creates and executes reroute handoff node", async () => {
     let verifyCalls = 0;
     plannerBuildNodesImpl = async () => [makeNode("n1", "primary route")];

@@ -93,6 +93,40 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("synthesizes multi-step plan when model under-decomposes a round-trip task", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                steps: [
+                    {
+                        objective: "Check the current warehouse page",
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            [
+                "Click to Warehouse Beta, then Warehouse Gamma.",
+                "Use go_back twice to return to Warehouse Alpha.",
+                "Call done() reporting both Gamma and Alpha inventory counts.",
+            ].join(" "),
+            "Warehouse Alpha",
+            "https://shop.com/go-back-chain?step=1",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps!.length).toBeGreaterThanOrEqual(2);
+        const synthesizedPlanText = result!.subtasks.join(" ");
+        expect(synthesizedPlanText).toMatch(/\bgamma\b/i);
+        expect(synthesizedPlanText).toMatch(/\balpha\b/i);
+    });
+
     test("parses structured step graph with dependencies and assumptions", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -511,6 +545,36 @@ Execution policy:
         expect(result!.subtasks).toEqual([]);
         expect(result!.difficulty).toBe("moderate");
         expect(result!.instrumentation?.outcome).toBe("simple_task");
+    });
+
+    test("does not collapse round-trip multi-step tasks just because difficulty is simple", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "simple",
+                steps: [
+                    { objective: "Go to Warehouse Beta", successCriteria: "Warehouse Beta visible" },
+                    { objective: "Go to Warehouse Gamma", successCriteria: "Warehouse Gamma visible" },
+                    { objective: "Use go_back twice to return to Warehouse Alpha", successCriteria: "Warehouse Alpha visible" },
+                    { objective: "Call done reporting Gamma and Alpha inventory counts", successCriteria: "Gamma and Alpha counts visible" },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            "Go to Warehouse Beta, then Gamma, then use go_back twice to return to Alpha and report both Gamma and Alpha inventory counts.",
+            "Warehouse Alpha",
+            "https://example.com/go-back-chain?step=1",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps!.length).toBeGreaterThanOrEqual(3);
+        expect(result!.instrumentation?.outcome).toBe("structured_steps");
     });
 
     test("returns null on malformed JSON", async () => {

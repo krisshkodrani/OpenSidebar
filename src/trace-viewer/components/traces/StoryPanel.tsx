@@ -45,8 +45,7 @@ function buildPrompt(
   let tokens = "";
   if (metrics) {
     if (metrics.totalCost) cost = formatCost(metrics.totalCost);
-    if (metrics.totalTokens)
-      tokens = formatTokens(metrics.totalTokens);
+    if (metrics.totalTokens) tokens = formatTokens(metrics.totalTokens);
   }
 
   const lines: string[] = [];
@@ -72,12 +71,17 @@ function buildPrompt(
     // Model & context info
     if (e.llmRequest) {
       const req = e.llmRequest;
-      const tierLabel = req.modelTier === "planner" ? " [PLANNER]" : " [EXECUTOR]";
+      const tierLabel =
+        req.modelTier === "planner" ? " [PLANNER]" : " [EXECUTOR]";
       lines.push(`Model: ${req.model}${tierLabel}`);
-      lines.push(`Compression: ${req.compressionLevel}, Messages: ${req.messageCount}`);
+      lines.push(
+        `Compression: ${req.compressionLevel}, Messages: ${req.messageCount}`,
+      );
       if (req.contextMetrics) {
         const cm = req.contextMetrics;
-        lines.push(`Context: ${cm.totalTokens}/${cm.maxTokens} tokens (${Math.round(cm.utilization * 100)}%), dropped: ${cm.droppedMessageCount}`);
+        lines.push(
+          `Context: ${cm.totalTokens}/${cm.maxTokens} tokens (${Math.round(cm.utilization * 100)}%), dropped: ${cm.droppedMessageCount}`,
+        );
       }
     }
     // LLM response
@@ -95,14 +99,18 @@ function buildPrompt(
         lines.push(`Actual model (failover): ${resp.actualModel}`);
       }
       if (resp.usage) {
-        lines.push(`Tokens: ${resp.usage.prompt_tokens} in / ${resp.usage.completion_tokens} out${resp.usage.cost ? ` ($${resp.usage.cost.toFixed(4)})` : ""}`);
+        lines.push(
+          `Tokens: ${resp.usage.prompt_tokens} in / ${resp.usage.completion_tokens} out${resp.usage.cost ? ` ($${resp.usage.cost.toFixed(4)})` : ""}`,
+        );
       }
       lines.push(`LLM latency: ${resp.durationMs}ms`);
     }
     // Perception
     if (e.perception) {
       const p = e.perception;
-      lines.push(`Perception [${p.model}]: ${p.cached ? "CACHED" : `${p.durationMs}ms`}`);
+      lines.push(
+        `Perception [${p.model}]: ${p.cached ? "CACHED" : `${p.durationMs}ms`}`,
+      );
       if (p.interpretation) {
         lines.push(`  Vision: ${truncate(p.interpretation, 500)}`);
       }
@@ -111,15 +119,15 @@ function buildPrompt(
     if (e.progressState) {
       const ps = e.progressState;
       if (ps.stagnantTurns > 0 || ps.signal) {
-        lines.push(`Stagnation: ${ps.stagnantTurns} stagnant turns${ps.signal ? `, signal: ${ps.signal}` : ""}`);
+        lines.push(
+          `Stagnation: ${ps.stagnantTurns} stagnant turns${ps.signal ? `, signal: ${ps.signal}` : ""}`,
+        );
       }
     }
     // Tool executions
     const toolExecs = e.toolExecutions || [];
     for (const t of toolExecs) {
-      lines.push(
-        `  Tool: ${t.toolName}(${JSON.stringify(t.args)})`,
-      );
+      lines.push(`  Tool: ${t.toolName}(${JSON.stringify(t.args)})`);
       lines.push(
         `  Result [${t.success ? "OK" : "ERROR"}]: ${truncate(t.result, 500)}`,
       );
@@ -197,9 +205,7 @@ export default function StoryPanel() {
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef("");
 
-  const session = sessions.find(
-    (s) => s.sessionId === currentSessionId,
-  );
+  const session = sessions.find((s) => s.sessionId === currentSessionId);
   const cachedStory = currentSessionId
     ? storyCache[currentSessionId]
     : undefined;
@@ -324,7 +330,15 @@ export default function StoryPanel() {
     if (currentEntries.length === 0) return;
     autoTriggered.current = true;
     generate();
-  }, [currentSessionId, session, cachedStory, storyLoading, storyError, currentEntries, generate]);
+  }, [
+    currentSessionId,
+    session,
+    cachedStory,
+    storyLoading,
+    storyError,
+    currentEntries,
+    generate,
+  ]);
 
   // Reset auto-trigger when session changes
   useEffect(() => {
@@ -345,7 +359,9 @@ export default function StoryPanel() {
       className="px-2 py-1 text-xs rounded bg-trace-bg border border-trace-border text-trace-text focus:outline-none focus:border-trace-accent cursor-pointer"
     >
       {STORY_MODELS.map((m) => (
-        <option key={m} value={m}>{m}</option>
+        <option key={m} value={m}>
+          {m}
+        </option>
       ))}
     </select>
   );
@@ -401,7 +417,9 @@ export default function StoryPanel() {
 
   // Loading / streaming
   if (storyLoading) {
-    const html = streamText ? sanitizeHtml(marked.parse(streamText) as string) : "";
+    const html = streamText
+      ? sanitizeHtml(marked.parse(streamText) as string)
+      : "";
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">

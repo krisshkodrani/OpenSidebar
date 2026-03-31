@@ -9,9 +9,12 @@
 import { describe, test, expect } from "vitest";
 import "../setup";
 import {
+  buildFirstTurnTextOnlyNudge,
+  evaluateDoneTaskContractGuard,
   matchSuccessCriteria,
-  tokenizeStepText,
+  requiresGroundingReadBeforeDone,
   snapshotSearchText,
+  tokenizeStepText,
 } from "../../src/background/agent/loop-helpers";
 import type { DomSnapshot } from "../../src/types";
 
@@ -207,9 +210,137 @@ describe("matchSuccessCriteria", () => {
     // "coupon" in text, "save10" in value
     expect(r.satisfied).toBe(true);
   });
+
+  test("requires quoted phrase matches when criteria include exact text", () => {
+    const snap = makeSnapshot({
+      pageContent: "Warehouse Alpha inventory count: 4,827 units",
+    });
+    const r = matchSuccessCriteria({
+      successCriteria:
+        'Confirmation shows "Warehouse Gamma" and inventory count 6,412',
+      snapshot: snap,
+    });
+    expect(r.satisfied).toBe(false);
+    expect(r.requiredQuotedPhrases).toContain("warehouse gamma");
+    expect(r.requiredNumbers).toContain("6,412");
+  });
+
+  test("requires numeric literals from success criteria", () => {
+    const snap = makeSnapshot({
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+    });
+    const r = matchSuccessCriteria({
+      successCriteria:
+        'Confirmation shows "Warehouse Gamma" and inventory count 6,412',
+      snapshot: snap,
+    });
+    expect(r.satisfied).toBe(true);
+    expect(r.matchedQuotedPhrases).toContain("warehouse gamma");
+    expect(r.matchedNumbers).toContain("6,412");
+  });
+
+  test("requires named target phrases from success criteria", () => {
+    const betaSnap = makeSnapshot({
+      pageContent: "Warehouse Beta inventory count: 3,156 units",
+    });
+    const alphaStep = matchSuccessCriteria({
+      successCriteria: "Page shows Warehouse Alpha and the requested result value.",
+      snapshot: betaSnap,
+    });
+    expect(alphaStep.satisfied).toBe(false);
+    expect(alphaStep.requiredNamedPhrases).toContain("warehouse alpha");
+
+    const alphaSnap = makeSnapshot({
+      pageContent: "Warehouse Alpha inventory count: 4,827 units",
+    });
+    const alphaMatched = matchSuccessCriteria({
+      successCriteria: "Page shows Warehouse Alpha and the requested result value.",
+      snapshot: alphaSnap,
+    });
+    expect(alphaMatched.satisfied).toBe(true);
+    expect(alphaMatched.matchedNamedPhrases).toContain("warehouse alpha");
+  });
+});
+
+describe("requiresGroundingReadBeforeDone", () => {
+  test("requires grounding for summarize and report tasks", () => {
+    expect(
+      requiresGroundingReadBeforeDone(
+        "Summarize this page in 2-3 sentences and mention the key points.",
+      ),
+    ).toBe(true);
+    expect(
+      requiresGroundingReadBeforeDone(
+        "Extract the main points from this article and report them back.",
+      ),
+    ).toBe(true);
+  });
+
+  test("does not require grounding for trivial page metadata questions", () => {
+    expect(
+      requiresGroundingReadBeforeDone("What is the title of this page?"),
+    ).toBe(false);
+    expect(
+      requiresGroundingReadBeforeDone("What is the URL of this page?"),
+    ).toBe(false);
+  });
+});
+
+describe("buildFirstTurnTextOnlyNudge", () => {
+  test("nudges summarize tasks to read_page before done", () => {
+    const nudge = buildFirstTurnTextOnlyNudge(
+      "Summarize this page in 2-3 sentences.",
+    );
+    expect(nudge).toContain("Call read_page first");
+    expect(nudge).toContain("done({\"summary\": \"...\"})");
+  });
+
+  test("keeps direct done nudge for trivial questions", () => {
+    const nudge = buildFirstTurnTextOnlyNudge(
+      "What is the title of this page?",
+    );
+    expect(nudge).toContain("wrap it in done");
+    expect(nudge).not.toContain("Call read_page first");
+  });
 });
 
 // ── Rate limit (Layer 3) — behavioral documentation ──────────────────
+
+describe("evaluateDoneTaskContractGuard", () => {
+  test("blocks done when final summary drops required report targets", () => {
+    const result = evaluateDoneTaskContractGuard({
+      query:
+        "Click through to Warehouse Gamma, then go back to Warehouse Alpha and call done() reporting BOTH inventory counts: Gamma and Alpha.",
+      summary: "Warehouse Gamma inventory was reviewed successfully.",
+      snapshot: makeSnapshot({
+        title: "Warehouse Gamma",
+        url: "https://shop.example.com/warehouse/gamma",
+        pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      }),
+    });
+
+    expect(result.blocked).toBe(true);
+    expect(result.summaryCoverage.missingEntities).toContain("warehouse alpha");
+    expect(result.missingReturnTarget).toBe(true);
+  });
+
+  test("passes once the summary covers required entities and the page is back at the return target", () => {
+    const result = evaluateDoneTaskContractGuard({
+      query:
+        "Click through to Warehouse Gamma, then go back to Warehouse Alpha and call done() reporting BOTH inventory counts: Gamma and Alpha.",
+      summary:
+        "Inventory counts collected: Warehouse Gamma has 6,412 units and Warehouse Alpha has 4,827 units.",
+      snapshot: makeSnapshot({
+        title: "Warehouse Alpha",
+        url: "https://shop.example.com/warehouse/alpha",
+        pageContent: "Warehouse Alpha inventory count: 4,827 units",
+      }),
+    });
+
+    expect(result.blocked).toBe(false);
+    expect(result.reason).toBeNull();
+  });
+});
 
 describe("consecutiveAutoAdvances rate limit (behavioral spec)", () => {
   // These document the expected behavior without needing a full AgentLoop instance.

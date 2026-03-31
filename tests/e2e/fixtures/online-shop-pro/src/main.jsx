@@ -90,26 +90,35 @@ function Layout({ children, currentPath }) {
   );
 }
 
+function getLocationState() {
+  const pathname = window.location.pathname || "/";
+  const search = window.location.search || "";
+  return {
+    pathname,
+    locationKey: `${pathname}${search}`,
+  };
+}
+
 function App() {
-  const [currentPath, setCurrentPath] = useState("/shop");
+  const [locationState, setLocationState] = useState(() => getLocationState());
+  const currentPath = locationState.pathname;
 
   useEffect(() => {
-    // Get current path from URL
-    const path = window.location.pathname;
-    const cleanPath = path || "/";
-    setCurrentPath(cleanPath);
+    const syncLocationState = () => {
+      const nextState = getLocationState();
+      setLocationState(nextState);
 
-    // Update document.title so chrome.tabs.get() returns the correct title
-    const route = routes.find((r) => r.path === cleanPath);
-    if (route?.title) document.title = route.title;
-
-    // Handle popstate for SPA navigation
-    const handlePopstate = () => {
-      const newPath = window.location.pathname || "/";
-      setCurrentPath(newPath);
-      const r = routes.find((rt) => rt.path === newPath);
-      if (r?.title) document.title = r.title;
+      // Update document.title so chrome.tabs.get() returns the correct title.
+      const route = routes.find((r) => r.path === nextState.pathname);
+      if (route?.title) document.title = route.title;
     };
+
+    syncLocationState();
+
+    const handlePopstate = () => {
+      syncLocationState();
+    };
+
     window.addEventListener("popstate", handlePopstate);
     return () => window.removeEventListener("popstate", handlePopstate);
   }, []);
@@ -119,7 +128,7 @@ function App() {
 
   return (
     <Layout currentPath={currentPath}>
-      <RouteComponent />
+      <RouteComponent key={locationState.locationKey} />
     </Layout>
   );
 }

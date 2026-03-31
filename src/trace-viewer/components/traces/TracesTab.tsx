@@ -103,9 +103,7 @@ export default function TracesTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSessionId]);
 
-  const currentSession = sessions.find(
-    (s) => s.sessionId === currentSessionId,
-  );
+  const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
 
   return (
     <PanelLayout

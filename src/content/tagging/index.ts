@@ -233,7 +233,13 @@ export function tagElements(): TaggedElement[] {
       role: entry.el.getAttribute("role") || inferRole(entry.el),
       text: truncateText(getVisibleText(entry.el), 80),
       attributes: extractAttributes(entry.el),
-      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, pageY: Math.round(rect.y + window.scrollY) },
+      rect: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        pageY: Math.round(rect.y + window.scrollY),
+      },
       isVisible: true,
       isDisabled: isDisabled(entry.el),
     });
