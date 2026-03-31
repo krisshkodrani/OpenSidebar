@@ -6,6 +6,11 @@ import { renderPrompt } from "../../prompts";
 import type { Difficulty, RuntimeLimits } from "./constants";
 import type { ToolProfile } from "../tools/metadata";
 import { tokenizeStepText } from "./loop-helpers";
+import {
+  buildTaskContract,
+  repairPlanCoverage,
+  synthesizePlanFromTaskContract,
+} from "./task-contract";
 
 /** Generic criteria patterns that have no DOM-observable tokens */
 const GENERIC_CRITERIA = [
@@ -210,8 +215,7 @@ export function inferToolProfileForStep(
   const isJsRelated =
     /(execute_js|javascript|data.attribute|dataset|computed.*value|window\.|document\.get|querySelector|programmatic|console)/.test(
       primaryText,
-    ) ||
-    /(execute_js|data.attribute|dataset)/.test(fullText);
+    ) || /(execute_js|data.attribute|dataset)/.test(fullText);
 
   if (isJsRelated) {
     return "inspect_hidden_state";
@@ -221,8 +225,7 @@ export function inferToolProfileForStep(
   const isBackNavigation =
     /(go_back|go back|browser back|history back|back button|return.*previous|previous page)/.test(
       primaryText,
-    ) ||
-    /(go_back|go back|browser back)/.test(fullText);
+    ) || /(go_back|go back|browser back)/.test(fullText);
 
   if (isBackNavigation) {
     return "navigate";
@@ -279,7 +282,10 @@ export class TaskPlanner {
   /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
   private getExecutorLlm(): LLMClient {
     if (!this.executorLlm) {
-      this.executorLlm = new LLMClient(this.openRouterApiKey, this.modelOverrides);
+      this.executorLlm = new LLMClient(
+        this.openRouterApiKey,
+        this.modelOverrides,
+      );
       // Stay on executor tier — never switchToPlanner
     }
     return this.executorLlm;
@@ -375,18 +381,105 @@ export class TaskPlanner {
         }
       }
 
-      // Guard: if difficulty is "simple" but model said isMultiStep, override.
-      // Simple tasks (read, summarize, single interactions) should never be decomposed.
-      const forceSimple = parsed.isMultiStep && difficulty === "simple";
+      const taskContract = buildTaskContract(query);
+      const requiresStructuredPlan =
+        taskContract.requiresRoundTrip ||
+        taskContract.reportTargets.length > 1 ||
+        taskContract.requiredEntities.length > 1;
+
+      // Guard: if difficulty is "simple" but model said isMultiStep, override only
+      // for truly single-step work. Round trips and multi-report tasks still need structure.
+      const forceSimple =
+        parsed.isMultiStep && difficulty === "simple" && !requiresStructuredPlan;
+      const synthesizedFallback = synthesizePlanFromTaskContract(query);
       if (forceSimple) {
         logger.info(
           "agent",
           "Planner returned isMultiStep=true but difficulty=simple — overriding to single-step",
-          { originalStepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0 },
+          {
+            originalStepCount: Array.isArray(parsed.steps)
+              ? parsed.steps.length
+              : 0,
+            requiresStructuredPlan,
+          },
         );
       }
 
       if (!parsed.isMultiStep || forceSimple) {
+        // Use synthesized fallback only when the planner produced NO usable
+        // steps, or when the task requires a round-trip and the planner missed
+        // the return leg. For normal multi-step tasks, the planner's steps
+        // preserve the user's specific instructions (names, values, codes)
+        // while the synthesis creates garbled entity-concatenation objectives.
+        const plannerHasSteps =
+          Array.isArray(parsed.steps) &&
+          parsed.steps.some(
+            (s: any) => typeof s?.objective === "string" && s.objective.trim(),
+          );
+        if (synthesizedFallback && !forceSimple && !plannerHasSteps) {
+          logger.info(
+            "agent",
+            "Planner under-decomposed task; using task-contract synthesis",
+            {
+              synthesizedStepCount: synthesizedFallback.length,
+              difficulty,
+            },
+          );
+          return {
+            subtasks: synthesizedFallback.map((step) => step.objective),
+            steps: synthesizedFallback,
+            difficulty,
+            limitOverrides,
+            instrumentation: {
+              outcome: "structured_steps",
+              parsedStepCount: synthesizedFallback.length,
+              parsedSubtaskCount: synthesizedFallback.length,
+              requestedMultiStep: true,
+            },
+          };
+        }
+
+        // Round-trip tasks: when planner returned steps but under-decomposed,
+        // repair coverage by adding the missing return leg instead of replacing
+        // with synthesis (which loses specific instructions).
+        if (plannerHasSteps && taskContract.requiresRoundTrip) {
+          const rawSteps = (parsed.steps as any[]).filter(
+            (s: any) => typeof s?.objective === "string" && s.objective.trim(),
+          );
+          const simpleSteps = rawSteps.map((s: any) => ({
+            objective: String(s.objective).trim(),
+            successCriteria:
+              typeof s.successCriteria === "string" && s.successCriteria.trim()
+                ? s.successCriteria.trim()
+                : `Page shows: ${String(s.objective).trim().slice(0, 60)}`,
+            dependencies: [] as number[],
+            assumptions: [] as string[],
+          }));
+          const repairedSteps = repairPlanCoverage({ query, steps: simpleSteps });
+          if (repairedSteps.length >= 2) {
+            logger.info(
+              "agent",
+              "Planner under-decomposed round-trip; repaired with return leg",
+              {
+                originalStepCount: simpleSteps.length,
+                repairedStepCount: repairedSteps.length,
+              },
+            );
+            return {
+              subtasks: repairedSteps.map((step) => step.objective),
+              steps: repairedSteps,
+              difficulty,
+              limitOverrides,
+              instrumentation: {
+                outcome: "structured_steps",
+                parsedStepCount: repairedSteps.length,
+                parsedSubtaskCount: repairedSteps.length,
+                requestedMultiStep: true,
+              },
+            };
+          }
+        }
+
         // Simple task — extract single step if provided, otherwise empty
         const singleSteps = Array.isArray(parsed.steps) ? parsed.steps : [];
         const singleSubtasks = singleSteps
@@ -424,7 +517,10 @@ export class TaskPlanner {
             obj.successCriteria.trim().length > 0
               ? obj.successCriteria.trim()
               : `Step "${obj.objective.trim()}" is completed and verified.`;
-          const successCriteria = ensureObservableCriteria(rawCriteria, obj.objective.trim());
+          const successCriteria = ensureObservableCriteria(
+            rawCriteria,
+            obj.objective.trim(),
+          );
 
           const dependencies: number[] = [];
           if (Array.isArray(obj.dependencies)) {
@@ -529,7 +625,8 @@ export class TaskPlanner {
         return result;
       };
 
-      const steps = parseSteps(parsed.steps);
+      const parsedSteps = parseSteps(parsed.steps);
+      const steps = parsedSteps ? repairPlanCoverage({ query, steps: parsedSteps }) : null;
       const legacySubtasks = Array.isArray(parsed.subtasks)
         ? parsed.subtasks
             .filter((step: unknown): step is string => typeof step === "string")
@@ -540,6 +637,33 @@ export class TaskPlanner {
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
       if (subtasks.length < 2) {
+        // Only fall back to synthesis when the planner returned NO parsed
+        // steps at all, or when the task requires a round-trip and the planner
+        // missed the return leg. For normal tasks, the planner's steps preserve
+        // the user's specific instructions (names, values, codes) while the
+        // synthesis creates garbled entity-concatenation objectives.
+        if (synthesizedFallback && !parsedSteps) {
+          logger.info(
+            "agent",
+            "Planner returned insufficient subtasks; using task-contract synthesis",
+            {
+              synthesizedStepCount: synthesizedFallback.length,
+              difficulty,
+            },
+          );
+          return {
+            subtasks: synthesizedFallback.map((step) => step.objective),
+            steps: synthesizedFallback,
+            difficulty,
+            limitOverrides,
+            instrumentation: {
+              outcome: "structured_steps",
+              parsedStepCount: synthesizedFallback.length,
+              parsedSubtaskCount: synthesizedFallback.length,
+              requestedMultiStep: true,
+            },
+          };
+        }
         // Simple task — return difficulty but no plan
         logger.info(
           "agent",
@@ -1036,7 +1160,10 @@ Current perception:\n${perception.slice(0, 800)}`,
             : `Step completed.`;
         newSteps.push({
           objective: replanObjective,
-          successCriteria: ensureObservableCriteria(replanRawCriteria, replanObjective),
+          successCriteria: ensureObservableCriteria(
+            replanRawCriteria,
+            replanObjective,
+          ),
           dependencies: [],
           assumptions: Array.isArray(obj.assumptions)
             ? (obj.assumptions as unknown[])

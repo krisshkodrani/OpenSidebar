@@ -76,13 +76,13 @@ describe("buildCompletedStepsSummary", () => {
     expect(summary).not.toContain("Step three");
   });
 
-  test("truncates long results to 100 chars", () => {
-    const longResult = "A".repeat(200);
+  test("truncates long results to 500 chars", () => {
+    const longResult = "A".repeat(800);
     const nodes = [makeCompletedNode("n1", "Long result step", longResult)];
     const summary = buildCompletedStepsSummary(nodes);
-    // The result portion should be at most 100 chars
+    // The result portion should be at most 500 chars
     const resultPart = summary.split("→")[1].trim();
-    expect(resultPart.length).toBeLessThanOrEqual(100);
+    expect(resultPart.length).toBeLessThanOrEqual(500);
   });
 
   test("caps at last 10 completed nodes with omission note", () => {
