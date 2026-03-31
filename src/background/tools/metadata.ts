@@ -57,7 +57,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   },
   [ToolName.SCROLL_PAGE]: {
     risk: RiskLevel.LOW,
-    domModifying: false,
+    domModifying: true,
     sequential: false,
   },
   [ToolName.FIND_ELEMENT]: {
@@ -445,7 +445,8 @@ export function buildDomAwareProfile(
 
   for (const el of elements) {
     if (el.attributes?.draggable === "true") hasDraggable = true;
-    if (el.tagName === "input" && el.attributes?.type === "file") hasFileInput = true;
+    if (el.tagName === "input" && el.attributes?.type === "file")
+      hasFileInput = true;
     if (el.tagName === "canvas") hasCanvas = true;
   }
 

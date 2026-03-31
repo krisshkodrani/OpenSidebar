@@ -34,8 +34,11 @@ describe("Tool Metadata", () => {
       expect(DOM_MODIFYING_TOOLS.has(ToolName.XRAY_PAGE)).toBe(true);
     });
 
+    test("contains scroll_page (triggers snapshot refresh for lazy content)", () => {
+      expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(true);
+    });
+
     test("does not contain read-only tools", () => {
-      expect(DOM_MODIFYING_TOOLS.has(ToolName.SCROLL_PAGE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.FIND_ELEMENT)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.NAVIGATE)).toBe(false);
       expect(DOM_MODIFYING_TOOLS.has(ToolName.ESCALATE)).toBe(false);
@@ -137,6 +140,7 @@ describe("Tool Metadata", () => {
           expect(CACHEABLE_TOOLS.has(tool)).toBe(true);
           continue;
         }
+        // scroll_page is domModifying (triggers snapshot refresh for lazy content) but not cacheable
         // Other DOM-modifying tools should not be cacheable (they change the page)
         expect(CACHEABLE_TOOLS.has(tool)).toBe(false);
       }

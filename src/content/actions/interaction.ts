@@ -380,9 +380,17 @@ export function executeSelectOption(args: SelectOptionArgs): {
     };
   }
 
-  // Scroll into view, set the value and dispatch change event
+  // Scroll into view and set the value using native setter for React compatibility
   el.scrollIntoView({ behavior: "instant", block: "center" });
-  el.value = match.value;
+
+  // Use native prototype setter to bypass React/Vue controlled select interception
+  const selectProto = HTMLSelectElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(selectProto, "value")?.set;
+  if (setter) {
+    setter.call(el, match.value);
+  } else {
+    el.value = match.value;
+  }
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.dispatchEvent(new Event("input", { bubbles: true }));
 
@@ -425,7 +433,17 @@ export function executePressKey(args: PressKeyArgs): {
   }
 
   target.dispatchEvent(new KeyboardEvent("keydown", opts));
+  target.dispatchEvent(new KeyboardEvent("keypress", opts));
   target.dispatchEvent(new KeyboardEvent("keyup", opts));
+
+  if (args.key === "Enter") {
+    const focusedEl =
+      target instanceof HTMLElement ? target : document.activeElement;
+    const form = focusedEl instanceof Element ? focusedEl.closest("form") : null;
+    if (form instanceof HTMLFormElement) {
+      form.requestSubmit();
+    }
+  }
 
   const modStr = modifiers.length > 0 ? ` (${modifiers.join("+")})` : "";
   return {
@@ -566,9 +584,24 @@ export function executeRightClick(args: RightClickArgs): {
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
-  el.dispatchEvent(
-    new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-  );
+  const rect = el.getBoundingClientRect();
+  const clientX = rect.left + rect.width / 2;
+  const clientY = rect.top + rect.height / 2;
+  const eventOpts = {
+    bubbles: true,
+    cancelable: true,
+    button: 2,
+    buttons: 2,
+    clientX,
+    clientY,
+  };
+  const PointerCtor =
+    typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
+  el.dispatchEvent(new PointerCtor("pointerdown", eventOpts));
+  el.dispatchEvent(new MouseEvent("mousedown", eventOpts));
+  el.dispatchEvent(new PointerCtor("pointerup", eventOpts));
+  el.dispatchEvent(new MouseEvent("mouseup", eventOpts));
+  el.dispatchEvent(new MouseEvent("contextmenu", eventOpts));
 
   return {
     success: true,
