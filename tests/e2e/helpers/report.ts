@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "fs";
 
 interface TestRecord {
   name: string;
-  passed: boolean;
+  passed: boolean | null;
   durationMs: number;
   traceFiles: string[];
 }
@@ -70,7 +70,12 @@ class SuiteReport {
   private records: TestRecord[] = [];
   private printed = false;
 
-  record(name: string, passed: boolean, durationMs: number, traceFiles: string[]): void {
+  record(
+    name: string,
+    passed: boolean | null,
+    durationMs: number,
+    traceFiles: string[],
+  ): void {
     this.records.push({ name, passed, durationMs, traceFiles });
   }
 
@@ -109,7 +114,7 @@ class SuiteReport {
 
       rows.push({
         name: rec.name,
-        result: rec.passed ? "PASS" : "FAIL",
+        result: rec.passed == null ? "UNK" : rec.passed ? "PASS" : "FAIL",
         turns,
         cost,
         time: formatDuration(rec.durationMs),

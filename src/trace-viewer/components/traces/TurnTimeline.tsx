@@ -19,15 +19,28 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
       const name = tc.function.name;
       try {
         const args = JSON.parse(tc.function.arguments);
-        if (args.id != null) { parts.push(`${name} [${args.id}]`); continue; }
-        if (args.url) { parts.push(`${name} → ${args.url.slice(0, 40)}`); continue; }
-        if (args.direction) { parts.push(`${name} ${args.direction}`); continue; }
+        if (args.id != null) {
+          parts.push(`${name} [${args.id}]`);
+          continue;
+        }
+        if (args.url) {
+          parts.push(`${name} → ${args.url.slice(0, 40)}`);
+          continue;
+        }
+        if (args.direction) {
+          parts.push(`${name} ${args.direction}`);
+          continue;
+        }
         if (args.text) {
-          const t = args.text.length > 30 ? args.text.slice(0, 27) + "…" : args.text;
+          const t =
+            args.text.length > 30 ? args.text.slice(0, 27) + "…" : args.text;
           parts.push(`${name} "${t}"`);
           continue;
         }
-        if (args.key) { parts.push(`${name} ${args.key}`); continue; }
+        if (args.key) {
+          parts.push(`${name} ${args.key}`);
+          continue;
+        }
         parts.push(name);
       } catch {
         parts.push(name);
@@ -60,9 +73,10 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
           const dur = entry.llmResponse?.durationMs ?? 0;
           const widthPct = Math.max((dur / maxDuration) * 100, 2);
           const tier = entry.llmRequest?.modelTier;
-          const bgColor = tier === "planner"
-            ? "bg-amber-500/60 hover:bg-amber-500/80"
-            : "bg-cyan-500/50 hover:bg-cyan-500/70";
+          const bgColor =
+            tier === "planner"
+              ? "bg-amber-500/60 hover:bg-amber-500/80"
+              : "bg-cyan-500/50 hover:bg-cyan-500/70";
 
           const turnNum = entry.turnNumber ?? i + 1;
 

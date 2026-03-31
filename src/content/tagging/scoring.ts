@@ -24,8 +24,10 @@ export function collapseNearIdentical(elements: Element[]): {
     ];
 
     const labelText =
-      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels &&
-      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels!.length > 0
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
+        .labels &&
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).labels!
+        .length > 0
         ? Array.from(
             (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement)
               .labels!,
@@ -36,7 +38,9 @@ export function collapseNearIdentical(elements: Element[]): {
         : "";
 
     const text =
-      attrCandidates.find((candidate) => candidate && candidate.trim().length > 0) ||
+      attrCandidates.find(
+        (candidate) => candidate && candidate.trim().length > 0,
+      ) ||
       labelText ||
       el.textContent?.trim() ||
       "";

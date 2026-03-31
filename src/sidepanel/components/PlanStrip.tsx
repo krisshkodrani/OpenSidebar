@@ -213,7 +213,9 @@ export function PlanStrip({
               size={12}
               className="shrink-0 text-blue-600 dark:text-blue-400"
             />
-            <span className={`text-[11px] font-medium text-blue-800 dark:text-blue-200 ${confirmed ? "animate-pulse" : ""}`}>
+            <span
+              className={`text-[11px] font-medium text-blue-800 dark:text-blue-200 ${confirmed ? "animate-pulse" : ""}`}
+            >
               {confirmed ? "Starting..." : "Plan ready"}
             </span>
             {pendingPlan.difficulty && (
@@ -347,100 +349,105 @@ export function PlanStrip({
           )}
 
           {/* --- PROGRESS / COMPLETION --- */}
-          {(mode === "progress" || mode === "completion") && rows.length > 0 && (
-            <>
-              {/* Recovery banner */}
-              {taskRecovery && (
-                <div className="mb-2 rounded border border-primary-200 dark:border-primary-800 bg-primary-50/70 dark:bg-primary-900/20 px-2 py-1.5 text-[11px] text-primary-700 dark:text-primary-300 flex items-center gap-1.5">
-                  <span>
-                    Recovered: {taskRecovery.completedSubtasks}/
-                    {taskRecovery.totalSubtasks} done,{" "}
-                    {taskRecovery.pendingSubtasks} pending
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setInputText(buildRecoveryHint(taskRecovery));
-                    }}
-                    className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-medium text-primary-600 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-100 transition-colors"
-                  >
-                    <RotateCcw size={9} />
-                    Resume
-                  </button>
-                </div>
-              )}
-
-              {/* Vertical timeline */}
-              <div className="ml-1">
-                {rows.map((row, i) => (
-                  <div key={row.id} ref={row.status === "running" ? runningRef : undefined} className="flex items-start gap-2">
-                    <div className="flex flex-col items-center">
-                      <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                        <PlanStepIcon status={row.status} size={14} />
-                      </div>
-                      {i < rows.length - 1 && (
-                        <div
-                          className={`w-px flex-1 min-h-[8px] ${
-                            row.status === "completed"
-                              ? "bg-green-300/60 dark:bg-green-700/40"
-                              : "bg-warm-200/60 dark:bg-warm-700/40"
-                          }`}
-                        />
-                      )}
-                    </div>
-                    <div
-                      className={`pb-2 min-w-0 flex-1 ${
-                        row.status === "running"
-                          ? "border-l-2 border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
-                          : ""
-                      }`}
+          {(mode === "progress" || mode === "completion") &&
+            rows.length > 0 && (
+              <>
+                {/* Recovery banner */}
+                {taskRecovery && (
+                  <div className="mb-2 rounded border border-primary-200 dark:border-primary-800 bg-primary-50/70 dark:bg-primary-900/20 px-2 py-1.5 text-[11px] text-primary-700 dark:text-primary-300 flex items-center gap-1.5">
+                    <span>
+                      Recovered: {taskRecovery.completedSubtasks}/
+                      {taskRecovery.totalSubtasks} done,{" "}
+                      {taskRecovery.pendingSubtasks} pending
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInputText(buildRecoveryHint(taskRecovery));
+                      }}
+                      className="ml-auto inline-flex items-center gap-0.5 text-[10px] font-medium text-primary-600 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-100 transition-colors"
                     >
-                      <span
-                        className={`text-xs leading-relaxed ${
+                      <RotateCcw size={9} />
+                      Resume
+                    </button>
+                  </div>
+                )}
+
+                {/* Vertical timeline */}
+                <div className="ml-1">
+                  {rows.map((row, i) => (
+                    <div
+                      key={row.id}
+                      ref={row.status === "running" ? runningRef : undefined}
+                      className="flex items-start gap-2"
+                    >
+                      <div className="flex flex-col items-center">
+                        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                          <PlanStepIcon status={row.status} size={14} />
+                        </div>
+                        {i < rows.length - 1 && (
+                          <div
+                            className={`w-px flex-1 min-h-[8px] ${
+                              row.status === "completed"
+                                ? "bg-green-300/60 dark:bg-green-700/40"
+                                : "bg-warm-200/60 dark:bg-warm-700/40"
+                            }`}
+                          />
+                        )}
+                      </div>
+                      <div
+                        className={`pb-2 min-w-0 flex-1 ${
                           row.status === "running"
-                            ? "text-warm-800 dark:text-warm-100 font-medium"
-                            : row.status === "pending"
-                              ? "text-warm-400 dark:text-warm-500"
-                              : "text-warm-600 dark:text-warm-300"
+                            ? "border-l-2 border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
+                            : ""
                         }`}
                       >
-                        {row.description}
-                      </span>
-                      {/* Live activity label under running step */}
-                      {row.status === "running" && latestStepLabel && (
-                        <div className="text-[10px] text-primary-500 dark:text-primary-400 truncate mt-0.5">
-                          {latestStepLabel}
-                        </div>
-                      )}
-                      {row.evidenceSnippet &&
-                        row.status !== "pending" &&
-                        row.status !== "running" && (
-                          <div className="mt-0.5 text-[10px] text-warm-400 dark:text-warm-500 line-clamp-2 leading-relaxed">
-                            {row.evidenceSnippet}
+                        <span
+                          className={`text-xs leading-relaxed ${
+                            row.status === "running"
+                              ? "text-warm-800 dark:text-warm-100 font-medium"
+                              : row.status === "pending"
+                                ? "text-warm-400 dark:text-warm-500"
+                                : "text-warm-600 dark:text-warm-300"
+                          }`}
+                        >
+                          {row.description}
+                        </span>
+                        {/* Live activity label under running step */}
+                        {row.status === "running" && latestStepLabel && (
+                          <div className="text-[10px] text-primary-500 dark:text-primary-400 truncate mt-0.5">
+                            {latestStepLabel}
                           </div>
                         )}
+                        {row.evidenceSnippet &&
+                          row.status !== "pending" &&
+                          row.status !== "running" && (
+                            <div className="mt-0.5 text-[10px] text-warm-400 dark:text-warm-500 line-clamp-2 leading-relaxed">
+                              {row.evidenceSnippet}
+                            </div>
+                          )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Skip button */}
-              {canSkip && (
-                <div className="mt-1 flex justify-end">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void skipCurrentSubtask();
-                    }}
-                    className="inline-flex items-center gap-1 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-                  >
-                    <SkipForward size={10} />
-                    Skip step
-                  </button>
+                  ))}
                 </div>
-              )}
-            </>
-          )}
+
+                {/* Skip button */}
+                {canSkip && (
+                  <div className="mt-1 flex justify-end">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void skipCurrentSubtask();
+                      }}
+                      className="inline-flex items-center gap-1 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 text-[10px] font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                    >
+                      <SkipForward size={10} />
+                      Skip step
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
         </div>
       </div>
     </div>

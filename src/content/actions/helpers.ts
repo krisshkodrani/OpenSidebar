@@ -13,7 +13,9 @@ export function normalizeTagId(id: number | string | unknown): number {
   return Number.NaN;
 }
 
-export function getTaggedElement(id: number | string | unknown): Element | null {
+export function getTaggedElement(
+  id: number | string | unknown,
+): Element | null {
   const tagId = normalizeTagId(id);
   if (!Number.isFinite(tagId)) return null;
   return getTagMap().get(tagId) ?? null;
@@ -45,8 +47,7 @@ export function staleIdError(id: number | unknown): {
 export function describeElement(el: Element, id: number): string {
   const tag = el.tagName.toLowerCase();
   const text = getVisibleText(el).slice(0, 40);
-  const label =
-    el.getAttribute("aria-label") || el.getAttribute("name") || "";
+  const label = el.getAttribute("aria-label") || el.getAttribute("name") || "";
   const parts = [`[${id}] <${tag}>`];
   if (label) parts.push(`"${label}"`);
   else if (text) parts.push(`"${text}"`);

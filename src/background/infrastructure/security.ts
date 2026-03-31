@@ -124,7 +124,9 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
       const code = (args.code as string) || (args.expression as string) || "";
       // Block navigation via location assignment (any accessor variant)
       if (
-        /(?:window|document|globalThis|self|top|parent|frames\s*\[.*?\])\.location/i.test(code) ||
+        /(?:window|document|globalThis|self|top|parent|frames\s*\[.*?\])\.location/i.test(
+          code,
+        ) ||
         /\blocation\s*\.\s*(?:href|assign|replace|reload)/i.test(code) ||
         /\blocation\s*=/i.test(code)
       ) {
@@ -136,12 +138,14 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
         };
       }
       // Block window.open (can open arbitrary URLs including javascript:)
-      if (/\bwindow\.open\s*\(/i.test(code) || /\bopen\s*\(\s*['"`]/i.test(code)) {
+      if (
+        /\bwindow\.open\s*\(/i.test(code) ||
+        /\bopen\s*\(\s*['"`]/i.test(code)
+      ) {
         return {
           original: tc,
           blocked: true,
-          reason:
-            "window.open() is blocked. Use the create_tab tool instead.",
+          reason: "window.open() is blocked. Use the create_tab tool instead.",
         };
       }
       // Block document.write/writeln (arbitrary HTML/JS injection)
@@ -149,8 +153,7 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
         return {
           original: tc,
           blocked: true,
-          reason:
-            "document.write() is blocked due to XSS risk.",
+          reason: "document.write() is blocked due to XSS risk.",
         };
       }
       // Block eval and Function constructor (code obfuscation)
@@ -167,8 +170,7 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
         return {
           original: tc,
           blocked: true,
-          reason:
-            "Dynamic script injection is blocked due to XSS risk.",
+          reason: "Dynamic script injection is blocked due to XSS risk.",
         };
       }
     }

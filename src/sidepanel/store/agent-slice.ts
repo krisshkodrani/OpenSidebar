@@ -81,7 +81,9 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
         });
       }
     } catch (e) {
-      logger.warn("ui", "Failed to load agent state from storage", { error: e });
+      logger.warn("ui", "Failed to load agent state from storage", {
+        error: e,
+      });
     }
   },
 

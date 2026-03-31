@@ -4,7 +4,12 @@
  * Pure functions: no side effects, no chrome APIs.
  */
 
-import type { GoldenAction, DemoAction, ToolName, DomSnapshot } from "../../types";
+import type {
+  GoldenAction,
+  DemoAction,
+  ToolName,
+  DomSnapshot,
+} from "../../types";
 
 // --- Action → Tool Call Mapping ---
 

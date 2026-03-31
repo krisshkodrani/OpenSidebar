@@ -225,10 +225,7 @@ export interface PoolConfig {
 export class ProviderPool {
   private slots: ProviderSlot[];
 
-  constructor(
-    openRouterKey: string,
-    config: PoolConfig,
-  ) {
+  constructor(openRouterKey: string, config: PoolConfig) {
     this.slots = [];
     this.slots.push({
       provider: openRouterProvider(openRouterKey),
@@ -326,10 +323,7 @@ export class LLMClient {
    * @param openRouterApiKey - OpenRouter key (required as default provider)
    * @param options - Provider selection, model overrides, and feature flags
    */
-  constructor(
-    openRouterApiKey: string,
-    options?: LLMClientOptions,
-  ) {
+  constructor(openRouterApiKey: string, options?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
 
     const useOpenAI = options?.provider === "openai" && !!options?.openaiApiKey;
@@ -341,24 +335,34 @@ export class LLMClient {
       const executorModel = options?.executorModel || OPENAI_MODEL_EXECUTOR;
       const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
       // Build pools with OpenRouter constructor, then override provider to OpenAI
-      this.executorPool = new ProviderPool(oaiKey, { openRouterModel: executorModel });
+      this.executorPool = new ProviderPool(oaiKey, {
+        openRouterModel: executorModel,
+      });
       this.executorPool.getSlots()[0].provider = oaiProvider;
-      this.executorFallbackModel = options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
-      this.plannerPool = new ProviderPool(oaiKey, { openRouterModel: plannerModel });
+      this.executorFallbackModel =
+        options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
+      this.plannerPool = new ProviderPool(oaiKey, {
+        openRouterModel: plannerModel,
+      });
       this.plannerPool.getSlots()[0].provider = oaiProvider;
     } else {
       // OpenRouter (default): apply :nitro, prefix model IDs
       const nitro = options?.useNitro;
-      this.executorPool = new ProviderPool(
-        openRouterApiKey,
-        { openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro) },
-      );
+      this.executorPool = new ProviderPool(openRouterApiKey, {
+        openRouterModel: applyNitro(
+          options?.executorModel || MODEL_EXECUTOR,
+          nitro,
+        ),
+      });
       this.executorFallbackModel =
-        options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
-      this.plannerPool = new ProviderPool(
-        openRouterApiKey,
-        { openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro) },
-      );
+        options?.executorFallbackModel ||
+        MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+      this.plannerPool = new ProviderPool(openRouterApiKey, {
+        openRouterModel: applyNitro(
+          options?.plannerModel || MODEL_PLANNER,
+          nitro,
+        ),
+      });
     }
 
     // Initialize from executor pool's top priority
@@ -388,13 +392,16 @@ export class LLMClient {
     const slot = pool.getActive();
     return {
       providerId: slot.provider.providerId,
-      model: !this._isPlannerTier && this.executorModelOverride
-        ? this.executorModelOverride
-        : slot.model,
+      model:
+        !this._isPlannerTier && this.executorModelOverride
+          ? this.executorModelOverride
+          : slot.model,
     };
   }
 
-  public activateExecutorFallback(reason: "empty_response" = "empty_response"): boolean {
+  public activateExecutorFallback(
+    reason: "empty_response" = "empty_response",
+  ): boolean {
     if (this._isPlannerTier) return false;
     if (!this.executorFallbackModel) return false;
     if (this.executorModelOverride === this.executorFallbackModel) return false;
@@ -517,7 +524,9 @@ export class LLMClient {
 
         // Immediate provider failover on 429 (rate limit)
         if (response.status === 429 && providerId) {
-          const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
+          const pool = this._isPlannerTier
+            ? this.plannerPool
+            : this.executorPool;
           pool.cooldown(providerId);
           const fallback = pool.getNextFallback(providerId);
           if (fallback) {
@@ -550,7 +559,9 @@ export class LLMClient {
 
         // Permanent provider disable on 402 (credit exhaustion)
         if (response.status === 402 && providerId) {
-          const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
+          const pool = this._isPlannerTier
+            ? this.plannerPool
+            : this.executorPool;
           pool.disableForSession(providerId);
           logger.warn(
             "agent",
@@ -600,9 +611,10 @@ export class LLMClient {
     const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
-    let activeModel = !this._isPlannerTier && this.executorModelOverride
-      ? this.executorModelOverride
-      : activeSlot.model;
+    let activeModel =
+      !this._isPlannerTier && this.executorModelOverride
+        ? this.executorModelOverride
+        : activeSlot.model;
 
     if (!provider.apiKey) {
       throw new Error(
@@ -819,9 +831,10 @@ export class LLMClient {
     const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
-    let activeModel = !this._isPlannerTier && this.executorModelOverride
-      ? this.executorModelOverride
-      : activeSlot.model;
+    let activeModel =
+      !this._isPlannerTier && this.executorModelOverride
+        ? this.executorModelOverride
+        : activeSlot.model;
 
     if (!provider.apiKey) {
       throw new Error(

@@ -140,11 +140,7 @@ export function extractPageSkeleton(
   const seenTexts = new Set<string>();
 
   // Helper: try to add an element as a candidate
-  function tryAdd(
-    el: Element,
-    tier: Tier,
-    minText: number,
-  ): void {
+  function tryAdd(el: Element, tier: Tier, minText: number): void {
     if (!isElementVisible(el)) return;
 
     const text = getDirectText(el);

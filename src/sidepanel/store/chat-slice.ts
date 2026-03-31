@@ -268,10 +268,14 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           const lastCurrent = current[current.length - 1].timestamp;
           const lastStored = stored[stored.length - 1].timestamp;
           if (lastCurrent >= lastStored) {
-            logger.debug("ui", "Skipping storage load — in-memory messages are newer", {
-              inMemoryCount: current.length,
-              storedCount: stored.length,
-            });
+            logger.debug(
+              "ui",
+              "Skipping storage load — in-memory messages are newer",
+              {
+                inMemoryCount: current.length,
+                storedCount: stored.length,
+              },
+            );
             return;
           }
         }

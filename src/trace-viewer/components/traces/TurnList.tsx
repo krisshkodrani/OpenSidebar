@@ -69,7 +69,11 @@ export default function TurnList() {
   }
 
   return (
-    <div ref={parentRef} style={{ height: "100%", overflow: "auto" }} className="scrollbar-thin">
+    <div
+      ref={parentRef}
+      style={{ height: "100%", overflow: "auto" }}
+      className="scrollbar-thin"
+    >
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -92,7 +96,11 @@ export default function TurnList() {
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <TurnCard entry={entry} index={virtualRow.index} sessionId={sessionId} />
+              <TurnCard
+                entry={entry}
+                index={virtualRow.index}
+                sessionId={sessionId}
+              />
             </div>
           );
         })}

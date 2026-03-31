@@ -1,4 +1,9 @@
-﻿import { AgentStatus, RuntimeMessage, MessageSource, RiskLevel } from "../types";
+﻿import {
+  AgentStatus,
+  RuntimeMessage,
+  MessageSource,
+  RiskLevel,
+} from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
 
@@ -31,10 +36,14 @@ export function initializeBridge(
     const activeWsId = store.getState().activeWorkspaceId;
     if (message.workspaceId != null) {
       if (activeWsId == null) {
-        logger.debug("ui", "Dropping workspace-scoped message without active workspace", {
-          type: message.type,
-          messageWs: message.workspaceId,
-        });
+        logger.debug(
+          "ui",
+          "Dropping workspace-scoped message without active workspace",
+          {
+            type: message.type,
+            messageWs: message.workspaceId,
+          },
+        );
         return;
       }
       if (message.workspaceId !== activeWsId) {
@@ -47,7 +56,10 @@ export function initializeBridge(
       }
     }
 
-    logger.debug("ui", "Received message", { type: message.type, wsId: message.workspaceId });
+    logger.debug("ui", "Received message", {
+      type: message.type,
+      wsId: message.workspaceId,
+    });
     const state = store.getState();
 
     switch (message.type) {
@@ -313,19 +325,24 @@ export function initializeBridge(
       // Re-sync agent status after reconnect (SW may still be running a task)
       const wsId = store.getState().activeWorkspaceId;
       if (wsId) {
-        chrome.runtime.sendMessage({
-          type: "WORKSPACE_SYNC",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
-          payload: { workspaceId: wsId },
-        }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            type: "WORKSPACE_SYNC",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.SIDEPANEL,
+            payload: { workspaceId: wsId },
+          })
+          .catch(() => {});
       }
       port.onDisconnect.addListener(() => {
         port = null;
         if (tornDown) return;
         const state = store.getState();
         if (state.isAgentRunning) {
-          logger.warn("ui", "SW disconnected while agent running — resetting state");
+          logger.warn(
+            "ui",
+            "SW disconnected while agent running — resetting state",
+          );
           state.setAgentRunning(false);
           state.updateStatus(AgentStatus.IDLE, "Agent disconnected");
           state.finalizeStream();
@@ -358,7 +375,11 @@ export function initializeBridge(
       reconnectTimer = null;
     }
     if (port) {
-      try { port.disconnect(); } catch { /* context invalidated */ }
+      try {
+        port.disconnect();
+      } catch {
+        /* context invalidated */
+      }
       port = null;
     }
   };

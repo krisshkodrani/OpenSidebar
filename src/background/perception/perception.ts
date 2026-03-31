@@ -290,14 +290,16 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
   let panoramicNote = "";
   if (input.panoramicScreenshots?.length) {
     const imageLabels = input.panoramicScreenshots
-      .map((s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`)
+      .map(
+        (s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`,
+      )
       .join("\n");
     panoramicNote = [
       "",
       "NOTE: Multiple screenshots are provided showing different scroll positions.",
       `Image 1: current viewport at scroll Y=${input.scroll.y}.`,
       imageLabels,
-      "Report LAYOUT covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., \"logo visible in Image 2 (top)\").",
+      'Report LAYOUT covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., "logo visible in Image 2 (top)").',
     ].join("\n");
   }
 
@@ -329,7 +331,9 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
       },
       model: (() => {
         const base = settings.perceptionModel || OPENROUTER_PERCEPTION_MODEL;
-        return settings.useNitro && !base.endsWith(":nitro") ? `${base}:nitro` : base;
+        return settings.useNitro && !base.endsWith(":nitro")
+          ? `${base}:nitro`
+          : base;
       })(),
       providerId: "openrouter",
     });

@@ -557,6 +557,10 @@ export interface DomSnapshotRequest extends BaseMessage {
   payload: {
     /** Whether to re-tag elements or use cached tags */
     refresh: boolean;
+    /** When true, auto-dismiss viewport-covering overlays before snapshotting.
+     *  Default: true. Set false for post-tool refreshes so agent-triggered
+     *  dialogs (confirmation prompts, menus) are not destroyed. */
+    autoDismiss?: boolean;
   };
 }
 

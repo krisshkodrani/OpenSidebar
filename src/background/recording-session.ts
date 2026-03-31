@@ -148,7 +148,12 @@ export class RecordingSession {
       llmCallCount: 0,
       totalCachedTokens: 0,
       modelBreakdown: {
-        recording: { promptTokens: 0, completionTokens: 0, cost: 0, calls: this.turnCount },
+        recording: {
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          calls: this.turnCount,
+        },
       },
     };
 

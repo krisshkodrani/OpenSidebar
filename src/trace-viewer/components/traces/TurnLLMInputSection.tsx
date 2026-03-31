@@ -1,5 +1,8 @@
 import React from "react";
-import type { TraceLLMMessage, TraceContextMetrics } from "../../../types/traces";
+import type {
+  TraceLLMMessage,
+  TraceContextMetrics,
+} from "../../../types/traces";
 import CollapsibleSection from "../CollapsibleSection";
 import TurnLLMMessage from "./TurnLLMMessage";
 import { formatTokens } from "../../utils";

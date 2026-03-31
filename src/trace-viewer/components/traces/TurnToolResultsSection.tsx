@@ -2,7 +2,11 @@ import React from "react";
 import type { TraceToolExecution } from "../../../types/traces";
 import TurnToolCallItem from "./TurnToolCallItem";
 
-export default function TurnToolResultsSection({ toolExecutions }: { toolExecutions: TraceToolExecution[] }) {
+export default function TurnToolResultsSection({
+  toolExecutions,
+}: {
+  toolExecutions: TraceToolExecution[];
+}) {
   if (toolExecutions.length === 0) return null;
   return (
     <div className="mb-2.5">
@@ -10,8 +14,14 @@ export default function TurnToolResultsSection({ toolExecutions }: { toolExecuti
         Tool Results ({toolExecutions.length})
       </div>
       {toolExecutions.map((te, i) => (
-        <TurnToolCallItem key={i} toolName={te.toolName || ""} success={te.success ?? null}
-          result={te.result ?? null} error={te.error ?? null} durationMs={te.durationMs ?? null} />
+        <TurnToolCallItem
+          key={i}
+          toolName={te.toolName || ""}
+          success={te.success ?? null}
+          result={te.result ?? null}
+          error={te.error ?? null}
+          durationMs={te.durationMs ?? null}
+        />
       ))}
     </div>
   );

@@ -45,7 +45,9 @@ export function isTaskNodeStatus(value: unknown): value is TaskNode["status"] {
   );
 }
 
-export function isTaskStatus(value: unknown): value is OrchestratorTask["status"] {
+export function isTaskStatus(
+  value: unknown,
+): value is OrchestratorTask["status"] {
   return (
     value === "planning" ||
     value === "running" ||
@@ -299,8 +301,8 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     task.terminationReason = raw.terminationReason;
   }
   if (Array.isArray(raw.createdWorkerTabIds)) {
-    const tabIds = raw.createdWorkerTabIds.filter(
-      (id): id is number => isNonNegativeInteger(id),
+    const tabIds = raw.createdWorkerTabIds.filter((id): id is number =>
+      isNonNegativeInteger(id),
     );
     if (tabIds.length > 0) task.createdWorkerTabIds = tabIds;
   }
@@ -453,9 +455,7 @@ export function sanitizeSessionMetrics(
   };
 }
 
-export function sanitizeBudget(
-  raw: Record<string, unknown>,
-): {
+export function sanitizeBudget(raw: Record<string, unknown>): {
   maxSessionTimeMs: number;
   maxTotalTokens: number;
   maxTotalCostUsd: number;
@@ -535,7 +535,9 @@ export function mergeSessionMetrics(
   return target;
 }
 
-export function sanitizeCheckpoint(raw: unknown): OrchestratorCheckpoint | null {
+export function sanitizeCheckpoint(
+  raw: unknown,
+): OrchestratorCheckpoint | null {
   if (!isRecord(raw)) return null;
   if (!isNonNegativeInteger(raw.version)) return null;
   if (!isNonNegativeInteger(raw.savedAt)) return null;
@@ -556,7 +558,9 @@ export function sanitizeCheckpoint(raw: unknown): OrchestratorCheckpoint | null 
   };
 }
 
-export function sanitizeEscalationPacket(raw: unknown): EscalationPacket | null {
+export function sanitizeEscalationPacket(
+  raw: unknown,
+): EscalationPacket | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.escalationId !== "string" || raw.escalationId.length === 0)
     return null;

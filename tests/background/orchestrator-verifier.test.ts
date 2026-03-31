@@ -100,6 +100,7 @@ describe("programmaticVerify", () => {
   test("returns accept for success + URL change", () => {
     const result = programmaticVerify({
       output: "Successfully completed the checkout process",
+      objective: "Finish checkout",
       successCriteria: "Checkout confirmed",
       previousUrl: "https://example.com/checkout",
       currentUrl: "https://example.com/confirmation",
@@ -114,6 +115,7 @@ describe("programmaticVerify", () => {
   test("returns accept for success + structured evidence", () => {
     const result = programmaticVerify({
       output: "Task completed successfully",
+      objective: "Add item to cart",
       successCriteria: "Item added to cart",
       evidence: [
         {
@@ -178,6 +180,7 @@ describe("programmaticVerify", () => {
     // for DOM-change accept path
     const result = programmaticVerify({
       output: "Error occurred but task completed successfully",
+      objective: "Complete the task",
       successCriteria: "Task done",
       previousUrl: "https://example.com/start",
       currentUrl: "https://example.com/done",
@@ -187,5 +190,18 @@ describe("programmaticVerify", () => {
     // Then success + DOM change → accept.
     expect(result).not.toBeNull();
     expect(result!.decision).toBe("accept");
+  });
+
+  test("does not accept success plus DOM change when output contradicts the target step", () => {
+    const result = programmaticVerify({
+      output: "Completed successfully. Verified Warehouse Gamma page 3 is visible.",
+      objective: "Navigate to Warehouse Beta page 2",
+      successCriteria: "Warehouse Beta page 2 visible",
+      previousUrl: "https://example.com/go-back?step=1",
+      currentUrl: "https://example.com/go-back?step=3",
+      previousTitle: "Warehouse Alpha",
+      currentTitle: "Warehouse Gamma",
+    });
+    expect(result).toBeNull();
   });
 });

@@ -30,7 +30,9 @@ export default function TurnToolCallItem({
               }`}
               aria-hidden="true"
             />
-            <span className={`text-[9px] font-bold ${success ? "text-[#2ecc71]" : "text-[#e74c3c]"}`}>
+            <span
+              className={`text-[9px] font-bold ${success ? "text-[#2ecc71]" : "text-[#e74c3c]"}`}
+            >
               {success ? "OK" : "ERR"}
             </span>
           </span>

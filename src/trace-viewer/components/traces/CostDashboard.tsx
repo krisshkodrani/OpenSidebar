@@ -8,7 +8,10 @@ interface CostDashboardProps {
   onDeleted?: () => void;
 }
 
-export default function CostDashboard({ sessions, onDeleted }: CostDashboardProps) {
+export default function CostDashboard({
+  sessions,
+  onDeleted,
+}: CostDashboardProps) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -43,11 +46,14 @@ export default function CostDashboard({ sessions, onDeleted }: CostDashboardProp
           Sessions
         </span>
         <span className="text-trace-muted">
-          <span className="font-semibold text-trace-subtle">{sessions.length}</span>
+          <span className="font-semibold text-trace-subtle">
+            {sessions.length}
+          </span>
         </span>
         <span className="text-trace-dim">&middot;</span>
         <span className="text-trace-muted">
-          <span className="font-semibold text-trace-subtle">{totalTurns}</span> turns
+          <span className="font-semibold text-trace-subtle">{totalTurns}</span>{" "}
+          turns
         </span>
         {totalCost > 0 && (
           <>

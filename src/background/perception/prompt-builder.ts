@@ -23,7 +23,11 @@ export function buildProductionPerceptionPrompt(
   const viewport = input.scroll.viewportHeight
     ? { height: input.scroll.viewportHeight, scrollY: input.scroll.y }
     : undefined;
-  const elementSummary = buildElementSummary(input.elements, input.skeleton, viewport);
+  const elementSummary = buildElementSummary(
+    input.elements,
+    input.skeleton,
+    viewport,
+  );
 
   let panoramicNote = "";
   if (input.panoramicScreenshots?.length) {

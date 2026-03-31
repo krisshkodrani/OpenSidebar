@@ -38,7 +38,8 @@ export default function TraceSessionItem({
     ? Object.keys(metrics.modelBreakdown)
     : [];
 
-  const borderCls = OUTCOME_BORDER[session.outcome] ?? "border-l-[3px] border-l-transparent";
+  const borderCls =
+    OUTCOME_BORDER[session.outcome] ?? "border-l-[3px] border-l-transparent";
 
   return (
     <div

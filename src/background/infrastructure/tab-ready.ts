@@ -120,6 +120,28 @@ export function waitForContentScriptReady(
 }
 
 /**
+ * Probe whether the content script is responsive on a tab right now.
+ * Marks the tab ready on success so later waits can short-circuit.
+ */
+export async function probeContentScript(
+  tabId: number,
+  timeoutMs = 100,
+): Promise<boolean> {
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "DOM_READY_PROBE",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { timeoutMs },
+    });
+    readyTabs.add(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Send a DOM readiness probe to a tab's content script.
  * Waits for DOM to settle (no mutations for 2 animation frames) before responding.
  *
@@ -166,7 +188,14 @@ export async function ensureContentScript(
   tabId: number,
   timeoutMs = 5000,
 ): Promise<boolean> {
-  if (readyTabs.has(tabId)) return true;
+  if (readyTabs.has(tabId)) {
+    const stillResponsive = await probeContentScript(
+      tabId,
+      Math.min(150, timeoutMs),
+    );
+    if (stillResponsive) return true;
+    readyTabs.delete(tabId);
+  }
 
   // Attempt to re-inject the content script
   try {
@@ -184,5 +213,7 @@ export async function ensureContentScript(
 
   // Wait for the content script to signal ready
   await waitForContentScriptReady(tabId, timeoutMs);
-  return readyTabs.has(tabId);
+  if (readyTabs.has(tabId)) return true;
+
+  return probeContentScript(tabId, Math.min(250, timeoutMs));
 }

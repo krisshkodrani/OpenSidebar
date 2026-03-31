@@ -11,7 +11,12 @@ interface TurnSnapshotSectionProps {
   turnNumber: number;
 }
 
-export default function TurnSnapshotSection({ snapshot, perception, sessionId, turnNumber }: TurnSnapshotSectionProps) {
+export default function TurnSnapshotSection({
+  snapshot,
+  perception,
+  sessionId,
+  turnNumber,
+}: TurnSnapshotSectionProps) {
   const [imgError, setImgError] = useState(false);
   const panoramicShots = perception?.panoramicShots;
 

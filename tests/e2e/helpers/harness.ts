@@ -23,6 +23,7 @@ import {
   stopLogServer,
   snapshotTraceFiles,
   findAllNewTraceFiles,
+  filterTraceFilesByWorkspace,
   readTrace,
   formatTraceSummary,
   attachSwConsole,
@@ -47,10 +48,12 @@ export interface E2EHarness {
 
   beforeAllHook(): Promise<void>;
   beforeEachHook(): Promise<void>;
-  afterEachHook(testName?: string): Promise<void>;
+  afterEachHook(testName?: string, passed?: boolean | null): Promise<void>;
   afterAllHook(): Promise<void>;
 
-  printTraceSummary(): Promise<{ traceFiles: string[]; turns: any[] }>;
+  printTraceSummary(
+    workspaceId?: string | null,
+  ): Promise<{ traceFiles: string[]; turns: any[] }>;
 }
 
 export function loadApiKey(): string | undefined {
@@ -134,14 +137,11 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       }
     },
 
-    async afterEachHook(testName?: string) {
+    async afterEachHook(testName?: string, passed: boolean | null = null) {
       const durationMs = testStartTime > 0 ? Date.now() - testStartTime : 0;
       if (testName) {
         const traceFiles = findAllNewTraceFiles(tracesBefore);
-        // Determine pass/fail based on whether we got here without throw.
-        // The caller should invoke this in afterEach where vitest provides context.
-        // We record optimistically; the report consumer can override if needed.
-        suiteReport.record(testName, true, durationMs, traceFiles);
+        suiteReport.record(testName, passed, durationMs, traceFiles);
       }
       await resetExtensionState(ctx);
     },
@@ -153,9 +153,12 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       await stopLogServer();
     },
 
-    async printTraceSummary() {
+    async printTraceSummary(workspaceId?: string | null) {
       await new Promise((r) => setTimeout(r, 2_000));
-      const traceFiles = findAllNewTraceFiles(tracesBefore);
+      const traceFiles = filterTraceFilesByWorkspace(
+        findAllNewTraceFiles(tracesBefore),
+        workspaceId,
+      );
       const allTurns = traceFiles.flatMap((f) => readTrace(f));
 
       for (const f of traceFiles) {

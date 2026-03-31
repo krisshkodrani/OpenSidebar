@@ -32,7 +32,9 @@ export async function loadSettings(): Promise<UserSettings | null> {
     chrome.storage.sync.get(SYNC_KEY),
     chrome.storage.local.get(LOCAL_KEY),
     // Check legacy session key for migration
-    chrome.storage.session.get(SESSION_KEY).catch(() => ({} as Record<string, unknown>)),
+    chrome.storage.session
+      .get(SESSION_KEY)
+      .catch(() => ({}) as Record<string, unknown>),
   ]);
   const syncSettings = syncResult[SYNC_KEY];
   // Prefer local, fall back to legacy session key
@@ -81,6 +83,8 @@ export async function loadApiKey(): Promise<string> {
       await chrome.storage.session.remove(SESSION_KEY);
       return key;
     }
-  } catch { /* empty */ }
+  } catch {
+    /* empty */
+  }
   return "";
 }

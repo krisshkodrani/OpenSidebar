@@ -431,7 +431,8 @@ export class ManualModeHandler {
       return {
         command: "tags",
         success: true,
-        result: "Visual element tags have been removed. Element IDs are always available in the agent's element list.",
+        result:
+          "Visual element tags have been removed. Element IDs are always available in the agent's element list.",
         durationMs: Date.now() - start,
       };
     } catch (e: any) {

@@ -168,10 +168,15 @@ export function deduplicateInvisibleElements(elements: TaggedElement[]): {
       visible.push(...items);
     } else {
       const ids = items.map((e) => e.tag).join(",");
-      const uniqueTexts = [...new Set(items.map((e) => e.text).filter(Boolean))];
+      const uniqueTexts = [
+        ...new Set(items.map((e) => e.text).filter(Boolean)),
+      ];
       const sampleTexts =
         uniqueTexts.length > 0
-          ? uniqueTexts.slice(0, 5).map((t) => `"${t.slice(0, 30)}"`).join(",")
+          ? uniqueTexts
+              .slice(0, 5)
+              .map((t) => `"${t.slice(0, 30)}"`)
+              .join(",")
           : "(no text)";
       groups.push(
         `[invisible-text group] ${items.length}× ${tagName} (IDs: ${ids}): ${sampleTexts}`,

@@ -13,7 +13,7 @@ import {
   MessageSource,
 } from "../../types";
 import { logger } from "../../utils";
-import { waitForContentScriptReady } from "./tab-ready";
+import { ensureContentScript } from "./tab-ready";
 
 // --- Constants ---
 
@@ -199,8 +199,8 @@ async function handleNavigationComplete(
     })
     .catch(() => {}); // Ignore if sidepanel closed
 
-  // Wait for content script to be ready (replaces fixed 500ms sleep)
-  await waitForContentScriptReady(details.tabId, 3000);
+  // Wait for content script to be truly responsive before resuming the loop.
+  await ensureContentScript(details.tabId, 3000);
 
   // Add navigation result to messages
   const state = { ...navState.agentState };

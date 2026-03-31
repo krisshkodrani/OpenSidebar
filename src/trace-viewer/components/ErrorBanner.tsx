@@ -6,7 +6,11 @@ interface ErrorBannerProps {
   onRetry?: () => void;
 }
 
-export default function ErrorBanner({ message, hint, onRetry }: ErrorBannerProps) {
+export default function ErrorBanner({
+  message,
+  hint,
+  onRetry,
+}: ErrorBannerProps) {
   return (
     <div className="p-3 mx-5 my-4 bg-red-500/10 border border-red-500/30 rounded-[5px] text-[#e74c3c] text-[13px]">
       {message}

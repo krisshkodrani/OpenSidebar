@@ -56,14 +56,22 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
                   : "model"
             }
           >
-            {shortModel(model)}{modelTier && !model.startsWith("manual") && !model.startsWith("recording") ? ` (${modelTier})` : ""}
+            {shortModel(model)}
+            {modelTier &&
+            !model.startsWith("manual") &&
+            !model.startsWith("recording")
+              ? ` (${modelTier})`
+              : ""}
           </Badge>
         )}
-        {actualProviderId && model && !model.startsWith("manual") && !model.startsWith("recording") && (
-          <span className="text-[9px] text-orange-400">
-            via {actualProviderId}
-          </span>
-        )}
+        {actualProviderId &&
+          model &&
+          !model.startsWith("manual") &&
+          !model.startsWith("recording") && (
+            <span className="text-[9px] text-orange-400">
+              via {actualProviderId}
+            </span>
+          )}
         {compressionLevel && compressionLevel !== "NONE" && (
           <span className="text-[10px] text-trace-muted">
             compress: {compressionLevel}
@@ -77,9 +85,7 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
             </span>
           )}
           {usage?.cost && (
-            <span className="font-mono">
-              {formatCost(usage.cost)}
-            </span>
+            <span className="font-mono">{formatCost(usage.cost)}</span>
           )}
         </div>
       </div>
@@ -91,15 +97,15 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
           messages={messages}
           contextMetrics={contextMetrics}
         />
-        <TurnLLMOutputSection
-          content={content}
-          toolCalls={toolCalls}
-        />
+        <TurnLLMOutputSection content={content} toolCalls={toolCalls} />
         <TurnToolResultsSection toolExecutions={toolExecutions} />
-        <TurnSnapshotSection snapshot={snapshot} perception={entry.perception} sessionId={sessionId} turnNumber={turnNum} />
-        {progressState && (
-          <TurnProgressState progressState={progressState} />
-        )}
+        <TurnSnapshotSection
+          snapshot={snapshot}
+          perception={entry.perception}
+          sessionId={sessionId}
+          turnNumber={turnNum}
+        />
+        {progressState && <TurnProgressState progressState={progressState} />}
       </div>
     </div>
   );

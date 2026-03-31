@@ -1,9 +1,7 @@
 import React from "react";
 import { useStore } from "../store";
 
-const TABS = [
-  { key: "traces" as const, label: "Traces" },
-];
+const TABS = [{ key: "traces" as const, label: "Traces" }];
 
 export default function TabBar() {
   const activeTab = useStore((s) => s.activeTab);

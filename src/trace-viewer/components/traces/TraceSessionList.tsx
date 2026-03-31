@@ -40,7 +40,8 @@ export default function TraceSessionList() {
     const items = container.querySelectorAll<HTMLElement>("[role=option]");
     const focused = document.activeElement as HTMLElement;
     const idx = Array.from(items).indexOf(focused);
-    if (e.key === "ArrowDown" && idx < items.length - 1) items[idx + 1]?.focus();
+    if (e.key === "ArrowDown" && idx < items.length - 1)
+      items[idx + 1]?.focus();
     else if (e.key === "ArrowUp" && idx > 0) items[idx - 1]?.focus();
     else if (e.key === "ArrowDown" && idx === -1) items[0]?.focus();
   };
@@ -56,7 +57,12 @@ export default function TraceSessionList() {
   }
 
   return (
-    <div ref={parentRef} role="listbox" onKeyDown={handleKeyDown} className="flex-1 overflow-y-auto scrollbar-thin">
+    <div
+      ref={parentRef}
+      role="listbox"
+      onKeyDown={handleKeyDown}
+      className="flex-1 overflow-y-auto scrollbar-thin"
+    >
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
