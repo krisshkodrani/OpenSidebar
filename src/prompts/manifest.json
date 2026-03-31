@@ -86,8 +86,8 @@
   {
     "id": "agent.system",
     "version": "v4",
-    "hash": "c58d3b51",
-    "description": "Core executor system prompt for browser automation turns. v4: shorter direct-action priority.",
+    "hash": "f30246ff",
+    "description": "Core executor system prompt for browser automation turns. v5: reduce exploration waste, auto-refresh awareness.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
   {
@@ -121,7 +121,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "a1f2ac0a",
+    "hash": "7e207a1b",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },
