@@ -1,12 +1,14 @@
 import { toolRegistry } from "./registry";
-import {
-  ToolName,
-  MessageSource,
-} from "../../types";
+import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
-import { waitForContentScriptReady } from "../tab-ready";
+import {
+  clearTabReady,
+  ensureContentScript,
+  waitForContentScriptReady,
+  waitForDomReady,
+} from "../tab-ready";
 import { DemoStore, formatDemoForContext } from "../demos/store";
 import {
   CLICK_DEF,
@@ -59,13 +61,49 @@ export * from "./registry";
 export * from "./definitions";
 export * from "./bridge";
 
+async function waitForTabUrlChange(
+  tabId: number,
+  previousUrl: string | undefined,
+  timeoutMs = 2500,
+): Promise<string | null> {
+  const isTransientUrl = (url: string): boolean =>
+    !url || url === "about:blank" || url.startsWith("chrome://newtab");
+
+  const startedAt = Date.now();
+  let fallbackUrl: string | null = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      const currentUrl = tab.url || "";
+      if (currentUrl && currentUrl !== (previousUrl || "")) {
+        if (!isTransientUrl(currentUrl)) {
+          return currentUrl;
+        }
+        fallbackUrl = currentUrl;
+      }
+    } catch {
+      return null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return fallbackUrl;
+}
+
+async function tryInPageHistoryBack(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN" as any,
+    func: () => {
+      window.history.back();
+    },
+  });
+}
+
 // --- Registration ---
 
 export function registerTools() {
-  toolRegistry.register(
-    ToolName.CLICK_ELEMENT,
-    CLICK_DEF,
-    (args, tabId) => executeContentTool(ToolName.CLICK_ELEMENT, args, tabId),
+  toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, (args, tabId) =>
+    executeContentTool(ToolName.CLICK_ELEMENT, args, tabId),
   );
   toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, (args, tabId) =>
     executeContentTool(ToolName.TYPE_TEXT, args, tabId),
@@ -201,6 +239,7 @@ export function registerTools() {
       const target = url ? url : `search: "${query}"`;
       logger.info("tools", "navigate", { tabId, url, query, target });
 
+      clearTabReady(tabId);
       if (url) {
         const urlResult = sanitizeUrl(url);
         if (!urlResult.ok) return `Error: ${urlResult.error}`;
@@ -366,10 +405,54 @@ export function registerTools() {
   toolRegistry.register(ToolName.GO_BACK, GO_BACK_DEF, async (_args, tabId) => {
     logger.info("tools", "go_back", { tabId });
     try {
-      await chrome.tabs.goBack(tabId);
-      await waitForNavigation(tabId);
-      await waitForContentScriptReady(tabId, 2000);
-      return "Navigated back. Fresh page snapshot is available.";
+      const before = await chrome.tabs.get(tabId);
+      const previousUrl = before.url || "";
+
+      // Attempt 1: chrome.tabs.goBack (browser-level history)
+      let currentUrl: string | null = null;
+      try {
+        clearTabReady(tabId);
+        await chrome.tabs.goBack(tabId);
+        await waitForNavigation(tabId);
+        currentUrl = await waitForTabUrlChange(tabId, previousUrl);
+      } catch {
+        // chrome.tabs.goBack throws when there's no browser history entry
+        // (e.g. SPA navigations via window.location.href within a single tab).
+        // Fall through to the in-page fallback.
+        currentUrl = null;
+      }
+
+      // Attempt 2: window.history.back() via scripting (in-page history)
+      if (!currentUrl || currentUrl === "about:blank") {
+        logger.warn("tools", "tabs.goBack did not change URL, trying in-page history.back()", {
+          tabId,
+          previousUrl,
+        });
+        try {
+          clearTabReady(tabId);
+          await tryInPageHistoryBack(tabId);
+          await waitForNavigation(tabId);
+          currentUrl = await waitForTabUrlChange(tabId, previousUrl);
+        } catch {
+          currentUrl = null;
+        }
+      }
+
+      if (!currentUrl || currentUrl === "about:blank") {
+        return previousUrl
+          ? `Error going back: browser remained on ${previousUrl}. History navigation did not reach a previous page.`
+          : "Error going back: browser history did not advance to a previous page.";
+      }
+      const ready = await ensureContentScript(tabId, 3000);
+      if (ready) {
+        await waitForDomReady(tabId, { timeoutMs: 300, waitForElements: true });
+      } else {
+        logger.warn("tools", "go_back completed before content script recovered", {
+          tabId,
+          currentUrl,
+        });
+      }
+      return `Navigated back to ${currentUrl}. Fresh page snapshot is available.`;
     } catch (e: any) {
       return `Error going back: ${e.message}`;
     }
@@ -801,23 +884,31 @@ export function registerTools() {
   );
 
   // Working notes tool (intercepted by agent loop before executor runs)
-  toolRegistry.register(ToolName.UPDATE_NOTES, UPDATE_NOTES_DEF, async (_args) => {
-    // This executor is a fallback — the loop intercepts update_notes before reaching here
-    return "Note saved.";
-  });
+  toolRegistry.register(
+    ToolName.UPDATE_NOTES,
+    UPDATE_NOTES_DEF,
+    async (_args) => {
+      // This executor is a fallback — the loop intercepts update_notes before reaching here
+      return "Note saved.";
+    },
+  );
 
   // Create window tool (intercepted by orchestrator before executor runs)
-  toolRegistry.register(ToolName.CREATE_WINDOW, CREATE_WINDOW_DEF, async (args) => {
-    // Fallback — normally intercepted by orchestrator
-    const url = args.url as string | undefined;
-    logger.info("tools", "create_window", { url });
-    try {
-      const win = await chrome.windows.create(url ? { url } : {});
-      return `Created new window (ID: ${win.id})`;
-    } catch (e: any) {
-      return `Error creating window: ${e.message}`;
-    }
-  });
+  toolRegistry.register(
+    ToolName.CREATE_WINDOW,
+    CREATE_WINDOW_DEF,
+    async (args) => {
+      // Fallback — normally intercepted by orchestrator
+      const url = args.url as string | undefined;
+      logger.info("tools", "create_window", { url });
+      try {
+        const win = await chrome.windows.create(url ? { url } : {});
+        return `Created new window (ID: ${win.id})`;
+      } catch (e: any) {
+        return `Error creating window: ${e.message}`;
+      }
+    },
+  );
 
   // Update plan tool (intercepted by agent loop before executor runs)
   toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {

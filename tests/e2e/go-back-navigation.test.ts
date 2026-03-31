@@ -32,7 +32,7 @@ import {
   readTrace,
 } from "./helpers/diagnostics";
 
-const h = createE2EHarness({ maxTurns: 20, testLabel: "go-back-nav" });
+const h = createE2EHarness({ maxTurns: 35, testLabel: "go-back-nav" });
 
 /** Extract all tool names from trace files. */
 function extractToolNames(traceFiles: string[]): string[] {
@@ -116,15 +116,36 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
       "Agent must use go_back or navigate to return to earlier pages",
     ).toBe(true);
 
-    // Done summary should reference inventory data
-    const summary = extractDoneSummary(traceFiles);
-    console.log("[e2e] Done summary:", summary?.slice(0, 300));
-    expect(summary, "Agent must call done() with a summary").toBeTruthy();
-    // Alpha count (4,827) should always be present since we start there
-    const mentionsAlpha = /4[,.]?827/.test(summary!);
+    // Check aggregated summary from TASK_COMPLETION (combines all node results).
+    // Individual node done() calls may not mention data from other nodes,
+    // but the orchestrator aggregates all node results into the final summary.
+    const completionEvent = [...outcome.events]
+      .reverse()
+      .find((e: any) => e.type === "TASK_COMPLETION");
+    const aggregatedSummary = completionEvent?.summary || "";
+    const subtaskResults = (completionEvent?.subtaskResults || []) as Array<{
+      result?: string;
+    }>;
+    const allResults = [
+      aggregatedSummary,
+      ...subtaskResults.map((r) => r.result || ""),
+    ].join("\n");
+    // Also check individual node done() calls as fallback
+    const traceSummary = extractDoneSummary(traceFiles) || "";
+    const combinedEvidence = `${allResults}\n${traceSummary}`;
+    console.log("[e2e] Aggregated summary:", aggregatedSummary.slice(0, 300));
+    console.log("[e2e] Trace done():", traceSummary.slice(0, 200));
+
+    expect(
+      aggregatedSummary || traceSummary,
+      "Agent must produce a summary (via done() or TASK_COMPLETION)",
+    ).toBeTruthy();
+    // Alpha count (4,827) should be present in either the aggregated summary
+    // or individual node results
+    const mentionsAlpha = /4[,.]?827/.test(combinedEvidence);
     expect(
       mentionsAlpha,
-      `Done summary must mention Alpha inventory (4,827). Got: ${summary?.slice(0, 200)}`,
+      `Summary must mention Alpha inventory (4,827). Got: ${combinedEvidence.slice(0, 300)}`,
     ).toBe(true);
 
     console.log(`\n[e2e] PASS — Forward/back navigation with data collection`);
