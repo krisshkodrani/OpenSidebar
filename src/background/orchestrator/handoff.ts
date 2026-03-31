@@ -7,7 +7,7 @@ import {
 } from "./types";
 
 const MAX_HANDOFF_ARTIFACTS = 8;
-const MAX_NOTE_LEN = 200;
+const MAX_NOTE_LEN = 400;
 const MAX_TASK_CONTEXT_NODES = 8;
 export const MAX_HANDOFF_DEPTH = 2;
 const MIN_ASSUMPTION_TOKEN_LEN = 4;
@@ -208,7 +208,7 @@ export function buildExecutorInstruction(
     sections.push(
       "",
       "Original user request (reference for specific values — names, emails, codes):",
-      originalQuery.slice(0, 500),
+      originalQuery.slice(0, 2000),
     );
   }
 
@@ -317,7 +317,7 @@ export function buildAssumptionDriftSignal(
 }
 
 const MAX_COMPLETED_SUMMARY_NODES = 10;
-const MAX_RESULT_LEN = 100;
+const MAX_RESULT_LEN = 500;
 
 export function buildCompletedStepsSummary(nodes: TaskNode[]): string {
   const completed = nodes.filter((n) => n.status === "completed");

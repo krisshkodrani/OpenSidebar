@@ -29,6 +29,10 @@ import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
 import { inferToolProfileForStep } from "../agent/planner";
 import {
+  assessTaskContractCoverage,
+  buildTaskContract,
+} from "../agent/task-contract";
+import {
   NodeHandoffArtifact,
   OrchestratorCheckpoint,
   OrchestratorStartInput,
@@ -94,6 +98,12 @@ import {
   toSubtasks,
 } from "./utils";
 
+function summaryOfCompletedNodes(nodes: TaskNode[]): string {
+  return nodes
+    .map((node) => `${node.description}\n${node.result || ""}`)
+    .join("\n");
+}
+
 export function buildInitialPlanState(
   task: OrchestratorTask,
   activeNodeId?: string,
@@ -109,7 +119,9 @@ export function buildInitialPlanState(
     activeNodeId != null
       ? task.nodes.findIndex((node) => node.id === activeNodeId)
       : -1;
-  const runningIndex = task.nodes.findIndex((node) => node.status === "running");
+  const runningIndex = task.nodes.findIndex(
+    (node) => node.status === "running",
+  );
   return {
     subtasks: task.nodes.map((node) => ({
       description: node.description,
@@ -138,9 +150,12 @@ export function buildInitialPlanState(
   };
 }
 
-function getActivePlanObjective(planState: ReturnType<typeof buildInitialPlanState>): string | null {
+function getActivePlanObjective(
+  planState: ReturnType<typeof buildInitialPlanState>,
+): string | null {
   const subtask = planState.subtasks[planState.currentIndex];
-  const description = typeof subtask?.description === "string" ? subtask.description.trim() : "";
+  const description =
+    typeof subtask?.description === "string" ? subtask.description.trim() : "";
   return description || null;
 }
 
@@ -165,33 +180,42 @@ function synthesizePlanStateFromSingleNode(node: TaskNode) {
 
   const currentIndex = 0;
   const baseStatus =
-    node.status === "completed" || node.status === "failed" ? node.status : "pending";
+    node.status === "completed" || node.status === "failed"
+      ? node.status
+      : "pending";
 
   return {
-    subtasks: matches.map((match, index) => {
-      const description = match[2]?.trim();
-      if (!description) return null;
-      const toolProfile = inferToolProfileForStep(description, node.successCriteria);
-      return {
-        description,
-        status:
-          node.status === "completed"
-            ? "completed"
-            : index < currentIndex
+    subtasks: matches
+      .map((match, index) => {
+        const description = match[2]?.trim();
+        if (!description) return null;
+        const toolProfile = inferToolProfileForStep(
+          description,
+          node.successCriteria,
+        );
+        return {
+          description,
+          status:
+            node.status === "completed"
               ? "completed"
-              : index === currentIndex
-                ? node.status === "running"
-                  ? "running"
-                  : baseStatus
-                : "pending",
-        turnsUsed: 0,
-        turnBudget: 0,
-        ...(index === matches.length - 1 && node.verificationGate
-          ? { verificationGate: node.verificationGate }
-          : {}),
-        ...(toolProfile ? { toolProfile } : {}),
-      };
-    }).filter((subtask): subtask is NonNullable<typeof subtask> => subtask !== null),
+              : index < currentIndex
+                ? "completed"
+                : index === currentIndex
+                  ? node.status === "running"
+                    ? "running"
+                    : baseStatus
+                  : "pending",
+          turnsUsed: 0,
+          turnBudget: 0,
+          ...(index === matches.length - 1 && node.verificationGate
+            ? { verificationGate: node.verificationGate }
+            : {}),
+          ...(toolProfile ? { toolProfile } : {}),
+        };
+      })
+      .filter(
+        (subtask): subtask is NonNullable<typeof subtask> => subtask !== null,
+      ),
     currentIndex,
   };
 }
@@ -295,7 +319,10 @@ export class Orchestrator {
   }
 
   private emitTraceEvent(
-    task: { runId?: string; id?: string; workspaceId?: string } | null | undefined,
+    task:
+      | { runId?: string; id?: string; workspaceId?: string }
+      | null
+      | undefined,
     type: string,
     data?: Record<string, unknown>,
     role?: "planner" | "executor" | "verifier" | "system",
@@ -612,7 +639,10 @@ export class Orchestrator {
         label: queued.label,
         nodeId: queued.nodeId,
       };
-      (pools[narrowedLane] as Map<string, LaneOperationInstance>).set(laneOperationId, op);
+      (pools[narrowedLane] as Map<string, LaneOperationInstance>).set(
+        laneOperationId,
+        op,
+      );
       logger.debug("orchestrator", "Lane operation registered", {
         taskId: queued.taskId,
         workspaceId: queued.workspaceId,
@@ -1359,13 +1389,7 @@ export class Orchestrator {
       createdAt: Date.now(),
       nodes: [],
       plannerReflexionLog: [],
-      maxWorkers: Math.max(
-        1,
-        Math.min(
-          8,
-          DEFAULT_MAX_WORKERS,
-        ),
-      ),
+      maxWorkers: Math.max(1, Math.min(8, DEFAULT_MAX_WORKERS)),
       maxReplans: DEFAULT_MAX_REPLANS,
       replansUsed: 0,
       horizonExpansions: 0,
@@ -1373,10 +1397,7 @@ export class Orchestrator {
       sessionMetrics: emptySessionMetrics(),
       budget: {
         maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
-        maxTotalTokens: clampInteger(
-          DEFAULT_MAX_TOTAL_TOKENS,
-          1,
-        ),
+        maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
       },
     };
@@ -1409,128 +1430,123 @@ export class Orchestrator {
 
     // ─── Plan decomposition ───
     try {
-        const plannerContract = buildRoleExecutionContract(
-          "planner",
-          input.settings,
-        );
-        logger.debug("policy", "Role execution contract resolved", {
-          role: plannerContract.role,
-          modelTier: plannerContract.modelTier,
-          allowedToolCount: plannerContract.allowedTools.length,
-        });
-        const modelOverrides = {
-          executorModel: input.settings.executorModel,
-          plannerModel: input.settings.plannerModel,
-          useNitro: input.settings.useNitro,
-          provider: input.settings.provider,
-          openaiApiKey: input.settings.openaiApiKey,
-        };
-        const planner = this.deps.createPlanner(
-          input.openRouterApiKey,
-          modelOverrides,
-        );
-        const tab = await chrome.tabs.get(input.tabId);
-        const buildResult = await this.runInLane(task, "planner", async () =>
-          planner.buildNodes(
-            input.query,
-            tab.title || "Untitled",
-            tab.url || "",
-          ),
-        );
-        nodes = buildResult.nodes;
-        task.planClassification = {
-          isSingleNode: buildResult.isSingleNode,
-          difficulty: buildResult.difficulty,
-        };
-        // Use the first node's planner-derived objective as a meaningful title
-        if (nodes.length > 0) {
-          updateTabGroupAppearance(input.workspaceId, {
-            title: nodes[0].description,
-          });
-        }
-        this.emitTraceEvent(
-          task,
-          "plan_decomposed",
-          {
-            nodeCount: nodes.length,
-            structured: true,
-            isSingleNode: buildResult.isSingleNode,
-            difficulty: buildResult.difficulty,
-          },
-          "planner",
-        );
-        this.sendMessage({
-          type: "AGENT_STEP",
-          workspaceId: input.workspaceId,
-          payload: {
-            step: {
-              id: crypto.randomUUID(),
-              type: "info",
-              label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
-              status: "done",
-              timestamp: Date.now(),
-            },
-            update: false,
-          },
-        });
-      } catch (error: any) {
-        logger.warn("orchestrator", "Planner failed, using single node", {
-          error: error?.message,
-        });
-        nodes = [
-          {
-            id: crypto.randomUUID(),
-            role: "executor",
-            description: input.query,
-            successCriteria: "The user goal is completed and verified.",
-            allowedTools: Object.values(ToolName),
-            dependencies: [],
-            assumptions: [],
-            handoffArtifacts: [
-              {
-                role: "planner",
-                phase: "planned",
-                note: "Planner fallback: single executor objective from original query.",
-                timestamp: Date.now(),
-              },
-            ],
-            reflexionLog: [],
-            handoffDepth: 0,
-            status: "pending",
-            retries: 0,
-          },
-        ];
-        task.planClassification = {
-          isSingleNode: true,
-          difficulty: "moderate",
-        };
-        this.emitTraceEvent(
-          task,
-          "plan_decomposed",
-          {
-            nodeCount: 1,
-            structured: false,
-            fallback: true,
-          },
-          "planner",
-        );
-        this.sendMessage({
-          type: "AGENT_STEP",
-          workspaceId: input.workspaceId,
-          payload: {
-            step: {
-              id: crypto.randomUUID(),
-              type: "info",
-              label: "Planning approach",
-              detail: error?.message || "Unknown planner error",
-              status: "done",
-              timestamp: Date.now(),
-            },
-            update: false,
-          },
+      const plannerContract = buildRoleExecutionContract(
+        "planner",
+        input.settings,
+      );
+      logger.debug("policy", "Role execution contract resolved", {
+        role: plannerContract.role,
+        modelTier: plannerContract.modelTier,
+        allowedToolCount: plannerContract.allowedTools.length,
+      });
+      const modelOverrides = {
+        executorModel: input.settings.executorModel,
+        plannerModel: input.settings.plannerModel,
+        useNitro: input.settings.useNitro,
+        provider: input.settings.provider,
+        openaiApiKey: input.settings.openaiApiKey,
+      };
+      const planner = this.deps.createPlanner(
+        input.openRouterApiKey,
+        modelOverrides,
+      );
+      const tab = await chrome.tabs.get(input.tabId);
+      const buildResult = await this.runInLane(task, "planner", async () =>
+        planner.buildNodes(input.query, tab.title || "Untitled", tab.url || ""),
+      );
+      nodes = buildResult.nodes;
+      task.planClassification = {
+        isSingleNode: buildResult.isSingleNode,
+        difficulty: buildResult.difficulty,
+      };
+      // Use the first node's planner-derived objective as a meaningful title
+      if (nodes.length > 0) {
+        updateTabGroupAppearance(input.workspaceId, {
+          title: nodes[0].description,
         });
       }
-
+      this.emitTraceEvent(
+        task,
+        "plan_decomposed",
+        {
+          nodeCount: nodes.length,
+          structured: true,
+          isSingleNode: buildResult.isSingleNode,
+          difficulty: buildResult.difficulty,
+        },
+        "planner",
+      );
+      this.sendMessage({
+        type: "AGENT_STEP",
+        workspaceId: input.workspaceId,
+        payload: {
+          step: {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
+            status: "done",
+            timestamp: Date.now(),
+          },
+          update: false,
+        },
+      });
+    } catch (error: any) {
+      logger.warn("orchestrator", "Planner failed, using single node", {
+        error: error?.message,
+      });
+      nodes = [
+        {
+          id: crypto.randomUUID(),
+          role: "executor",
+          description: input.query,
+          successCriteria: "The user goal is completed and verified.",
+          allowedTools: Object.values(ToolName),
+          dependencies: [],
+          assumptions: [],
+          handoffArtifacts: [
+            {
+              role: "planner",
+              phase: "planned",
+              note: "Planner fallback: single executor objective from original query.",
+              timestamp: Date.now(),
+            },
+          ],
+          reflexionLog: [],
+          handoffDepth: 0,
+          status: "pending",
+          retries: 0,
+        },
+      ];
+      task.planClassification = {
+        isSingleNode: true,
+        difficulty: "moderate",
+      };
+      this.emitTraceEvent(
+        task,
+        "plan_decomposed",
+        {
+          nodeCount: 1,
+          structured: false,
+          fallback: true,
+        },
+        "planner",
+      );
+      this.sendMessage({
+        type: "AGENT_STEP",
+        workspaceId: input.workspaceId,
+        payload: {
+          step: {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: "Planning approach",
+            detail: error?.message || "Unknown planner error",
+            status: "done",
+            timestamp: Date.now(),
+          },
+          update: false,
+        },
+      });
+    }
 
     if (task.status === "stopped") {
       task.finishedAt = Date.now();
@@ -1575,7 +1591,10 @@ export class Orchestrator {
       if (confirmation.decision === "cancel") {
         task.status = "stopped";
         task.finishedAt = Date.now();
-        this.sendTerminationCompletion(task, "Cancelled by user during plan confirmation");
+        this.sendTerminationCompletion(
+          task,
+          "Cancelled by user during plan confirmation",
+        );
         this.tasksByWorkspace.delete(task.workspaceId);
         this.cleanupWorkspaceRuntime(task.workspaceId);
         await this.clearTaskCheckpoint(task.workspaceId);
@@ -1595,11 +1614,14 @@ export class Orchestrator {
         const revisedQuery = `${input.query}\n\nUser guidance: ${confirmation.feedback.trim()}`;
         try {
           const tab = await chrome.tabs.get(input.tabId);
-          const replanPlanner = this.deps.createPlanner(input.openRouterApiKey, {
-            executorModel: input.settings.executorModel,
-            plannerModel: input.settings.plannerModel,
-            useNitro: input.settings.useNitro,
-          });
+          const replanPlanner = this.deps.createPlanner(
+            input.openRouterApiKey,
+            {
+              executorModel: input.settings.executorModel,
+              plannerModel: input.settings.plannerModel,
+              useNitro: input.settings.useNitro,
+            },
+          );
           const replanResult = await replanPlanner.buildNodes(
             revisedQuery,
             tab.title || "Untitled",
@@ -1615,7 +1637,9 @@ export class Orchestrator {
             });
           }
         } catch (err) {
-          logger.warn("orchestrator", "Replan after feedback failed", { error: err });
+          logger.warn("orchestrator", "Replan after feedback failed", {
+            error: err,
+          });
           // Proceed with original plan
         }
       }
@@ -1803,10 +1827,7 @@ export class Orchestrator {
           // 4. User's tab is occupied by a running node — create if under cap
           const createdCount = task.createdWorkerTabIds?.length ?? 0;
           if (createdCount < task.maxWorkers - 1) {
-            tabId = await this.createWorkerTab(
-              initialTabUrl,
-              task.workspaceId,
-            );
+            tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
             if (!task.createdWorkerTabIds) task.createdWorkerTabIds = [];
             task.createdWorkerTabIds.push(tabId);
           } else {
@@ -1962,13 +1983,15 @@ export class Orchestrator {
           // current node. This activates done() validation (the planner verifies
           // the node objective was actually met) without exposing sibling nodes.
           initialPlanState: task.planClassification?.isSingleNode
-            ? synthesizePlanStateFromSingleNode(node) ?? undefined
+            ? (synthesizePlanStateFromSingleNode(node) ?? undefined)
             : {
                 currentIndex: 0,
-                subtasks: [{
-                  description: node.description,
-                  status: "running" as const,
-                }],
+                subtasks: [
+                  {
+                    description: node.description,
+                    status: "running" as const,
+                  },
+                ],
               },
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
@@ -2004,6 +2027,30 @@ export class Orchestrator {
           undefined, // node.description used directly
           task.query,
         );
+
+        // Inject predecessor trajectory for same-tab sequential nodes.
+        // This gives the executor awareness of what happened before (e.g.
+        // "cart drawer opened after adding item") without full history.
+        if (node.dependencies.length > 0) {
+          const predecessorTrajectories: string[] = [];
+          for (const depId of node.dependencies) {
+            const depNode = task.nodes.find((n) => n.id === depId);
+            if (
+              depNode?.trajectory &&
+              depNode.trajectory.length > 0 &&
+              nodeTabMap.get(depId) === tabId // same tab
+            ) {
+              predecessorTrajectories.push(
+                `Prior actions (${depNode.description}):\n${depNode.trajectory.join("\n")}`,
+              );
+            }
+          }
+          if (predecessorTrajectories.length > 0) {
+            executorInstruction +=
+              "\n\nPage history from prior steps on this tab:\n" +
+              predecessorTrajectories.join("\n\n");
+          }
+        }
 
         if (
           (node.retries > 0 || node.handoffFromNodeId) &&
@@ -2104,6 +2151,11 @@ export class Orchestrator {
           llmCallCount: task.sessionMetrics.llmCallCount,
           budgetEstimate: budgetEstimator.getEstimate(),
         });
+        // Store condensed action trajectory for same-tab handoff
+        if (result.trajectory && result.trajectory.length > 0) {
+          node.trajectory = result.trajectory;
+        }
+
         if (node.status !== "running") {
           return;
         }
@@ -2246,14 +2298,14 @@ export class Orchestrator {
                 task.status = "stopped";
                 node.status = "failed";
                 node.error = "Stopped by operator escalation decision.";
-  
+
                 await this.clearPendingEscalation(task);
                 return;
               }
               if (escalationDecision.optionId === "skip_node") {
                 node.status = "skipped";
                 node.error = "Skipped by operator escalation decision.";
-  
+
                 await this.clearPendingEscalation(task);
                 return;
               }
@@ -2325,7 +2377,7 @@ export class Orchestrator {
                   });
                   node.status = "failed";
                   node.error = reason;
-    
+
                   logger.warn(
                     "orchestrator",
                     "Replan budget exhausted; failing node",
@@ -2384,7 +2436,7 @@ export class Orchestrator {
                       node.result = `Replanned into ${expandedNodes.length} node(s): ${verification.reason}`;
                       task.nodes.push(...expandedNodes);
                       task.replansUsed += 1;
-        
+
                       replanned = true;
                       logger.info(
                         "orchestrator",
@@ -2402,7 +2454,7 @@ export class Orchestrator {
                     if (isLaneIsolationError(error, "planner")) {
                       node.status = "failed";
                       node.error = `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`;
-        
+
                       replanned = true;
                       logger.warn(
                         "orchestrator",
@@ -2545,7 +2597,6 @@ export class Orchestrator {
                   node.status = "failed";
                   node.error = `Verifier ${verification.decision}: ${verification.reason} (${retryDecision.rationale})`;
                 }
-  
               }
             } else {
               this.appendHandoffArtifact(node, {
@@ -2558,7 +2609,6 @@ export class Orchestrator {
               });
               node.status = "failed";
               node.error = `Verifier ${verification.decision}: ${verification.reason}`;
-
             }
           } // end verification pipeline
         } else {
@@ -2667,10 +2717,7 @@ export class Orchestrator {
       const remainingPending = task.nodes.filter((n) => n.status === "pending");
       if (completedNodes.length > 0 && remainingPending.length > 0) {
         const finalNode = task.nodes[task.nodes.length - 1];
-        if (
-          finalNode.status === "pending" &&
-          finalNode.successCriteria
-        ) {
+        if (finalNode.status === "pending" && finalNode.successCriteria) {
           try {
             const goalSnap = await this.getSnapshot(input.tabId);
             if (goalSnap) {
@@ -2678,7 +2725,33 @@ export class Orchestrator {
                 successCriteria: finalNode.successCriteria,
                 snapshot: goalSnap,
               });
-              if (goalCheck.satisfied && goalCheck.matchedTokens.length >= 2) {
+              const contract = buildTaskContract(task.query);
+              const coverageCorpus = [
+                goalSnap.title,
+                goalSnap.url,
+                goalSnap.visibleContent,
+                goalSnap.pageContent,
+                ...completedNodes.map((node) => node.result || ""),
+                summaryOfCompletedNodes(completedNodes),
+              ]
+                .filter(Boolean)
+                .join("\n");
+              const contractCoverage = assessTaskContractCoverage({
+                contract,
+                text: coverageCorpus,
+                requireReturnTarget: contract.requiresRoundTrip,
+              });
+              const allowGlobalShortcut =
+                !contract.requiresRoundTrip &&
+                contract.reportTargets.length <= 1 &&
+                contract.requiredEntities.length <= 1 &&
+                contract.requiredNumbers.length === 0;
+              if (
+                allowGlobalShortcut &&
+                goalCheck.satisfied &&
+                goalCheck.matchedTokens.length >= 2 &&
+                contractCoverage.satisfied
+              ) {
                 logger.info(
                   "orchestrator",
                   "Global goal already met, skipping remaining nodes",
@@ -2703,6 +2776,31 @@ export class Orchestrator {
                   "system",
                 );
                 break;
+              } else if (goalCheck.satisfied && !allowGlobalShortcut) {
+                logger.debug(
+                  "orchestrator",
+                  "Global goal shortcut blocked by multi-obligation task contract",
+                  {
+                    taskId: task.id,
+                    matchedTokens: goalCheck.matchedTokens,
+                    requiresRoundTrip: contract.requiresRoundTrip,
+                    reportTargetCount: contract.reportTargets.length,
+                    requiredEntityCount: contract.requiredEntities.length,
+                    requiredNumberCount: contract.requiredNumbers.length,
+                  },
+                );
+              } else if (goalCheck.satisfied && !contractCoverage.satisfied) {
+                logger.debug(
+                  "orchestrator",
+                  "Global goal shortcut blocked by task contract coverage",
+                  {
+                    taskId: task.id,
+                    matchedTokens: goalCheck.matchedTokens,
+                    missingEntities: contractCoverage.missingEntities,
+                    missingNumbers: contractCoverage.missingNumbers,
+                    missingReturnTarget: contractCoverage.missingReturnTarget,
+                  },
+                );
               }
             }
           } catch (err) {
@@ -2911,7 +3009,7 @@ export class Orchestrator {
 
     const subtaskResults = this.buildSubtaskResults(task);
 
-    const completionStatus: "completed" | "partial" | "failed" =
+    let completionStatus: "completed" | "partial" | "failed" =
       failed > 0
         ? completed > 0 || skipped > 0
           ? "partial"
@@ -2919,6 +3017,66 @@ export class Orchestrator {
         : skipped > 0
           ? "partial"
           : "completed";
+
+    const contract = buildTaskContract(task.query);
+    // Entity/number coverage uses all node descriptions + results
+    const coverageCorpus = [
+      summary,
+      ...subtaskResults.map(
+        (item) => `${item.description}\n${item.result || ""}`,
+      ),
+    ].join("\n");
+    // Return-target coverage must only check actual execution results
+    // (not plan descriptions), otherwise a planned-but-unexecuted
+    // "Return to X" node would falsely satisfy the return check.
+    const returnTargetCorpus = contract.requiresRoundTrip
+      ? [
+          summary,
+          ...subtaskResults
+            .filter((item) => item.status === "completed" && item.result)
+            .map((item) => item.result),
+        ].join("\n")
+      : coverageCorpus;
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: coverageCorpus,
+    });
+    // Separate return-target check against results-only corpus
+    if (contract.requiresRoundTrip) {
+      const returnCoverage = assessTaskContractCoverage({
+        contract: {
+          ...contract,
+          requiredEntities: [],
+          requiredNumbers: [],
+        },
+        text: returnTargetCorpus,
+        requireReturnTarget: true,
+      });
+      if (returnCoverage.missingReturnTarget) {
+        coverage.missingReturnTarget = true;
+        coverage.satisfied = false;
+      }
+    }
+    if (completionStatus === "completed" && !coverage.satisfied) {
+      completionStatus = "partial";
+      const missingParts: string[] = [];
+      if (coverage.missingEntities.length > 0) {
+        missingParts.push(
+          `missing entities: ${coverage.missingEntities.join(", ")}`,
+        );
+      }
+      if (coverage.missingNumbers.length > 0) {
+        missingParts.push(
+          `missing values: ${coverage.missingNumbers.join(", ")}`,
+        );
+      }
+      if (coverage.missingReturnTarget) {
+        missingParts.push("missing return-to target evidence");
+      }
+      task.terminationReason =
+        task.terminationReason ||
+        `Task contract incomplete: ${missingParts.join("; ")}`;
+    }
 
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
@@ -2956,7 +3114,12 @@ export class Orchestrator {
       "system",
     );
 
-    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Task complete", completionStatus);
+    this.sendStatus(
+      task.workspaceId,
+      AgentStatus.IDLE,
+      "Task complete",
+      completionStatus,
+    );
     await this.closeWorkerTabs(task);
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -3131,9 +3294,7 @@ export class Orchestrator {
     }
   }
 
-  private async getSnapshot(
-    tabId: number,
-  ): Promise<any | undefined> {
+  private async getSnapshot(tabId: number): Promise<any | undefined> {
     try {
       try {
         const manifest = chrome.runtime.getManifest();
@@ -3169,7 +3330,7 @@ export class Orchestrator {
   }
 
   private buildProgrammaticSummary(task: OrchestratorTask): string {
-    const completed = task.nodes.filter((n) => n.status === "completed").length;
+    const completedNodes = task.nodes.filter((n) => n.status === "completed");
     const failed = task.nodes.filter((n) => n.status === "failed").length;
     const lastCompleted = [...task.nodes]
       .reverse()
@@ -3184,9 +3345,31 @@ export class Orchestrator {
       return lastCompleted.result;
     }
 
-    // Multi-node or partial: show the last completed node's result in full.
-    // The TASK_COMPLETION card below provides subtask list + metrics.
-    if (completed > 0 && lastCompleted?.result) {
+    // Multi-node completed: aggregate results from all completed nodes.
+    // Each node may have collected data that the final summary needs
+    // (e.g. "read inventory on page A, go back, read inventory on page B,
+    // report both"). Only the combined results satisfy the full task.
+    if (completedNodes.length > 1 && lastCompleted?.result) {
+      const nodeResults = completedNodes
+        .filter((n) => n.result && n.result.trim())
+        .map((n) => n.result!.trim());
+
+      // If the last node's result already covers all prior results
+      // (e.g. it explicitly mentions all key data), use it alone.
+      // Otherwise combine all unique node results.
+      const lastResult = lastCompleted.result;
+      const priorResults = nodeResults.slice(0, -1);
+      const missingPrior = priorResults.filter(
+        (r) => !lastResult.includes(r.slice(0, 40)),
+      );
+
+      if (missingPrior.length > 0) {
+        return nodeResults.join("\n\n");
+      }
+      return lastResult;
+    }
+
+    if (completedNodes.length > 0 && lastCompleted?.result) {
       return lastCompleted.result;
     }
 
@@ -3235,12 +3418,7 @@ export class Orchestrator {
     let newNodes: TaskNode[] | null = null;
     try {
       newNodes = await this.runInLane(task, "planner", async () =>
-        replanner.planNextHorizon(
-          task.query,
-          summary,
-          pageTitle,
-          pageUrl,
-        ),
+        replanner.planNextHorizon(task.query, summary, pageTitle, pageUrl),
       );
     } catch (error: any) {
       logger.warn("orchestrator", "Horizon expansion planner call failed", {
@@ -3335,7 +3513,11 @@ export class Orchestrator {
           return chrome.storage.local.set({ [storageKey]: trimmed });
         })
         .catch((e) => {
-          logger.debug("orchestrator", "Failed to persist completion to chat storage", { error: e });
+          logger.debug(
+            "orchestrator",
+            "Failed to persist completion to chat storage",
+            { error: e },
+          );
         });
     }
   }
@@ -3675,7 +3857,11 @@ export class Orchestrator {
   ): Promise<{ decision: "approve" | "cancel"; feedback?: string }> {
     const confirmationId = crypto.randomUUID();
 
-    this.sendStatus(task.workspaceId, AgentStatus.PAUSED, "Awaiting plan confirmation...");
+    this.sendStatus(
+      task.workspaceId,
+      AgentStatus.PAUSED,
+      "Awaiting plan confirmation...",
+    );
     this.sendMessage({
       type: "PLAN_CONFIRMATION_REQUEST",
       workspaceId: task.workspaceId,
@@ -3698,30 +3884,27 @@ export class Orchestrator {
 
     return new Promise<{ decision: "approve" | "cancel"; feedback?: string }>(
       (resolve) => {
-        this.pendingPlanConfirmationResolvers.set(
-          confirmationId,
-          (result) => {
-            this.pendingPlanConfirmationResolvers.delete(confirmationId);
-            logger.info("orchestrator", "Plan confirmation received", {
+        this.pendingPlanConfirmationResolvers.set(confirmationId, (result) => {
+          this.pendingPlanConfirmationResolvers.delete(confirmationId);
+          logger.info("orchestrator", "Plan confirmation received", {
+            taskId: task.id,
+            confirmationId,
+            decision: result.decision,
+            hasFeedback: !!result.feedback,
+          });
+          this.emitTraceEvent(
+            task,
+            "plan_confirmation",
+            {
               taskId: task.id,
               confirmationId,
               decision: result.decision,
               hasFeedback: !!result.feedback,
-            });
-            this.emitTraceEvent(
-              task,
-              "plan_confirmation",
-              {
-                taskId: task.id,
-                confirmationId,
-                decision: result.decision,
-                hasFeedback: !!result.feedback,
-              },
-              "system",
-            );
-            resolve(result);
-          },
-        );
+            },
+            "system",
+          );
+          resolve(result);
+        });
       },
     );
   }

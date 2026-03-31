@@ -16,7 +16,11 @@ import {
   REFERENCE_VALUE_TOOLS,
   CompressionLevel,
 } from "./context-types";
-import type { ContextMetrics, PlanStatus, PlanStatusGate } from "./context-types";
+import type {
+  ContextMetrics,
+  PlanStatus,
+  PlanStatusGate,
+} from "./context-types";
 
 // Re-export submodules for barrel compatibility
 export * from "./context-types";
@@ -30,10 +34,30 @@ const SYSTEM_PROMPT_TEMPLATE = getPromptTemplate("agent.system");
 
 /** Whitelist of action-relevant DOM attributes for NONE/LIGHT compression levels. */
 const ACTION_RELEVANT_ATTRS = new Set([
-  "type", "href", "placeholder", "value", "aria-label", "role",
-  "name", "action", "method", "target", "alt", "title",
-  "min", "max", "pattern", "required", "checked", "selected",
-  "disabled", "readonly", "multiple", "accept", "label", "description",
+  "type",
+  "href",
+  "placeholder",
+  "value",
+  "aria-label",
+  "role",
+  "name",
+  "action",
+  "method",
+  "target",
+  "alt",
+  "title",
+  "min",
+  "max",
+  "pattern",
+  "required",
+  "checked",
+  "selected",
+  "disabled",
+  "readonly",
+  "multiple",
+  "accept",
+  "label",
+  "description",
 ]);
 
 /** Format skeleton nodes into indented hierarchy for the agent system prompt. */
@@ -129,7 +153,11 @@ export class ContextManager {
   }
 
   /** Set time-awareness fields for the turn budget indicator. */
-  public setTimeContext(turnCount: number, maxTurns: number, startTimeMs: number): void {
+  public setTimeContext(
+    turnCount: number,
+    maxTurns: number,
+    startTimeMs: number,
+  ): void {
     this.turnCount = turnCount;
     this.turnMax = maxTurns;
     this.startTimeMs = startTimeMs;
@@ -233,7 +261,7 @@ export class ContextManager {
       i: number,
     ): string => {
       const url = s.completedAtUrl ? `(${urlPath(s.completedAtUrl)})` : "";
-      const result = s.result ? ` → ${s.result.slice(0, 150)}` : "";
+      const result = s.result ? ` → ${s.result.slice(0, 500)}` : "";
       return `${i + 1}-${s.description}${url}${result}`;
     };
 
@@ -645,7 +673,10 @@ Do NOT call done() until every planned step is complete.
       // Batch hint for multi-field forms
       const batchHint = buildFormBatchHint(visibleElements);
       if (batchHint) {
-        content = content.replace("{{pageContent}}", batchHint + "\n\n{{pageContent}}");
+        content = content.replace(
+          "{{pageContent}}",
+          batchHint + "\n\n{{pageContent}}",
+        );
       }
 
       // Page content: Readability Markdown or plain text fallback, with dynamic truncation
@@ -1053,9 +1084,12 @@ Do NOT call done() until every planned step is complete.
           continue;
         }
         const toolName = this.findToolNameForResult(msg.tool_call_id);
-        const isReferenceValue = toolName !== null && REFERENCE_VALUE_TOOLS.has(toolName);
+        const isReferenceValue =
+          toolName !== null && REFERENCE_VALUE_TOOLS.has(toolName);
         const maxLen = isReferenceValue ? DISCOVERY_MAX : ACTION_MAX;
-        const snippetLen = isReferenceValue ? DISCOVERY_SNIPPET : ACTION_SNIPPET;
+        const snippetLen = isReferenceValue
+          ? DISCOVERY_SNIPPET
+          : ACTION_SNIPPET;
 
         if (typeof msg.content === "string" && msg.content.length > maxLen) {
           const firstLine = msg.content.split("\n")[0].slice(0, snippetLen);
