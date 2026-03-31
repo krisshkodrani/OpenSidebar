@@ -675,9 +675,12 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           const start = performance.now();
 
           // Auto-dismiss overlays that block the viewport (synchronous — no sleep needed)
+          // Skipped for post-tool refreshes (autoDismiss: false) so agent-triggered
+          // dialogs like confirmation prompts are not destroyed.
           let dismissedTexts: string[] = [];
+          const shouldDismiss = message.payload.autoDismiss !== false;
           const overlays = detectViewportCoveringOverlays();
-          if (overlays.length > 0) {
+          if (overlays.length > 0 && shouldDismiss) {
             const result = autoDismissModals();
             dismissedTexts = result.capturedTexts;
           }
@@ -741,22 +744,38 @@ function setAgentBorder(active: boolean) {
   const existingBtn = document.getElementById(STOP_BTN_ID);
 
   if (active) {
-    // --- Warm ambient glow overlay ---
+    // --- Warm ambient vignette overlay ---
+    // 12px frame that is solid orange at the viewport edge and fades to
+    // transparent toward the center, creating a glowing vignette effect.
     if (!existing) {
       const overlay = document.createElement("div");
       overlay.id = BORDER_ID;
+      // Use a large inset box-shadow to paint the vignette gradient.
+      // Multiple shadow layers at decreasing opacity simulate the fade.
       Object.assign(overlay.style, {
         position: "fixed",
         inset: "0",
         zIndex: "2147483646",
         pointerEvents: "none",
-        border: "2px solid rgba(217,170,100,0.4)",
-        borderRadius: "4px",
-        boxShadow:
-          "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
-        opacity: "1",
+        borderRadius: "0",
+        border: "none",
+        boxShadow: [
+          "inset 0 0 0 2px rgba(250,144,62,0.7)",
+          "inset 0 0 0 4px rgba(250,144,62,0.45)",
+          "inset 0 0 0 7px rgba(250,144,62,0.22)",
+          "inset 0 0 0 12px rgba(250,144,62,0.08)",
+          "inset 0 0 40px rgba(250,144,62,0.12)",
+          "inset 0 0 80px rgba(250,144,62,0.05)",
+        ].join(", "),
+        opacity: "0",
       });
       document.documentElement.appendChild(overlay);
+
+      // Smooth fade-in
+      overlay.animate([{ opacity: "0" }, { opacity: "1" }], {
+        duration: 400,
+        fill: "forwards",
+      });
 
       const reducedMotion = window.matchMedia(
         "(prefers-reduced-motion: reduce)",
@@ -765,19 +784,34 @@ function setAgentBorder(active: boolean) {
         borderAnimation = overlay.animate(
           [
             {
-              boxShadow:
-                "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
-              borderColor: "rgba(217,170,100,0.4)",
+              boxShadow: [
+                "inset 0 0 0 2px rgba(250,144,62,0.7)",
+                "inset 0 0 0 4px rgba(250,144,62,0.45)",
+                "inset 0 0 0 7px rgba(250,144,62,0.22)",
+                "inset 0 0 0 12px rgba(250,144,62,0.08)",
+                "inset 0 0 40px rgba(250,144,62,0.12)",
+                "inset 0 0 80px rgba(250,144,62,0.05)",
+              ].join(", "),
             },
             {
-              boxShadow:
-                "inset 0 0 45px rgba(217,170,100,0.18), inset 0 0 80px rgba(196,140,80,0.08)",
-              borderColor: "rgba(217,170,100,0.55)",
+              boxShadow: [
+                "inset 0 0 0 2px rgba(250,144,62,0.85)",
+                "inset 0 0 0 5px rgba(250,144,62,0.55)",
+                "inset 0 0 0 9px rgba(250,144,62,0.3)",
+                "inset 0 0 0 14px rgba(250,144,62,0.12)",
+                "inset 0 0 50px rgba(250,144,62,0.18)",
+                "inset 0 0 100px rgba(250,144,62,0.08)",
+              ].join(", "),
             },
             {
-              boxShadow:
-                "inset 0 0 30px rgba(217,170,100,0.12), inset 0 0 60px rgba(196,140,80,0.06)",
-              borderColor: "rgba(217,170,100,0.4)",
+              boxShadow: [
+                "inset 0 0 0 2px rgba(250,144,62,0.7)",
+                "inset 0 0 0 4px rgba(250,144,62,0.45)",
+                "inset 0 0 0 7px rgba(250,144,62,0.22)",
+                "inset 0 0 0 12px rgba(250,144,62,0.08)",
+                "inset 0 0 40px rgba(250,144,62,0.12)",
+                "inset 0 0 80px rgba(250,144,62,0.05)",
+              ].join(", "),
             },
           ],
           { duration: 3000, iterations: Infinity, easing: "ease-in-out" },
@@ -791,7 +825,7 @@ function setAgentBorder(active: boolean) {
       btn.id = STOP_BTN_ID;
       btn.innerHTML =
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' +
-        '<span style="margin-left:6px">Stop OpenSidebar</span>';
+        '<span style="margin-left:6px">Stop</span>';
       Object.assign(btn.style, {
         position: "fixed",
         bottom: "24px",
