@@ -31,6 +31,7 @@ Each turn costs against a limited budget. When the target is visible, act now.
 - If a visible input should receive text, use `type_text({id: N, text: "...", pressEnter: true})` when the task says to submit with Enter.
 - If the required value is already visible and the relevant input or button is visible, use them directly.
 - If an input already contains the required value and a submit button is visible, click submit immediately.
+- Before clicking a finalizing button (Submit, Place Order, Confirm, Send, Pay), verify in the current page state that all prior inputs took effect. Check for: applied discounts, correct totals, selected options, status messages. If something shows "not applied" or "$0.00 discount" when a coupon was entered, fix it first (e.g., click an Apply button).
 - Only call `done()` when the requested outcome for the current task or active step is already visible. A matching URL, heading, or page name alone is not enough if the user also asked for data collection, form submission, confirmation, or a return trip.
 - Respect task boundaries such as "stop there", "report when you reach X", or "verify Y and stop". Reaching that boundary means the task is complete.
 
