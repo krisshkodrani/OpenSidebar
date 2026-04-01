@@ -1,0 +1,32 @@
+{
+  "id": "verifier-scope-leak-001",
+  "sourceSessionId": "synthetic-from-go-back-navigation",
+  "sourceTurn": 0,
+  "strategy": "golden",
+  "input": {
+    "systemPrompt": "You are a strict verifier for browser automation subtasks.\n\nDecide if the executor output satisfies the objective and success criteria.\nReturn JSON only:\n{\"decision\":\"accept\",\"reason\":\"...\",\"confidence\":0.0}\n{\"decision\":\"retry\",\"reason\":\"...\",\"confidence\":0.0,\"failureType\":\"insufficient_evidence\"}\n{\"decision\":\"reroute\",\"reason\":\"...\",\"confidence\":0.0,\"failureType\":\"blocked\",\"rerouteObjective\":\"...\"}\n\nRules:\n- Judge ONLY whether the Objective and Success criteria are satisfied — NOT the overall Task. The Task field is background context; this executor is responsible for ONE step of a larger plan. Partial overall progress is expected and correct.\n- accept only when criteria are clearly satisfied.\n- When deciding \"accept\", you MUST cite at least one specific piece of evidence from the executor's output. If the output lacks concrete evidence of success, use \"retry\" with failureType \"insufficient_evidence\".\n- retry when likely fixable by one more attempt on the same objective.\n- reroute when current approach is blocked and objective should be reframed.\n- rerouteObjective must be concrete and action-oriented.\n- confidence must be a number between 0 and 1.\n- failureType must be one of: blocked, state_mismatch, insufficient_evidence, transient, unknown.\n- for accept, omit failureType.\n- for retry/reroute, always include failureType.",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "Task (background context only — do NOT judge completion against this): You are on a warehouse inventory page (Warehouse Alpha — page 1 of 3). Click the button to go to Warehouse Beta (page 2), then click again to go to Warehouse Gamma (page 3). On page 3, read the inventory count for Warehouse Gamma. Then navigate back to Warehouse Alpha (page 1) using the breadcrumb links at the top of the page. Read the inventory count for Warehouse Alpha. Call done() reporting BOTH inventory counts: Gamma and Alpha.\nObjective: Navigate from Warehouse Alpha page 1 to Warehouse Beta page 2\nSuccess criteria: Page shows Warehouse Beta and page 2 of 3\nExecutor output: Completed the requested step: the page now shows Warehouse Beta on Page 2 of 3. The visible content confirms the navigation succeeded, with the heading Navigation Chain — Page 2 of 3 and the section Warehouse Beta showing Inventory count: 3,156 units.\n\nHandoff context:\n- Planner (planner): Navigate from Alpha to Beta\n- Executor start (executor): Started navigation\n"
+      }
+    ],
+    "tools": [],
+    "model": "openai/gpt-5.4-mini"
+  },
+  "expected": {
+    "toolCalls": [],
+    "text": "{\"decision\":\"accept\""
+  },
+  "metadata": {
+    "query": "You are on a warehouse inventory page (Warehouse Alpha — page 1 of 3). Click the button to go to Warehouse Beta (page 2), then click again to go to Warehouse Gamma (page 3). On page 3, read the inventory count for Warehouse Gamma. Then navigate back to Warehouse Alpha (page 1) using the breadcrumb links at the top of the page. Read the inventory count for Warehouse Alpha. Call done() reporting BOTH inventory counts: Gamma and Alpha.",
+    "sessionOutcome": "completed",
+    "difficulty": "moderate",
+    "tags": [
+      "golden",
+      "verifier_scope_leak"
+    ],
+    "pathology": "verifier_scope_leak",
+    "description": "Verifier sees node output matching objective (Alpha to Beta) but full task mentions Gamma + return. Should accept based on node objective, not reject based on full task."
+  }
+}
