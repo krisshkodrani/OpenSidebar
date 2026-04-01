@@ -453,12 +453,16 @@ export async function resetExtensionState(
   }
 
   await clearMonitoredEvents(ctx.serviceWorker);
+  // Close ALL non-extension pages and open a fresh one.
+  // Navigating to about:blank leaves the tab in a state where content scripts
+  // can't inject, causing bridge disconnects on subsequent tests.
   const pages = await ctx.browser.pages();
-  const anchorPage = pages.find((page) => !page.url().startsWith("chrome-extension://"));
-  if (anchorPage) {
-    await anchorPage.goto("about:blank", { waitUntil: "domcontentloaded" }).catch(() => {});
-    await closeNonExtensionPages(ctx, [anchorPage]);
+  const nonExtPages = pages.filter((p) => !p.url().startsWith("chrome-extension://"));
+  for (const p of nonExtPages) {
+    await p.close().catch(() => {});
   }
+  // Ensure at least one page exists for the next test
+  await ctx.browser.newPage();
 }
 
 /**

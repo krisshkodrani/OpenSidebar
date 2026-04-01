@@ -132,9 +132,12 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       await resetExtensionState(ctx);
       tracesBefore = snapshotTraceFiles();
       testStartTime = Date.now();
-      if (page.isClosed()) {
-        page = await ctx.browser.newPage();
-      }
+      // resetExtensionState closes old pages and creates a fresh one.
+      // Always pick up the latest non-extension page.
+      const freshPages = await ctx.browser.pages();
+      page =
+        freshPages.find((p) => !p.url().startsWith("chrome-extension://")) ||
+        (await ctx.browser.newPage());
     },
 
     async afterEachHook(testName?: string, passed: boolean | null = null) {

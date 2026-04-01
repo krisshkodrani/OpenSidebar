@@ -5182,7 +5182,7 @@ export class AgentLoop {
               // If the user's query has numbered steps and the agent has barely
               // started, reject once. Uses doneRejections so maxDoneRejections
               // cap prevents ghost sessions.
-              if (this.doneRejections === 0 && this.originalQuery) {
+              if (this.doneRejections === 0 && this.originalQuery && !this.nodeId) {
                 const stepCount = countExplicitSteps(this.originalQuery);
                 // Activate for queries with 3+ explicit steps where the agent
                 // has spent very few turns (turnCount includes planner's ~2 turns,
@@ -5347,7 +5347,12 @@ export class AgentLoop {
                     false,
                   );
 
-                  if (!shouldReject) {
+                  // Skip planner validateDone for orchestrator sub-nodes.
+                  // Sub-nodes only need to satisfy their node-level objective;
+                  // the orchestrator's own verifier checks node completion.
+                  // Calling validateDone with the full original query would
+                  // reject because sibling steps aren't done yet.
+                  if (!shouldReject && !this.nodeId) {
                     const currentSubtask =
                       effectiveCurrentIdx >= 0
                         ? this.planSubtasks[effectiveCurrentIdx]
