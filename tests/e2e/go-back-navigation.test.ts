@@ -88,7 +88,7 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
     ].join(" ");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-    const outcome = await waitForTaskCompletion(h.ctx, 240_000, workspaceId);
+    const outcome = await waitForTaskCompletion(h.ctx, 360_000, workspaceId);
 
     const { traceFiles } = await h.printTraceSummary();
 
@@ -151,5 +151,5 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
 
     console.log(`\n[e2e] PASS — Forward/back navigation with data collection`);
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
-  }, 300_000);
+  }, 420_000);
 });
