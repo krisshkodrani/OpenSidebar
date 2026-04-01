@@ -321,6 +321,63 @@ export function executeType(args: TypeTextArgs): {
   };
 }
 
+/**
+ * Activate CSS :hover rules on an element by injecting matching styles as a class.
+ * This works around the limitation that synthetic MouseEvent doesn't trigger the
+ * CSS :hover pseudo-class — only real mouse input does (or CDP Input.dispatchMouseEvent).
+ */
+function forceHoverStyles(el: HTMLElement): boolean {
+  try {
+    const hoverRules: string[] = [];
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (
+            rule instanceof CSSStyleRule &&
+            rule.selectorText.includes(":hover")
+          ) {
+            // Check if this rule would match our element when hovered
+            const baseSelector = rule.selectorText.replace(/:hover/g, "");
+            try {
+              if (el.matches(baseSelector) || el.closest(baseSelector)) {
+                // Extract the CSS text and add it to our override
+                hoverRules.push(rule.cssText.replace(/:hover/g, ".--os-hover-active"));
+              }
+            } catch {
+              // Invalid selector — skip
+            }
+          }
+        }
+      } catch {
+        // Cross-origin stylesheet — skip
+      }
+    }
+    if (hoverRules.length === 0) return false;
+
+    // Inject a <style> element with the hover rules rewritten to use a class
+    let styleEl = document.getElementById("__os-hover-override") as HTMLStyleElement | null;
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      styleEl.id = "__os-hover-override";
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = hoverRules.join("\n");
+
+    // Add the class to the element and its ancestors (some rules target parent:hover > child)
+    el.classList.add("--os-hover-active");
+    let parent = el.parentElement;
+    let depth = 0;
+    while (parent && depth < 5) {
+      parent.classList.add("--os-hover-active");
+      parent = parent.parentElement;
+      depth++;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function executeHover(args: { id: number }): {
   success: boolean;
   result: string;
@@ -331,13 +388,17 @@ export function executeHover(args: { id: number }): {
   if (!el) return staleIdError(args.id);
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
+  // Dispatch synthetic mouse events (triggers JS handlers)
   el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
   el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
   el.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
 
+  // Force CSS :hover styles (synthetic events don't activate the pseudo-class)
+  const forcedCss = forceHoverStyles(el as HTMLElement);
+
   return {
     success: true,
-    result: `Hovered over ${describeElement(el, tagId)}`,
+    result: `Hovered over ${describeElement(el, tagId)}${forcedCss ? " (CSS :hover activated)" : ""}`,
     navigated: false,
   };
 }
