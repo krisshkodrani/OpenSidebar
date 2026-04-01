@@ -26,7 +26,7 @@
   "toolMatch": "MATCH_TOOL_ARGS_DIFFER",
   "textMatch": "UNEXPECTED_TEXT",
   "matchesExpected": true,
-  "reviewStatus": "pending",
+  "reviewStatus": "accepted",
   "usage": {
     "prompt_tokens": 9867,
     "completion_tokens": 115,

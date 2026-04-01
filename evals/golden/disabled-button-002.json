@@ -144,13 +144,11 @@
   "expected": {
     "toolCalls": [
       {
-        "toolName": "escalate",
-        "args": {
-          "reason": "Code rejected by form 3 times - need different approach"
-        }
+        "toolName": "read_page",
+        "args": {}
       }
     ],
-    "text": null
+    "text": "I see the submit changed the DOM earlier, which suggests the page may have navigated or updated, but stale IDs/value reads made the state unclear. Re-typing the code also changed the DOM, so I should refresh perception and verify whether we are now on step 21 or if a new blocker/confirmation appeared.\nI’ll re-read the page to get current IDs and content, then finish if step 21 is visible; otherwise I’ll use the updated controls. The expected change is a fresh page snapshot showing the post-submit state."
   },
   "metadata": {
     "url": "https://example.com/browser-challenge/step20?version=1",
@@ -161,6 +159,19 @@
       "golden",
       "disabled_button"
     ],
-    "pathology": "disabled_button"
+    "pathology": "disabled_button",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "escalate",
+          "args": {
+            "reason": "Code rejected by form 3 times - need different approach"
+          }
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }

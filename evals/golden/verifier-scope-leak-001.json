@@ -30,7 +30,7 @@
     "description": "Verifier sees node output matching objective (Alpha to Beta) but full task mentions Gamma + return. Should accept based on node objective, not reject based on full task.",
     "previousExpected": {
       "toolCalls": [],
-      "text": "{\"decision\":\"accept\""
+      "text": "{\"decision\":\"accept\",\"reason\":\"Executor provided specific evidence that the objective was met: they report the page shows \\\"Warehouse Beta\\\" and \\\"Page 2 of 3,\\\" specifically citing the visible heading \\\"Navigation Chain — Page 2 of 3\\\" and the section \\\"Warehouse Beta.\\\" This matches the success criteria.\",\"confidence\":0.97}"
     },
     "baselineModel": "openai/gpt-5.4-20260305",
     "baselineDate": "2026-04-01"

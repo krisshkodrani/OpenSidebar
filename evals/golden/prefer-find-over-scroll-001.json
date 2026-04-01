@@ -100,8 +100,11 @@
     "previousExpected": {
       "toolCalls": [
         {
-          "toolName": "find_element",
-          "args": {}
+          "toolName": "wait",
+          "args": {
+            "seconds": 2,
+            "reason": "Need lazy-loaded posts 31-40 to render after nearing current bottom of the feed."
+          }
         }
       ],
       "text": null

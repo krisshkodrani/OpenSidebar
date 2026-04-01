@@ -105,7 +105,7 @@
           }
         }
       ],
-      "text": null
+      "text": "Think:\n- The required fields were already visible and are now filled; express shipping was selected.\n- The coupon still needs to be applied, and the checkout likely advanced after the action effect.\n- Applying the promo or confirming the checkout state should reveal SAVE10 and Express together."
     },
     "baselineModel": "openai/gpt-5.4-20260305",
     "baselineDate": "2026-04-01"

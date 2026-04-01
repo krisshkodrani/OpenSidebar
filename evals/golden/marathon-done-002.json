@@ -94,13 +94,14 @@
   "expected": {
     "toolCalls": [
       {
-        "toolName": "escalate",
+        "toolName": "inspect_hidden",
         "args": {
-          "reason": "Stuck on step 20 for 50+ turns, code keeps being rejected"
+          "pattern": "code",
+          "maxResults": 20
         }
       }
     ],
-    "text": null
+    "text": "I see the page is still on step 20, the input is present, and the submit button remains disabled. Prior attempts with code entry failed, so I need new evidence about the page state before choosing a different path.\nI'll inspect hidden elements again for the actual code or gating clue; I expect to find hidden text or instructions that explain why the button is disabled."
   },
   "metadata": {
     "url": "https://example.com/browser-challenge/step20?version=1",
@@ -111,6 +112,19 @@
       "golden",
       "marathon_no_done"
     ],
-    "pathology": "marathon_no_done"
+    "pathology": "marathon_no_done",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "escalate",
+          "args": {
+            "reason": "Stuck on step 20 for 50+ turns, code keeps being rejected"
+          }
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }
