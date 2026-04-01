@@ -1,0 +1,54 @@
+{
+  "caseId": "scope-decoy-distraction-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 123,
+          "count": 1
+        }
+      }
+    ],
+    "text": "I see the code is already revealed and entered as LURMNZ, but the page hasn't advanced yet.  \nI'll click the visible submit button to proceed to step 6; the URL or page heading should change if successful."
+  },
+  "handWrittenExpected": {
+    "toolCalls": [
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 123
+        }
+      }
+    ],
+    "text": null
+  },
+  "toolMatch": "MATCH_FULL",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 17702,
+    "completion_tokens": 75,
+    "total_tokens": 17777,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1920,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.04106,
+      "upstream_inference_prompt_cost": 0.039935,
+      "upstream_inference_completions_cost": 0.001125
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

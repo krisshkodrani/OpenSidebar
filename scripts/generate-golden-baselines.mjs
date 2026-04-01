@@ -19,9 +19,15 @@ import { join } from "path";
 
 const GOLDEN_DIR = "evals/golden";
 const BASELINE_DIR = "evals/golden/baselines";
+const TOOL_DEFS_PATH = "evals/tool-definitions.json";
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "openai/gpt-5.4";
 const PERCEPTION_MODEL = "openai/gpt-5.4"; // Use same top model for perception too
+
+// Load tool definitions for cases that expect tool calls
+const TOOL_DEFS = existsSync(TOOL_DEFS_PATH)
+  ? JSON.parse(readFileSync(TOOL_DEFS_PATH, "utf8"))
+  : [];
 
 // ── API Key ─────────────────────────────────────────────────────────────────
 
@@ -174,7 +180,10 @@ async function main() {
       ];
 
       const model = c.metadata?.tags?.includes("perception") ? PERCEPTION_MODEL : DEFAULT_MODEL;
-      const output = await callModel(messages, model, c.input.tools || []);
+      // Use tool definitions when the case expects tool calls
+      const expectsTools = c.expected?.toolCalls?.length > 0;
+      const tools = c.input.tools?.length > 0 ? c.input.tools : (expectsTools ? TOOL_DEFS : []);
+      const output = await callModel(messages, model, tools);
 
       // Compare with hand-written expected
       const toolMatch = compareToolCalls(c.expected, output);

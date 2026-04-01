@@ -1,0 +1,39 @@
+{
+  "caseId": "planner-sequencing-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [],
+    "text": "{\"isMultiStep\":false,\"steps\":[{\"objective\":\"Open the Settings tab, update the notification email field to admin@company.com, and click the Save Settings button\",\"successCriteria\":\"Settings tab content is visible, notification email field shows admin@company.com, and a Save Settings confirmation state appears such as Save Settings disabled, success message, or persisted admin@company.com value\",\"verifyAfter\":{\"trigger\":\"notification email field shows admin@company.com or a success message with Save Settings appears\",\"action\":\"call_done\",\"pattern\":\"admin@company\\\\.com|Save Settings|success|saved\"},\"toolProfile\":\"form_fill\"}],\"difficulty\":\"simple\"}"
+  },
+  "handWrittenExpected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "toolMatch": "MATCH_NONE",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 1870,
+    "completion_tokens": 135,
+    "total_tokens": 2005,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1664,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.002956,
+      "upstream_inference_prompt_cost": 0.000931,
+      "upstream_inference_completions_cost": 0.002025
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

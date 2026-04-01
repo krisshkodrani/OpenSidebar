@@ -1,0 +1,39 @@
+{
+  "caseId": "planner-criteria-quality-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [],
+    "text": "{\"isMultiStep\":true,\"difficulty\":\"complex\",\"steps\":[{\"objective\":\"Add Trabuco Max 3 to the cart from the shop page.\",\"successCriteria\":\"Cart shows Trabuco Max 3 and cart counter displays 1\",\"dependencies\":[],\"assumptions\":[\"The product listing for Trabuco Max 3 is visible on the Performance Running shop page.\"],\"verifyAfter\":{\"trigger\":\"Trabuco Max 3 appears in the cart and cart counter shows 1\",\"action\":\"advance_step\",\"pattern\":\"Trabuco Max 3|cart\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The cart or cart drawer is open and contains the Trabuco Max 3 product with quantity 1.\",\"urlPattern\":\"shop|cart\",\"expectedPhrases\":[\"Trabuco Max 3\",\"Cart\"]}},{\"objective\":\"Change the quantity of Trabuco Max 3 in the cart to 3.\",\"successCriteria\":\"Trabuco Max 3 quantity field shows 3\",\"dependencies\":[0],\"assumptions\":[\"The cart view is open and the Trabuco Max 3 line item is visible.\"],\"verifyAfter\":{\"trigger\":\"Quantity control for Trabuco Max 3 displays 3\",\"action\":\"advance_step\",\"pattern\":\"3\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The cart displays Trabuco Max 3 with quantity set to 3.\",\"urlPattern\":\"cart|checkout|shop\",\"expectedPhrases\":[\"Trabuco Max 3\",\"3\"]}},{\"objective\":\"Apply promo code SAVE10 in the cart or checkout.\",\"successCriteria\":\"Promo code SAVE10 is visible as applied or discount line shows SAVE10\",\"dependencies\":[1],\"assumptions\":[\"A promo code input is available in the cart or checkout flow.\"],\"verifyAfter\":{\"trigger\":\"SAVE10 appears in applied promo area or discount section\",\"action\":\"advance_step\",\"pattern\":\"SAVE10\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The order summary shows promo code SAVE10 applied or a discount line is visible.\",\"urlPattern\":\"cart|checkout\",\"expectedPhrases\":[\"SAVE10\",\"Discount\"]}},{\"objective\":\"Proceed to checkout and keep the shipping method as Standard.\",\"successCriteria\":\"Checkout page shows Standard shipping selected\",\"dependencies\":[2],\"assumptions\":[\"A checkout button is available after the cart step.\"],\"verifyAfter\":{\"trigger\":\"Shipping section displays Standard as selected\",\"action\":\"advance_step\",\"pattern\":\"Standard\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The checkout page is visible with the shipping method set to Standard.\",\"urlPattern\":\"checkout\",\"expectedPhrases\":[\"Checkout\",\"Standard\"]}},{\"objective\":\"Enter Sam Walker and sam@test.com in the checkout contact form.\",\"successCriteria\":\"Checkout form shows Sam Walker and sam@test.com in the contact fields\",\"dependencies\":[3],\"assumptions\":[\"The checkout form includes name and email fields.\"],\"verifyAfter\":{\"trigger\":\"Contact fields display Sam Walker and sam@test.com\",\"action\":\"advance_step\",\"pattern\":\"Sam Walker|sam@test.com\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The checkout form contains the provided customer name and email.\",\"urlPattern\":\"checkout\",\"expectedPhrases\":[\"Sam Walker\",\"sam@test.com\"]}},{\"objective\":\"Place the order.\",\"successCriteria\":\"Order confirmation page shows confirmation message or order ID visible\",\"dependencies\":[4],\"assumptions\":[\"All required checkout fields beyond name and email are already satisfied or not required.\"],\"verifyAfter\":{\"trigger\":\"Confirmation page displays order confirmation text or order ID\",\"action\":\"call_done\",\"pattern\":\"Order|Confirmation|Thank you|#\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"An order confirmation or thank-you page is displayed with a visible confirmation message or order number.\",\"urlPattern\":\"confirmation|order\",\"expectedPhrases\":[\"Thank you\",\"Order\",\"Confirmation\"]}}]}"
+  },
+  "handWrittenExpected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "toolMatch": "MATCH_NONE",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 1894,
+    "completion_tokens": 787,
+    "total_tokens": 2681,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1792,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.012508,
+      "upstream_inference_prompt_cost": 0.000703,
+      "upstream_inference_completions_cost": 0.011805
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}
