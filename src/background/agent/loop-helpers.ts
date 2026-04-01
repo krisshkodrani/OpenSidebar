@@ -80,14 +80,15 @@ export function validateElementIds(
 }
 
 /**
- * Extract tag IDs from find_element tool results.
- * find_element returns strings like "Found ... near [30] <td> ...".
+ * Extract tag IDs mentioned in tool results.
+ * Tools report dynamic tags as [N] — e.g. find_element ("near [30] <td>"),
+ * click interception ("covered by [34] <div>"). These tags exist in the
+ * content script's tag map but may not be in the background's snapshot yet.
  */
 export function extractDiscoveredTagIds(
-  toolName: string,
+  _toolName: string,
   result: string,
 ): number[] {
-  if (toolName !== ToolName.FIND_ELEMENT) return [];
   const matches = result.matchAll(/\[(\d+)\]/g);
   return [...matches].map((m) => Number(m[1])).filter((n) => !isNaN(n));
 }
