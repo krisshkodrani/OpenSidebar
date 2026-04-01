@@ -96,10 +96,12 @@
       "toolCalls": [
         {
           "toolName": "done",
-          "args": {}
+          "args": {
+            "summary": "Completed Step 1: the cart drawer visibly shows **Trabuco Max 3** with **quantity 1**, confirming the shoe was added to the cart."
+          }
         }
       ],
-      "text": null
+      "text": "Think:\n- The cart drawer already shows Trabuco Max 3 with quantity 1, which matches the step success criteria.\n- No further page action is needed; I should complete the task with a done call.\n- This should end the current objective cleanly."
     },
     "baselineModel": "openai/gpt-5.4-20260305",
     "baselineDate": "2026-04-01"

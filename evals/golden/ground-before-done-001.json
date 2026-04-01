@@ -37,11 +37,13 @@
     "previousExpected": {
       "toolCalls": [
         {
-          "toolName": "read_page",
-          "args": {}
+          "toolName": "done",
+          "args": {
+            "summary": "Footnote **[2]** cites: **\"Buffer's report surveys over 2,500 remote workers annually across multiple industries.\"**"
+          }
         }
       ],
-      "text": null
+      "text": "Think:\n- The page content already shows the footnotes, including Footnote 2 text.\n- Success is satisfied because the citation/source text for footnote [2] is visible now.\n- I should report the full citation text directly."
     },
     "baselineModel": "openai/gpt-5.4-20260305",
     "baselineDate": "2026-04-01"

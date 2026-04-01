@@ -71,13 +71,20 @@
   "expected": {
     "toolCalls": [
       {
+        "toolName": "inspect_hidden",
+        "args": {
+          "pattern": "code",
+          "maxResults": 20
+        }
+      },
+      {
         "toolName": "execute_js",
         "args": {
-          "code": "document.querySelectorAll('[data-code],[aria-label]').length"
+          "code": "(function(){ const metas=[...document.querySelectorAll('meta')].map(m=>({name:m.getAttribute('name'),property:m.getAttribute('property'),content:m.getAttribute('content')})); const attrs=[]; for(const el of Array.from(document.querySelectorAll('*'))){ for(const a of Array.from(el.attributes||[])){ const n=a.name.toLowerCase(); const v=a.value; if(/code|secret|pass|key|token|aria-label|title/i.test(n) || /code|secret|pass|key|token/i.test(v)) attrs.push({tag:el.tagName.toLowerCase(), attr:n, value:v, text:(el.textContent||'').trim().slice(0,80)}); } } return JSON.stringify({url:location.href, metas, attrs:attrs.slice(0,100)}); })()"
         }
       }
     ],
-    "text": null
+    "text": "I see the click on the supposed “Next Step” had no effect, so that was likely a decoy or nonfunctional element. The page hint says the code is hidden in attributes/aria/meta, and prior attempts only checked a few attributes on one paragraph.\nI’ll inspect hidden elements for “code” and then use JS to search meta/attributes for likely secret values. I expect to uncover a code string or a real input/navigation mechanism."
   },
   "metadata": {
     "url": "https://example.com/browser-challenge/step1?version=1",
@@ -88,6 +95,19 @@
       "golden",
       "escalation_repeat"
     ],
-    "pathology": "escalation_repeat"
+    "pathology": "escalation_repeat",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "execute_js",
+          "args": {
+            "code": "document.querySelectorAll('[data-code],[aria-label]').length"
+          }
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }
