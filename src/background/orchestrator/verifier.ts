@@ -362,7 +362,7 @@ export class OrchestratorVerifier {
           {
             role: "user",
             content:
-              `Task: ${input.taskQuery}\n` +
+              `Task (background context only — do NOT judge completion against this): ${input.taskQuery}\n` +
               `Objective: ${input.objective}\n` +
               `Success criteria: ${input.successCriteria}\n` +
               `Executor output: ${input.output}\n` +
