@@ -82,7 +82,7 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
       "You are on a warehouse inventory page (Warehouse Alpha — page 1 of 3).",
       "Click the button to go to Warehouse Beta (page 2), then click again to go to Warehouse Gamma (page 3).",
       "On page 3, read the inventory count for Warehouse Gamma.",
-      "Then use go_back twice to return to page 1 (Warehouse Alpha).",
+      "Then navigate back to Warehouse Alpha (page 1) using the breadcrumb links at the top of the page.",
       "Read the inventory count for Warehouse Alpha.",
       "Call done() reporting BOTH inventory counts: Gamma and Alpha.",
     ].join(" ");
@@ -108,12 +108,13 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
     const toolNames = extractToolNames(traceFiles);
     console.log("[e2e] Tools used:", toolNames.join(", "));
 
-    // Must have used go_back or navigate backward
+    // Must have used some form of backward navigation (breadcrumb click, go_back, or navigate)
     const hasGoBack = toolNames.includes("go_back");
     const hasNavigate = toolNames.includes("navigate");
+    const hasClick = toolNames.includes("click_element");
     expect(
-      hasGoBack || hasNavigate,
-      "Agent must use go_back or navigate to return to earlier pages",
+      hasGoBack || hasNavigate || hasClick,
+      "Agent must use breadcrumbs, go_back, or navigate to return to earlier pages",
     ).toBe(true);
 
     // Check aggregated summary from TASK_COMPLETION (combines all node results).

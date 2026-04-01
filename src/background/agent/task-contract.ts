@@ -72,7 +72,7 @@ function extractReturnTargets(text: string): string[] {
     if (raw) targets.push(normalize(raw));
   }
   for (const match of text.matchAll(
-    /\b(?:return|go back|back)\s+to[^.\n]{0,80}\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/gi,
+    /\b(?:return|go back|navigate back|back)\s+to\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})/g,
   )) {
     targets.push(normalize(match[1]));
   }
@@ -187,10 +187,23 @@ export function repairPlanCoverage(params: {
     steps.map((step) => `${step.objective}\n${step.successCriteria}`).join("\n"),
   );
 
+  // Check if any step explicitly returns to the target (not just mentions it
+  // in a "navigate FROM target" context). Look for "return to X" or "back to X"
+  // patterns in objectives, not bare string inclusion.
+  const hasExplicitReturn = (target: string) =>
+    steps.some((step) => {
+      const obj = normalize(step.objective);
+      return (
+        obj.includes(`return to ${target}`) ||
+        obj.includes(`back to ${target}`) ||
+        obj.includes(`navigate to ${target}`) ||
+        (obj.startsWith(`read`) && obj.includes(target))
+      );
+    });
   if (
     contract.requiresRoundTrip &&
     contract.returnTargets.length > 0 &&
-    !contract.returnTargets.some((target) => corpus.includes(target))
+    !contract.returnTargets.some((target) => hasExplicitReturn(target))
   ) {
     const target = contract.returnTargets[0];
     steps.push({
