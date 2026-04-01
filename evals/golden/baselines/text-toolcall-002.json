@@ -1,0 +1,61 @@
+{
+  "caseId": "text-toolcall-002",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 390,
+          "count": 1
+        }
+      },
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 591,
+          "count": 1
+        }
+      }
+    ],
+    "text": "I see the Step 9 page with a visible “Reveal Code” button and nuisance popups called out as blockers. I’ll dismiss the overlays first so they don’t interfere with revealing or entering the code.  \nAfter this, the popups should disappear and the main controls should be easier to interact with."
+  },
+  "handWrittenExpected": {
+    "toolCalls": [
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 3
+        }
+      }
+    ],
+    "text": null
+  },
+  "toolMatch": "MATCH_TOOL_ARGS_DIFFER",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 11536,
+    "completion_tokens": 125,
+    "total_tokens": 11661,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 3584,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.022651,
+      "upstream_inference_prompt_cost": 0.020776,
+      "upstream_inference_completions_cost": 0.001875
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

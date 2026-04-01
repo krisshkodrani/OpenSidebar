@@ -1,0 +1,54 @@
+{
+  "caseId": "disabled-button-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [
+      {
+        "toolName": "click_element",
+        "args": {
+          "id": 47,
+          "count": 1
+        }
+      }
+    ],
+    "text": "Think:\nI see the code field already filled with 47NV6U and the real submit control [47] visible; prior failures involved wrong/irrelevant targets, not the actual submit.\nI’ll submit via the proper button now, because this differs from the logged failed actions and is the intended progression path.\nI expect either navigation to step21, a URL/content change, or an error/overlay that I can then investigate."
+  },
+  "handWrittenExpected": {
+    "toolCalls": [
+      {
+        "toolName": "inspect_hidden",
+        "args": {
+          "pattern": "[A-Z0-9]{6}"
+        }
+      }
+    ],
+    "text": null
+  },
+  "toolMatch": "TOOL_MISMATCH (expected: inspect_hidden, got: click_element)",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": false,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 10969,
+    "completion_tokens": 116,
+    "total_tokens": 11085,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1920,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0248425,
+      "upstream_inference_prompt_cost": 0.0231025,
+      "upstream_inference_completions_cost": 0.00174
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

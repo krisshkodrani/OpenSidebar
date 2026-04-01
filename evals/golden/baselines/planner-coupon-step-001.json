@@ -1,0 +1,39 @@
+{
+  "caseId": "planner-coupon-step-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [],
+    "text": "{\"isMultiStep\":true,\"difficulty\":\"moderate\",\"steps\":[{\"objective\":\"Find and open the product page for Air Zoom Pegasus 41 from the Northstar Outfitters shop page.\",\"successCriteria\":\"Product page shows Air Zoom Pegasus 41 title and Add to Cart button visible\",\"dependencies\":[],\"assumptions\":[\"The shop page lists or links to Air Zoom Pegasus 41.\"],\"verifyAfter\":{\"trigger\":\"Air Zoom Pegasus 41 title visible with Add to Cart button\",\"action\":\"advance_step\",\"pattern\":\"Air Zoom Pegasus 41|Add to Cart\"},\"toolProfile\":\"navigate\",\"expectedState\":{\"description\":\"The product detail page for the running shoe is open.\",\"expectedPhrases\":[\"Air Zoom Pegasus 41\",\"Add to Cart\"]}},{\"objective\":\"Add Air Zoom Pegasus 41 to the cart and open the cart or checkout view.\",\"successCriteria\":\"Cart or checkout view shows Air Zoom Pegasus 41 and cart counter displays 1 or cart line item visible\",\"dependencies\":[0],\"assumptions\":[\"The product can be added with a standard Add to Cart control.\"],\"verifyAfter\":{\"trigger\":\"Cart view displays Air Zoom Pegasus 41 line item\",\"action\":\"advance_step\",\"pattern\":\"Air Zoom Pegasus 41\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The cart or checkout page is visible with the selected shoe added.\",\"expectedPhrases\":[\"Air Zoom Pegasus 41\",\"Cart\",\"Checkout\"]}},{\"objective\":\"Apply coupon code SAVE10 in the promo or discount code field.\",\"successCriteria\":\"Coupon SAVE10 appears applied and discount line or savings message visible\",\"dependencies\":[1],\"assumptions\":[\"A promo code field is available in cart or checkout.\"],\"verifyAfter\":{\"trigger\":\"SAVE10 applied message or discount line visible\",\"action\":\"advance_step\",\"pattern\":\"SAVE10|discount|savings\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The order summary reflects the applied coupon.\",\"expectedPhrases\":[\"SAVE10\",\"Discount\",\"Savings\"]}},{\"objective\":\"Select express shipping in the shipping options.\",\"successCriteria\":\"Express shipping option is selected and order summary shows Express shipping\",\"dependencies\":[2],\"assumptions\":[\"Shipping options are available before final order submission.\"],\"verifyAfter\":{\"trigger\":\"Express shipping marked selected\",\"action\":\"advance_step\",\"pattern\":\"Express\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The shipping method area shows express as the chosen option.\",\"expectedPhrases\":[\"Express\"]}},{\"objective\":\"Enter checkout contact information for Alex Morgan with email alex.morgan@example.com.\",\"successCriteria\":\"Checkout form shows Alex Morgan and alex.morgan@example.com in the contact fields\",\"dependencies\":[3],\"assumptions\":[\"Checkout has visible contact fields for name and email.\"],\"verifyAfter\":{\"trigger\":\"Alex Morgan and alex.morgan@example.com visible in form fields\",\"action\":\"advance_step\",\"pattern\":\"Alex Morgan|alex\\\\.morgan@example\\\\.com\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"The checkout form is filled with the provided customer identity.\",\"expectedPhrases\":[\"Alex Morgan\",\"alex.morgan@example.com\"]}},{\"objective\":\"Place the order to complete checkout.\",\"successCriteria\":\"Order confirmation page shows confirmation message or order ID visible\",\"dependencies\":[4],\"assumptions\":[\"No additional required fields beyond provided contact info block order placement.\"],\"verifyAfter\":{\"trigger\":\"Order confirmation message or order ID visible\",\"action\":\"call_done\",\"pattern\":\"Order Confirmation|Thank you|Order ID\"},\"toolProfile\":\"form_fill\",\"expectedState\":{\"description\":\"A final confirmation page is displayed after submitting the order.\",\"expectedPhrases\":[\"Order Confirmation\",\"Thank you\",\"Order ID\"]}}]}"
+  },
+  "handWrittenExpected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "toolMatch": "MATCH_NONE",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 1884,
+    "completion_tokens": 737,
+    "total_tokens": 2621,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1664,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.012021,
+      "upstream_inference_prompt_cost": 0.000966,
+      "upstream_inference_completions_cost": 0.011055
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

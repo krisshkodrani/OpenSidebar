@@ -1,0 +1,39 @@
+{
+  "caseId": "planner-roundtrip-001",
+  "model": "openai/gpt-5.4-20260305",
+  "modelOutput": {
+    "toolCalls": [],
+    "text": "{\"isMultiStep\":true,\"difficulty\":\"moderate\",\"steps\":[{\"objective\":\"Navigate from Warehouse Alpha to Warehouse Beta by clicking the Warehouse Beta link.\",\"successCriteria\":\"Page shows Warehouse Beta and page 2 of 3\",\"dependencies\":[],\"assumptions\":[\"The current page is Warehouse Alpha on page 1 of 3.\"],\"verifyAfter\":{\"trigger\":\"Warehouse Beta and page 2 of 3 are visible\",\"action\":\"advance_step\",\"pattern\":\"Warehouse Beta|page 2 of 3\"},\"toolProfile\":\"navigate\",\"expectedState\":{\"description\":\"The page has advanced to the Warehouse Beta view in the chain.\",\"urlPattern\":\"step=2\",\"expectedPhrases\":[\"Warehouse Beta\",\"page 2 of 3\"]}},{\"objective\":\"Navigate from Warehouse Beta to Warehouse Gamma by clicking the Warehouse Gamma link.\",\"successCriteria\":\"Page shows Warehouse Gamma and page 3 of 3\",\"dependencies\":[0],\"assumptions\":[\"Warehouse Beta view is open.\"],\"verifyAfter\":{\"trigger\":\"Warehouse Gamma and page 3 of 3 are visible\",\"action\":\"advance_step\",\"pattern\":\"Warehouse Gamma|page 3 of 3\"},\"toolProfile\":\"navigate\",\"expectedState\":{\"description\":\"The page has advanced to the Warehouse Gamma view.\",\"urlPattern\":\"step=3\",\"expectedPhrases\":[\"Warehouse Gamma\",\"page 3 of 3\"]}},{\"objective\":\"Read the inventory count shown on the Warehouse Gamma page.\",\"successCriteria\":\"Warehouse Gamma inventory count text is visible on the page\",\"dependencies\":[1],\"assumptions\":[\"Warehouse Gamma page is visible.\"],\"verifyAfter\":{\"trigger\":\"Warehouse Gamma inventory count text is visible\",\"action\":\"advance_step\"},\"toolProfile\":\"read_only\",\"expectedState\":{\"description\":\"The Gamma page displays an inventory count that can be read from the DOM.\",\"expectedPhrases\":[\"Warehouse Gamma\",\"Inventory\"]}},{\"objective\":\"Navigate back to Warehouse Alpha by clicking the Warehouse Alpha breadcrumb link.\",\"successCriteria\":\"Page shows Warehouse Alpha and page 1 of 3\",\"dependencies\":[2],\"assumptions\":[\"A breadcrumb trail is visible from the Warehouse Gamma page.\"],\"verifyAfter\":{\"trigger\":\"Warehouse Alpha and page 1 of 3 are visible\",\"action\":\"advance_step\",\"pattern\":\"Warehouse Alpha|page 1 of 3\"},\"toolProfile\":\"navigate\",\"expectedState\":{\"description\":\"The page returns to the Warehouse Alpha view via breadcrumb navigation.\",\"urlPattern\":\"step=1\",\"expectedPhrases\":[\"Warehouse Alpha\",\"page 1 of 3\"]}},{\"objective\":\"Read the inventory count shown on the Warehouse Alpha page and report both the Warehouse Gamma and Warehouse Alpha inventory counts.\",\"successCriteria\":\"Warehouse Alpha inventory count text is visible on the page\",\"dependencies\":[3],\"assumptions\":[\"Warehouse Alpha page is visible and the previously read Gamma inventory count is available to report.\"],\"verifyAfter\":{\"trigger\":\"Warehouse Alpha inventory count text is visible\",\"action\":\"call_done\"},\"toolProfile\":\"read_only\",\"expectedState\":{\"description\":\"The Alpha page displays its inventory count, enabling a final report that includes both Alpha and Gamma counts.\",\"expectedPhrases\":[\"Warehouse Alpha\",\"Inventory\"]}}]}"
+  },
+  "handWrittenExpected": {
+    "toolCalls": [],
+    "text": null
+  },
+  "toolMatch": "MATCH_NONE",
+  "textMatch": "UNEXPECTED_TEXT",
+  "matchesExpected": true,
+  "reviewStatus": "pending",
+  "usage": {
+    "prompt_tokens": 1907,
+    "completion_tokens": 630,
+    "total_tokens": 2537,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 1792,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0101855,
+      "upstream_inference_prompt_cost": 0.0007355,
+      "upstream_inference_completions_cost": 0.00945
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}
