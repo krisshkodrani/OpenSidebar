@@ -79,8 +79,11 @@
   "expected": {
     "toolCalls": [
       {
-        "toolName": "find_element",
-        "args": {}
+        "toolName": "wait",
+        "args": {
+          "seconds": 2,
+          "reason": "Need lazy-loaded posts 31-40 to render after nearing current bottom of the feed."
+        }
       }
     ],
     "text": null
@@ -93,6 +96,17 @@
       "prefer_find_element"
     ],
     "pathology": "prefer_find_element",
-    "description": "Agent has been scrolling for several turns without finding target post. Should try find_element to jump directly instead of continuing to scroll."
+    "description": "Agent has been scrolling for several turns without finding target post. Should try find_element to jump directly instead of continuing to scroll.",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "find_element",
+          "args": {}
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }

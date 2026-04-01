@@ -82,7 +82,7 @@
         }
       }
     ],
-    "text": null
+    "text": "Think:\n- The required fields were already visible and are now filled; express shipping was selected.\n- The coupon still needs to be applied, and the checkout likely advanced after the action effect.\n- Applying the promo or confirming the checkout state should reveal SAVE10 and Express together."
   },
   "metadata": {
     "url": "http://127.0.0.1:58934/shop",
@@ -94,6 +94,20 @@
       "premature_submit"
     ],
     "pathology": "premature_submit",
-    "description": "Agent sees Discount: $0.00 and Coupon status: none applied yet with Apply button [63] visible. Should click Apply before Place Order. Tests pre-submit verification prompt rule."
+    "description": "Agent sees Discount: $0.00 and Coupon status: none applied yet with Apply button [63] visible. Should click Apply before Place Order. Tests pre-submit verification prompt rule.",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "click_element",
+          "args": {
+            "id": 63,
+            "count": 1
+          }
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }
