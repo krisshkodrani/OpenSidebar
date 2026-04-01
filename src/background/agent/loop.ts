@@ -120,6 +120,7 @@ import {
   TURN_RETRY_BACKOFF_MS,
   userExplicitlyRequestedTabManagement,
   validateElementIds,
+  extractDiscoveredTagIds,
 } from "./loop-helpers";
 import {
   BUILTIN_DEMO_MULTI_ITEM_SHOPPING,
@@ -1518,6 +1519,17 @@ export class AgentLoop {
           snapshot.title || "",
           ToolName.READ_PAGE,
         );
+      }
+
+      // Pre-set hasReadPage when initial snapshot has substantive content.
+      // The system prompt includes pageContent (up to 60K chars), so the LLM
+      // genuinely has the page content — no need to require an explicit read_page call.
+      const initElements = snapshot.elements?.length ?? 0;
+      const initContentLen = (
+        snapshot.pageContent ?? snapshot.visibleContent ?? ""
+      ).length;
+      if (initElements > 5 && initContentLen > 100) {
+        this.hasReadPage = true;
       }
 
       if (warmupPerception) {
@@ -3347,6 +3359,9 @@ export class AgentLoop {
     // Track all recent tool calls so exact looping can be blocked even when calls "succeed"
     const recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
 
+    // Tag IDs discovered by find_element (not yet in snapshot but valid for next tool call)
+    const discoveredTagIds = new Set<number>();
+
     // Failed action memory: prevents exact repeats of failed tool calls
     const blockedActions: BlockedAction[] = [];
     let turnsSinceStepEscalation = -1; // -1 = no step escalation active
@@ -4377,6 +4392,7 @@ export class AgentLoop {
                 toolName,
                 args,
                 this.context.getSnapshot(),
+                discoveredTagIds,
               );
               if (idError) {
                 this.log.warn("agent", "Invalid element ID pre-dispatch", {
@@ -4516,6 +4532,10 @@ export class AgentLoop {
               try {
                 const result = await this.executeToolCall(toolCall, tabId);
                 const toolMs = Date.now() - toolStep.timestamp;
+                // Track tag IDs discovered by find_element
+                for (const id of extractDiscoveredTagIds(toolName, result)) {
+                  discoveredTagIds.add(id);
+                }
                 this.middleware.evaluatePostTool(
                   toolName,
                   result,
@@ -4883,6 +4903,7 @@ export class AgentLoop {
               toolName,
               args,
               this.context.getSnapshot(),
+              discoveredTagIds,
             );
             if (idError) {
               this.context.addMessage({
@@ -5099,10 +5120,10 @@ export class AgentLoop {
               }
 
               // Done() Content Verification Guard
-              // Reject done() if the agent never called read_page/xray_page and the page
+              // Reject done() if the agent never had access to page content and the page
               // has substantive content — prevents hallucinated summaries from filename/URL alone.
-              // Only enforce for plan-based tasks. Planless tasks (summarize, Q&A) can
-              // complete in 1 turn since the system prompt already includes the snapshot.
+              // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
+              // includes substantive content (system prompt provides it via {{pageContent}}).
               if (
                 !this.hasReadPage &&
                 (this.taskId ||
@@ -6167,6 +6188,10 @@ export class AgentLoop {
             try {
               result = await this.executeToolCall(toolCall, tabId);
               const toolMs = Date.now() - toolStep.timestamp;
+              // Track tag IDs discovered by find_element
+              for (const id of extractDiscoveredTagIds(toolName, result)) {
+                discoveredTagIds.add(id);
+              }
               this.middleware.evaluatePostTool(
                 toolName,
                 result,

@@ -2715,7 +2715,9 @@ export class Orchestrator {
       // success criteria are already satisfied on the page, skip remaining nodes.
       const completedNodes = task.nodes.filter((n) => n.status === "completed");
       const remainingPending = task.nodes.filter((n) => n.status === "pending");
-      if (completedNodes.length > 0 && remainingPending.length > 0) {
+      // Only allow skipping when at most 1 node remains pending.
+      // Prevents premature skipping after early steps when most work is still ahead.
+      if (remainingPending.length === 1 && completedNodes.length > 0) {
         const finalNode = task.nodes[task.nodes.length - 1];
         if (finalNode.status === "pending" && finalNode.successCriteria) {
           try {

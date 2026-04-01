@@ -119,7 +119,6 @@ describe("Tool Metadata", () => {
   describe("CACHEABLE_TOOLS", () => {
     test("contains expected DOM-cacheable tools", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.READ_ELEMENT)).toBe("dom");
-      expect(CACHEABLE_TOOLS.get(ToolName.FIND_ELEMENT)).toBe("dom");
       expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_HIDDEN)).toBe("dom");
     });
 

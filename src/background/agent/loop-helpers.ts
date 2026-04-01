@@ -38,10 +38,14 @@ export function validateElementIds(
   toolName: string,
   args: Record<string, unknown>,
   snapshot: DomSnapshot | null,
+  discoveredIds?: Set<number>,
 ): string | null {
   if (!snapshot || snapshot.elements.length === 0) return null;
 
   const validIds = new Set(snapshot.elements.map((e) => e.tag));
+  if (discoveredIds) {
+    for (const id of discoveredIds) validIds.add(id);
+  }
 
   const checkId = (id: unknown, paramName: string): string | null => {
     if (id == null) return null; // param not present — let executor handle
@@ -73,6 +77,19 @@ export function validateElementIds(
     );
   }
   return null;
+}
+
+/**
+ * Extract tag IDs from find_element tool results.
+ * find_element returns strings like "Found ... near [30] <td> ...".
+ */
+export function extractDiscoveredTagIds(
+  toolName: string,
+  result: string,
+): number[] {
+  if (toolName !== ToolName.FIND_ELEMENT) return [];
+  const matches = result.matchAll(/\[(\d+)\]/g);
+  return [...matches].map((m) => Number(m[1])).filter((n) => !isNaN(n));
 }
 
 /**
