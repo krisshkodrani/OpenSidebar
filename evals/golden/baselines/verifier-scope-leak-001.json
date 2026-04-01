@@ -12,7 +12,7 @@
   "toolMatch": "MATCH_NONE",
   "textMatch": "MATCH_DECISION",
   "matchesExpected": true,
-  "reviewStatus": "pending",
+  "reviewStatus": "accepted",
   "usage": {
     "prompt_tokens": 522,
     "completion_tokens": 74,

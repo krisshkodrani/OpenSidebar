@@ -24,7 +24,7 @@
   "toolMatch": "MATCH_TOOL",
   "textMatch": "UNEXPECTED_TEXT",
   "matchesExpected": true,
-  "reviewStatus": "pending",
+  "reviewStatus": "accepted",
   "usage": {
     "prompt_tokens": 8559,
     "completion_tokens": 110,

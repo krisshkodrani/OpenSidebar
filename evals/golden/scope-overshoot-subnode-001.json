@@ -74,10 +74,12 @@
     "toolCalls": [
       {
         "toolName": "done",
-        "args": {}
+        "args": {
+          "summary": "Completed Step 1: the cart drawer visibly shows **Trabuco Max 3** with **quantity 1**, confirming the shoe was added to the cart."
+        }
       }
     ],
-    "text": null
+    "text": "Think:\n- The cart drawer already shows Trabuco Max 3 with quantity 1, which matches the step success criteria.\n- No further page action is needed; I should complete the task with a done call.\n- This should end the current objective cleanly."
   },
   "metadata": {
     "url": "http://127.0.0.1:51260/shop",
@@ -89,6 +91,17 @@
       "scope_overshoot_subnode"
     ],
     "pathology": "scope_overshoot_subnode",
-    "description": "Executor completed node objective (add to cart, qty 1 visible). Original query says change qty to 3 but that is a FUTURE node. Agent should call done() now, not start changing quantity."
+    "description": "Executor completed node objective (add to cart, qty 1 visible). Original query says change qty to 3 but that is a FUTURE node. Agent should call done() now, not start changing quantity.",
+    "previousExpected": {
+      "toolCalls": [
+        {
+          "toolName": "done",
+          "args": {}
+        }
+      ],
+      "text": null
+    },
+    "baselineModel": "openai/gpt-5.4-20260305",
+    "baselineDate": "2026-04-01"
   }
 }

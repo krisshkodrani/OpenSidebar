@@ -24,7 +24,7 @@
   "toolMatch": "TOOL_MISMATCH (expected: read_page, got: done)",
   "textMatch": "UNEXPECTED_TEXT",
   "matchesExpected": false,
-  "reviewStatus": "pending",
+  "reviewStatus": "accepted",
   "usage": {
     "prompt_tokens": 5384,
     "completion_tokens": 99,
