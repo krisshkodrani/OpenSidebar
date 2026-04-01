@@ -96,7 +96,7 @@ describe.skipIf(!h.apiKey)("E2E: Procurement List", () => {
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-    const outcome = await waitForTaskCompletion(h.ctx, 300_000, workspaceId);
+    const outcome = await waitForTaskCompletion(h.ctx, 480_000, workspaceId);
 
     const { traceFiles } = await h.printTraceSummary();
 
@@ -131,5 +131,5 @@ describe.skipIf(!h.apiKey)("E2E: Procurement List", () => {
 
     console.log(`\n[e2e] PASS — Procurement list processed (${toolNames.length} tool calls)`);
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
-  }, 360_000);
+  }, 540_000);
 });

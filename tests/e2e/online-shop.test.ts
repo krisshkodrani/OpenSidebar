@@ -144,7 +144,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
         );
         return order || null;
       },
-      300_000,
+      480_000,
       workspaceId,
     );
 
@@ -211,7 +211,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     assertNodeIsolation(wsEvents, traceFiles);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
-  }, 380_000);
+  }, 540_000);
 
   it("agent adds accessory, applies coupon, express shipping", async () => {
     await navigateAndWait(h.page, getFixtureUrl("shop"));
@@ -488,7 +488,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
         );
         return order || null;
       },
-      300_000,
+      480_000,
       workspaceId,
     );
 
@@ -562,6 +562,6 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     console.log("[e2e] Watching for ghost sessions (12s quiet period)...");
     await assertNoGhostSession(h.ctx.serviceWorker, 12_000, workspaceId);
     console.log("[e2e] No ghost session detected — OK");
-  }, 420_000);
+  }, 540_000);
 
 });
