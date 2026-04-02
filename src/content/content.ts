@@ -737,86 +737,42 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
 const BORDER_ID = "opensidebar-agent-border";
 const STOP_BTN_ID = "opensidebar-stop-btn";
-let borderAnimation: Animation | null = null;
-
 function setAgentBorder(active: boolean) {
   const existing = document.getElementById(BORDER_ID);
   const existingBtn = document.getElementById(STOP_BTN_ID);
 
   if (active) {
-    // --- Warm ambient vignette overlay ---
-    // 12px frame that is solid orange at the viewport edge and fades to
-    // transparent toward the center, creating a glowing vignette effect.
+    // --- Static vignette overlay ---
+    // Solid warm orange at the viewport edge, fading smoothly inward.
+    // Layered inset box-shadows with decreasing opacity simulate the gradient.
+    // No animation — just a persistent "agent is active" indicator.
     if (!existing) {
       const overlay = document.createElement("div");
       overlay.id = BORDER_ID;
-      // Use a large inset box-shadow to paint the vignette gradient.
-      // Multiple shadow layers at decreasing opacity simulate the fade.
       Object.assign(overlay.style, {
         position: "fixed",
         inset: "0",
         zIndex: "2147483646",
         pointerEvents: "none",
-        borderRadius: "0",
-        border: "none",
         boxShadow: [
-          "inset 0 0 0 2px rgba(250,144,62,0.7)",
-          "inset 0 0 0 4px rgba(250,144,62,0.45)",
-          "inset 0 0 0 7px rgba(250,144,62,0.22)",
-          "inset 0 0 0 12px rgba(250,144,62,0.08)",
-          "inset 0 0 40px rgba(250,144,62,0.12)",
-          "inset 0 0 80px rgba(250,144,62,0.05)",
+          "inset 0 0 0 2px rgba(20,184,166,0.72)",
+          "inset 0 0 0 5px rgba(20,184,166,0.48)",
+          "inset 0 0 0 9px rgba(20,184,166,0.30)",
+          "inset 0 0 0 14px rgba(20,184,166,0.18)",
+          "inset 0 0 0 20px rgba(20,184,166,0.09)",
+          "inset 0 0 40px rgba(20,184,166,0.10)",
+          "inset 0 0 80px rgba(20,184,166,0.04)",
         ].join(", "),
         opacity: "0",
       });
       document.documentElement.appendChild(overlay);
 
-      // Smooth fade-in
+      // Gentle fade-in
       overlay.animate([{ opacity: "0" }, { opacity: "1" }], {
-        duration: 400,
+        duration: 600,
+        easing: "ease-out",
         fill: "forwards",
       });
-
-      const reducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-      if (!reducedMotion) {
-        borderAnimation = overlay.animate(
-          [
-            {
-              boxShadow: [
-                "inset 0 0 0 2px rgba(250,144,62,0.7)",
-                "inset 0 0 0 4px rgba(250,144,62,0.45)",
-                "inset 0 0 0 7px rgba(250,144,62,0.22)",
-                "inset 0 0 0 12px rgba(250,144,62,0.08)",
-                "inset 0 0 40px rgba(250,144,62,0.12)",
-                "inset 0 0 80px rgba(250,144,62,0.05)",
-              ].join(", "),
-            },
-            {
-              boxShadow: [
-                "inset 0 0 0 2px rgba(250,144,62,0.85)",
-                "inset 0 0 0 5px rgba(250,144,62,0.55)",
-                "inset 0 0 0 9px rgba(250,144,62,0.3)",
-                "inset 0 0 0 14px rgba(250,144,62,0.12)",
-                "inset 0 0 50px rgba(250,144,62,0.18)",
-                "inset 0 0 100px rgba(250,144,62,0.08)",
-              ].join(", "),
-            },
-            {
-              boxShadow: [
-                "inset 0 0 0 2px rgba(250,144,62,0.7)",
-                "inset 0 0 0 4px rgba(250,144,62,0.45)",
-                "inset 0 0 0 7px rgba(250,144,62,0.22)",
-                "inset 0 0 0 12px rgba(250,144,62,0.08)",
-                "inset 0 0 40px rgba(250,144,62,0.12)",
-                "inset 0 0 80px rgba(250,144,62,0.05)",
-              ].join(", "),
-            },
-          ],
-          { duration: 3000, iterations: Infinity, easing: "ease-in-out" },
-        );
-      }
     }
 
     // --- Floating stop button ---
@@ -824,37 +780,56 @@ function setAgentBorder(active: boolean) {
       const btn = document.createElement("button");
       btn.id = STOP_BTN_ID;
       btn.innerHTML =
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="white" style="flex-shrink:0"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' +
-        '<span style="margin-left:6px">Stop</span>';
+        '<svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0">' +
+        '<rect width="10" height="10" rx="2" fill="rgba(20,184,166,0.9)"/></svg>' +
+        '<span style="margin-left:7px;letter-spacing:0.04em">Stop</span>';
       Object.assign(btn.style, {
         position: "fixed",
         bottom: "24px",
         left: "50%",
-        transform: "translateX(-50%)",
+        transform: "translateX(-50%) translateY(8px)",
         zIndex: "2147483647",
         pointerEvents: "auto",
         display: "flex",
         alignItems: "center",
-        padding: "8px 18px",
-        background: "rgba(30,30,30,0.85)",
-        backdropFilter: "blur(8px)",
-        color: "#fff",
+        padding: "9px 20px 9px 16px",
+        background: "rgba(13,20,19,0.72)",
+        backdropFilter: "blur(16px) saturate(1.4)",
+        WebkitBackdropFilter: "blur(16px) saturate(1.4)",
+        color: "rgba(204,251,241,0.92)",
         fontSize: "13px",
         fontWeight: "500",
         fontFamily:
           '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-        border: "1px solid rgba(255,255,255,0.15)",
+        border: "1px solid rgba(20,184,166,0.25)",
         borderRadius: "24px",
-        boxShadow: "0 2px 12px rgba(0,0,0,0.3)",
+        boxShadow: [
+          "0 4px 24px rgba(0,0,0,0.25)",
+          "0 0 0 1px rgba(20,184,166,0.08)",
+          "0 0 16px rgba(20,184,166,0.10)",
+        ].join(", "),
         cursor: "pointer",
         opacity: "0",
-        transition: "background 0.15s, opacity 0.3s",
+        transition:
+          "background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.4s ease-out, transform 0.4s ease-out",
       });
       btn.addEventListener("mouseenter", () => {
-        btn.style.background = "rgba(50,50,50,0.9)";
+        btn.style.background = "rgba(13,20,19,0.85)";
+        btn.style.borderColor = "rgba(20,184,166,0.45)";
+        btn.style.boxShadow = [
+          "0 4px 24px rgba(0,0,0,0.3)",
+          "0 0 0 1px rgba(20,184,166,0.15)",
+          "0 0 24px rgba(20,184,166,0.18)",
+        ].join(", ");
       });
       btn.addEventListener("mouseleave", () => {
-        btn.style.background = "rgba(30,30,30,0.85)";
+        btn.style.background = "rgba(13,20,19,0.72)";
+        btn.style.borderColor = "rgba(20,184,166,0.25)";
+        btn.style.boxShadow = [
+          "0 4px 24px rgba(0,0,0,0.25)",
+          "0 0 0 1px rgba(20,184,166,0.08)",
+          "0 0 16px rgba(20,184,166,0.10)",
+        ].join(", ");
       });
       btn.addEventListener("click", () => {
         chrome.runtime
@@ -867,20 +842,18 @@ function setAgentBorder(active: boolean) {
           .catch(() => {});
       });
       document.documentElement.appendChild(btn);
-      // Fade in
+      // Slide up + fade in
       requestAnimationFrame(() => {
         btn.style.opacity = "1";
+        btn.style.transform = "translateX(-50%) translateY(0)";
       });
     }
   } else {
     // --- Remove border ---
     if (existing) {
-      if (borderAnimation) {
-        borderAnimation.cancel();
-        borderAnimation = null;
-      }
       existing.animate([{ opacity: "1" }, { opacity: "0" }], {
-        duration: 300,
+        duration: 600,
+        easing: "ease-in",
         fill: "forwards",
       }).onfinish = () => existing.remove();
     }
@@ -888,7 +861,8 @@ function setAgentBorder(active: boolean) {
     // --- Remove stop button ---
     if (existingBtn) {
       existingBtn.style.opacity = "0";
-      setTimeout(() => existingBtn.remove(), 300);
+      existingBtn.style.transform = "translateX(-50%) translateY(8px)";
+      setTimeout(() => existingBtn.remove(), 400);
     }
   }
 }
