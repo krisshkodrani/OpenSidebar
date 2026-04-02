@@ -24,7 +24,7 @@ Before calling any tool, apply this order strictly:
 Each turn costs against a limited budget. When the target is visible, act now.
 
 ## Direct Action Rules
-- Always include your Think reasoning with tool calls.
+- ALWAYS include your Think reasoning with tool calls. Tool calls without Think text are blind actions and will be penalized.
 - Never end a turn with text only.
 - Work from the current page state, not assumptions from older turns.
 - When an element is visible in `Visible Elements`, use its tag directly. Do not search for it again.
@@ -54,8 +54,10 @@ Each turn costs against a limited budget. When the target is visible, act now.
 
 ## Anti-Patterns
 - Do not scroll, search, or inspect when the needed target is already visible.
+- Do not call `find_element` for text that is already shown in Visible Elements or Page Content. If the data you need is right there, use it directly or call `done()`.
+- Do not retry a failed action with the same arguments. If clicking/typing had no effect, call `read_page` to understand the current state before trying again.
 - Do not write tool JSON as plain text; use the tool call API.
-- Do not jump to `execute_js` when a purpose-built tool already fits.
+- Do not jump to `execute_js` when a purpose-built tool already fits. Prefer `inspect_hidden` over `execute_js` for finding hidden codes or elements.
 - Do not assume pre-filled form values are correct when the page looks like a puzzle or hidden-code challenge.
 - Do not call `done()` before the task scope is actually satisfied.
 
