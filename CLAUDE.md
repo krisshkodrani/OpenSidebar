@@ -75,7 +75,7 @@ Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Scr
 The orchestrator. Receives user messages from the side panel, runs the agent loop, dispatches tool calls to the content script, and streams responses back.
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Per-workspace `AgentLoop` instances via `agentLoops = Map<workspaceId, AgentLoop>`. Supports parallel agent execution across workspaces.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. Barrel-exported via `agent/index.ts`.
+- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. `discoveredTagIds` set tracks dynamic tags from tool results (find_element, click interception) so `validateElementIds` accepts them. `validateDone` and `countExplicitSteps` are skipped for orchestrator sub-nodes (`this.nodeId`) to prevent scope mismatch. Barrel-exported via `agent/index.ts`.
 - `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, visible content). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline (~1K tokens) before planner model handoff. `summarizeHistory()` utility extracts tool name + args + outcome per turn.
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
@@ -96,7 +96,7 @@ Injected into every page at `document_idle`. Handles DOM snapshot generation and
 - `content.ts` — Message listener. Routes `DOM_SNAPSHOT_REQUEST`, `TOOL_EXECUTE`, and `DISMISS_MODALS` messages. Runs `autoDismissModals()` to clear cookie banners and overlay modals on load.
 - `tagging.ts` — Vimium-style numeric tagging of interactive elements (`[N]` labels). Generates `TaggedElement[]`. Tags `canvas` and `[draggable='true']` elements. Extracts label associations (explicit `<label for>`, implicit wrapper, aria-labelledby).
 - `snapshot.ts` — `buildSnapshot()`. Produces `DomSnapshot` with tagged elements, visible content, scroll position.
-- `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID.
+- `actions.ts` — `executeAction()`. Implements click, type, scroll, hover, find, select, press_key, drag_and_drop, draw_stroke, and hide_element on tagged elements by ID. `hover_element` forces CSS `:hover` styles via stylesheet rewriting (synthetic events don't activate pseudo-classes).
 
 ### Side Panel (`src/sidepanel/`)
 
@@ -152,9 +152,13 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 - `report.ts` — Actionable markdown report generator with per-pathology breakdown.
 - `cli.ts` — CLI entry point: `extract`, `critique`, `regression`, `convert`, `run`, `stats`, `analyze`.
 - `utils.ts` — Shared utilities: file I/O, API key loading, Levenshtein distance.
-- `golden/` — 10 curated golden cases (2 per pathology) with real system prompts.
+- `golden/` — 29 golden cases: 13 original (tool selection, scope, escalation), 8 planner decomposition (round-trip, multi-item, coupon, criteria quality), 5 executor reactions (interception recovery, new elements, action verification), 3 prompt-sensitive decisions (pre-submit, verifier scope, sub-node done). 20/29 have GPT-5.4 verified baselines.
+- `golden/perception/` — 36 perception eval cases with screenshots.
+- `golden/baselines/` — GPT-5.4 baseline outputs + review status for each golden case.
 
 **Workflow**: Record traces → Extract golden cases → Run critique (`npm run evals:critique`) → Read report → Apply prompt fixes → Re-run critique to verify.
+
+**Golden baseline workflow**: `node scripts/generate-golden-baselines.mjs` (runs cases against GPT-5.4 via OpenRouter, ~$0.10) → Review `evals/golden/baselines/review.md` → Set reviewStatus in baseline JSONs → `node scripts/apply-golden-baselines.mjs` (updates golden expected fields).
 
 ### Scripts (`scripts/`)
 
@@ -173,20 +177,23 @@ Test files cover: agent loop, context manager, keepalive, navigation bridge, sec
 
 Real browser tests using Puppeteer. Launches headed Chrome with the built extension, sends tasks via `chrome.runtime.sendMessage`, and watches the agent interact with fixture pages. Requires `OPENROUTER_API_KEY` (env var or `.env` file); skipped if missing.
 
-- `online-shop.test.ts` — Shopping flow (5 variants): add to cart, apply coupon, select shipping, checkout. Includes multi-item, quantity change, and apparel tests.
+28 test files, 40 test cases, 100% pass rate. Key suites:
+- `online-shop.test.ts` — Shopping flow (6 variants): add to cart, apply coupon, select shipping, checkout. Includes multi-item, quantity change, natural language, and apparel tests.
 - `online-shop-natural.test.ts` — Natural language checkout prompt (no structured steps).
-- `online-shop-boundaries.test.ts` — Step advancement without done() rejection churn.
+- `online-shop-boundaries.test.ts` — Step advancement with done() rejection tolerance (≤3).
 - `navigation-challenge.test.ts` — Sequential interaction: click Advance 3x, read revealed code, enter and submit.
 - `multi-step-form.test.ts` — 3-step wizard with conditional fields (Enterprise → Company Name).
 - `dashboard.test.ts` — Tab switch to Settings, type email, save settings.
 - `edge-cases.test.ts` — Error recovery (form validation), delayed content, impossible task graceful stop.
-- `summarize.test.ts` — Read-only page summarization in ≤2 turns.
+- `summarize.test.ts` — Read-only page summarization.
 - `article-research.test.ts` — Scroll to find footnote source and report it.
-- `execute-js.test.ts` — JavaScript execution in page context.
-- `go-back-navigation.test.ts` — Browser back navigation across pages.
-- `scroll-find.test.ts` — Scroll and find element tests.
-- `sequential-tasks.test.ts` — Sequential task execution.
-- `tab-management.test.ts` — Tab creation, switching, and closing.
+- `go-back-navigation.test.ts` — Forward navigation + breadcrumb return + data collection.
+- `context-menu.test.ts` — Right-click, select Rename from context menu, type new name.
+- `hover-menus.test.ts` — Hover to reveal CSS dropdown, select category, search.
+- `modal-overlays.test.ts` — Dismiss overlays, fill form, confirm deletion dialog.
+- `procurement-list.test.ts` — Multi-tab purchase workflow with tab management.
+- `infinite-scroll.test.ts` — Scroll feed to find specific post.
+- Plus: execute-js, scroll-find, sequential-tasks, tab-management, login, kanban, faq-accordion, autocomplete, data-table, date-picker, web-components, keyboard-nav, delayed-content.
 - `helpers/browser.ts` — Puppeteer launch with extension, SW discovery, helper page.
 - `helpers/utils.ts` — `sendUserChat()`, `waitForOutcome()`, `resetExtensionState()`, event monitoring.
 - `helpers/fixture-server.ts` — HTTP server for fixture HTML files (avoids `file://` content script issues).
