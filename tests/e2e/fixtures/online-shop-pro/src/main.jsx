@@ -29,6 +29,7 @@ import InfiniteScroll from "./routes/infinite-scroll";
 import DatePickerPage from "./routes/date-picker";
 import WebComponents from "./routes/web-components";
 import KeyboardNav from "./routes/keyboard-nav";
+import StructuralLoading from "./routes/structural-loading";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -58,6 +59,7 @@ const routes = [
   { path: "/date-picker", label: "DatePick", title: "Booking Form", component: DatePickerPage },
   { path: "/web-components", label: "WebComp", title: "Web Components", component: WebComponents },
   { path: "/keyboard-nav", label: "Keyboard", title: "Spreadsheet Editor", component: KeyboardNav },
+  { path: "/structural-loading", label: "StructLoad", title: "Social Feed", component: StructuralLoading },
 ];
 
 function Layout({ children, currentPath }) {

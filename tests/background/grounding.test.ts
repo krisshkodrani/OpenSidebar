@@ -536,4 +536,151 @@ describe("detectPendingAsyncChange", () => {
       }),
     ).toBe(true);
   });
+
+  it("ignores structural loading keywords present before the action", () => {
+    // Simulate LinkedIn-like page where "loading" is always in the DOM
+    const preActionSnapshot = makeSnapshot({
+      pageContent: "Feed loading more posts",
+      elements: [
+        {
+          tag: 1,
+          tagName: "div",
+          role: "feed",
+          text: "loading more posts",
+          attributes: { "aria-label": "loading" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const postActionSnapshot = makeSnapshot({
+      pageContent: "Feed loading more posts Start a post",
+      elements: [
+        {
+          tag: 1,
+          tagName: "div",
+          role: "feed",
+          text: "loading more posts",
+          attributes: { "aria-label": "loading" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 2,
+          tagName: "button",
+          role: "button",
+          text: "Start a post",
+          attributes: {},
+          rect: { x: 0, y: 100, width: 10, height: 10, pageY: 100 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    // With preActionSnapshot, structural "loading" should be ignored
+    const signal = detectPendingAsyncChange({
+      currentStepDescription: "Open the post composer",
+      currentStepSuccessCriteria: "Post composer is visible",
+      currentSnapshot: postActionSnapshot,
+      preActionSnapshot,
+      actionEffect: {
+        deltaPercent: 0.15,
+        urlChanged: false,
+        currentUrl: "https://www.linkedin.com/feed/",
+        elementsAdded: 1,
+        elementsRemoved: 0,
+        prevCount: 1,
+        currentCount: 2,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    // No signal: "loading" was structural, not triggered by the action
+    expect(signal).toBeNull();
+  });
+
+  it("detects truly new loading indicators that appear after the action", () => {
+    const preActionSnapshot = makeSnapshot({
+      pageContent: "Product page",
+      elements: [],
+    });
+
+    const postActionSnapshot = makeSnapshot({
+      pageContent: "Product page processing your order",
+      elements: [
+        {
+          tag: 1,
+          tagName: "div",
+          role: "status",
+          text: "processing your order",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const signal = detectPendingAsyncChange({
+      currentStepDescription: "Click Buy Now and wait for order confirmation",
+      currentStepSuccessCriteria: "Order confirmation number is visible",
+      currentSnapshot: postActionSnapshot,
+      preActionSnapshot,
+      actionEffect: {
+        deltaPercent: 0.3,
+        urlChanged: false,
+        currentUrl: "https://shop.example.com/product",
+        elementsAdded: 1,
+        elementsRemoved: 0,
+        prevCount: 5,
+        currentCount: 6,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    // "processing" is a NEW loading indicator → signal should fire
+    expect(signal).not.toBeNull();
+    expect(signal!.loadingIndicator).toBe("processing");
+    expect(signal!.baselineLoadingKeywords).toEqual([]);
+  });
+
+  it("isPendingAsyncChangeSatisfied ignores baseline loading keywords", () => {
+    // Page still has structural "loading" but expected content is visible
+    const snapshot = makeSnapshot({
+      pageContent: "Feed loading more posts. Post composer visible.",
+      elements: [
+        {
+          tag: 1,
+          tagName: "div",
+          role: "dialog",
+          text: "Post composer visible",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    // Without baseline: would fail because "loading" is present
+    expect(
+      isPendingAsyncChangeSatisfied({
+        snapshot,
+        expectedTokens: ["composer", "visible"],
+      }),
+    ).toBe(false);
+
+    // With baseline: "loading" is structural, should be ignored
+    expect(
+      isPendingAsyncChangeSatisfied({
+        snapshot,
+        expectedTokens: ["composer", "visible"],
+        baselineLoadingKeywords: ["loading"],
+      }),
+    ).toBe(true);
+  });
 });
