@@ -8,6 +8,14 @@ import { isElementVisible } from "./utils";
 /** CSS class for the injected label overlay (legacy — kept for cleanup of old labels) */
 export const LABEL_CLASS = "opensidebar-tag";
 
+/** IDs of elements injected by the extension that should be excluded from tagging */
+const OWN_ELEMENT_IDS = new Set(["opensidebar-stop-btn"]);
+
+/** Check if an element was injected by our extension (not part of the page) */
+export function isOwnElement(el: Element): boolean {
+  return OWN_ELEMENT_IDS.has(el.id) || (el as HTMLElement).classList?.contains(LABEL_CLASS);
+}
+
 /** Maximum depth to traverse shadow DOM (prevents infinite recursion) */
 const MAX_SHADOW_DEPTH = 3;
 
@@ -72,7 +80,7 @@ export function querySelectorAllDeep(
   const results: Element[] = [];
 
   try {
-    results.push(...Array.from(root.querySelectorAll(selector)));
+    results.push(...Array.from(root.querySelectorAll(selector)).filter((el) => !isOwnElement(el)));
 
     const allElements = root.querySelectorAll("*");
 
@@ -130,8 +138,8 @@ export function detectClickableElements(): Element[] {
     {
       acceptNode(node) {
         const el = node as Element;
-        // Skip our own labels (legacy cleanup)
-        if ((el as HTMLElement).classList?.contains(LABEL_CLASS))
+        // Skip our own injected elements (stop button, labels)
+        if (isOwnElement(el))
           return NodeFilter.FILTER_REJECT;
         // Skip if already captured by interactive selectors
         try {
