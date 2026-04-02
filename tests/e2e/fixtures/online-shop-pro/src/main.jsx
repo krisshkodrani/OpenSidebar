@@ -24,7 +24,6 @@ import DataTable from "./routes/data-table";
 import Login from "./routes/login";
 import Kanban from "./routes/kanban";
 import FaqAccordion from "./routes/faq-accordion";
-import FileUpload from "./routes/file-upload";
 import ContextMenuPage from "./routes/context-menu";
 import InfiniteScroll from "./routes/infinite-scroll";
 import DatePickerPage from "./routes/date-picker";
@@ -54,7 +53,6 @@ const routes = [
   { path: "/login", label: "Login", title: "Sign In", component: Login },
   { path: "/kanban", label: "Kanban", title: "Kanban Board", component: Kanban },
   { path: "/faq-accordion", label: "FAQ", title: "Frequently Asked Questions", component: FaqAccordion },
-  { path: "/file-upload", label: "Upload", title: "Support Ticket", component: FileUpload },
   { path: "/context-menu", label: "CtxMenu", title: "Document Manager", component: ContextMenuPage },
   { path: "/infinite-scroll", label: "Feed", title: "Social Feed", component: InfiniteScroll },
   { path: "/date-picker", label: "DatePick", title: "Booking Form", component: DatePickerPage },

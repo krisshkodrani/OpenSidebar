@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v4",
-    "hash": "f30246ff",
+    "hash": "ea40b625",
     "description": "Core executor system prompt for browser automation turns. v5: reduce exploration waste, auto-refresh awareness.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },
@@ -107,7 +107,7 @@
   {
     "id": "orchestrator.verifier.system",
     "version": "v2",
-    "hash": "b5da9890",
+    "hash": "56e8ffa6",
     "description": "Primary verifier system prompt for executor outcome validation.",
     "sourcePath": "prompts/runtime/orchestrator/verifier_system.md"
   },
