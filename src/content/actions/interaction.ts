@@ -157,10 +157,15 @@ export async function executeClick(args: ClickElementArgs): Promise<{
           await new Promise((r) => setTimeout(r, 150));
         }
       }
+      const mayNavigate =
+        el.tagName === "A" ||
+        el.closest("a") !== null ||
+        (el instanceof HTMLFormElement) ||
+        (el instanceof HTMLButtonElement && el.type === "submit");
       return {
         success: true,
         result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}" (overlay pass-through)`,
-        navigated: false,
+        navigated: mayNavigate,
       };
     }
 
@@ -497,12 +502,19 @@ export function executePressKey(args: PressKeyArgs): {
   target.dispatchEvent(new KeyboardEvent("keypress", opts));
   target.dispatchEvent(new KeyboardEvent("keyup", opts));
 
+  // Only auto-submit forms on Enter when the focused element is a single-line
+  // text input — not for textareas, contenteditable, or select/autocomplete.
   if (args.key === "Enter") {
     const focusedEl =
       target instanceof HTMLElement ? target : document.activeElement;
-    const form = focusedEl instanceof Element ? focusedEl.closest("form") : null;
-    if (form instanceof HTMLFormElement) {
-      form.requestSubmit();
+    const isSingleLineInput =
+      focusedEl instanceof HTMLInputElement &&
+      !["checkbox", "radio", "file", "range", "hidden"].includes(focusedEl.type);
+    if (isSingleLineInput) {
+      const form = focusedEl.closest("form");
+      if (form instanceof HTMLFormElement) {
+        form.requestSubmit();
+      }
     }
   }
 

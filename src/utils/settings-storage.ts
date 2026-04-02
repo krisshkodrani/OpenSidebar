@@ -10,14 +10,19 @@ import type { UserSettings } from "../types";
 const SYNC_KEY = "userSettings";
 const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
 const LOCAL_KEY = "openRouterApiKey_local";
+const LOCAL_OPENAI_KEY = "openaiApiKey_local";
 
 /**
- * Save settings: API key to session storage, everything else to sync storage.
+ * Save settings: API keys to local storage, everything else to sync storage.
+ * Both openRouterApiKey and openaiApiKey are credentials — never sync them.
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
-  const { openRouterApiKey, ...rest } = settings;
+  const { openRouterApiKey, openaiApiKey, ...rest } = settings;
   await Promise.all([
-    chrome.storage.local.set({ [LOCAL_KEY]: openRouterApiKey }),
+    chrome.storage.local.set({
+      [LOCAL_KEY]: openRouterApiKey,
+      [LOCAL_OPENAI_KEY]: openaiApiKey ?? "",
+    }),
     chrome.storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
     chrome.storage.session.remove(SESSION_KEY).catch(() => {}),
@@ -30,7 +35,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
 export async function loadSettings(): Promise<UserSettings | null> {
   const [syncResult, localResult, sessionResult] = await Promise.all([
     chrome.storage.sync.get(SYNC_KEY),
-    chrome.storage.local.get(LOCAL_KEY),
+    chrome.storage.local.get([LOCAL_KEY, LOCAL_OPENAI_KEY]),
     // Check legacy session key for migration
     chrome.storage.session
       .get(SESSION_KEY)
@@ -41,6 +46,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
   const apiKey =
     (localResult[LOCAL_KEY] as string | undefined) ||
     (sessionResult[SESSION_KEY] as string | undefined);
+  const openaiApiKey = (localResult[LOCAL_OPENAI_KEY] as string | undefined) || "";
 
   if (!syncSettings && !apiKey) return null;
 
@@ -62,9 +68,13 @@ export async function loadSettings(): Promise<UserSettings | null> {
   delete raw.orchestratorMaxTotalTokens;
   delete raw.orchestratorMaxWorkers;
 
+  // Strip openaiApiKey from sync data in case it leaked from an older version
+  delete raw.openaiApiKey;
+
   return {
     ...raw,
     openRouterApiKey: apiKey ?? "",
+    openaiApiKey: openaiApiKey,
   } as UserSettings;
 }
 
