@@ -141,6 +141,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development guide.
 
 ## Documentation
 
+- [Getting Started](./docs/getting-started.md) — install, configure, first task
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Developer Guide](./docs/developer-guide.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)

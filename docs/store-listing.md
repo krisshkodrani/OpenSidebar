@@ -25,8 +25,8 @@ What it does
 
 Current architecture
 
-- Executor model: Gemini 3 Flash via OpenRouter
-- Planner model: MiniMax M2.5 via OpenRouter
+- Executor model: GPT-5.4 Mini via OpenRouter
+- Planner model: GPT-5.4 Mini via OpenRouter
 - Perception model: Grok 4.1 Fast via OpenRouter
 - Visual perception layer for location, changes, blockers, visual-only cues, and affordances
 - Planner -> executor -> verifier orchestration for harder tasks
