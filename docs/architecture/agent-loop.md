@@ -521,3 +521,19 @@ On escalation, `summarizeTrajectory()` compresses the full conversation history 
 | `src/background/tools/metadata.ts`    | Tool metadata (risk, flags)          |
 | `src/background/perception/`          | Perception layer                     |
 | `src/background/security.ts`          | Risk classification                  |
+
+## Orchestrator Sub-Node Mode
+
+When the agent loop runs as a sub-node of the orchestrator (`this.nodeId` is set), several behaviors change:
+
+- **`validateDone` is skipped** — the orchestrator's own verifier checks node completion. Running the planner's validateDone against the full original query would reject correct sub-node completions because sibling steps aren't done.
+- **`countExplicitSteps` early rejection is skipped** — the original query may have 5 numbered steps, but the sub-node only handles 1.
+- **`taskContractGuard` is skipped** — entity coverage is checked at the orchestrator level.
+
+## Discovered Tag IDs
+
+Tool results can reference dynamically-created tags (e.g., `find_element` returns `[30]`, click interception reports `covered by [34]`). These tags exist in the content script's tag map but not in the background's snapshot.
+
+The `discoveredTagIds` set tracks these tags so `validateElementIds` accepts them on the next tool call. Without this, the agent would get `grounding_mismatch` errors when trying to use tags from discovery tools.
+
+Tags are extracted from any tool result by `extractDiscoveredTagIds()` — it parses `[N]` patterns from all tool output strings.

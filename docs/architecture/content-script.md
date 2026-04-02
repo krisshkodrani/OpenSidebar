@@ -168,7 +168,7 @@ Welcome to Example. This is the main content...
 
 ### hover_element
 
-Hovers over an element to reveal tooltips or menus.
+Hovers over an element to reveal tooltips or menus. Dispatches synthetic `mouseover`, `mouseenter`, and `mousemove` events (triggers JS handlers). Also forces CSS `:hover` styles by scanning stylesheets for matching `:hover` rules, rewriting them with a `.--os-hover-active` class selector, and applying the class to the element and its ancestors. This workaround is necessary because synthetic mouse events don't activate the CSS `:hover` pseudo-class — only real mouse input (or CDP `Input.dispatchMouseEvent`) does.
 
 ### find_element
 
@@ -242,6 +242,10 @@ The background can also trigger dismissal via the `DISMISS_MODALS` message.
 ### Surviving Overlays
 
 If auto-dismiss cannot remove a viewport-covering overlay, it's included in the DOM snapshot as `survivingOverlays`, telling the agent to handle it manually.
+
+## Extension Element Filtering
+
+The tagging pipeline excludes elements injected by the extension itself (e.g., the floating Stop button, legacy label overlays). `isOwnElement()` in `dom-traversal.ts` checks element IDs and CSS classes against a known set. This prevents the agent from targeting its own UI as if it were part of the page.
 
 ## Label Association
 
