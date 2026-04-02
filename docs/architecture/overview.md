@@ -16,12 +16,12 @@ Side Panel <-> Service Worker <-> Content Script
 
 | Role | Current Default |
 | --- | --- |
-| Executor | `google/gemini-3-flash-preview` |
-| Executor fallback | `google/gemini-3.1-flash-lite-preview` |
-| Planner | `minimax/minimax-m2.5` |
+| Executor | `openai/gpt-5.4-mini` |
+| Executor fallback | `openai/gpt-5.4-mini` (non-nitro) |
+| Planner | `openai/gpt-5.4-mini` |
 | Perception | `x-ai/grok-4.1-fast` |
 
-All models are routed through OpenRouter by default.
+All models are routed through OpenRouter. The Nitro toggle appends `:nitro` for faster inference. Models are configurable in Settings.
 
 ## Core Subsystems
 
@@ -52,7 +52,10 @@ All models are routed through OpenRouter by default.
 
 ## See Also
 
+- [Orchestrator](./orchestrator.md) — multi-step task decomposition and verification
+- [Agent Loop](./agent-loop.md) — LLM-tool cycle, escalation, stagnation
+- [Perception Layer](./perception-layer.md) — visual page interpretation
+- [Content Script](./content-script.md) — DOM tagging, snapshots, actions
 - [Developer Guide](../developer-guide.md)
-- [Perception Layer](./perception-layer.md)
 - [Tools](./tools.md)
 - [Evals Program](../guides/evals-program.md)
