@@ -556,6 +556,7 @@ export class AgentLoop {
   private pendingAsyncVerification: {
     stepIndex: number;
     expectedTokens: string[];
+    baselineLoadingKeywords: string[];
     reason: string;
     startedTurn: number;
   } | null = null;
@@ -3096,6 +3097,7 @@ export class AgentLoop {
     expectation: {
       stepIndex: number;
       expectedTokens: string[];
+      baselineLoadingKeywords: string[];
       reason: string;
       startedTurn: number;
     },
@@ -3118,6 +3120,7 @@ export class AgentLoop {
         isPendingAsyncChangeSatisfied({
           snapshot: refreshed,
           expectedTokens: expectation.expectedTokens,
+          baselineLoadingKeywords: expectation.baselineLoadingKeywords,
         })
       ) {
         this.pendingAsyncVerification = null;
@@ -5327,6 +5330,7 @@ export class AgentLoop {
                   !isPendingAsyncChangeSatisfied({
                     snapshot: this.context.getSnapshot(),
                     expectedTokens: activeAsyncExpectation.expectedTokens,
+                    baselineLoadingKeywords: activeAsyncExpectation.baselineLoadingKeywords,
                   })
                 ) {
                   shouldReject = true;
@@ -5770,9 +5774,12 @@ export class AgentLoop {
               );
               const reason = (args.reason as string) || "";
 
+              // Signal WAITING status so the UI activity indicator stays visible
+              this.statusHandler(AgentStatus.WAITING_FOR_PAGE_LOAD, `Waiting ${seconds}s…`);
               await new Promise((resolve) =>
                 setTimeout(resolve, seconds * 1000),
               );
+              this.statusHandler(AgentStatus.THINKING, "Analyzing…");
 
               // Refresh DOM snapshot for fresh context
               prevElementCount = await this.refreshSnapshotWithRetry(
@@ -7002,6 +7009,11 @@ export class AgentLoop {
             response.tool_calls[response.tool_calls.length - 1].function.name;
         }
 
+        // Capture pre-action snapshot for diff-based loading detection.
+        // Used to distinguish structural loading keywords (present before the
+        // action) from transient ones (appeared due to the action).
+        const preActionSnapshot = this.context.getSnapshot();
+
         // Batch snapshot refresh: ONE refresh after all tools complete
         if (domModified && !doneSignaled) {
           try {
@@ -7294,6 +7306,7 @@ export class AgentLoop {
                         this.planSteps[planAfterAction.currentIndex]
                           ?.successCriteria,
                       currentSnapshot: snap,
+                      preActionSnapshot,
                       actionEffect,
                       toolName: lastToolName,
                     });
@@ -7302,6 +7315,7 @@ export class AgentLoop {
                       this.pendingAsyncVerification = {
                         stepIndex: planAfterAction.currentIndex,
                         expectedTokens: asyncSignal.expectedTokens,
+                        baselineLoadingKeywords: asyncSignal.baselineLoadingKeywords,
                         reason: asyncSignal.reason,
                         startedTurn: this.turnCount,
                       };

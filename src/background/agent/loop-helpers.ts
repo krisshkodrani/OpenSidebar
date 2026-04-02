@@ -122,6 +122,8 @@ export interface StepAdvanceSignal {
 export interface PendingAsyncChangeSignal {
   expectedTokens: string[];
   loadingIndicator: string | null;
+  /** Loading keywords that were already present before the action (structural, not transient). */
+  baselineLoadingKeywords: string[];
   reason: string;
 }
 
@@ -434,6 +436,11 @@ function findLoadingIndicator(snapshot: DomSnapshot | null): string | null {
   );
 }
 
+function findAllLoadingKeywords(snapshot: DomSnapshot | null): string[] {
+  const searchText = snapshotSearchText(snapshot);
+  return LOADING_UI_KEYWORDS.filter((keyword) => searchText.includes(keyword));
+}
+
 function matchStepTokens(
   stepText: string,
   snapshot: DomSnapshot | null,
@@ -502,10 +509,18 @@ export function detectStructuralStepAdvance(params: {
 export function isPendingAsyncChangeSatisfied(params: {
   snapshot: DomSnapshot | null;
   expectedTokens: string[];
+  /** Loading keywords that existed before the action — these are structural and should be ignored. */
+  baselineLoadingKeywords?: string[];
 }): boolean {
-  const { snapshot, expectedTokens } = params;
+  const { snapshot, expectedTokens, baselineLoadingKeywords = [] } = params;
   if (!snapshot) return false;
-  if (findLoadingIndicator(snapshot)) return false;
+  // Only block on loading indicators that are NEW (not structural).
+  // A keyword present before the action (e.g. LinkedIn's permanent "loading"
+  // in lazy-load containers) is structural and should not prevent satisfaction.
+  const currentLoading = findLoadingIndicator(snapshot);
+  if (currentLoading && !baselineLoadingKeywords.includes(currentLoading)) {
+    return false;
+  }
   if (expectedTokens.length === 0) return false;
   const searchText = snapshotSearchText(snapshot);
   const matched = expectedTokens.filter((token) => searchText.includes(token));
@@ -518,6 +533,8 @@ export function detectPendingAsyncChange(params: {
   currentStepDescription: string;
   currentStepSuccessCriteria?: string;
   currentSnapshot: DomSnapshot | null;
+  /** Snapshot captured before tool execution — used to distinguish structural vs transient loading indicators. */
+  preActionSnapshot?: DomSnapshot | null;
   actionEffect: ActionEffect | null;
   toolName: string;
 }): PendingAsyncChangeSignal | null {
@@ -525,39 +542,53 @@ export function detectPendingAsyncChange(params: {
     currentStepDescription,
     currentStepSuccessCriteria,
     currentSnapshot,
+    preActionSnapshot,
     actionEffect,
     toolName,
   } = params;
   if (!currentSnapshot || !actionEffect) return null;
   if (!ASYNC_TRIGGER_TOOLS.has(toolName)) return null;
 
+  // Identify loading keywords that existed before the action (structural).
+  const baselineLoadingKeywords = findAllLoadingKeywords(preActionSnapshot ?? null);
+
   const combinedText =
     `${currentStepDescription}\n${currentStepSuccessCriteria ?? ""}`.toLowerCase();
-  const loadingIndicator = findLoadingIndicator(currentSnapshot);
+  const postLoadingIndicator = findLoadingIndicator(currentSnapshot);
+  // A loading indicator is only "new" if it wasn't present before the action.
+  const newLoadingIndicator =
+    postLoadingIndicator && !baselineLoadingKeywords.includes(postLoadingIndicator)
+      ? postLoadingIndicator
+      : null;
   const hasAsyncIntent =
-    loadingIndicator !== null ||
+    newLoadingIndicator !== null ||
     ASYNC_INTENT_KEYWORDS.some((keyword) => combinedText.includes(keyword));
   if (!hasAsyncIntent) return null;
 
   const materiallyChanged =
     actionEffect.urlChanged ||
     actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
-  if (!materiallyChanged && !loadingIndicator) return null;
+  if (!materiallyChanged && !newLoadingIndicator) return null;
 
   const expectedTokens = tokenizeAsyncExpectationText(
     currentStepSuccessCriteria || currentStepDescription,
   ).slice(0, 8);
   if (
-    isPendingAsyncChangeSatisfied({ snapshot: currentSnapshot, expectedTokens })
+    isPendingAsyncChangeSatisfied({
+      snapshot: currentSnapshot,
+      expectedTokens,
+      baselineLoadingKeywords,
+    })
   ) {
     return null;
   }
 
   return {
     expectedTokens,
-    loadingIndicator,
-    reason: loadingIndicator
-      ? `The page is still showing "${loadingIndicator}", so the result of the last action is still pending.`
+    loadingIndicator: newLoadingIndicator,
+    baselineLoadingKeywords,
+    reason: newLoadingIndicator
+      ? `The page is still showing "${newLoadingIndicator}", so the result of the last action is still pending.`
       : "The current step expects content to appear after the last action, but the result is not visible yet.",
   };
 }
