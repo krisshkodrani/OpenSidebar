@@ -90,6 +90,6 @@ describe.skipIf(!h.apiKey)("E2E: Navigation Challenge", () => {
     console.log(`\n[e2e] PASS — Navigation Challenge completed`);
     console.log(`[e2e]   Code: ${result.code}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 });

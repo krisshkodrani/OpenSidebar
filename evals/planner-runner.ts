@@ -19,7 +19,25 @@ import { judgePlannerCase } from "./planner-judge";
 import { getPromptTemplate } from "../src/prompts";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const PLANNER_MODEL = "deepseek/deepseek-v3.2";
+
+type PlannerProvider = "openrouter" | "groq";
+
+function resolveEndpoint(keys: ApiKeys, provider?: PlannerProvider) {
+  const useGroq = provider === "groq";
+  const apiUrl = useGroq ? GROQ_API_URL : OPENROUTER_API_URL;
+  const apiKey = useGroq ? keys.groq : keys.openrouter;
+  if (!apiKey) {
+    throw new Error(useGroq ? "GROQ_API_KEY not found in .env" : "OPENROUTER_API_KEY not found in .env");
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+    ...(useGroq ? {} : { "HTTP-Referer": "https://opensidebar.dev", "X-Title": "OpenSidebar Planner Evals" }),
+  };
+  return { apiUrl, headers };
+}
 type PlannerReasoningEffort = "low" | "medium" | "high";
 
 /** Adaptive timeout based on case difficulty */
@@ -40,6 +58,7 @@ async function replayDecompose(
   modelOverride?: string,
   reasoningEffort?: PlannerReasoningEffort,
   timeoutMs?: number,
+  provider?: PlannerProvider,
 ): Promise<{ subtasks: string[]; steps?: any[]; difficulty: string; isMultiStep: boolean; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.decompose.system");
 
@@ -70,21 +89,18 @@ async function replayDecompose(
     body.reasoning = { effort: reasoningEffort };
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
+  const endpoint = resolveEndpoint(keys, provider);
+
+  const response = await fetch(endpoint.apiUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${keys.openrouter}`,
-      "HTTP-Referer": "https://opensidebar.dev",
-      "X-Title": "OpenSidebar Planner Evals",
-    },
+    headers: endpoint.headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs ?? 60_000),
   });
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`OpenRouter API error ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(`API error ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as any;
@@ -125,6 +141,7 @@ async function replayValidateDone(
   evalCase: PlannerEvalCase,
   modelOverride?: string,
   reasoningEffort?: PlannerReasoningEffort,
+  provider?: PlannerProvider,
 ): Promise<{ approved: boolean; reason?: string; modelVersion?: string }> {
   const systemPrompt = getPromptTemplate("planner.validate_done.system");
 
@@ -159,21 +176,18 @@ async function replayValidateDone(
     body.reasoning = { effort: reasoningEffort };
   }
 
-  const response = await fetch(OPENROUTER_API_URL, {
+  const endpoint = resolveEndpoint(keys, provider);
+
+  const response = await fetch(endpoint.apiUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${keys.openrouter}`,
-      "HTTP-Referer": "https://opensidebar.dev",
-      "X-Title": "OpenSidebar Planner Evals",
-    },
+    headers: endpoint.headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`OpenRouter API error ${response.status}: ${body.slice(0, 200)}`);
+    throw new Error(`API error ${response.status}: ${body.slice(0, 200)}`);
   }
 
   const json = (await response.json()) as any;
@@ -215,6 +229,7 @@ export async function runPlannerEvals(options: {
   outDir?: string;
   model?: string;
   reasoningEffort?: PlannerReasoningEffort;
+  provider?: PlannerProvider;
 }): Promise<PlannerEvalResult[]> {
   const { keys, judge = false } = options;
 
@@ -261,6 +276,7 @@ export async function runPlannerEvals(options: {
           options.model,
           options.reasoningEffort,
           decomposeTimeout(evalCase.metadata.difficulty),
+          options.provider,
         );
         const durationMs = Date.now() - start;
         const scores = scorePlannerDecompose(evalCase, actual);
@@ -282,6 +298,7 @@ export async function runPlannerEvals(options: {
           evalCase,
           options.model,
           options.reasoningEffort,
+          options.provider,
         );
         const durationMs = Date.now() - start;
         const scores = scorePlannerValidateDone(evalCase, actual);

@@ -100,6 +100,6 @@ describe.skipIf(!h.apiKey)("E2E: Structural Loading", () => {
     ).toBeLessThanOrEqual(1);
 
     console.log("[e2e] PASS — Agent completed task despite permanent 'loading' in DOM");
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 180_000);
 });

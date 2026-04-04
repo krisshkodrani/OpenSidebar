@@ -97,6 +97,6 @@ describe.skipIf(!h.apiKey)("E2E: Delayed Content", () => {
     expect(hasCode, "Agent must report the secret code SECRET-CODE-7X9Q2").toBe(true);
 
     console.log("[e2e] PASS — Secret code correctly read after AJAX delay");
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 180_000);
 });

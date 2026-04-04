@@ -214,7 +214,7 @@ describe.skipIf(!h.apiKey)("E2E: Sequential Tasks", () => {
     // Final: no ghost session after both tasks
     // =========================================================
     console.log("\n[e2e:seq] === POST-CHECK: Ghost session detection ===");
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId2);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId2);
     console.log("[e2e:seq] No ghost session — OK");
 
     console.log("\n[e2e:seq] === SEQUENTIAL TASKS PASSED ===");

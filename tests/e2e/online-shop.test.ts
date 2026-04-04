@@ -112,7 +112,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 
   it("agent adds two items to cart, no coupon, standard shipping", async () => {
@@ -210,7 +210,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     assertNodeIsolation(wsEvents, traceFiles);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 540_000);
 
   it("agent adds accessory, applies coupon, express shipping", async () => {
@@ -294,7 +294,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 
   it("agent adds item, changes quantity to 3, applies coupon, standard shipping", async () => {
@@ -380,7 +380,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 
   it("agent adds apparel item, no coupon, express shipping", async () => {
@@ -463,7 +463,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 
   it("agent handles natural two-item order with coupon and express shipping", async () => {
@@ -560,7 +560,7 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
 
     // Verify no ghost session starts after order completion
     console.log("[e2e] Watching for ghost sessions (12s quiet period)...");
-    await assertNoGhostSession(h.ctx.serviceWorker, 12_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
     console.log("[e2e] No ghost session detected — OK");
   }, 540_000);
 

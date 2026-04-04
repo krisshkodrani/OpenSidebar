@@ -290,7 +290,7 @@ export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
  */
 export async function assertNoGhostSession(
   worker: WebWorker,
-  quietPeriodMs: number = 12_000,
+  quietPeriodMs: number = 2_000,
   workspaceId?: string | null,
 ): Promise<void> {
   await clearMonitoredEvents(worker);

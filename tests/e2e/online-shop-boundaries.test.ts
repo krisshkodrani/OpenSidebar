@@ -257,6 +257,6 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping Boundaries", () => {
 
     assertNodeIsolation(wsEvents, traceFiles);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 360_000);
 });

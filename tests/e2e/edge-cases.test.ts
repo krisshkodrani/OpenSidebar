@@ -75,7 +75,7 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
 
     console.log(`[e2e] PASS — Contact form submitted: ${result.email}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 260_000);
 
   it("agent handles delayed content that appears after button click", async () => {
@@ -123,7 +123,7 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
 
     console.log(`[e2e] PASS — Delayed content loaded: "${text}"`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 260_000);
 
   it("agent stops gracefully when task is impossible", async () => {

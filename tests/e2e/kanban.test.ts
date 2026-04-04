@@ -87,6 +87,6 @@ describe.skipIf(!h.apiKey)("E2E: Kanban", () => {
     console.log(`\n[e2e] PASS — Task dragged to In Progress`);
     console.log(`[e2e]   Moves: ${JSON.stringify(result.moves)}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

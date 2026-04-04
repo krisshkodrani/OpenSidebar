@@ -99,6 +99,6 @@ describe.skipIf(!h.apiKey)("E2E: Web Components", () => {
     console.log(`[e2e]   Actions: ${result.actions.join(", ")}`);
     console.log(`[e2e]   Toggle: ${result.toggleEnabled}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

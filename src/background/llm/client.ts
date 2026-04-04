@@ -42,12 +42,27 @@ export const OPENAI_MODEL_EXECUTOR = "gpt-5.4-mini";
 export const OPENAI_MODEL_PLANNER = "gpt-5.4-mini";
 export const OPENAI_MODEL_PERCEPTION = "gpt-5.4-mini";
 
+/** Groq direct API */
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
+export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
+export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
+export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
+
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: OPENAI_BASE_URL,
     apiKey,
     headers: {},
     providerId: "openai",
+  };
+}
+
+function groqProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: GROQ_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "groq",
   };
 }
 
@@ -58,10 +73,16 @@ export interface LLMClientOptions {
   plannerModel?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
-  /** LLM provider selection */
-  provider?: "openrouter" | "openai";
-  /** OpenAI API key (required when provider is "openai") */
+  /** Provider mode: how executor and planner providers are combined */
+  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+  /** @deprecated Use providerMode instead */
+  provider?: "openrouter" | "openai" | "groq";
+  /** OpenAI API key (required for openai-groq mode) */
   openaiApiKey?: string;
+  /** Groq API key (required for hybrid modes) */
+  groqApiKey?: string;
+  /** Override default temperature (default: 0.0) */
+  temperature?: number;
 }
 
 /** Append `:nitro` suffix if enabled and not already present */
@@ -290,14 +311,34 @@ export class ProviderPool {
  * Annotate system message with cache_control for OpenRouter prefix caching.
  * The static prefix (rules, persona, demo catalog) is stable across turns,
  * so marking the system message as ephemeral enables provider-side caching.
+ * Skipped for non-OpenRouter providers (Groq/OpenAI reject unknown fields).
  */
-function annotateCacheControl(messages: LLMMessage[]): LLMMessage[] {
+function annotateCacheControl(messages: LLMMessage[], providerId: string): LLMMessage[] {
+  if (providerId !== "openrouter") return messages;
   if (messages.length === 0 || messages[0].role !== "system") return messages;
   const systemMsg: LLMMessage = {
     ...messages[0],
     cache_control: { type: "ephemeral" as const },
   };
   return [systemMsg, ...messages.slice(1)];
+}
+
+/**
+ * Sanitize messages for strict providers (Groq requires type:"function" on tool_calls).
+ * OpenRouter and OpenAI are lenient about missing `type` fields, but Groq rejects them.
+ */
+function sanitizeToolCallMessages(messages: LLMMessage[], providerId: string): LLMMessage[] {
+  if (providerId !== "groq") return messages;
+  return messages.map((msg) => {
+    if (msg.role !== "assistant" || !msg.tool_calls) return msg;
+    return {
+      ...msg,
+      tool_calls: msg.tool_calls.map((tc) => ({
+        type: "function" as const,
+        ...tc,
+      })),
+    };
+  });
 }
 
 /**
@@ -316,6 +357,7 @@ export class LLMClient {
   /** Whether the client is currently in planner model tier */
   private _isPlannerTier = false;
   private executorModelOverride: string | null = null;
+  private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
 
   /**
@@ -325,43 +367,54 @@ export class LLMClient {
    */
   constructor(openRouterApiKey: string, options?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
+    this.defaultTemperature = options?.temperature ?? 0.0;
 
-    const useOpenAI = options?.provider === "openai" && !!options?.openaiApiKey;
+    // Resolve providerMode (supports legacy `provider` field for backward compat)
+    let mode: "openrouter" | "openrouter-groq" | "openai-groq" = options?.providerMode ?? "openrouter";
+    if (!options?.providerMode && options?.provider) {
+      // Migrate legacy provider field
+      if (options.provider === "groq" && options.groqApiKey) mode = "openrouter-groq";
+      else if (options.provider === "openai" && options.openaiApiKey) mode = "openai-groq";
+    }
 
-    if (useOpenAI) {
-      // OpenAI direct: no :nitro, no prefix, native prompt caching
+    const nitro = options?.useNitro;
+    const hasGroq = !!options?.groqApiKey;
+    const hasOpenAI = !!options?.openaiApiKey;
+
+    // --- Build executor pool (OpenRouter or OpenAI, never Groq) ---
+    if (mode === "openai-groq" && hasOpenAI) {
       const oaiKey = options!.openaiApiKey!;
-      const oaiProvider = openAIProvider(oaiKey);
+      const oaiProv = openAIProvider(oaiKey);
       const executorModel = options?.executorModel || OPENAI_MODEL_EXECUTOR;
-      const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
-      // Build pools with OpenRouter constructor, then override provider to OpenAI
-      this.executorPool = new ProviderPool(oaiKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = oaiProvider;
-      this.executorFallbackModel =
-        options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
-      this.plannerPool = new ProviderPool(oaiKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = oaiProvider;
+      this.executorPool = new ProviderPool(oaiKey, { openRouterModel: executorModel });
+      this.executorPool.getSlots()[0].provider = oaiProv;
+      this.executorFallbackModel = options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
     } else {
-      // OpenRouter (default): apply :nitro, prefix model IDs
-      const nitro = options?.useNitro;
+      // OpenRouter for executor (both "openrouter" and "openrouter-groq" modes)
       this.executorPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(
-          options?.executorModel || MODEL_EXECUTOR,
-          nitro,
-        ),
+        openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro),
       });
-      this.executorFallbackModel =
-        options?.executorFallbackModel ||
-        MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+      this.executorFallbackModel = options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+    }
+
+    // --- Build planner pool (Groq in hybrid modes, else same as executor provider) ---
+    if ((mode === "openrouter-groq" || mode === "openai-groq") && hasGroq) {
+      const groqKey = options!.groqApiKey!;
+      const groqProv = groqProvider(groqKey);
+      const plannerModel = options?.plannerModel || GROQ_MODEL_PLANNER;
+      this.plannerPool = new ProviderPool(groqKey, { openRouterModel: plannerModel });
+      this.plannerPool.getSlots()[0].provider = groqProv;
+    } else if (mode === "openai-groq" && hasOpenAI) {
+      // No Groq key but OpenAI mode — planner uses OpenAI too
+      const oaiKey = options!.openaiApiKey!;
+      const oaiProv = openAIProvider(oaiKey);
+      const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
+      this.plannerPool = new ProviderPool(oaiKey, { openRouterModel: plannerModel });
+      this.plannerPool.getSlots()[0].provider = oaiProv;
+    } else {
+      // OpenRouter for planner
       this.plannerPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(
-          options?.plannerModel || MODEL_PLANNER,
-          nitro,
-        ),
+        openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro),
       });
     }
 
@@ -624,10 +677,10 @@ export class LLMClient {
 
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: annotateCacheControl(request.messages),
+      messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
       tools: request.tools,
-      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
-      temperature: request.temperature ?? 0.0, // Agentic needs low temp
+      tool_choice: request.tools?.length ? (request.tool_choice ?? "auto") : undefined,
+      temperature: request.temperature ?? this.defaultTemperature, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
       response_format: request.response_format,
@@ -844,10 +897,10 @@ export class LLMClient {
 
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
-      messages: annotateCacheControl(request.messages),
+      messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
       tools: request.tools,
-      tool_choice: request.tools?.length ? ("auto" as const) : undefined,
-      temperature: request.temperature ?? 0.0,
+      tool_choice: request.tools?.length ? (request.tool_choice ?? "auto") : undefined,
+      temperature: request.temperature ?? this.defaultTemperature,
       max_tokens: request.max_tokens,
       stop: request.stop,
       stream: true,

@@ -13,6 +13,8 @@ import { sanitizeHtml } from "../../utils/sanitize-html";
 import { useStore } from "../store";
 import { ToolCallBadge } from "./ToolCallBadge";
 import { StepTimeline } from "./StepTimeline";
+import { Volume2, VolumeX } from "lucide-react";
+import { useTextToSpeech } from "../hooks/useTextToSpeech";
 import { PlanStepIcon } from "./PlanStepIcon";
 import {
   CheckCircle2,
@@ -303,6 +305,10 @@ export const MessageBubble = React.memo(function MessageBubble({
   const showDetailsByDefault = useStore(
     (s) => s.settings.showMessageDetailsByDefault ?? false,
   );
+  const voiceOutputEnabled = useStore((s) => s.settings.enableVoiceOutput ?? false);
+  const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
+  const ttsVoice = useStore((s) => s.settings.ttsVoice);
+  const tts = useTextToSpeech(openaiApiKey, ttsVoice);
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
   const isAnnotation = isUser && message.isAnnotation;
@@ -454,6 +460,18 @@ export const MessageBubble = React.memo(function MessageBubble({
             ""
           )}
         </div>
+      )}
+
+      {/* TTS speaker icon — assistant messages with content */}
+      {voiceOutputEnabled && openaiApiKey && !isUser && renderedHtml && !message.isStreaming && (
+        <button
+          onClick={() => tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")}
+          className="mt-1 p-1 rounded-md text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 transition-colors"
+          aria-label={tts.isSpeaking ? "Stop speaking" : "Read aloud"}
+          title={tts.isSpeaking ? "Stop" : "Read aloud"}
+        >
+          {tts.isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        </button>
       )}
 
       {showDetailsByDefault && message.toolCalls.length > 0 && (

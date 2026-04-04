@@ -1443,8 +1443,11 @@ export class Orchestrator {
         executorModel: input.settings.executorModel,
         plannerModel: input.settings.plannerModel,
         useNitro: input.settings.useNitro,
+        providerMode: input.settings.providerMode,
         provider: input.settings.provider,
         openaiApiKey: input.settings.openaiApiKey,
+        groqApiKey: input.settings.groqApiKey,
+        temperature: input.settings.temperature,
       };
       const planner = this.deps.createPlanner(
         input.openRouterApiKey,
@@ -1998,8 +2001,11 @@ export class Orchestrator {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
           useNitro: input.settings.useNitro,
+          providerMode: input.settings.providerMode,
           provider: input.settings.provider,
           openaiApiKey: input.settings.openaiApiKey,
+        groqApiKey: input.settings.groqApiKey,
+        temperature: input.settings.temperature,
         },
       });
 
@@ -3259,6 +3265,10 @@ export class Orchestrator {
     workers?.clear();
     pools?.planner.clear();
     pools?.verifier.clear();
+    // Immediately notify side panel so the indicator clears without waiting
+    // for runTask's scheduling loop to detect the stopped status.
+    this.sendStatus(workspaceId, AgentStatus.IDLE, "Stopped");
+    resetTabGroupAppearance(workspaceId);
   }
 
   private pauseWorkspace(workspaceId: string): void {
@@ -3266,6 +3276,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.pause();
     }
+    this.sendStatus(workspaceId, AgentStatus.PAUSED, "Paused by user");
   }
 
   private resumeWorkspace(workspaceId: string): void {
@@ -3273,6 +3284,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.resume();
     }
+    this.sendStatus(workspaceId, AgentStatus.ACTING, "Resumed");
   }
 
   private async createWorkerTab(

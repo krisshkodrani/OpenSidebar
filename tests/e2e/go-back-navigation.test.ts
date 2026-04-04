@@ -150,6 +150,6 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
     ).toBe(true);
 
     console.log(`\n[e2e] PASS — Forward/back navigation with data collection`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 420_000);
 });

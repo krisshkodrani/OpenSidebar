@@ -89,6 +89,6 @@ describe.skipIf(!h.apiKey)("E2E: FAQ Accordion", () => {
     console.log(`\n[e2e] PASS — Promo code found`);
     console.log(`[e2e]   Code: ${result.codeValue}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

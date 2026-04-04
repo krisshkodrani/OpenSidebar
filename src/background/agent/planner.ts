@@ -789,6 +789,7 @@ export class TaskPlanner {
     signal?: AbortSignal,
     perception?: string,
     successCriteria?: string,
+    stateEvidence?: string,
   ): Promise<DoneValidation> {
     try {
       const planText = plan
@@ -801,6 +802,9 @@ export class TaskPlanner {
       }
       if (perception) {
         userContent += `\n\nCurrent page perception:\n${perception}`;
+      }
+      if (stateEvidence) {
+        userContent += `\n\nDeterministic state evidence (DOM changes observed after agent's last actions):\n${stateEvidence}`;
       }
 
       const start = Date.now();

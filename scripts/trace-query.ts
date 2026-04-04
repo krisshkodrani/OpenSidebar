@@ -14,6 +14,9 @@
  *   filter --outcome <outcome>    Filter sessions by outcome
  *   stats                         Aggregate stats across all sessions
  *   pathologies [session-id]      Show multi-turn pathology events
+ *   runs list                     List all orchestrator runs
+ *   runs show <run-id>            Show run manifest + linked sessions
+ *   runs sessions <run-id>        List session IDs for a run
  *   help                          Show usage
  */
 
@@ -24,6 +27,8 @@ import { fileURLToPath } from "url";
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const INDEX_FILE = join(TRACE_DIR, "index.jsonl");
+const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
+const RUN_INDEX_FILE = join(RUN_TRACE_DIR, "index.jsonl");
 
 // ANSI colors
 const c = {
@@ -545,6 +550,121 @@ function cmdPathologies(sessionId?: string) {
   }
 }
 
+// --- Run types and helpers ---
+
+interface RunManifestRecord {
+  runId: string;
+  correlationId?: string;
+  startedAt: string;
+  source: string;
+  taskId?: string;
+  workspaceId?: string;
+}
+
+function readRunIndex(): RunManifestRecord[] {
+  if (!existsSync(RUN_INDEX_FILE)) return [];
+  const lines = readFileSync(RUN_INDEX_FILE, "utf-8").trim().split("\n").filter(Boolean);
+  return lines.map((l) => JSON.parse(l));
+}
+
+function findRunByPrefix(prefix: string): RunManifestRecord | null {
+  const runs = readRunIndex();
+  return runs.find((r) => r.runId === prefix || r.runId.startsWith(prefix)) ?? null;
+}
+
+function findSessionsByRunId(runIdPrefix: string): TraceSessionRecord[] {
+  const sessions = readIndex();
+  return sessions.filter((s) => {
+    const rid = (s as any).runId;
+    return typeof rid === "string" && rid.startsWith(runIdPrefix);
+  });
+}
+
+function cmdRunsList() {
+  const runs = readRunIndex();
+  if (runs.length === 0) {
+    console.log("No orchestrator runs found.");
+    return;
+  }
+
+  // Count sessions per run
+  const sessions = readIndex();
+  const sessionsByRun = new Map<string, number>();
+  for (const s of sessions) {
+    const rid = (s as any).runId;
+    if (typeof rid === "string" && rid.length > 0) {
+      sessionsByRun.set(rid, (sessionsByRun.get(rid) || 0) + 1);
+    }
+  }
+
+  const sorted = [...runs].sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || ""));
+  console.log(`${c.bold}Orchestrator Runs (${sorted.length}):${c.reset}\n`);
+  for (const r of sorted) {
+    const shortId = r.runId.slice(0, 8);
+    const count = sessionsByRun.get(r.runId) ?? 0;
+    const started = r.startedAt ? new Date(r.startedAt).toLocaleString() : "?";
+    console.log(
+      `  ${c.cyan}${shortId}${c.reset} ${c.dim}${started}${c.reset} ` +
+      `${count} session${count !== 1 ? "s" : ""} ` +
+      `${c.dim}src=${r.source || "?"}${c.reset}`,
+    );
+  }
+}
+
+function cmdRunsShow(prefix: string) {
+  const run = findRunByPrefix(prefix);
+  if (!run) {
+    console.error(`${c.red}Run not found: ${prefix}${c.reset}`);
+    process.exit(1);
+  }
+
+  console.log(`${c.bold}Run: ${run.runId}${c.reset}`);
+  console.log(`  Short ID:   ${c.cyan}${run.runId.slice(0, 8)}${c.reset}`);
+  console.log(`  Started:    ${run.startedAt ? new Date(run.startedAt).toLocaleString() : "?"}`);
+  console.log(`  Source:     ${run.source || "?"}`);
+  if (run.taskId) console.log(`  Task ID:    ${run.taskId}`);
+  if (run.workspaceId) console.log(`  Workspace:  ${run.workspaceId}`);
+  console.log();
+
+  // List sessions in this run
+  const sessions = findSessionsByRunId(run.runId);
+  if (sessions.length === 0) {
+    console.log("  No agent sessions found for this run.");
+    return;
+  }
+
+  console.log(`${c.bold}Sessions (${sessions.length}):${c.reset}`);
+  for (const s of sessions.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0))) {
+    const oc = outcomeColor(s.outcome);
+    const duration = formatDuration(s.endTime - s.startTime);
+    const cost = s.metrics?.totalCost != null ? `$${s.metrics.totalCost.toFixed(4)}` : "";
+    console.log(
+      `  ${c.dim}${formatTime(s.startTime)}${c.reset} ${oc}${s.outcome.padEnd(10)}${c.reset} ` +
+      `${c.cyan}${s.turnCount}t${c.reset} ${duration.padEnd(6)} ${cost.padEnd(8)} ` +
+      `${truncate(s.query, 50)}`,
+    );
+    console.log(`  ${c.dim}${s.sessionId}${c.reset}\n`);
+  }
+}
+
+function cmdRunsSessions(prefix: string) {
+  const run = findRunByPrefix(prefix);
+  if (!run) {
+    console.error(`${c.red}Run not found: ${prefix}${c.reset}`);
+    process.exit(1);
+  }
+
+  const sessions = findSessionsByRunId(run.runId);
+  if (sessions.length === 0) {
+    console.log("No sessions found for this run.");
+    return;
+  }
+
+  for (const s of sessions.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0))) {
+    console.log(s.sessionId);
+  }
+}
+
 function cmdHelp() {
   console.log(`
 ${c.bold}Trace Query CLI${c.reset}
@@ -561,9 +681,12 @@ Commands:
   filter --outcome <outcome>    Filter sessions by outcome
   stats                         Aggregate statistics
   pathologies [session-id]      Show multi-turn pathology events
+  runs list                     List all orchestrator runs
+  runs show <run-id>            Show run manifest + linked sessions
+  runs sessions <run-id>        List session IDs for a run (scriptable)
   help                          Show this help
 
-Session IDs can be abbreviated (prefix match).
+Session and run IDs can be abbreviated (prefix match).
 `);
 }
 
@@ -616,6 +739,21 @@ switch (command) {
   case "pathologies":
     cmdPathologies(args[1]);
     break;
+  case "runs": {
+    const subCmd = args[1] || "list";
+    if (subCmd === "list") cmdRunsList();
+    else if (subCmd === "show") {
+      if (!args[2]) { console.error("Usage: runs show <run-id>"); process.exit(1); }
+      cmdRunsShow(args[2]);
+    } else if (subCmd === "sessions") {
+      if (!args[2]) { console.error("Usage: runs sessions <run-id>"); process.exit(1); }
+      cmdRunsSessions(args[2]);
+    } else {
+      console.error(`Unknown runs subcommand: ${subCmd}. Use: list, show, sessions`);
+      process.exit(1);
+    }
+    break;
+  }
   case "help":
   default:
     cmdHelp();

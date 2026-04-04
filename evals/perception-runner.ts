@@ -19,9 +19,10 @@ import { judgePerceptionCase } from "./perception-judge";
 import { buildProductionPerceptionPrompt } from "../src/background/perception/prompt-builder";
 import { stripThinkTags } from "../src/background/llm";
 
-export type PerceptionProvider = "openrouter";
+export type PerceptionProvider = "openrouter" | "groq";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 
 interface ProviderConfig {
@@ -35,16 +36,24 @@ interface ProviderConfig {
 function buildProviderConfig(
   keys: ApiKeys,
   model?: string,
+  provider?: PerceptionProvider,
 ): ProviderConfig {
+  const useGroq = provider === "groq";
+  const apiKey = useGroq ? keys.groq : keys.openrouter;
+  if (!apiKey) {
+    throw new Error(useGroq ? "GROQ_API_KEY not found in .env" : "OPENROUTER_API_KEY not found in .env");
+  }
   return {
-    apiUrl: OPENROUTER_API_URL,
-    apiKey: keys.openrouter,
+    apiUrl: useGroq ? GROQ_API_URL : OPENROUTER_API_URL,
+    apiKey,
     model: model ?? DEFAULT_PERCEPTION_MODEL,
-    providerId: "openrouter",
-    headers: {
-      "HTTP-Referer": "https://opensidebar.dev",
-      "X-Title": "OpenSidebar Perception Evals",
-    },
+    providerId: useGroq ? "groq" : "openrouter",
+    headers: useGroq
+      ? {}
+      : {
+          "HTTP-Referer": "https://opensidebar.dev",
+          "X-Title": "OpenSidebar Perception Evals",
+        },
   };
 }
 
@@ -55,13 +64,14 @@ export async function replayPerceptionCase(
   keys: ApiKeys,
   evalCase: PerceptionEvalCase,
   model?: string,
+  provider?: PerceptionProvider,
 ): Promise<{
   interpretation: string;
   model: string;
   providerId: string;
   durationMs: number;
 }> {
-  const config = buildProviderConfig(keys, model);
+  const config = buildProviderConfig(keys, model, provider);
 
   // Reconstruct the perception prompt
   const promptText = buildProductionPerceptionPrompt({
@@ -162,17 +172,17 @@ export async function runPerceptionEvals(options: {
     const evalCase = cases[i];
 
     {
-      const config = buildProviderConfig(keys);
+      const config = buildProviderConfig(keys, options.model, options.provider);
 
       process.stdout.write(
-        `  [${i + 1}/${cases.length}] ${evalCase.id.slice(0, 35)} [openrouter]... `,
+        `  [${i + 1}/${cases.length}] ${evalCase.id.slice(0, 35)} [${config.providerId}]... `,
       );
 
       const start = Date.now();
       let result: PerceptionEvalResult;
 
       try {
-        const replay = await replayPerceptionCase(keys, evalCase, options.model);
+        const replay = await replayPerceptionCase(keys, evalCase, options.model, options.provider);
         const durationMs = Date.now() - start;
 
         const scores = scorePerception(evalCase, replay.interpretation);

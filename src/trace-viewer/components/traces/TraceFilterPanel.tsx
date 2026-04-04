@@ -112,6 +112,8 @@ export default function TraceFilterPanel({
     chips.push({ key: "model", label: `Model: ${shortModel(filters.model)}` });
   if (filters.tier !== "all")
     chips.push({ key: "tier", label: `Tier: ${filters.tier}` });
+  if (filters.runId)
+    chips.push({ key: "runId", label: `Run: ${filters.runId.slice(0, 8)}` });
 
   const handleChipRemove = (key: string) => {
     if (key === "outcome") setFilter("outcome", "all");
@@ -125,6 +127,9 @@ export default function TraceFilterPanel({
     if (key === "mode") setFilter("mode", "all");
     if (key === "model") setFilter("model", "all");
     if (key === "tier") setFilter("tier", "all");
+    if (key === "runId") {
+      setFilter("runId", "");
+    }
     onFiltersChanged();
   };
 

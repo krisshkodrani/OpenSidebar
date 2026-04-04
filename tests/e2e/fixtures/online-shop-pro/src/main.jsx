@@ -30,6 +30,7 @@ import DatePickerPage from "./routes/date-picker";
 import WebComponents from "./routes/web-components";
 import KeyboardNav from "./routes/keyboard-nav";
 import StructuralLoading from "./routes/structural-loading";
+import TeamChat from "./routes/team-chat";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -60,6 +61,7 @@ const routes = [
   { path: "/web-components", label: "WebComp", title: "Web Components", component: WebComponents },
   { path: "/keyboard-nav", label: "Keyboard", title: "Spreadsheet Editor", component: KeyboardNav },
   { path: "/structural-loading", label: "StructLoad", title: "Social Feed", component: StructuralLoading },
+  { path: "/team-chat", label: "TeamChat", title: "Acme Corp — #project-updates", component: TeamChat },
 ];
 
 function Layout({ children, currentPath }) {

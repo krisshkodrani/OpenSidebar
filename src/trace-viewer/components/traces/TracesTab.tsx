@@ -19,6 +19,7 @@ import CostDashboard from "./CostDashboard";
 
 export default function TracesTab() {
   const sessions = useStore((s) => s.sessions);
+  const runGroups = useStore((s) => s.runGroups);
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
@@ -119,7 +120,7 @@ export default function TracesTab() {
             />
           ) : (
             <>
-              <CostDashboard sessions={sessions} onDeleted={refreshSessions} />
+              <CostDashboard sessions={sessions} runGroups={runGroups} onDeleted={refreshSessions} />
               <TraceSessionList />
             </>
           )}

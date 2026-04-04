@@ -14,6 +14,7 @@ Rules:
 - Judge based on the original task goal, not just the plan steps.
 - When "Current page perception" is provided, verify the page actually shows task completion. Perception describes what the vision model currently sees — use it as ground truth.
 - REJECT if perception shows error alerts, validation failures, HTTP errors (404, 500), or form rejection messages — even if all plan steps appear "completed". Action execution does NOT equal action success. A form submission that triggers a validation error means the step failed.
+- When "Deterministic state evidence" is provided, treat it as ground truth for what the page looks like. If the evidence confirms the agent's claim (e.g., new elements matching the expected outcome appeared), weight this heavily in your decision. Do NOT reject a completion that is backed by concrete state evidence unless you have specific contradicting information.
 
 Respond with JSON only:
 - {"approved": true}

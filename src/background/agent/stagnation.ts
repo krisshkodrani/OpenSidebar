@@ -21,6 +21,8 @@ export interface ActionEffect {
   elementsRemoved: number;
   prevCount: number;
   currentCount: number;
+  /** Signature strings of elements that appeared (new in current, absent in previous). Capped at 15. */
+  addedSignatures: string[];
 }
 
 /** Key attributes that indicate meaningful state changes */
@@ -114,8 +116,12 @@ export class StagnationMonitor {
     // Compute action effect from symmetric diff (cheap — sets are already built)
     let added = 0;
     let removed = 0;
+    const addedSigs: string[] = [];
     for (const sig of currSigs) {
-      if (!this.lastSignatures.has(sig)) added++;
+      if (!this.lastSignatures.has(sig)) {
+        added++;
+        if (addedSigs.length < 15) addedSigs.push(sig);
+      }
     }
     for (const sig of this.lastSignatures) {
       if (!currSigs.has(sig)) removed++;
@@ -129,6 +135,7 @@ export class StagnationMonitor {
       elementsRemoved: removed,
       prevCount: this.lastSignatures.size,
       currentCount: currSigs.size,
+      addedSignatures: addedSigs,
     };
 
     this.lastSignatures = currSigs;

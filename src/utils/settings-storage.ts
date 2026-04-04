@@ -11,17 +11,19 @@ const SYNC_KEY = "userSettings";
 const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
 const LOCAL_KEY = "openRouterApiKey_local";
 const LOCAL_OPENAI_KEY = "openaiApiKey_local";
+const LOCAL_GROQ_KEY = "groqApiKey_local";
 
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
  * Both openRouterApiKey and openaiApiKey are credentials — never sync them.
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
-  const { openRouterApiKey, openaiApiKey, ...rest } = settings;
+  const { openRouterApiKey, openaiApiKey, groqApiKey, ...rest } = settings;
   await Promise.all([
     chrome.storage.local.set({
       [LOCAL_KEY]: openRouterApiKey,
       [LOCAL_OPENAI_KEY]: openaiApiKey ?? "",
+      [LOCAL_GROQ_KEY]: groqApiKey ?? "",
     }),
     chrome.storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -35,7 +37,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
 export async function loadSettings(): Promise<UserSettings | null> {
   const [syncResult, localResult, sessionResult] = await Promise.all([
     chrome.storage.sync.get(SYNC_KEY),
-    chrome.storage.local.get([LOCAL_KEY, LOCAL_OPENAI_KEY]),
+    chrome.storage.local.get([LOCAL_KEY, LOCAL_OPENAI_KEY, LOCAL_GROQ_KEY]),
     // Check legacy session key for migration
     chrome.storage.session
       .get(SESSION_KEY)
@@ -47,6 +49,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
     (localResult[LOCAL_KEY] as string | undefined) ||
     (sessionResult[SESSION_KEY] as string | undefined);
   const openaiApiKey = (localResult[LOCAL_OPENAI_KEY] as string | undefined) || "";
+  const groqApiKey = (localResult[LOCAL_GROQ_KEY] as string | undefined) || "";
 
   if (!syncSettings && !apiKey) return null;
 
@@ -68,13 +71,24 @@ export async function loadSettings(): Promise<UserSettings | null> {
   delete raw.orchestratorMaxTotalTokens;
   delete raw.orchestratorMaxWorkers;
 
-  // Strip openaiApiKey from sync data in case it leaked from an older version
+  // Migrate legacy `provider` to `providerMode`
+  if ("provider" in raw && !("providerMode" in raw)) {
+    const p = raw.provider as string;
+    if (p === "groq") raw.providerMode = "openrouter-groq";
+    else if (p === "openai") raw.providerMode = "openai-groq";
+    else raw.providerMode = "openrouter";
+    delete raw.provider;
+  }
+
+  // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;
+  delete raw.groqApiKey;
 
   return {
     ...raw,
     openRouterApiKey: apiKey ?? "",
     openaiApiKey: openaiApiKey,
+    groqApiKey: groqApiKey,
   } as UserSettings;
 }
 

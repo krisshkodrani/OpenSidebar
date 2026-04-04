@@ -25,6 +25,7 @@ export async function fetchTraceSessions(
   if (filters.mode && filters.mode !== "all") params.set("mode", filters.mode);
   if (filters.model && filters.model !== "all")
     params.set("model", filters.model);
+  if (filters.runId) params.set("runId", filters.runId);
   params.set("limit", "1000");
   return fetchJson(`/api/traces/search?${params.toString()}`);
 }

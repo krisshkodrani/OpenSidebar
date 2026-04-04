@@ -7,6 +7,8 @@ import {
   ChevronDown,
   Check,
   Square,
+  Mic,
+  Loader2,
 } from "lucide-react";
 import { useStore } from "../store";
 import { StatusLine } from "./StatusLine";
@@ -26,6 +28,7 @@ import {
   getInteractionModeLabel,
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
+import { useSpeechToText } from "../hooks/useSpeechToText";
 
 import { clsx } from "clsx";
 
@@ -57,6 +60,13 @@ export function InputArea({
   const interactionMode = getInteractionMode(settings);
   const autonomousMode = interactionMode === "autonomous";
   const [autonomyMenuOpen, setAutonomyMenuOpen] = useState(false);
+
+  // Voice input (STT)
+  const voiceEnabled = settings?.enableVoiceInput ?? false;
+  const stt = useSpeechToText({
+    groqApiKey: settings?.groqApiKey,
+    openaiApiKey: settings?.openaiApiKey,
+  });
 
   const setInteractionMode = useCallback(
     (mode: InteractionMode) => {
@@ -96,6 +106,14 @@ export function InputArea({
   useEffect(() => {
     resizeTextarea();
   }, [inputText, resizeTextarea]);
+
+  // Populate input when voice transcript arrives
+  useEffect(() => {
+    if (stt.transcript) {
+      setInputText((prev) => (prev ? prev + " " + stt.transcript : stt.transcript!));
+      stt.clearTranscript();
+    }
+  }, [stt.transcript, setInputText, stt.clearTranscript]);
 
   const hasText = inputText.trim().length > 0;
 
@@ -321,6 +339,24 @@ export function InputArea({
                 rows={1}
               />
               <div className="flex items-end gap-1">
+                {/* Mic button — appears when voice is enabled and no text */}
+                {voiceEnabled && !hasText && !demoRecording && (
+                  <button
+                    onClick={() => stt.isRecording ? stt.stopRecording() : stt.startRecording()}
+                    disabled={stt.isTranscribing}
+                    className={clsx(
+                      "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
+                      stt.isRecording
+                        ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                        : stt.isTranscribing
+                          ? "bg-warm-400 text-white cursor-wait"
+                          : "bg-warm-300 hover:bg-warm-400 dark:bg-warm-600 dark:hover:bg-warm-500 text-warm-700 dark:text-warm-200",
+                    )}
+                    aria-label={stt.isRecording ? "Stop recording" : "Start voice input"}
+                  >
+                    {stt.isTranscribing ? <Loader2 size={16} className="animate-spin" /> : <Mic size={16} />}
+                  </button>
+                )}
                 {/* Send button — appears when text is present */}
                 {hasText && (
                   <button

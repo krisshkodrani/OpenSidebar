@@ -33,12 +33,28 @@ export interface TraceFilters {
   mode: string; // "all" | "agent" | "recording" | "manual"
   model: string; // "all" | specific model name
   tier: string; // "all" | "executor" | "planner"
+  runId: string; // "" means no filter, otherwise prefix match
+}
+
+/** Aggregate stats for a group of sessions sharing the same runId */
+export interface RunGroup {
+  runId: string;
+  shortId: string; // first 8 chars of runId
+  sessions: TraceSession[];
+  totalTurns: number;
+  totalCost: number;
+  earliestStart: number;
+  latestEnd: number;
+  overallOutcome: string;
+  query: string;
+  expanded: boolean;
 }
 
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
   sessions: TraceSession[];
+  runGroups: RunGroup[];
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
@@ -71,6 +87,9 @@ export interface TracesSlice {
   setStoryError: (error: string | null) => void;
   setTracesLoading: (loading: boolean) => void;
   setTracesError: (error: string | null) => void;
+  toggleRunGroup: (runId: string) => void;
+  expandAllRunGroups: () => void;
+  collapseAllRunGroups: () => void;
 }
 
 export interface UiSlice {

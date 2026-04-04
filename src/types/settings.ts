@@ -8,10 +8,14 @@ import type { AgentLoopState } from "./agent";
 
 export interface UserSettings {
   openRouterApiKey: string;
-  /** LLM provider: "openrouter" (default) or "openai" (direct) */
-  provider?: "openrouter" | "openai";
-  /** OpenAI API key (required when provider is "openai") */
+  /** Provider mode: how LLM providers are combined across roles */
+  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+  /** @deprecated Use providerMode instead. Kept for migration. */
+  provider?: "openrouter" | "openai" | "groq";
+  /** OpenAI API key (required for openai-groq mode) */
   openaiApiKey?: string;
+  /** Groq API key (required for hybrid modes) */
+  groqApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
@@ -36,6 +40,14 @@ export interface UserSettings {
   perceptionModel?: string;
   /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
   useNitro?: boolean;
+  /** Override default LLM temperature (default: 0.0 for deterministic agentic behavior) */
+  temperature?: number;
+  /** Enable voice input via microphone (STT) */
+  enableVoiceInput?: boolean;
+  /** Enable voice output on assistant messages (TTS) — requires OpenAI key */
+  enableVoiceOutput?: boolean;
+  /** TTS voice selection (OpenAI voices) */
+  ttsVoice?: "alloy" | "nova" | "echo" | "shimmer" | "onyx" | "fable";
 }
 
 // --- Workspace / Tab Group Types ---

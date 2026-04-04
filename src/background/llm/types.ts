@@ -9,7 +9,7 @@ export interface ProviderConfig {
   /** Extra headers (e.g. OpenRouter's HTTP-Referer, X-Title) */
   headers: Record<string, string>;
   /** Provider identifier for logging and metrics */
-  providerId: "openrouter" | "openai";
+  providerId: "openrouter" | "openai" | "groq";
 }
 
 export type ContentPart =
@@ -47,6 +47,8 @@ export interface CompletionRequest {
   stop?: string[];
   signal?: AbortSignal;
   response_format?: { type: "json_object" };
+  /** Override tool_choice (default: "auto" when tools present) */
+  tool_choice?: "auto" | "required" | "none";
 }
 
 /** Token usage data returned by OpenRouter in every response */
