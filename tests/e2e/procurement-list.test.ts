@@ -130,6 +130,6 @@ describe.skipIf(!h.apiKey)("E2E: Procurement List", () => {
     expect(summary, "Agent must call done() with a summary").toBeTruthy();
 
     console.log(`\n[e2e] PASS — Procurement list processed (${toolNames.length} tool calls)`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 540_000);
 });

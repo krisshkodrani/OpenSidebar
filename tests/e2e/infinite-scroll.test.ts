@@ -87,6 +87,6 @@ describe.skipIf(!h.apiKey)("E2E: Infinite Scroll", () => {
     console.log(`\n[e2e] PASS — Target post found`);
     console.log(`[e2e]   Posts loaded: ${result.postsLoaded}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 360_000);
 });

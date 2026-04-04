@@ -97,6 +97,6 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
 
     console.log(`\n[e2e] PASS — Overlays dismissed, form filled, deletion confirmed`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

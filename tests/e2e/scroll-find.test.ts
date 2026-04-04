@@ -86,6 +86,6 @@ describe.skipIf(!h.apiKey)("E2E: Scroll-to-Find", () => {
 
     console.log(`\n[e2e] PASS — Found Thunderbolt Dock Pro and revealed spec`);
     console.log(`[e2e]   Spec: ${result.spec}`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 300_000);
 });

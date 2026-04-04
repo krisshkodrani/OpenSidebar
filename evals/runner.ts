@@ -28,8 +28,27 @@ function loadToolDefinitions(): any[] {
 }
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
 
-export type EvalProvider = "openrouter";
+export type EvalProvider = "openrouter" | "groq";
+
+/** Sanitize messages for strict APIs (Groq requires type:"function" on tool_calls) */
+function sanitizeMessagesForProvider(
+  messages: LLMMessage[],
+  provider: EvalProvider | undefined,
+): LLMMessage[] {
+  if (provider !== "groq") return messages;
+  return messages.map((msg) => {
+    if (msg.role !== "assistant" || !msg.tool_calls) return msg;
+    return {
+      ...msg,
+      tool_calls: msg.tool_calls.map((tc: any) => ({
+        type: "function",
+        ...tc,
+      })),
+    };
+  });
+}
 export type EvalReplayMode = "single" | "recovery";
 
 const PAGE_CONTEXT_MARKER = "## Page Context";
@@ -327,9 +346,11 @@ async function replaySingleCase(
   tools: ToolDefinition[],
 ): Promise<ReplayOutput> {
 
+  const sanitizedMessages = sanitizeMessagesForProvider(resolvedMessages, provider);
+
   const body: Record<string, unknown> = {
     model,
-    messages: resolvedMessages,
+    messages: sanitizedMessages,
     max_tokens: 4096,
     temperature: 0,
   };
@@ -340,14 +361,19 @@ async function replaySingleCase(
     body.tool_choice = "auto";
   }
 
+  const useGroq = provider === "groq";
+  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
+  const apiKey = useGroq ? keys.groq : keys.openrouter;
+  if (!apiKey) {
+    throw new Error(useGroq ? "GROQ_API_KEY not found in .env" : "OPENROUTER_API_KEY not found in .env");
+  }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${keys.openrouter}`,
+    Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://opensidebar.dev",
-    "X-Title": "OpenSidebar Evals",
+    ...(useGroq ? {} : { "HTTP-Referer": "https://opensidebar.dev", "X-Title": "OpenSidebar Evals" }),
   };
 
-  const response = await fetch(OPENROUTER_API, {
+  const response = await fetch(apiUrl, {
     method: "POST",
     headers,
     body: JSON.stringify(body),

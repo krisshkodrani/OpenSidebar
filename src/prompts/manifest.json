@@ -142,7 +142,7 @@
   {
     "id": "planner.validate_done.system",
     "version": "v1",
-    "hash": "d46fffd2",
+    "hash": "c905dafa",
     "description": "Done validation system prompt for the task planner.",
     "sourcePath": "prompts/runtime/planner/validate_done_system.md"
   },

@@ -99,6 +99,6 @@ describe.skipIf(!h.apiKey)("E2E: Login", () => {
     console.log(`[e2e]   Email: ${result.email}`);
     console.log(`[e2e]   Remember me: ${result.rememberMe}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

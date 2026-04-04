@@ -99,6 +99,6 @@ describe.skipIf(!h.apiKey)("E2E: Dynamic Compute", () => {
     console.log(`\n[e2e] PASS — Configured product`);
     console.log(`[e2e]   Size: ${config.size}, Engraving: ${config.engraving}`);
     console.log(`[e2e]   Computed price: $${config.total}`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 300_000);
 });

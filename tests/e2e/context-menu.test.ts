@@ -93,6 +93,6 @@ describe.skipIf(!h.apiKey)("E2E: Context Menu", () => {
     console.log(`[e2e]   Old: ${result.oldName}`);
     console.log(`[e2e]   New: ${result.newName}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

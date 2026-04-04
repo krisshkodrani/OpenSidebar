@@ -142,7 +142,7 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
     expect(tabs.length).toBeGreaterThanOrEqual(2);
 
     console.log(`\n[e2e] PASS — Data collected (${tabs.length} tabs, ${toolNames.length} tool calls)`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 300_000);
 
   it("opens tabs, collects data, then closes them", async () => {
@@ -201,6 +201,6 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
     console.log("[e2e] Tabs after cleanup:", JSON.stringify(tabs, null, 2));
 
     console.log(`\n[e2e] PASS — Tab lifecycle complete (${toolNames.length} tool calls)`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 300_000);
 });

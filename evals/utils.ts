@@ -141,6 +141,7 @@ export function readEvalResults(): EvalResult[] {
 
 export interface ApiKeys {
   openrouter: string;
+  groq?: string;
 }
 
 /** Load API keys from .env / .env.local. OpenRouter is required. */
@@ -167,7 +168,9 @@ export function loadApiKeys(): ApiKeys {
     throw new Error("OPENROUTER_API_KEY not found in .env file");
   }
 
-  return { openrouter };
+  const groq = extractEnvVar(content, "GROQ_API_KEY") ?? undefined;
+
+  return { openrouter, groq };
 }
 
 /** Load OPENROUTER_API_KEY from .env file (backward compat wrapper) */

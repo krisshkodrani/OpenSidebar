@@ -121,6 +121,6 @@ describe.skipIf(!h.apiKey)("E2E: Article Research", () => {
       );
     }
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 210_000);
 });

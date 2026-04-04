@@ -92,6 +92,6 @@ describe.skipIf(!h.apiKey)("E2E: Hover Menus", () => {
     console.log(`[e2e]   Category: ${result.categorySelected}`);
     console.log(`[e2e]   Search query: ${result.searchQuery}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

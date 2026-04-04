@@ -104,6 +104,7 @@ import {
   evaluateDoneTaskContractGuard,
   findPriorFailure,
   formatActionEffect,
+  formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
@@ -496,6 +497,10 @@ export class AgentLoop {
   private originalQuery = "";
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
+  /** Tracks (tool+args) → result for non-idempotent action dedup after done() rejection */
+  private executedActions = new Map<string, string>();
+  /** When true, executedActions persists across turns (set after done() rejection) */
+  private guardAfterDoneRejection = false;
   /** Pending hint from the user, picked up on the next turn */
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
@@ -818,8 +823,11 @@ export class AgentLoop {
       executorModel?: string;
       plannerModel?: string;
       useNitro?: boolean;
-      provider?: "openrouter" | "openai";
+      providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+      provider?: "openrouter" | "openai" | "groq"; // legacy compat
       openaiApiKey?: string;
+      groqApiKey?: string;
+      temperature?: number;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
@@ -849,8 +857,11 @@ export class AgentLoop {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
       useNitro: options?.useNitro,
+      providerMode: options?.providerMode,
       provider: options?.provider,
       openaiApiKey: options?.openaiApiKey,
+      groqApiKey: options?.groqApiKey,
+      temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     if (this.preferredModelTier === "planner") {
@@ -2057,15 +2068,21 @@ export class AgentLoop {
     return this.pauseGate !== null;
   }
 
-  /** Escalate to planner model when stuck. Distills context, then switches model via planner pool. */
+  /**
+   * Escalate when stuck. Distills context into compact timeline + injects reflection prompt.
+   * Does NOT switch LLM provider — tool calls stay on executor provider for reliability.
+   * The "fresh start" comes from context distillation, not from a different model.
+   */
   private escalateModel(): void {
     // Distill verbose history into compact situation report (unless orientation phase — no history yet)
     if (this.turnCount > 1) {
       this.context.summarizeTrajectory(this.originalQuery);
     }
-    this.llm.switchToPlanner();
-    this.context.setModelTier("planner");
-    this.log.info("agent", "Escalating to planner model", {
+    // Keep provider/model unchanged — escalation is prompt-based, not provider-based.
+    // In hybrid mode (OpenRouter executor + Groq planner), switching to planner pool
+    // would route tool calls through Groq, which can't handle them reliably.
+    this.context.setModelTier("planner"); // label only, for logging/trace
+    this.log.info("agent", "Escalating (context distilled, same provider)", {
       model: this.llm.getCurrentModel(),
       provider: this.llm.getCurrentProvider(),
     });
@@ -2082,12 +2099,12 @@ export class AgentLoop {
     return !userExplicitlyRequestedTabManagement(this.originalQuery);
   }
 
-  /** De-escalate back to executor model when progress resumes after automatic escalation. */
+  /** De-escalate back to executor mode when progress resumes after escalation. */
   private async deescalateModel(
     tabId?: number,
     prevElementCount?: number,
   ): Promise<number> {
-    this.llm.switchToExecutor();
+    // No provider switch needed — escalation is prompt-based only.
     this.context.setModelTier("executor");
     let newCount = prevElementCount ?? -1;
     // Refresh snapshot so executor model gets fresh element IDs
@@ -2119,8 +2136,9 @@ export class AgentLoop {
     const attemptSummary =
       precomputedSummary ?? extractAttemptSummary(this.context.getMessages());
 
-    // 2. Clear history (keeps DOM snapshot)
+    // 2. Clear history and idempotency ledger (keeps DOM snapshot)
     this.context.clearHistory();
+    this.executedActions.clear();
 
     // 3. Re-inject original query
     this.context.addMessage({
@@ -3254,6 +3272,7 @@ export class AgentLoop {
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
+      this.executedActions.clear();
     }
 
     return resolvedIndex;
@@ -3400,6 +3419,13 @@ export class AgentLoop {
 
       this.turnCount++;
       this.turnsOnCurrentStep++;
+
+      // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
+      // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
+      if (!this.guardAfterDoneRejection) {
+        this.executedActions.clear();
+      }
+      this.guardAfterDoneRejection = false;
 
       // Per-turn hallucination detection state (reset each turn)
       let hallucinationDetected = false;
@@ -4103,10 +4129,13 @@ export class AgentLoop {
 
         // Blind Tool Call Guard — nudge when tool calls arrive with no reasoning.
         // Skip for text-recovered tool calls: the model DID produce text, it was just JSON.
+        // Skip when model emitted think tags: reasoning IS present, just in <think> blocks
+        // (Qwen3, DeepSeek, etc. put all reasoning in think tags before tool calls).
         // Only nudge (no forced escalation) — stagnation monitor and dead-end
         // detection handle actual stuck loops. Forced escalation caused
         // escalate→de-escalate loops with models that naturally omit reasoning.
-        if (!cleanContent && !toolsRecoveredFromText) {
+        const hadThinking = rawContent ? extractThinkContent(rawContent) !== null : false;
+        if (!cleanContent && !toolsRecoveredFromText && !hadThinking) {
           consecutiveBlindToolTurns++;
           if (consecutiveBlindToolTurns === 3) {
             this.log.warn(
@@ -5372,6 +5401,10 @@ export class AgentLoop {
                       })
                         ? undefined
                         : (interpretation ?? undefined);
+                    const lastEffect = this.stagnation.lastActionEffect;
+                    const stateEvidence = lastEffect
+                      ? formatStateEvidence(lastEffect)
+                      : undefined;
                     const validation = await this.planner.validateDone(
                       this.originalQuery,
                       this.planSubtasks,
@@ -5381,6 +5414,7 @@ export class AgentLoop {
                       this.abortController!.signal,
                       validationPerception,
                       this.planSteps[effectiveCurrentIdx]?.successCriteria,
+                      stateEvidence,
                     );
 
                     if (!validation.approved) {
@@ -5529,6 +5563,9 @@ export class AgentLoop {
                   }
 
                   this.doneRejections++;
+                  // Activate idempotency guard: prevent re-execution of actions
+                  // that already succeeded but whose done() was rejected by verifier
+                  this.guardAfterDoneRejection = true;
 
                   this.log.warn("agent", "DONE rejected", {
                     turn: this.turnCount,
@@ -6184,6 +6221,33 @@ export class AgentLoop {
               continue;
             }
 
+            // Idempotency guard: prevent re-execution of non-idempotent DOM actions
+            // within the same plan step. Returns cached result on exact (tool+args) match.
+            if (
+              DOM_MODIFYING_TOOLS.has(toolName) &&
+              toolName !== ToolName.READ_PAGE &&
+              toolName !== ToolName.SCROLL_PAGE
+            ) {
+              const actionKey = `${toolName}:${JSON.stringify(args)}`;
+              const cached = this.executedActions.get(actionKey);
+              if (cached) {
+                this.log.info("agent", "Idempotency guard: returning cached result", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  args: JSON.stringify(args).slice(0, 100),
+                });
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    cached +
+                    "\n[Note: This action was already executed earlier in this step. " +
+                    "The result above is from the previous execution. The page state already reflects this action — do NOT repeat it.]",
+                });
+                continue;
+              }
+            }
+
             const toolStepId = crypto.randomUUID();
             const toolStep: AgentStep = {
               id: toolStepId,
@@ -6238,6 +6302,17 @@ export class AgentLoop {
                 toolMs,
                 preDecision.riskLevel,
               );
+              // Store in idempotency ledger for non-idempotent DOM actions
+              if (
+                DOM_MODIFYING_TOOLS.has(toolName) &&
+                toolName !== ToolName.READ_PAGE &&
+                toolName !== ToolName.SCROLL_PAGE
+              ) {
+                this.executedActions.set(
+                  `${toolName}:${JSON.stringify(args)}`,
+                  result,
+                );
+              }
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
               const errorMsg = toolError.message || String(toolError);

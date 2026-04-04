@@ -37,6 +37,8 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_PERCEPTION_MODEL = "gpt-5.4-mini";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -85,9 +87,24 @@ interface PerceptionProvider {
 
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
+  const mode = settings.providerMode ?? (
+    settings.provider === "groq" ? "openrouter-groq" :
+    settings.provider === "openai" ? "openai-groq" : "openrouter"
+  );
 
-  // When OpenAI is selected, use OpenAI as primary perception provider
-  if (settings.provider === "openai" && settings.openaiApiKey) {
+  // Hybrid modes: Groq as primary perception provider (fast, cheap)
+  if ((mode === "openrouter-groq" || mode === "openai-groq") && settings.groqApiKey) {
+    providers.push({
+      baseUrl: GROQ_API_URL,
+      apiKey: settings.groqApiKey,
+      headers: {},
+      model: settings.perceptionModel || GROQ_PERCEPTION_MODEL,
+      providerId: "groq",
+    });
+  }
+
+  // OpenAI-groq fallback: if no Groq key, use OpenAI for perception
+  if (mode === "openai-groq" && settings.openaiApiKey && !settings.groqApiKey) {
     providers.push({
       baseUrl: OPENAI_API_URL,
       apiKey: settings.openaiApiKey,

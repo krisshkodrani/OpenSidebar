@@ -65,6 +65,23 @@ export function loadApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function loadGroqApiKey(): string | undefined {
+  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
+  const envPath = resolve(__dirname, "../../../.env");
+  if (!existsSync(envPath)) return undefined;
+  const content = readFileSync(envPath, "utf-8");
+  const match = content.match(/GROQ_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
+/** Detect provider mode from E2E_PROVIDER env var (default: openrouter) */
+function detectProviderMode(): "openrouter" | "openrouter-groq" | "openai-groq" {
+  const prov = process.env.E2E_PROVIDER?.toLowerCase();
+  if (prov === "groq" || prov === "openrouter-groq") return "openrouter-groq";
+  if (prov === "openai-groq") return "openai-groq";
+  return "openrouter";
+}
+
 export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const maxTurns = options.maxTurns ?? 20;
   const testLabel = options.testLabel ?? "e2e";
@@ -107,21 +124,33 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         (await ctx.browser.newPage());
 
       const helper = await openHelperPage(ctx);
+      const providerMode = detectProviderMode();
+      const groqKey = providerMode !== "openrouter" ? loadGroqApiKey() : undefined;
+      const executorModel = process.env.E2E_EXECUTOR_MODEL || undefined;
+      const temperature = process.env.E2E_TEMPERATURE ? parseFloat(process.env.E2E_TEMPERATURE) : undefined;
       await helper.evaluate(
-        async (key: string, turns: number) => {
-          await chrome.storage.local.set({ openRouterApiKey_local: key });
-          await chrome.storage.sync.set({
-            userSettings: {
-              requireApprovals: false,
-              allowNavigation: false,
-              requirePlanConfirmation: false,
-              showElementTags: false,
-              maxTurns: turns,
-            },
-          });
+        async (key: string, turns: number, mode: string, gKey: string | null, execModel: string | null, temp: number | null) => {
+          const localData: Record<string, string> = { openRouterApiKey_local: key };
+          if (gKey) localData.groqApiKey_local = gKey;
+          await chrome.storage.local.set(localData);
+          const settings: Record<string, unknown> = {
+            requireApprovals: false,
+            allowNavigation: false,
+            requirePlanConfirmation: false,
+            showElementTags: false,
+            maxTurns: turns,
+          };
+          if (mode !== "openrouter") settings.providerMode = mode;
+          if (execModel) settings.executorModel = execModel;
+          if (temp !== null) settings.temperature = temp;
+          await chrome.storage.sync.set({ userSettings: settings });
         },
         apiKey!,
         maxTurns,
+        providerMode,
+        groqKey ?? null,
+        executorModel ?? null,
+        temperature ?? null,
       );
       await helper.close();
 

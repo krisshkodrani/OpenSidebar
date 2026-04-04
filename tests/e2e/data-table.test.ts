@@ -87,6 +87,6 @@ describe.skipIf(!h.apiKey)("E2E: Data Table", () => {
     console.log(`\n[e2e] PASS — Diana Chen found`);
     console.log(`[e2e]   Salary: ${result.dianaSalary}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

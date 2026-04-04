@@ -115,6 +115,6 @@ describe.skipIf(!h.apiKey)("E2E: Multi-Step Form", () => {
     );
     console.log(`[e2e]   Budget: ${result.budget}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 });

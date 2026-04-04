@@ -114,6 +114,39 @@ export function formatActionEffect(effect: ActionEffect): string | null {
   return `[Action effect: ${parts.join(", ")}]`;
 }
 
+/**
+ * Format an ActionEffect into structured evidence for the validateDone verifier.
+ * Returns null if the effect is negligible (no meaningful DOM change).
+ */
+export function formatStateEvidence(effect: ActionEffect): string | null {
+  if (effect.deltaPercent < 0.01 && !effect.urlChanged) return null;
+
+  const lines: string[] = [];
+  lines.push(
+    `Elements: ${effect.prevCount} → ${effect.currentCount} (${effect.elementsAdded > 0 ? "+" + effect.elementsAdded : "0"} new, ${effect.elementsRemoved > 0 ? "-" + effect.elementsRemoved : "0"} removed)`,
+  );
+  lines.push(
+    `Change: ${Math.round(effect.deltaPercent * 100)}% of page signatures changed`,
+  );
+  if (effect.urlChanged)
+    lines.push(`URL changed: ${effect.prevUrl} → ${effect.currentUrl}`);
+
+  if (effect.addedSignatures.length > 0) {
+    lines.push("New elements appearing on page:");
+    for (const sig of effect.addedSignatures) {
+      const parts = sig.split(":");
+      const tag = parts[0] || "";
+      const text = parts[1] || "";
+      const attrs = parts.slice(2).join(":") || "";
+      const readable = text
+        ? `${tag} "${text}"${attrs ? ` (${attrs})` : ""}`
+        : tag;
+      lines.push(`  + ${readable}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 export interface StepAdvanceSignal {
   matchedTokens: string[];
   reason: string;

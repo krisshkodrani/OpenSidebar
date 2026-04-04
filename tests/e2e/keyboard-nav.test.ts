@@ -89,6 +89,6 @@ describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
     console.log(`\n[e2e] PASS — Spreadsheet edited`);
     console.log(`[e2e]   Edits: ${JSON.stringify(result.edits)}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

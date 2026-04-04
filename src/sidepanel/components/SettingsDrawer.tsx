@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
-import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, OPENAI_MODEL_PLANNER, OPENAI_MODEL_PERCEPTION } from "../../background/llm/client";
+import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, OPENAI_MODEL_PLANNER, OPENAI_MODEL_PERCEPTION, GROQ_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION } from "../../background/llm/client";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
 
@@ -403,29 +403,38 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
           {activeTab === "models" && (
             <>
-              {/* PROVIDER SELECTOR */}
+              {/* PROVIDER MODE SELECTOR */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Provider
+                  Provider Mode
                 </h3>
                 <select
-                  value={formState.provider || "openrouter"}
+                  value={formState.providerMode || "openrouter"}
                   onChange={(e) =>
-                    handleChange("provider", e.target.value as "openrouter" | "openai")
+                    handleChange("providerMode", e.target.value as "openrouter" | "openrouter-groq" | "openai-groq")
                   }
                   className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
                 >
                   <option value="openrouter">OpenRouter</option>
-                  <option value="openai">OpenAI</option>
+                  <option value="openrouter-groq">OpenRouter + Groq</option>
+                  <option value="openai-groq">OpenAI + Groq</option>
                 </select>
+                <p className="text-xs text-warm-400 dark:text-warm-500">
+                  {(formState.providerMode || "openrouter") === "openrouter"
+                    ? "All roles via OpenRouter"
+                    : (formState.providerMode || "openrouter") === "openrouter-groq"
+                      ? "Executor via OpenRouter, planner + perception via Groq"
+                      : "Executor via OpenAI, planner + perception via Groq"}
+                </p>
               </section>
 
-              {/* API KEY — adapts to selected provider */}
+              {/* API KEYS — adapts to selected mode */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  API Key
+                  API Keys
                 </h3>
-                {(formState.provider || "openrouter") === "openrouter" ? (
+                {/* OpenRouter key — needed for "openrouter" and "openrouter-groq" modes */}
+                {(formState.providerMode || "openrouter") !== "openai-groq" && (
                   <div className="space-y-1">
                     <label className="text-sm font-medium dark:text-warm-300">
                       OpenRouter API Key
@@ -434,14 +443,14 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     <input
                       type="password"
                       value={formState.openRouterApiKey}
-                      onChange={(e) =>
-                        handleChange("openRouterApiKey", e.target.value)
-                      }
+                      onChange={(e) => handleChange("openRouterApiKey", e.target.value)}
                       className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
                       placeholder="sk-or-..."
                     />
                   </div>
-                ) : (
+                )}
+                {/* OpenAI key — needed for "openai-groq" mode */}
+                {(formState.providerMode || "openrouter") === "openai-groq" && (
                   <div className="space-y-1">
                     <label className="text-sm font-medium dark:text-warm-300">
                       OpenAI API Key
@@ -450,21 +459,32 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     <input
                       type="password"
                       value={formState.openaiApiKey || ""}
-                      onChange={(e) =>
-                        handleChange("openaiApiKey", e.target.value)
-                      }
+                      onChange={(e) => handleChange("openaiApiKey", e.target.value)}
                       className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
                       placeholder="sk-..."
                     />
-                    <p className="text-xs text-warm-400 dark:text-warm-500 mt-1">
-                      Direct OpenAI API — same models, no routing overhead
-                    </p>
+                  </div>
+                )}
+                {/* Groq key — needed for hybrid modes */}
+                {(formState.providerMode || "openrouter") !== "openrouter" && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Groq API Key
+                      <span className="text-xs text-warm-400 ml-2">(required for planner + perception)</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={formState.groqApiKey || ""}
+                      onChange={(e) => handleChange("groqApiKey", e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                      placeholder="gsk_..."
+                    />
                   </div>
                 )}
               </section>
 
-              {/* NITRO TOGGLE — OpenRouter only */}
-              {(formState.provider || "openrouter") === "openrouter" && (
+              {/* NITRO TOGGLE — OpenRouter modes only */}
+              {(formState.providerMode || "openrouter") !== "openai-groq" && (
               <section className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
@@ -498,7 +518,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.executorModel || ""}
                   onChange={(v) => handleChange("executorModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "openai" ? OPENAI_MODEL_EXECUTOR : MODEL_EXECUTOR}
+                  defaultModel={(formState.providerMode || "openrouter") === "openai-groq" ? OPENAI_MODEL_EXECUTOR : MODEL_EXECUTOR}
                   models={models}
                   loading={modelsLoading}
                 />
@@ -515,7 +535,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.plannerModel || ""}
                   onChange={(v) => handleChange("plannerModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "openai" ? OPENAI_MODEL_PLANNER : MODEL_PLANNER}
+                  defaultModel={(formState.providerMode || "openrouter") !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
                   models={models}
                   loading={modelsLoading}
                 />
@@ -532,11 +552,70 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <ModelSelector
                   value={formState.perceptionModel || ""}
                   onChange={(v) => handleChange("perceptionModel", v || undefined)}
-                  defaultModel={(formState.provider || "openrouter") === "openai" ? OPENAI_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
+                  defaultModel={(formState.providerMode || "openrouter") !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
                   models={models}
                   loading={modelsLoading}
                   filterVisionOnly
                 />
+              </section>
+
+              {/* VOICE I/O */}
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
+                  Voice
+                </h3>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Voice Input (STT)
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Microphone button for speech-to-text
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formState.enableVoiceInput)}
+                    onChange={(e) => handleChange("enableVoiceInput", e.target.checked)}
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Voice Output (TTS)
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      {(formState.providerMode || "openrouter") === "openai-groq"
+                        ? "Read assistant messages aloud"
+                        : "Requires OpenAI + Groq mode"}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formState.enableVoiceOutput)}
+                    onChange={(e) => handleChange("enableVoiceOutput", e.target.checked)}
+                    disabled={(formState.providerMode || "openrouter") !== "openai-groq" && !formState.openaiApiKey}
+                    className="w-4 h-4 text-primary-600 rounded disabled:opacity-40"
+                  />
+                </div>
+                {formState.enableVoiceOutput && (
+                  <div className="space-y-1">
+                    <label className="text-xs text-warm-400 dark:text-warm-500">TTS Voice</label>
+                    <select
+                      value={formState.ttsVoice || "nova"}
+                      onChange={(e) => handleChange("ttsVoice", e.target.value)}
+                      className="w-full px-3 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                    >
+                      <option value="nova">Nova</option>
+                      <option value="alloy">Alloy</option>
+                      <option value="echo">Echo</option>
+                      <option value="shimmer">Shimmer</option>
+                      <option value="onyx">Onyx</option>
+                      <option value="fable">Fable</option>
+                    </select>
+                  </div>
+                )}
               </section>
             </>
           )}

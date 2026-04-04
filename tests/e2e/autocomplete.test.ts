@@ -98,6 +98,6 @@ describe.skipIf(!h.apiKey)("E2E: Autocomplete", () => {
     console.log(`[e2e]   Address: ${result.address}`);
     console.log(`[e2e]   Product: ${result.product}`);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 10_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 320_000);
 });

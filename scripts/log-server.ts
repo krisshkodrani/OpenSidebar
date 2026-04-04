@@ -603,6 +603,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const mode = (url.searchParams.get("mode") || "").trim();
       const model = (url.searchParams.get("model") || "").trim();
       const q = (url.searchParams.get("q") || "").toLowerCase().trim();
+      const runId = (url.searchParams.get("runId") || "").trim();
       const cursor = (url.searchParams.get("cursor") || "").trim();
       const withMeta = url.searchParams.get("meta") === "1";
       const limitRaw = Number(url.searchParams.get("limit") || "200");
@@ -644,6 +645,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           if (!models.includes(model)) return false;
         }
         if (q && !(query.includes(q) || startUrl.includes(q) || sessionId.includes(q.toLowerCase()))) return false;
+        if (runId && !String((s as any).runId || "").startsWith(runId)) return false;
         return true;
       });
 

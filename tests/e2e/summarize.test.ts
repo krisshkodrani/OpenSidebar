@@ -77,6 +77,6 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
     );
     expect(forbiddenActionTools).toEqual([]);
 
-    await assertNoGhostSession(h.ctx.serviceWorker, 8_000, workspaceId);
+    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 150_000);
 });

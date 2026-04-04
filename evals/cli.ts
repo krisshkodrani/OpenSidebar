@@ -845,9 +845,9 @@ async function cmdPerceptionExtractAll(args: string[]) {
 async function cmdPerceptionCritique(args: string[]) {
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] : "openrouter";
-  if (providerArg !== "openrouter") {
+  if (providerArg !== "openrouter" && providerArg !== "groq") {
     console.error(
-      `${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`,
+      `${c.red}Invalid provider: ${providerArg}. Use "openrouter" or "groq".${c.reset}`,
     );
     process.exit(1);
   }
@@ -1046,6 +1046,12 @@ async function cmdPlannerCritique(args: string[]) {
     );
     process.exit(1);
   }
+  const providerIdx = args.indexOf("--provider");
+  const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as "openrouter" | "groq" : undefined;
+  if (providerArg && providerArg !== "openrouter" && providerArg !== "groq") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter" or "groq".${c.reset}`);
+    process.exit(1);
+  }
   const outIdx = args.indexOf("--out");
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
 
@@ -1068,6 +1074,7 @@ async function cmdPlannerCritique(args: string[]) {
     model,
     reasoningEffort: reasoningEffort as "low" | "medium" | "high" | undefined,
     outDir: join(outDir, "planner"),
+    provider: providerArg,
   });
 
   if (results.length === 0) return;
@@ -1580,8 +1587,8 @@ async function runCritiqueCommand(
   const outDir = outIdx !== -1 ? args[outIdx + 1] : join("evals", "reports");
   const providerIdx = args.indexOf("--provider");
   const providerArg = providerIdx !== -1 ? args[providerIdx + 1] as EvalProvider : undefined;
-  if (providerArg && providerArg !== "openrouter") {
-    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter".${c.reset}`);
+  if (providerArg && providerArg !== "openrouter" && providerArg !== "groq") {
+    console.error(`${c.red}Invalid provider: ${providerArg}. Use "openrouter" or "groq".${c.reset}`);
     process.exit(1);
   }
 
