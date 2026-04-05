@@ -237,6 +237,8 @@ Real browser tests using Puppeteer. Launches headed Chrome with the built extens
 
 Run: `npm run test:e2e` (builds first, then runs). Each test suite launches its own Chrome instance. `beforeEach` cleanup resets agent state between test cases.
 
+**Model Benchmarks**: See `docs/model-benchmark-reference.md` for tested model comparison, recommended configurations, and how to run benchmarks with different providers/models. Dated reports in `docs/e2e-benchmark-*.md`.
+
 ## Debugging
 
 When investigating errors (build failures, runtime exceptions, unexpected behavior), **check the logs first** — they are the best source of truth for what actually happened at runtime.
