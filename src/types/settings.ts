@@ -9,13 +9,15 @@ import type { AgentLoopState } from "./agent";
 export interface UserSettings {
   openRouterApiKey: string;
   /** Provider mode: how LLM providers are combined across roles */
-  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
   /** @deprecated Use providerMode instead. Kept for migration. */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
   openaiApiKey?: string;
   /** Groq API key (required for hybrid modes) */
   groqApiKey?: string;
+  /** Fireworks AI API key (required for fireworks mode) */
+  fireworksApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
@@ -42,6 +44,8 @@ export interface UserSettings {
   useNitro?: boolean;
   /** Override default LLM temperature (default: 0.0 for deterministic agentic behavior) */
   temperature?: number;
+  /** Use VL model as unified executor+perception — screenshot sent directly to executor (default: false) */
+  useVLExecutor?: boolean;
   /** Enable voice input via microphone (STT) */
   enableVoiceInput?: boolean;
   /** Enable voice output on assistant messages (TTS) — requires OpenAI key */

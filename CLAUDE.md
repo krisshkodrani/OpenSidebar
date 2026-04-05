@@ -75,19 +75,19 @@ Side Panel (React/Zustand) ←→ Service Worker (Agent Loop) ←→ Content Scr
 The orchestrator. Receives user messages from the side panel, runs the agent loop, dispatches tool calls to the content script, and streams responses back.
 
 - `background.ts` — Entry point. Message router for all `RuntimeMessage` types (chat, stop, workspace CRUD, settings, side panel lifecycle). Per-workspace `AgentLoop` instances via `agentLoops = Map<workspaceId, AgentLoop>`. Supports parallel agent execution across workspaces.
-- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. `discoveredTagIds` set tracks dynamic tags from tool results (find_element, click interception) so `validateElementIds` accepts them. `validateDone` and `countExplicitSteps` are skipped for orchestrator sub-nodes (`this.nodeId`) to prevent scope mismatch. Barrel-exported via `agent/index.ts`.
-- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, visible content). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline (~1K tokens) before planner model handoff. `summarizeHistory()` utility extracts tool name + args + outcome per turn.
+- `agent/loop.ts` — `AgentLoop` class. Runs the LLM→tool→LLM cycle with abort support, pause/resume, feedback injection, and progress tracking. Returns `LoopResult`. Unified mode: parallel tool execution, modal auto-dismiss, reflection→escalate→give-up for text-only responses. Workspace-scoped via `workspaceId` property — each workspace gets isolated state. `discoveredTagIds` set tracks dynamic tags from tool results (find_element, click interception) so `validateElementIds` accepts them. `validateDone` and `countExplicitSteps` are skipped for orchestrator sub-nodes (`this.nodeId`) to prevent scope mismatch. Idempotency guard: `executedActions` Map blocks re-execution of DOM-modifying tools after `done()` rejection (`guardAfterDoneRejection` flag). State-diff evidence: `formatStateEvidence()` passes deterministic DOM changes to `validateDone` verifier. VL executor mode (`useVLExecutor`): skips separate perception VLM call, passes screenshot directly to executor LLM as image content. Barrel-exported via `agent/index.ts`.
+- `agent/context.ts` — `ContextManager`. Builds the system prompt with DOM snapshot data (title, URL, tagged elements, visible content). Manages sliding-window conversation history with dynamic compression (NONE→LIGHT→MEDIUM→HEAVY). `summarizeTrajectory()` compresses full history into a structured timeline (~1K tokens) before planner model handoff. `summarizeHistory()` utility extracts tool name + args + outcome per turn. Supports VL executor mode: `setScreenshotForExecutor()` stores screenshot data URL, `getPrompt()` injects it as an `image_url` content part in a user message.
 - `agent/stagnation.ts` — `StagnationMonitor`. Detects stuck loops via snapshot fingerprinting. Graduated intervention: reflection at 6 stagnant turns, escalate at 12. Broadcasts `AGENT_STAGNATION` signals.
 - `agent/step-labels.ts` — Human-readable step label generation for `AgentStep` timeline entries.
 - `agent/tool-recovery.ts` — `recoverToolCallsFromText()`. Extracts structured tool calls from LLM text output when models emit JSON as plain text instead of using the tool_calls API.
-- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s for each tier, both via OpenRouter. Executor pool: `openai/gpt-5.4-mini:nitro`. Planner pool: `minimax/minimax-m2.7:nitro`. Executor fallback: `openai/gpt-5.4-mini`. `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `applyNitro()` appends `:nitro` suffix when `useNitro` setting is enabled. `llm/types.ts` defines `LLMMessage`, `CompletionRequest`, `CompletionResponse` (with `actualModel` for failover attribution), `ProviderConfig`. Barrel-exported via `llm/index.ts`.
+- `llm/client.ts` — `LLMClient`. Two-tier architecture with independent `ProviderPool`s (executor + planner). Provider selection via `providerMode` setting. Four providers: OpenRouter (default), OpenAI, Groq, Fireworks — each with a factory function (`openRouterProvider()`, `openAIProvider()`, `groqProvider()`, `fireworksProvider()`). `ProviderPool` manages cooldowns (60s on 429). `fetchWithRetry` returns `{ response, actualProviderId, actualModel }`. `switchToPlanner()` reads from planner pool, `switchToExecutor()` reads from executor pool. `applyNitro()` appends `:nitro` suffix (OpenRouter only). `llm/types.ts` defines `LLMMessage` (supports `ContentPart[]` for multimodal), `CompletionRequest`, `CompletionResponse`, `ProviderConfig` (providerId: `"openrouter" | "openai" | "groq" | "fireworks"`). Barrel-exported via `llm/index.ts`.
 - `tools/registry.ts` — `ToolRegistry` singleton. Maps `ToolName` → executor function. `getDefinitions()` returns all tool schemas. `tools/index.ts` registers all 38 tools and bridges to content script.
 - `tools/metadata.ts` — `ToolMeta` interface and pre-computed sets: `DOM_MODIFYING_TOOLS`, `SEQUENTIAL_TOOLS`. Single source of truth for tool properties (risk, domModifying, sequential). Used by `security.ts` and `loop.ts`.
 - `workspaces/manager.ts` — `WorkspaceManager`. Maps workspaces to Chrome Tab Groups via `chrome.tabGroups`. Persists to `chrome.storage.local`.
 - `keepalive.ts` — Service Worker keepalive via `chrome.alarms`. Creates a repeating alarm (~24s) to prevent SW termination during long agent loop runs. Start/stop tied to agent loop lifecycle.
 - `navigation.ts` — Navigation bridge. Persists `AgentLoopState` to `chrome.storage.local` before page navigations, listens for `webNavigation.onCompleted` / `onErrorOccurred`, and resumes the agent loop with the tool result. Handles timeout (30s) and tab-closed cleanup.
 - `security.ts` — `classifyRisk()` maps each `ToolName` to a `RiskLevel` (low/medium/high) via tool metadata. `sanitizeUrl()` blocks non-http(s) protocols. `sanitizeUserInput()` strips null bytes and truncates.
-- `streaming.ts` — `parseSSEStream()`. Parses OpenAI-compatible SSE streams, accumulating text deltas and tool calls across chunks. Captures `usage` (token counts + cost) from the final SSE chunk. Returns final content, assembled `ToolCall[]`, and `TokenUsage`.
+- `streaming.ts` — `parseSSEStream()`. Parses OpenAI-compatible SSE streams, accumulating text deltas and tool calls across chunks. Handles `reasoning_content` field (Kimi K2.5 / DeepSeek-R1 style) by wrapping in `<think>` tags for uniform processing. Captures `usage` (token counts + cost) from the final SSE chunk. Returns final content, assembled `ToolCall[]`, and `TokenUsage`.
 
 ### Content Script (`src/content/`)
 
@@ -125,11 +125,45 @@ Single source of truth for all interfaces. Key patterns:
 - `RiskLevel` enum (low/medium/high) for tool risk classification.
 - `NavigationState` — serialized agent state for cross-navigation persistence.
 - `Result<T, E>` — discriminated union for fallible operations.
-- `UserSettings` — OpenRouter API key, maxTurns, theme, showSessionMetrics, model overrides (executorModel, plannerModel, perceptionModel), useNitro toggle.
+- `UserSettings` — API keys (openRouterApiKey, openaiApiKey, groqApiKey, fireworksApiKey), providerMode, maxTurns, theme, showSessionMetrics, model overrides (executorModel, plannerModel, perceptionModel), useNitro toggle, useVLExecutor toggle, voice settings (enableVoiceInput, enableVoiceOutput, ttsVoice).
 
 ### Messaging Protocol
 
 All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs.sendMessage` with `RuntimeMessage` payloads. Each message carries a `requestId` (UUID), `source` (enum: sidepanel, background, content), and optional `workspaceId` for workspace-scoped routing. Side panel bridge filters messages by `activeWorkspaceId`. Background→content tool execution uses `TOOL_EXECUTE` / `TOOL_RESULT`. Background→content modal cleanup uses `DISMISS_MODALS` / `DISMISS_MODALS_RESPONSE`. Background→sidepanel streaming uses `STREAM_CHUNK`. Navigation resumption uses `NAVIGATION_RESUME`. Agent feedback uses `AGENT_STAGNATION`, `AGENT_TURN`, `TASK_PROGRESS`, `TASK_COMPLETION`. User control uses `PAUSE_AGENT`, `RESUME_AGENT`, `SKIP_SUBTASK`.
+
+### Provider Architecture
+
+Four LLM providers, all OpenAI-compatible. Selection via `providerMode` in UserSettings.
+
+**Providers** (`src/background/llm/client.ts`):
+
+| Provider | Base URL | Auth | Special Headers |
+|----------|----------|------|----------------|
+| OpenRouter | `openrouter.ai/api/v1/chat/completions` | Bearer | `HTTP-Referer`, `X-Title` |
+| OpenAI | `api.openai.com/v1/chat/completions` | Bearer | None |
+| Groq | `api.groq.com/openai/v1/chat/completions` | Bearer | None |
+| Fireworks | `api.fireworks.ai/inference/v1/chat/completions` | Bearer | None |
+
+**Provider modes**:
+
+| Mode | Executor | Planner/Verifier | Perception | Use case |
+|------|----------|-----------------|------------|----------|
+| `openrouter` | OpenRouter | OpenRouter | OpenRouter | Default. Broadest model selection |
+| `openrouter-groq` | OpenRouter | Groq | Groq→OpenRouter | Fast planner, reliable executor |
+| `openai-groq` | OpenAI | Groq | Groq→OpenRouter | Direct OpenAI, fast planner |
+| `fireworks` | Fireworks | Fireworks | OpenRouter | High-throughput alternative |
+
+**API keys** stored in `chrome.storage.local` (never synced): `openRouterApiKey`, `openaiApiKey`, `groqApiKey`, `fireworksApiKey`.
+
+**VL executor mode** (`useVLExecutor` setting): When enabled, screenshot is passed directly to the executor LLM as an `image_url` content part, skipping the separate perception VLM call. Reduces per-turn latency by 40-70%. Requires a vision-capable executor model (GPT-5.4-mini, Kimi K2.5, Qwen3-VL). Falls back to 2-call pipeline if provider rejects images.
+
+**Idempotency guard**: After `done()` rejection by the verifier, blocks re-execution of identical DOM-modifying tool calls (`executedActions` Map). Prevents duplicate cart additions and similar non-idempotent side effects. Clears on plan step advance.
+
+**State-diff evidence**: `ActionEffect.addedSignatures` captures element signatures that appeared after tool execution. `formatStateEvidence()` formats this as deterministic DOM evidence passed to `validateDone`, giving the verifier ground truth instead of relying solely on the executor's text summary.
+
+**Perception warmup** (`src/background/perception/warmup.ts`): Proactive page interpretation triggered on side panel open and tab switch. Pre-captures snapshot + screenshot + VLM interpretation (or screenshot-only in VL mode). 30s staleness window. Consumed on first agent turn.
+
+**Settings cache**: `cachedSettings` in `background.ts` populated on panel open, invalidated on `chrome.storage.onChanged`. Avoids re-reading storage on every user message.
 
 ### Traces & Evals
 
@@ -139,7 +173,7 @@ All cross-context communication uses `chrome.runtime.sendMessage` / `chrome.tabs
 
 **Trace Query** (`scripts/trace-query.ts`): CLI for querying trace files. Commands: `list`, `show <id>`, `turns <id>`, `turn <id> <N>`, `filter --outcome <o>`, `stats`.
 
-**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, and screenshots. Start with `npm run logs` or `npm run dev`.
+**Trace Viewer** (`src/trace-viewer/`): Built-in React UI for inspecting recorded sessions. Served by the log server at `http://127.0.0.1:7589/viewer`. Shows session list, per-turn LLM/tool details, and screenshots. Cross-linked navigation: Perception tab "Turn N" links to Turns tab (and vice versa via "View in Perception"), `[image]` placeholders in LLM messages link to Perception tab. VL mode traces show synthetic perception entries with "[VL mode]" label. Start with `npm run logs` or `npm run dev`.
 
 **Eval Pipeline** (`evals/`): Trace-based evaluation system that replays recorded interactions offline.
 

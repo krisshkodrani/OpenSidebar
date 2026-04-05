@@ -82,6 +82,14 @@ export async function parseSSEStream(
           onTextDelta(delta.content);
         }
 
+        // Reasoning content (Kimi K2.5 / DeepSeek-R1 style): wrap in <think> tags
+        // so existing think-tag infrastructure handles it uniformly
+        if (delta.reasoning_content) {
+          const rc = delta.reasoning_content as string;
+          content += `<think>${rc}</think>`;
+          // Don't call onTextDelta — reasoning is stripped before display
+        }
+
         // Tool calls (streamed incrementally by index)
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {

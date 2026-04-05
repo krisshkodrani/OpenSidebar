@@ -160,6 +160,17 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     set((s) => {
       s.activeSubview = view;
     }),
+  focusTurnNumber: null,
+  navigateToTurn: (turnNumber) =>
+    set((s) => {
+      s.activeSubview = "turns";
+      s.focusTurnNumber = turnNumber;
+    }),
+  navigateToPerception: (turnNumber) =>
+    set((s) => {
+      s.activeSubview = "perception";
+      s.focusTurnNumber = turnNumber;
+    }),
   setTracesLoading: (loading) =>
     set((s) => {
       s.tracesLoading = loading;

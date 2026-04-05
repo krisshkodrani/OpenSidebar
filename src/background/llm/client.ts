@@ -66,6 +66,18 @@ function groqProvider(apiKey: string): ProviderConfig {
   };
 }
 
+const FIREWORKS_BASE_URL =
+  "https://api.fireworks.ai/inference/v1/chat/completions";
+
+function fireworksProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: FIREWORKS_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "fireworks",
+  };
+}
+
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
@@ -74,13 +86,15 @@ export interface LLMClientOptions {
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
-  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
   /** @deprecated Use providerMode instead */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
   openaiApiKey?: string;
   /** Groq API key (required for hybrid modes) */
   groqApiKey?: string;
+  /** Fireworks AI API key (required for fireworks mode) */
+  fireworksApiKey?: string;
   /** Override default temperature (default: 0.0) */
   temperature?: number;
 }
@@ -370,7 +384,8 @@ export class LLMClient {
     this.defaultTemperature = options?.temperature ?? 0.0;
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
-    let mode: "openrouter" | "openrouter-groq" | "openai-groq" = options?.providerMode ?? "openrouter";
+    let mode: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks" =
+      options?.providerMode ?? "openrouter";
     if (!options?.providerMode && options?.provider) {
       // Migrate legacy provider field
       if (options.provider === "groq" && options.groqApiKey) mode = "openrouter-groq";
@@ -380,9 +395,17 @@ export class LLMClient {
     const nitro = options?.useNitro;
     const hasGroq = !!options?.groqApiKey;
     const hasOpenAI = !!options?.openaiApiKey;
+    const hasFireworks = !!options?.fireworksApiKey;
 
-    // --- Build executor pool (OpenRouter or OpenAI, never Groq) ---
-    if (mode === "openai-groq" && hasOpenAI) {
+    // --- Build executor pool ---
+    if (mode === "fireworks" && hasFireworks) {
+      const fwKey = options!.fireworksApiKey!;
+      const fwProv = fireworksProvider(fwKey);
+      const executorModel = options?.executorModel || "accounts/fireworks/models/kimi-k2p5";
+      this.executorPool = new ProviderPool(fwKey, { openRouterModel: executorModel });
+      this.executorPool.getSlots()[0].provider = fwProv;
+      this.executorFallbackModel = options?.executorFallbackModel || executorModel;
+    } else if (mode === "openai-groq" && hasOpenAI) {
       const oaiKey = options!.openaiApiKey!;
       const oaiProv = openAIProvider(oaiKey);
       const executorModel = options?.executorModel || OPENAI_MODEL_EXECUTOR;
@@ -397,8 +420,14 @@ export class LLMClient {
       this.executorFallbackModel = options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
     }
 
-    // --- Build planner pool (Groq in hybrid modes, else same as executor provider) ---
-    if ((mode === "openrouter-groq" || mode === "openai-groq") && hasGroq) {
+    // --- Build planner pool ---
+    if (mode === "fireworks" && hasFireworks) {
+      const fwKey = options!.fireworksApiKey!;
+      const fwProv = fireworksProvider(fwKey);
+      const plannerModel = options?.plannerModel || "accounts/fireworks/models/kimi-k2p5";
+      this.plannerPool = new ProviderPool(fwKey, { openRouterModel: plannerModel });
+      this.plannerPool.getSlots()[0].provider = fwProv;
+    } else if ((mode === "openrouter-groq" || mode === "openai-groq") && hasGroq) {
       const groqKey = options!.groqApiKey!;
       const groqProv = groqProvider(groqKey);
       const plannerModel = options?.plannerModel || GROQ_MODEL_PLANNER;

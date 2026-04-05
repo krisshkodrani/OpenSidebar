@@ -25,6 +25,13 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
+
+/** Cached settings — populated on side panel open, invalidated on storage change. */
+let cachedSettings: UserSettings | null = null;
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.userSettings) cachedSettings = null;
+  if (area === "local") cachedSettings = null; // API keys stored in local
+});
 import { DemoStore } from "./demos/store";
 import { RecordingSession } from "./recording-session";
 import { ManualModeHandler } from "./manual-mode";
@@ -209,7 +216,8 @@ async function handleSidePanelOpened(
         tabId,
         workspace: existingWorkspace.name,
       });
-      // Fire-and-forget: proactively warm perception cache for this tab
+      // Pre-cache settings + warm perception (fire-and-forget)
+      loadSettings().then((s) => { if (s) cachedSettings = s; });
       perceptionWarmup.warmup(tabId);
       return existingWorkspace.id;
     } else {
@@ -234,7 +242,8 @@ async function handleSidePanelOpened(
             id: workspace.id,
             tabId,
           });
-          // Fire-and-forget: proactively warm perception cache for this tab
+          // Pre-cache settings + warm perception (fire-and-forget)
+          loadSettings().then((s) => { if (s) cachedSettings = s; });
           perceptionWarmup.warmup(tabId);
           // Consumed the flag
           await removeUserOpenedPanel(tabId);
@@ -299,6 +308,8 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId: _windowId }) => {
         tabId,
         workspace: workspace.name,
       });
+      // Warm perception on tab switch so first message is instant
+      perceptionWarmup.warmup(tabId);
     } catch (e) {
       logger.debug("sidebar", "Failed to enable panel for workspace tab", {
         tabId,
@@ -943,8 +954,9 @@ async function handleUserChat(
 
     logger.debug("agent", "User message", { text, tabId, workspaceId });
 
-    // 1. Get Settings (API Keys)
-    const settings = (await loadSettings()) ?? ({} as UserSettings);
+    // 1. Get Settings (API Keys) — use cache if populated, else load fresh
+    const settings =
+      cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
     const openRouterApiKey = settings.openRouterApiKey;
 
     if (!openRouterApiKey) {

@@ -743,7 +743,7 @@ function setAgentBorder(active: boolean) {
 
   if (active) {
     // --- Static vignette overlay ---
-    // Solid warm orange at the viewport edge, fading smoothly inward.
+    // Cool indigo glow at the viewport edge, fading smoothly inward.
     // Layered inset box-shadows with decreasing opacity simulate the gradient.
     // No animation — just a persistent "agent is active" indicator.
     if (!existing) {
@@ -755,13 +755,13 @@ function setAgentBorder(active: boolean) {
         zIndex: "2147483646",
         pointerEvents: "none",
         boxShadow: [
-          "inset 0 0 0 2px rgba(20,184,166,0.72)",
-          "inset 0 0 0 5px rgba(20,184,166,0.48)",
-          "inset 0 0 0 9px rgba(20,184,166,0.30)",
-          "inset 0 0 0 14px rgba(20,184,166,0.18)",
-          "inset 0 0 0 20px rgba(20,184,166,0.09)",
-          "inset 0 0 40px rgba(20,184,166,0.10)",
-          "inset 0 0 80px rgba(20,184,166,0.04)",
+          "inset 0 0 0 2px rgba(90,102,214,0.72)",
+          "inset 0 0 0 5px rgba(90,102,214,0.48)",
+          "inset 0 0 0 9px rgba(90,102,214,0.30)",
+          "inset 0 0 0 14px rgba(90,102,214,0.18)",
+          "inset 0 0 0 20px rgba(90,102,214,0.09)",
+          "inset 0 0 40px rgba(90,102,214,0.10)",
+          "inset 0 0 80px rgba(90,102,214,0.04)",
         ].join(", "),
         opacity: "0",
       });
@@ -781,7 +781,7 @@ function setAgentBorder(active: boolean) {
       btn.id = STOP_BTN_ID;
       btn.innerHTML =
         '<svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0">' +
-        '<rect width="10" height="10" rx="2" fill="rgba(20,184,166,0.9)"/></svg>' +
+        '<rect width="10" height="10" rx="2" fill="rgba(90,102,214,0.9)"/></svg>' +
         '<span style="margin-left:7px;letter-spacing:0.04em">Stop</span>';
       Object.assign(btn.style, {
         position: "fixed",
@@ -793,20 +793,20 @@ function setAgentBorder(active: boolean) {
         display: "flex",
         alignItems: "center",
         padding: "9px 20px 9px 16px",
-        background: "rgba(13,20,19,0.72)",
+        background: "rgba(20,19,40,0.72)",
         backdropFilter: "blur(16px) saturate(1.4)",
         WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-        color: "rgba(204,251,241,0.92)",
+        color: "rgba(210,214,251,0.92)",
         fontSize: "13px",
         fontWeight: "500",
         fontFamily:
           '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-        border: "1px solid rgba(20,184,166,0.25)",
+        border: "1px solid rgba(90,102,214,0.25)",
         borderRadius: "24px",
         boxShadow: [
           "0 4px 24px rgba(0,0,0,0.25)",
-          "0 0 0 1px rgba(20,184,166,0.08)",
-          "0 0 16px rgba(20,184,166,0.10)",
+          "0 0 0 1px rgba(90,102,214,0.08)",
+          "0 0 16px rgba(90,102,214,0.10)",
         ].join(", "),
         cursor: "pointer",
         opacity: "0",
@@ -814,21 +814,21 @@ function setAgentBorder(active: boolean) {
           "background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.4s ease-out, transform 0.4s ease-out",
       });
       btn.addEventListener("mouseenter", () => {
-        btn.style.background = "rgba(13,20,19,0.85)";
-        btn.style.borderColor = "rgba(20,184,166,0.45)";
+        btn.style.background = "rgba(20,19,40,0.85)";
+        btn.style.borderColor = "rgba(90,102,214,0.45)";
         btn.style.boxShadow = [
           "0 4px 24px rgba(0,0,0,0.3)",
-          "0 0 0 1px rgba(20,184,166,0.15)",
-          "0 0 24px rgba(20,184,166,0.18)",
+          "0 0 0 1px rgba(90,102,214,0.15)",
+          "0 0 24px rgba(90,102,214,0.18)",
         ].join(", ");
       });
       btn.addEventListener("mouseleave", () => {
-        btn.style.background = "rgba(13,20,19,0.72)";
-        btn.style.borderColor = "rgba(20,184,166,0.25)";
+        btn.style.background = "rgba(20,19,40,0.72)";
+        btn.style.borderColor = "rgba(90,102,214,0.25)";
         btn.style.boxShadow = [
           "0 4px 24px rgba(0,0,0,0.25)",
-          "0 0 0 1px rgba(20,184,166,0.08)",
-          "0 0 16px rgba(20,184,166,0.10)",
+          "0 0 0 1px rgba(90,102,214,0.08)",
+          "0 0 16px rgba(90,102,214,0.10)",
         ].join(", ");
       });
       btn.addEventListener("click", () => {
