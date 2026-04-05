@@ -1448,6 +1448,8 @@ export class Orchestrator {
         openaiApiKey: input.settings.openaiApiKey,
         groqApiKey: input.settings.groqApiKey,
         temperature: input.settings.temperature,
+        useVLExecutor: input.settings.useVLExecutor,
+        fireworksApiKey: input.settings.fireworksApiKey,
       };
       const planner = this.deps.createPlanner(
         input.openRouterApiKey,
@@ -2005,7 +2007,9 @@ export class Orchestrator {
           provider: input.settings.provider,
           openaiApiKey: input.settings.openaiApiKey,
         groqApiKey: input.settings.groqApiKey,
+        fireworksApiKey: input.settings.fireworksApiKey,
         temperature: input.settings.temperature,
+        useVLExecutor: input.settings.useVLExecutor,
         },
       });
 

@@ -96,6 +96,7 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
         <TurnLLMInputSection
           messages={messages}
           contextMetrics={contextMetrics}
+          turnNumber={turnNum}
         />
         <TurnLLMOutputSection content={content} toolCalls={toolCalls} />
         <TurnToolResultsSection toolExecutions={toolExecutions} />

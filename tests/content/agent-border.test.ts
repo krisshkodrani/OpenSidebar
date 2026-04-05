@@ -20,7 +20,7 @@ function setAgentBorder(active: boolean) {
             inset: "0",
             zIndex: "2147483646",
             pointerEvents: "none",
-            border: "3px dashed #f59e0b",
+            border: "3px dashed #5A66D6",
             borderRadius: "4px",
             opacity: "1",
         });
@@ -70,7 +70,7 @@ describe("Agent Border Overlay", () => {
     test("overlay has correct border style", () => {
         setAgentBorder(true);
         const el = document.getElementById(BORDER_ID);
-        expect(el!.style.border).toBe("3px dashed #f59e0b");
+        expect(el!.style.border).toBe("3px dashed #5A66D6");
         expect(el!.style.borderRadius).toBe("4px");
     });
 });

@@ -10,11 +10,13 @@ import { formatTokens } from "../../utils";
 interface TurnLLMInputSectionProps {
   messages: TraceLLMMessage[];
   contextMetrics?: TraceContextMetrics;
+  turnNumber?: number;
 }
 
 export default function TurnLLMInputSection({
   messages,
   contextMetrics: cm,
+  turnNumber,
 }: TurnLLMInputSectionProps) {
   if (!messages || messages.length === 0) return null;
 
@@ -83,6 +85,7 @@ export default function TurnLLMInputSection({
               msg={msg}
               cachedPrefixLength={cm?.cachedPrefixLength}
               isFirstUser={isFirstUser}
+              turnNumber={turnNumber}
             />
           );
         })}

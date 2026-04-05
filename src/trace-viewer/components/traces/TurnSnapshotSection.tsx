@@ -3,6 +3,7 @@ import type { TraceEntry } from "../../../types/traces";
 import CollapsibleSection from "../CollapsibleSection";
 import PanoramicThumbnails from "./PanoramicThumbnails";
 import { screenshotUrl } from "../../api";
+import { useStore } from "../../store";
 
 interface TurnSnapshotSectionProps {
   snapshot: TraceEntry["snapshot"] | null;
@@ -18,6 +19,7 @@ export default function TurnSnapshotSection({
   turnNumber,
 }: TurnSnapshotSectionProps) {
   const [imgError, setImgError] = useState(false);
+  const navigateToPerception = useStore((s) => s.navigateToPerception);
   const panoramicShots = perception?.panoramicShots;
 
   // Use inline data URL if available, otherwise fall back to file-based API
@@ -52,6 +54,15 @@ export default function TurnSnapshotSection({
             />
             {panoramicShots && panoramicShots.length > 0 && (
               <PanoramicThumbnails shots={panoramicShots} />
+            )}
+            {perception && (
+              <a
+                className="inline-block mt-2 text-[11px] text-trace-accent-light hover:underline cursor-pointer"
+                onClick={() => navigateToPerception(turnNumber)}
+                title="View full perception details"
+              >
+                View in Perception &rarr;
+              </a>
             )}
           </div>
         </CollapsibleSection>

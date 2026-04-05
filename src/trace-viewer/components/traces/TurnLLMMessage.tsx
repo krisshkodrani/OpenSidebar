@@ -2,21 +2,45 @@ import React, { useState } from "react";
 import type { TraceLLMMessage } from "../../../types/traces";
 import Badge from "../Badge";
 import { truncate, formatTokens } from "../../utils";
+import { useStore } from "../../store";
 
 interface LLMMessageProps {
   msg: TraceLLMMessage;
   cachedPrefixLength?: number;
   isFirstUser: boolean;
+  turnNumber?: number;
 }
 
 export default function TurnLLMMessage({
   msg,
   cachedPrefixLength,
   isFirstUser,
+  turnNumber,
 }: LLMMessageProps) {
   const [open, setOpen] = useState(false);
+  const navigateToPerception = useStore((s) => s.navigateToPerception);
   const role = msg.role || "unknown";
   const contentText = msg.content || "";
+
+  // Render [image] placeholders as clickable links to perception tab
+  const renderContent = (text: string) => {
+    if (!text.includes("[image]") || turnNumber == null) return text;
+    const parts = text.split("[image]");
+    return parts.map((part, i) => (
+      <React.Fragment key={i}>
+        {part}
+        {i < parts.length - 1 && (
+          <a
+            className="text-trace-accent-light hover:underline cursor-pointer"
+            onClick={() => navigateToPerception(turnNumber)}
+            title="View screenshot in Perception tab"
+          >
+            [image &rarr;]
+          </a>
+        )}
+      </React.Fragment>
+    ));
+  };
   const toolCalls = msg.tool_calls;
 
   let tokEst = Math.ceil(contentText.length / 4);
@@ -83,15 +107,15 @@ export default function TurnLLMMessage({
       <div className={`collapsible ${open ? "open" : ""}`}>
         {hasCachedSplit ? (
           <div className="p-2 text-[11px] font-mono text-[#d6d3cc] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(41,37,36,0.4)]">
-            {contentText.slice(0, cachedPrefixLength!)}
+            {renderContent(contentText.slice(0, cachedPrefixLength!))}
             <div className="border-t-2 border-dashed border-[rgba(230,126,34,0.5)] my-1 pt-1 text-[10px] text-[#e67e22] font-semibold tracking-wide">
               -- Dynamic Context (changes per turn) --
             </div>
-            {contentText.slice(cachedPrefixLength!)}
+            {renderContent(contentText.slice(cachedPrefixLength!))}
           </div>
         ) : (
           <div className="p-2 text-[11px] font-mono text-[#d6d3cc] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(41,37,36,0.4)]">
-            {contentText}
+            {renderContent(contentText)}
             {toolCalls && toolCalls.length > 0 && (
               <>
                 {"\n\n"}[Tool Calls]{"\n"}

@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from "react";
+import React, { useRef, useMemo, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
 import TurnCard from "./TurnCard";
@@ -10,6 +10,7 @@ export default function TurnList() {
   const sessionId = useStore((s) => s.currentSessionId) ?? "";
   const searchQuery = useStore((s) => s.searchQuery);
   const tierFilter = useStore((s) => s.filters.tier);
+  const focusTurnNumber = useStore((s) => s.focusTurnNumber);
 
   const filtered = useMemo(() => {
     let result = entries;
@@ -58,6 +59,19 @@ export default function TurnList() {
     estimateSize: () => ESTIMATED_TURN_HEIGHT,
     overscan: 3,
   });
+
+  // Scroll to focused turn when navigating from Perception tab
+  useEffect(() => {
+    if (focusTurnNumber == null) return;
+    const idx = filtered.findIndex(
+      (e) => e.turnNumber === focusTurnNumber,
+    );
+    if (idx >= 0) {
+      virtualizer.scrollToIndex(idx, { align: "start" });
+    }
+    // Clear focus after scrolling
+    useStore.getState().focusTurnNumber = null;
+  }, [focusTurnNumber, filtered, virtualizer]);
 
   if (filtered.length === 0) {
     const q = searchQuery.toLowerCase().trim();

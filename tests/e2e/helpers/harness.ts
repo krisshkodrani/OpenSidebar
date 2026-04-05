@@ -74,11 +74,21 @@ function loadGroqApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function loadFireworksApiKey(): string | undefined {
+  if (process.env.FIREWORKS_API_KEY) return process.env.FIREWORKS_API_KEY;
+  const envPath = resolve(__dirname, "../../../.env");
+  if (!existsSync(envPath)) return undefined;
+  const content = readFileSync(envPath, "utf-8");
+  const match = content.match(/FIREWORKS_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 /** Detect provider mode from E2E_PROVIDER env var (default: openrouter) */
-function detectProviderMode(): "openrouter" | "openrouter-groq" | "openai-groq" {
+function detectProviderMode(): "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks" {
   const prov = process.env.E2E_PROVIDER?.toLowerCase();
   if (prov === "groq" || prov === "openrouter-groq") return "openrouter-groq";
   if (prov === "openai-groq") return "openai-groq";
+  if (prov === "fireworks") return "fireworks";
   return "openrouter";
 }
 
@@ -126,12 +136,15 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const helper = await openHelperPage(ctx);
       const providerMode = detectProviderMode();
       const groqKey = providerMode !== "openrouter" ? loadGroqApiKey() : undefined;
+      const fireworksKey = providerMode === "fireworks" ? loadFireworksApiKey() : undefined;
       const executorModel = process.env.E2E_EXECUTOR_MODEL || undefined;
       const temperature = process.env.E2E_TEMPERATURE ? parseFloat(process.env.E2E_TEMPERATURE) : undefined;
+      const useVLExecutor = process.env.E2E_USE_VL_EXECUTOR === "true" || undefined;
       await helper.evaluate(
-        async (key: string, turns: number, mode: string, gKey: string | null, execModel: string | null, temp: number | null) => {
+        async (key: string, turns: number, mode: string, gKey: string | null, fwKey: string | null, execModel: string | null, temp: number | null, vlExec: boolean | null) => {
           const localData: Record<string, string> = { openRouterApiKey_local: key };
           if (gKey) localData.groqApiKey_local = gKey;
+          if (fwKey) localData.fireworksApiKey_local = fwKey;
           await chrome.storage.local.set(localData);
           const settings: Record<string, unknown> = {
             requireApprovals: false,
@@ -143,14 +156,17 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (mode !== "openrouter") settings.providerMode = mode;
           if (execModel) settings.executorModel = execModel;
           if (temp !== null) settings.temperature = temp;
+          if (vlExec) settings.useVLExecutor = true;
           await chrome.storage.sync.set({ userSettings: settings });
         },
         apiKey!,
         maxTurns,
         providerMode,
         groqKey ?? null,
+        fireworksKey ?? null,
         executorModel ?? null,
         temperature ?? null,
+        useVLExecutor ?? null,
       );
       await helper.close();
 

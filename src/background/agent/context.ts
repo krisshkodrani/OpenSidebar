@@ -106,6 +106,8 @@ export class ContextManager {
   private modelTier: "executor" | "planner" = "executor";
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
+  /** Screenshot data URL for unified VL executor mode */
+  private screenshotDataUrl: string | null = null;
   private pageContent: string | null = null;
   private isFirstTurn = true;
   private contradictionDetails: string | null = null;
@@ -126,6 +128,11 @@ export class ContextManager {
   /** Set the page interpretation from the perception layer. */
   public setPageInterpretation(interpretation: string | null): void {
     this.pageInterpretation = interpretation;
+  }
+
+  /** Set screenshot for unified VL executor mode (screenshot sent directly to executor). */
+  public setScreenshotForExecutor(dataUrl: string | null): void {
+    this.screenshotDataUrl = dataUrl;
   }
 
   /** Mark that the first turn is complete (grounding check only fires on turn 1). */
@@ -443,6 +450,32 @@ export class ContextManager {
 
     if (firstUserMsg) {
       finalMessages.push(firstUserMsg);
+    }
+
+    // VL executor mode: inject screenshot as a user message before recent history
+    if (this.screenshotDataUrl) {
+      const isFirstTurnOrUrlChange =
+        this.isFirstTurn ||
+        (this.snapshot?.url &&
+          this.history.length > 0 &&
+          !this.history.some(
+            (m) =>
+              typeof m.content === "string" &&
+              m.content.includes(this.snapshot!.url),
+          ));
+      finalMessages.push({
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: this.screenshotDataUrl,
+              detail: isFirstTurnOrUrlChange ? "high" : "low",
+            },
+          },
+          { type: "text", text: "Current page screenshot." },
+        ],
+      });
     }
 
     // Add selected recent messages (re-reverse to restore order)
@@ -765,10 +798,23 @@ Do NOT call done() until every planned step is complete.
         );
       }
 
-      // Page interpretation from the perception layer (replaces raw visibleContent)
-      const interpretation =
-        this.pageInterpretation ||
-        "No visual interpretation available. Use element list above.";
+      // Page interpretation: perception text, VL instructions, or fallback
+      let interpretation: string;
+      if (this.pageInterpretation) {
+        interpretation = this.pageInterpretation;
+      } else if (this.screenshotDataUrl) {
+        // VL executor mode: screenshot is injected as image — give short instructions
+        interpretation =
+          "A screenshot of the current page is included above. Before acting:\n" +
+          "1. ORIENT: What page is this? What state is it in?\n" +
+          "2. VERIFY: Did your last action have the intended effect?\n" +
+          "3. BLOCKERS: Any overlays, modals, errors, or loading states?\n" +
+          "4. VISUAL-ONLY: Any prices, images, or text not in the element list?\n" +
+          "Ground all actions in the [N] element tags from Visible Elements.";
+      } else {
+        interpretation =
+          "No visual interpretation available. Use element list above.";
+      }
       content = content.replace("{{pageInterpretation}}", interpretation);
       content = content.replace("{{planStatus}}", this.formatPlanStatus());
     } else {

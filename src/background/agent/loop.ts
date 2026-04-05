@@ -499,6 +499,8 @@ export class AgentLoop {
   private stagnation = new StagnationMonitor();
   /** Tracks (tool+args) → result for non-idempotent action dedup after done() rejection */
   private executedActions = new Map<string, string>();
+  /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
+  private useVLExecutor = false;
   /** When true, executedActions persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
   /** Pending hint from the user, picked up on the next turn */
@@ -823,14 +825,17 @@ export class AgentLoop {
       executorModel?: string;
       plannerModel?: string;
       useNitro?: boolean;
-      providerMode?: "openrouter" | "openrouter-groq" | "openai-groq";
+      providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
       openaiApiKey?: string;
       groqApiKey?: string;
+      fireworksApiKey?: string;
       temperature?: number;
+      useVLExecutor?: boolean;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
+    this.useVLExecutor = options?.useVLExecutor ?? false;
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
     this.initialPlanState = options?.initialPlanState ?? null;
@@ -861,6 +866,7 @@ export class AgentLoop {
       provider: options?.provider,
       openaiApiKey: options?.openaiApiKey,
       groqApiKey: options?.groqApiKey,
+      fireworksApiKey: options?.fireworksApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
@@ -1463,12 +1469,13 @@ export class AgentLoop {
         const entry = await pending;
         if (entry) {
           snapshot = entry.snapshot;
-          warmupPerception = entry.perception;
+          if (entry.perception) warmupPerception = entry.perception;
           warmupScreenshot = entry.screenshotUrl;
-          this.log.info("agent", "Using warmup snapshot + perception", {
+          this.log.info("agent", "Using warmup snapshot" + (entry.screenshotOnly ? " (screenshot-only)" : " + perception"), {
             tabId,
             elementCount: snapshot.elements.length,
-            provider: entry.perception.providerId,
+            screenshotOnly: entry.screenshotOnly ?? false,
+            provider: entry.perception?.providerId,
           });
         }
       } else {
@@ -1476,9 +1483,9 @@ export class AgentLoop {
         const cached = perceptionWarmup.get(tabId);
         if (cached) {
           snapshot = cached.snapshot;
-          warmupPerception = cached.perception;
+          if (cached.perception) warmupPerception = cached.perception;
           warmupScreenshot = cached.screenshotUrl;
-          this.log.info("agent", "Using cached warmup snapshot + perception", {
+          this.log.info("agent", "Using cached warmup snapshot" + (cached.screenshotOnly ? " (screenshot-only)" : " + perception"), {
             tabId,
             elementCount: snapshot.elements.length,
             ageMs: Date.now() - cached.timestamp,
@@ -1544,7 +1551,22 @@ export class AgentLoop {
         this.hasReadPage = true;
       }
 
-      if (warmupPerception) {
+      if (this.useVLExecutor && warmupScreenshot) {
+        // VL mode: use warmup screenshot directly — skip VLM call
+        this.context.setScreenshotForExecutor(warmupScreenshot);
+        this.context.setPageInterpretation(null);
+        this.perception.setScreenshotUrl(warmupScreenshot);
+        this.traceRecorder?.recordPerception(
+          {
+            interpretation: "[VL mode] Screenshot from warmup cache — no perception call.",
+            model: "none (unified VL, warmup)",
+            durationMs: 0,
+            cached: true,
+          },
+          warmupScreenshot,
+        );
+        this.log.info("agent", "VL mode: using warmup screenshot (skipped VLM)", { tabId });
+      } else if (warmupPerception) {
         // Use pre-computed perception — hydrate PerceptionAgent with warmup result
         const warmupFingerprint = computeSnapshotFingerprint(snapshot);
         this.perception.hydrateFromWarmup(
@@ -2687,8 +2709,57 @@ export class AgentLoop {
    * Use this instead of bare `refreshPerception()` at all call sites.
    */
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
+    if (this.useVLExecutor) {
+      // Unified VL mode: capture screenshot for the executor, skip perception VLM call.
+      // The executor LLM receives the screenshot directly as an image content block.
+      await this.captureScreenshotForVLExecutor(tabId);
+      // Skip triagePopups — executor sees overlays in screenshot and calls dismiss_overlays.
+      return;
+    }
     await this.refreshPerception(tabId);
     await this.triagePopups(tabId);
+  }
+
+  /** Capture screenshot and store for VL executor injection (no perception VLM call). */
+  private async captureScreenshotForVLExecutor(tabId: number): Promise<void> {
+    const snapshot = this.context.getSnapshot();
+    if (!snapshot || snapshot.elements.length <= 3) {
+      this.context.setScreenshotForExecutor(null);
+      this.context.setPageInterpretation(null);
+      return;
+    }
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.active) {
+        try {
+          await chrome.tabs.update(tabId, { active: true });
+        } catch { /* tab may be closed */ }
+      }
+      const dataUrl = await this.captureVisibleTabWithRetry(
+        tab.windowId,
+        { format: "jpeg", quality: 70 },
+      );
+      setCachedScreenshot(tabId, dataUrl);
+      this.context.setScreenshotForExecutor(dataUrl);
+      this.context.setPageInterpretation(null); // VL instructions generated by context
+      this.perception.setScreenshotUrl(dataUrl); // keep for trace recording
+      // Record synthetic perception entry so trace viewer shows the screenshot
+      this.traceRecorder?.recordPerception(
+        {
+          interpretation: "[VL mode] Screenshot sent directly to executor — no separate perception call.",
+          model: "none (unified VL)",
+          durationMs: 0,
+          cached: false,
+        },
+        dataUrl,
+      );
+    } catch {
+      // Capture failed — fall back to 2-call pipeline for this turn
+      this.log.warn("agent", "VL screenshot capture failed, falling back to perception");
+      this.context.setScreenshotForExecutor(null);
+      await this.refreshPerception(tabId);
+      await this.triagePopups(tabId);
+    }
   }
 
   /**

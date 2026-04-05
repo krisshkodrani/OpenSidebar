@@ -79,6 +79,12 @@ export interface TracesSlice {
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
   setActiveSubview: (view: "turns" | "perception" | "logs" | "story") => void;
+  /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
+  focusTurnNumber: number | null;
+  /** Switch to Turns tab and scroll to a specific turn */
+  navigateToTurn: (turnNumber: number) => void;
+  /** Switch to Perception tab and scroll to a specific turn's perception */
+  navigateToPerception: (turnNumber: number) => void;
   storyCache: Record<string, string>;
   storyLoading: boolean;
   storyError: string | null;
