@@ -48,6 +48,34 @@ const MODEL_PRICING: ModelPricing[] = [
     sourceUrl: "https://openrouter.ai/google/gemini-2.5-flash",
     confidence: "official",
   },
+  {
+    providerId: "fireworks",
+    model: "accounts/fireworks/models/kimi-k2p5",
+    inputUsdPerMillion: 0.6,
+    outputUsdPerMillion: 3.0,
+    cachedInputUsdPerMillion: 0.1,
+    effectiveDate: "2026-04-05",
+    sourceUrl: "https://fireworks.ai/models/fireworks/kimi-k2p5",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
+    model: "accounts/fireworks/models/minimax-m2p5",
+    inputUsdPerMillion: 0.5,
+    outputUsdPerMillion: 2.0,
+    effectiveDate: "2026-04-05",
+    sourceUrl: "https://fireworks.ai/pricing",
+    confidence: "best_effort",
+  },
+  {
+    providerId: "openrouter",
+    model: "openai/gpt-5.4-mini",
+    inputUsdPerMillion: 0.75,
+    outputUsdPerMillion: 4.5,
+    effectiveDate: "2026-04-05",
+    sourceUrl: "https://openrouter.ai/openai/gpt-5.4-mini",
+    confidence: "official",
+  },
 ];
 
 function normalizeModel(model: string): string {

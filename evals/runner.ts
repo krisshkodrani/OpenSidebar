@@ -29,8 +29,9 @@ function loadToolDefinitions(): any[] {
 
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
+const FIREWORKS_API = "https://api.fireworks.ai/inference/v1/chat/completions";
 
-export type EvalProvider = "openrouter" | "groq";
+export type EvalProvider = "openrouter" | "groq" | "fireworks";
 
 /** Sanitize messages for strict APIs (Groq requires type:"function" on tool_calls) */
 function sanitizeMessagesForProvider(
@@ -361,16 +362,22 @@ async function replaySingleCase(
     body.tool_choice = "auto";
   }
 
-  const useGroq = provider === "groq";
-  const apiUrl = useGroq ? GROQ_API : OPENROUTER_API;
-  const apiKey = useGroq ? keys.groq : keys.openrouter;
+  const apiUrl =
+    provider === "groq" ? GROQ_API :
+    provider === "fireworks" ? FIREWORKS_API :
+    OPENROUTER_API;
+  const apiKey =
+    provider === "groq" ? keys.groq :
+    provider === "fireworks" ? keys.fireworks :
+    keys.openrouter;
   if (!apiKey) {
-    throw new Error(useGroq ? "GROQ_API_KEY not found in .env" : "OPENROUTER_API_KEY not found in .env");
+    const keyName = provider === "groq" ? "GROQ_API_KEY" : provider === "fireworks" ? "FIREWORKS_API_KEY" : "OPENROUTER_API_KEY";
+    throw new Error(`${keyName} not found in .env`);
   }
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    ...(useGroq ? {} : { "HTTP-Referer": "https://opensidebar.dev", "X-Title": "OpenSidebar Evals" }),
+    ...(provider === "openrouter" ? { "HTTP-Referer": "https://opensidebar.dev", "X-Title": "OpenSidebar Evals" } : {}),
   };
 
   const response = await fetch(apiUrl, {

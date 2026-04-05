@@ -2753,9 +2753,12 @@ export class AgentLoop {
         },
         dataUrl,
       );
-    } catch {
+    } catch (e: any) {
       // Capture failed — fall back to 2-call pipeline for this turn
-      this.log.warn("agent", "VL screenshot capture failed, falling back to perception");
+      this.log.warn("agent", "VL screenshot capture failed, falling back to perception", {
+        error: e?.message,
+        tabId,
+      });
       this.context.setScreenshotForExecutor(null);
       await this.refreshPerception(tabId);
       await this.triagePopups(tabId);

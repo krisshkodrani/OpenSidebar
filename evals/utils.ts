@@ -142,6 +142,7 @@ export function readEvalResults(): EvalResult[] {
 export interface ApiKeys {
   openrouter: string;
   groq?: string;
+  fireworks?: string;
 }
 
 /** Load API keys from .env / .env.local. OpenRouter is required. */
@@ -169,8 +170,9 @@ export function loadApiKeys(): ApiKeys {
   }
 
   const groq = extractEnvVar(content, "GROQ_API_KEY") ?? undefined;
+  const fireworks = extractEnvVar(content, "FIREWORKS_API_KEY") ?? undefined;
 
-  return { openrouter, groq };
+  return { openrouter, groq, fireworks };
 }
 
 /** Load OPENROUTER_API_KEY from .env file (backward compat wrapper) */
