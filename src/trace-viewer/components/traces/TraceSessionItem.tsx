@@ -53,8 +53,10 @@ export default function TraceSessionItem({
       tabIndex={0}
       role="option"
       aria-selected={isActive}
-      className={`px-4 py-3 border-b border-[rgba(68,64,60,0.4)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${borderCls} ${
-        isActive ? "bg-trace-border" : "hover:bg-[rgba(68,64,60,0.5)]"
+      className={`px-4 py-3 border-b border-[rgba(68,64,60,0.3)] cursor-pointer transition-colors outline-none focus-visible:ring-1 focus-visible:ring-trace-accent ${borderCls} ${
+        isActive
+          ? "bg-[linear-gradient(180deg,rgba(20,184,166,0.14),rgba(20,184,166,0.05))]"
+          : "hover:bg-[rgba(255,255,255,0.035)]"
       }`}
     >
       <div className="flex items-center gap-2 mb-1">
