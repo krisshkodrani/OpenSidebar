@@ -99,9 +99,9 @@ export interface TracesSlice {
 }
 
 export interface UiSlice {
-  activeTab: "traces";
+  activeTab: "sessions" | "trace";
   tabInitialized: Record<string, boolean>;
-  setActiveTab: (tab: "traces") => void;
+  setActiveTab: (tab: "sessions" | "trace") => void;
   markTabInitialized: (tab: string) => void;
 }
 

@@ -32,6 +32,7 @@ export default function TraceSessionList() {
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSearchQuery = useStore((s) => s.setSearchQuery);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setActiveTab = useStore((s) => s.setActiveTab);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
   const tracesLoading = useStore((s) => s.tracesLoading);
 
@@ -131,11 +132,15 @@ export default function TraceSessionList() {
   });
 
   const selectSession = (sessionId: string) => {
-    if (currentSessionId === sessionId) return;
+    if (currentSessionId === sessionId) {
+      setActiveTab("trace");
+      return;
+    }
     setCurrentSessionId(sessionId);
     setCurrentEntries([]);
     setSearchQuery("");
     setActiveSubview("turns");
+    setActiveTab("trace");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
