@@ -48,7 +48,7 @@ export default function CostDashboard({
   };
 
   return (
-    <div className="px-3 py-2 bg-[#0f0d0a] border-b-2 border-trace-accent/40 shrink-0">
+    <div className="px-3 py-2.5 bg-[linear-gradient(180deg,rgba(15,13,10,0.85),rgba(15,13,10,0.55))] border-b border-trace-accent/20 shrink-0">
       <div className="flex items-center gap-2 text-[11px]">
         {runGroups.length > 0 && (
           <>
