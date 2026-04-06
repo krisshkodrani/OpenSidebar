@@ -66,8 +66,27 @@ function groqProvider(apiKey: string): ProviderConfig {
   };
 }
 
+/** Fireworks AI direct API */
 const FIREWORKS_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
+export const FIREWORKS_MODEL_EXECUTOR = "accounts/fireworks/models/kimi-k2p5";
+export const FIREWORKS_MODEL_PLANNER = "accounts/fireworks/models/kimi-k2p5";
+
+/** Models known to support vision (image_url content) + tool calling simultaneously */
+const VL_CAPABLE_MODELS = new Set([
+  "accounts/fireworks/models/kimi-k2p5",
+  "openai/gpt-5.4-mini",
+  "openai/gpt-5.4-mini:nitro",
+  "gpt-5.4-mini",
+  "qwen/qwen3-vl-30b-a3b-instruct",
+  "qwen/qwen3-vl-30b-a3b-thinking",
+  "x-ai/grok-4.1-fast",
+]);
+
+/** Check if a model supports unified VL executor mode (vision + tool calling). */
+export function isVLCapable(model: string): boolean {
+  return VL_CAPABLE_MODELS.has(model.replace(/:nitro$/, ""));
+}
 
 function fireworksProvider(apiKey: string): ProviderConfig {
   return {
@@ -401,7 +420,7 @@ export class LLMClient {
     if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
-      const executorModel = options?.executorModel || "accounts/fireworks/models/kimi-k2p5";
+      const executorModel = options?.executorModel || FIREWORKS_MODEL_EXECUTOR;
       this.executorPool = new ProviderPool(fwKey, { openRouterModel: executorModel });
       this.executorPool.getSlots()[0].provider = fwProv;
       this.executorFallbackModel = options?.executorFallbackModel || executorModel;
@@ -424,7 +443,7 @@ export class LLMClient {
     if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
-      const plannerModel = options?.plannerModel || "accounts/fireworks/models/kimi-k2p5";
+      const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;
       this.plannerPool = new ProviderPool(fwKey, { openRouterModel: plannerModel });
       this.plannerPool.getSlots()[0].provider = fwProv;
     } else if ((mode === "openrouter-groq" || mode === "openai-groq") && hasGroq) {

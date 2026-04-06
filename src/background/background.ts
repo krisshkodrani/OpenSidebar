@@ -424,7 +424,8 @@ chrome.runtime.onMessage.addListener(
         chrome.tabs
           .query({ active: true, currentWindow: true })
           .then(([tab]) => {
-            if (tab?.id) sendAgentActivity(tab.id, false);
+            if (tab?.id)
+              sendAgentActivity(tab.id, false, { status: "stopped" });
           })
           .catch(() => {});
       })();
@@ -958,8 +959,19 @@ async function handleUserChat(
     const settings =
       cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
     const openRouterApiKey = settings.openRouterApiKey;
+    const mode = settings.providerMode ?? "fireworks";
 
-    if (!openRouterApiKey) {
+    // Check the primary API key for the active provider
+    const activeKey =
+      mode === "fireworks" ? settings.fireworksApiKey :
+      mode === "openai-groq" ? settings.openaiApiKey :
+      openRouterApiKey;
+    const activeKeyName =
+      mode === "fireworks" ? "Fireworks AI" :
+      mode === "openai-groq" ? "OpenAI" :
+      "OpenRouter";
+
+    if (!activeKey) {
       chrome.runtime.sendMessage({
         type: "AGENT_STATUS",
         requestId: crypto.randomUUID(),
@@ -967,7 +979,7 @@ async function handleUserChat(
         workspaceId,
         payload: {
           status: AgentStatus.ERROR,
-          detail: "No OpenRouter API Key configured.",
+          detail: `No ${activeKeyName} API Key configured. Open Settings to add one.`,
         },
       });
       return;
@@ -1007,7 +1019,12 @@ async function handleUserChat(
         openRouterApiKey,
       });
     } finally {
-      sendAgentActivity(tabId, false);
+      const outcomeStatus = orchestrator.getRecentOutcome(workspaceId);
+      sendAgentActivity(
+        tabId,
+        false,
+        outcomeStatus ? { status: outcomeStatus } : undefined,
+      );
       await maybeStopKeepalive();
     }
   } finally {
@@ -1016,14 +1033,18 @@ async function handleUserChat(
 }
 
 /** Send AGENT_ACTIVITY message to the content script on a specific tab */
-function sendAgentActivity(tabId: number, active: boolean) {
+function sendAgentActivity(
+  tabId: number,
+  active: boolean,
+  outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
+) {
   if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
   chrome.tabs
     .sendMessage(tabId, {
       type: "AGENT_ACTIVITY",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
-      payload: { active },
+      payload: { active, outcome },
     })
     .catch(() => {});
 }
