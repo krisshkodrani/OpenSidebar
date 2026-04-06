@@ -15,6 +15,7 @@ import {
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
 import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
+import { FIREWORKS_MODEL_EXECUTOR, MODEL_EXECUTOR } from "../llm/client";
 import { toolRegistry } from "../tools";
 import {
   DOM_MODIFYING_TOOLS,
@@ -835,7 +836,8 @@ export class AgentLoop {
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
-    this.useVLExecutor = options?.useVLExecutor ?? false;
+    // VL mode: defaults to ON for Fireworks (verified), OFF otherwise. User can override in settings.
+    this.useVLExecutor = options?.useVLExecutor ?? (options?.providerMode === "fireworks");
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
     this.initialPlanState = options?.initialPlanState ?? null;

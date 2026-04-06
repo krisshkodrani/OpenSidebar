@@ -17,6 +17,7 @@ import React, {
 } from "react";
 import { X, Sparkles, ClipboardList } from "lucide-react";
 import { logger } from "../utils";
+import { speakText, stopCurrentTTS } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
 import { Header, MessageBubble, InputArea, PlanStrip } from "./components";
@@ -393,6 +394,35 @@ export default function App() {
     }
   }, [isAgentRunning]);
 
+  // Auto-TTS — speak the final assistant message when the agent finishes
+  const prevRunningForVoice = useRef(isAgentRunning);
+  useEffect(() => {
+    const wasRunning = prevRunningForVoice.current;
+    prevRunningForVoice.current = isAgentRunning;
+
+    if (
+      wasRunning &&
+      !isAgentRunning &&
+      settings.enableVoiceOutput &&
+      settings.autoVoiceResponse &&
+      settings.openaiApiKey
+    ) {
+      // Find the last completed assistant message
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant" && m.content.trim() && !m.isStreaming);
+      if (lastAssistant) {
+        speakText(
+          lastAssistant.content,
+          settings.openaiApiKey,
+          settings.ttsVoice || "nova",
+        ).catch(() => {
+          // Fire-and-forget — user can still click speaker on message manually
+        });
+      }
+    }
+  }, [isAgentRunning, messages, settings]);
+
   // Auto-dismiss error after 8 seconds (persistent errors stay until user acts)
   const errorPersistent = useStore((s) => s.errorPersistent);
   useEffect(() => {
@@ -717,13 +747,13 @@ export default function App() {
                   <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
                     <Sparkles size={24} className="text-primary-500" />
                   </div>
-                  {!settings.openRouterApiKey ? (
+                  {!(settings.fireworksApiKey || settings.openRouterApiKey) ? (
                     <>
                       <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
                         Welcome to OpenSidebar
                       </h2>
                       <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
-                        Add your OpenRouter API key to get started.
+                        Add your Fireworks AI API key to get started.
                       </p>
                       <button
                         onClick={() => setIsSettingsOpen(true)}
