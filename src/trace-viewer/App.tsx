@@ -1,7 +1,8 @@
 import React, { useEffect } from "react";
 import { useStore } from "./store";
 import TabBar from "./components/TabBar";
-import TracesTab from "./components/traces/TracesTab";
+import SessionsTab from "./components/traces/SessionsTab";
+import TraceViewTab from "./components/traces/TraceViewTab";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 
 function parseHash(): { session?: string; view?: string } {
@@ -24,11 +25,15 @@ export default function App() {
   const activeSubview = useStore((s) => s.activeSubview);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setActiveTab = useStore((s) => s.setActiveTab);
 
   // On mount, restore state from URL hash
   useEffect(() => {
     const { session, view } = parseHash();
-    if (session) setCurrentSessionId(session);
+    if (session) {
+      setCurrentSessionId(session);
+      setActiveTab("trace");
+    }
     if (view && VALID_SUBVIEWS.has(view))
       setActiveSubview(view as "turns" | "perception" | "logs" | "story");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,10 +61,11 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-trace-bg text-trace-text font-sans overflow-hidden">
+    <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <TabBar />
       <ViewerErrorBoundary>
-        {activeTab === "traces" && <TracesTab />}
+        {activeTab === "sessions" && <SessionsTab />}
+        {activeTab === "trace" && <TraceViewTab />}
       </ViewerErrorBoundary>
     </div>
   );

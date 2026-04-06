@@ -1,8 +1,8 @@
 import type { SliceCreator, UiSlice } from "./types";
 
 export const createUiSlice: SliceCreator<UiSlice> = (set) => ({
-  activeTab: "traces",
-  tabInitialized: { traces: false },
+  activeTab: "sessions",
+  tabInitialized: { sessions: false, trace: false },
 
   setActiveTab: (tab) =>
     set((s) => {
