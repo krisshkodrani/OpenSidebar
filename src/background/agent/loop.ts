@@ -428,6 +428,15 @@ export class AgentLoop {
     return true;
   }
 
+  /**
+   * Set the moment done() is accepted, BEFORE post-processing (trace, metrics,
+   * verification). The orchestrator reads this after a lane timeout to avoid
+   * retrying a subtask that already completed — prevents duplicate actions
+   * (e.g. adding the same item to cart multiple times).
+   */
+  public completedResult: { outcome: "completed"; summary: string } | null =
+    null;
+
   private llm: LLMClient;
   private context: ContextManager;
   private baseContextTokens: number; // Original context window size for de-escalation restore
@@ -5649,6 +5658,10 @@ export class AgentLoop {
               }
 
               // --- Normal done handling ---
+              // Signal completion immediately — the orchestrator reads this
+              // after a lane timeout to avoid retrying completed subtasks.
+              this.completedResult = { outcome: "completed", summary };
+
               this.context.clearPlanStatus();
               this.log.info("agent", "DONE called", {
                 turn: this.turnCount,

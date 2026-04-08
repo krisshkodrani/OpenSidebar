@@ -2637,6 +2637,25 @@ export class Orchestrator {
           }
         }
       } catch (error: any) {
+        // Race-condition guard: the agent may have called done() just before
+        // the lane timeout killed the worker. Check the loop's eagerly-set
+        // completedResult — if present, treat as success instead of retrying.
+        // This prevents duplicate actions (e.g. adding items to cart again).
+        if (loop.completedResult) {
+          logger.info(
+            "orchestrator",
+            "Worker timed out but done() was already called — accepting result",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              summary: loop.completedResult.summary.slice(0, 120),
+            },
+          );
+          node.status = "completed";
+          node.result = loop.completedResult.summary;
+          return;
+        }
+
         if (
           isLaneIsolationError(error, "executor") ||
           isLaneIsolationError(error, "verifier") ||
