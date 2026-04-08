@@ -677,7 +677,9 @@ async function handleUserChat(
         tabId,
         workspaceId,
         settings,
-        openRouterApiKey,
+        // In Fireworks-only mode openRouterApiKey may be empty — pass the
+        // active provider key so LLMClient pools receive a valid key.
+        openRouterApiKey: activeKey || openRouterApiKey,
       });
     } finally {
       const outcomeStatus = orchestrator.getRecentOutcome(workspaceId);

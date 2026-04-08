@@ -505,7 +505,7 @@ describe("complete() payload & response", () => {
   test("throws on missing API key", async () => {
     const client = new LLMClient("");
     await expect(client.complete(baseRequest())).rejects.toThrow(
-      /API Key is missing/,
+      /API key is missing/i,
     );
   });
 

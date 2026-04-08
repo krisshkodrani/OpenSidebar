@@ -719,7 +719,7 @@ export class LLMClient {
 
     if (!provider.apiKey) {
       throw new Error(
-        `OpenRouter API Key is missing. Please configure it in settings.`,
+        `API key is missing for ${provider.providerId}. Please configure it in settings.`,
       );
     }
 
@@ -939,7 +939,7 @@ export class LLMClient {
 
     if (!provider.apiKey) {
       throw new Error(
-        `OpenRouter API Key is missing. Please configure it in settings.`,
+        `API key is missing for ${provider.providerId}. Please configure it in settings.`,
       );
     }
 
