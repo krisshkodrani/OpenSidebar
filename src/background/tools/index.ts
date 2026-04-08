@@ -9,7 +9,6 @@ import {
   waitForContentScriptReady,
   waitForDomReady,
 } from "../tab-ready";
-import { DemoStore, formatDemoForContext } from "../demos/store";
 import {
   CLICK_DEF,
   TYPE_TEXT_DEF,
@@ -45,7 +44,6 @@ import {
   SEARCH_HISTORY_DEF,
   INSPECT_HIDDEN_DEF,
   XRAY_PAGE_DEF,
-  RECALL_DEMO_DEF,
   UPDATE_NOTES_DEF,
   CREATE_WINDOW_DEF,
   UPDATE_PLAN_DEF,
@@ -914,22 +912,6 @@ export function registerTools() {
   toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
     // Fallback — the loop intercepts update_plan before reaching here
     return `Plan updated: ${(args.summary as string) || "no summary"}`;
-  });
-
-  // Demo recall tool
-  toolRegistry.register(ToolName.RECALL_DEMO, RECALL_DEMO_DEF, async (args) => {
-    const query = args.query as string;
-    if (!query || !query.trim()) return "Error: query is required.";
-    logger.info("tools", "recall_demo", { query });
-    try {
-      const demoStore = new DemoStore();
-      const demo = await demoStore.findByQuery(query);
-      if (!demo) return `No demonstration found matching "${query}".`;
-      await demoStore.recordDemoUsage(demo.id);
-      return formatDemoForContext(demo);
-    } catch (e: any) {
-      return `Error recalling demo: ${e.message}`;
-    }
   });
 
   logger.info(

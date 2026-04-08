@@ -22,8 +22,6 @@ import {
   AlertTriangle,
   MessageCircle,
   ExternalLink,
-  StickyNote,
-  Terminal,
   Copy,
   Check,
   ChevronDown,
@@ -306,13 +304,13 @@ export const MessageBubble = React.memo(function MessageBubble({
     (s) => s.settings.showMessageDetailsByDefault ?? false,
   );
   const voiceOutputEnabled = useStore((s) => s.settings.enableVoiceOutput ?? false);
+  const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
+  const ttsProvider = useStore((s) => s.settings.ttsProvider);
   const ttsVoice = useStore((s) => s.settings.ttsVoice);
-  const tts = useTextToSpeech(openaiApiKey, ttsVoice);
+  const tts = useTextToSpeech({ groqApiKey, openaiApiKey }, ttsProvider, ttsVoice);
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
-  const isAnnotation = isUser && message.isAnnotation;
-  const isManualCommand = !!message.isManualCommand;
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
@@ -402,35 +400,15 @@ export const MessageBubble = React.memo(function MessageBubble({
             isUser
               ? clsx(
                   "px-3 py-2 rounded-2xl whitespace-pre-wrap",
-                  isManualCommand
-                    ? "bg-warm-600 dark:bg-warm-500 text-white font-mono"
-                    : isAnnotation
-                      ? "bg-primary-600 dark:bg-primary-700 text-white italic"
-                      : isFeedback
-                        ? "bg-amber-500/80 text-white"
-                        : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
+                  isFeedback
+                    ? "bg-amber-500/80 text-white"
+                    : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
                 )
-              : clsx(
-                  "text-warm-800 dark:text-warm-100",
-                  isManualCommand &&
-                    "px-3 py-2 rounded-2xl border border-warm-300/40 dark:border-warm-600/40",
-                ),
+              : "text-warm-800 dark:text-warm-100",
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >
-          {isUser && isManualCommand && (
-            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
-              <Terminal size={10} />
-              <span>manual</span>
-            </div>
-          )}
-          {isAnnotation && !isManualCommand && (
-            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
-              <StickyNote size={10} />
-              <span>annotation</span>
-            </div>
-          )}
-          {isFeedback && !isAnnotation && !isManualCommand && (
+          {isFeedback && (
             <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
               <MessageCircle size={10} />
               <span>feedback</span>
@@ -463,15 +441,20 @@ export const MessageBubble = React.memo(function MessageBubble({
       )}
 
       {/* TTS speaker icon — assistant messages with content */}
-      {voiceOutputEnabled && openaiApiKey && !isUser && renderedHtml && !message.isStreaming && (
-        <button
-          onClick={() => tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")}
-          className="mt-1 p-1 rounded-md text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 transition-colors"
-          aria-label={tts.isSpeaking ? "Stop speaking" : "Read aloud"}
-          title={tts.isSpeaking ? "Stop" : "Read aloud"}
-        >
-          {tts.isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-        </button>
+      {voiceOutputEnabled && (groqApiKey || openaiApiKey) && !isUser && renderedHtml && !message.isStreaming && (
+        <div className="flex items-center gap-1.5 mt-1">
+          <button
+            onClick={() => tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")}
+            className="p-1 rounded-md text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 transition-colors"
+            aria-label={tts.isSpeaking ? "Stop speaking" : "Read aloud"}
+            title={tts.isSpeaking ? "Stop" : "Read aloud"}
+          >
+            {tts.isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          </button>
+          {tts.error && (
+            <span className="text-[10px] text-red-500 dark:text-red-400">{tts.error}</span>
+          )}
+        </div>
       )}
 
       {showDetailsByDefault && message.toolCalls.length > 0 && (

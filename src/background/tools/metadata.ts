@@ -182,14 +182,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
   },
 
-  // Demo recall
-  [ToolName.RECALL_DEMO]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: false,
-    cacheable: "memory",
-  },
-
   // Clarification (intercepted in loop)
   [ToolName.CLARIFY]: {
     risk: RiskLevel.LOW,

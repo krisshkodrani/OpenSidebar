@@ -12,10 +12,9 @@ import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import type { Browser } from "puppeteer";
-import {
-  analyzeAgentRuntimeDiagnostics,
-  formatRuntimeDiagnostics,
-} from "../../../evals/runtime-diagnostics";
+// Runtime diagnostics removed with evals directory — stub to avoid import errors
+function analyzeAgentRuntimeDiagnostics(_turns: unknown[]): unknown { return {}; }
+function formatRuntimeDiagnostics(_diagnostics: unknown): string { return ""; }
 
 const moduleDir = import.meta.url.startsWith("file:")
   ? dirname(fileURLToPath(import.meta.url))

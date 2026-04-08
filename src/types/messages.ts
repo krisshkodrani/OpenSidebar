@@ -3,9 +3,8 @@
  */
 
 import type { AgentStatus, MessageSource, AgentRole, RiskLevel, ToolName } from "./enums";
-import type { OverlayDescriptor, DomSnapshot, TaggedElement } from "./dom";
+import type { OverlayDescriptor, DomSnapshot } from "./dom";
 import type { UserSettings } from "./settings";
-import type { DemoAction, Demonstration, GoldenAction } from "./demos";
 import type {
   AgentStep,
   Citation,
@@ -65,23 +64,14 @@ export type RuntimeMessage =
   | ContentScriptReadyMessage
   | DomReadyProbeMessage
   | DomReadyAckMessage
-  | DemoRecordStartMessage
-  | DemoRecordStopMessage
-  | DemoActionCapturedMessage
-  | DemoRecordStatusMessage
-  | DemoSavedMessage
-  | GoldenActionMessage
-  | RecordingSavedMessage
-  | GoldenAnnotationMessage
-  | ManualToolExecuteMessage
-  | ManualToolResultMessage
   | PlanConfirmationRequestMessage
   | PlanConfirmationResponseMessage
   | ClarificationRequestMessage
   | ClarificationResponseMessage
   | ScrollToPositionMessage
   | ScrollToPositionResponse
-  | WorkspaceSyncMessage;
+  | WorkspaceSyncMessage
+  | AgentStepLabelMessage;
 
 // --- Chat Messages ---
 
@@ -290,7 +280,19 @@ export interface AgentActivityMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload: {
     active: boolean;
+    /** Final outcome sent with active=false so the overlay can show a brief done/failed flash */
+    outcome?: { status: "completed" | "failed" | "stopped"; label?: string };
     laneTelemetry?: LaneTelemetrySnapshot;
+  };
+}
+
+/** Background sends the latest step label to the content script for the floating overlay */
+export interface AgentStepLabelMessage extends BaseMessage {
+  type: "AGENT_STEP_LABEL";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    label: string;
+    status: "running" | "done" | "error";
   };
 }
 
@@ -608,138 +610,6 @@ export interface NavigationResumeMessage extends BaseMessage {
     success: boolean;
     url: string;
     error?: string;
-  };
-}
-
-// --- Demo RuntimeMessage Types ---
-
-/** Side panel → Background: begin recording user actions */
-export interface DemoRecordStartMessage extends BaseMessage {
-  type: "DEMO_RECORD_START";
-  source: MessageSource.SIDEPANEL;
-  payload: {
-    tabId: number;
-    /** When true, capture enriched golden data (snapshots + tag IDs) for eval pipeline */
-    golden?: boolean;
-  };
-}
-
-/** Side panel → Background: stop recording, return captured actions */
-export interface DemoRecordStopMessage extends BaseMessage {
-  type: "DEMO_RECORD_STOP";
-  source: MessageSource.SIDEPANEL;
-  payload: {
-    tabId: number;
-    /** User-provided name for the demo */
-    name: string;
-    description?: string;
-    goal?: string;
-    preconditions?: string[];
-    outcomeSignal?: string;
-    /** When true, build golden eval cases from this recording */
-    golden?: boolean;
-  };
-}
-
-/** Content script → Background: individual action captured during recording */
-export interface DemoActionCapturedMessage extends BaseMessage {
-  type: "DEMO_ACTION_CAPTURED";
-  source: MessageSource.CONTENT;
-  payload: {
-    action: DemoAction;
-  };
-}
-
-/** Background → Side panel: recording state updates */
-export interface DemoRecordStatusMessage extends BaseMessage {
-  type: "DEMO_RECORD_STATUS";
-  source: MessageSource.BACKGROUND;
-  payload: {
-    active: boolean;
-    actionCount: number;
-    sessionId?: string;
-  };
-}
-
-/** Background → Side panel: confirmation after demo persisted */
-export interface DemoSavedMessage extends BaseMessage {
-  type: "DEMO_SAVED";
-  source: MessageSource.BACKGROUND;
-  payload: {
-    demo: Demonstration;
-  };
-}
-
-// --- Golden Dataset Recording Types ---
-
-/** Content script → Background: enriched action during golden recording */
-export interface GoldenActionMessage extends BaseMessage {
-  type: "GOLDEN_ACTION";
-  source: MessageSource.CONTENT;
-  payload: {
-    goldenAction: GoldenAction;
-  };
-}
-
-/** Background → Side panel: recording saved via TraceRecorder */
-export interface RecordingSavedMessage extends BaseMessage {
-  type: "RECORDING_SAVED";
-  source: MessageSource.BACKGROUND;
-  payload: {
-    sessionId: string;
-    turnCount: number;
-    name: string;
-  };
-}
-
-/** Side panel → Background: text annotation during golden recording */
-export interface GoldenAnnotationMessage extends BaseMessage {
-  type: "GOLDEN_ANNOTATION";
-  source: MessageSource.SIDEPANEL;
-  payload: { text: string };
-}
-
-// --- Manual Mode Message Types ---
-
-/** Manual command type for slash commands */
-export type ManualCommand =
-  | "tool"
-  | "perceive"
-  | "snapshot"
-  | "screenshot"
-  | "record"
-  | "tags"
-  | "dismiss"
-  | "help";
-
-/** Side panel → Background: execute a manual slash command */
-export interface ManualToolExecuteMessage extends BaseMessage {
-  type: "MANUAL_TOOL_EXECUTE";
-  source: MessageSource.SIDEPANEL;
-  payload: {
-    command: ManualCommand;
-    toolName?: ToolName;
-    args?: Record<string, unknown>;
-    objective?: string;
-    recordName?: string;
-    tabId: number;
-  };
-}
-
-/** Background → Side panel: result of a manual slash command */
-export interface ManualToolResultMessage extends BaseMessage {
-  type: "MANUAL_TOOL_RESULT";
-  source: MessageSource.BACKGROUND;
-  payload: {
-    command: string;
-    success: boolean;
-    result: string;
-    toolName?: ToolName;
-    args?: Record<string, unknown>;
-    durationMs: number;
-    elements?: TaggedElement[];
-    interpretation?: string;
-    screenshotUrl?: string;
   };
 }
 

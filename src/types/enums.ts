@@ -64,7 +64,6 @@ export enum ToolName {
   INSPECT_HIDDEN = "inspect_hidden",
   XRAY_PAGE = "xray_page",
   DISMISS_OVERLAYS = "dismiss_overlays",
-  RECALL_DEMO = "recall_demo",
   CLARIFY = "clarify",
   UPDATE_NOTES = "update_notes",
   CREATE_WINDOW = "create_window",

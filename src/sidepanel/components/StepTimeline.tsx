@@ -19,7 +19,6 @@ import {
   StickyNote,
   Clock,
   X as XIcon,
-  BookOpen,
   Cookie,
   Download,
   History,
@@ -105,8 +104,6 @@ function toolIcon(step: AgentStep): React.ReactNode {
       return <Layers size={sz} className={iconCls} />;
     case ToolName.GO_BACK:
       return <ArrowLeft size={sz} className={iconCls} />;
-    case ToolName.RECALL_DEMO:
-      return <BookOpen size={sz} className={iconCls} />;
     case ToolName.GET_COOKIES:
     case ToolName.SET_COOKIE:
     case ToolName.DELETE_COOKIE:

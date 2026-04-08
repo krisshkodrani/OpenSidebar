@@ -8,7 +8,6 @@ export * from "./enums";
 export * from "./tools";
 export * from "./dom";
 export * from "./settings";
-export * from "./demos";
 export * from "./traces";
 export * from "./agent";
 export * from "./messages";

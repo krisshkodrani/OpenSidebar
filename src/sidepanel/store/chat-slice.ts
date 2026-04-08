@@ -1,5 +1,6 @@
 import type { ChatEntry, Citation } from "../../types";
 import { logger } from "../../utils";
+import { clearTTSCache } from "../hooks/useTextToSpeech";
 import type { ChatSlice, SliceCreator } from "./types";
 
 /** Strip screenshotUrl from steps before persisting (each is ~100KB base64). */
@@ -242,6 +243,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
   clearHistory: () =>
     set((state) => {
       state.messages = [];
+      clearTTSCache();
       logger.info("ui", "Chat history cleared");
       const wsId = get().activeWorkspaceId;
       if (wsId != null) {

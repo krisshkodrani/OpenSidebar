@@ -266,12 +266,6 @@ export type XrayPageArgs = Record<string, never>;
 /** Arguments for dismiss_overlays — no arguments */
 export type DismissOverlaysArgs = Record<string, never>;
 
-/** Arguments for recall_demo — retrieve a recorded demonstration by name or query */
-export interface RecallDemoArgs {
-  /** Demo name or search query to find a relevant demonstration */
-  query: string;
-}
-
 /** Arguments for update_notes — save a note to persistent working memory */
 export interface UpdateNotesArgs {
   /** The note to save (max 500 chars) */
@@ -321,7 +315,6 @@ export type ToolArgsMap = {
   [ToolName.INSPECT_HIDDEN]: InspectHiddenArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
-  [ToolName.RECALL_DEMO]: RecallDemoArgs;
   [ToolName.CLARIFY]: ClarifyArgs;
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;

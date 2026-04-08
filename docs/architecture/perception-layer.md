@@ -86,15 +86,9 @@ Frozen baseline:
 - validator: `20 valid, 0 invalid, 1 warning`
 - result: `18/20` pass (`90%`)
 
-Use:
-
-```bash
-npx tsx evals/cli.ts perception-validate
-npm run evals:perception
-```
+This section is historical reference only. The old perception eval commands have been removed from the active toolchain.
 
 ## Guardrails
 
 - Treat pre-v6 perception reports as historical artifacts, not comparable baselines.
-- Require `perception-validate` to pass before trusting score changes.
 - Compare future prompt or model changes against the frozen Grok baseline.

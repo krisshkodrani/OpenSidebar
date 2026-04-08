@@ -21,7 +21,9 @@ export function isBridgeDisconnect(errorMsg: string): boolean {
   return (
     errorMsg.includes("Receiving end does not exist") ||
     errorMsg.includes("Could not establish connection") ||
-    errorMsg.includes("The message port closed")
+    errorMsg.includes("The message port closed") ||
+    errorMsg.includes("Empty response from content script") ||
+    errorMsg.includes("Cannot read properties of undefined")
   );
 }
 
@@ -162,7 +164,15 @@ export async function executeContentTool(
     });
 
   try {
-    const response = await sendMessage();
+    const response = await Promise.race([
+      sendMessage(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Tool execution timed out (15s)")), 15_000),
+      ),
+    ]);
+    if (!response?.payload?.result && response?.payload?.result !== "") {
+      throw new Error("Empty response from content script — bridge may be disconnected");
+    }
     return response.payload.result;
   } catch (e: any) {
     if (!isBridgeDisconnect(e.message)) {

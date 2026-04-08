@@ -8,9 +8,6 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
   error: null,
   errorPersistent: false,
   activeWorkspaceId: null,
-  demoRecording: false,
-  demoActionCount: 0,
-  manualRecording: null,
 
   setReady: () =>
     set((state) => {
@@ -56,15 +53,4 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
       get().loadMessagesFromStorage();
     }
   },
-
-  setDemoRecording: (active, actionCount) =>
-    set((state) => {
-      state.demoRecording = active;
-      if (actionCount !== undefined) state.demoActionCount = actionCount;
-    }),
-
-  setManualRecording: (r) =>
-    set((state) => {
-      state.manualRecording = r;
-    }),
 });

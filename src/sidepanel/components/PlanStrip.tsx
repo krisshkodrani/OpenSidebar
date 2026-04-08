@@ -168,12 +168,6 @@ export function PlanStrip({
   // --- Nothing to show ---
   if (!mode) return null;
 
-  const completedCount = rows.filter(
-    (r) =>
-      r.status === "completed" ||
-      r.status === "failed" ||
-      r.status === "skipped",
-  ).length;
   const currentIndex = taskProgress?.currentIndex ?? 0;
   const canSkip =
     mode === "progress" && rows.some((r) => r.status === "running");

@@ -10,7 +10,6 @@ Most development work falls into one of these workflows:
 2. Run fast tests while iterating.
 3. Run the real-browser E2E harness.
 4. Inspect traces and logs to debug agent behavior.
-5. Run evals to measure regressions.
 
 If you only need the common commands, start with the next section. Use the rest of the document as an operating map.
 
@@ -80,25 +79,12 @@ Viewer:
 
 - `http://127.0.0.1:7589/viewer`
 
-### Run evals
-
-When to use this:
-Measure regressions and review action/perception quality without rerunning a full manual scenario.
-
-```bash
-npm run ci:evals:offline
-npm run evals:critique
-npm run evals:perception
-npx tsx evals/cli.ts perception-validate
-```
-
 ## Current Runtime
 
 - side panel UI: React 18 + Zustand
 - service worker: agent loop, orchestrator, tool routing, tracing
 - content script: DOM tagging, snapshots, page actions
 - prompts: compiled prompt registry under `src/prompts/`
-- evals: trace-based and fixture-based quality checks under `evals/`
 
 ## Current Model Defaults
 
@@ -129,7 +115,6 @@ src/
   utils/            Logging, storage, support utilities
 
 tests/              Unit, integration, and e2e tests
-evals/              Evaluation CLI, fixtures, reports, results
 scripts/            Build, prompts, logs, and maintenance scripts
 ```
 
@@ -140,7 +125,7 @@ scripts/            Build, prompts, logs, and maintenance scripts
 - `src/background/llm/client.ts`: executor/planner model defaults and provider routing
 - `src/background/orchestrator/index.ts`: multi-step runtime orchestration
 - `src/background/perception/perception-agent.ts`: stateful visual interpretation
-- `src/background/perception/prompt-builder.ts`: shared production/eval prompt path
+- `src/background/perception/prompt-builder.ts`: perception prompt assembly
 - `src/background/tools/metadata.ts`: tool risk metadata and tool profiles
 - `src/content/tagging/index.ts`: stable tag generation and candidate filtering
 - `src/content/actions/`: DOM action implementations
@@ -169,8 +154,6 @@ Production perception uses the unified v6 contract:
 - `VISUAL-ONLY`
 - `AFFORDANCES`
 
-The eval harness uses the same contract and the same prompt path.
-
 ## Operational Surfaces
 
 ### App runtime
@@ -192,12 +175,6 @@ The eval harness uses the same contract and the same prompt path.
 - trace viewer: `src/trace-viewer/`
 - trace files: `traces/`
 - query CLI: `npm run traces`
-
-### Evals
-
-- CLI: `evals/cli.ts`
-- golden cases: `evals/golden/`
-- reports and critique flow: `evals/`
 
 ## Command Reference
 
@@ -226,15 +203,6 @@ The eval harness uses the same contract and the same prompt path.
 | `npm run logs:tail` | you want recent logs quickly | last 50 entries |
 | `npm run logs:errors` | you only care about errors | filters by log level |
 | `npm run traces` | you want trace CLI queries | session list, turns, stats |
-
-### Evals
-
-| Command | Use this when | Notes |
-| --- | --- | --- |
-| `npm run ci:evals:offline` | you want offline structural validation | no API key required |
-| `npm run evals:critique` | you want judged action-quality feedback | replay + report |
-| `npm run evals:perception` | you want perception critique runs | judge-backed |
-| `npx tsx evals/cli.ts perception-validate` | you want perception contract validation | focused perception check |
 
 ## Development Notes
 

@@ -4,7 +4,6 @@ import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
-import { inferToolProfileForStep } from "../agent/planner";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [

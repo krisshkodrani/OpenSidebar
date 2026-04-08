@@ -8,8 +8,10 @@
  * 4. Return transcribed text
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { transcribeAudio } from "../../background/llm/audio";
+
+const MAX_RECORDING_MS = 120_000; // 2 minutes — prevents oversized blobs
 
 export interface SpeechToTextState {
   isRecording: boolean;
@@ -33,6 +35,7 @@ export function useSpeechToText(
   const [error, setError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const ensureMicPermission = useCallback(async (): Promise<boolean> => {
     try {
@@ -121,12 +124,24 @@ export function useSpeechToText(
       mediaRecorder.start();
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
+
+      // Auto-stop after max duration to prevent oversized blobs
+      timerRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+        }
+      }, MAX_RECORDING_MS);
     } catch (err: any) {
       setError(err.message || "Could not start recording.");
     }
   }, [keys, ensureMicPermission]);
 
   const stopRecording = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
@@ -137,6 +152,16 @@ export function useSpeechToText(
   const clearTranscript = useCallback(() => {
     setTranscript(null);
     setError(null);
+  }, []);
+
+  // Cleanup on unmount — stop recording and clear timer
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+    };
   }, []);
 
   return {

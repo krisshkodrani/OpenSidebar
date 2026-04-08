@@ -2,7 +2,6 @@
   AgentStatus,
   RuntimeMessage,
   MessageSource,
-  RiskLevel,
 } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
@@ -216,77 +215,6 @@ export function initializeBridge(
       case "AGENT_ACTIVITY":
         state.setLaneTelemetry(message.payload.laneTelemetry ?? null);
         break;
-
-      case "DEMO_RECORD_STATUS":
-        state.setDemoRecording(
-          message.payload.active,
-          message.payload.actionCount,
-        );
-        break;
-
-      case "DEMO_SAVED":
-        // Demo saved successfully — recording already stopped via DEMO_RECORD_STATUS
-        logger.info("ui", "Demo saved", {
-          name: message.payload.demo.name,
-          actionCount: message.payload.demo.actions.length,
-        });
-        break;
-
-      case "RECORDING_SAVED":
-        state.addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Recording "${message.payload.name}" saved — ${message.payload.turnCount} actions`,
-          timestamp: Date.now(),
-          toolCalls: [],
-          isStreaming: false,
-        });
-        break;
-
-      case "MANUAL_TOOL_RESULT": {
-        const p = message.payload;
-        // Build assistant chat entry from manual command result
-        let content = p.result;
-        if (p.toolName) {
-          content = `**/${p.command}** \`${p.toolName}\` — ${p.result}`;
-        }
-        state.addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content,
-          timestamp: Date.now(),
-          toolCalls: p.toolName
-            ? [
-                {
-                  toolName: p.toolName,
-                  args: p.args ?? {},
-                  result: p.result,
-                  riskLevel: RiskLevel.LOW,
-                  durationMs: p.durationMs,
-                },
-              ]
-            : [],
-          isStreaming: false,
-          isManualCommand: true,
-        });
-
-        // Update manual recording state from /record responses
-        if (p.command === "record") {
-          if (p.result.includes("started")) {
-            // Extract session info from result text
-            const nameMatch = p.result.match(/Recording started: "([^"]+)"/);
-            const idMatch = p.result.match(/ID: ([^)]+)/);
-            state.setManualRecording({
-              sessionId: idMatch?.[1] ?? "",
-              turnCount: 0,
-              name: nameMatch?.[1] ?? "manual",
-            });
-          } else if (p.result.includes("stopped")) {
-            state.setManualRecording(null);
-          }
-        }
-        break;
-      }
 
       // Background-sourced messages not relevant to the side panel (sent to content script, etc.)
       case "TOOL_EXECUTE":
