@@ -99,6 +99,11 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   activeSubview: "turns",
   tracesLoading: false,
   tracesError: null,
+  tableSort: { column: "startTime", direction: "desc" },
+  setTableSort: (column, direction) =>
+    set((s) => {
+      s.tableSort = { column, direction };
+    }),
   storyCache: {},
   storyLoading: false,
   storyError: null,

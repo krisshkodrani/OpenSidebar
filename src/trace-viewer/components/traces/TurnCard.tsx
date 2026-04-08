@@ -40,9 +40,9 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
   const actualProviderId = llmResponse?.actualProviderId;
 
   return (
-    <div className="bg-trace-panel border border-[rgba(68,64,60,0.6)] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
+    <div className="bg-trace-panel border border-[rgba(124,58,237,0.15)] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(68,64,60,0.3)] border-b border-[rgba(68,64,60,0.4)] flex-wrap">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(124,58,237,0.12)] border-b border-[rgba(124,58,237,0.12)] flex-wrap">
         <span className="text-[13px] font-bold text-trace-accent-light shrink-0">
           Turn {turnNum}
         </span>

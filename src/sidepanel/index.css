@@ -15,11 +15,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: #faf9f7;
+  background-color: #F5F3FF;
 }
 
 .dark body {
-  background-color: #1c1917;
+  background-color: #150F35;
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -263,21 +263,21 @@ body,
 
 /* --- Warm background gradient --- */
 .bg-warm-gradient {
-  background: linear-gradient(to bottom, #faf9f7, rgba(255, 247, 237, 0.2));
+  background: linear-gradient(to bottom, #F5F3FF, rgba(237, 233, 254, 0.2));
 }
 .dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, #1c1917, #0f0d0a);
+  background: linear-gradient(to bottom, #150F35, #0D0A1F);
 }
 
 /* --- Glass surface --- */
 .glass-surface {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  background-color: rgba(250, 249, 247, 0.85);
+  background-color: rgba(245, 243, 255, 0.85);
 }
 
 .dark .glass-surface {
-  background-color: rgba(28, 25, 23, 0.85);
+  background-color: rgba(21, 15, 53, 0.85);
 }
 
 /* --- Button tactile feedback --- */

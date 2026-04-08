@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import type { TraceSession } from "../../../types/traces";
 import { useStore } from "../../store";
 import Badge from "../Badge";
@@ -16,9 +16,19 @@ interface TraceDetailHeaderProps {
   session: TraceSession;
 }
 
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
 export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   const currentEntries = useStore((s) => s.currentEntries);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const outcome = session.outcome;
   const metrics = session.metrics;
   const duration = formatDuration(
@@ -33,10 +43,34 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
       tokens = `${formatTokens(metrics.totalTokens)} tokens`;
   }
 
+  // Compute latency percentiles from turn durations
+  const latencyStats = useMemo(() => {
+    const durations = currentEntries
+      .map((e) => e.llmResponse?.durationMs ?? 0)
+      .filter((d) => d > 0)
+      .sort((a, b) => a - b);
+    if (durations.length === 0) return null;
+    return {
+      min: durations[0],
+      median: percentile(durations, 50),
+      p95: percentile(durations, 95),
+      max: durations[durations.length - 1],
+      count: durations.length,
+    };
+  }, [currentEntries]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(session.sessionId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
+  };
+
+  const handleCopyLink = () => {
+    const url = new URL(window.location.href);
+    url.hash = `session=${session.sessionId}`;
+    navigator.clipboard.writeText(url.toString());
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1200);
   };
 
   const handleExport = () => {
@@ -104,13 +138,22 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         >
           {outcome}
         </Badge>
-        <button
-          className="ml-auto text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
-          title="Export session as JSONL"
-          onClick={handleExport}
-        >
-          Export JSONL
-        </button>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button
+            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+            title="Copy shareable link"
+            onClick={handleCopyLink}
+          >
+            {linkCopied ? "Copied!" : "Copy Link"}
+          </button>
+          <button
+            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+            title="Export session as JSONL"
+            onClick={handleExport}
+          >
+            Export JSONL
+          </button>
+        </div>
       </div>
       <QueryTitle query={session.query || ""} />
       <div className="flex gap-4 text-[11px] text-trace-muted mt-1.5 flex-wrap">
@@ -120,6 +163,29 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         {cost && <span>{cost}</span>}
         {session.startUrl && <span>{truncate(session.startUrl, 50)}</span>}
       </div>
+
+      {/* Latency stats strip */}
+      {latencyStats && (
+        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-trace-border/50 text-[10px] font-mono text-trace-muted">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-trace-accent-light/70">
+            Latency
+          </span>
+          <span>
+            min <span className="text-trace-subtle">{formatDuration(latencyStats.min)}</span>
+          </span>
+          <span>
+            p50 <span className="text-trace-subtle">{formatDuration(latencyStats.median)}</span>
+          </span>
+          <span>
+            p95 <span className="text-trace-subtle">{formatDuration(latencyStats.p95)}</span>
+          </span>
+          <span>
+            max <span className="text-trace-subtle">{formatDuration(latencyStats.max)}</span>
+          </span>
+          <span className="text-trace-dim">({latencyStats.count} calls)</span>
+        </div>
+      )}
+
       <PlanSection session={session} />
     </div>
   );

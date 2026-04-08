@@ -85,6 +85,8 @@ export interface TracesSlice {
   navigateToTurn: (turnNumber: number) => void;
   /** Switch to Perception tab and scroll to a specific turn's perception */
   navigateToPerception: (turnNumber: number) => void;
+  tableSort: { column: string; direction: "asc" | "desc" };
+  setTableSort: (column: string, direction: "asc" | "desc") => void;
   storyCache: Record<string, string>;
   storyLoading: boolean;
   storyError: string | null;
@@ -98,16 +100,9 @@ export interface TracesSlice {
   collapseAllRunGroups: () => void;
 }
 
-export interface UiSlice {
-  activeTab: "sessions" | "trace";
-  tabInitialized: Record<string, boolean>;
-  setActiveTab: (tab: "sessions" | "trace") => void;
-  markTabInitialized: (tab: string) => void;
-}
-
 // ── Combined Store ─────────────────────────────────────────────
 
-export type Store = TracesSlice & UiSlice;
+export type Store = TracesSlice;
 
 export type SliceCreator<T> = StateCreator<
   Store,
