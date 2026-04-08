@@ -86,7 +86,7 @@
   {
     "id": "agent.system",
     "version": "v4",
-    "hash": "ea40b625",
+    "hash": "689ad7e1",
     "description": "Core executor system prompt for browser automation turns. v5: reduce exploration waste, auto-refresh awareness.",
     "sourcePath": "prompts/runtime/agent/system.md"
   },

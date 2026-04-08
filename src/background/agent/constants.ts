@@ -22,7 +22,7 @@ export const STUCK_THRESHOLDS = {
   /** Tighter give-up when already on the planner model (saves wasted turns) */
   GIVE_UP_PLANNER: 8,
   /** Same-URL turns before forced escalation (independent of DOM delta) */
-  SAME_URL_ESCALATE: 8,
+  SAME_URL_ESCALATE: 6,
 } as const;
 
 /** Escalation/de-escalation cycle limits */
@@ -58,9 +58,9 @@ export const MAX_ORIENTATION_TURNS = 6;
 /** Tool failure circuit breaker */
 export const TOOL_FAILURE_THRESHOLDS = {
   /** Warn after this many consecutive failures on the same tool */
-  WARN: 4,
+  WARN: 3,
   /** Exit after this many consecutive failures on the same tool */
-  EXIT: 6,
+  EXIT: 4,
 } as const;
 
 /** Exploration budget: nudge after consecutive turns of only reading/inspecting */
@@ -75,7 +75,6 @@ export const EXPLORATION_ONLY_TOOLS = new Set<string>([
   "xray_page",
   "get_cookies",
   "search_history",
-  "recall_demo",
 ]);
 
 /** Redundant action detection (informational — nudges, never blocks) */
@@ -99,9 +98,9 @@ export const TOOL_CACHE = {
 /** Step duration watchdog */
 export const STEP_WATCHDOG = {
   /** Turns on same step before injecting a nudge */
-  WARN_TURNS: 5,
+  WARN_TURNS: 4,
   /** Turns on same step before forcing escalation */
-  ESCALATE_TURNS: 10,
+  ESCALATE_TURNS: 7,
 } as const;
 
 /** Broadcast intervals (turns) */
@@ -114,8 +113,9 @@ export const BROADCAST_INTERVALS = {
 
 /** LLM configuration */
 export const LLM_CONFIG = {
-  /** Maximum tokens in LLM response */
-  MAX_TOKENS: 4096,
+  /** Maximum tokens in LLM response (8192 to accommodate reasoning models
+   *  like Kimi K2.5 whose reasoning_content counts toward this limit) */
+  MAX_TOKENS: 8192,
   /** Temperature for agentic tasks (low = deterministic) */
   TEMPERATURE: 0,
   /** Token budget for decomposition */
@@ -147,11 +147,11 @@ export const STRING_LIMITS = {
 /** Turn-count-based compression triggers (overrides utilization-based) */
 export const COMPRESSION_TRIGGERS = {
   /** History length at which LIGHT compression activates */
-  LIGHT_TURN_COUNT: 30,
+  LIGHT_TURN_COUNT: 20,
   /** History length at which MEDIUM compression activates */
-  MEDIUM_TURN_COUNT: 60,
+  MEDIUM_TURN_COUNT: 40,
   /** History length at which HEAVY compression activates */
-  HEAVY_TURN_COUNT: 100,
+  HEAVY_TURN_COUNT: 70,
   /** Messages to keep verbatim in HEAVY compression */
   HEAVY_KEEP_RECENT: 10,
   /** Tool result truncation limit for LIGHT compression */
@@ -175,9 +175,9 @@ export const STAGNATION_DETECTION = {
   /** Size of the sliding window for recent outcomes */
   WINDOW: 6,
   /** Consecutive identical outcomes before injecting a reflection */
-  REFLECTION_THRESHOLD: 3,
+  REFLECTION_THRESHOLD: 2,
   /** Consecutive identical outcomes before forcing a strategy pivot */
-  PIVOT_THRESHOLD: 5,
+  PIVOT_THRESHOLD: 4,
 } as const;
 
 /** Action effect verification thresholds */
@@ -303,24 +303,26 @@ const MAXIMUM_LIMITS: RuntimeLimits = {
 export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
   simple: {
     stuckEscalate: 3,
-    stuckGiveUp: 6,
-    stuckGiveUpPlanner: 5,
+    stuckGiveUp: 5,
+    stuckGiveUpPlanner: 4,
     maxEscalationCycles: 2,
     toolFailureWarn: 2,
-    toolFailureExit: 4,
+    toolFailureExit: 3,
     maxDoneRejections: 1,
-    maxConsecutiveAllFail: 3,
+    maxConsecutiveAllFail: 2,
     stagnationReflection: 2,
     stagnationPivot: 3,
     stepWarnTurns: 3,
-    stepEscalateTurns: 6,
+    stepEscalateTurns: 5,
     maxFreshStarts: 1,
-    sameUrlEscalate: 6,
+    sameUrlEscalate: 5,
   },
   moderate: {
-    // Mostly defaults — the static constants were tuned for this tier
+    // Tighter than old defaults — fail fast, escalate sooner
     stuckEscalate: 4,
     maxDoneRejections: 2,
+    stepEscalateTurns: 7,
+    sameUrlEscalate: 6,
   },
   complex: {
     stuckEscalate: 6,
