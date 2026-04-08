@@ -72,10 +72,10 @@ export default function TurnLLMMessage({
     contentText.length > cachedPrefixLength;
 
   return (
-    <div className="border border-[rgba(68,64,60,0.3)] rounded mb-1 overflow-hidden">
+    <div className="border border-[rgba(124,58,237,0.12)] rounded mb-1 overflow-hidden">
       <div
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-2 py-[5px] cursor-pointer text-[11px] text-trace-subtle transition-colors hover:bg-[rgba(68,64,60,0.3)]"
+        className="flex items-center gap-2 px-2 py-[5px] cursor-pointer text-[11px] text-trace-subtle transition-colors hover:bg-[rgba(124,58,237,0.12)]"
       >
         <span
           className={`text-[9px] shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
@@ -94,11 +94,11 @@ export default function TurnLLMMessage({
             </Badge>
           </>
         )}
-        <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[#a8a29e]">
+        <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[#6D5F9A]">
           {preview}
         </span>
         <span
-          className="shrink-0 font-mono text-[#57534e] text-[10px]"
+          className="shrink-0 font-mono text-[#4C3D80] text-[10px]"
           title="Estimated from character count"
         >
           ~{formatTokens(tokEst)} tok
@@ -106,7 +106,7 @@ export default function TurnLLMMessage({
       </div>
       <div className={`collapsible ${open ? "open" : ""}`}>
         {hasCachedSplit ? (
-          <div className="p-2 text-[11px] font-mono text-[#d6d3cc] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(41,37,36,0.4)]">
+          <div className="p-2 text-[11px] font-mono text-[#4C3D80] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(124,58,237,0.04)]">
             {renderContent(contentText.slice(0, cachedPrefixLength!))}
             <div className="border-t-2 border-dashed border-[rgba(230,126,34,0.5)] my-1 pt-1 text-[10px] text-[#e67e22] font-semibold tracking-wide">
               -- Dynamic Context (changes per turn) --
@@ -114,7 +114,7 @@ export default function TurnLLMMessage({
             {renderContent(contentText.slice(cachedPrefixLength!))}
           </div>
         ) : (
-          <div className="p-2 text-[11px] font-mono text-[#d6d3cc] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(41,37,36,0.4)]">
+          <div className="p-2 text-[11px] font-mono text-[#4C3D80] whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-[rgba(124,58,237,0.04)]">
             {renderContent(contentText)}
             {toolCalls && toolCalls.length > 0 && (
               <>

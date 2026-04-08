@@ -14,7 +14,7 @@ export default function TurnProgressState({
   progressState,
 }: TurnProgressStateProps) {
   return (
-    <div className="text-[10px] text-[#57534e] pt-1.5 border-t border-[rgba(68,64,60,0.3)] mt-2 flex gap-3">
+    <div className="text-[10px] text-[#4C3D80] pt-1.5 border-t border-[rgba(124,58,237,0.12)] mt-2 flex gap-3">
       <span
         className={
           ((progressState.staleTurns ?? progressState.stagnantTurns) || 0) > 4

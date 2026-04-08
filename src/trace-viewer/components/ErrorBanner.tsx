@@ -12,7 +12,7 @@ export default function ErrorBanner({
   onRetry,
 }: ErrorBannerProps) {
   return (
-    <div className="p-3 mx-5 my-4 bg-red-500/10 border border-red-500/30 rounded-[5px] text-[#e74c3c] text-[13px]">
+    <div className="p-3 mx-5 my-4 bg-red-500/10 border border-red-500/30 rounded text-[#e74c3c] text-[13px]">
       {message}
       {hint && (
         <div className="mt-2">
