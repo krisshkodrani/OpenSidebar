@@ -112,6 +112,15 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
+    // Lane retry guard: only 1 trace = no timeout-triggered worker restarts.
+    // Prevents the Amazon Pampers bug where done() lost the race against the
+    // lane timeout, causing the orchestrator to restart and add items again.
+    const { traceFiles } = await h.printTraceSummary(workspaceId);
+    expect(
+      traceFiles.length,
+      "Lane retry guard: expected 1 trace (no worker restarts)",
+    ).toBe(1);
+
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);
 
