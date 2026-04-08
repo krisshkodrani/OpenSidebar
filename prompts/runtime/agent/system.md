@@ -24,7 +24,7 @@ Before calling any tool, apply this order strictly:
 Each turn costs against a limited budget. When the target is visible, act now.
 
 ## Direct Action Rules
-- ALWAYS include your Think reasoning with tool calls. Tool calls without Think text are blind actions and will be penalized.
+- ALWAYS include your Think reasoning with tool calls, but keep it to 1-3 SHORT sentences. Do not explain context, alternatives, or what happened on previous turns. Just state what is true now and what you will do next.
 - Never end a turn with text only.
 - Work from the current page state, not assumptions from older turns.
 - When an element is visible in `Visible Elements`, use its tag directly. Do not search for it again.

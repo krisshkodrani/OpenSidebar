@@ -66,6 +66,13 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       node.id === "opensidebar-stop-btn" ||
       node.classList?.contains("opensidebar-tag"));
 
+  // Body/HTML returned by elementFromPoint is a false positive — these root
+  // elements can't meaningfully block their children. Happens on complex SPAs
+  // (e.g. LinkedIn messaging) where scrollIntoView shifts a fixed panel and
+  // elementFromPoint lands on the document root behind it.
+  const isDocumentRoot = (node: Element | null): boolean =>
+    node === document.body || node === document.documentElement;
+
   // Z-Index Check: Auto-hide covering overlays (up to 3 layers) before clicking
   const MAX_OVERLAY_RETRIES = 3;
   for (let attempt = 0; attempt < MAX_OVERLAY_RETRIES; attempt++) {
@@ -74,8 +81,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const y = rect.top + rect.height / 2;
     const topEl = document.elementFromPoint(x, y);
 
-    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl)) {
-      break; // Clear to click (or our own overlay — transparent to interaction)
+    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl) || isDocumentRoot(topEl)) {
+      break; // Clear to click (or our own overlay / document root — not a real blocker)
     }
 
     // Auto-hide the covering element only if it looks like an overlay
@@ -115,7 +122,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
 
   for (const point of points) {
     const topEl = document.elementFromPoint(point.x, point.y);
-    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl)) {
+    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl) || isDocumentRoot(topEl)) {
       cleanClick = true;
       break;
     }
@@ -250,46 +257,50 @@ export function executeType(args: TypeTextArgs): {
     el.focus();
   }
 
-  // Clear existing value using native setter
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    setNativeValue(el, "");
-    el.dispatchEvent(
-      new InputEvent("input", {
-        bubbles: true,
-        inputType: "deleteContentBackward",
-      }),
+  // ContentEditable: set text directly and fire input events
+  const isInput = el instanceof HTMLInputElement;
+  const isTextarea = el instanceof HTMLTextAreaElement;
+  if (!isInput && !isTextarea) {
+    const htmlEl = el as HTMLElement;
+    htmlEl.focus();
+    htmlEl.textContent = args.text;
+    htmlEl.dispatchEvent(
+      new InputEvent("input", { bubbles: true, data: args.text, inputType: "insertText" }),
     );
+    htmlEl.dispatchEvent(new Event("change", { bubbles: true }));
+    return {
+      success: true,
+      result: `Typed "${args.text.slice(0, 60)}" into [${tagId}] (contentEditable)`,
+      navigated: false,
+    };
   }
 
-  // Type character by character for SPA frameworks that listen to input events
-  for (const char of args.text) {
-    el.dispatchEvent(
-      new KeyboardEvent("keydown", { key: char, bubbles: true }),
-    );
+  // Input/textarea: clear using native setter, then type char-by-char for SPA frameworks
+  {
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      setNativeValue(el, el.value + char);
+      setNativeValue(el, "");
       el.dispatchEvent(
-        new InputEvent("input", {
-          bubbles: true,
-          data: char,
-          inputType: "insertText",
-        }),
-      );
-    } else if ((el as HTMLElement).isContentEditable) {
-      (el as HTMLElement).textContent =
-        ((el as HTMLElement).textContent || "") + char;
-      el.dispatchEvent(
-        new InputEvent("input", {
-          bubbles: true,
-          data: char,
-          inputType: "insertText",
-        }),
+        new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }),
       );
     }
-    el.dispatchEvent(new KeyboardEvent("keyup", { key: char, bubbles: true }));
-  }
 
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+    for (const char of args.text) {
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", { key: char, bubbles: true }),
+      );
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        setNativeValue(el, el.value + char);
+        el.dispatchEvent(
+          new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }),
+        );
+      }
+      el.dispatchEvent(
+        new KeyboardEvent("keyup", { key: char, bubbles: true }),
+      );
+    }
+
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
 
   // Press Enter if requested
   let navigated = false;

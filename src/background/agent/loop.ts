@@ -15,7 +15,6 @@ import {
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
 import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
-import { FIREWORKS_MODEL_EXECUTOR, MODEL_EXECUTOR } from "../llm/client";
 import { toolRegistry } from "../tools";
 import {
   DOM_MODIFYING_TOOLS,
@@ -63,7 +62,6 @@ import { TraceRecorder } from "./trace";
 import { parseNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { AgentMiddleware } from "./middleware";
-import { DemoStore, formatDemoForContext } from "../demos/store";
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
@@ -125,12 +123,10 @@ import {
   extractDiscoveredTagIds,
 } from "./loop-helpers";
 import {
-  BUILTIN_DEMO_MULTI_ITEM_SHOPPING,
   DEESCALATION_REFLECTION,
   ESCALATION_RECOVERY,
   ESCALATION_REFLECTION,
   HANDOFF_REFLECTION,
-  matchesMultiItemPattern,
   PIVOT_MESSAGE,
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
@@ -1651,55 +1647,6 @@ export class AgentLoop {
       }
     }
 
-    // --- Demo catalog + matching: inject reference demonstrations ---
-    try {
-      const demoStore = new DemoStore();
-
-      // Layer 1: Load compact catalog into static prompt prefix (for prefix caching)
-      const catalog = await demoStore.getCatalogSummary();
-      if (catalog) {
-        this.context.setDemoCatalog(catalog);
-        this.log.info("agent", "Demo catalog loaded into prompt prefix", {
-          lineCount: catalog.split("\n").length,
-        });
-      }
-
-      // Layer 3: Auto-inject best-matching demo for this query + URL
-      const currentUrl = this.context.getSnapshot()?.url || "";
-      const matchedDemo = await demoStore.matchDemo(
-        initialUserText,
-        currentUrl,
-      );
-      if (matchedDemo) {
-        await demoStore.recordDemoUsage(matchedDemo.demo.id);
-        const demoText = formatDemoForContext(matchedDemo.demo);
-        this.context.setDemonstrations(demoText);
-        this.log.info("agent", "Demo matched and injected", {
-          demoId: matchedDemo.demo.id,
-          demoName: matchedDemo.demo.name,
-          score: matchedDemo.score,
-          actionCount: matchedDemo.demo.actions.length,
-        });
-        this.traceRecorder?.recordEvent("demo_matched" as any, {
-          demoId: matchedDemo.demo.id,
-          demoName: matchedDemo.demo.name,
-          score: matchedDemo.score,
-          actionCount: matchedDemo.demo.actions.length,
-        });
-      } else if (matchesMultiItemPattern(initialUserText)) {
-        // Fallback: inject built-in demo for multi-item shopping
-        this.context.setDemonstrations(BUILTIN_DEMO_MULTI_ITEM_SHOPPING);
-        this.log.info("agent", "Built-in multi-item shopping demo injected");
-        this.traceRecorder?.recordEvent("builtin_demo_injected" as any, {
-          pattern: "multi_item_shopping",
-        });
-      }
-    } catch (err: any) {
-      this.log.warn("agent", "Demo catalog/matching error (non-fatal)", {
-        error: err?.message,
-      });
-    }
-
     // --- Planner: decompose task into plan (task-agnostic) ---
     if (!this.disableInternalPlanning) {
       try {
@@ -2208,7 +2155,7 @@ export class AgentLoop {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { refresh: true },
+        payload: { refresh: true, autoDismiss: false },
       });
 
     try {

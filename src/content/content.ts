@@ -21,12 +21,6 @@ import {
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import { isElementVisible, addDynamicTag, resetStableIds } from "./tagging";
-import {
-  startRecording,
-  stopRecording,
-  startGoldenRecording,
-  stopGoldenRecording,
-} from "./recorder";
 
 logger.info("system", "Content Script Loaded");
 
@@ -58,12 +52,12 @@ function querySelectorAllWithShadow(
 
 function runJanitor() {
   const COMMON_selectors = [
-    // Generic aria-labels
+    // Generic aria-labels (consent-specific only — avoid broad labels like "Close"
+    // which match app UI buttons on sites like LinkedIn)
     "button[aria-label='Accept all']",
     "button[aria-label='Reject all']",
     "button[aria-label='Accept cookies']",
     "button[aria-label='Accept All Cookies']",
-    "button[aria-label='Close']",
     // Common cookie/consent platforms
     "#onetrust-accept-btn-handler", // OneTrust
     "#onetrust-reject-all-handler",
@@ -208,6 +202,47 @@ export function detectViewportCoveringOverlays(): {
 
   results.sort((a, b) => b.coverage - a.coverage);
   return results;
+}
+
+/**
+ * Heuristic: does this element look like primary app content rather than a
+ * nuisance overlay (cookie banner, GDPR modal, promo popup)?
+ *
+ * Real app panels (e.g. LinkedIn messaging, SPA drawers) are fixed/overlay-
+ * positioned but contain significant interactive content. Cookie banners
+ * typically have 1-5 buttons and little text. We skip dismissal when the
+ * element clearly holds app content the user needs.
+ */
+function isLikelyAppContent(el: HTMLElement): boolean {
+  // IFRAMEs are never cookie banners — hiding one blanks the page
+  const tag = el.tagName.toLowerCase();
+  if (tag === "iframe") return true;
+
+  // Semantic containers are never nuisance overlays
+  if (tag === "main" || tag === "nav" || tag === "header") return true;
+  const role = el.getAttribute("role");
+  if (role === "main" || role === "navigation") return true;
+
+  // If the element contains a <main>, <nav>, or common SPA root, it's app content
+  if (
+    el.querySelector(
+      "main, nav, [role='main'], [role='navigation'], #app, #root, #__next, #__nuxt",
+    )
+  ) {
+    return true;
+  }
+
+  // Count interactive children — app panels have many, cookie banners have few
+  const interactiveCount = el.querySelectorAll(
+    "a[href], button, input, textarea, select, [contenteditable='true']",
+  ).length;
+  if (interactiveCount > 10) return true;
+
+  // Substantial text content (cookie banners rarely exceed a few hundred chars)
+  const textLen = (el.textContent || "").length;
+  if (textLen > 1000) return true;
+
+  return false;
 }
 
 /**
@@ -397,6 +432,16 @@ function autoDismissModals(): DismissResult {
 
     if (!isOverlay) continue;
 
+    // Guard: skip elements that look like primary app content
+    if (isLikelyAppContent(el)) {
+      logger.info("tools", "Skipped app-content overlay", {
+        tag: el.tagName,
+        classes: el.className.toString().slice(0, 50),
+        interactive: el.querySelectorAll("a[href],button,input,textarea,select").length,
+      });
+      continue;
+    }
+
     // Archive text BEFORE dismissing
     archiveOverlay(el);
 
@@ -424,22 +469,24 @@ function autoDismissModals(): DismissResult {
   for (const { el, coverage } of coveringOverlays) {
     if (!isElementVisible(el)) continue; // May have been hidden in Phase A
 
+    // Guard: skip elements that look like primary app content (same as Phase A)
+    if (!isBackdropElement(el) && isLikelyAppContent(el)) {
+      logger.info("tools", "Skipped app-content covering element", {
+        coverage: Math.round(coverage),
+        tag: el.tagName,
+        interactive: el.querySelectorAll("a[href],button,input,textarea,select").length,
+      });
+      continue;
+    }
+
     // Archive text BEFORE dismissing (skip pure backdrops — no useful text)
     if (!isBackdropElement(el)) {
       archiveOverlay(el);
     }
 
-    if (isBackdropElement(el)) {
-      // Backdrop/scrim: just hide it
-      el.style.display = "none";
-      dismissed++;
-      logger.info("tools", "Hid backdrop overlay", {
-        coverage: Math.round(coverage),
-        tag: el.tagName,
-      });
-      continue;
-    }
-
+    // Try close button first (even for backdrops) — clicking triggers proper
+    // framework state cleanup (React setState, Vue reactivity, etc.) so the
+    // overlay doesn't reappear on the next re-render.
     const closeBtn = findCloseButton(el);
     if (closeBtn) {
       closeBtn.click();
@@ -447,11 +494,14 @@ function autoDismissModals(): DismissResult {
       logger.info("tools", "Clicked close on covering overlay", {
         coverage: Math.round(coverage),
         tag: el.tagName,
+        backdrop: isBackdropElement(el),
       });
     } else {
       el.style.display = "none";
       dismissed++;
-      logger.info("tools", "Hid covering overlay (no close button)", {
+      logger.info("tools", isBackdropElement(el)
+        ? "Hid backdrop overlay"
+        : "Hid covering overlay (no close button)", {
         coverage: Math.round(coverage),
         tag: el.tagName,
       });
@@ -509,7 +559,12 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       if (message.source !== MessageSource.BACKGROUND) return;
 
       if (message.type === "AGENT_ACTIVITY") {
-        setAgentBorder(message.payload.active);
+        setAgentBorder(message.payload.active, message.payload.outcome);
+        return;
+      }
+
+      if (message.type === "AGENT_STEP_LABEL") {
+        updateFloatingStepLabel(message.payload.label, message.payload.status);
         return;
       }
 
@@ -574,7 +629,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         // framework-aware settling — the browser confirms the main thread is idle,
         // meaning React/Vue/Angular commits are done. Falls back to 2-frame idle
         // detection on older browsers.
-        const framework = detectFramework();
+        detectFramework();
         const hasIdleCallback = typeof requestIdleCallback === "function";
         let idleFrames = 0;
         let settled = false;
@@ -649,27 +704,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true; // async response
       }
 
-      // DEMO messages are forwarded from sidepanel via background, arriving with
-      // source=BACKGROUND at runtime but typed as SIDEPANEL in the union.
-      if ((message as any).type === "DEMO_RECORD_START") {
-        if ((message as any).payload?.golden) {
-          startGoldenRecording();
-        } else {
-          startRecording();
-        }
-        sendResponse({ ok: true });
-        return true;
-      }
-
-      if ((message as any).type === "DEMO_RECORD_STOP") {
-        // Check if we were in golden mode (payload.golden forwarded from background)
-        const actions = (message as any).payload?.golden
-          ? stopGoldenRecording()
-          : stopRecording();
-        sendResponse({ ok: true, actions });
-        return true;
-      }
-
       if (message.type === "DOM_SNAPSHOT_REQUEST") {
         (async () => {
           const start = performance.now();
@@ -718,15 +752,46 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       if (message.type === "TOOL_EXECUTE") {
         const { toolName, args, toolCallId } = message.payload;
-        const result = executeAction(toolName, args);
-        Promise.resolve(result).then((res) => {
+        let responded = false;
+        const respond = (res: any) => {
+          if (responded) return;
+          responded = true;
           sendResponse({
             type: "TOOL_RESULT",
             requestId: message.requestId,
             source: MessageSource.CONTENT,
             payload: { toolCallId, ...res },
           });
-        });
+        };
+        // Safety timeout: ensure sendResponse is always called
+        setTimeout(() => {
+          if (!responded) {
+            console.error("[content] TOOL_EXECUTE timed out for", toolName);
+            respond({
+              success: false,
+              result: `Tool execution timed out: ${toolName}`,
+              navigated: false,
+            });
+          }
+        }, 10_000);
+        try {
+          const res = executeAction(toolName, args);
+          Promise.resolve(res).then(respond).catch((err: any) => {
+            console.error("[content] TOOL_EXECUTE error:", toolName, err);
+            respond({
+              success: false,
+              result: `Tool error: ${err?.message || err}`,
+              navigated: false,
+            });
+          });
+        } catch (err: any) {
+          console.error("[content] TOOL_EXECUTE sync error:", toolName, err);
+          respond({
+            success: false,
+            result: `Tool sync error: ${err?.message || err}`,
+            navigated: false,
+          });
+        }
         return true; // async response
       }
     },
@@ -737,9 +802,37 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
 const BORDER_ID = "opensidebar-agent-border";
 const STOP_BTN_ID = "opensidebar-stop-btn";
-function setAgentBorder(active: boolean) {
+const STEP_LABEL_ID = "opensidebar-step-label";
+const FLOATING_WRAP_ID = "opensidebar-floating-wrap";
+const DIVIDER_ID = "opensidebar-divider";
+
+/** Update the step label text above the floating stop button */
+function updateFloatingStepLabel(label: string, status: "running" | "done" | "error") {
+  const el = document.getElementById(STEP_LABEL_ID);
+  if (!el) return;
+  const dot = el.querySelector("span") as HTMLSpanElement | null;
+  const text = el.querySelector("[data-label]") as HTMLSpanElement | null;
+  if (text) text.textContent = label;
+  if (dot) {
+    if (status === "error") {
+      dot.style.background = "#ef4444";
+      dot.style.animation = "none";
+    } else if (status === "done") {
+      dot.style.background = "#22c55e";
+      dot.style.animation = "none";
+    } else {
+      dot.style.background = "rgba(90,102,214,0.9)";
+      dot.style.animation = "opensidebar-pulse 1.5s ease-in-out infinite";
+    }
+  }
+}
+
+function setAgentBorder(
+  active: boolean,
+  outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
+) {
   const existing = document.getElementById(BORDER_ID);
-  const existingBtn = document.getElementById(STOP_BTN_ID);
+  const existingBtn = document.getElementById(FLOATING_WRAP_ID);
 
   if (active) {
     // --- Static vignette overlay ---
@@ -775,61 +868,130 @@ function setAgentBorder(active: boolean) {
       });
     }
 
-    // --- Floating stop button ---
+    // --- Floating HUD bar: [ ● Step label…  ⏹ Stop ] ---
     if (!existingBtn) {
-      const btn = document.createElement("button");
-      btn.id = STOP_BTN_ID;
-      btn.innerHTML =
-        '<svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0">' +
-        '<rect width="10" height="10" rx="2" fill="rgba(90,102,214,0.9)"/></svg>' +
-        '<span style="margin-left:7px;letter-spacing:0.04em">Stop</span>';
-      Object.assign(btn.style, {
+      // Inject keyframe for pulsing dot
+      if (!document.getElementById("opensidebar-pulse-style")) {
+        const style = document.createElement("style");
+        style.id = "opensidebar-pulse-style";
+        style.textContent =
+          "@keyframes opensidebar-pulse{0%,100%{opacity:1}50%{opacity:0.4}}";
+        document.documentElement.appendChild(style);
+      }
+
+      const FONT =
+        '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+
+      // Single-row bar — fixed width so label changes don't shift layout
+      const bar = document.createElement("div");
+      bar.id = FLOATING_WRAP_ID;
+      Object.assign(bar.style, {
         position: "fixed",
         bottom: "24px",
         left: "50%",
         transform: "translateX(-50%) translateY(8px)",
         zIndex: "2147483647",
+        width: "360px",
+        display: "flex",
+        alignItems: "center",
+        background: "rgba(20,19,40,0.60)",
+        backdropFilter: "blur(16px) saturate(1.4)",
+        WebkitBackdropFilter: "blur(16px) saturate(1.4)",
+        border: "1px solid rgba(90,102,214,0.20)",
+        borderRadius: "24px",
+        boxShadow: [
+          "0 4px 24px rgba(0,0,0,0.20)",
+          "0 0 0 1px rgba(90,102,214,0.06)",
+          "0 0 16px rgba(90,102,214,0.08)",
+        ].join(", "),
+        opacity: "0",
+        transition: "opacity 0.4s ease-out, transform 0.4s ease-out",
+      });
+
+      // Left section: dot + label (takes remaining space)
+      const labelSection = document.createElement("div");
+      labelSection.id = STEP_LABEL_ID;
+      Object.assign(labelSection.style, {
+        flex: "1",
+        minWidth: "0",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "10px 0 10px 16px",
+      });
+
+      const dot = document.createElement("span");
+      Object.assign(dot.style, {
+        width: "7px",
+        height: "7px",
+        borderRadius: "50%",
+        background: "rgba(90,102,214,0.9)",
+        flexShrink: "0",
+        animation: "opensidebar-pulse 1.5s ease-in-out infinite",
+        transition: "background 0.3s",
+      });
+
+      const labelText = document.createElement("span");
+      labelText.setAttribute("data-label", "");
+      labelText.textContent = "Starting\u2026";
+      Object.assign(labelText.style, {
+        color: "rgba(210,214,251,0.75)",
+        fontSize: "12px",
+        fontWeight: "400",
+        fontFamily: FONT,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        letterSpacing: "0.02em",
+        transition: "color 0.3s",
+      });
+
+      labelSection.appendChild(dot);
+      labelSection.appendChild(labelText);
+      bar.appendChild(labelSection);
+
+      // Divider
+      const divider = document.createElement("div");
+      divider.id = DIVIDER_ID;
+      Object.assign(divider.style, {
+        width: "1px",
+        height: "18px",
+        background: "rgba(90,102,214,0.20)",
+        flexShrink: "0",
+        transition: "opacity 0.3s",
+      });
+      bar.appendChild(divider);
+
+      // Right section: stop button
+      const btn = document.createElement("button");
+      btn.id = STOP_BTN_ID;
+      btn.innerHTML =
+        '<svg width="9" height="9" viewBox="0 0 10 10" style="flex-shrink:0">' +
+        '<rect width="10" height="10" rx="2" fill="rgba(210,214,251,0.6)"/></svg>' +
+        '<span style="margin-left:6px;letter-spacing:0.04em">Stop</span>';
+      Object.assign(btn.style, {
         pointerEvents: "auto",
         display: "flex",
         alignItems: "center",
-        padding: "9px 20px 9px 16px",
-        background: "rgba(20,19,40,0.72)",
-        backdropFilter: "blur(16px) saturate(1.4)",
-        WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-        color: "rgba(210,214,251,0.92)",
-        fontSize: "13px",
+        padding: "10px 18px 10px 14px",
+        background: "transparent",
+        color: "rgba(210,214,251,0.75)",
+        fontSize: "12px",
         fontWeight: "500",
-        fontFamily:
-          '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-        border: "1px solid rgba(90,102,214,0.25)",
-        borderRadius: "24px",
-        boxShadow: [
-          "0 4px 24px rgba(0,0,0,0.25)",
-          "0 0 0 1px rgba(90,102,214,0.08)",
-          "0 0 16px rgba(90,102,214,0.10)",
-        ].join(", "),
+        fontFamily: FONT,
+        border: "none",
+        borderRadius: "0 24px 24px 0",
         cursor: "pointer",
-        opacity: "0",
-        transition:
-          "background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.4s ease-out, transform 0.4s ease-out",
+        flexShrink: "0",
+        transition: "background 0.2s, color 0.2s, opacity 0.3s",
       });
       btn.addEventListener("mouseenter", () => {
-        btn.style.background = "rgba(20,19,40,0.85)";
-        btn.style.borderColor = "rgba(90,102,214,0.45)";
-        btn.style.boxShadow = [
-          "0 4px 24px rgba(0,0,0,0.3)",
-          "0 0 0 1px rgba(90,102,214,0.15)",
-          "0 0 24px rgba(90,102,214,0.18)",
-        ].join(", ");
+        btn.style.background = "rgba(90,102,214,0.15)";
+        btn.style.color = "rgba(210,214,251,0.95)";
       });
       btn.addEventListener("mouseleave", () => {
-        btn.style.background = "rgba(20,19,40,0.72)";
-        btn.style.borderColor = "rgba(90,102,214,0.25)";
-        btn.style.boxShadow = [
-          "0 4px 24px rgba(0,0,0,0.25)",
-          "0 0 0 1px rgba(90,102,214,0.08)",
-          "0 0 16px rgba(90,102,214,0.10)",
-        ].join(", ");
+        btn.style.background = "transparent";
+        btn.style.color = "rgba(210,214,251,0.75)";
       });
       btn.addEventListener("click", () => {
         chrome.runtime
@@ -841,28 +1003,75 @@ function setAgentBorder(active: boolean) {
           })
           .catch(() => {});
       });
-      document.documentElement.appendChild(btn);
+      bar.appendChild(btn);
+      document.documentElement.appendChild(bar);
+
       // Slide up + fade in
       requestAnimationFrame(() => {
-        btn.style.opacity = "1";
-        btn.style.transform = "translateX(-50%) translateY(0)";
+        bar.style.opacity = "1";
+        bar.style.transform = "translateX(-50%) translateY(0)";
       });
     }
   } else {
-    // --- Remove border ---
-    if (existing) {
-      existing.animate([{ opacity: "1" }, { opacity: "0" }], {
-        duration: 600,
-        easing: "ease-in",
-        fill: "forwards",
-      }).onfinish = () => existing.remove();
+    const fadeDelay = outcome && existingBtn ? 1500 : 0;
+
+    // --- Show outcome flash before fading ---
+    if (outcome && existingBtn) {
+      // Hide stop button + divider
+      const stopBtn = document.getElementById(STOP_BTN_ID);
+      const divider = document.getElementById(DIVIDER_ID);
+      if (stopBtn) {
+        stopBtn.style.opacity = "0";
+        stopBtn.style.pointerEvents = "none";
+      }
+      if (divider) divider.style.opacity = "0";
+
+      // Update label to show outcome
+      const labelEl = document.getElementById(STEP_LABEL_ID);
+      if (labelEl) {
+        const dot = labelEl.querySelector("span") as HTMLSpanElement | null;
+        const text = labelEl.querySelector("[data-label]") as HTMLSpanElement | null;
+        if (dot) {
+          dot.style.animation = "none";
+          dot.style.background =
+            outcome.status === "completed"
+              ? "#22c55e"
+              : outcome.status === "failed"
+                ? "#ef4444"
+                : "#f59e0b";
+        }
+        if (text) {
+          text.textContent =
+            outcome.label ||
+            (outcome.status === "completed"
+              ? "Done"
+              : outcome.status === "failed"
+                ? "Failed"
+                : "Stopped");
+          text.style.color =
+            outcome.status === "completed"
+              ? "rgba(134,239,172,0.9)"
+              : outcome.status === "failed"
+                ? "rgba(252,165,165,0.9)"
+                : "rgba(253,224,71,0.9)";
+        }
+      }
     }
 
-    // --- Remove stop button ---
-    if (existingBtn) {
-      existingBtn.style.opacity = "0";
-      existingBtn.style.transform = "translateX(-50%) translateY(8px)";
-      setTimeout(() => existingBtn.remove(), 400);
-    }
+    // --- Remove border + bar (delayed if showing outcome flash) ---
+    setTimeout(() => {
+      if (existing) {
+        existing.animate([{ opacity: "1" }, { opacity: "0" }], {
+          duration: 600,
+          easing: "ease-in",
+          fill: "forwards",
+        }).onfinish = () => existing.remove();
+      }
+      if (existingBtn) {
+        existingBtn.style.opacity = "0";
+        existingBtn.style.transform = "translateX(-50%) translateY(8px)";
+        setTimeout(() => existingBtn.remove(), 400);
+      }
+    }, fadeDelay);
   }
 }

@@ -100,8 +100,6 @@ export class ContextManager {
   private maxHistory = 20;
   private maxContextTokens: number;
   private planStatus: PlanStatus | null = null;
-  private demonstrations: string | null = null;
-  private demoCatalog: string | null = null;
   private storageKey: string;
   private modelTier: "executor" | "planner" = "executor";
   private originalQuery: string | null = null;
@@ -147,16 +145,6 @@ export class ContextManager {
   /** Store a detected instruction-vs-page contradiction for the grounding check. */
   public setContradiction(details: string | null): void {
     this.contradictionDetails = details;
-  }
-
-  /** Inject a formatted demonstration into the system prompt context. */
-  public setDemonstrations(demoText: string | null): void {
-    this.demonstrations = demoText;
-  }
-
-  /** Set the compact demo catalog (one line per demo) for the system prompt prefix. */
-  public setDemoCatalog(catalog: string | null): void {
-    this.demoCatalog = catalog;
   }
 
   /** Set time-awareness fields for the turn budget indicator. */
@@ -550,15 +538,8 @@ export class ContextManager {
       `## Persona\n${this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA}`,
     );
 
-    // Demo catalog: semi-static, changes per session (in static prefix for caching)
-    if (this.demoCatalog) {
-      content = content.replace(
-        "{{demoCatalog}}",
-        `## Available Demonstrations\nUse recall_demo to retrieve step-by-step instructions for any of these:\n${this.demoCatalog}\n`,
-      );
-    } else {
-      content = content.replace("{{demoCatalog}}", "");
-    }
+    // Remove demo catalog placeholder (demos removed)
+    content = content.replace("{{demoCatalog}}", "");
 
     // Cache breakpoint marker: stripped from output, signals end of static prefix
     content = content.replace("{{cacheBreakpoint}}", "");
@@ -581,8 +562,8 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{planInstructions}}", "");
     }
 
-    // Inject demonstration context (if any)
-    content = content.replace("{{demonstrations}}", this.demonstrations || "");
+    // Remove demonstrations placeholder (demos removed)
+    content = content.replace("{{demonstrations}}", "");
 
     // Inject working notes (if any)
     if (this.workingNotes) {
@@ -714,9 +695,9 @@ Do NOT call done() until every planned step is complete.
 
       // Page content: Readability Markdown or plain text fallback, with dynamic truncation
       const pageContentCharLimits: Record<CompressionLevel, number> = {
-        [CompressionLevel.NONE]: 60000,
-        [CompressionLevel.LIGHT]: 40000,
-        [CompressionLevel.MEDIUM]: 20000,
+        [CompressionLevel.NONE]: 30000,
+        [CompressionLevel.LIGHT]: 20000,
+        [CompressionLevel.MEDIUM]: 12000,
         [CompressionLevel.HEAVY]: 8000,
       };
       if (this.pageContent) {
@@ -905,7 +886,7 @@ Do NOT call done() until every planned step is complete.
     }, 0);
     const perceptionTokens = this.pageInterpretation ? 250 : 0; // Perception output (~200 tokens + prior observations)
     const pageContentTokens = this.pageContent
-      ? Math.ceil(Math.min(this.pageContent.length, 60000) / 4)
+      ? Math.ceil(Math.min(this.pageContent.length, 30000) / 4)
       : 0;
     const planTokens = this.planStatus
       ? Math.ceil(this.formatPlanStatus().length / 4)

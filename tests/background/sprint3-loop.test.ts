@@ -65,12 +65,12 @@ describe("STAGNATION_DETECTION constants", () => {
     expect(STAGNATION_DETECTION.WINDOW).toBe(6);
   });
 
-  test("nudge threshold is 3", () => {
-    expect(STAGNATION_DETECTION.REFLECTION_THRESHOLD).toBe(3);
+  test("nudge threshold is 2", () => {
+    expect(STAGNATION_DETECTION.REFLECTION_THRESHOLD).toBe(2);
   });
 
-  test("pivot threshold is 5", () => {
-    expect(STAGNATION_DETECTION.PIVOT_THRESHOLD).toBe(5);
+  test("pivot threshold is 4", () => {
+    expect(STAGNATION_DETECTION.PIVOT_THRESHOLD).toBe(4);
   });
 
   test("pivot threshold > nudge threshold", () => {

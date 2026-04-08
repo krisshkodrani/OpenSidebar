@@ -23,17 +23,17 @@ describe("resolveRuntimeLimits", () => {
   test("applies simple profile correctly (all values tighter)", () => {
     const result = resolveRuntimeLimits("simple");
     expect(result.stuckEscalate).toBe(3);
-    expect(result.stuckGiveUp).toBe(6);
-    expect(result.stuckGiveUpPlanner).toBe(5);
+    expect(result.stuckGiveUp).toBe(5);
+    expect(result.stuckGiveUpPlanner).toBe(4);
     expect(result.maxEscalationCycles).toBe(2);
     expect(result.toolFailureWarn).toBe(2);
-    expect(result.toolFailureExit).toBe(4);
+    expect(result.toolFailureExit).toBe(3);
     expect(result.maxDoneRejections).toBe(1);
-    expect(result.maxConsecutiveAllFail).toBe(3);
+    expect(result.maxConsecutiveAllFail).toBe(2);
     expect(result.stagnationReflection).toBe(2);
     expect(result.stagnationPivot).toBe(3);
     expect(result.stepWarnTurns).toBe(3);
-    expect(result.stepEscalateTurns).toBe(6);
+    expect(result.stepEscalateTurns).toBe(5);
     expect(result.maxFreshStarts).toBe(1);
   });
 

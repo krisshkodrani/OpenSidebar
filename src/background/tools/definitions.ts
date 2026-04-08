@@ -9,7 +9,7 @@ export const CLICK_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLICK_ELEMENT,
     description:
-      "Click an element. Auto-scrolls to it first. Use count for repeated clicks (e.g. 'click 3 times'). Not for canvas/game elements without tags — use click_coordinates.",
+      "Click an element by tag ID. For untagged canvas/game targets, use click_coordinates.",
     parameters: {
       type: "object",
       properties: {
@@ -20,7 +20,7 @@ export const CLICK_DEF: ToolDefinition = {
         count: {
           type: "integer",
           description:
-            "Number of times to click (for challenges requiring repeated clicks). Default 1, max 10.",
+            "Click count (default 1, max 10).",
         },
       },
       required: ["id"],
@@ -33,7 +33,7 @@ export const TYPE_TEXT_DEF: ToolDefinition = {
   function: {
     name: ToolName.TYPE_TEXT,
     description:
-      "Type into an input field. Auto-focuses and auto-scrolls. Clears existing text in input/textarea fields; appends in contenteditable. Only set pressEnter for single-field forms (search bars). For multi-field forms, fill all fields first then click the submit button. Not for keyboard shortcuts or hotkeys — use press_key.",
+      "Type into an input field. Clears existing text (appends in contenteditable). Set pressEnter only for single-field forms. For multi-field forms, fill all fields then click submit. Not for hotkeys — use press_key.",
     parameters: {
       type: "object",
       properties: {
@@ -57,14 +57,14 @@ export const SCROLL_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.SCROLL_PAGE,
     description:
-      "Scroll the page or a container. Pass 'y' from @y hints to jump directly, or 'direction' for relative scrolling. If you know what text you're looking for, use find_element instead.",
+      "Scroll page or container. Pass 'y' from @y hints for absolute jump, or 'direction' for relative. Prefer find_element if you know the target text.",
     parameters: {
       type: "object",
       properties: {
         y: {
           type: "integer",
           description:
-            "Absolute Y position (from @y hints). Scrolls directly to this page offset.",
+            "Absolute Y position (from @y hints).",
         },
         direction: {
           type: "string",
@@ -86,7 +86,7 @@ export const READ_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.READ_PAGE,
     description:
-      "Force a fresh DOM snapshot. Only needed after find_element fails or after dynamic content changes. The page snapshot is already in your context each turn — don't call this just to 'see' the page. Not for searching text (use find_element) or waiting (use wait).",
+      "Force a fresh DOM snapshot. Only needed after find_element fails or dynamic content changes. Snapshot already refreshes after every action — don't call just to re-read.",
     parameters: {
       type: "object",
       properties: {},
@@ -174,7 +174,7 @@ export const WAIT_DEF: ToolDefinition = {
   function: {
     name: ToolName.WAIT,
     description:
-      "Pause for dynamic content to load, then re-orient. Returns your original goal, plan progress, and fresh page state. Use for timed reveals, animations, or AJAX loads — not just to re-read the page (use read_page for that).",
+      "Pause for dynamic content (timed reveals, animations, AJAX). Returns goal reminder and fresh page state.",
     parameters: {
       type: "object",
       properties: {
@@ -237,7 +237,7 @@ export const FIND_ELEMENT_DEF: ToolDefinition = {
   function: {
     name: ToolName.FIND_ELEMENT,
     description:
-      "Find exact visible text on the page, scroll to it, and return its tag ID. Only works with text that literally appears on screen — do NOT search for conceptual labels, element types, or attribute values. Use read_page first if unsure what text exists. Only finds VISIBLE text. For hidden/CSS-concealed content, use inspect_hidden.",
+      "Find exact visible text on the page, scroll to it, return its tag ID. Only literal on-screen text — not conceptual labels or attributes. For hidden content, use inspect_hidden.",
     parameters: {
       type: "object",
       properties: {
@@ -279,7 +279,7 @@ export const PRESS_KEY_DEF: ToolDefinition = {
   function: {
     name: ToolName.PRESS_KEY,
     description:
-      "Press a keyboard key on the page (dispatched to window, not a specific element). For typing into fields, use type_text. Useful for Escape, Tab, Enter, arrow keys.",
+      "Press a keyboard key (dispatched to window). For typing text into fields, use type_text instead.",
     parameters: {
       type: "object",
       properties: {
@@ -296,7 +296,7 @@ export const PRESS_KEY_DEF: ToolDefinition = {
             enum: ["ctrl", "shift", "alt", "meta"],
           },
           description:
-            "Modifier keys to hold (e.g. ['ctrl'], ['shift', 'alt']).",
+            "Modifier keys to hold.",
         },
       },
       required: ["key"],
@@ -309,7 +309,7 @@ export const DRAG_AND_DROP_DEF: ToolDefinition = {
   function: {
     name: ToolName.DRAG_AND_DROP,
     description:
-      "Drag source element to target element. Look for elements with draggable=true (sources) and dropzone=true (targets) in the page snapshot. Source is auto-scrolled into view but target is NOT — scroll to reveal both elements first if they're far apart.",
+      "Drag source element to target element. Look for draggable=true (sources) and dropzone=true (targets). Scroll to reveal both elements first if far apart.",
     parameters: {
       type: "object",
       properties: {
@@ -332,7 +332,7 @@ export const HIDE_ELEMENT_DEF: ToolDefinition = {
   function: {
     name: ToolName.HIDE_ELEMENT,
     description:
-      "Hide an overlay blocking interaction (sets display:none). Must match overlay heuristics: fixed/absolute + z-index>100, dialog role, backdrop-filter, or >30% viewport coverage. If rejected, try click_element on a close button or press_key Escape instead. To dismiss ALL overlays at once, use dismiss_overlays first.",
+      "Hide a single overlay blocking interaction (display:none). Must match overlay heuristics. If rejected, try a close button or press_key Escape. To dismiss ALL overlays at once, use dismiss_overlays.",
     parameters: {
       type: "object",
       properties: {
@@ -351,7 +351,7 @@ export const DISMISS_OVERLAYS_DEF: ToolDefinition = {
   function: {
     name: ToolName.DISMISS_OVERLAYS,
     description:
-      "Dismiss all overlays, popups, modals, cookie banners, and dialogs blocking the viewport. Tries close/dismiss buttons first (triggering proper JS cleanup), then falls back to hiding. Reports any surviving overlay with its tag ID so you can hide_element it. To target ONE specific overlay by tag ID, use hide_element instead.",
+      "Dismiss all overlays, popups, modals, and cookie banners blocking the viewport. Tries close buttons first, falls back to hiding. Reports surviving overlays.",
     parameters: {
       type: "object",
       properties: {},
@@ -451,7 +451,7 @@ export const EXECUTE_JS_DEF: ToolDefinition = {
   function: {
     name: ToolName.EXECUTE_JS,
     description:
-      "Run JavaScript in the page context. Use for hidden/computed values, timers, or DOM queries that tagged elements can't reach. Returns the result as a string. IMPORTANT: No jQuery — use el.textContent.includes() not :contains(). Use el.getAttribute('class') not el.className (fails on SVG). Use Array.from(querySelectorAll(...)) for array methods. Wrap in (function(){ ... })() if using return.",
+      "Run JavaScript in the page context. Returns result as string. No jQuery. Use textContent.includes() not :contains(), getAttribute('class') not className (SVG), Array.from(querySelectorAll(...)). Wrap in (function(){ ... })() for return.",
     parameters: {
       type: "object",
       properties: {
@@ -520,7 +520,7 @@ export const RIGHT_CLICK_DEF: ToolDefinition = {
   function: {
     name: ToolName.RIGHT_CLICK,
     description:
-      "Right-click on an element (dispatches contextmenu event). Auto-scrolls to element. If no menu appears, the page may not handle contextmenu events.",
+      "Right-click on an element (dispatches contextmenu event).",
     parameters: {
       type: "object",
       properties: {
@@ -684,14 +684,14 @@ export const INSPECT_HIDDEN_DEF: ToolDefinition = {
   function: {
     name: ToolName.INSPECT_HIDDEN,
     description:
-      "Scan the page for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, color camouflage, aria-hidden, etc). Use when you suspect content is intentionally hidden in the page — hidden codes, invisible text, or CSS-concealed elements that don't appear in the normal page snapshot. Not for visible text — use find_element for that.",
+      "Scan for hidden DOM elements (display:none, visibility:hidden, opacity:0, off-screen, camouflage, aria-hidden). Use for hidden codes or CSS-concealed content. Not for visible text — use find_element.",
     parameters: {
       type: "object",
       properties: {
         pattern: {
           type: "string",
           description:
-            "Case-insensitive text filter. Only return elements whose text contains this substring.",
+            "Case-insensitive text filter.",
         },
         maxResults: {
           type: "integer",
@@ -708,27 +708,8 @@ export const XRAY_PAGE_DEF: ToolDefinition = {
   function: {
     name: ToolName.XRAY_PAGE,
     description:
-      "Toggle X-ray mode: forces all hidden elements visible (overrides display:none, opacity:0, visibility:hidden). Call again to disable. Use when you suspect content is hidden by CSS. To just read hidden content without changing visibility, use inspect_hidden.",
+      "Toggle X-ray mode: forces all hidden elements visible. Call again to disable. To read hidden content without changing visibility, use inspect_hidden.",
     parameters: { type: "object", properties: {}, required: [] },
-  },
-};
-
-export const RECALL_DEMO_DEF: ToolDefinition = {
-  type: "function",
-  function: {
-    name: ToolName.RECALL_DEMO,
-    description:
-      "Retrieve a saved demonstration by name or description. Returns step-by-step instructions from a previously recorded workflow. Use when you recognize a matching demo from the catalog, or when stuck on a repetitive task.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Demo name, goal, or description to search for.",
-        },
-      },
-      required: ["query"],
-    },
   },
 };
 
