@@ -1064,13 +1064,18 @@ export class Orchestrator {
     resumeTabId: number,
   ): Promise<OrchestratorStartInput | null> {
     const settings = (await loadSettings()) ?? ({} as UserSettings);
-    const openRouterApiKey = settings.openRouterApiKey;
-    if (!openRouterApiKey) {
+    const mode = settings.providerMode ?? (settings.openRouterApiKey ? "openrouter" : "fireworks");
+    const activeKey =
+      mode === "fireworks" ? settings.fireworksApiKey :
+      mode === "openai-groq" ? settings.openaiApiKey :
+      settings.openRouterApiKey;
+    if (!activeKey) {
       logger.warn(
         "orchestrator",
-        "Cannot resume task without OpenRouter API key",
+        "Cannot resume task without API key for active provider",
         {
           workspaceId: task.workspaceId,
+          providerMode: mode,
         },
       );
       return null;
@@ -1081,7 +1086,7 @@ export class Orchestrator {
       tabId: resumeTabId,
       workspaceId: task.workspaceId,
       settings,
-      openRouterApiKey,
+      openRouterApiKey: activeKey,
     };
   }
 
