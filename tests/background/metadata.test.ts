@@ -122,10 +122,6 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_HIDDEN)).toBe("dom");
     });
 
-    test("contains expected memory-cacheable tools", () => {
-      expect(CACHEABLE_TOOLS.get(ToolName.RECALL_DEMO)).toBe("memory");
-    });
-
     test("contains expected static-cacheable tools", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.GET_COOKIES)).toBe("static");
       expect(CACHEABLE_TOOLS.get(ToolName.LIST_TABS)).toBe("static");
@@ -153,8 +149,8 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.has(ToolName.ESCALATE)).toBe(false);
     });
 
-    test("has exactly 8 entries", () => {
-      expect(CACHEABLE_TOOLS.size).toBe(8);
+    test("has exactly 7 entries", () => {
+      expect(CACHEABLE_TOOLS.size).toBe(7);
     });
   });
 

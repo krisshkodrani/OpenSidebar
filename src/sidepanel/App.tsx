@@ -17,7 +17,7 @@ import React, {
 } from "react";
 import { X, Sparkles, ClipboardList } from "lucide-react";
 import { logger } from "../utils";
-import { speakText, stopCurrentTTS } from "./hooks/useTextToSpeech";
+import { speakText } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
 import { Header, MessageBubble, InputArea, PlanStrip } from "./components";
@@ -30,7 +30,6 @@ import {
 } from "./interaction-mode";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
-import { parseSlashCommand } from "./slash-commands";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -405,23 +404,26 @@ export default function App() {
       !isAgentRunning &&
       settings.enableVoiceOutput &&
       settings.autoVoiceResponse &&
-      settings.openaiApiKey
+      (settings.groqApiKey || settings.openaiApiKey)
     ) {
-      // Find the last completed assistant message
-      const lastAssistant = [...messages]
-        .reverse()
-        .find((m) => m.role === "assistant" && m.content.trim() && !m.isStreaming);
-      if (lastAssistant) {
-        speakText(
-          lastAssistant.content,
-          settings.openaiApiKey,
-          settings.ttsVoice || "nova",
-        ).catch(() => {
-          // Fire-and-forget — user can still click speaker on message manually
-        });
+      const msgs = useStore.getState().messages;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m.role === "assistant" && m.content.trim() && !m.isStreaming) {
+          speakText(
+            m.content,
+            {
+              groqApiKey: settings.groqApiKey,
+              openaiApiKey: settings.openaiApiKey,
+            },
+            settings.ttsVoice || "nova",
+            settings.ttsProvider,
+          ).catch(() => {});
+          break;
+        }
       }
     }
-  }, [isAgentRunning, messages, settings]);
+  }, [isAgentRunning, settings]);
 
   // Auto-dismiss error after 8 seconds (persistent errors stay until user acts)
   const errorPersistent = useStore((s) => s.errorPersistent);
@@ -533,110 +535,6 @@ export default function App() {
       }
     },
     [addMessage, setError],
-  );
-
-  // Send annotation during golden recording
-  const handleSendAnnotation = useCallback(
-    (text: string) => {
-      const trimmedText = text.trim();
-      if (!trimmedText) return;
-
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: trimmedText,
-        timestamp: Date.now(),
-        toolCalls: [],
-        isStreaming: false,
-        isAnnotation: true,
-      });
-
-      chrome.runtime
-        .sendMessage({
-          type: "GOLDEN_ANNOTATION",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
-          payload: { text: trimmedText },
-        })
-        .catch((e) => {
-          logger.error("ui", "Failed to send annotation", { error: e });
-        });
-    },
-    [addMessage],
-  );
-
-  // Handle manual slash command from input
-  const handleManualCommand = useCallback(
-    async (text: string) => {
-      const trimmedText = text.trim();
-      const parsed = parseSlashCommand(trimmedText);
-
-      // Add user message as manual command
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "user",
-        content: trimmedText,
-        timestamp: Date.now(),
-        toolCalls: [],
-        isStreaming: false,
-        isManualCommand: true,
-      });
-      setInputText("");
-
-      if (typeof parsed === "string") {
-        // Parse error — show inline
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: parsed,
-          timestamp: Date.now(),
-          toolCalls: [],
-          isStreaming: false,
-          isManualCommand: true,
-        });
-        return;
-      }
-
-      // Get active tab
-      let activeTabId = 0;
-      try {
-        const [tab] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
-        if (tab?.id) activeTabId = tab.id;
-      } catch (e) {
-        logger.warn("ui", "Failed to get active tab for manual command", {
-          error: e,
-        });
-      }
-
-      // Send to background
-      try {
-        await chrome.runtime.sendMessage({
-          type: "MANUAL_TOOL_EXECUTE",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
-          workspaceId: useStore.getState().activeWorkspaceId,
-          payload: {
-            ...parsed,
-            tabId: activeTabId,
-          },
-        });
-      } catch (e) {
-        logger.error("ui", "Failed to send manual command", { error: e });
-        addMessage({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "Failed to execute command — service worker not responding.",
-          timestamp: Date.now(),
-          toolCalls: [],
-          isStreaming: false,
-          isManualCommand: true,
-        });
-      }
-    },
-    [addMessage, setInputText],
   );
 
   const handleStop = useCallback(async () => {
@@ -805,8 +703,6 @@ export default function App() {
           <InputArea
             onSend={handleSend}
             onSendFeedback={handleSendFeedback}
-            onSendAnnotation={handleSendAnnotation}
-            onManualCommand={handleManualCommand}
             onStop={handleStop}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />

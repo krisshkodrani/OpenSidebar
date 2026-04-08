@@ -34,21 +34,3 @@ export const ESCALATION_RECOVERY = (count: number, stepLabel?: string) =>
 export const PIVOT_MESSAGE = (attemptSummary: string) =>
   renderPrompt("agent.reflection.pivot", { attemptSummary });
 
-/** Built-in demonstration for multi-item shopping flows. */
-export const BUILTIN_DEMO_MULTI_ITEM_SHOPPING = renderPrompt(
-  "demos.multi_item_shopping",
-);
-
-/** Check if a query matches the multi-item shopping pattern. */
-export function matchesMultiItemPattern(query: string): boolean {
-  const q = query.toLowerCase();
-  const hasMultipleItems =
-    /add\b.*\band\b/i.test(q) ||
-    /step\s*1.*step\s*2/i.test(q) ||
-    /two\s+items|2\s+items|multiple\s+items/i.test(q) ||
-    /\badd\b.*\bthen\b.*\badd\b/i.test(q);
-  const hasShoppingContext = /cart|shop|buy|order|checkout|add to cart/i.test(
-    q,
-  );
-  return hasMultipleItems && hasShoppingContext;
-}

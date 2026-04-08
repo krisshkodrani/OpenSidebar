@@ -170,10 +170,6 @@ export interface ChatEntry {
   steps?: AgentStep[];
   /** Whether this user message was sent as feedback during execution */
   isFeedback?: boolean;
-  /** Whether this user message is a golden recording annotation */
-  isAnnotation?: boolean;
-  /** Whether this message is a manual slash command or its result */
-  isManualCommand?: boolean;
   /** Structured completion data — when present, MessageBubble renders CompletionSummary */
   completionData?: TaskCompletionMessage["payload"];
   /** Source citations from URLs visited during the agent session */
@@ -287,8 +283,4 @@ export interface SidePanelState {
   laneTelemetry: LaneTelemetrySnapshot | null;
   /** User-saved prompt templates */
   savedPrompts: SavedPrompt[];
-  /** Whether demo recording is active */
-  demoRecording: boolean;
-  /** Number of actions captured in current recording */
-  demoActionCount: number;
 }

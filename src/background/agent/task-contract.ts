@@ -183,9 +183,6 @@ export function repairPlanCoverage(params: {
   const { query } = params;
   const contract = buildTaskContract(query);
   const steps = [...params.steps];
-  const corpus = normalize(
-    steps.map((step) => `${step.objective}\n${step.successCriteria}`).join("\n"),
-  );
 
   // Check if any step explicitly returns to the target (not just mentions it
   // in a "navigate FROM target" context). Look for "return to X" or "back to X"

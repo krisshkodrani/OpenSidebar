@@ -9,6 +9,11 @@ const GROQ_STT_MODEL = "whisper-large-v3-turbo";
 const OPENAI_STT_MODEL = "whisper-1";
 
 const OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech";
+const GROQ_TTS_URL = "https://api.groq.com/openai/v1/audio/speech";
+const OPENAI_TTS_MODEL = "tts-1";
+const GROQ_TTS_MODEL = "canopylabs/orpheus-v1-english";
+
+export type TTSProvider = "openai" | "groq";
 
 export interface TranscriptionResult {
   text: string;
@@ -92,6 +97,7 @@ export async function transcribeAudio(
 
 export interface TTSOptions {
   text: string;
+  provider: TTSProvider;
   apiKey: string;
   voice?: string;
   model?: string;
@@ -99,28 +105,29 @@ export interface TTSOptions {
 }
 
 /**
- * Generate speech audio from text using OpenAI TTS API.
- * Returns an audio blob (mp3).
+ * Generate speech audio from text using the selected provider.
  */
 export async function synthesizeSpeech(options: TTSOptions): Promise<Blob> {
-  const response = await fetch(OPENAI_TTS_URL, {
+  const isGroq = options.provider === "groq";
+  const response = await fetch(isGroq ? GROQ_TTS_URL : OPENAI_TTS_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${options.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: options.model || "tts-1",
+      model: options.model || (isGroq ? GROQ_TTS_MODEL : OPENAI_TTS_MODEL),
       input: options.text,
-      voice: options.voice || "nova",
-      response_format: "mp3",
-      speed: options.speed ?? 1.0,
+      voice: options.voice || (isGroq ? "hannah" : "nova"),
+      response_format: isGroq ? "wav" : "mp3",
+      ...(isGroq ? {} : { speed: options.speed ?? 1.0 }),
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`OpenAI TTS error ${response.status}: ${errText.slice(0, 200)}`);
+    const label = isGroq ? "Groq" : "OpenAI";
+    throw new Error(`${label} TTS error ${response.status}: ${errText.slice(0, 200)}`);
   }
 
   return response.blob();

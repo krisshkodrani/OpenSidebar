@@ -19,7 +19,7 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 - Stateful perception for page location, change detection, blockers, and affordances.
 - Approval gates and risk classification for sensitive actions.
 - Anti-loop guardrails, stale element recovery, and retry policy control.
-- Trace recording, logs, and offline evals for quality work.
+- Trace recording and logs for debugging and quality work.
 
 ## Perception Contract
 

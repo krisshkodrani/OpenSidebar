@@ -152,8 +152,8 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
             requirePlanConfirmation: false,
             showElementTags: false,
             maxTurns: turns,
+            providerMode: mode,
           };
-          if (mode !== "openrouter") settings.providerMode = mode;
           if (execModel) settings.executorModel = execModel;
           if (temp !== null) settings.temperature = temp;
           if (vlExec) settings.useVLExecutor = true;

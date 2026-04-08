@@ -31,6 +31,9 @@ import WebComponents from "./routes/web-components";
 import KeyboardNav from "./routes/keyboard-nav";
 import StructuralLoading from "./routes/structural-loading";
 import TeamChat from "./routes/team-chat";
+import MessagingThread from "./routes/messaging-thread";
+import EmailCompose from "./routes/email-compose";
+import SupportTicket from "./routes/support-ticket";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -62,6 +65,9 @@ const routes = [
   { path: "/keyboard-nav", label: "Keyboard", title: "Spreadsheet Editor", component: KeyboardNav },
   { path: "/structural-loading", label: "StructLoad", title: "Social Feed", component: StructuralLoading },
   { path: "/team-chat", label: "TeamChat", title: "Acme Corp — #project-updates", component: TeamChat },
+  { path: "/messaging-thread", label: "Messaging", title: "Nachrichten — Cloud-Migration Team", component: MessagingThread },
+  { path: "/email-compose", label: "Email", title: "Q3 Strategy Meeting — Scheduling", component: EmailCompose },
+  { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
 ];
 
 function Layout({ children, currentPath }) {

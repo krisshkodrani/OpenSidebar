@@ -1,46 +1,45 @@
 # Documentation
 
-## Start Here
+## Getting Started
 
-- [Getting Started](./getting-started.md) — install, configure, first task
-- [Architecture Overview](./architecture/overview.md) — how the system works
-- [Developer Guide](./developer-guide.md) — testing, debugging, prompt workflow
-- [Evals Guide](./guides/evals-program.md) — golden cases and critique pipeline
+- [Getting Started](./getting-started.md)
+- [User Manual](./manual.md)
+- [Prompt Tips](./guides/prompt-tips.md)
 
-## Reference
+## Architecture
 
-- [Tools Reference](./features/tools.md) — all 38 browser tools
-- [Security](./features/security.md) — risk classification, URL sanitization, approvals
-- [Store Listing](./store-listing.md) — Chrome Web Store copy
+- [Overview](./architecture/overview.md)
+- [Agent Loop](./architecture/agent-loop.md)
+- [Orchestrator](./architecture/orchestrator.md)
+- [Content Script](./architecture/content-script.md)
+- [Perception Layer](./architecture/perception-layer.md)
+- [Message Protocol](./architecture/message-protocol.md)
+- [Navigation Bridge](./architecture/navigation-bridge.md)
+- [Side Panel UI](./architecture/sidepanel-ui.md)
+- [Tools](./architecture/tools.md)
+- [Types Reference](./architecture/types-reference.md)
+- [Project Setup](./architecture/project-setup.md)
 
-## Architecture Deep Dives
+## Features
 
-- [Agent Loop](./architecture/agent-loop.md) — LLM-tool cycle, escalation, stagnation
-- [Content Script](./architecture/content-script.md) — DOM tagging, snapshots, actions
-- [Perception Layer](./architecture/perception-layer.md) — VLM page interpretation
-- [Message Protocol](./architecture/message-protocol.md) — cross-context messaging
-- [Navigation Bridge](./architecture/navigation-bridge.md) — cross-page state persistence
-- [Side Panel UI](./architecture/sidepanel-ui.md) — React components, Zustand store
-- [Types Reference](./architecture/types-reference.md) — full type catalog
+- [Agent Capabilities](./features/agent-capabilities.md)
+- [Browser Automation](./features/browser-automation.md)
+- [Tools Reference](./features/tools.md)
+- [Workspace Management](./features/workspace-management.md)
+- [Security](./features/security.md)
+- [Streaming UI](./features/streaming-ui.md)
 
 ## Guides
 
-- [Prompt Tips](./guides/prompt-tips.md) — writing effective agent prompts
-- [Manual Evals Runbook](./guides/manual-evals-runbook.md) — hands-on evaluation
+- [Developer Guide](./developer-guide.md)
+- [Agent Strategy Letter](./guides/agent-strategy-letter.md)
+- [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
+- [Model Benchmark Reference](./model-benchmark-reference.md)
 
-## Structure
+## Articles
 
-```
-docs/
-  architecture/     System design and component ownership
-  features/         User-facing capability docs
-  guides/           Runbooks and operating guides
-  rfc/              Design proposals (historical + active)
-  articles/         Longer-form writeups
-  assets/           Screenshots and media
-  archive/          Historical plans, research, and superseded docs
-```
+- [When to Stop](./articles/when-to-stop.md)
 
-## Release Notes
+## Other
 
-- [0.7.0 (2026-04-02)](./release-notes-2026-04-02.md)
+- [Store Listing](./store-listing.md)

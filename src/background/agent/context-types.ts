@@ -52,5 +52,4 @@ export const REFERENCE_VALUE_TOOLS: ReadonlySet<string> = new Set([
   "get_cookies",
   "search_history",
   "read_element",
-  "recall_demo",
 ]);

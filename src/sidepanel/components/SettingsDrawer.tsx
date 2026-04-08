@@ -4,7 +4,8 @@ import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
-import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, OPENAI_MODEL_PLANNER, OPENAI_MODEL_PERCEPTION, GROQ_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION } from "../../background/llm/client";
+import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION } from "../../background/llm/client";
+import { clearTTSCache } from "../hooks/useTextToSpeech";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
 
@@ -20,7 +21,53 @@ const FOCUSABLE_SELECTOR =
 
 const MAX_TURNS_PRESETS = [30, 50, 100, 200, 500];
 
-type SettingsTab = "general" | "models";
+type SettingsTab = "general" | "models" | "voice";
+
+const OPENAI_TTS_VOICES = [
+  { value: "nova", label: "Nova" },
+  { value: "alloy", label: "Alloy" },
+  { value: "echo", label: "Echo" },
+  { value: "shimmer", label: "Shimmer" },
+  { value: "onyx", label: "Onyx" },
+  { value: "fable", label: "Fable" },
+];
+
+const GROQ_TTS_VOICES = [
+  { value: "hannah", label: "Hannah" },
+  { value: "troy", label: "Troy" },
+  { value: "austin", label: "Austin" },
+  { value: "diana", label: "Diana" },
+  { value: "daniel", label: "Daniel" },
+  { value: "autumn", label: "Autumn" },
+];
+
+function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
+  if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
+  if (mode === "openrouter") return "All roles via OpenRouter";
+  if (mode === "openrouter-groq") return "Executor via OpenRouter, Planner + Perception via Groq";
+  if (mode === "openai-groq") return "Executor via OpenAI, Planner + Perception via Groq";
+  return "";
+}
+
+/** Which provider modes use which key */
+function getKeyUsage(key: "openRouter" | "fireworks" | "openai" | "groq", mode: string): string {
+  const uses: string[] = [];
+  if (key === "openRouter") {
+    if (mode === "openrouter" || mode === "openrouter-groq") uses.push("agent");
+  }
+  if (key === "fireworks") {
+    if (mode === "fireworks") uses.push("agent");
+  }
+  if (key === "openai") {
+    if (mode === "openai-groq") uses.push("agent");
+    uses.push("voice (TTS)");
+  }
+  if (key === "groq") {
+    if (mode === "openrouter-groq" || mode === "openai-groq") uses.push("agent");
+    uses.push("voice (STT/TTS)");
+  }
+  return uses.length ? `Used by: ${uses.join(", ")}` : "Not used by current mode";
+}
 
 export function SettingsDrawer({ isOpen, onClose }: Props) {
   const settings = useStore((s) => s.settings);
@@ -141,7 +188,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
       setDataControlStatus(detail);
 
       if (action === "clear_chat_history" && ok) {
-        clearHistory();
+        clearHistory(); // also clears TTS cache via chat-slice
+      }
+      if (action === "clear_local_data" && ok) {
+        clearTTSCache();
       }
     } catch (error: any) {
       setDataControlStatus(`Failed: ${error?.message ?? String(error)}`);
@@ -150,12 +200,28 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
   if (!isOpen) return null;
 
+  const providerMode = formState.providerMode || "fireworks";
+  const useUnifiedVision =
+    formState.useVLExecutor ?? providerMode === "fireworks";
+  const hasAnyTTSKey = Boolean(formState.groqApiKey || formState.openaiApiKey);
+  const effectiveTTSProvider =
+    formState.ttsProvider ||
+    (formState.groqApiKey ? "groq" : formState.openaiApiKey ? "openai" : "auto");
+  const ttsVoiceOptions =
+    effectiveTTSProvider === "openai" ? OPENAI_TTS_VOICES : GROQ_TTS_VOICES;
+  const defaultTTSVoice =
+    effectiveTTSProvider === "openai" ? "nova" : "hannah";
+
   const tabClass = (tab: SettingsTab) =>
     `px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
       activeTab === tab
         ? "border-primary-500 text-primary-600 dark:text-primary-400"
         : "border-transparent text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-300"
     }`;
+
+  // Shared input class for API key fields
+  const inputCls = "w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100";
+  const hintCls = "text-[11px] text-warm-400 dark:text-warm-500 mt-0.5";
 
   return (
     <div
@@ -192,9 +258,13 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           <button className={tabClass("models")} onClick={() => setActiveTab("models")}>
             Models
           </button>
+          <button className={tabClass("voice")} onClick={() => setActiveTab("voice")}>
+            Voice
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* ═══════════════ GENERAL TAB ═══════════════ */}
           {activeTab === "general" && (
             <>
               {/* APPEARANCE */}
@@ -401,19 +471,75 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             </>
           )}
 
+          {/* ═══════════════ MODELS TAB ═══════════════ */}
           {activeTab === "models" && (
             <>
-              {/* PROVIDER MODE SELECTOR */}
+              {/* API KEYS — always visible, all providers */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Provider Mode
+                  API Keys
+                </h3>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">OpenRouter</label>
+                  <input
+                    type="password"
+                    value={formState.openRouterApiKey}
+                    onChange={(e) => handleChange("openRouterApiKey", e.target.value)}
+                    className={inputCls}
+                    placeholder="sk-or-..."
+                  />
+                  <p className={hintCls}>{getKeyUsage("openRouter", providerMode)}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">Fireworks AI</label>
+                  <input
+                    type="password"
+                    value={formState.fireworksApiKey || ""}
+                    onChange={(e) => handleChange("fireworksApiKey", e.target.value)}
+                    className={inputCls}
+                    placeholder="fw_..."
+                  />
+                  <p className={hintCls}>{getKeyUsage("fireworks", providerMode)}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">OpenAI</label>
+                  <input
+                    type="password"
+                    value={formState.openaiApiKey || ""}
+                    onChange={(e) => handleChange("openaiApiKey", e.target.value)}
+                    className={inputCls}
+                    placeholder="sk-..."
+                  />
+                  <p className={hintCls}>{getKeyUsage("openai", providerMode)}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">Groq</label>
+                  <input
+                    type="password"
+                    value={formState.groqApiKey || ""}
+                    onChange={(e) => handleChange("groqApiKey", e.target.value)}
+                    className={inputCls}
+                    placeholder="gsk_..."
+                  />
+                  <p className={hintCls}>{getKeyUsage("groq", providerMode)}</p>
+                </div>
+              </section>
+
+              {/* PROVIDER STACK */}
+              <section className="space-y-2">
+                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
+                  Provider Stack
                 </h3>
                 <select
-                  value={formState.providerMode || "fireworks"}
+                  value={providerMode}
                   onChange={(e) =>
                     handleChange("providerMode", e.target.value as "fireworks" | "openrouter" | "openrouter-groq" | "openai-groq")
                   }
-                  className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                  className={inputCls}
                 >
                   <option value="fireworks">Fireworks AI (Kimi K2.5)</option>
                   <option value="openrouter">OpenRouter (GPT-5.4-mini)</option>
@@ -421,197 +547,118 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <option value="openai-groq">OpenAI + Groq</option>
                 </select>
                 <p className="text-xs text-warm-400 dark:text-warm-500">
-                  {(formState.providerMode || "fireworks") === "fireworks"
-                    ? "Kimi K2.5 via Fireworks AI — vision + tools unified"
-                    : (formState.providerMode) === "openrouter"
-                    ? "All roles via OpenRouter"
-                    : (formState.providerMode) === "openrouter-groq"
-                      ? "Executor via OpenRouter, planner + perception via Groq"
-                      : "Executor via OpenAI, planner + perception via Groq"}
+                  {getProviderOneLiner(providerMode)}
                 </p>
               </section>
 
-              {/* API KEYS — adapts to selected mode */}
+              {/* MODEL OVERRIDES */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  API Keys
+                  Model Overrides
                 </h3>
-                {/* Fireworks key — needed for "fireworks" mode */}
-                {(formState.providerMode || "fireworks") === "fireworks" && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Fireworks AI API Key
-                      <span className="text-xs text-warm-400 ml-2">(required)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.fireworksApiKey || ""}
-                      onChange={(e) => handleChange("fireworksApiKey", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="fw_..."
-                    />
-                  </div>
-                )}
-                {/* OpenRouter key — needed for "openrouter" and "openrouter-groq" modes */}
-                {((formState.providerMode) === "openrouter" || (formState.providerMode) === "openrouter-groq") && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      OpenRouter API Key
-                      <span className="text-xs text-warm-400 ml-2">(required)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.openRouterApiKey}
-                      onChange={(e) => handleChange("openRouterApiKey", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="sk-or-..."
-                    />
-                  </div>
-                )}
-                {/* OpenAI key — needed for "openai-groq" mode */}
-                {(formState.providerMode) === "openai-groq" && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      OpenAI API Key
-                      <span className="text-xs text-warm-400 ml-2">(required)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.openaiApiKey || ""}
-                      onChange={(e) => handleChange("openaiApiKey", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="sk-..."
-                    />
-                  </div>
-                )}
-                {/* Groq key — needed for hybrid modes */}
-                {((formState.providerMode) === "openrouter-groq" || (formState.providerMode) === "openai-groq") && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Groq API Key
-                      <span className="text-xs text-warm-400 ml-2">(required for planner + perception)</span>
-                    </label>
-                    <input
-                      type="password"
-                      value={formState.groqApiKey || ""}
-                      onChange={(e) => handleChange("groqApiKey", e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-                      placeholder="gsk_..."
-                    />
-                  </div>
-                )}
-              </section>
 
-              {/* NITRO TOGGLE — OpenRouter modes only */}
-              {((formState.providerMode) === "openrouter" || (formState.providerMode) === "openrouter-groq") && (
-              <section className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Use Nitro
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Route all models through faster :nitro endpoints
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formState.useNitro)}
-                    onChange={(e) =>
-                      handleChange("useNitro", e.target.checked)
-                    }
-                    className="w-4 h-4 text-primary-600 rounded"
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">Executor</label>
+                  <p className="text-xs text-warm-400 dark:text-warm-500">
+                    Fast model for tool execution and page interaction
+                  </p>
+                  <ModelSelector
+                    value={formState.executorModel || ""}
+                    onChange={(v) => handleChange("executorModel", v || undefined)}
+                    defaultModel={providerMode === "openai-groq" ? OPENAI_MODEL_EXECUTOR : providerMode === "fireworks" ? "accounts/fireworks/models/kimi-k2p5" : MODEL_EXECUTOR}
+                    models={models}
+                    loading={modelsLoading}
                   />
                 </div>
-              </section>
-              )}
 
-              {/* EXECUTOR MODEL */}
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Executor Model
-                </h3>
-                <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Fast model for tool execution and page interaction
-                </p>
-                <ModelSelector
-                  value={formState.executorModel || ""}
-                  onChange={(v) => handleChange("executorModel", v || undefined)}
-                  defaultModel={(formState.providerMode || "openrouter") === "openai-groq" ? OPENAI_MODEL_EXECUTOR : MODEL_EXECUTOR}
-                  models={models}
-                  loading={modelsLoading}
-                />
-              </section>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">Planner</label>
+                  <p className="text-xs text-warm-400 dark:text-warm-500">
+                    Reasoning model for task decomposition and escalation
+                  </p>
+                  <ModelSelector
+                    value={formState.plannerModel || ""}
+                    onChange={(v) => handleChange("plannerModel", v || undefined)}
+                    defaultModel={providerMode === "fireworks" ? "accounts/fireworks/models/kimi-k2p5" : providerMode !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
+                    models={models}
+                    loading={modelsLoading}
+                  />
+                </div>
 
-              {/* UNIFIED VL TOGGLE */}
-              <section className="space-y-2">
-                <div className="flex items-center justify-between">
+                {/* Unified Vision toggle */}
+                <div className="flex items-center justify-between py-1">
                   <div>
                     <span className="text-sm font-medium dark:text-warm-300">Unified Vision</span>
                     <p className="text-xs text-warm-400 dark:text-warm-500 mt-0.5">
-                      Send screenshot directly to executor — skip separate perception model
+                      Send screenshot to executor — skip perception model
                     </p>
                   </div>
                   <button
                     role="switch"
-                    aria-checked={formState.useVLExecutor ?? ((formState.providerMode || "fireworks") === "fireworks")}
-                    onClick={() => handleChange("useVLExecutor", !(formState.useVLExecutor ?? ((formState.providerMode || "fireworks") === "fireworks")))}
-                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${(formState.useVLExecutor ?? ((formState.providerMode || "fireworks") === "fireworks")) ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
+                    aria-checked={useUnifiedVision}
+                    onClick={() => handleChange("useVLExecutor", !useUnifiedVision)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useUnifiedVision ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
                   >
-                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${(formState.useVLExecutor ?? ((formState.providerMode || "fireworks") === "fireworks")) ? "translate-x-4" : "translate-x-0"}`} />
+                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useUnifiedVision ? "translate-x-4" : "translate-x-0"}`} />
                   </button>
                 </div>
-              </section>
 
-              {/* PLANNER MODEL */}
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Planner Model
-                </h3>
-                <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Reasoning model for task decomposition and escalation
-                </p>
-                <ModelSelector
-                  value={formState.plannerModel || ""}
-                  onChange={(v) => handleChange("plannerModel", v || undefined)}
-                  defaultModel={(formState.providerMode || "fireworks") === "fireworks" ? "accounts/fireworks/models/kimi-k2p5" : (formState.providerMode || "openrouter") !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
-                  models={models}
-                  loading={modelsLoading}
-                />
-              </section>
+                {/* Perception model — hidden when unified VL is active */}
+                {!useUnifiedVision && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium dark:text-warm-300">Perception</label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Vision model for interpreting page screenshots
+                    </p>
+                    <ModelSelector
+                      value={formState.perceptionModel || ""}
+                      onChange={(v) => handleChange("perceptionModel", v || undefined)}
+                      defaultModel={providerMode !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
+                      models={models}
+                      loading={modelsLoading}
+                      filterVisionOnly
+                    />
+                  </div>
+                )}
 
-              {/* PERCEPTION MODEL — hidden when unified VL is active */}
-              {!(formState.useVLExecutor ?? ((formState.providerMode || "fireworks") === "fireworks")) && (
-              <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Perception Model
-                </h3>
-                <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Vision model for interpreting page screenshots
-                </p>
-                <ModelSelector
-                  value={formState.perceptionModel || ""}
-                  onChange={(v) => handleChange("perceptionModel", v || undefined)}
-                  defaultModel={(formState.providerMode || "openrouter") !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
-                  models={models}
-                  loading={modelsLoading}
-                  filterVisionOnly
-                />
+                {/* Nitro toggle — OpenRouter modes only */}
+                {(providerMode === "openrouter" || providerMode === "openrouter-groq") && (
+                  <div className="flex items-center justify-between py-1">
+                    <div>
+                      <span className="text-sm font-medium dark:text-warm-300">Nitro</span>
+                      <p className="text-xs text-warm-400 dark:text-warm-500 mt-0.5">
+                        Route through faster :nitro endpoints
+                      </p>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={Boolean(formState.useNitro)}
+                      onClick={() => handleChange("useNitro", !formState.useNitro)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${formState.useNitro ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${formState.useNitro ? "translate-x-4" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+                )}
               </section>
-              )}
+            </>
+          )}
 
-              {/* VOICE I/O */}
+          {/* ═══════════════ VOICE TAB ═══════════════ */}
+          {activeTab === "voice" && (
+            <>
+              {/* STT */}
               <section className="space-y-3">
                 <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
-                  Voice
+                  Speech to Text
                 </h3>
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium dark:text-warm-300">
-                      Voice Input (STT)
+                      Voice input
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Microphone button for speech-to-text
+                      Record via mic, transcribe with Whisper (Alt+V)
                     </p>
                   </div>
                   <input
@@ -621,25 +668,38 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
+                {formState.enableVoiceInput && !formState.groqApiKey && !formState.openaiApiKey && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+                    Needs a Groq or OpenAI key. Add one in the Models tab.
+                  </p>
+                )}
+              </section>
+
+              {/* TTS */}
+              <section className="space-y-3">
+                <h3 className="text-xs font-semibold uppercase text-warm-400 tracking-wider">
+                  Text to Speech
+                </h3>
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="text-sm font-medium dark:text-warm-300">
-                      Voice Output (TTS)
+                      Voice output
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
-                      {formState.openaiApiKey
+                      {hasAnyTTSKey
                         ? "Read assistant messages aloud"
-                        : "Requires an OpenAI API key"}
+                        : "Requires a Groq or OpenAI key"}
                     </p>
                   </div>
                   <input
                     type="checkbox"
                     checked={Boolean(formState.enableVoiceOutput)}
                     onChange={(e) => handleChange("enableVoiceOutput", e.target.checked)}
-                    disabled={!formState.openaiApiKey}
+                    disabled={!hasAnyTTSKey}
                     className="w-4 h-4 text-primary-600 rounded disabled:opacity-40"
                   />
                 </div>
+
                 {formState.enableVoiceOutput && (
                   <>
                     <div className="flex items-center justify-between">
@@ -648,7 +708,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                           Auto-speak responses
                         </label>
                         <p className="text-xs text-warm-400 dark:text-warm-500">
-                          Speak the final answer when the agent finishes
+                          Speak the final answer automatically
                         </p>
                       </div>
                       <input
@@ -658,23 +718,58 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         className="w-4 h-4 text-primary-600 rounded"
                       />
                     </div>
+
                     <div className="space-y-1">
-                      <label className="text-xs text-warm-400 dark:text-warm-500">TTS Voice</label>
+                      <label className="text-xs text-warm-400 dark:text-warm-500">
+                        Provider
+                      </label>
                       <select
-                        value={formState.ttsVoice || "nova"}
-                        onChange={(e) => handleChange("ttsVoice", e.target.value)}
-                        className="w-full px-3 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+                        value={effectiveTTSProvider}
+                        onChange={(e) => {
+                          const nextProvider = e.target.value as "auto" | "groq" | "openai";
+                          handleChange("ttsProvider", nextProvider);
+                          handleChange(
+                            "ttsVoice",
+                            nextProvider === "openai" ? "nova" : "hannah",
+                          );
+                        }}
+                        className={inputCls}
                       >
-                        <option value="nova">Nova</option>
-                        <option value="alloy">Alloy</option>
-                        <option value="echo">Echo</option>
-                        <option value="shimmer">Shimmer</option>
-                        <option value="onyx">Onyx</option>
-                        <option value="fable">Fable</option>
+                        <option value="auto">Auto (prefer Groq)</option>
+                        <option value="groq" disabled={!formState.groqApiKey}>
+                          Groq
+                        </option>
+                        <option value="openai" disabled={!formState.openaiApiKey}>
+                          OpenAI
+                        </option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs text-warm-400 dark:text-warm-500">Voice</label>
+                      <select
+                        value={formState.ttsVoice || defaultTTSVoice}
+                        onChange={(e) => handleChange("ttsVoice", e.target.value)}
+                        className={inputCls}
+                      >
+                        {ttsVoiceOptions.map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </>
                 )}
+
+                {!hasAnyTTSKey && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+                    Add a Groq or OpenAI key in the Models tab to enable voice.
+                  </p>
+                )}
+                <p className="text-xs text-warm-400 dark:text-warm-500">
+                  Groq TTS requires accepting model terms at console.groq.com. Falls back to OpenAI automatically if Groq fails.
+                </p>
               </section>
             </>
           )}

@@ -47,7 +47,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*", "public/request-mic.html"],
+      "resources": ["assets/*", "public/request-mic.html", "public/request-mic.js"],
       "matches": ["<all_urls>"]
     }
   ],

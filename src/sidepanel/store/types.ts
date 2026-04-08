@@ -116,20 +116,9 @@ export interface UiSlice {
   /** When true, the error banner stays until the user dismisses it manually. */
   errorPersistent: boolean;
   activeWorkspaceId: string | null;
-  demoRecording: boolean;
-  demoActionCount: number;
-  manualRecording: {
-    sessionId: string;
-    turnCount: number;
-    name: string;
-  } | null;
   setReady: () => void;
   setError: (error: string | null, options?: { persistent?: boolean }) => void;
   setActiveWorkspaceId: (id: string | null) => void;
-  setDemoRecording: (active: boolean, actionCount?: number) => void;
-  setManualRecording: (
-    r: { sessionId: string; turnCount: number; name: string } | null,
-  ) => void;
 }
 
 // --- Combined Store ---

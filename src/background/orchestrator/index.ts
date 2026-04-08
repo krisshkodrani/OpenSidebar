@@ -150,15 +150,6 @@ export function buildInitialPlanState(
   };
 }
 
-function getActivePlanObjective(
-  planState: ReturnType<typeof buildInitialPlanState>,
-): string | null {
-  const subtask = planState.subtasks[planState.currentIndex];
-  const description =
-    typeof subtask?.description === "string" ? subtask.description.trim() : "";
-  return description || null;
-}
-
 function isTabOccupiedByRunningNode(
   tabId: number,
   nodeTabMap: Map<string, number>,
@@ -1884,7 +1875,6 @@ export class Orchestrator {
         taskStateContextChars: taskStateBrief.length,
       });
 
-      const initialPlanState = buildInitialPlanState(task, node.id);
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
         callbacks: {
@@ -1919,18 +1909,26 @@ export class Orchestrator {
               );
             }
             const isSingleNode = task.planClassification?.isSingleNode === true;
+            const resolvedLabel = isSingleNode ? step.label : `Executor: ${step.label}`;
             this.sendMessage({
               type: "AGENT_STEP",
               workspaceId: task.workspaceId,
               payload: {
-                step: {
-                  ...step,
-                  // Single-node tasks: clean labels. Multi-node: prefix with Executor.
-                  label: isSingleNode ? step.label : `Executor: ${step.label}`,
-                },
+                step: { ...step, label: resolvedLabel },
                 update,
               },
             });
+            // Forward step label to content script for the floating overlay
+            if (tabId && step.label) {
+              chrome.tabs
+                .sendMessage(tabId, {
+                  type: "AGENT_STEP_LABEL",
+                  requestId: crypto.randomUUID(),
+                  source: MessageSource.BACKGROUND,
+                  payload: { label: resolvedLabel, status: step.status },
+                })
+                .catch(() => {});
+            }
           },
         },
         options: {
@@ -3136,6 +3134,18 @@ export class Orchestrator {
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
     await this.clearTaskCheckpoint(task.workspaceId);
+  }
+
+  /** Get the outcome of the most recently completed task for a workspace. */
+  getRecentOutcome(
+    workspaceId: string,
+  ): "completed" | "failed" | "stopped" | null {
+    const task = this.tasksByWorkspace.get(workspaceId);
+    if (task?.status === "stopped") return "stopped";
+    const recent = this.recentCompletion.get(workspaceId);
+    if (!recent) return null;
+    // "partial" maps to "completed" — partial success is still success at the overlay level
+    return recent.payload.status === "failed" ? "failed" : "completed";
   }
 
   async stopTask(workspaceId?: string): Promise<void> {

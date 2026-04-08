@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
 import { isoDayOffset, shortModel, formatCost } from "../../utils";
 
 interface FilterBarProps {
   onFiltersChanged: () => void;
+}
+
+interface OptionItem {
+  value: string;
+  label: string;
+  count: number;
 }
 
 export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
@@ -15,7 +21,11 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   const availableModels = useStore((s) => s.availableModels);
   const sessions = useStore((s) => s.sessions);
 
-  const availableOutcomes = useMemo(() => {
+  // Snapshot dropdown options when no outcome filter is active so counts
+  // reflect the full dataset rather than the already-filtered result set.
+  const outcomeSnapshot = useRef<OptionItem[] | null>(null);
+
+  const computedOutcomes = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const s of sessions) {
       const outcome = (s.outcome as string) || "unknown";
@@ -32,7 +42,16 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       .sort((a, b) => b.count - a.count);
   }, [sessions]);
 
-  const availableModes = useMemo(() => {
+  // Update snapshot only when outcome filter is "all" (unfiltered)
+  if (filters.outcome === "all") {
+    outcomeSnapshot.current = computedOutcomes;
+  }
+  const availableOutcomes = outcomeSnapshot.current ?? computedOutcomes;
+
+  // Same pattern for modes
+  const modeSnapshot = useRef<OptionItem[] | null>(null);
+
+  const computedModes = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const s of sessions) {
       const models = Array.isArray(s.models) ? (s.models as string[]) : [];
@@ -47,6 +66,11 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       .filter(([, count]) => count > 0)
       .map(([value, count]) => ({ value, label: labels[value] || value, count }));
   }, [sessions]);
+
+  if (filters.mode === "all") {
+    modeSnapshot.current = computedModes;
+  }
+  const availableModes = modeSnapshot.current ?? computedModes;
 
   const [localDomain, setLocalDomain] = useState(filters.domain);
   const debouncedDomain = useDebounce(localDomain, 250);

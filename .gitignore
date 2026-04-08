@@ -30,10 +30,6 @@ traces/*.jsonl
 traces/runs/*.jsonl
 traces/archive/
 
-# Eval data (generated, not checked in)
-evals/cases/
-evals/results/
-evals/reports/
 
 # Test coverage
 coverage/
@@ -65,6 +61,9 @@ credentials.json
 
 # Internal planning docs
 plans/
+
+# Internal notes, RFCs, reports (untracked personal workspace)
+notes/
 
 # E2E reports (generated per run, not checked in)
 docs/e2e-*

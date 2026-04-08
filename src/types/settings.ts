@@ -50,8 +50,12 @@ export interface UserSettings {
   enableVoiceInput?: boolean;
   /** Enable voice output on assistant messages (TTS) — requires OpenAI key */
   enableVoiceOutput?: boolean;
-  /** TTS voice selection (OpenAI voices) */
-  ttsVoice?: "alloy" | "nova" | "echo" | "shimmer" | "onyx" | "fable";
+  /** Preferred TTS provider (auto picks Groq first, then OpenAI) */
+  ttsProvider?: "auto" | "groq" | "openai";
+  /** TTS voice selection for the active provider */
+  ttsVoice?: string;
+  /** Automatically speak the final assistant response when the agent finishes */
+  autoVoiceResponse?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---

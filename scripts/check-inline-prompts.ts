@@ -3,7 +3,7 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN_DIRS = [join(ROOT, "src"), join(ROOT, "evals")];
+const SCAN_DIRS = [join(ROOT, "src")];
 const EXCLUDE_SUFFIXES = [join("src", "prompts", "generated.ts")];
 const MARKERS = [
   "You are ",
