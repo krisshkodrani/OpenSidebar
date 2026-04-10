@@ -121,7 +121,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v3",
-    "hash": "7e207a1b",
+    "hash": "59c78ea2",
     "description": "Planner decomposition system prompt for the task planner. v3: require minimum 1 step for all tasks.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },

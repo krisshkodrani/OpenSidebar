@@ -116,8 +116,30 @@ ROUND-TRIP NAVIGATION:
 When a task requires going somewhere AND coming back (e.g., "visit pages 1-3 then return to page 1"):
 - Create explicit steps for BOTH directions — forward AND backward.
 - Every page that needs data read must have its own step with a clear successCriteria.
-- Do NOT combine "go back" and "read data" into a single step — split them.
+- For simple read tasks, you MAY combine navigation with the read when the requested data is visible immediately on arrival.
+- GOOD: "Navigate to Warehouse Gamma and read its inventory count."
+- GOOD: "Return to Warehouse Alpha and read its inventory count."
+- BAD: splitting into separate "go back" and "read data" steps when the read happens on the landing page with no extra interaction.
 - Before finalizing the plan, verify EVERY action and data collection in the user's original query has a corresponding step. Missing a direction (e.g., forgetting the return leg) fails the entire task.
+
+INTERACTION PATTERNS:
+Certain UI elements require specific interaction sequences. Decompose into micro-steps:
+
+Autocomplete / Suggestion Fields:
+When the task mentions "suggestions", "autocomplete", "from the dropdown", or "select from results":
+1. Type PARTIAL text (first few characters) into the field — do NOT type the full value
+2. Wait for the suggestion dropdown to appear (it loads after a short delay)
+3. Click the matching suggestion from the dropdown list
+NEVER combine these into one step. Typing the full value does NOT register as a selection.
+
+Infinite Scroll / Lazy-Loaded Content:
+When the task requires finding content that may be far below the current viewport (e.g., "find Post #35 in the feed"):
+- Use verifyAfter with action "retry_step" and maxRetries 6-8
+- Each attempt: scroll down, wait for new content to load, check for the target
+- The executor will keep retrying the step until the content is found or retries are exhausted
+
+Pagination:
+When content spans multiple pages, create a separate step per page navigation.
 
 EXPECTED STATE (recommended for each step):
 Include "expectedState" describing what the page should look like after the step:
