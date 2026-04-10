@@ -186,7 +186,7 @@ export function executeFindElement(args: {
     return {
       success: false,
       result: hasMoreContent
-        ? `Text "${query}" not found in current viewport. Page is scrollable (${Math.round((scrollTop / (scrollHeight - clientHeight)) * 100)}% scrolled, ${Math.round(scrollTop)}/${scrollHeight - clientHeight}px). You have NOT scrolled through most of the page yet. Keep scrolling down and searching.`
+        ? `Text "${query}" not found in current viewport. Page is scrollable (${Math.round((scrollTop / (scrollHeight - clientHeight)) * 100)}% scrolled, ${Math.round(scrollTop)}/${scrollHeight - clientHeight}px). Scroll to the very bottom using scroll_page(direction="bottom"), then wait 1-2 seconds for lazy content to load, and search again.`
         : `Text "${query}" not found on this page.`,
       navigated: false,
     };
