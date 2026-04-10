@@ -39,6 +39,7 @@
     "logs:errors": "tsx scripts/log-query.ts errors",
     "traces": "tsx scripts/trace-query.ts",
     "test:e2e": "npm run build && vitest run --config tests/e2e/vitest.e2e.config.ts",
+    "test:e2e:progressive": "tsx scripts/run-e2e-progressive.ts",
     "prompts:build": "tsx scripts/build-prompts.ts",
     "prompts:check": "tsx scripts/check-inline-prompts.ts"
   },
