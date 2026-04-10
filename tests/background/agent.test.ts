@@ -87,6 +87,7 @@ vi.mock("../../src/background/llm", () => ({
 import {
   AgentLoop,
   isPerceptionFailurePlaceholder,
+  rewriteAutocompleteTextEntry,
   shouldOmitPerceptionForDoneValidation,
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
@@ -95,6 +96,32 @@ import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
 
 describe("AgentLoop", () => {
+  function setPlanContext(
+    agent: AgentLoop,
+    params: {
+      subtasks: Array<{ description: string; status: string }>;
+      planSteps: Array<{ successCriteria?: string }>;
+      snapshotText: string;
+    },
+  ) {
+    (agent as any).planSubtasks = params.subtasks.map((subtask) => ({
+      ...subtask,
+      turnsUsed: 0,
+      turnBudget: 0,
+    }));
+    (agent as any).planSteps = params.planSteps;
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Test Page",
+      url: "https://example.com/test",
+      elements: [],
+      pageContent: params.snapshotText,
+      visibleContent: params.snapshotText,
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+  }
+
   test("blocks typing checkout name into non-text shipping radio input", () => {
     const target: TaggedElement = {
       tag: 15,
@@ -143,6 +170,128 @@ describe("AgentLoop", () => {
     );
 
     expect(error).toContain("looks like a name field");
+  });
+
+  test("rewriteAutocompleteTextEntry truncates full values for suggestion fields", () => {
+    const target: TaggedElement = {
+      tag: 31,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "text",
+        placeholder: "Start typing an address...",
+        id: "address-input",
+        autocomplete: "off",
+      },
+      rect: { x: 0, y: 0, width: 200, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    const rewrite = rewriteAutocompleteTextEntry({
+      objectiveText:
+        "Select the address suggestion for 123 Main Street, Springfield, IL 62704 from the dropdown.",
+      originalQuery: "",
+      element: target,
+      typedText: "123 Main Street, Springfield, IL 62704",
+    });
+
+    expect(rewrite).not.toBeNull();
+    expect(rewrite?.rewrittenText).not.toBe(
+      "123 Main Street, Springfield, IL 62704",
+    );
+    expect(rewrite?.rewrittenText.length).toBeLessThan(
+      "123 Main Street, Springfield, IL 62704".length,
+    );
+    expect(rewrite?.reason).toContain("Wait for suggestions/dropdown");
+  });
+
+  test("rewriteAutocompleteTextEntry does not rewrite normal text entry", () => {
+    const target: TaggedElement = {
+      tag: 32,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "email",
+        placeholder: "Email address",
+        id: "email",
+      },
+      rect: { x: 0, y: 0, width: 200, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    const rewrite = rewriteAutocompleteTextEntry({
+      objectiveText: "Type alex.morgan@example.com into the email field.",
+      originalQuery: "",
+      element: target,
+      typedText: "alex.morgan@example.com",
+    });
+
+    expect(rewrite).toBeNull();
+  });
+
+  test("rewriteAutocompleteTextEntry falls back to original query for autocomplete element", () => {
+    const target: TaggedElement = {
+      tag: 33,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "text",
+        placeholder: "Type to search products...",
+        id: "product-input",
+        autocomplete: "off",
+      },
+      rect: { x: 0, y: 0, width: 200, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    // Step objective does NOT mention suggestions, but original query does
+    const rewrite = rewriteAutocompleteTextEntry({
+      objectiveText:
+        "Search for Laptop Stand in the product search field",
+      originalQuery:
+        "Fill in the address with '123 Main Street' from the suggestions, and search for 'Laptop Stand' in the product search.",
+      element: target,
+      typedText: "Laptop Stand",
+    });
+
+    expect(rewrite).not.toBeNull();
+    expect(rewrite?.rewrittenText.length).toBeLessThan(
+      "Laptop Stand".length,
+    );
+  });
+
+  test("rewriteAutocompleteTextEntry does not rewrite normal input even when query mentions suggestions", () => {
+    const target: TaggedElement = {
+      tag: 34,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "tel",
+        placeholder: "Phone number",
+        id: "phone",
+      },
+      rect: { x: 0, y: 0, width: 200, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    // Original query mentions suggestions, but the element is a normal phone input
+    const rewrite = rewriteAutocompleteTextEntry({
+      objectiveText: "Type the phone number into the form",
+      originalQuery:
+        "Fill in the address from the suggestions, then enter your phone number 555-0123",
+      element: target,
+      typedText: "555-0123",
+    });
+
+    expect(rewrite).toBeNull();
   });
 
   test("runs simple conversation with streaming", async () => {
@@ -513,6 +662,221 @@ describe("AgentLoop", () => {
         (call: any[]) => call[1] === "Plan status missing running subtask",
       ),
     ).toBeDefined();
+  });
+
+  test("text-admission gate passes for intermediate step after repeated admitted text", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Go to Warehouse Gamma", status: "running" },
+        { description: "Return to Warehouse Alpha", status: "pending" },
+        { description: "Report both inventory counts", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+        { successCriteria: "Warehouse Alpha visible" },
+        { successCriteria: "Gamma and Alpha counts reported" },
+      ],
+      snapshotText: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary:
+        "## Completed\nI navigated to Warehouse Gamma and verified 6,412 units.",
+      consecutiveTextOnly: 2,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.runningIdx).toBe(0);
+    expect(result.isLastStep).toBe(false);
+  });
+
+  test("text-admission gate identifies final step without auto-completing it", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [{ description: "Report Warehouse Gamma count", status: "running" }],
+      planSteps: [{ successCriteria: "Warehouse Gamma inventory count 6,412 visible" }],
+      snapshotText: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
+      consecutiveTextOnly: 2,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.isLastStep).toBe(true);
+  });
+
+  test("text-admission gate blocks failure sentiment even when criteria match", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Go to Warehouse Gamma", status: "running" },
+        { description: "Return to Warehouse Alpha", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+        { successCriteria: "Warehouse Alpha visible" },
+      ],
+      snapshotText: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary: "Unable to complete the Warehouse Gamma check even though the page changed.",
+      consecutiveTextOnly: 2,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain("failure_sentiment");
+  });
+
+  test("text-admission gate blocks criteria mismatch", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Go to Warehouse Gamma", status: "running" },
+        { description: "Return to Warehouse Alpha", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+        { successCriteria: "Warehouse Alpha visible" },
+      ],
+      snapshotText: "Warehouse Alpha inventory count: 4,827 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary: "## Completed\nWarehouse Gamma inventory count is visible.",
+      consecutiveTextOnly: 2,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.reason).toBe("criteria_mismatch");
+  });
+
+  test("text-admission gate blocks on first text-only turn", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Go to Warehouse Gamma", status: "running" },
+        { description: "Return to Warehouse Alpha", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+        { successCriteria: "Warehouse Alpha visible" },
+      ],
+      snapshotText: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
+      consecutiveTextOnly: 1,
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.reason).toBe("first_text_only_turn");
+  });
+
+  test("final-step text admission nudges done instead of auto-completing", async () => {
+    mockCompleteStream.mockReset();
+    let callIdx = 0;
+    mockCompleteStream.mockImplementation((_request: any, onTextDelta: (delta: string) => void) => {
+      callIdx++;
+      if (callIdx <= 2) {
+        const text = "## Completed\nWarehouse Gamma inventory count is 6,412 units.";
+        onTextDelta(text);
+        return Promise.resolve({
+          role: "assistant",
+          content: text,
+          tool_calls: undefined,
+          finish_reason: "stop",
+        });
+      }
+
+      return Promise.resolve({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "tc_done",
+            type: "function",
+            function: {
+              name: "done",
+              arguments:
+                '{"summary":"Warehouse Gamma inventory count is 6,412 units."}',
+            },
+          },
+        ],
+        finish_reason: "tool_calls",
+      });
+    });
+
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        preferredModelTier: "executor",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Report Warehouse Gamma count",
+              status: "running",
+            },
+          ],
+        },
+      },
+    );
+
+    (agent as any).planSteps = [
+      { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+    ];
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Warehouse Gamma",
+      url: "https://example.com/gamma",
+      elements: [],
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = await agent.start("Report Warehouse Gamma count", 123);
+
+    expect(callIdx).toBeGreaterThanOrEqual(3);
+    expect(result.outcome).not.toBe("completed");
   });
 });
 
