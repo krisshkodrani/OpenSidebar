@@ -37,13 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-Step Form", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Complete this 3-step form. Do NOT navigate away from this page.",
-      "",
-      "Step 1: Fill Personal Info — type_text Name: Jane Smith, Email: jane@example.com, Phone: 555-0123. Click Next.",
-      "Step 2: Fill Preferences — use select_option to set Category to Enterprise. This reveals a Company Name field — type Acme Corp. Use set_checkbox to select Budget: Premium ($2,000+). Type Special Requirements: Priority support needed. Click Next.",
-      "Step 3: Review & Submit — use set_checkbox to check the confirmation checkbox, then click Submit.",
-    ].join("\n");
+    const prompt = "Fill out the form: Name is Jane Smith, email jane@example.com, phone 555-0123. Category should be Enterprise, company name Acme Corp, premium budget, and add 'Priority support needed' as special requirements. Then review and submit.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

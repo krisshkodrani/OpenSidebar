@@ -38,15 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Autocomplete", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This page has two autocomplete fields that show suggestion dropdowns after you type.",
-      "",
-      "Step 1: Click the Address input field and type '123 Main'. Wait for the suggestion dropdown to appear (it takes about half a second). Then click on '123 Main Street, Springfield, IL 62704' from the suggestions.",
-      "",
-      "Step 2: Click the Product Search input field and type 'lap'. Wait for the suggestion dropdown to appear. Then click on 'Laptop Stand' from the suggestions.",
-      "",
-      "Both fields should show a green 'Selected:' confirmation below them when done correctly.",
-    ].join("\n");
+    const prompt = "Fill in the address with '123 Main Street, Springfield, IL 62704' from the suggestions, and search for 'Laptop Stand' in the product search.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

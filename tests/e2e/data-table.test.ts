@@ -38,13 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Data Table", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a paginated employee directory with a search field at the top.",
-      "",
-      "Type 'Diana' into the search field to filter the table, then find Diana Chen in the results and report her salary.",
-      "",
-      "Call done() with her salary in the summary.",
-    ].join("\n");
+    const prompt = "Search for Diana in the employee directory and tell me her salary.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

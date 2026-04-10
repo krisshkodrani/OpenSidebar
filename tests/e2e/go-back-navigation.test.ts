@@ -78,14 +78,8 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a warehouse inventory page (Warehouse Alpha — page 1 of 3).",
-      "Click the button to go to Warehouse Beta (page 2), then click again to go to Warehouse Gamma (page 3).",
-      "On page 3, read the inventory count for Warehouse Gamma.",
-      "Then navigate back to Warehouse Alpha (page 1) using the breadcrumb links at the top of the page.",
-      "Read the inventory count for Warehouse Alpha.",
-      "Call done() reporting BOTH inventory counts: Gamma and Alpha.",
-    ].join(" ");
+    const prompt =
+      "Check the inventory count for Warehouse Gamma on page 3, then go back to Warehouse Alpha and check its count too. Tell me both numbers.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForTaskCompletion(h.ctx, 360_000, workspaceId);

@@ -39,15 +39,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: In the Air Zoom Pegasus 41 product card, click its 'Add to cart' button. Do NOT click the header 'Open Cart' button. The cart drawer should appear automatically after the correct Add to cart click.",
-      "",
-      "Step 2: In the cart drawer, FIRST type SAVE10 into the promo code input field in the Promo Code section, then click the Apply button. After that, select the Express ($15) shipping radio option in the cart drawer.",
-      "",
-      "Step 3: Keep the cart drawer open. In the cart drawer checkout section, type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button in the cart drawer.",
-    ].join("\n");
+    const prompt =
+      "Add the Air Zoom Pegasus 41 to cart, apply coupon SAVE10, choose express shipping, and checkout as Alex Morgan (alex.morgan@example.com).";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -130,17 +123,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: Add the Novablast 4 shoes to cart using the 'Add to cart' button on its product card.",
-      "",
-      "Step 2: Add the CloudStrike 8 shoes to cart using the 'Add to cart' button on its product card.",
-      "",
-      "Step 3: In the cart drawer, keep the shipping as Standard (Free). Do NOT apply any coupon.",
-      "",
-      "Step 4: In the checkout section, type Jordan Smith into the Full name field. Type jordan.smith@test.com into the Email address field. Then click Place Order.",
-    ].join("\n");
+    const prompt =
+      "Add the Novablast 4 and CloudStrike 8 to my cart. Checkout with standard shipping as Jordan Smith (jordan.smith@test.com), no coupon.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -228,17 +212,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: Add the Endurance GPS Watch to cart using the 'Add to cart' button on its product card.",
-      "",
-      "Step 2: In the cart drawer, apply the promo code SAVE10.",
-      "",
-      "Step 3: Select Express shipping ($15).",
-      "",
-      "Step 4: In the checkout section, type Casey Lee into the Full name field. Type casey.lee@test.com into the Email address field. Then click Place Order.",
-    ].join("\n");
+    const prompt =
+      "Order the Endurance GPS Watch with promo code SAVE10 and express shipping. Checkout as Casey Lee (casey.lee@test.com).";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -312,19 +287,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: Add the Trabuco Max 3 shoes to cart using the 'Add to cart' button.",
-      "",
-      "Step 2: In the cart drawer, change the quantity of the Trabuco Max 3 to 3 using the quantity controls (+ button).",
-      "",
-      "Step 3: Apply the promo code SAVE10.",
-      "",
-      "Step 4: Keep shipping as Standard (Free).",
-      "",
-      "Step 5: In checkout, type Sam Walker into Full name. Type sam@test.com into Email. Click Place Order.",
-    ].join("\n");
+    const prompt =
+      "Order 3 pairs of Trabuco Max 3 shoes with promo code SAVE10 and standard shipping. Checkout as Sam Walker (sam@test.com).";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -398,17 +362,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: Add the Tempo 2-in-1 Shorts to cart using the 'Add to cart' button on its product card.",
-      "",
-      "Step 2: In the cart drawer, select Express shipping ($15).",
-      "",
-      "Step 3: Do NOT apply any coupon code.",
-      "",
-      "Step 4: In checkout, type Riley Jones into Full name. Type riley@test.com into Email. Click Place Order.",
-    ].join("\n");
+    const prompt =
+      "Add the Tempo 2-in-1 Shorts to cart with express shipping, no coupon. Checkout as Riley Jones (riley@test.com).";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

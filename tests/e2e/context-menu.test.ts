@@ -38,17 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Context Menu", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a document manager. You can right-click on documents to see a context menu with actions.",
-      "",
-      "Step 1: Right-click on the document named 'Q3 Report.pdf' to open the context menu.",
-      "",
-      "Step 2: Click 'Rename' from the context menu that appears.",
-      "",
-      "Step 3: An inline text input will appear. Clear it and type 'Q3 Financial Report 2026.pdf' as the new name.",
-      "",
-      "Step 4: Press Enter to confirm the rename.",
-    ].join("\n");
+    const prompt = "Rename the document 'Q3 Report.pdf' to 'Q3 Financial Report 2026.pdf'.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

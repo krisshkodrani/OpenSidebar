@@ -38,15 +38,8 @@ describe.skipIf(!h.apiKey)("E2E: Hover Menus", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This page has a navigation bar with a 'Products' dropdown menu that appears on hover.",
-      "",
-      "Step 1: Hover over the 'Products' button in the top nav to reveal the dropdown menu, then click 'Electronics'.",
-      "",
-      "Step 2: In the Product Inventory table below, hover over the info icon (the 'i' circle) next to 'Widget X' to see its SKU number in the tooltip.",
-      "",
-      "Step 3: Read the SKU from the tooltip, type it into the 'Search by SKU' input field, and click the Search button.",
-    ].join("\n");
+    const prompt =
+      "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

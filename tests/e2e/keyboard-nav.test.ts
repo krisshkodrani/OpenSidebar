@@ -38,17 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a spreadsheet editor. You can click cells to select them, double-click or press Enter to edit, and press Enter again to confirm.",
-      "",
-      "Step 1: Click on the cell in row 1, 'Q1 Sales' column (it should show '130').",
-      "",
-      "Step 2: Double-click it or press Enter to start editing. Change the value to '999'.",
-      "",
-      "Step 3: Press Enter to confirm the edit.",
-      "",
-      "Step 4: After editing, the spreadsheet should show '1 edit(s)'. Call done() to finish.",
-    ].join("\n");
+    const prompt = "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

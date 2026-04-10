@@ -39,17 +39,10 @@ describe.skipIf(!h.apiKey)("E2E: Email Compose", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is an email client. Read the open email from David Park about the Q3 strategy meeting.",
-      "",
-      "Draft a reply in the reply editor. The reply should:",
-      "- Politely decline attendance for both proposed times (Thursday and Friday)",
-      "- Explain that you have a conflict with a client demo on Thursday and a team offsite on Friday",
-      "- Suggest Monday at 2 PM as an alternative",
-      "- Keep it professional and concise (3-4 sentences)",
-      "",
-      "IMPORTANT: Type the reply but do NOT click Send. Just compose it in the reply box.",
-    ].join("\n");
+    const prompt =
+      "Read David Park's email about the Q3 strategy meeting and draft a reply. " +
+      "Decline both proposed times — you have a client demo on Thursday and a team offsite on Friday. " +
+      "Suggest Monday at 2 PM instead. Keep it professional, 3-4 sentences. Don't send it, just draft.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

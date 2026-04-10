@@ -94,17 +94,8 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
     const supportUrl = getFixtureUrl("dashboard-support");
     const marketingUrl = getFixtureUrl("dashboard-marketing");
 
-    // Frame as a question requiring specific data from multiple pages.
-    const prompt = [
-      "You are on the Sales Dashboard. I need specific numbers from two other dashboards.",
-      "You MUST open each URL in a NEW browser tab using create_tab, switch to it, and call read_page.",
-      "",
-      `1. Open ${supportUrl} in a new tab. Switch to it and read_page. Find the exact "Open Tickets" number.`,
-      `2. Open ${marketingUrl} in a new tab. Switch to it and read_page. Find the exact "Active Campaigns" number.`,
-      "",
-      "Call done() with BOTH numbers: the Open Tickets count AND the Active Campaigns count.",
-      "You MUST call read_page on each tab to find these numbers. Do NOT guess.",
-    ].join("\n");
+    const prompt =
+      `I need the Open Tickets number from ${supportUrl} and the Active Campaigns number from ${marketingUrl}. Open each in a new tab and tell me both numbers.`;
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForTaskCompletion(h.ctx, 240_000, workspaceId);
@@ -153,15 +144,8 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
 
     const supportUrl = getFixtureUrl("dashboard-support");
 
-    // Minimal tab lifecycle: open, read, close, return.
-    // Framed as a single cohesive action to prevent premature done().
-    const prompt = [
-      `Open ${supportUrl} in a new tab using create_tab.`,
-      "Switch to that new tab with switch_tab.",
-      "Call read_page to see the Support Dashboard content.",
-      "Then close that tab with close_tab and switch back to the original tab.",
-      "Finally call done() reporting what you found on the Support Dashboard.",
-    ].join(" ");
+    const prompt =
+      `Open ${supportUrl} in a new tab, check what's there, then come back and tell me about it.`;
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForTaskCompletion(h.ctx, 240_000, workspaceId);
@@ -187,9 +171,14 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
     const hasCreateTab = toolNames.includes("create_tab");
     expect(hasCreateTab, "Agent must use create_tab to open the support page").toBe(true);
 
-    // Must have attempted close_tab (lifecycle test)
-    const hasCloseTab = toolNames.includes("close_tab");
-    expect(hasCloseTab, "Agent must use close_tab to close the support tab").toBe(true);
+    // Agent should return to original tab (close_tab is optional — natural
+    // users say "come back" not "close the tab")
+    const hasCloseOrSwitch =
+      toolNames.includes("close_tab") || toolNames.includes("switch_tab");
+    expect(
+      hasCloseOrSwitch,
+      "Agent must use close_tab or switch_tab to return to the original tab",
+    ).toBe(true);
 
     // Must have called done() with a summary
     const summary = extractDoneSummary(traceFiles);

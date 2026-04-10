@@ -37,17 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Dashboard", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on an analytics dashboard. Complete these steps IN ORDER. Do NOT navigate away.",
-      "",
-      "Step 1: Click the 'Settings' tab button to switch to the Settings panel.",
-      "",
-      "Step 2: In the Settings form, type 'admin@test.com' into the notification email input field (it has placeholder 'admin@example.com'). Make sure to use type_text to enter the email, not just click the field.",
-      "",
-      "Step 3: Click the Save button.",
-      "",
-      "Verify the success toast 'Settings saved successfully!' appears.",
-    ].join("\n");
+    const prompt = "Go to the Settings tab, change the notification email to admin@test.com, and save it.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

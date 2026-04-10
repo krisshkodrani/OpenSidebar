@@ -40,13 +40,8 @@ describe.skipIf(!h.apiKey)("E2E: Scroll-to-Find", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a product catalog page with many items.",
-      "Scroll down to find the product called 'Thunderbolt Dock Pro'.",
-      "It is near the bottom of the page. Use scroll_page to scroll down until you can see it.",
-      "Once you find it, click the 'View Specs' button next to it to reveal the specifications.",
-      "Then call done() reporting the spec text that appears after clicking.",
-    ].join(" ");
+    const prompt =
+      "Find the Thunderbolt Dock Pro product on this page and show me its specs.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

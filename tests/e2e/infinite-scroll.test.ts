@@ -37,14 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Infinite Scroll", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a social feed that loads more posts as you scroll down (10 at a time).",
-      "",
-      "Scroll down through the feed to find Post #35 titled 'The Secret Formula for Productivity'.",
-      "You will need to scroll multiple times and wait for new posts to load.",
-      "",
-      "Once you find it, read the post content and report the secret code mentioned in it.",
-    ].join("\n");
+    const prompt = "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

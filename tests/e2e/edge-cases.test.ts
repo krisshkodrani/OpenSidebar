@@ -39,15 +39,7 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on an Error Scenarios page. Complete this task:",
-      "",
-      "Fill in the Contact Form section:",
-      "- Email: test@example.com",
-      "- Message: Hello, this is a test message for the contact form.",
-      "Then click 'Send Message'.",
-      "Verify the page shows 'Message sent successfully!'.",
-    ].join("\n");
+    const prompt = "Fill out the contact form with email test@example.com and message 'Hello, this is a test message for the contact form' and send it.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -84,15 +76,7 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on an Error Scenarios page. Complete this task:",
-      "",
-      "1. Find the 'Delayed Content' section.",
-      "2. In that section, click the 'Load Content' button. Do NOT just inspect or summarize the section before clicking the button.",
-      "3. Wait for the delayed text to appear after the click.",
-      "4. Do NOT call done until the loaded text is visible.",
-      "5. Read the loaded text and report exactly what it says.",
-    ].join("\n");
+    const prompt = "Click Load Content in the Delayed Content section and tell me what text appears.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -132,14 +116,7 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on an Error Scenarios page. Complete this task:",
-      "",
-      "Find and click the 'Generate Report' button, then click 'Submit Report'.",
-      "",
-      "If the 'Generate Report' button does not exist on the page, report that",
-      "the task cannot be completed and explain why.",
-    ].join("\n");
+    const prompt = "Generate a report and submit it. If the button doesn't exist, let me know.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

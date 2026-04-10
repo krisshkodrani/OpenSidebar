@@ -63,11 +63,7 @@ describe.skipIf(!h.apiKey)("E2E: Delayed Content", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Click the 'Load Data' button, wait for the data to load,",
-      "then read the secret code that appears and report it in done().",
-      "The code appears after a short delay — do NOT report before it loads.",
-    ].join(" ");
+    const prompt = "Click Load Data and tell me the secret code that shows up.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForTaskCompletion(h.ctx, 120_000, workspaceId);

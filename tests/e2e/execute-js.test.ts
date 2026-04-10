@@ -43,12 +43,7 @@ describe.skipIf(!h.apiKey)("E2E: Dynamic Compute", () => {
     expect(tabId).toBeGreaterThan(0);
 
     // Large (1.3x) + engraving ($15) = 75 * 1.3 + 15 = $112.50
-    const prompt = [
-      "You are on a product configurator page. Complete these steps in order:",
-      "Step 1: Use select_option to select 'Large (32 oz)' from the Size dropdown.",
-      "Step 2: Use set_checkbox to check the 'Add custom engraving' checkbox.",
-      "Step 3: Read the updated price shown on the page and call done() reporting the total.",
-    ].join(" ");
+    const prompt = "Configure the product: pick the Large (32 oz) size, enable custom engraving, and tell me the total price.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

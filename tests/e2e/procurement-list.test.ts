@@ -81,19 +81,8 @@ describe.skipIf(!h.apiKey)("E2E: Procurement List", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "BUY items from the Procurement List on this page. Do NOT just read the list — you must actually purchase each item.",
-      "",
-      "For the first two items in the table, perform these steps:",
-      "  1. Open the store link in a NEW tab (use create_tab with the store URL from the link).",
-      "  2. In that store tab, find the matching product and click 'Add to Cart'.",
-      "  3. Click 'Place Order' to complete the purchase.",
-      "  4. Close the store tab (close_tab) and switch back to the procurement list tab.",
-      "  5. Check the checkbox next to that item to mark it as done.",
-      "",
-      "You MUST complete at least two purchases. Reading the list is NOT enough — items must be bought and checked off.",
-      "IMPORTANT: You must use create_tab to open stores and close_tab when finished with each store.",
-    ].join("\n");
+    const prompt =
+      "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForTaskCompletion(h.ctx, 480_000, workspaceId);

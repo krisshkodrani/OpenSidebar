@@ -37,17 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Date Picker", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a booking form with a custom calendar date picker.",
-      "",
-      "Step 1: Type 'John Smith' into the Full Name field.",
-      "",
-      "Step 2: Click the date field ('Click to select a date...') to open the calendar widget.",
-      "",
-      "Step 3: In the calendar, navigate to June 2026 if not already showing, then click on day 15 to select it.",
-      "",
-      "Step 4: Click 'Book Appointment'.",
-    ].join("\n");
+    const prompt = "Book an appointment for John Smith on June 15, 2026.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
