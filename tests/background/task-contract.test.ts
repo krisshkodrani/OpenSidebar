@@ -74,6 +74,51 @@ describe("task contract helpers", () => {
     expect(coverage.missingEntities).toContain("gamma");
   });
 
+  test("detects multi-return 'both' in natural language queries", () => {
+    const contract = buildTaskContract(
+      "Check the inventory count for Warehouse Gamma on page 3, then go back to Warehouse Alpha and check its count too. Tell me both numbers.",
+    );
+
+    expect(contract.multiReturnCount).toBe(2);
+    // Should extract Gamma and Alpha as required entities
+    expect(contract.requiredEntities).toContain("warehouse gamma");
+    expect(contract.requiredEntities).toContain("warehouse alpha");
+  });
+
+  test("multi-return coverage rejects when summary has 1 of 2 required entities", () => {
+    const contract = buildTaskContract(
+      "Tell me both numbers for Gamma and Alpha.",
+    );
+
+    expect(contract.multiReturnCount).toBe(2);
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    expect(coverage.satisfied).toBe(false);
+  });
+
+  test("multi-return coverage passes when summary has both required entities", () => {
+    const contract = buildTaskContract(
+      "Tell me both numbers for Gamma and Alpha.",
+    );
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: "Warehouse Gamma: 6,412 units. Warehouse Alpha: 4,827 units.",
+    });
+
+    expect(coverage.satisfied).toBe(true);
+  });
+
+  test("no multi-return false positive on single-return queries", () => {
+    const contract = buildTaskContract("What is Diana's salary?");
+
+    expect(contract.multiReturnCount).toBeUndefined();
+  });
+
   test("synthesizes a multi-step plan for round-trip reporting tasks", () => {
     const synthesized = synthesizePlanFromTaskContract(
       [
