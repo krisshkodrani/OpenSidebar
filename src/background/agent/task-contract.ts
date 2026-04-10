@@ -4,6 +4,7 @@ export interface TaskContract {
   requiredNumbers: string[];
   returnTargets: string[];
   reportTargets: string[];
+  multiReturnCount?: number;
 }
 
 export interface TaskContractCoverage {
@@ -53,6 +54,25 @@ function extractNamedEntities(text: string): string[] {
     "Pages",
     "Task",
     "Original",
+    "Tell",
+    "Check",
+    "Find",
+    "Read",
+    "Show",
+    "Give",
+    "List",
+    "Open",
+    "Click",
+    "Type",
+    "Fill",
+    "Search",
+    "Report",
+    "Verify",
+    "Both",
+    "BOTH",
+    "All",
+    "Each",
+    "Every",
   ]);
   return unique(
     matches
@@ -105,12 +125,32 @@ function extractReportTargets(text: string): string[] {
   return unique(targets);
 }
 
+function extractMultiReturnMarkers(text: string): {
+  count: number;
+  entities: string[];
+} {
+  const lower = text.toLowerCase();
+  let count = 0;
+
+  if (/\bboth\b/.test(lower)) count = 2;
+  else if (/\ball\s+(three|3)\b/.test(lower)) count = 3;
+  else if (/\ball\s+(four|4)\b/.test(lower)) count = 4;
+
+  if (count === 0) return { count: 0, entities: [] };
+
+  // Extract the named entities that "both/all" refers to
+  const entities = extractNamedEntities(text);
+  return { count, entities };
+}
+
 export function buildTaskContract(query: string): TaskContract {
   const namedEntities = extractNamedEntities(query);
+  const multiReturn = extractMultiReturnMarkers(query);
   const requiredEntities = unique([
     ...extractQuotedPhrases(query),
     ...extractReportTargets(query),
     ...extractReturnTargets(query),
+    ...multiReturn.entities,
   ]);
 
   const broadEntities =
@@ -134,6 +174,7 @@ export function buildTaskContract(query: string): TaskContract {
     requiredNumbers: extractLargeNumbers(query),
     returnTargets: extractReturnTargets(query),
     reportTargets: extractReportTargets(query),
+    multiReturnCount: multiReturn.count || undefined,
   };
 }
 
@@ -154,6 +195,16 @@ export function assessTaskContractCoverage(params: {
       params.contract.returnTargets.length > 0 &&
       !params.contract.returnTargets.some((target) => corpus.includes(target)),
   );
+  // Multi-return check: when "both"/"all N" is detected, ensure enough
+  // distinct entities from the contract are present in the summary
+  const multiReturnCount = params.contract.multiReturnCount ?? 0;
+  const coveredEntities =
+    multiReturnCount >= 2
+      ? params.contract.requiredEntities.filter((e) => corpus.includes(e))
+      : [];
+  const multiReturnShortfall =
+    multiReturnCount >= 2 && coveredEntities.length < multiReturnCount;
+
   return {
     missingEntities,
     missingNumbers,
@@ -161,7 +212,8 @@ export function assessTaskContractCoverage(params: {
     satisfied:
       missingEntities.length === 0 &&
       missingNumbers.length === 0 &&
-      !missingReturnTarget,
+      !missingReturnTarget &&
+      !multiReturnShortfall,
   };
 }
 

@@ -179,9 +179,15 @@ export function executeFindElement(args: {
   }
   const found = (window as any).find(query);
   if (!found) {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight;
+    const clientHeight = window.innerHeight;
+    const hasMoreContent = scrollHeight > clientHeight + scrollTop + 50;
     return {
       success: false,
-      result: `Text "${query}" not found on this page`,
+      result: hasMoreContent
+        ? `Text "${query}" not found in current viewport. Page is scrollable (${Math.round((scrollTop / (scrollHeight - clientHeight)) * 100)}% scrolled, ${Math.round(scrollTop)}/${scrollHeight - clientHeight}px). You have NOT scrolled through most of the page yet. Keep scrolling down and searching.`
+        : `Text "${query}" not found on this page.`,
       navigated: false,
     };
   }
