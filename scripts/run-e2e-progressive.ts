@@ -19,7 +19,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const E2E_DIR = path.resolve(__dirname, "../tests/e2e");
-const REPORT_DIR = path.resolve(__dirname, "../docs/e2e-reports/natural-v2");
+const dirArg = process.argv.find((a) => a.startsWith("--dir="));
+const REPORT_DIR = dirArg
+  ? path.resolve(dirArg.split("=")[1])
+  : path.resolve(__dirname, "../docs/e2e-reports/natural-v2");
 const SUMMARY_FILE = path.join(REPORT_DIR, "_summary.md");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
 
@@ -48,6 +51,24 @@ function extractPrompts(filePath: string): string[] {
     for (const m of src.matchAll(concat)) {
       // Just grab what we can
       prompts.push((m[1] || m[2] || "").replace(/\s+/g, " ").trim());
+    }
+  }
+  // Continuation tests: count sendUserChat calls as turns (each is a prompt)
+  if (prompts.length === 0) {
+    const sendCalls = [...src.matchAll(/sendUserChat\(\s*h\.ctx,\s*\n?\s*"([^"]+)/g)];
+    for (const m of sendCalls) {
+      prompts.push(m[1].replace(/\s+/g, " ").trim());
+    }
+    // Also try string concat pattern: sendUserChat(\n  h.ctx,\n  "..." +\n  "...",
+    if (prompts.length === 0) {
+      const concatCalls = [
+        ...src.matchAll(
+          /await\s+sendUserChat\(\s*\n?\s*h\.ctx,\s*\n?\s*"([^"]*)/g,
+        ),
+      ];
+      for (const m of concatCalls) {
+        prompts.push(m[1].replace(/\s+/g, " ").trim());
+      }
     }
   }
   return prompts;
@@ -334,7 +355,7 @@ function main() {
         `npx vitest run --config "${CONFIG}" "${filePath}"`,
         {
           cwd: path.resolve(__dirname, ".."),
-          timeout: Math.max(720_000, prompts.length * 360_000), // 12 min base, +6 min per test
+          timeout: Math.max(720_000, prompts.length * 240_000), // 12 min base, +4 min per user turn
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
           env: { ...process.env, FORCE_COLOR: "0" },
