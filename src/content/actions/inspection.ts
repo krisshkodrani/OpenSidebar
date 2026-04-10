@@ -88,11 +88,17 @@ export function executeScroll(args: ScrollPageArgs): {
         el.scrollBy({ top: amount, behavior: "instant" });
         break;
     }
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const notScrollable = maxScroll <= 0;
+    const posInfo = `Position: ${el.scrollTop}/${maxScroll}`;
+    const scrollHint = notScrollable
+      ? ` (Element [${tagId}] has no overflow — try scroll_page(direction="${args.direction}") without an id to scroll the page instead.)`
+      : "";
     return {
       success: true,
       result: isAbsolute
-        ? `Scrolled [${tagId}] to ${args.direction}. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`
-        : `Scrolled [${tagId}] ${args.direction} by ${amount}px. Position: ${el.scrollTop}/${el.scrollHeight - el.clientHeight}`,
+        ? `Scrolled [${tagId}] to ${args.direction}. ${posInfo}${scrollHint}`
+        : `Scrolled [${tagId}] ${args.direction} by ${amount}px. ${posInfo}${scrollHint}`,
       navigated: false,
     };
   }
