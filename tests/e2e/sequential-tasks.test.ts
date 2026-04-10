@@ -143,7 +143,7 @@ describe.skipIf(!h.apiKey)("E2E: Sequential Tasks", () => {
     console.log("\n[e2e:seq] === TASK 2: Summarize Page ===");
 
     const summarizePrompt =
-      "Summarize this page in 2-3 sentences. Mention the main topic, one key concept, and one concrete detail.";
+      "Summarize this page in a few sentences.";
 
     // Fresh workspace for Task 2 — ensures clean event state
     const workspaceId2 = await sendUserChat(h.ctx, summarizePrompt, tabId2);

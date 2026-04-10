@@ -157,15 +157,8 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping Boundaries", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a shopping page. Complete these steps IN ORDER. Do NOT navigate away or open new tabs.",
-      "",
-      "Step 1: In the Air Zoom Pegasus 41 product card, click its 'Add to cart' button. Do NOT click the header 'Open Cart' button. The cart drawer should appear automatically after the correct Add to cart click.",
-      "",
-      "Step 2: In the cart drawer, FIRST type SAVE10 into the promo code input field in the Promo Code section, then click the Apply button. After that, select the Express ($15) shipping radio option in the cart drawer.",
-      "",
-      "Step 3: Keep the cart drawer open. In the cart drawer checkout section, type Alex Morgan into the input with placeholder 'Full name'. Type alex.morgan@example.com into the input with placeholder 'Email address'. Then click the Place Order button in the cart drawer.",
-    ].join("\n");
+    const prompt =
+      "Add the Air Zoom Pegasus 41 to cart, apply coupon SAVE10, choose express shipping, and checkout as Alex Morgan (alex.morgan@example.com).";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
     const outcome = await waitForOutcome(

@@ -48,11 +48,7 @@ describe.skipIf(!h.apiKey)("E2E: Structural Loading", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Click the 'Compose Message' button to open the message composer.",
-      "Once the composer is visible with the text area and Send button, report done.",
-      "Do NOT type anything or send a message — just open the composer.",
-    ].join(" ");
+    const prompt = "Open the message composer.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

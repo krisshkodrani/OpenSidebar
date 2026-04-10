@@ -37,17 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Web Components", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This page uses web components with Shadow DOM. There are custom cards, an input, and a toggle switch.",
-      "",
-      "Step 1: Click the 'Take Action' button inside the 'Notification Settings' card.",
-      "",
-      "Step 2: Click the 'Take Action' button inside the 'Privacy Settings' card.",
-      "",
-      "Step 3: Click on the dark mode toggle switch to enable it.",
-      "",
-      "The interaction status section at the bottom should update to show your actions.",
-    ].join("\n");
+    const prompt = "Activate the Notification Settings and Privacy Settings actions, then turn on dark mode.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

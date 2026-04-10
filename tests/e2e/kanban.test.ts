@@ -37,13 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Kanban", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a Kanban board with three columns: To Do, In Progress, and Done.",
-      "",
-      "Drag the task card 'Design Homepage' from the 'To Do' column and drop it onto the 'In Progress' column.",
-      "",
-      "Use drag_and_drop to move the card. The source is the 'Design Homepage' card and the target is the 'In Progress' column area.",
-    ].join("\n");
+    const prompt = "Move the 'Design Homepage' task from To Do to In Progress.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

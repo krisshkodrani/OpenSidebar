@@ -42,10 +42,7 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Summarize this page in 2-3 sentences.",
-      "Mention the product purpose, one capability, and one concrete fact.",
-    ].join(" ");
+    const prompt = "Summarize this page in a few sentences.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

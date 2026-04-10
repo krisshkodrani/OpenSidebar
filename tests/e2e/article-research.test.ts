@@ -42,11 +42,7 @@ describe.skipIf(!h.apiKey)("E2E: Article Research", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "What source is cited in footnote [2] of this article?",
-      "Scroll down to the footnotes section at the bottom of the page to find it.",
-      "Report the full citation text.",
-    ].join(" ");
+    const prompt = "What source is cited in footnote 2 of this article?";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

@@ -37,15 +37,8 @@ describe.skipIf(!h.apiKey)("E2E: Navigation Challenge", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "You are on a Navigation Challenge page. Complete these steps:",
-      "",
-      "1. Click the 'Advance' button 3 times. Each click increments the step counter.",
-      "2. After the 3rd click, a secret code will be revealed on the page. Read it carefully.",
-      "3. Type that exact code into the input field (placeholder 'Enter the secret code').",
-      "4. Click the 'Submit Code' button.",
-      "5. Verify the page shows 'Challenge Complete!' to confirm success.",
-    ].join("\n");
+    const prompt =
+      "Click Advance three times to reveal the secret code, then enter it and submit.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

@@ -39,16 +39,8 @@ describe.skipIf(!h.apiKey)("E2E: Support Ticket", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a support ticket system. Read ticket TICKET-4271 about a CSV export timeout issue.",
-      "",
-      "Do two things:",
-      "1. Change the Status dropdown from 'Open' to 'In Progress'",
-      "2. Add an internal comment that briefly summarizes the issue and notes the next steps",
-      "   (e.g., investigate the export timeout, check if it's related to the report size or server config)",
-      "",
-      "Make sure the internal note checkbox stays checked.",
-    ].join("\n");
+    const prompt =
+      "Set ticket TICKET-4271 to In Progress and add an internal note summarizing the issue and next steps.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

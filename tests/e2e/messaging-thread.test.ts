@@ -52,18 +52,12 @@ describe.skipIf(!h.apiKey)("E2E: Messaging Thread", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "This is a messaging app showing a German discussion about a cloud migration project.",
-      "Read the thread carefully to understand the context.",
-      "",
-      "Lisa (project manager) is asking Markus to prepare a technical summary and cost plan by Friday.",
-      "",
-      "Compose a reply IN GERMAN in the reply editor based on these English notes:",
-      '"I can prepare the technical summary by Thursday evening.',
+      "This is a German discussion about cloud migration. Lisa asked Markus for a technical summary and cost plan by Friday.",
+      "Reply in German based on these notes: 'I can prepare the technical summary by Thursday evening.",
       "Thomas and I will review the cost overruns for staging.",
-      'We should consider reserved instances to bring costs down."',
-      "",
-      "IMPORTANT: Type the reply in the editor but do NOT click Send. Just compose it.",
-    ].join("\n");
+      "We should consider reserved instances to bring costs down.'",
+      "Don't send it, just compose the reply.",
+    ].join(" ");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -132,10 +126,7 @@ describe.skipIf(!h.apiKey)("E2E: Messaging Thread", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Click into the reply editor at the bottom and type exactly: Hallo Team",
-      "Do not click Send.",
-    ].join("\n");
+    const prompt = "Type 'Hallo Team' in the reply box.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
@@ -192,10 +183,7 @@ describe.skipIf(!h.apiKey)("E2E: Messaging Thread", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "Write a message of hello in Albanian to Alda.",
-      "Do not send it.",
-    ].join("\n");
+    const prompt = "Write a hello message in Albanian to Alda, don't send it.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

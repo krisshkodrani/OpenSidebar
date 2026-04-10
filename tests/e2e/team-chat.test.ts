@@ -39,15 +39,12 @@ describe.skipIf(!h.apiKey)("E2E: Team Chat", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt = [
-      "This is a team chat app. Read the conversation in #project-updates.",
-      "Sarah (QA Lead) is asking about the release date and who writes the changelog.",
+      "This is a team chat. Sarah is asking about the release date and who handles the changelog.",
+      "Reply to the thread based on these notes but rewrite it as a clear, professional message:",
       "",
-      "Type a reply in the message input and send it. Base it on these rough notes but rewrite it",
-      "as a clear, professional message:",
-      "",
-      '"release is set for thursday, i will handle the changelog wednesday evening,',
+      "'release is set for thursday, i will handle the changelog wednesday evening,",
       "carol needs to wrap up the onboarding flow first but she said wednesday at the latest,",
-      'dave can cut the release branch once carol merges"',
+      "dave can cut the release branch once carol merges'",
     ].join("\n");
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);

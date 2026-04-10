@@ -41,17 +41,7 @@ describe.skipIf(!h.apiKey)("E2E: Modal Overlays", () => {
     // Brief wait for React to render overlays
     await new Promise((r) => setTimeout(r, 500));
 
-    const prompt = [
-      "This page has popup overlays blocking the content. Complete these steps:",
-      "",
-      "Step 1: Dismiss or close any cookie banners and newsletter popups that are covering the page.",
-      "",
-      "Step 2: In the Account Settings section, type 'user@test.com' into the Notification Email field.",
-      "",
-      "Step 3: Click the 'Delete Account' button.",
-      "",
-      "Step 4: When the confirmation dialog appears, click 'Confirm Delete'.",
-    ].join("\n");
+    const prompt = "Close any popups on the page, set the notification email to user@test.com, then delete the account and confirm.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

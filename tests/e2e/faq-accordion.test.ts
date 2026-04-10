@@ -37,15 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: FAQ Accordion", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a FAQ page with collapsible sections. Each question can be clicked to expand its answer.",
-      "",
-      "Step 1: Find and click on the question 'Do you offer promo codes?' to expand it.",
-      "",
-      "Step 2: The answer mentions a promo code but it may be hidden on the page. Look for a 'Reveal Code' button in that section and click it to reveal the code.",
-      "",
-      "Step 3: Report the promo code you found.",
-    ].join("\n");
+    const prompt = "Find the FAQ about promo codes and tell me the actual code.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

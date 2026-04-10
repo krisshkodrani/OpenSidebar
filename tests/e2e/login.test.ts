@@ -38,19 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Login", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = [
-      "This is a login page. Complete these steps:",
-      "",
-      "Step 1: Type 'admin@example.com' into the Email field.",
-      "",
-      "Step 2: Type 'secret123' into the Password field.",
-      "",
-      "Step 3: Check the 'Remember me' checkbox.",
-      "",
-      "Step 4: Click the 'Log In' button.",
-      "",
-      "Step 5: Wait for the page to transition to the dashboard. Verify you see 'Welcome, Admin!' on the page.",
-    ].join("\n");
+    const prompt = "Log in with email admin@example.com and password secret123. Check the Remember me box too.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
