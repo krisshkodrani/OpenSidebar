@@ -5743,7 +5743,7 @@ export class AgentLoop {
                     currentStep?.verifyAfter?.action === "retry_step"
                   ) {
                     const maxRetries =
-                      currentStep.verifyAfter.maxRetries ?? 5;
+                      currentStep.verifyAfter.maxRetries ?? 8;
                     if (this.stepRetryCount < maxRetries) {
                       this.stepRetryCount++;
                       this.context.addMessage({

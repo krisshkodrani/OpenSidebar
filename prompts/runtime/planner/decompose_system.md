@@ -115,11 +115,10 @@ When a task requires actions across different views (e.g., adding multiple items
 ROUND-TRIP NAVIGATION:
 When a task requires going somewhere AND coming back (e.g., "visit pages 1-3 then return to page 1"):
 - Create explicit steps for BOTH directions — forward AND backward.
-- Every page that needs data read must have its own step with a clear successCriteria.
-- For simple read tasks, you MAY combine navigation with the read when the requested data is visible immediately on arrival.
-- GOOD: "Navigate to Warehouse Gamma and read its inventory count."
-- GOOD: "Return to Warehouse Alpha and read its inventory count."
-- BAD: splitting into separate "go back" and "read data" steps when the read happens on the landing page with no extra interaction.
+- ALWAYS combine "navigate to X" and "read data from X" into a SINGLE step when the data is visible on arrival. Do NOT split navigation and reading into separate steps.
+- GOOD (2 steps): "Navigate to Warehouse Gamma and read its inventory count." then "Return to Warehouse Alpha and read its inventory count."
+- BAD (4 steps): "Navigate to Gamma" → "Read Gamma count" → "Go back to Alpha" → "Read Alpha count" — this wastes execution budget.
+- A simple round-trip (go there, read, come back, read) should be exactly 2 steps, not 3 or 4.
 - Before finalizing the plan, verify EVERY action and data collection in the user's original query has a corresponding step. Missing a direction (e.g., forgetting the return leg) fails the entire task.
 
 INTERACTION PATTERNS:
