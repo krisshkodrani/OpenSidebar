@@ -577,6 +577,63 @@ Execution policy:
         expect(result!.instrumentation?.outcome).toBe("structured_steps");
     });
 
+    test("collapses adjacent round-trip navigation and read pairs into atomic read steps", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Navigate to Warehouse Gamma page 3.",
+                        successCriteria: "Warehouse Gamma page 3 is visible.",
+                        dependencies: [],
+                        assumptions: [],
+                        toolProfile: "navigate",
+                    },
+                    {
+                        objective: "Read Warehouse Gamma inventory count.",
+                        successCriteria: "Warehouse Gamma inventory count 6,412 is visible.",
+                        dependencies: [0],
+                        assumptions: [],
+                        toolProfile: "read_only",
+                    },
+                    {
+                        objective: "Return to Warehouse Alpha.",
+                        successCriteria: "Warehouse Alpha is visible.",
+                        dependencies: [1],
+                        assumptions: [],
+                        toolProfile: "navigate",
+                    },
+                    {
+                        objective: "Read Warehouse Alpha inventory count and report both numbers.",
+                        successCriteria: "Warehouse Alpha inventory count 4,827 is visible and both numbers are ready to report.",
+                        dependencies: [2],
+                        assumptions: [],
+                        toolProfile: "read_only",
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            "Check the inventory count for Warehouse Gamma on page 3, then go back to Warehouse Alpha and check its count too. Tell me both numbers.",
+            "Warehouse Alpha",
+            "https://example.com/go-back-chain?step=1",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps).toHaveLength(2);
+        expect(result!.steps![0].objective).toMatch(/warehouse gamma/i);
+        expect(result!.steps![0].objective).toMatch(/read/i);
+        expect(result!.steps![1].objective).toMatch(/warehouse alpha/i);
+        expect(result!.steps![1].objective).toMatch(/report both/i);
+    });
+
     test("returns null on malformed JSON", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -684,6 +741,31 @@ Execution policy:
         await guardian.decompose("Task", "Page", "https://example.com");
 
         expect(mockComplete).toHaveBeenCalledTimes(1);
+    });
+
+    test("planner prompt allows combined navigation-plus-read steps for simple round-trip reads", async () => {
+        completeImpl = (request: any) => {
+            const system = request.messages?.[0]?.content || "";
+            expect(system).toContain(
+                'For simple read tasks, you MAY combine navigation with the read when the requested data is visible immediately on arrival.',
+            );
+            expect(system).toContain(
+                'GOOD: "Navigate to Warehouse Gamma and read its inventory count."',
+            );
+            return Promise.resolve({
+                role: "assistant",
+                content: '{"isMultiStep": false}',
+                tool_calls: undefined,
+                finish_reason: "stop",
+            });
+        };
+
+        const guardian = new TaskPlanner("test-key");
+        await guardian.decompose(
+            "Check the inventory count for Warehouse Gamma on page 3, then go back to Warehouse Alpha and check its count too. Tell me both numbers.",
+            "Warehouse Alpha",
+            "https://example.com/go-back-chain?step=1",
+        );
     });
 
     test("sends response_format: json_object in validateDone request", async () => {

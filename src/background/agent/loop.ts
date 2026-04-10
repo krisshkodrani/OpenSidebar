@@ -123,6 +123,10 @@ import {
   extractDiscoveredTagIds,
 } from "./loop-helpers";
 import {
+  assessTaskContractCoverage,
+  buildTaskContract,
+} from "./task-contract";
+import {
   DEESCALATION_REFLECTION,
   ESCALATION_RECOVERY,
   ESCALATION_REFLECTION,
@@ -369,6 +373,95 @@ export function validateTextEntryTarget(
   return null;
 }
 
+function isAutocompleteLikeElement(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): boolean {
+  if (!element) return false;
+  if (!isTextLikeInputElement(element)) return false;
+
+  const attrs = element.attributes || {};
+  const role = normalizeGuardText(element.role);
+  const attributeBlob = [
+    element.text,
+    attrs["aria-label"],
+    attrs.placeholder,
+    attrs.id,
+    attrs.name,
+    attrs["aria-controls"],
+    attrs["aria-haspopup"],
+    attrs["aria-autocomplete"],
+    attrs.list,
+    attrs.autocomplete,
+  ]
+    .map((value) => normalizeGuardText(value))
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    role === "combobox" ||
+    role === "listbox" ||
+    "aria-autocomplete" in attrs ||
+    "list" in attrs ||
+    /listbox|option|suggest|dropdown/.test(String(attrs["aria-controls"] || "")) ||
+    /suggest|autocomplete|typeahead|start typing|search/.test(attributeBlob)
+  );
+}
+
+function indicatesAutocompleteSelectionIntent(objectiveText: string): boolean {
+  const objective = normalizeGuardText(objectiveText);
+  if (!objective) return false;
+
+  return /\b(suggestion|suggestions|autocomplete|typeahead|dropdown)\b/.test(
+    objective,
+  );
+}
+
+function buildAutocompletePrefix(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 3) return trimmed;
+
+  const prefixLength = Math.min(8, Math.max(3, Math.ceil(trimmed.length / 3)));
+  const candidate = trimmed.slice(0, prefixLength).trimEnd();
+  return candidate.length >= 3 ? candidate : trimmed.slice(0, 3);
+}
+
+export function rewriteAutocompleteTextEntry(params: {
+  objectiveText: string;
+  originalQuery?: string;
+  element: DomSnapshot["elements"][number] | null | undefined;
+  typedText: string;
+}):
+  | {
+      rewrittenText: string;
+      reason: string;
+    }
+  | null {
+  const { objectiveText, originalQuery, element, typedText } = params;
+  const trimmed = typedText.trim();
+  if (trimmed.length < 4) return null;
+  // Intent check: step objective is the primary source.
+  // Original query is a fallback for when the planner dropped
+  // the autocomplete wording from the active step's objective.
+  if (
+    !indicatesAutocompleteSelectionIntent(objectiveText) &&
+    !indicatesAutocompleteSelectionIntent(originalQuery ?? "")
+  )
+    return null;
+  // Element classification: the hard safety boundary.
+  // Even if intent is detected, normal text inputs are never rewritten.
+  if (!isAutocompleteLikeElement(element)) return null;
+
+  const rewrittenText = buildAutocompletePrefix(trimmed);
+  if (rewrittenText === trimmed) return null;
+
+  return {
+    rewrittenText,
+    reason:
+      `Autocomplete guard: blocked full-value typing for [${element?.tag ?? "?"}]. ` +
+      `Typed partial text "${rewrittenText}" only. Wait for suggestions/dropdown, then click the exact match "${trimmed}".`,
+  };
+}
+
 function shouldTrackRepeatAction(toolName: ToolName): boolean {
   return !REPEAT_ACTION_EXEMPT_TOOLS.has(toolName);
 }
@@ -538,6 +631,8 @@ export class AgentLoop {
   private taskId: string | null = null;
   private planSubtasks: SubtaskSummary[] = [];
   private planSteps: PlanStep[] = [];
+  private planRequiresTabManagement = false;
+  private stepRetryCount = 0;
   private taskStartTime = 0;
   private urlHistory: string[] = [];
 
@@ -958,6 +1053,7 @@ export class AgentLoop {
       | "step_advanced_by_done_rejection"
       | "structural_step_advance"
       | "passive_step_advance"
+      | "text_admission_criteria_advance"
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
@@ -1394,6 +1490,7 @@ export class AgentLoop {
     this.taskId = null;
     this.planSubtasks = [];
     this.planSteps = [];
+    this.planRequiresTabManagement = false;
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
@@ -1761,6 +1858,15 @@ export class AgentLoop {
             }));
             this.planSteps = decomposition.steps || [];
 
+            // Detect if plan steps require tab management
+            const TAB_STEP_KEYWORDS =
+              /(new tab|open.*tab|switch.*tab|close.*tab|separate tab|another tab|each tab|multiple tab|across tab)/i;
+            this.planRequiresTabManagement =
+              decomposition.requiresTabManagement ??
+              this.planSteps.some((s) =>
+                TAB_STEP_KEYWORDS.test(s.objective || ""),
+              );
+
             // Inject plan status into system prompt (visible every turn)
             this.context.setPlanStatus(
               decomposition.subtasks.map((desc, i) => ({
@@ -2076,7 +2182,9 @@ export class AgentLoop {
   }
 
   private shouldBlockTabManagementTools(): boolean {
-    return !userExplicitlyRequestedTabManagement(this.originalQuery);
+    if (userExplicitlyRequestedTabManagement(this.originalQuery)) return false;
+    if (this.planRequiresTabManagement) return false;
+    return true;
   }
 
   /** De-escalate back to executor mode when progress resumes after escalation. */
@@ -3263,6 +3371,7 @@ export class AgentLoop {
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
+      this.stepRetryCount = 0;
     }
     return advancedTo;
   }
@@ -3308,6 +3417,88 @@ export class AgentLoop {
     }
 
     return resolvedIndex;
+  }
+
+  private evaluateTextAdmissionAdvanceGate(params: {
+    summary: string;
+    consecutiveTextOnly: number;
+  }): {
+    passed: boolean;
+    runningIdx: number;
+    isLastStep: boolean;
+    reason?: string;
+  } {
+    const { summary, consecutiveTextOnly } = params;
+    const runningIdx = this.planSubtasks.findIndex((s) => s.status === "running");
+    if (runningIdx < 0) {
+      return { passed: false, runningIdx: -1, isLastStep: false, reason: "no_running_step" };
+    }
+
+    if (consecutiveTextOnly < 2) {
+      return {
+        passed: false,
+        runningIdx,
+        isLastStep: false,
+        reason: "first_text_only_turn",
+      };
+    }
+
+    const currentStep = this.planSteps[runningIdx];
+    if (!currentStep?.successCriteria) {
+      return {
+        passed: false,
+        runningIdx,
+        isLastStep: false,
+        reason: "missing_success_criteria",
+      };
+    }
+
+    const sentiment = assessDoneSummary(summary);
+    if (!sentiment.confident) {
+      return {
+        passed: false,
+        runningIdx,
+        isLastStep: false,
+        reason: `failure_sentiment:${sentiment.reason ?? "unknown"}`,
+      };
+    }
+
+    const criteriaCheck = matchSuccessCriteria({
+      successCriteria: currentStep.successCriteria,
+      snapshot: this.context.getSnapshot(),
+    });
+    if (!criteriaCheck.satisfied) {
+      return {
+        passed: false,
+        runningIdx,
+        isLastStep: false,
+        reason: "criteria_mismatch",
+      };
+    }
+
+    const coherence = checkSummaryStepCoherence({
+      summary,
+      currentStepIndex: runningIdx,
+      stepDescriptions: this.planSubtasks.map((s) => s.description),
+    });
+    if (!coherence.coherent) {
+      return {
+        passed: false,
+        runningIdx,
+        isLastStep: false,
+        reason: `coherence_failed:${coherence.reason ?? "unknown"}`,
+      };
+    }
+
+    const pendingCount = this.planSubtasks.filter(
+      (s) => s.status === "pending",
+    ).length;
+
+    return {
+      passed: true,
+      runningIdx,
+      isLastStep: pendingCount === 0,
+    };
   }
 
   /**
@@ -4555,6 +4746,30 @@ export class AgentLoop {
                 }
               }
 
+              let autocompleteRewriteReason: string | null = null;
+              if (toolName === ToolName.TYPE_TEXT && args.id != null) {
+                const snapshot = this.context.getSnapshot();
+                const targetId = Number(args.id);
+                const target = Number.isFinite(targetId)
+                  ? snapshot?.elements.find((el) => el.tag === targetId)
+                  : null;
+                const planStatus = this.context.getPlanStatusRaw();
+                const activeObjective =
+                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                  this.originalQuery;
+                const rewrite = rewriteAutocompleteTextEntry({
+                  objectiveText: activeObjective,
+                  originalQuery: this.originalQuery,
+                  element: target,
+                  typedText: String(args.text || ""),
+                });
+                if (rewrite) {
+                  args.text = rewrite.rewrittenText;
+                  toolCall.function.arguments = JSON.stringify(args);
+                  autocompleteRewriteReason = rewrite.reason;
+                }
+              }
+
               const preDecision = this.middleware.evaluatePreTool(
                 toolName,
                 args,
@@ -4594,7 +4809,10 @@ export class AgentLoop {
               }
 
               try {
-                const result = await this.executeToolCall(toolCall, tabId);
+                let result = await this.executeToolCall(toolCall, tabId);
+                if (autocompleteRewriteReason) {
+                  result = `${result}\n${autocompleteRewriteReason}`;
+                }
                 const toolMs = Date.now() - toolStep.timestamp;
                 // Track tag IDs discovered by find_element
                 for (const id of extractDiscoveredTagIds(toolName, result)) {
@@ -5093,6 +5311,30 @@ export class AgentLoop {
               }
             }
 
+            let autocompleteRewriteReason: string | null = null;
+            if (toolName === ToolName.TYPE_TEXT && args.id != null) {
+              const snapshot = this.context.getSnapshot();
+              const targetId = Number(args.id);
+              const target = Number.isFinite(targetId)
+                ? snapshot?.elements.find((el) => el.tag === targetId)
+                : null;
+              const planStatus = this.context.getPlanStatusRaw();
+              const activeObjective =
+                planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                this.originalQuery;
+              const rewrite = rewriteAutocompleteTextEntry({
+                objectiveText: activeObjective,
+                originalQuery: this.originalQuery,
+                element: target,
+                typedText: String(args.text || ""),
+              });
+              if (rewrite) {
+                args.text = rewrite.rewrittenText;
+                toolCall.function.arguments = JSON.stringify(args);
+                autocompleteRewriteReason = rewrite.reason;
+              }
+            }
+
             const preDecision = this.middleware.evaluatePreTool(
               toolName,
               args,
@@ -5281,7 +5523,31 @@ export class AgentLoop {
                 }
               }
 
-              // Skip the task contract guard for orchestrator sub-nodes.
+              // Multi-return guard: only for root agent (no nodeId).
+              // For orchestrator nodes, individual steps handle their own
+              // objectives — the task-level final verification in the
+              // orchestrator catches multi-return requirements after all
+              // nodes complete.
+              if (!this.nodeId) {
+                const multiReturnContract = buildTaskContract(
+                  this.originalQuery,
+                );
+                if (
+                  (multiReturnContract.multiReturnCount ?? 0) >= 2 &&
+                  !shouldReject
+                ) {
+                  const multiCoverage = assessTaskContractCoverage({
+                    contract: multiReturnContract,
+                    text: summary,
+                  });
+                  if (!multiCoverage.satisfied) {
+                    shouldReject = true;
+                    rejectReason = `Query requires ${multiReturnContract.multiReturnCount} results (detected "both"/"all") but summary only covers ${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. Missing: ${multiCoverage.missingEntities.join(", ")}`;
+                  }
+                }
+              }
+
+              // Skip the full task contract guard for orchestrator sub-nodes.
               // The originalQuery contains the full user prompt appended to the
               // executor instruction, so the guard would extract entities from
               // ALL steps and reject because this node only handles one step.
@@ -5467,6 +5733,38 @@ export class AgentLoop {
                 }
 
                 if (shouldReject) {
+                  // retry_step: when the current step uses retry semantics
+                  // (infinite scroll, pagination), reject done() without
+                  // counting toward doneRejections — the executor should
+                  // keep trying the same step.
+                  const currentStep =
+                    this.planSteps[effectiveCurrentIdx];
+                  if (
+                    currentStep?.verifyAfter?.action === "retry_step"
+                  ) {
+                    const maxRetries =
+                      currentStep.verifyAfter.maxRetries ?? 5;
+                    if (this.stepRetryCount < maxRetries) {
+                      this.stepRetryCount++;
+                      this.context.addMessage({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content:
+                          `Step not yet complete (attempt ${this.stepRetryCount}/${maxRetries}). ` +
+                          `${currentStep.verifyAfter.trigger} not detected yet. ` +
+                          `Keep trying: scroll down further, wait for content to load, then check again.`,
+                      });
+                      this.log.info("agent", "retry_step: attempt", {
+                        turn: this.turnCount,
+                        step: effectiveCurrentIdx,
+                        attempt: this.stepRetryCount,
+                        maxRetries,
+                      });
+                      continue;
+                    }
+                    // Exhausted retries — fall through to normal rejection
+                  }
+
                   const planIncompleteOnly =
                     rejectReason.startsWith("Plan incomplete.");
                   const canAdvanceStep =
@@ -5482,7 +5780,12 @@ export class AgentLoop {
                         this.planSteps[effectiveCurrentIdx]?.successCriteria,
                       snapshot: this.context.getSnapshot(),
                     });
-                    const rateLimited = this.consecutiveAutoAdvances >= 2;
+                    const autoAdvanceCap = Math.max(
+                      2,
+                      Math.ceil(this.planSubtasks.length / 2),
+                    );
+                    const rateLimited =
+                      this.consecutiveAutoAdvances >= autoAdvanceCap;
 
                     const coherence = checkSummaryStepCoherence({
                       summary,
@@ -5614,6 +5917,16 @@ export class AgentLoop {
                     advancedTo: effectiveCurrentIdx,
                   });
 
+                  // Build next-step hint for actionable rejection
+                  const nextStepIdx = effectiveCurrentIdx + 1;
+                  const nextStepDesc =
+                    nextStepIdx < this.planSubtasks.length
+                      ? this.planSubtasks[nextStepIdx].description
+                      : null;
+                  const nextStepHint = nextStepDesc
+                    ? `\nYOUR NEXT ACTION: ${nextStepDesc}\nDo NOT call done(). Execute this step now.`
+                    : "";
+
                   if (this.doneRejections >= this.limits.maxDoneRejections) {
                     this.log.warn("agent", "DONE blocked after max rejections", {
                       turn: this.turnCount,
@@ -5630,7 +5943,8 @@ export class AgentLoop {
                       content:
                         `done() REJECTED: ${rejectReason}\n\n` +
                         "You have repeated done() too many times while the task is still incomplete. " +
-                        "Do not call done() again from this state. Take a different action or call escalate().",
+                        "Do not call done() again from this state. Take a different action or call escalate()." +
+                        nextStepHint,
                     });
                     continue;
                   } else {
@@ -5640,7 +5954,8 @@ export class AgentLoop {
                       content:
                         `done() REJECTED: ${rejectReason}\n\n` +
                         "Take concrete actions to complete this step — click, type, scroll, or navigate. " +
-                        "Do NOT call done() again until you have performed the missing actions.",
+                        "Do NOT call done() again until you have performed the missing actions." +
+                        nextStepHint,
                     });
                     this.stepHandler(
                       {
@@ -6299,6 +6614,9 @@ export class AgentLoop {
             let result: string;
             try {
               result = await this.executeToolCall(toolCall, tabId);
+              if (autocompleteRewriteReason) {
+                result = `${result}\n${autocompleteRewriteReason}`;
+              }
               const toolMs = Date.now() - toolStep.timestamp;
               // Track tag IDs discovered by find_element
               for (const id of extractDiscoveredTagIds(toolName, result)) {
@@ -6492,6 +6810,34 @@ export class AgentLoop {
                     content: `WARNING: You typed "${typedValue.slice(0, 50)}" but this value doesn't appear in any page content, tool result, or the user's query. Use investigation tools first (inspect_hidden, execute_js, read_element) to find the correct value before typing.`,
                   });
                 }
+              }
+            }
+
+            // Post-type_text DOM settle: detect autocomplete/dropdown appearance
+            if (!args.pressEnter) {
+              const preCount =
+                this.context.getSnapshot()?.elements.length ?? 0;
+              await new Promise((r) => setTimeout(r, 400));
+              prevElementCount = await this.refreshSnapshotWithRetry(
+                tabId,
+                preCount,
+              );
+              if (prevElementCount > preCount + 2) {
+                const delta = prevElementCount - preCount;
+                this.context.addMessage({
+                  role: "user",
+                  content: `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value — select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`,
+                });
+                this.log.info(
+                  "agent",
+                  "Post-type DOM settle: new elements detected",
+                  {
+                    turn: this.turnCount,
+                    preCount,
+                    postCount: prevElementCount,
+                    delta,
+                  },
+                );
               }
             }
           }
@@ -7269,7 +7615,17 @@ export class AgentLoop {
 
               const explicitSuccessSignal =
                 this.detectExplicitSuccessSignalInSnapshot(snap);
-              if (explicitSuccessSignal) {
+              // Suppress auto-complete for root agent (no nodeId) when query
+              // requires multiple return values (e.g. "both numbers").
+              // Orchestrator nodes auto-complete freely — the verifier
+              // handles node-level validation.
+              const taskContractMultiReturn = !this.nodeId
+                ? (buildTaskContract(this.originalQuery).multiReturnCount ?? 0)
+                : 0;
+              if (
+                explicitSuccessSignal &&
+                taskContractMultiReturn < 2
+              ) {
                 const summary = [
                   `- Verified "${explicitSuccessSignal}" is visible on the page.`,
                   `- URL: ${snap.url}`,
@@ -7325,6 +7681,51 @@ export class AgentLoop {
                     type: "SESSION_METRICS",
                     payload: { ...this.metrics },
                   });
+                }
+              } else if (
+                explicitSuccessSignal &&
+                taskContractMultiReturn >= 2 &&
+                this.planSubtasks.length > 0
+              ) {
+                // Multi-return query: auto-complete blocked because not all
+                // returns are collected yet. But the current step IS done.
+                // Advance to the next step instead of blocking the executor.
+                const runningIdx = this.planSubtasks.findIndex(
+                  (s) => s.status === "running",
+                );
+                if (
+                  runningIdx >= 0 &&
+                  runningIdx < this.planSubtasks.length - 1
+                ) {
+                  const newIdx = this.advanceCompletedSubtasks();
+                  const nextDesc =
+                    this.planSubtasks[newIdx]?.description ||
+                    "Continue to next step";
+                  this.syncPlanStatus(
+                    newIdx,
+                    "multi_return_step_advanced",
+                    {
+                      signal: explicitSuccessSignal,
+                      advancedTo: newIdx,
+                    },
+                  );
+                  this.context.addMessage({
+                    role: "user",
+                    content:
+                      `Current step verified ("${explicitSuccessSignal}" visible). ` +
+                      `But the task requires multiple results — advancing to next step.\n` +
+                      `YOUR NEW OBJECTIVE: ${nextDesc}`,
+                  });
+                  this.log.info(
+                    "agent",
+                    "Multi-return: auto-advanced step instead of auto-completing",
+                    {
+                      turn: this.turnCount,
+                      signal: explicitSuccessSignal,
+                      advancedTo: newIdx,
+                      nextObjective: nextDesc,
+                    },
+                  );
                 }
               }
 
@@ -7936,6 +8337,78 @@ export class AgentLoop {
               type: admission.type,
               match: admission.match,
             });
+
+            // When the model admits success in text but won't call done(),
+            // reuse the existing evidence gate shape instead of trusting the
+            // narration alone.
+            const nextTextOnlyCount = consecutiveTextOnly + 1;
+            consecutiveTextOnly = nextTextOnlyCount;
+            totalTextOnly++;
+
+            if (admission.type === "success" && this.planSubtasks.length > 0) {
+              const gate = this.evaluateTextAdmissionAdvanceGate({
+                summary: cleanContent,
+                consecutiveTextOnly: nextTextOnlyCount,
+              });
+
+              if (gate.passed) {
+                if (gate.isLastStep) {
+                  this.log.info(
+                    "agent",
+                    "Text admission matched final step; nudging done()",
+                    {
+                      turn: this.turnCount,
+                      step: gate.runningIdx,
+                      text: cleanContent.slice(0, 100),
+                    },
+                  );
+                  this.context.addMessage({
+                    role: "user",
+                    content:
+                      `You stated: "${admission.match}". All step criteria are met. ` +
+                      `Call done({"summary": "..."}) now with the complete result ` +
+                      `including all requested data.`,
+                  });
+                  this.broadcast({
+                    type: "STREAM_CHUNK",
+                    payload: { delta: "", done: true },
+                  });
+                  continue;
+                }
+
+                const newIdx = this.completeSingleSubtask(gate.runningIdx);
+                const nextDesc =
+                  this.planSubtasks[newIdx]?.description ||
+                  "Continue to next step";
+                this.syncPlanStatus(
+                  newIdx,
+                  "text_admission_criteria_advance",
+                  { turn: this.turnCount, fromStep: gate.runningIdx },
+                );
+                this.log.info(
+                  "agent",
+                  "Text admission criteria advanced step",
+                  {
+                    turn: this.turnCount,
+                    fromStep: gate.runningIdx,
+                    advancedTo: newIdx,
+                    nextObjective: nextDesc,
+                  },
+                );
+                this.context.addMessage({
+                  role: "user",
+                  content:
+                    `Step verified complete (criteria matched, text confirms success). ` +
+                    `Advancing.\nYOUR NEW OBJECTIVE: ${nextDesc}`,
+                });
+                this.broadcast({
+                  type: "STREAM_CHUNK",
+                  payload: { delta: "", done: true },
+                });
+                continue;
+              }
+            }
+
             const nudge =
               admission.type === "success"
                 ? `You stated: "${admission.match}". Call done() to deliver the result.`

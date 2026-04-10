@@ -168,6 +168,13 @@ const SUCCESS_PATTERNS = [
   /operation\s+(complete|successful)/i,
   /all\s+steps?\s+(are\s+)?completed?/i,
   /goal\s+(achieved|accomplished|reached)/i,
+  /(?:step|objective)\s+(?:is\s+)?(?:satisfied|complete|done|met)/i,
+  /i\s+can\s+report\s+(?:both|all|the)/i,
+  /(?:is|are)\s+(?:now\s+)?(?:visible|displayed|shown)\s+on\s+(?:the\s+)?(?:page|screen)/i,
+  /^#+\s*completed?\b/im,
+  /^done\s*[—–-]/im,
+  /i['']?ll\s+mark\s+completion/i,
+  /i\s+verified\b/i,
 ];
 
 const FAILURE_PATTERNS = [
