@@ -42,6 +42,7 @@ export interface PlanDecomposition {
   steps?: PlanStep[];
   difficulty: Difficulty;
   limitOverrides?: Partial<RuntimeLimits> | null;
+  requiresTabManagement?: boolean;
   instrumentation?: {
     outcome:
       | "structured_steps"
@@ -61,7 +62,8 @@ export interface PlanStep {
   assumptions: string[];
   verifyAfter?: {
     trigger: string;
-    action: "call_done" | "advance_step";
+    action: "call_done" | "advance_step" | "retry_step";
+    maxRetries?: number;
     pattern?: string;
   };
   toolProfile?: ToolProfile;
@@ -70,6 +72,98 @@ export interface PlanStep {
     urlPattern?: string; // optional regex for expected URL
     expectedPhrases?: string[]; // key content that should appear in perception
   };
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizePlanText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function looksLikeNavigationOnlyStep(step: PlanStep): boolean {
+  const text = normalizePlanText(`${step.objective} ${step.successCriteria}`);
+  const hasNavigationVerb =
+    /\b(navigate|go to|open|visit|return to|go back|back to|move to)\b/.test(
+      text,
+    );
+  const hasReadVerb =
+    /\b(read|check|inspect|review|report|extract|inventory count|count)\b/.test(
+      text,
+    );
+  return hasNavigationVerb && !hasReadVerb;
+}
+
+function looksLikeReadStep(step: PlanStep): boolean {
+  const text = normalizePlanText(`${step.objective} ${step.successCriteria}`);
+  return /\b(read|check|inspect|review|report|extract|inventory count|count)\b/.test(
+    text,
+  );
+}
+
+function extractSharedTargets(a: PlanStep, b: PlanStep): string[] {
+  const contractLikeTargets = buildTaskContract(
+    `${a.objective}\n${a.successCriteria}\n${b.objective}\n${b.successCriteria}`,
+  ).requiredEntities;
+  return dedupeStrings(contractLikeTargets);
+}
+
+function mergeAdjacentRoundTripReadSteps(steps: PlanStep[]): PlanStep[] {
+  if (steps.length < 2) return steps;
+
+  const merged: PlanStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const current = steps[i];
+    const next = steps[i + 1];
+
+    if (
+      next &&
+      looksLikeNavigationOnlyStep(current) &&
+      looksLikeReadStep(next)
+    ) {
+      const sharedTargets = extractSharedTargets(current, next);
+      const currentText = normalizePlanText(current.objective);
+      const nextText = normalizePlanText(next.objective);
+      const hasSharedTarget =
+        sharedTargets.length === 0 ||
+        sharedTargets.some(
+          (target) =>
+            currentText.includes(target.toLowerCase()) &&
+            nextText.includes(target.toLowerCase()),
+        );
+
+      if (hasSharedTarget) {
+        merged.push({
+          objective: `${current.objective.replace(/[.:\s]+$/, "")} and ${next.objective.replace(/^[a-z]/, (ch) => ch.toLowerCase())}`,
+          successCriteria: dedupeStrings([
+            next.successCriteria,
+            current.successCriteria,
+          ]).join(" "),
+          dependencies: [...current.dependencies],
+          assumptions: dedupeStrings([
+            ...current.assumptions,
+            ...next.assumptions,
+          ]),
+          verifyAfter: next.verifyAfter ?? current.verifyAfter,
+          toolProfile:
+            next.toolProfile === "read_only"
+              ? "navigate"
+              : next.toolProfile || current.toolProfile,
+          expectedState: next.expectedState ?? current.expectedState,
+        });
+        i++;
+        continue;
+      }
+    }
+
+    merged.push(current);
+  }
+
+  return merged.map((step, idx) => ({
+    ...step,
+    dependencies: step.dependencies.filter((dep) => dep < idx),
+  }));
 }
 
 /** Alignment classification from plan monitor */
@@ -455,7 +549,9 @@ export class TaskPlanner {
             dependencies: [] as number[],
             assumptions: [] as string[],
           }));
-          const repairedSteps = repairPlanCoverage({ query, steps: simpleSteps });
+          const repairedSteps = mergeAdjacentRoundTripReadSteps(
+            repairPlanCoverage({ query, steps: simpleSteps }),
+          );
           if (repairedSteps.length >= 2) {
             logger.info(
               "agent",
@@ -626,7 +722,11 @@ export class TaskPlanner {
       };
 
       const parsedSteps = parseSteps(parsed.steps);
-      const steps = parsedSteps ? repairPlanCoverage({ query, steps: parsedSteps }) : null;
+      const steps = parsedSteps
+        ? mergeAdjacentRoundTripReadSteps(
+            repairPlanCoverage({ query, steps: parsedSteps }),
+          )
+        : null;
       const legacySubtasks = Array.isArray(parsed.subtasks)
         ? parsed.subtasks
             .filter((step: unknown): step is string => typeof step === "string")
