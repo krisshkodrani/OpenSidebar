@@ -496,6 +496,7 @@ export interface DataControlRequestMessage extends BaseMessage {
     action:
       | "clear_logs"
       | "clear_chat_history"
+      | "clear_workspace_chat_history"
       | "clear_local_data";
   };
 }

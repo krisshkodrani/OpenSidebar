@@ -91,6 +91,7 @@ describe("Orchestrator conversation collaboration", () => {
 
     const runtimeMessages: any[] = [];
     const checkpointStore: Record<string, unknown> = {};
+    const localStore: Record<string, unknown> = {};
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -122,7 +123,7 @@ describe("Orchestrator conversation collaboration", () => {
       if (key === "opensidebar:orchestrator:checkpoints") {
         return { [key]: checkpointStore };
       }
-      return {};
+      return key in localStore ? { [key]: localStore[key] } : {};
     });
     (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
       const key = "opensidebar:orchestrator:checkpoints";
@@ -132,6 +133,13 @@ describe("Orchestrator conversation collaboration", () => {
         for (const k of Object.keys(checkpointStore)) {
           if (!(k in value)) delete checkpointStore[k];
         }
+        return;
+      }
+      Object.assign(localStore, payload);
+    });
+    (chrome.storage.local as any).remove = vi.fn(async (keys: string | string[]) => {
+      for (const key of Array.isArray(keys) ? keys : [keys]) {
+        delete localStore[key];
       }
     });
 
@@ -269,6 +277,36 @@ describe("Orchestrator conversation collaboration", () => {
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("completed");
+  });
+
+  test("same-workspace follow-up injects prior turn memory into planner and executor", async () => {
+    const plannerQueries: string[] = [];
+    plannerBuildNodesImpl = async (...args: unknown[]) => {
+      plannerQueries.push(String(args[0] ?? ""));
+      return [makeNode("n1", "update draft")];
+    };
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: "Drafted a reply suggesting Monday at 11 AM.",
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+
+    await orchestrator.startTask(makeInput("Draft a reply accepting Thursday 2 PM"));
+    await orchestrator.startTask(
+      makeInput("Change the reply. Suggest Monday at 11 AM instead."),
+    );
+
+    expect(plannerQueries).toHaveLength(2);
+    expect(plannerQueries[1]).toContain("PRIOR WORKSPACE TURNS:");
+    expect(plannerQueries[1]).toContain("Draft a reply accepting Thursday 2 PM");
+    expect(plannerQueries[1]).toContain("CURRENT REQUEST:");
+
+    const secondInstruction = capturedInstructions.at(-1)?.instruction ?? "";
+    expect(secondInstruction).toContain("PRIOR WORKSPACE TURNS:");
+    expect(secondInstruction).toContain("Original user request");
+    expect(secondInstruction).toContain("Suggest Monday at 11 AM instead.");
   });
 
   // ── WS2: Cross-Role Reflexion ────────────────────────────────────

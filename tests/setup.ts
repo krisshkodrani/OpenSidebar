@@ -38,6 +38,7 @@ global.chrome = {
         local: {
             get: async () => ({}),
             set: async () => { },
+            remove: async () => { },
         },
         sync: {
             get: async () => ({}),

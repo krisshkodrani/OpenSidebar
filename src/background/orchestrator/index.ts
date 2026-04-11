@@ -20,6 +20,13 @@ import {
 } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
 import { listPromptDescriptors } from "../../prompts";
+import {
+  buildQueryWithTurnMemory,
+  buildWorkspaceTurnRecord,
+  formatWorkspaceTurnMemoryForPrompt,
+  loadWorkspaceTurnMemory,
+  saveWorkspaceTurnRecord,
+} from "../agent/memory";
 import { workspaceManager } from "../workspaces/manager";
 import {
   updateTabGroupAppearance,
@@ -1374,6 +1381,16 @@ export class Orchestrator {
       await this.stopTask(input.workspaceId);
     }
 
+    const priorTurnMemory =
+      await loadWorkspaceTurnMemory(input.workspaceId).catch(() => null);
+    const priorTurnMemoryBrief =
+      formatWorkspaceTurnMemoryForPrompt(priorTurnMemory);
+    const plannerQuery = buildQueryWithTurnMemory(
+      input.query,
+      priorTurnMemoryBrief,
+    );
+    const turnNumber = (priorTurnMemory?.turns.length ?? 0) + 1;
+
     const taskId = crypto.randomUUID();
     const task: OrchestratorTask = {
       runId: crypto.randomUUID(),
@@ -1381,6 +1398,8 @@ export class Orchestrator {
       workspaceId: input.workspaceId,
       rootTabId: input.tabId,
       query: input.query,
+      turnNumber,
+      priorTurnMemoryBrief: priorTurnMemoryBrief || undefined,
       status: "planning",
       createdAt: Date.now(),
       nodes: [],
@@ -1453,7 +1472,7 @@ export class Orchestrator {
       );
       const tab = await chrome.tabs.get(input.tabId);
       const buildResult = await this.runInLane(task, "planner", async () =>
-        planner.buildNodes(input.query, tab.title || "Untitled", tab.url || ""),
+        planner.buildNodes(plannerQuery, tab.title || "Untitled", tab.url || ""),
       );
       nodes = buildResult.nodes;
       task.planClassification = {
@@ -2039,6 +2058,7 @@ export class Orchestrator {
           driftSignal,
           undefined, // node.description used directly
           task.query,
+          task.priorTurnMemoryBrief,
         );
 
         // Inject predecessor trajectory for same-tab sequential nodes.
@@ -3129,6 +3149,7 @@ export class Orchestrator {
       payload: completionPayload,
     });
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    void this.persistWorkspaceTurnMemory(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
@@ -3574,6 +3595,38 @@ export class Orchestrator {
     }
   }
 
+  private async persistWorkspaceTurnMemory(
+    task: OrchestratorTask,
+    payload: TaskCompletionMessage["payload"],
+  ): Promise<void> {
+    try {
+      let finalUrl: string | null = null;
+      try {
+        const tab = await chrome.tabs.get(task.rootTabId);
+        finalUrl = tab.url ?? null;
+      } catch {
+        finalUrl = null;
+      }
+      await saveWorkspaceTurnRecord(
+        buildWorkspaceTurnRecord({
+          workspaceId: task.workspaceId,
+          taskId: task.id,
+          userQuery: task.query,
+          completion: payload,
+          completedAt: task.finishedAt ?? Date.now(),
+          turnNumber: task.turnNumber ?? 1,
+          finalUrl,
+        }),
+      );
+    } catch (error) {
+      logger.debug("orchestrator", "Failed to persist workspace turn memory", {
+        error,
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+      });
+    }
+  }
+
   private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
     return task.nodes.map((node) => ({
       description: node.description,
@@ -3623,6 +3676,7 @@ export class Orchestrator {
       payload: completionPayload,
     });
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    void this.persistWorkspaceTurnMemory(task, completionPayload);
   }
 
   private emitVerifierStep(

@@ -168,7 +168,9 @@ describe("SidePanel Store", () => {
 
     test("clearHistory clears persisted messages", async () => {
         const setSpy = vi.fn(async () => {});
+        const sendMessageSpy = vi.fn(async () => ({ ok: true }));
         (chrome.storage.local.set as any) = setSpy;
+        (chrome.runtime.sendMessage as any) = sendMessageSpy;
 
         useStore.getState().addMessage({
             id: "1",
@@ -184,6 +186,11 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().messages).toHaveLength(0);
         // Verify workspace-scoped storage was cleared
         expect(setSpy).toHaveBeenCalledWith({ "chatMessages:ws-test": [] });
+        expect(sendMessageSpy).toHaveBeenCalledWith(expect.objectContaining({
+            type: "DATA_CONTROL_REQUEST",
+            workspaceId: "ws-test",
+            payload: { action: "clear_workspace_chat_history" },
+        }));
     });
 
     test("DEFAULT_SETTINGS includes requireApprovals", () => {

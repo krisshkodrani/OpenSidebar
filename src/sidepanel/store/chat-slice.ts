@@ -249,6 +249,15 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       if (wsId != null) {
         const key = chatStorageKey(wsId);
         chrome.storage.local.set({ [key]: [] }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            type: "DATA_CONTROL_REQUEST",
+            requestId: crypto.randomUUID(),
+            source: "sidepanel",
+            workspaceId: wsId,
+            payload: { action: "clear_workspace_chat_history" as const },
+          })
+          .catch(() => {});
       }
     }),
 

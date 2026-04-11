@@ -142,6 +142,7 @@ export function buildExecutorInstruction(
   realitySignal?: string,
   objectiveOverride?: string,
   originalQuery?: string,
+  priorTurnMemoryBrief?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -202,6 +203,10 @@ export function buildExecutorInstruction(
       `If triggered: ${actionText}.`,
       "Do NOT continue executing additional tools once this condition is met.",
     );
+  }
+
+  if (priorTurnMemoryBrief) {
+    sections.push("", priorTurnMemoryBrief);
   }
 
   if (originalQuery) {
