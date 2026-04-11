@@ -10,10 +10,56 @@
  *   npx tsx scripts/run-e2e-progressive.ts --resume    # skip already-reported tests
  */
 
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+
+function runWithTimeout(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; timeout: number; env: Record<string, string | undefined> },
+): Promise<{ stdout: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let killed = false;
+
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env as NodeJS.ProcessEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: true,
+      windowsHide: true,
+    });
+
+    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+    const timer = setTimeout(() => {
+      killed = true;
+      // On Windows, taskkill /T kills the process tree
+      try {
+        execSync(`taskkill /F /T /PID ${child.pid}`, { stdio: "ignore" });
+      } catch {
+        child.kill("SIGKILL");
+      }
+    }, opts.timeout);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({
+        stdout: stdout + "\n" + stderr,
+        exitCode: killed ? 1 : (code ?? 1),
+      });
+    });
+
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve({ stdout: stdout + "\n" + stderr, exitCode: 1 });
+    });
+  });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -270,7 +316,7 @@ function updateSummary(
 
 // ── main ─────────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const filterArg = args.find((a) => !a.startsWith("--"));
   const resume = args.includes("--resume");
@@ -350,21 +396,18 @@ function main() {
     let output = "";
     let exitCode = 0;
 
-    try {
-      output = execSync(
-        `npx vitest run --config "${CONFIG}" "${filePath}"`,
-        {
-          cwd: path.resolve(__dirname, ".."),
-          timeout: Math.max(720_000, prompts.length * 240_000), // 12 min base, +4 min per user turn
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env, FORCE_COLOR: "0" },
-        },
-      );
-    } catch (e: any) {
-      exitCode = e.status ?? 1;
-      output = (e.stdout || "") + "\n" + (e.stderr || "");
-    }
+    const timeoutMs = Math.max(720_000, prompts.length * 240_000);
+    const runResult = await runWithTimeout(
+      "npx",
+      ["vitest", "run", "--config", CONFIG, filePath],
+      {
+        cwd: path.resolve(__dirname, ".."),
+        timeout: timeoutMs,
+        env: { ...process.env, FORCE_COLOR: "0" },
+      },
+    );
+    output = runResult.stdout;
+    exitCode = runResult.exitCode;
 
     const duration = Date.now() - start;
     const result = parseTestOutput(output);
