@@ -102,6 +102,8 @@ export interface OrchestratorTask {
   workspaceId: string;
   rootTabId: number;
   query: string;
+  turnNumber?: number;
+  priorTurnMemoryBrief?: string;
   status: "planning" | "running" | "completed" | "failed" | "stopped";
   createdAt: number;
   startedAt?: number;

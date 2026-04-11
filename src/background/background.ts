@@ -25,6 +25,10 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
+import {
+  clearAllWorkspaceTurnMemory,
+  clearWorkspaceTurnMemory,
+} from "./agent/memory";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -540,9 +544,27 @@ chrome.runtime.onMessage.addListener(
               (k) => k === "chatMessages" || k.startsWith("chatMessages:"),
             );
             if (keys.length > 0) await chrome.storage.local.remove(keys);
+            await clearAllWorkspaceTurnMemory();
             sendResponse({
               ok: true,
               detail: "Chat history cleared for all workspaces.",
+            });
+            return;
+          }
+          if (action === "clear_workspace_chat_history") {
+            const wsId = message.workspaceId;
+            if (!wsId) {
+              sendResponse({
+                ok: false,
+                detail: "No workspace specified for workspace-scoped clear.",
+              });
+              return;
+            }
+            await chrome.storage.local.set({ [`chatMessages:${wsId}`]: [] });
+            await clearWorkspaceTurnMemory(wsId);
+            sendResponse({
+              ok: true,
+              detail: "Chat history cleared for the active workspace.",
             });
             return;
           }
