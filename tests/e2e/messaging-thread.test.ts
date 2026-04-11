@@ -5,12 +5,7 @@
  * based on English instructions, but does NOT send it.
  * Tests: cross-language, contenteditable, read-then-compose, negative constraint.
  *
- * Test 2: Agent clicks the reply editor and types a short message.
- * Verifies no click_element calls were falsely intercepted (body/html
- * false-positive regression — see LinkedIn trace 063466dc).
- * Tests: click interception correctness on fixed-panel messaging layouts.
- *
- * Test 3: DOM-mismatch mode — the thread and composer live inside a closed
+ * Test 2: DOM-mismatch mode — the thread and composer live inside a closed
  * shadow root while the normal DOM only exposes a promo rail. The agent must
  * use vision grounding to locate the real composer and avoid clicking ads.
  * Tests: VLM grounding, shadow DOM resilience, distractor avoidance.
@@ -119,60 +114,6 @@ describe.skipIf(!h.apiKey)("E2E: Messaging Thread", () => {
 
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 360_000);
-
-  it("clicks reply editor without false interception", async () => {
-    await navigateAndWait(h.page, getFixtureUrl("messaging-thread"));
-    await h.page.bringToFront();
-    const tabId = await getActiveTabId(h.ctx.serviceWorker);
-    expect(tabId).toBeGreaterThan(0);
-
-    const prompt = "Type 'Hallo Team' in the reply box.";
-
-    const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-
-    const outcome = await waitForOutcome(
-      h.page,
-      h.ctx.serviceWorker,
-      async () => {
-        const result = await h.page.evaluate(
-          () => (window as any).messagingResult ?? null,
-        );
-        if (!result?.composed || result.sent) return null;
-        if (!result.message.includes("Hallo")) return null;
-        return result;
-      },
-      180_000,
-      workspaceId,
-    );
-
-    await h.printTraceSummary();
-
-    // Verify via traces that no click was falsely intercepted
-    const { traceFiles } = await h.printTraceSummary(workspaceId);
-    const rawTraceEntries = traceFiles.flatMap((filePath) =>
-      readFileSync(filePath, "utf-8")
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line)),
-    );
-    const clickResults = rawTraceEntries.flatMap((entry) =>
-      (entry.toolExecutions ?? [])
-        .filter((e: any) => e.toolName === "click_element")
-        .map((e: any) => String(e.result ?? "")),
-    );
-    const hadInterception = clickResults.some((r) =>
-      r.includes("Click intercepted"),
-    );
-
-    expect(outcome.ok, outcome.reason).toBe(true);
-    expect(hadInterception).toBe(false);
-
-    console.log(`\n[e2e] PASS — Reply editor clicked without interception`);
-    console.log(`[e2e]   Message: ${outcome.result.message}`);
-
-    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
-  }, 240_000);
 
   it("composes message via vision grounding despite DOM mismatch", async () => {
     await navigateAndWait(

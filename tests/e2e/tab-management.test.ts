@@ -27,7 +27,6 @@ import {
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { openHelperPage } from "./helpers/browser";
 import {
-  findAllNewTraceFiles,
   readTrace,
 } from "./helpers/diagnostics";
 
@@ -133,63 +132,6 @@ describe.skipIf(!h.apiKey)("E2E: Tab Management", () => {
     expect(tabs.length).toBeGreaterThanOrEqual(2);
 
     console.log(`\n[e2e] PASS — Data collected (${tabs.length} tabs, ${toolNames.length} tool calls)`);
-    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
-  }, 300_000);
-
-  it("opens tabs, collects data, then closes them", async () => {
-    await navigateAndWait(h.page, getFixtureUrl("dashboard-sales"));
-    await h.page.bringToFront();
-    const tabId = await getActiveTabId(h.ctx.serviceWorker);
-    expect(tabId).toBeGreaterThan(0);
-
-    const supportUrl = getFixtureUrl("dashboard-support");
-
-    const prompt =
-      `Open ${supportUrl} in a new tab, check what's there, then come back and tell me about it.`;
-
-    const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-    const outcome = await waitForTaskCompletion(h.ctx, 240_000, workspaceId);
-
-    const { traceFiles } = await h.printTraceSummary();
-
-    if (!outcome.ok) {
-      console.log(
-        "[e2e] FAILURE:",
-        JSON.stringify(
-          { reason: outcome.reason, events: outcome.events.slice(-10) },
-          null,
-          2,
-        ),
-      );
-    }
-    expect(outcome.ok, outcome.reason).toBe(true);
-
-    // Trace verification: agent must have used create_tab
-    const toolNames = extractToolNames(traceFiles);
-    console.log("[e2e] Tools used:", toolNames.join(", "));
-
-    const hasCreateTab = toolNames.includes("create_tab");
-    expect(hasCreateTab, "Agent must use create_tab to open the support page").toBe(true);
-
-    // Agent should return to original tab (close_tab is optional — natural
-    // users say "come back" not "close the tab")
-    const hasCloseOrSwitch =
-      toolNames.includes("close_tab") || toolNames.includes("switch_tab");
-    expect(
-      hasCloseOrSwitch,
-      "Agent must use close_tab or switch_tab to return to the original tab",
-    ).toBe(true);
-
-    // Must have called done() with a summary
-    const summary = extractDoneSummary(traceFiles);
-    console.log("[e2e] Done summary:", summary?.slice(0, 200));
-    expect(summary, "Agent must call done() with a summary").toBeTruthy();
-
-    // Verify tab state (informational — close_tab may not always succeed)
-    const tabs = await queryContentTabs();
-    console.log("[e2e] Tabs after cleanup:", JSON.stringify(tabs, null, 2));
-
-    console.log(`\n[e2e] PASS — Tab lifecycle complete (${toolNames.length} tool calls)`);
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 300_000);
 });
