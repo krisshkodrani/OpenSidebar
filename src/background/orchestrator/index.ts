@@ -3143,13 +3143,13 @@ export class Orchestrator {
       metrics: task.sessionMetrics,
       terminationReason: task.terminationReason,
     };
+    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    await this.persistWorkspaceTurnMemory(task, completionPayload);
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    void this.persistWorkspaceTurnMemory(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
@@ -3195,11 +3195,11 @@ export class Orchestrator {
 
   async stopTask(workspaceId?: string): Promise<void> {
     if (workspaceId) {
-      this.stopWorkspace(workspaceId);
+      await this.stopWorkspace(workspaceId);
       return;
     }
     for (const wsId of this.tasksByWorkspace.keys()) {
-      this.stopWorkspace(wsId);
+      await this.stopWorkspace(wsId);
     }
   }
 
@@ -3287,7 +3287,7 @@ export class Orchestrator {
     return true;
   }
 
-  private stopWorkspace(workspaceId: string): void {
+  private async stopWorkspace(workspaceId: string): Promise<void> {
     const task = this.tasksByWorkspace.get(workspaceId);
     if (!task) return;
     this.emitTraceEvent(
@@ -3312,7 +3312,7 @@ export class Orchestrator {
       this.pendingPlanConfirmationResolvers.delete(id);
     }
     if (task.nodes.length > 0) {
-      this.sendTerminationCompletion(task, "Stopped by user");
+      await this.sendTerminationCompletion(task, "Stopped by user");
     }
     void this.closeWorkerTabs(task);
     void this.persistTaskCheckpoint(task);
@@ -3641,10 +3641,10 @@ export class Orchestrator {
     }));
   }
 
-  private sendTerminationCompletion(
+  private async sendTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
-  ): void {
+  ): Promise<void> {
     // Finalize the stream first so the side panel exits isStreaming state.
     // Without this, the UI stays stuck showing "Thinking..." after a stop.
     this.sendMessage({
@@ -3670,13 +3670,13 @@ export class Orchestrator {
       metrics: task.sessionMetrics,
       terminationReason,
     };
+    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    await this.persistWorkspaceTurnMemory(task, completionPayload);
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    void this.persistWorkspaceTurnMemory(task, completionPayload);
   }
 
   private emitVerifierStep(
