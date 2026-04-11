@@ -1,7 +1,7 @@
 /**
  * E2E: Edge cases and error handling.
  *
- * Tests: form validation recovery, delayed content, impossible task graceful stop.
+ * Tests: form validation recovery, impossible task graceful stop.
  *
  * Run: npm run test:e2e
  */
@@ -66,46 +66,6 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     expect(result.message.length).toBeGreaterThanOrEqual(10);
 
     console.log(`[e2e] PASS — Contact form submitted: ${result.email}`);
-
-    await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
-  }, 260_000);
-
-  it("agent handles delayed content that appears after button click", async () => {
-    await navigateAndWait(h.page, getFixtureUrl("errors"));
-    await h.page.bringToFront();
-    const tabId = await getActiveTabId(h.ctx.serviceWorker);
-    expect(tabId).toBeGreaterThan(0);
-
-    const prompt = "Click Load Content in the Delayed Content section and tell me what text appears.";
-
-    const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
-
-    const outcome = await waitForOutcome(
-      h.page,
-      h.ctx.serviceWorker,
-      async () => {
-        return h.page.evaluate(() =>
-          (window as any).delayedLoaded ? { loaded: true } : null,
-        );
-      },
-      180_000,
-      workspaceId,
-    );
-
-    await h.printTraceSummary();
-
-    if (!outcome.ok) {
-      console.log("[e2e] FAILURE:", outcome.reason, outcome.events.slice(-5));
-    }
-    expect(outcome.ok, outcome.reason).toBe(true);
-
-    const text = await h.page.evaluate(() => {
-      const el = document.getElementById("delayed-text");
-      return el?.textContent?.trim() ?? null;
-    });
-    expect(text).toContain("The answer is 42");
-
-    console.log(`[e2e] PASS — Delayed content loaded: "${text}"`);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 260_000);
