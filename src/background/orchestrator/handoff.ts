@@ -11,6 +11,8 @@ const MAX_NOTE_LEN = 400;
 const MAX_TASK_CONTEXT_NODES = 8;
 export const MAX_HANDOFF_DEPTH = 2;
 const MIN_ASSUMPTION_TOKEN_LEN = 4;
+const VERIFICATION_TURN_QUERY_PATTERN =
+  /\b(did it work|verify|confirm|check if|check whether|does it show|what('s| is) the (status|result|current)|is it there)\b/i;
 
 const PHASE_LABELS: Record<NodeHandoffArtifact["phase"], string> = {
   planned: "Planner",
@@ -136,6 +138,18 @@ export function buildTaskStateBrief(
     .join("\n");
 }
 
+export function isVerificationTurnQuery(query?: string): boolean {
+  if (!query) return false;
+  return VERIFICATION_TURN_QUERY_PATTERN.test(query);
+}
+
+export function shouldUseVerificationTurnMode(params: {
+  originalQuery?: string;
+  priorTurnMemoryBrief?: string;
+}): boolean {
+  return !!params.priorTurnMemoryBrief && isVerificationTurnQuery(params.originalQuery);
+}
+
 export function buildExecutorInstruction(
   node: TaskNode,
   taskStateBrief?: string,
@@ -143,6 +157,7 @@ export function buildExecutorInstruction(
   objectiveOverride?: string,
   originalQuery?: string,
   priorTurnMemoryBrief?: string,
+  verificationTurnMode = false,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -202,6 +217,20 @@ export function buildExecutorInstruction(
       `After each action, check: ${gate.trigger}`,
       `If triggered: ${actionText}.`,
       "Do NOT continue executing additional tools once this condition is met.",
+    );
+  }
+
+  if (verificationTurnMode) {
+    sections.push(
+      "",
+      "VERIFICATION TURN:",
+      "The user is asking you to confirm the result of a prior action.",
+      "You must complete this turn using tool calls, not plain-text narration.",
+      "Rules:",
+      "- If current page evidence is insufficient or stale, call read_page().",
+      '- If the current grounded page state already answers the question, call done({"summary":"..."}) immediately.',
+      "- Do not describe findings in plain text.",
+      "- Do not repeat the prior action unless the user explicitly asked for that.",
     );
   }
 

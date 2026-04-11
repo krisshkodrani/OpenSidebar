@@ -802,6 +802,30 @@ describe("AgentLoop", () => {
     expect(result.reason).toBe("first_text_only_turn");
   });
 
+  test("verification-turn text-admission gate can pass on first text-only turn", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+      verificationTurnMode: true,
+    });
+    (agent as any).verificationTurnMode = true;
+
+    setPlanContext(agent, {
+      subtasks: [{ description: "Report Warehouse Gamma inventory count", status: "running" }],
+      planSteps: [{ successCriteria: "Warehouse Gamma inventory count 6,412 visible" }],
+      snapshotText: "Warehouse Gamma inventory count: 6,412 units",
+    });
+
+    const result = (agent as any).evaluateTextAdmissionAdvanceGate({
+      summary: "## Completed\nWarehouse Gamma inventory count is 6,412 units.",
+      consecutiveTextOnly: 1,
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.isLastStep).toBe(true);
+  });
+
   test("final-step text admission nudges done instead of auto-completing", async () => {
     mockCompleteStream.mockReset();
     let callIdx = 0;

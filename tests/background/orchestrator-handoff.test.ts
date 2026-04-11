@@ -7,6 +7,8 @@ import {
   buildVerifierContext,
   createRerouteNode,
   formatHandoffBrief,
+  isVerificationTurnQuery,
+  shouldUseVerificationTurnMode,
 } from "../../src/background/orchestrator/handoff";
 import { TaskNode } from "../../src/background/orchestrator/types";
 import { ToolName } from "../../src/types";
@@ -91,6 +93,27 @@ describe("Orchestrator handoff briefing", () => {
     );
     expect(instruction).not.toContain("Objective: Fill checkout form");
     expect(instruction).toContain("Success criteria: Checkout form submitted");
+  });
+
+  test("detects verification follow-up queries", () => {
+    expect(isVerificationTurnQuery("Did it work? What's the status now?")).toBe(
+      true,
+    );
+    expect(isVerificationTurnQuery("Click Save and continue")).toBe(false);
+  });
+
+  test("enables verification turn mode only when prior-turn memory exists", () => {
+    expect(
+      shouldUseVerificationTurnMode({
+        originalQuery: "Confirm the current status",
+        priorTurnMemoryBrief: "PRIOR WORKSPACE TURNS:\nTurn 1 completed",
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseVerificationTurnMode({
+        originalQuery: "Confirm the current status",
+      }),
+    ).toBe(false);
   });
 
   test("builds cross-node task state brief", () => {
@@ -241,6 +264,26 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("text 'Code accepted' visible");
     expect(instruction).toContain("call done() immediately");
     expect(instruction).toContain("Do NOT continue executing");
+  });
+
+  test("adds verification-turn instructions for continuation follow-ups", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      undefined,
+      "Did it work? What's the status now?",
+      "PRIOR WORKSPACE TURNS:\nTurn 1 completed",
+      true,
+    );
+
+    expect(instruction).toContain("VERIFICATION TURN:");
+    expect(instruction).toContain(
+      "You must complete this turn using tool calls, not plain-text narration.",
+    );
+    expect(instruction).toContain('call done({"summary":"..."}) immediately');
+    expect(instruction).toContain("Do not repeat the prior action");
   });
 
   test("includes advance_step action text for non-final gates", () => {
