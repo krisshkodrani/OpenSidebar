@@ -62,6 +62,7 @@ import {
   MAX_HANDOFF_DEPTH,
   buildTaskStateBrief,
   buildVerifierContext,
+  shouldUseVerificationTurnMode,
 } from "./handoff";
 import { matchSuccessCriteria } from "../agent/loop-helpers";
 import { buildRoleExecutionContract } from "./contracts";
@@ -132,6 +133,7 @@ export function buildInitialPlanState(
   return {
     subtasks: task.nodes.map((node) => ({
       description: node.description,
+      successCriteria: node.successCriteria,
       status: node.status,
       turnsUsed: 0,
       turnBudget: 0,
@@ -193,6 +195,7 @@ function synthesizePlanStateFromSingleNode(node: TaskNode) {
         );
         return {
           description,
+          successCriteria: node.successCriteria,
           status:
             node.status === "completed"
               ? "completed"
@@ -1898,6 +1901,10 @@ export class Orchestrator {
         disabledToolCount: executorContract.disabledTools.size,
         taskStateContextChars: taskStateBrief.length,
       });
+      const verificationTurnMode = shouldUseVerificationTurnMode({
+        originalQuery: task.query,
+        priorTurnMemoryBrief: task.priorTurnMemoryBrief,
+      });
 
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
@@ -2016,10 +2023,23 @@ export class Orchestrator {
                 subtasks: [
                   {
                     description: node.description,
+                    successCriteria: node.successCriteria,
                     status: "running" as const,
+                    ...(inferToolProfileForStep(
+                      node.description,
+                      node.successCriteria,
+                    )
+                      ? {
+                          toolProfile: inferToolProfileForStep(
+                            node.description,
+                            node.successCriteria,
+                          ),
+                        }
+                      : {}),
                   },
                 ],
               },
+          verificationTurnMode,
           disableInternalPlanning: executorContract.disableInternalPlanning,
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
@@ -2059,6 +2079,7 @@ export class Orchestrator {
           undefined, // node.description used directly
           task.query,
           task.priorTurnMemoryBrief,
+          verificationTurnMode,
         );
 
         // Inject predecessor trajectory for same-tab sequential nodes.

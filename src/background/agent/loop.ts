@@ -550,9 +550,11 @@ export class AgentLoop {
     modelTier: "executor" | "planner";
     allowedTools: ToolName[];
   } | null;
+  private verificationTurnMode: boolean;
   private initialPlanState: {
     subtasks: Array<{
       description: string;
+      successCriteria?: string;
       status: SubtaskSummary["status"];
       turnsUsed?: number;
       turnBudget?: number;
@@ -906,6 +908,7 @@ export class AgentLoop {
       initialPlanState?: {
         subtasks: Array<{
           description: string;
+          successCriteria?: string;
           status: SubtaskSummary["status"];
           turnsUsed?: number;
           turnBudget?: number;
@@ -920,6 +923,7 @@ export class AgentLoop {
         }>;
         currentIndex: number;
       };
+      verificationTurnMode?: boolean;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
       approvalTimeoutMs?: number;
@@ -940,6 +944,7 @@ export class AgentLoop {
     this.useVLExecutor = options?.useVLExecutor ?? (options?.providerMode === "fireworks");
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
+    this.verificationTurnMode = options?.verificationTurnMode ?? false;
     this.initialPlanState = options?.initialPlanState ?? null;
     this.disabledTools = options?.disabledTools ?? new Set<ToolName>();
     this.workspaceId = options?.workspaceId ?? null;
@@ -1027,6 +1032,17 @@ export class AgentLoop {
       ...(subtask.completedAtUrl
         ? { completedAtUrl: subtask.completedAtUrl }
         : {}),
+    }));
+    this.planSteps = this.initialPlanState.subtasks.map((subtask) => ({
+      objective: subtask.description,
+      successCriteria:
+        subtask.successCriteria || "The current step is completed and verified.",
+      dependencies: [],
+      assumptions: [],
+      ...(subtask.verificationGate
+        ? { verifyAfter: subtask.verificationGate }
+        : {}),
+      ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
     }));
     this.lastPlanIndex = this.initialPlanState.currentIndex;
     this.context.setPlanStatus(
@@ -3434,12 +3450,16 @@ export class AgentLoop {
       return { passed: false, runningIdx: -1, isLastStep: false, reason: "no_running_step" };
     }
 
-    if (consecutiveTextOnly < 2) {
+    const requiredTextOnlyTurns = this.verificationTurnMode ? 1 : 2;
+    if (consecutiveTextOnly < requiredTextOnlyTurns) {
       return {
         passed: false,
         runningIdx,
         isLastStep: false,
-        reason: "first_text_only_turn",
+        reason:
+          requiredTextOnlyTurns === 1
+            ? "verification_turn_waiting"
+            : "first_text_only_turn",
       };
     }
 
