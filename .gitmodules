@@ -1,0 +1,6 @@
+[submodule "lab/agents/hermes/repo"]
+	path = lab/agents/hermes/repo
+	url = https://github.com/nousresearch/hermes-agent.git
+[submodule "lab/agents/gbrain/repo"]
+	path = lab/agents/gbrain/repo
+	url = https://github.com/garrytan/gbrain.git
