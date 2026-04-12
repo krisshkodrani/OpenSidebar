@@ -50,10 +50,6 @@ full-test-output.txt
 test-output.txt
 analyze-log.js
 
-/books/*
-!/books/notes/
-!/books/notes/**
-
 # Secret files (defense in depth)
 *.pem
 *.key
@@ -62,10 +58,14 @@ credentials.json
 # Internal planning docs
 plans/
 
-# Internal notes, RFCs, reports (untracked personal workspace)
-notes/
+# Lab: ignore generated data, keep structure and knowledge
+lab/books/*.pdf
+lab/e2e-reports/
+lab/agents/hermes/repo/
+lab/agents/gbrain/repo/
+data/
 
-# E2E reports (generated per run, not checked in)
+# E2E reports at docs root (legacy, now in lab/e2e-reports/)
 docs/e2e-*
 docs/shopping-trace-*
 docs/test-prompt.md
