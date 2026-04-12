@@ -1,0 +1,77 @@
+# GBrain configuration for OpenSidebar Lab
+# https://github.com/garrytan/gbrain
+
+name: opensidebar-knowledge-base
+description: >
+  Knowledge persistence and semantic search for the OpenSidebar lab.
+  Indexes RFCs, research, reports, book notes, and experiment logs
+  into a searchable knowledge base with vector embeddings.
+
+# Database: PGLite (zero-setup, local)
+database:
+  provider: pglite
+  data_dir: ../../../data/gbrain
+
+# Embedding model
+embeddings:
+  provider: fireworks
+  model: nomic-ai/nomic-embed-text-v1.5
+  api_base: https://api.fireworks.ai/inference/v1
+  # FIREWORKS_API_KEY loaded from project .env
+
+# LLM for multi-query expansion and chunking
+llm:
+  provider: fireworks
+  model: accounts/fireworks/models/kimi-k2.5
+  api_base: https://api.fireworks.ai/inference/v1
+  # FIREWORKS_API_KEY loaded from project .env
+
+# Directories to index
+sources:
+  - path: ../../rfcs
+    glob: "**/*.md"
+    description: "Request for Comments -- hypotheses and designs"
+
+  - path: ../../research
+    glob: "**/*.md"
+    description: "Literature reviews and benchmark studies"
+
+  - path: ../../reports
+    glob: "**/*.md"
+    description: "E2E run reports and benchmark results"
+
+  - path: ../../e2e-reports
+    glob: "**/*.md"
+    description: "Per-run E2E reports"
+
+  - path: ../../books/notes
+    glob: "**/*.md"
+    description: "Book reading notes"
+
+  - path: ../../articles
+    glob: "**/*.md"
+    description: "Short-form articles"
+
+  - path: ../../knowledge
+    glob: "**/*.md"
+    description: "Accumulated knowledge entries"
+
+  - path: ../../experiments
+    glob: "**/README.md"
+    description: "Experiment summaries"
+
+# Autonomous enrichment
+enrichment:
+  enabled: false  # Enable after initial indexing
+  schedule: "0 2 * * *"  # Daily 2am
+  description: >
+    Re-index changed files, generate summaries for new entries,
+    cross-link related documents.
+
+# MCP server mode (for Claude Code integration)
+mcp:
+  enabled: true
+  port: 3847
+  description: >
+    Exposes gbrain tools as an MCP server so Claude Code
+    can query the knowledge base during conversations.

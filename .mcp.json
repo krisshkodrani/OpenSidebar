@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "gbrain": {
+      "command": "bun",
+      "args": [
+        "run",
+        "lab/agents/gbrain/repo/src/cli.ts",
+        "serve"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+      }
+    }
+  }
+}
