@@ -50,7 +50,7 @@ const MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
-    model: "accounts/fireworks/models/kimi-k2p5",
+    model: "accounts/fireworks/routers/kimi-k2p5-turbo",
     inputUsdPerMillion: 0.6,
     outputUsdPerMillion: 3.0,
     cachedInputUsdPerMillion: 0.1,

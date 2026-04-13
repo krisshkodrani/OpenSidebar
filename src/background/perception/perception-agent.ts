@@ -35,10 +35,12 @@ import type {
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_PERCEPTION_MODEL = "gpt-5.4-mini";
+const OPENAI_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
+const OPENAI_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const FIREWORKS_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
+const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -92,6 +94,17 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
     settings.provider === "openai" ? "openai-groq" : "openrouter"
   );
 
+  // Fireworks mode: use Kimi K2.5 Turbo for perception
+  if (mode === "fireworks" && settings.fireworksApiKey) {
+    providers.push({
+      baseUrl: FIREWORKS_API_URL,
+      apiKey: settings.fireworksApiKey,
+      headers: {},
+      model: settings.perceptionModel || FIREWORKS_PERCEPTION_MODEL,
+      providerId: "fireworks",
+    });
+  }
+
   // Hybrid modes: Groq as primary perception provider (fast, cheap)
   if ((mode === "openrouter-groq" || mode === "openai-groq") && settings.groqApiKey) {
     providers.push({
@@ -103,14 +116,14 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
     });
   }
 
-  // OpenAI-groq fallback: if no Groq key, use OpenAI for perception
+  // OpenAI-groq fallback: redirected to Fireworks
   if (mode === "openai-groq" && settings.openaiApiKey && !settings.groqApiKey) {
     providers.push({
       baseUrl: OPENAI_API_URL,
       apiKey: settings.openaiApiKey,
       headers: {},
       model: settings.perceptionModel || OPENAI_PERCEPTION_MODEL,
-      providerId: "openai",
+      providerId: "fireworks",
     });
   }
 

@@ -4,7 +4,7 @@ import { useStore } from "../store";
 import { UserSettings } from "../../types";
 import { saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
-import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION } from "../../background/llm/client";
+import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION, FIREWORKS_MODEL_EXECUTOR, FIREWORKS_MODEL_PLANNER } from "../../background/llm/client";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
@@ -565,7 +565,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <ModelSelector
                     value={formState.executorModel || ""}
                     onChange={(v) => handleChange("executorModel", v || undefined)}
-                    defaultModel={providerMode === "openai-groq" ? OPENAI_MODEL_EXECUTOR : providerMode === "fireworks" ? "accounts/fireworks/models/kimi-k2p5" : MODEL_EXECUTOR}
+                    defaultModel={providerMode === "openai-groq" ? OPENAI_MODEL_EXECUTOR : providerMode === "fireworks" ? FIREWORKS_MODEL_EXECUTOR : MODEL_EXECUTOR}
                     models={models}
                     loading={modelsLoading}
                   />
@@ -579,7 +579,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <ModelSelector
                     value={formState.plannerModel || ""}
                     onChange={(v) => handleChange("plannerModel", v || undefined)}
-                    defaultModel={providerMode === "fireworks" ? "accounts/fireworks/models/kimi-k2p5" : providerMode !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
+                    defaultModel={providerMode === "fireworks" ? FIREWORKS_MODEL_PLANNER : providerMode !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
                     models={models}
                     loading={modelsLoading}
                   />
@@ -613,7 +613,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     <ModelSelector
                       value={formState.perceptionModel || ""}
                       onChange={(v) => handleChange("perceptionModel", v || undefined)}
-                      defaultModel={providerMode !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
+                      defaultModel={providerMode === "fireworks" ? FIREWORKS_MODEL_EXECUTOR : providerMode !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
                       models={models}
                       loading={modelsLoading}
                       filterVisionOnly

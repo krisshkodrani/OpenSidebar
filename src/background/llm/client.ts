@@ -29,18 +29,18 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Executor model tier — used for initial turns (OpenRouter, :nitro for fast routing) */
-export const MODEL_EXECUTOR = "openai/gpt-5.4-mini:nitro";
-/** Fallback: same model without :nitro — routes through different OpenRouter infrastructure */
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "openai/gpt-5.4-mini";
-/** Planner model tier — used after escalation (OpenRouter) */
-export const MODEL_PLANNER = "openai/gpt-5.4-mini:nitro";
+/** Executor model tier — used for initial turns (Fireworks Kimi K2.5 Turbo) */
+export const MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
+/** Fallback: same model (no :nitro variant on Fireworks) */
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "accounts/fireworks/routers/kimi-k2p5-turbo";
+/** Planner model tier — used after escalation (Fireworks Kimi K2.5 Turbo) */
+export const MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
 
-/** OpenAI direct API */
-const OPENAI_BASE_URL = "https://api.openai.com/v1/chat/completions";
-export const OPENAI_MODEL_EXECUTOR = "gpt-5.4-mini";
-export const OPENAI_MODEL_PLANNER = "gpt-5.4-mini";
-export const OPENAI_MODEL_PERCEPTION = "gpt-5.4-mini";
+/** OpenAI direct API — redirected to Fireworks */
+const OPENAI_BASE_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
+export const OPENAI_MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const OPENAI_MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const OPENAI_MODEL_PERCEPTION = "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -53,7 +53,7 @@ function openAIProvider(apiKey: string): ProviderConfig {
     baseUrl: OPENAI_BASE_URL,
     apiKey,
     headers: {},
-    providerId: "openai",
+    providerId: "fireworks",
   };
 }
 
@@ -69,12 +69,12 @@ function groqProvider(apiKey: string): ProviderConfig {
 /** Fireworks AI direct API */
 const FIREWORKS_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-export const FIREWORKS_MODEL_EXECUTOR = "accounts/fireworks/models/kimi-k2p5";
-export const FIREWORKS_MODEL_PLANNER = "accounts/fireworks/models/kimi-k2p5";
+export const FIREWORKS_MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const FIREWORKS_MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 /** Models known to support vision (image_url content) + tool calling simultaneously */
 const VL_CAPABLE_MODELS = new Set([
-  "accounts/fireworks/models/kimi-k2p5",
+  "accounts/fireworks/routers/kimi-k2p5-turbo",
   "openai/gpt-5.4-mini",
   "openai/gpt-5.4-mini:nitro",
   "gpt-5.4-mini",
@@ -723,6 +723,9 @@ export class LLMClient {
       );
     }
 
+    // Fireworks routers require streaming — force it and collect the response
+    const forceStream = provider.providerId === "fireworks";
+
     const payload: Record<string, unknown> = {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
@@ -732,6 +735,7 @@ export class LLMClient {
       max_tokens: request.max_tokens,
       stop: request.stop,
       response_format: request.response_format,
+      ...(forceStream ? { stream: true, stream_options: { include_usage: true } } : {}),
     };
 
     logger.debug("agent", "LLM Request", {
@@ -843,6 +847,29 @@ export class LLMClient {
           throw err;
         }
         throw new Error(`LLM API Error (${response.status}): ${errorText}`);
+      }
+
+      // Fireworks streaming: collect SSE stream and return as CompletionResponse
+      if (forceStream) {
+        if (!response.body) {
+          throw new Error("Fireworks streaming response has no body");
+        }
+        const result = await parseSSEStream(
+          response.body,
+          () => {}, // no-op: complete() doesn't stream to UI
+          request.signal,
+        );
+        const rawContent = result.content;
+        const cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+        return {
+          role: "assistant",
+          content: cleanContent,
+          tool_calls: result.tool_calls,
+          finish_reason: result.tool_calls ? "tool_calls" : "stop",
+          usage: result.usage,
+          actualProviderId,
+          actualModel,
+        };
       }
 
       const data = await response.json();
