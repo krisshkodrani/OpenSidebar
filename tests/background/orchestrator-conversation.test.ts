@@ -258,16 +258,21 @@ describe("Orchestrator conversation collaboration", () => {
   });
 
   test("memory writes do NOT fire when all nodes succeed", async () => {
-    plannerBuildNodesImpl = async () => [makeNode("n1", "success step")];
+    plannerBuildNodesImpl = async () => [makeNode("n1", "do the step")];
     verifierDecisionImpl = async () => ({
       decision: "accept",
       reason: "All good",
       confidence: 0.95,
     });
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed",
+      summary: `did the step ${nodeId}`,
+      metrics: undefined,
+    });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("all success no memory write"));
+    await orchestrator.startTask(makeInput("do the step"));
 
     const messages = (globalThis as any).__runtimeMessages as Array<{
       type?: string;

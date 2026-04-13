@@ -45,7 +45,7 @@ describe("Orchestrator verifier fallback", () => {
     expect(decision.decision).not.toBe("reroute");
   });
 
-  test("accepts when executor completed even without success keywords", () => {
+  test("accepts with low confidence when executor completed but verifier LLM failed", () => {
     const decision = deriveVerifierFallbackDecision({
       taskQuery: "Summarize page",
       objective: "Summarize this page",
@@ -54,7 +54,7 @@ describe("Orchestrator verifier fallback", () => {
       executorOutcome: "completed",
     });
     expect(decision.decision).toBe("accept");
-    expect(decision.confidence).toBeGreaterThanOrEqual(0.7);
+    expect(decision.confidence).toBeLessThanOrEqual(0.5);
     expect(decision.reason).toContain("executor");
   });
 
