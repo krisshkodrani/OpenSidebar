@@ -79,6 +79,21 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Execute only the current step objective.");
   });
 
+  test("injects selected workflow skill into executor instruction", () => {
+    const node = makeNode([]);
+    node.selectedSkillId = "structured-form-fill";
+    node.selectedSkillReason =
+      "Task requires disciplined multi-field form entry before submission.";
+
+    const instruction = buildExecutorInstruction(node);
+
+    expect(instruction).toContain("Selected workflow skill:");
+    expect(instruction).toContain("structured-form-fill");
+    expect(instruction).toContain("Skill procedure:");
+    expect(instruction).toContain("Map each requested value to a specific input");
+    expect(instruction).toContain("Skill evidence requirements:");
+  });
+
   test("uses active plan objective override when provided", () => {
     const node = makeNode([]);
     const instruction = buildExecutorInstruction(
@@ -230,6 +245,17 @@ describe("Orchestrator handoff briefing", () => {
     expect(context).toContain("Node handoff context:");
     expect(context).toContain("Global task context:");
     expect(context).toContain("Planner (planner): Finalize checkout confirmation.");
+  });
+
+  test("includes reduced skill verification contract for verifier", () => {
+    const node = makeNode([]);
+    node.selectedSkillId = "cross-tab-compare";
+
+    const context = buildVerifierContext(node, "- [completed] Prior node :: Collected metrics");
+
+    expect(context).toContain("Skill verification contract:");
+    expect(context).toContain("Selected skill: cross-tab-compare");
+    expect(context).toContain("Required evidence:");
   });
 
   test("builds assumption drift signal when assumptions do not match snapshot", () => {

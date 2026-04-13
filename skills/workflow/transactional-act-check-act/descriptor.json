@@ -1,0 +1,27 @@
+{
+  "id": "transactional-act-check-act",
+  "name": "Transactional Act Check Act",
+  "description": "Execute a state-changing action, verify the resulting page state, then continue with fresh grounding.",
+  "tags": ["workflow", "transactional", "verification", "mutation"],
+  "triggers": [
+    "act then verify then continue",
+    "inspect before mutating",
+    "destructive or confirm-gated workflow"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "read_element",
+    "click_element",
+    "type_text",
+    "dismiss_overlays",
+    "update_notes"
+  ],
+  "discouragedTools": ["done"],
+  "memoryScope": "turn",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Prefer sequential execution.",
+    "Require a fresh grounding step after each mutation."
+  ]
+}

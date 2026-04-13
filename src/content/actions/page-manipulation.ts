@@ -3,7 +3,7 @@
  */
 
 import { HideElementArgs } from "../../types";
-import { getVisibleText, addDynamicTag } from "../tagging";
+import { getVisibleText, addDynamicTag, dismissElement } from "../tagging";
 import {
   staleIdError,
   describeElement,
@@ -70,7 +70,7 @@ export function executeHideElement(args: HideElementArgs): {
     ancestorUsed = true;
   }
 
-  target.style.display = "none";
+  dismissElement(target);
 
   // Restore body overflow if modal set it
   const bodyStyle = window.getComputedStyle(document.body);

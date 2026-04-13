@@ -65,12 +65,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const E2E_DIR = path.resolve(__dirname, "../tests/e2e");
+const TRACE_DIR = path.resolve(__dirname, "../traces");
+const RUN_TRACE_DIR = path.join(TRACE_DIR, "runs");
 const dirArg = process.argv.find((a) => a.startsWith("--dir="));
 const REPORT_DIR = dirArg
   ? path.resolve(dirArg.split("=")[1])
   : path.resolve(__dirname, "../docs/e2e-reports/natural-v2");
 const SUMMARY_FILE = path.join(REPORT_DIR, "_summary.md");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
+const TRACE_INDEX_FILE = path.join(TRACE_DIR, "index.jsonl");
+
+interface TraceSessionSummary {
+  sessionId: string;
+  outcome: string;
+  failureCategory?: string;
+  failureCode?: string;
+  failureDetail?: string;
+}
+
+interface SkillNodeSummary {
+  nodeId: string;
+  skillId: string;
+  reason?: string;
+  outcome?: string;
+  failureType?: string;
+  failureReason?: string;
+  summary?: string;
+}
+
+interface SkillAnalytics {
+  skillIds: string[];
+  nodeSkills: SkillNodeSummary[];
+  sessions: TraceSessionSummary[];
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -194,12 +221,210 @@ function parseTestOutput(output: string): {
   };
 }
 
+function snapshotTraceFiles(): Set<string> {
+  if (!fs.existsSync(TRACE_DIR)) return new Set();
+  return new Set(
+    fs
+      .readdirSync(TRACE_DIR)
+      .filter((f) => f.endsWith(".jsonl") && f !== "index.jsonl"),
+  );
+}
+
+function findAllNewTraceFiles(before: Set<string>): string[] {
+  if (!fs.existsSync(TRACE_DIR)) return [];
+  return fs
+    .readdirSync(TRACE_DIR)
+    .filter((f) => f.endsWith(".jsonl") && f !== "index.jsonl")
+    .filter((f) => !before.has(f))
+    .map((f) => path.join(TRACE_DIR, f))
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+}
+
+function extractRunIdsFromTraceFiles(traceFiles: string[]): string[] {
+  const runIds = new Set<string>();
+  for (const filePath of traceFiles) {
+    if (!fs.existsSync(filePath)) continue;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (typeof entry?.runId === "string" && entry.runId.length > 0) {
+          runIds.add(entry.runId);
+        }
+      } catch {}
+    }
+  }
+  return [...runIds];
+}
+
+function readTraceSessionIndex(): Map<string, TraceSessionSummary> {
+  const bySessionId = new Map<string, TraceSessionSummary>();
+  if (!fs.existsSync(TRACE_INDEX_FILE)) return bySessionId;
+  const raw = fs.readFileSync(TRACE_INDEX_FILE, "utf-8");
+  const lines = raw.trim().split("\n").filter(Boolean);
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+      const sessionId =
+        typeof entry?.sessionId === "string" ? entry.sessionId : "";
+      if (!sessionId) continue;
+      bySessionId.set(sessionId, {
+        sessionId,
+        outcome: typeof entry?.outcome === "string" ? entry.outcome : "unknown",
+        failureCategory:
+          typeof entry?.failureCategory === "string"
+            ? entry.failureCategory
+            : undefined,
+        failureCode:
+          typeof entry?.failureCode === "string"
+            ? entry.failureCode
+            : undefined,
+        failureDetail:
+          typeof entry?.failureDetail === "string"
+            ? entry.failureDetail
+            : undefined,
+      });
+    } catch {}
+  }
+  return bySessionId;
+}
+
+function extractSessionSummariesFromTraceFiles(
+  traceFiles: string[],
+): TraceSessionSummary[] {
+  const bySessionId = readTraceSessionIndex();
+  const seen = new Set<string>();
+  const sessions: TraceSessionSummary[] = [];
+  for (const filePath of traceFiles) {
+    const sessionId = path.basename(filePath, ".jsonl");
+    if (!sessionId || seen.has(sessionId)) continue;
+    seen.add(sessionId);
+    const summary = bySessionId.get(sessionId);
+    if (summary) sessions.push(summary);
+  }
+  return sessions;
+}
+
+function extractSkillAnalytics(
+  runIds: string[],
+  traceFiles: string[],
+): SkillAnalytics {
+  const skillIds = new Set<string>();
+  const nodeSkills = new Map<string, SkillNodeSummary>();
+
+  for (const runId of runIds) {
+    const traceFile = path.join(RUN_TRACE_DIR, `${runId}.jsonl`);
+    if (!fs.existsSync(traceFile)) continue;
+    const raw = fs.readFileSync(traceFile, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry?.traceKind !== "orchestrator.run.event") continue;
+
+        if (
+          entry?.type === "plan_decomposed" &&
+          Array.isArray(entry?.data?.skills)
+        ) {
+          for (const item of entry.data.skills) {
+            const nodeId =
+              typeof item?.nodeId === "string" ? item.nodeId : "";
+            const skillId =
+              typeof item?.skillId === "string" ? item.skillId : "";
+            const reason =
+              typeof item?.reason === "string" ? item.reason : undefined;
+            if (!nodeId || !skillId) continue;
+            skillIds.add(skillId);
+            const current = nodeSkills.get(nodeId) ?? { nodeId, skillId };
+            current.skillId = skillId;
+            if (reason) current.reason = reason;
+            nodeSkills.set(nodeId, current);
+          }
+        }
+
+        if (entry?.type === "node_started") {
+          const nodeId =
+            typeof entry?.data?.nodeId === "string" ? entry.data.nodeId : "";
+          const skillId =
+            typeof entry?.data?.selectedSkillId === "string"
+              ? entry.data.selectedSkillId
+              : "";
+          const reason =
+            typeof entry?.data?.selectedSkillReason === "string"
+              ? entry.data.selectedSkillReason
+              : undefined;
+          if (!nodeId || !skillId) continue;
+          skillIds.add(skillId);
+          const current = nodeSkills.get(nodeId) ?? { nodeId, skillId };
+          current.skillId = skillId;
+          if (reason) current.reason = reason;
+          nodeSkills.set(nodeId, current);
+        }
+
+        if (entry?.type === "node_verified") {
+          const nodeId =
+            typeof entry?.data?.nodeId === "string" ? entry.data.nodeId : "";
+          if (!nodeId) continue;
+          const current =
+            nodeSkills.get(nodeId) ?? ({ nodeId, skillId: "unattributed" } as SkillNodeSummary);
+          const failureType =
+            typeof entry?.data?.failureType === "string"
+              ? entry.data.failureType
+              : undefined;
+          const failureReason =
+            typeof entry?.data?.reason === "string" ? entry.data.reason : undefined;
+          if (failureType) current.failureType = failureType;
+          if (failureReason) current.failureReason = failureReason;
+          nodeSkills.set(nodeId, current);
+        }
+
+        if (entry?.type === "node_completed") {
+          const nodeId =
+            typeof entry?.data?.nodeId === "string" ? entry.data.nodeId : "";
+          if (!nodeId) continue;
+          const current =
+            nodeSkills.get(nodeId) ?? ({ nodeId, skillId: "unattributed" } as SkillNodeSummary);
+          const outcome =
+            typeof entry?.data?.outcome === "string" ? entry.data.outcome : undefined;
+          const summary =
+            typeof entry?.data?.summary === "string" ? entry.data.summary : undefined;
+          if (outcome) current.outcome = outcome;
+          if (summary) current.summary = summary;
+          nodeSkills.set(nodeId, current);
+        }
+      } catch {}
+    }
+  }
+
+  return {
+    skillIds: [...skillIds].sort(),
+    nodeSkills: [...nodeSkills.values()].sort((a, b) =>
+      a.nodeId.localeCompare(b.nodeId),
+    ),
+    sessions: extractSessionSummariesFromTraceFiles(traceFiles),
+  };
+}
+
+function summarizeSessionOutcomes(sessions: TraceSessionSummary[]): string {
+  if (sessions.length === 0) return "N/A";
+  const counts = new Map<string, number>();
+  for (const session of sessions) {
+    counts.set(session.outcome, (counts.get(session.outcome) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([outcome, count]) => `${outcome}=${count}`)
+    .join(", ");
+}
+
 function writeReport(
   testFile: string,
   prompts: string[],
   result: ReturnType<typeof parseTestOutput>,
   duration: number,
   rawOutput: string,
+  skillSummary: SkillAnalytics,
 ): void {
   const basename = path.basename(testFile, ".test.ts");
   const reportPath = path.join(REPORT_DIR, `${basename}.md`);
@@ -232,7 +457,57 @@ function writeReport(
   md += `## Stats\n\n`;
   md += `- Tools used: ${result.tools || "N/A"}\n`;
   md += `- Done summary: ${result.doneSummary || "N/A"}\n`;
+  md += `- Skills used: ${skillSummary.skillIds.length > 0 ? skillSummary.skillIds.map((s) => `\`${s}\``).join(", ") : "N/A"}\n`;
+  md += `- Trace outcomes: ${summarizeSessionOutcomes(skillSummary.sessions)}\n`;
   md += `\n`;
+
+  if (skillSummary.nodeSkills.length > 0) {
+    md += `## Skill Routing\n\n`;
+    md += `| Node | Skill | Outcome | Failure Type | Reason |\n|---|---|---|---|---|\n`;
+    for (const item of skillSummary.nodeSkills) {
+      md += `| ${item.nodeId.slice(0, 8)} | \`${item.skillId}\` | ${item.outcome || "-"} | ${item.failureType || "-"} | ${item.reason || "-"} |\n`;
+    }
+    md += `\n`;
+  }
+
+  const failingSessions = skillSummary.sessions.filter(
+    (session) => session.outcome !== "completed",
+  );
+  if (failingSessions.length > 0) {
+    md += `## Trace Failure Summary\n\n`;
+    for (const session of failingSessions) {
+      md += `- Session \`${session.sessionId.slice(0, 8)}\`: outcome=${session.outcome}`;
+      if (session.failureCode && session.failureCode !== "none") {
+        md += `; code=\`${session.failureCode}\``;
+      }
+      if (session.failureCategory && session.failureCategory !== "none") {
+        md += `; category=\`${session.failureCategory}\``;
+      }
+      if (session.failureDetail) {
+        md += `; detail=${session.failureDetail}`;
+      }
+      md += `\n`;
+    }
+    md += `\n`;
+  }
+
+  const skillFailures = skillSummary.nodeSkills.filter(
+    (node) =>
+      node.failureType ||
+      (node.outcome && node.outcome !== "completed"),
+  );
+  if (skillFailures.length > 0) {
+    md += `## Skill Failure Signals\n\n`;
+    md += `| Skill | Node | Outcome | Failure Type | Signal |\n|---|---|---|---|---|\n`;
+    for (const item of skillFailures) {
+      const signal =
+        item.failureReason ||
+        item.summary ||
+        "-";
+      md += `| \`${item.skillId}\` | ${item.nodeId.slice(0, 8)} | ${item.outcome || "-"} | ${item.failureType || "-"} | ${signal.replace(/\|/g, "\\|").slice(0, 180)} |\n`;
+    }
+    md += `\n`;
+  }
 
   // Trace
   if (result.trace) {
@@ -289,6 +564,9 @@ function updateSummary(
     passed: number;
     failed: number;
     duration: number;
+    skillIds: string[];
+    sessions: TraceSessionSummary[];
+    nodeSkills: SkillNodeSummary[];
   }[],
 ): void {
   let md = `# E2E Progressive Report — Natural Language Prompts v2\n\n`;
@@ -299,12 +577,112 @@ function updateSummary(
   md += `**Overall**: ${totalPass}/${totalPass + totalFail} passed (${Math.round((totalPass / (totalPass + totalFail || 1)) * 100)}%)\n`;
   md += `**Total time**: ${(totalTime / 1000 / 60).toFixed(1)} min\n\n`;
 
-  md += `| Test File | Pass | Fail | Time | Result |\n`;
-  md += `|---|---|---|---|---|\n`;
+  md += `| Test File | Pass | Fail | Time | Result | Skills |\n`;
+  md += `|---|---|---|---|---|---|\n`;
   for (const r of results) {
     const name = path.basename(r.file, ".test.ts");
     const icon = r.failed === 0 ? "PASS" : "FAIL";
-    md += `| [${name}](${name}.md) | ${r.passed} | ${r.failed} | ${(r.duration / 1000).toFixed(0)}s | ${icon} |\n`;
+    md += `| [${name}](${name}.md) | ${r.passed} | ${r.failed} | ${(r.duration / 1000).toFixed(0)}s | ${icon} | ${r.skillIds.length > 0 ? r.skillIds.map((skillId) => `\`${skillId}\``).join(", ") : "-"} |\n`;
+  }
+
+  md += `\n## Skill Summary\n\n`;
+  const skillUsage = new Map<string, { total: number; passing: number; failing: number }>();
+  for (const r of results) {
+    for (const skillId of r.skillIds) {
+      const current = skillUsage.get(skillId) ?? {
+        total: 0,
+        passing: 0,
+        failing: 0,
+      };
+      current.total += 1;
+      if (r.failed === 0) current.passing += 1;
+      else current.failing += 1;
+      skillUsage.set(skillId, current);
+    }
+  }
+  if (skillUsage.size === 0) {
+    md += `No workflow skills were detected in the linked run traces.\n`;
+  } else {
+    for (const [skillId, counts] of [...skillUsage.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    )) {
+      md += `- \`${skillId}\`: used in ${counts.total} test file(s); ${counts.passing} passing, ${counts.failing} failing\n`;
+    }
+  }
+
+  md += `\n## Skill Failure Analytics\n\n`;
+  const failureBySkill = new Map<
+    string,
+    {
+      failureTypes: Map<string, number>;
+      failureCodes: Map<string, number>;
+      outcomes: Map<string, number>;
+    }
+  >();
+  for (const result of results) {
+    for (const node of result.nodeSkills) {
+      const current =
+        failureBySkill.get(node.skillId) ?? {
+          failureTypes: new Map<string, number>(),
+          failureCodes: new Map<string, number>(),
+          outcomes: new Map<string, number>(),
+        };
+      if (node.outcome) {
+        current.outcomes.set(
+          node.outcome,
+          (current.outcomes.get(node.outcome) ?? 0) + 1,
+        );
+      }
+      if (node.failureType) {
+        current.failureTypes.set(
+          node.failureType,
+          (current.failureTypes.get(node.failureType) ?? 0) + 1,
+        );
+      }
+      failureBySkill.set(node.skillId, current);
+    }
+    for (const session of result.sessions) {
+      if (!session.failureCode || session.failureCode === "none") continue;
+      for (const skillId of result.skillIds) {
+        const current =
+          failureBySkill.get(skillId) ?? {
+            failureTypes: new Map<string, number>(),
+            failureCodes: new Map<string, number>(),
+            outcomes: new Map<string, number>(),
+          };
+        current.failureCodes.set(
+          session.failureCode,
+          (current.failureCodes.get(session.failureCode) ?? 0) + 1,
+        );
+        failureBySkill.set(skillId, current);
+      }
+    }
+  }
+  if (failureBySkill.size === 0) {
+    md += `No skill-linked failure signals were detected.\n`;
+  } else {
+    for (const [skillId, stats] of [...failureBySkill.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    )) {
+      const topFailureTypes = [...stats.failureTypes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([value, count]) => `${value}=${count}`)
+        .join(", ");
+      const topFailureCodes = [...stats.failureCodes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([value, count]) => `${value}=${count}`)
+        .join(", ");
+      const outcomes = [...stats.outcomes.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([value, count]) => `${value}=${count}`)
+        .join(", ");
+      md += `- \`${skillId}\`: outcomes ${outcomes || "n/a"}`;
+      if (topFailureTypes) md += `; failure types ${topFailureTypes}`;
+      if (topFailureCodes) md += `; failure codes ${topFailureCodes}`;
+      md += `\n`;
+    }
   }
 
   md += `\n## Compared to v1 (pre-fix baseline)\n\n`;
@@ -353,6 +731,9 @@ async function main() {
     passed: number;
     failed: number;
     duration: number;
+    skillIds: string[];
+    sessions: TraceSessionSummary[];
+    nodeSkills: SkillNodeSummary[];
   }[] = [];
 
   // Load existing results if resuming
@@ -371,6 +752,9 @@ async function main() {
             passed: parseInt(passMatch[1]),
             failed: parseInt(failMatch[1]),
             duration: parseFloat(durMatch[1]) * 1000,
+            skillIds: [],
+            sessions: [],
+            nodeSkills: [],
           });
           console.log(`⏭  Skipping ${basename} (already reported)`);
         }
@@ -393,6 +777,7 @@ async function main() {
     console.log(`${"═".repeat(60)}`);
 
     const start = Date.now();
+    const traceBefore = snapshotTraceFiles();
     let output = "";
     let exitCode = 0;
 
@@ -408,6 +793,9 @@ async function main() {
     );
     output = runResult.stdout;
     exitCode = runResult.exitCode;
+    const traceFiles = findAllNewTraceFiles(traceBefore);
+    const runIds = extractRunIdsFromTraceFiles(traceFiles);
+    const skillSummary = extractSkillAnalytics(runIds, traceFiles);
 
     const duration = Date.now() - start;
     const result = parseTestOutput(output);
@@ -418,13 +806,16 @@ async function main() {
       result.diagnostics += "\nTest process crashed or timed out.";
     }
 
-    writeReport(file, prompts, result, duration, output);
+    writeReport(file, prompts, result, duration, output, skillSummary);
 
     summaryResults.push({
       file,
       passed: result.passed,
       failed: result.failed,
       duration,
+      skillIds: skillSummary.skillIds,
+      sessions: skillSummary.sessions,
+      nodeSkills: skillSummary.nodeSkills,
     });
 
     updateSummary(summaryResults);

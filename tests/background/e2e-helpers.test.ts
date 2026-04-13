@@ -22,6 +22,31 @@ describe("e2e helper semantics", () => {
     expect(e2eUtilsTestOnly.getLatestTaskCompletionState([])).toBe("none");
   });
 
+  it("treats failed task completion as terminal", () => {
+    const events = [
+      { type: "TASK_COMPLETION", status: "failed", timestamp: 100 },
+      { type: "AGENT_STATUS", status: "IDLE", timestamp: 120 },
+    ];
+
+    expect(e2eUtilsTestOnly.isTerminalTaskCompletionStatus("failed")).toBe(true);
+    expect(e2eUtilsTestOnly.getLatestTaskCompletionState(events)).toBe("failed");
+    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(events)).toBe(true);
+  });
+
+  it("requires idle after terminal completion for turn handoff", () => {
+    const idleBeforeCompletion = [
+      { type: "AGENT_STATUS", status: "IDLE", timestamp: 100 },
+      { type: "TASK_COMPLETION", status: "completed", timestamp: 200 },
+    ];
+    const idleAfterCompletion = [
+      { type: "TASK_COMPLETION", status: "completed", timestamp: 200 },
+      { type: "AGENT_STATUS", status: "IDLE", timestamp: 250 },
+    ];
+
+    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleBeforeCompletion)).toBe(false);
+    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleAfterCompletion)).toBe(true);
+  });
+
   it("filters trace files by workspace id", () => {
     const dir = mkdtempSync(join(tmpdir(), "opensidebar-e2e-"));
     try {

@@ -23,14 +23,14 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForTaskCompletion,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
-import { findAllNewTraceFiles, readTrace } from "./helpers/diagnostics";
+import { extractDoneSummary, findAllNewTraceFiles } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 10, testLabel: "cross-tab" });
 
@@ -38,17 +38,7 @@ const TURN_TIMEOUT = 150_000;
 
 /** Extract the done() message from trace files */
 function extractDoneMessage(traceFiles: string[]): string {
-  for (const f of traceFiles) {
-    const turns = readTrace(f);
-    for (const t of turns) {
-      for (const tc of (t as any).toolCalls ?? []) {
-        if (tc.name === "done" && tc.args?.message) {
-          return tc.args.message;
-        }
-      }
-    }
-  }
-  return "";
+  return extractDoneSummary(traceFiles);
 }
 
 describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
@@ -94,8 +84,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
     const tracesAfterTurn1 = new Set([...h.tracesBefore, ...turn1Traces]);
 
     // =================================================================
@@ -131,8 +120,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
     const tracesAfterTurn2 = new Set([...tracesAfterTurn1, ...turn2Traces]);
 
     // =================================================================

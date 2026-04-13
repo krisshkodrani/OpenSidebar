@@ -1,0 +1,31 @@
+{
+  "id": "navigate-read-return",
+  "name": "Navigate Read Return",
+  "description": "Navigate to a target page, extract the needed information, then return to the original page to continue the workflow.",
+  "tags": ["workflow", "navigation", "lookup", "round-trip"],
+  "triggers": [
+    "go to page and come back",
+    "look up information then return",
+    "find details on another page",
+    "check job listing and return",
+    "round-trip lookup"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "navigate",
+    "go_back",
+    "click_element",
+    "read_element",
+    "update_notes"
+  ],
+  "discouragedTools": [
+    "done"
+  ],
+  "memoryScope": "turn",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Capture the needed fact before navigating away from the target page.",
+    "Verify the return landed on the expected origin page before continuing."
+  ]
+}

@@ -24,10 +24,10 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForOutcome,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
@@ -96,8 +96,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation", () => {
     // =================================================================
     // TRANSITION: Clear events, keep same workspace
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 2: Decline both times, suggest Monday
@@ -156,8 +155,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 3: Make it casual, mention Q3 slides

@@ -4,7 +4,7 @@
  * Tests that the agent can undo a prior action and change course
  * when the user realizes they picked the wrong item.
  *
- * Turn 1: Add UltraBoost 24 to cart
+ * Turn 1: Add Novablast 4 to cart
  * Turn 2: Remove it, add Pegasus 41 instead
  * Turn 3: Checkout with coupon + standard shipping
  *
@@ -23,10 +23,10 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForOutcome,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
@@ -52,11 +52,11 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
     // =================================================================
     // TURN 1: Add the wrong item
     // =================================================================
-    console.log("\n[cart-swap] === TURN 1: Add UltraBoost 24 ===");
+    console.log("\n[cart-swap] === TURN 1: Add Novablast 4 ===");
 
     await sendUserChat(
       h.ctx,
-      "Add the UltraBoost 24 to the cart.",
+      "Add the Novablast 4 to the cart.",
       tabId,
       workspaceId,
     );
@@ -69,10 +69,10 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
           () => (window as any).__shopState ?? null,
         );
         if (!state?.cart?.length) return null;
-        const hasUltra = state.cart.some(
-          (item: any) => item.id === "ultraboost-24",
+        const hasNova = state.cart.some(
+          (item: any) => item.id === "novablast-4",
         );
-        return hasUltra ? state : null;
+        return hasNova ? state : null;
       },
       TURN_TIMEOUT,
       workspaceId,
@@ -86,13 +86,12 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
     }
     expect(turn1.ok, `Turn 1 failed: ${turn1.reason}`).toBe(true);
 
-    console.log("[cart-swap] Turn 1 PASS — UltraBoost in cart");
+    console.log("[cart-swap] Turn 1 PASS — Novablast in cart");
 
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 2: Remove wrong item, add correct one
@@ -101,7 +100,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
 
     await sendUserChat(
       h.ctx,
-      "Wrong shoe — remove the UltraBoost from the cart and add the Air Zoom Pegasus 41 instead.",
+      "Wrong shoe — remove the Novablast from the cart and add the Pegasus 41 instead.",
       tabId,
       workspaceId,
     );
@@ -117,11 +116,11 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
         const hasPegasus = state.cart.some(
           (item: any) => item.id === "pegasus-41",
         );
-        const hasUltra = state.cart.some(
-          (item: any) => item.id === "ultraboost-24",
+        const hasNova = state.cart.some(
+          (item: any) => item.id === "novablast-4",
         );
-        // Pegasus must be in, UltraBoost must be out
-        return hasPegasus && !hasUltra ? state : null;
+        // Pegasus must be in, Novablast must be out
+        return hasPegasus && !hasNova ? state : null;
       },
       TURN_TIMEOUT,
       workspaceId,
@@ -143,8 +142,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 3: Checkout
@@ -190,11 +188,11 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cart Swap", () => {
     expect(order.shippingMethod).toBe("standard");
     expect(order.email).toBe("alex@example.com");
 
-    // Must be Pegasus, not UltraBoost
+    // Must be Pegasus, not Novablast
     const pegasus = order.items.find((i: any) => i.id === "pegasus-41");
-    const ultra = order.items.find((i: any) => i.id === "ultraboost-24");
+    const nova = order.items.find((i: any) => i.id === "novablast-4");
     expect(pegasus, "Order should contain Pegasus 41").toBeDefined();
-    expect(ultra, "Order should NOT contain UltraBoost 24").toBeUndefined();
+    expect(nova, "Order should NOT contain Novablast 4").toBeUndefined();
 
     // Exactly 1 order placed
     const orderCount = await h.page.evaluate(

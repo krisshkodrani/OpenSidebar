@@ -9,6 +9,7 @@ import { tokenizeStepText } from "./loop-helpers";
 import {
   buildTaskContract,
   repairPlanCoverage,
+  synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "./task-contract";
 
@@ -476,10 +477,20 @@ export class TaskPlanner {
       }
 
       const taskContract = buildTaskContract(query);
+      const batchedExhaustiveFallback =
+        synthesizeBatchedExhaustivePlan(query);
       const requiresStructuredPlan =
         taskContract.requiresRoundTrip ||
         taskContract.reportTargets.length > 1 ||
         taskContract.requiredEntities.length > 1;
+      const maxStructuredSteps =
+        taskContract.exhaustiveScopeCount &&
+        taskContract.requiresAggregateReport
+          ? Math.max(
+              8,
+              Math.min(12, taskContract.exhaustiveScopeCount + 1),
+            )
+          : 8;
 
       // Guard: if difficulty is "simple" but model said isMultiStep, override only
       // for truly single-step work. Round trips and multi-report tasks still need structure.
@@ -727,6 +738,31 @@ export class TaskPlanner {
             repairPlanCoverage({ query, steps: parsedSteps }),
           )
         : null;
+      if (
+        batchedExhaustiveFallback &&
+        (!steps || steps.length > batchedExhaustiveFallback.length)
+      ) {
+        logger.info(
+          "agent",
+          "Planner exhaustive review plan replaced with compact batched plan",
+          {
+            originalStepCount: steps?.length ?? 0,
+            batchedStepCount: batchedExhaustiveFallback.length,
+          },
+        );
+        return {
+          subtasks: batchedExhaustiveFallback.map((step) => step.objective),
+          steps: batchedExhaustiveFallback,
+          difficulty,
+          limitOverrides,
+          instrumentation: {
+            outcome: "structured_steps",
+            parsedStepCount: batchedExhaustiveFallback.length,
+            parsedSubtaskCount: batchedExhaustiveFallback.length,
+            requestedMultiStep: true,
+          },
+        };
+      }
       const legacySubtasks = Array.isArray(parsed.subtasks)
         ? parsed.subtasks
             .filter((step: unknown): step is string => typeof step === "string")
@@ -788,17 +824,19 @@ export class TaskPlanner {
         };
       }
 
-      // Hard cap: truncate to 8 subtasks max
-      if (subtasks.length > 8) {
+      // Hard cap: exhaustive bounded review tasks may need more than 8 steps
+      // to cover all requested items plus a final synthesis/report step.
+      if (subtasks.length > maxStructuredSteps) {
         logger.warn(
           "agent",
-          "Planner decomposition exceeded 8 subtasks, truncating",
+          "Planner decomposition exceeded step cap, truncating",
           {
             original: subtasks.length,
+            maxStructuredSteps,
           },
         );
         if (steps) {
-          const cappedSteps = steps.slice(0, 8);
+          const cappedSteps = steps.slice(0, maxStructuredSteps);
           for (const step of cappedSteps) {
             step.dependencies = step.dependencies.filter(
               (dep) => dep < cappedSteps.length,
@@ -822,13 +860,13 @@ export class TaskPlanner {
           };
         }
         return {
-          subtasks: subtasks.slice(0, 8),
+          subtasks: subtasks.slice(0, maxStructuredSteps),
           difficulty,
           limitOverrides,
           instrumentation: {
             outcome: "legacy_subtasks",
             parsedStepCount: 0,
-            parsedSubtaskCount: Math.min(subtasks.length, 8),
+            parsedSubtaskCount: Math.min(subtasks.length, maxStructuredSteps),
             requestedMultiStep: true,
           },
         };

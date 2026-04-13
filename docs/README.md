@@ -35,6 +35,7 @@
 - [Agent Strategy Letter](./guides/agent-strategy-letter.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [Model Benchmark Reference](./model-benchmark-reference.md)
+- [Skills Roadmap](./skills-roadmap-2026-04-13.md)
 
 ## Articles
 

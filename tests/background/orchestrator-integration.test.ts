@@ -311,6 +311,100 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(false);
   });
 
+  test("treats global-goal shortcut skips as completed when root task contract is satisfied", async () => {
+    const first = makeNode(
+      "n1",
+      "Read the Overview tab and gather the key metrics needed for a comparison.",
+    );
+    first.successCriteria =
+      "The key Overview metrics are collected for the final comparison.";
+    const second = makeNode(
+      "n2",
+      "Switch to the Reports tab and compare it with the Overview data.",
+    );
+    second.successCriteria =
+      "Final answer identifies which area is strongest based on both tabs.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Admin Dashboard",
+          url: "http://127.0.0.1:61549/dashboard",
+          visibleContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          pageContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 2000 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "Based on what you saw in both tabs, which area of the business looks strongest - user growth, revenue, or traffic? Give a brief answer referencing the data.",
+      ),
+    );
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("completed");
+  });
+
+  test("does not use global-goal shortcut when the remaining node is an action step", async () => {
+    const first = makeNode("n1", "Reveal Widget X SKU");
+    first.successCriteria = "Widget X SKU is visible.";
+    const second = makeNode("n2", "Search for Widget X using the revealed SKU");
+    second.successCriteria = "Widget X SKU is visible.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Hover Menus",
+          url: "http://127.0.0.1:61549/hover-menus",
+          visibleContent:
+            "Products menu revealed. Electronics selected. Widget X SKU-4829 visible. Search input and Search button still present.",
+          pageContent:
+            "Products menu revealed. Electronics selected. Widget X SKU-4829 visible. Search input and Search button still present.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 2000 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(
+      completion?.payload?.subtaskResults?.some(
+        (item: any) =>
+          String(item.result || "").includes("Skipped: global goal already achieved"),
+      ),
+    ).toBe(false);
+  });
+
   test("creates and executes reroute handoff node", async () => {
     let verifyCalls = 0;
     plannerBuildNodesImpl = async () => [makeNode("n1", "primary route")];

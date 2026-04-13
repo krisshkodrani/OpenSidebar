@@ -1,0 +1,35 @@
+{
+  "id": "modal-overlay-recovery",
+  "name": "Modal Overlay Recovery",
+  "description": "Detect and dismiss blocking overlays (modals, banners, popups, cookie consents) one at a time by clicking their close buttons, re-grounding after each dismissal before proceeding to the underlying task.",
+  "tags": ["workflow", "modal", "overlay", "popup", "banner", "recovery"],
+  "triggers": [
+    "close popup",
+    "dismiss modal",
+    "cookie banner",
+    "newsletter popup",
+    "blocking overlay",
+    "can't see the page",
+    "overlays blocking"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "click_element",
+    "press_key",
+    "read_element"
+  ],
+  "discouragedTools": [
+    "done",
+    "navigate",
+    "type_text",
+    "dismiss_overlays"
+  ],
+  "memoryScope": "turn",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Click the overlay's close/dismiss/accept/X button directly — do not use dismiss_overlays.",
+    "Dismiss one overlay at a time, re-read after each to verify it is gone.",
+    "Do not call done until ALL blocking overlays are confirmed gone."
+  ]
+}

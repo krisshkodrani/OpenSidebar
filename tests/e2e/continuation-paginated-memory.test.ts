@@ -24,14 +24,14 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForTaskCompletion,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
-import { findAllNewTraceFiles, readTrace } from "./helpers/diagnostics";
+import { extractDoneSummary, findAllNewTraceFiles } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 12, testLabel: "paginated-memory" });
 
@@ -72,17 +72,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
 
     // Extract the agent's answer from traces (done() message)
     const turn1Traces = findAllNewTraceFiles(h.tracesBefore);
-    let turn1Answer = "";
-    for (const f of turn1Traces) {
-      const turns = readTrace(f);
-      for (const t of turns) {
-        for (const tc of (t as any).toolCalls ?? []) {
-          if (tc.name === "done" && tc.args?.message) {
-            turn1Answer = tc.args.message;
-          }
-        }
-      }
-    }
+    const turn1Answer = extractDoneSummary(turn1Traces);
     console.log(`[pag-mem] Turn 1 answer: ${turn1Answer.slice(0, 150)}`);
 
     // The agent should have mentioned a salary figure
@@ -94,8 +84,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
     const tracesAfterTurn1 = new Set([...h.tracesBefore, ...turn1Traces]);
 
     // =================================================================
@@ -133,17 +122,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
     ).toBeGreaterThan(1);
 
     const turn2Traces = findAllNewTraceFiles(tracesAfterTurn1);
-    let turn2Answer = "";
-    for (const f of turn2Traces) {
-      const turns = readTrace(f);
-      for (const t of turns) {
-        for (const tc of (t as any).toolCalls ?? []) {
-          if (tc.name === "done" && tc.args?.message) {
-            turn2Answer = tc.args.message;
-          }
-        }
-      }
-    }
+    const turn2Answer = extractDoneSummary(turn2Traces);
     console.log(`[pag-mem] Turn 2 answer: ${turn2Answer.slice(0, 150)}`);
 
     expect(
@@ -154,8 +133,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
     const tracesAfterTurn2 = new Set([...tracesAfterTurn1, ...turn2Traces]);
 
     // =================================================================
@@ -178,17 +156,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
     expect(turn3.ok, `Turn 3 failed: ${turn3.reason}`).toBe(true);
 
     const turn3Traces = findAllNewTraceFiles(tracesAfterTurn2);
-    let turn3Answer = "";
-    for (const f of turn3Traces) {
-      const turns = readTrace(f);
-      for (const t of turns) {
-        for (const tc of (t as any).toolCalls ?? []) {
-          if (tc.name === "done" && tc.args?.message) {
-            turn3Answer = tc.args.message;
-          }
-        }
-      }
-    }
+    const turn3Answer = extractDoneSummary(turn3Traces);
     console.log(`[pag-mem] Turn 3 answer: ${turn3Answer.slice(0, 200)}`);
 
     // The comparison answer should reference both pages and a difference

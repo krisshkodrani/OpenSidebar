@@ -74,6 +74,8 @@ export interface TaskNode {
   role: Extract<AgentRole, "executor">;
   description: string;
   successCriteria: string;
+  selectedSkillId?: string;
+  selectedSkillReason?: string;
   allowedTools: ToolName[];
   dependencies: string[];
   assumptions: string[];

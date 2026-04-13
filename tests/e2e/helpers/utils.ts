@@ -9,15 +9,41 @@ import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
 import { closeNonExtensionPages, openHelperPage } from "./browser";
 
-type TaskCompletionState = "completed" | "partial" | "none";
+type TaskCompletionState = "completed" | "partial" | "failed" | "none";
+
+function isTerminalTaskCompletionStatus(status: unknown): status is "completed" | "partial" | "failed" {
+  return status === "completed" || status === "partial" || status === "failed";
+}
+
+function getLatestTaskCompletionEvent(events: any[]): any | null {
+  return (
+    [...events]
+      .reverse()
+      .find((event: any) => event.type === "TASK_COMPLETION" && isTerminalTaskCompletionStatus(event.status)) ??
+    null
+  );
+}
 
 function getLatestTaskCompletionState(events: any[]): TaskCompletionState {
-  const completion = [...events]
-    .reverse()
-    .find((event: any) => event.type === "TASK_COMPLETION");
+  const completion = getLatestTaskCompletionEvent(events);
   if (completion?.status === "completed") return "completed";
   if (completion?.status === "partial") return "partial";
+  if (completion?.status === "failed") return "failed";
   return "none";
+}
+
+function hasIdleAfterTerminalCompletion(events: any[]): boolean {
+  const completion = getLatestTaskCompletionEvent(events);
+  if (!completion) return false;
+
+  return events.some(
+    (event: any) =>
+      event.type === "AGENT_STATUS" &&
+      event.status === "IDLE" &&
+      typeof event.timestamp === "number" &&
+      typeof completion.timestamp === "number" &&
+      event.timestamp >= completion.timestamp,
+  );
 }
 
 /**
@@ -28,10 +54,12 @@ function getLatestTaskCompletionState(events: any[]): TaskCompletionState {
  * This avoids needing a visible helper page tab for event collection.
  */
 export async function setupEventMonitor(worker: WebWorker): Promise<void> {
-  await worker.evaluate(async () => {
+  const eventBufferLimit = process.env.E2E_DIAGNOSTIC === "true" ? 2_000 : 400;
+  await worker.evaluate(async (bufferLimit: number) => {
     const g = self as any;
     if (g.__e2eEventMonitorInstalled) {
       g.__agentEvents = [];
+      g.__e2eEventBufferLimit = bufferLimit;
       return;
     }
 
@@ -49,6 +77,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
     }
 
     g.__agentEvents = [];
+    g.__e2eEventBufferLimit = bufferLimit;
     const runtime = g.chrome.runtime;
     const origSend = runtime.sendMessage.bind(runtime);
     g.__e2eOrigSendMessage = origSend;
@@ -75,13 +104,13 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
             currentIndex: message?.payload?.currentIndex ?? null,
             subtaskResults: message?.payload?.subtaskResults ?? null,
           });
-          if (g.__agentEvents.length > 400) g.__agentEvents.shift();
+          if (g.__agentEvents.length > g.__e2eEventBufferLimit) g.__agentEvents.shift();
         }
       }
       return origSend(...args);
     };
     g.__e2eEventMonitorInstalled = true;
-  });
+  }, eventBufferLimit);
 }
 
 /**
@@ -409,6 +438,44 @@ async function waitForAgentIdle(
   }
 }
 
+export async function waitForWorkspaceIdle(
+  worker: WebWorker,
+  workspaceId: string,
+  timeoutMs: number = 15_000,
+): Promise<void> {
+  const start = Date.now();
+  let sawWorkspaceEvent = false;
+
+  while (Date.now() - start < timeoutMs) {
+    const events = (await getMonitoredEvents(worker, 80)).filter(
+      (event: any) =>
+        event.workspaceId == null || event.workspaceId === workspaceId,
+    );
+    if (events.length > 0) sawWorkspaceEvent = true;
+    if (sawWorkspaceEvent && hasIdleAfterTerminalCompletion(events)) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    `Workspace ${workspaceId} did not become idle within ${timeoutMs}ms`,
+  );
+}
+
+export async function settleWorkspaceBetweenTurns(
+  worker: WebWorker,
+  workspaceId: string,
+  settleDelayMs: number = 0,
+): Promise<void> {
+  await waitForWorkspaceIdle(worker, workspaceId);
+  if (settleDelayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, settleDelayMs));
+  }
+  await clearMonitoredEvents(worker);
+}
+
 /**
  * Reset extension state between tests.
  * Clears agent events and stops any running agent loop.
@@ -467,7 +534,7 @@ export async function resetExtensionState(
 
 /**
  * Wait for the agent to complete a task (no page-level check needed).
- * Polls monitored events for TASK_COMPLETION, "Task complete" step, IDLE, or ERROR.
+ * Polls monitored events for terminal TASK_COMPLETION or ERROR.
  * Useful for tasks where success is judged by trace output, not DOM state.
  */
 export async function waitForTaskCompletion(
@@ -482,39 +549,48 @@ export async function waitForTaskCompletion(
       (event: any) =>
         event.workspaceId == null || event.workspaceId === workspaceId,
     );
-    const completion = [...events]
+    const completion = getLatestTaskCompletionEvent(events);
+    const latestProgress = [...events]
       .reverse()
-      .find((event: any) => event.type === "TASK_COMPLETION");
+      .find(
+        (event: any) =>
+          event.type === "TASK_PROGRESS" && Array.isArray(event.subtasks),
+      );
+    const latestSubtasks = Array.isArray(latestProgress?.subtasks)
+      ? latestProgress.subtasks
+      : [];
+    const hasMultiNodePlan = latestSubtasks.length > 1;
+    const planStillInFlight =
+      hasMultiNodePlan &&
+      latestSubtasks.some(
+        (subtask: any) =>
+          subtask?.status !== "completed" && subtask?.status !== "skipped",
+      );
     if (completion?.status === "completed") {
       return { ok: true, reason: String(completion.status), events };
     }
     if (completion?.status === "partial") {
       return { ok: false, reason: "task_partial", events };
     }
+    if (completion?.status === "failed") {
+      return {
+        ok: false,
+        reason: `task_failed:${completion.detail || completion.terminationReason || "unknown"}`,
+        events,
+      };
+    }
 
-    const taskCompleteStep = [...events]
+    const lastStatus = [...events]
       .reverse()
-      .find(
-        (event: any) =>
-          event.type === "AGENT_STEP" &&
-          String(event.stepLabel || "").includes("Task complete"),
-      );
-    if (taskCompleteStep) {
+      .find((event: any) => event.type === "AGENT_STATUS");
+    if (lastStatus?.status === "IDLE") {
       if (getLatestTaskCompletionState(events) === "partial") {
         return { ok: false, reason: "task_partial", events };
       }
-      return { ok: true, reason: "task_complete_step", events };
-    }
-
-      const lastStatus = [...events]
-        .reverse()
-        .find((event: any) => event.type === "AGENT_STATUS");
-      if (lastStatus?.status === "IDLE") {
-        if (getLatestTaskCompletionState(events) === "partial") {
-          return { ok: false, reason: "task_partial", events };
-        }
+      if (!planStillInFlight) {
         return { ok: false, reason: "idle_without_completion", events };
       }
+    }
     if (lastStatus?.status === "ERROR") {
       return {
         ok: false,
@@ -556,14 +632,12 @@ export async function waitForOutcome<T>(
 ): Promise<{ ok: boolean; reason: string; result: T | null; events: any[] }> {
   const start = Date.now();
   let lastResult: T | null = null;
-  let successObservedAt: number | null = null;
   let successfulResult: T | null = null;
 
   while (Date.now() - start < timeoutMs) {
     const result = await checkFn();
     if (result) {
       successfulResult = result;
-      successObservedAt ??= Date.now();
     }
     lastResult = result ?? null;
 
@@ -583,12 +657,10 @@ export async function waitForOutcome<T>(
       .find((e: any) => e.type === "AGENT_STATUS");
 
     if (successfulResult) {
-      const taskCompleted =
-        lastTaskCompletion?.status === "completed";
+      const taskCompleted = lastTaskCompletion?.status === "completed";
       const taskPartial = lastTaskCompletion?.status === "partial";
+      const taskFailed = lastTaskCompletion?.status === "failed";
       const agentIdle = lastStatus?.status === "IDLE";
-      const settledLongEnough =
-        successObservedAt !== null && Date.now() - successObservedAt >= 4000;
 
       if (taskPartial) {
         return {
@@ -599,8 +671,28 @@ export async function waitForOutcome<T>(
         };
       }
 
-      if (taskCompleted || agentIdle || settledLongEnough) {
+      if (taskFailed) {
+        return {
+          ok: false,
+          reason: "task_failed",
+          result: successfulResult,
+          events,
+        };
+      }
+
+      if (taskCompleted) {
         return { ok: true, reason: "done", result: successfulResult, events };
+      }
+
+      if (agentIdle) {
+        // Agent is idle and the DOM success check passed —
+        // treat as success even without explicit TASK_COMPLETION event.
+        return {
+          ok: true,
+          reason: "idle_with_successful_result",
+          result: successfulResult,
+          events,
+        };
       }
     }
 
@@ -634,5 +726,8 @@ export async function waitForOutcome<T>(
 }
 
 export const __testOnly = {
+  getLatestTaskCompletionEvent,
   getLatestTaskCompletionState,
+  hasIdleAfterTerminalCompletion,
+  isTerminalTaskCompletionStatus,
 };

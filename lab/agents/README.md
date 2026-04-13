@@ -5,32 +5,36 @@ Two agents power the OpenSidebar laboratory.
 ## Quick Start
 
 ```bash
-# 1. API keys are in the project root .env file (FIREWORKS_API_KEY, OPENROUTER_API_KEY)
-#    The setup script sources .env automatically.
+# 1. Put keys in the project root .env file.
+#    Hermes uses FIREWORKS_API_KEY by default.
+#    The pinned GBrain build uses OPENAI_API_KEY.
 
-# 2. Install Hermes Agent
-cd lab/agents/hermes/repo
-pip install -e .
-hermes model set fireworks/accounts/fireworks/models/kimi-k2.5
+# 2. Bootstrap the lab
+npm run lab:setup
 
-# 3. Install GBrain
-cd lab/agents/gbrain/repo
-bun install
-bun run build
+# 3. Verify the environment
+npm run lab:doctor
 
-# 4. Initialize knowledge base
-cd ../..  # back to lab/agents/gbrain/
-bun run repo/dist/cli.js init --data-dir ../../data/gbrain
+# 4. Start the GBrain MCP server used by Claude Code
+bun run lab/bin/gbrain-mcp.ts
 
-# 5. Index lab content
-bun run repo/dist/cli.js import ../../rfcs/
-bun run repo/dist/cli.js import ../../research/
-bun run repo/dist/cli.js import ../../reports/
-bun run repo/dist/cli.js import ../../books/notes/
-bun run repo/dist/cli.js import ../../knowledge/
+# 5. Re-index after adding new lab material
+npm run lab:index
 
-# 6. Start GBrain MCP server (for Claude Code)
-bun run repo/dist/cli.js mcp --port 3847
+# 6. Generate a trace-analysis knowledge entry
+npm run lab:analyze-traces -- --days 7 --limit 200
+
+# 7. Capture a development question or pathology
+npm run lab:question -- "Why does the executor over-commit before verification in transactional workflows?"
+
+# 8. Run an ad hoc research task through Hermes
+npm run lab:research -- "Compare our workflow-skills pipeline to Hermes skills"
+
+# 9. Save the note into lab/research/ and re-index it
+npm run lab:research -- --save skills-vs-hermes "Compare our workflow-skills pipeline to Hermes skills"
+
+# 10. Generate a prioritized list of new skill candidates from recent traces
+npm run lab:skill-candidates -- --days 7 --limit 200
 ```
 
 ## Architecture
@@ -70,13 +74,30 @@ Both agents use **Kimi K2.5** on Fireworks as their default model:
 - **Context**: 128K tokens
 - **Strengths**: Strong reasoning, good at structured output, multilingual
 
-This is the same model used for E2E test execution in the main project,
-so lab operations stay within the same model family for consistency.
+Hermes uses the same model family as the E2E executor in the main project,
+so most lab orchestration stays close to production conditions.
+
+The `lab:research` wrapper prefers the lab's Fireworks-backed Hermes profile and
+falls back to other configured providers only when needed.
+
+GBrain is different: the pinned version in this repo currently relies on
+`OPENAI_API_KEY` for embeddings/query expansion and is wrapped by
+OpenSidebar-owned lab scripts.
 
 ## Hermes Agent
 
 Research orchestrator. Maintains persistent memory, spawns parallel
 subagents, and runs scheduled tasks for automated research.
+
+One of the lab's core jobs is to take questions from active development,
+read traces and reports, generalize recurring failures, and turn those into
+actionable harness ideas worth testing.
+
+That includes explicitly asking things like:
+
+- investigate the latest traces for possible new skills
+- identify repeated workflow pathologies that deserve a contract
+- separate skill candidates from issues that should stay harness-side
 
 Config: `hermes/config.yaml`
 
@@ -98,16 +119,17 @@ Config: `gbrain/config.yaml`
 ### MCP Integration
 
 When running as an MCP server, GBrain exposes ~30 tools that Claude Code
-can use to query the knowledge base mid-conversation:
+can use to query the knowledge base mid-conversation. The supported way to
+run it from this repo is through the lab wrapper:
 
 ```jsonc
-// Add to .claude/settings.local.json
+// Already wired in .mcp.json at the repo root
 {
   "mcpServers": {
     "gbrain": {
       "command": "bun",
-      "args": ["run", "lab/agents/gbrain/repo/dist/cli.js", "mcp"],
-      "env": { "FIREWORKS_API_KEY": "${FIREWORKS_API_KEY}" }
+      "args": ["run", "lab/bin/gbrain-mcp.ts"],
+      "env": { "OPENAI_API_KEY": "${OPENAI_API_KEY}" }
     }
   }
 }

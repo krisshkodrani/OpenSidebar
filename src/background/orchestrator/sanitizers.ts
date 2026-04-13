@@ -170,6 +170,18 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
     retries: raw.retries,
   };
   if (
+    typeof raw.selectedSkillId === "string" &&
+    raw.selectedSkillId.length > 0
+  ) {
+    node.selectedSkillId = raw.selectedSkillId;
+  }
+  if (
+    typeof raw.selectedSkillReason === "string" &&
+    raw.selectedSkillReason.length > 0
+  ) {
+    node.selectedSkillReason = raw.selectedSkillReason;
+  }
+  if (
     typeof raw.handoffFromNodeId === "string" &&
     raw.handoffFromNodeId.length > 0
   ) {
