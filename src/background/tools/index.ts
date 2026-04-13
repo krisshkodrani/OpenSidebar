@@ -100,9 +100,29 @@ async function tryInPageHistoryBack(tabId: number): Promise<void> {
 // --- Registration ---
 
 export function registerTools() {
-  toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, (args, tabId) =>
-    executeContentTool(ToolName.CLICK_ELEMENT, args, tabId),
-  );
+  toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId) => {
+    const result = await executeContentTool(ToolName.CLICK_ELEMENT, args, tabId);
+    // Main-world click bridge: content script el.click() runs in the isolated
+    // world and may not trigger framework event handlers (React onClick, Vue
+    // @click, etc.) that are attached in the main world. Dispatch a follow-up
+    // click via chrome.scripting in the MAIN world using the data-os-tag bridge.
+    if (result.success && typeof args.id === "number") {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "MAIN" as any,
+          func: (tagId: number) => {
+            const el = document.querySelector(`[data-os-tag="${tagId}"]`);
+            if (el instanceof HTMLElement) el.click();
+          },
+          args: [args.id],
+        });
+      } catch {
+        // Best-effort — content script click already succeeded
+      }
+    }
+    return result;
+  });
   toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, (args, tabId) =>
     executeContentTool(ToolName.TYPE_TEXT, args, tabId),
   );
