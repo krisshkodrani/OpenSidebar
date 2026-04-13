@@ -180,8 +180,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const blockingTagName = finalTop.tagName.toLowerCase();
     const overlayLikely = isLikelyOverlay(finalTop);
     const result = overlayLikely
-      ? `Click intercepted! Element [${tagId}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Use hide_element(${blockingTag}) to remove it, or press_key("Escape").`
-      : `Click intercepted! Element [${tagId}] is covered by [${blockingTag}] <${blockingTagName}>. This is page content, not an overlay. Try: hide_element(${blockingTag}) to remove it, scroll_page to reposition, or execute_js to click programmatically.`;
+      ? `Click intercepted! Element [${tagId}] is covered by overlay [${blockingTag}] <${blockingTagName}>. Read the page to find the overlay's close/dismiss/accept button and click it directly. Alternatively try press_key("Escape").`
+      : `Click intercepted! Element [${tagId}] is covered by [${blockingTag}] <${blockingTagName}>. This may be a popup, banner, or modal. Read the page to find its close/dismiss/accept button and click that button directly. If no button is visible, try press_key("Escape") or scroll_page to reposition.`;
     return { success: false, result, navigated: false };
   }
 
@@ -196,6 +196,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   // Use el.click() as the single click source (native, trusted) — the Playwright
   // approach. Do NOT also dispatch synthetic MouseEvent("click") as that causes
   // double-processing on toggle elements (accordions, checkboxes, tabs).
+  //
   for (let i = 0; i < count; i++) {
     el.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
