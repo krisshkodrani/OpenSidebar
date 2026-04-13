@@ -17,6 +17,7 @@ const STORAGE_KEY = "openrouter_api_key";
 const MODEL_STORAGE_KEY = "story_model";
 
 const STORY_MODELS = [
+  "accounts/fireworks/routers/kimi-k2p5-turbo",
   "openai/gpt-5.4-mini",
   "minimax/minimax-m2.5",
   "anthropic/claude-sonnet-4",
