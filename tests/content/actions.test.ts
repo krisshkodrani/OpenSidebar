@@ -335,7 +335,7 @@ describe("Content Actions", () => {
             expect(result.result).toContain("Hidden");
 
             const overlay = document.getElementById("overlay")!;
-            expect(overlay.style.display).toBe("none");
+            expect(overlay.getAttribute("data-osb-dismissed")).toBe("true");
         });
 
         test("hides a fixed + high z-index overlay", async () => {
@@ -348,7 +348,7 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
             expect(result.success).toBe(true);
             expect(result.result).toContain("Hidden");
-            expect(el.style.display).toBe("none");
+            expect(el.getAttribute("data-osb-dismissed")).toBe("true");
         });
 
         test("rejects non-overlay element", async () => {
@@ -420,7 +420,7 @@ describe("Content Actions", () => {
 
             // The modal ancestor should be hidden, not just the button
             const modal = document.getElementById("modal")!;
-            expect(modal.style.display).toBe("none");
+            expect(modal.getAttribute("data-osb-dismissed")).toBe("true");
         });
 
         test("returns failure with helpful message for non-overlay child (WI-2)", async () => {

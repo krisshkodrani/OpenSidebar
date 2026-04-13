@@ -275,13 +275,17 @@ export function deriveVerifierFallbackDecision(
     };
   }
 
-  // Executor explicitly called done() — trust it over keyword heuristics
+  // Executor explicitly called done() but verifier LLM failed.
+  // Accept with low confidence — the executor's own done() signal is the best
+  // evidence available when the verifier is unreachable. Returning "retry"
+  // here would loop if the provider is consistently failing, eventually
+  // marking the node as failed even though the executor completed successfully.
   if (input.executorOutcome === "completed") {
     return {
       decision: "accept",
       reason:
-        "Executor completed; verifier parse failed, accepting on executor signal.",
-      confidence: 0.7,
+        "Executor completed; verifier LLM unreachable, accepting on executor signal.",
+      confidence: 0.5,
     };
   }
 
