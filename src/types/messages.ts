@@ -425,6 +425,8 @@ export interface SubtaskSummary {
   result?: string;
   /** URL (origin+pathname) where this step was completed — used by navigate guard */
   completedAtUrl?: string;
+  /** Workflow skill selected for this subtask */
+  selectedSkillId?: string;
 }
 
 /** Background sends structured completion report when a task finishes */
@@ -622,7 +624,7 @@ export interface PlanConfirmationRequestMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload: {
     confirmationId: string;
-    nodes: { description: string; successCriteria: string }[];
+    nodes: { description: string; successCriteria: string; selectedSkillId?: string }[];
     difficulty?: string;
     query: string;
   };

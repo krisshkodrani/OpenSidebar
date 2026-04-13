@@ -237,15 +237,31 @@ function PlanSection({ session }: { session: TraceSession }) {
     ? (`difficulty-${difficulty.toLowerCase()}` as const)
     : undefined;
 
+  const usedSkills = [
+    ...new Set(
+      (steps ?? [])
+        .map((s) => s.selectedSkillId)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+
   return (
     <div className="border-t border-trace-border mt-2.5 pt-2.5">
-      <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
         <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
           Plan
         </span>
         {difficultyVariant && (
           <Badge variant={difficultyVariant}>{difficulty}</Badge>
         )}
+        {usedSkills.map((skillId) => (
+          <span
+            key={skillId}
+            className="px-1.5 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-medium"
+          >
+            {skillId}
+          </span>
+        ))}
       </div>
       {subtasks.length > 0 && (
         <ol className="list-decimal list-inside text-[12px] text-trace-muted leading-relaxed pl-1 mb-1.5">
@@ -266,6 +282,11 @@ function PlanSection({ session }: { session: TraceSession }) {
               <div key={i} className="border-l-2 border-trace-border pl-2">
                 <div className="text-trace-subtle font-medium">
                   {i + 1}. {step.objective ?? "(no objective)"}
+                  {step.selectedSkillId && (
+                    <span className="ml-1.5 px-1 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-normal">
+                      {step.selectedSkillId}
+                    </span>
+                  )}
                 </div>
                 {step.successCriteria && (
                   <div className="text-[10px]">

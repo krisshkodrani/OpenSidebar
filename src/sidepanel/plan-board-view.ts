@@ -18,6 +18,7 @@ export interface PlanRow {
   turnsUsed: number;
   turnBudget?: number;
   evidenceSnippet?: string;
+  selectedSkillId?: string;
 }
 
 export function derivePlanRows(
@@ -32,6 +33,7 @@ export function derivePlanRows(
       turnsUsed: subtask.turnsUsed,
       turnBudget: subtask.turnBudget,
       evidenceSnippet: subtask.result,
+      selectedSkillId: subtask.selectedSkillId,
     }));
   }
 
