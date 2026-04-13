@@ -84,6 +84,7 @@ chrome.sidePanel.setPanelBehavior({
 // 5. State — per-workspace agent loops
 const pendingSidePanelOpens = new Set<number>();
 const pendingUserChat = new Set<string>(); // per-workspace guard against concurrent USER_CHAT
+const queuedUserChat = new Map<string, { text: string; tabId: number }>(); // latest follow-up per workspace
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(
@@ -603,21 +604,25 @@ async function handleUserChat(
   payload: { text: string; tabId: number },
   workspaceId: string,
 ) {
-  // Per-workspace guard: reject concurrent requests
+  // Per-workspace guard: serialize concurrent requests instead of dropping them.
   if (pendingUserChat.has(workspaceId)) {
-    logger.warn("agent", "Ignoring concurrent USER_CHAT for workspace", {
+    queuedUserChat.set(workspaceId, payload);
+    logger.warn("agent", "Queueing concurrent USER_CHAT for workspace", {
       workspaceId,
+      textPreview: payload.text.slice(0, 120),
     });
     return;
   }
   pendingUserChat.add(workspaceId);
 
   try {
-    const text = sanitizeUserInput(payload.text);
+    let currentPayload: { text: string; tabId: number } | undefined = payload;
+    while (currentPayload) {
+      const text = sanitizeUserInput(currentPayload.text);
 
     // Validate tabId — side panel's chrome.tabs.query can race with workspace creation
     const tabId = await resolveValidTabId(
-      payload.tabId,
+      currentPayload.tabId,
       workspaceId,
       workspaceManager,
     );
@@ -712,7 +717,18 @@ async function handleUserChat(
       );
       await maybeStopKeepalive();
     }
+
+      currentPayload = queuedUserChat.get(workspaceId);
+      queuedUserChat.delete(workspaceId);
+      if (currentPayload) {
+        logger.info("agent", "Processing queued USER_CHAT for workspace", {
+          workspaceId,
+          textPreview: currentPayload.text.slice(0, 120),
+        });
+      }
+    }
   } finally {
+    queuedUserChat.delete(workspaceId);
     pendingUserChat.delete(workspaceId);
   }
 }

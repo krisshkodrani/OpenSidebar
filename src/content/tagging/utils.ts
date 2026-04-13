@@ -41,6 +41,17 @@ export function isElementVisible(el: Element): boolean {
   return true;
 }
 
+/** Mark an element as dismissed via data attribute (survives framework re-renders). */
+export function dismissElement(el: HTMLElement): void {
+  if (!document.getElementById("osb-dismiss-style")) {
+    const style = document.createElement("style");
+    style.id = "osb-dismiss-style";
+    style.textContent = "[data-osb-dismissed] { display: none !important; }";
+    document.documentElement.appendChild(style);
+  }
+  el.setAttribute("data-osb-dismissed", "true");
+}
+
 export function inferRole(el: Element): string {
   const tag = el.tagName.toLowerCase();
   if (tag === "a") return "link";

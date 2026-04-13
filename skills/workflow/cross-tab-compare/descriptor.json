@@ -1,0 +1,25 @@
+{
+  "id": "cross-tab-compare",
+  "name": "Cross Tab Compare",
+  "description": "Collect facts from multiple tabs or pages, normalize them, then compare only after required evidence is gathered.",
+  "tags": ["workflow", "comparison", "tabs", "memory"],
+  "triggers": [
+    "compare tabs",
+    "compare page 1 and page N",
+    "compare overview and reports"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "switch_tab",
+    "read_element",
+    "update_notes"
+  ],
+  "discouragedTools": [],
+  "memoryScope": "workspace",
+  "verifierMode": "deterministic",
+  "notes": [
+    "Gather all required facts before synthesizing.",
+    "Store normalized observations with stable labels."
+  ]
+}

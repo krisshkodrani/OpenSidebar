@@ -4,8 +4,7 @@
       "command": "bun",
       "args": [
         "run",
-        "lab/agents/gbrain/repo/src/cli.ts",
-        "serve"
+        "lab/bin/gbrain-mcp.ts"
       ],
       "env": {
         "OPENAI_API_KEY": "${OPENAI_API_KEY}"

@@ -16,8 +16,8 @@ export default function ModalOverlays() {
   // Track results on window for test assertions
   useEffect(() => {
     (window as any).modalResult = {
-      cookieDismissed: !cookieVisible && email !== "", // dismissed AND form was accessible
-      newsletterClosed: false,
+      cookieDismissed: !cookieVisible,
+      newsletterClosed: !newsletterVisible,
       deleteConfirmed: deleted,
       formFilled: email.length > 0,
     };

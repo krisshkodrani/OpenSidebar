@@ -140,6 +140,44 @@ export async function recoverContentScriptBridge(
   return probeContentScript(tabId, 150);
 }
 
+async function hardReloadActivePage(
+  tabId: number,
+  options: { ensureTimeoutMs?: number; domReadyTimeoutMs?: number } = {},
+): Promise<boolean> {
+  const { ensureTimeoutMs = 5000, domReadyTimeoutMs = 1000 } = options;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const targetUrl =
+      typeof (tab as { pendingUrl?: string }).pendingUrl === "string" &&
+      (tab as { pendingUrl?: string }).pendingUrl
+        ? (tab as { pendingUrl?: string }).pendingUrl
+        : tab.url;
+
+    if (targetUrl && !targetUrl.startsWith("chrome://")) {
+      await chrome.tabs.update(tabId, { url: targetUrl });
+    } else {
+      await chrome.tabs.reload(tabId);
+    }
+
+    await waitForNavigation(tabId, 10_000);
+    await waitForContentScriptReady(tabId, ensureTimeoutMs);
+    const ready = await ensureContentScript(tabId, ensureTimeoutMs);
+    if (!ready) return false;
+
+    await waitForDomReady(tabId, {
+      timeoutMs: domReadyTimeoutMs,
+      waitForElements: true,
+    });
+    return probeContentScript(tabId, 250);
+  } catch (e: any) {
+    logger.error("tools", "Hard page reload recovery failed", {
+      tabId,
+      error: e?.message ?? String(e),
+    });
+    return false;
+  }
+}
+
 export async function executeContentTool(
   startName: ToolName,
   args: any,
@@ -197,9 +235,17 @@ export async function executeContentTool(
     // permanent disconnect that leaves the agent unable to interact.
     const recovered = await recoverContentScriptBridge(tabId, {
       allowReloadFallback: true,
+      ensureTimeoutMs: 5000,
+      domReadyTimeoutMs: 1000,
     });
     if (!recovered) {
-      return `Error: Content script disconnected and reinjection failed. Try refreshing the page.`;
+      const hardRecovered = await hardReloadActivePage(tabId, {
+        ensureTimeoutMs: 5000,
+        domReadyTimeoutMs: 1000,
+      });
+      if (!hardRecovered) {
+        return `Error: Content script disconnected and reinjection failed. Try refreshing the page.`;
+      }
     }
 
     try {
@@ -210,6 +256,27 @@ export async function executeContentTool(
       });
       return retryResponse.payload.result;
     } catch (retryErr: any) {
+      if (isBridgeDisconnect(retryErr.message || "")) {
+        const hardRecovered = await hardReloadActivePage(tabId, {
+          ensureTimeoutMs: 5000,
+          domReadyTimeoutMs: 1000,
+        });
+        if (hardRecovered) {
+          try {
+            const finalRetryResponse = await sendMessage();
+            logger.info("tools", "Bridge reconnect successful after hard page reload", {
+              tabId,
+              tool: startName,
+            });
+            return finalRetryResponse.payload.result;
+          } catch (finalErr: any) {
+            logger.error("tools", "Bridge retry failed after hard page reload", {
+              tabId,
+              error: finalErr.message,
+            });
+          }
+        }
+      }
       logger.error("tools", "Bridge retry failed after reinject", {
         tabId,
         error: retryErr.message,

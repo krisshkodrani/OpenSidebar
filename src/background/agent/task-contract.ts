@@ -5,12 +5,18 @@ export interface TaskContract {
   returnTargets: string[];
   reportTargets: string[];
   multiReturnCount?: number;
+  exhaustiveScopeLabel?: string;
+  exhaustiveScopeCount?: number;
+  requiresAggregateReport?: boolean;
+  requiresSequentialDetailReview?: boolean;
 }
 
 export interface TaskContractCoverage {
   missingEntities: string[];
   missingNumbers: string[];
   missingReturnTarget: boolean;
+  missingExhaustiveCoverage: boolean;
+  missingMultiReturnCoverage: boolean;
   satisfied: boolean;
 }
 
@@ -22,12 +28,24 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+const CONVERSATIONAL_FILLERS = new Set([
+  "actually",
+  "basically",
+  "just",
+  "now",
+  "please",
+  "thanks",
+  "thank you",
+  "one more change",
+  "one more thing",
+]);
+
 function extractQuotedPhrases(text: string): string[] {
   return unique(
     [...text.matchAll(/["']([^"']{2,120})["']/g)].map((match) =>
       normalize(match[1] || ""),
     ),
-  );
+  ).filter((value) => !CONVERSATIONAL_FILLERS.has(value));
 }
 
 function extractLargeNumbers(text: string): string[] {
@@ -40,10 +58,11 @@ function extractLargeNumbers(text: string): string[] {
 }
 
 function extractNamedEntities(text: string): string[] {
-  const matches =
-    text.match(
+  const matches = [
+    ...text.matchAll(
       /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{2,}(?:\s+[A-Z][a-z]+)*)\b/g,
-    ) ?? [];
+    ),
+  ];
   const blacklist = new Set([
     "You",
     "This",
@@ -76,11 +95,23 @@ function extractNamedEntities(text: string): string[] {
   ]);
   return unique(
     matches
-      .map((value) => value.trim())
+      .map((match) => {
+        const value = (match[0] || "").trim();
+        const index = match.index ?? 0;
+        const isSingleTitleCaseWord =
+          /^[A-Z][a-z]+$/.test(value) && !value.includes(" ");
+        const prefix = text.slice(0, index);
+        const atSentenceBoundary =
+          index === 0 || /(?:^|[.!?]\s*)$/.test(prefix);
+        if (isSingleTitleCaseWord && atSentenceBoundary) {
+          return "";
+        }
+        return value;
+      })
       .filter((value) => value.length >= 4)
       .filter((value) => !blacklist.has(value))
       .map((value) => normalize(value)),
-  );
+  ).filter((value) => !CONVERSATIONAL_FILLERS.has(value));
 }
 
 function extractReturnTargets(text: string): string[] {
@@ -140,12 +171,100 @@ function extractMultiReturnMarkers(text: string): {
 
   // Extract the named entities that "both/all" refers to
   const entities = extractNamedEntities(text);
+  if (entities.length < count) return { count: 0, entities: [] };
   return { count, entities };
+}
+
+function singularizePhrase(label: string): string {
+  const normalized = normalize(label);
+  if (normalized.endsWith("ies")) return normalized.slice(0, -3) + "y";
+  if (normalized.endsWith("s") && !normalized.endsWith("ss")) {
+    return normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+function extractExhaustiveScope(text: string): {
+  label?: string;
+  count?: number;
+} {
+  const vagueScopeLabels = new Set([
+    "that",
+    "this",
+    "it",
+    "them",
+    "those",
+    "these",
+    "everything",
+    "anything",
+    "something",
+    "of that",
+    "of this",
+    "of it",
+    "of them",
+    "of those",
+    "of these",
+  ]);
+  const patterns = [
+    /\b(?:review|inspect|check|open|browse|read|visit|compare|analyze)\s+(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
+    /\b(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const rawLabel = normalize(match[2] || "");
+    if (!rawLabel) continue;
+    const label = rawLabel
+      .replace(/\b(?:this page|the page|page)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!label) continue;
+    if (vagueScopeLabels.has(label)) continue;
+    const count =
+      typeof match[1] === "string" && /^\d+$/.test(match[1])
+        ? Number(match[1])
+        : undefined;
+    return { label, count };
+  }
+
+  return {};
+}
+
+function countWord(value: number): string | null {
+  const words: Record<number, string> = {
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "ten",
+    11: "eleven",
+    12: "twelve",
+  };
+  return words[value] ?? null;
+}
+
+function extractAggregateReportIntent(text: string): boolean {
+  return /\b(report|tell me|summari[sz]e|recommend|best match|best matches|rank|compare|which .* strongest|which .* best|give .* answer|why)\b/i.test(
+    text,
+  );
+}
+
+function extractSequentialDetailReviewIntent(text: string): boolean {
+  return /\b(click into each|open each|each one|every one|read the full details|read full details|full details|come back|go back|return to the listings|return to the list|back to the listings|back to the list)\b/i.test(
+    text,
+  );
 }
 
 export function buildTaskContract(query: string): TaskContract {
   const namedEntities = extractNamedEntities(query);
   const multiReturn = extractMultiReturnMarkers(query);
+  const exhaustiveScope = extractExhaustiveScope(query);
   const requiredEntities = unique([
     ...extractQuotedPhrases(query),
     ...extractReportTargets(query),
@@ -175,6 +294,36 @@ export function buildTaskContract(query: string): TaskContract {
     returnTargets: extractReturnTargets(query),
     reportTargets: extractReportTargets(query),
     multiReturnCount: multiReturn.count || undefined,
+    exhaustiveScopeLabel: exhaustiveScope.label,
+    exhaustiveScopeCount: exhaustiveScope.count,
+    requiresAggregateReport:
+      Boolean(exhaustiveScope.label) && extractAggregateReportIntent(query),
+    requiresSequentialDetailReview:
+      Boolean(exhaustiveScope.label) && extractSequentialDetailReviewIntent(query),
+  };
+}
+
+function buildExhaustiveSynthesisStep(contract: TaskContract): {
+  objective: string;
+  successCriteria: string;
+  dependencies: number[];
+  assumptions: string[];
+  toolProfile?: string;
+} | null {
+  if (!contract.exhaustiveScopeLabel || !contract.requiresAggregateReport) {
+    return null;
+  }
+  const singular = singularizePhrase(contract.exhaustiveScopeLabel);
+  const countText =
+    typeof contract.exhaustiveScopeCount === "number"
+      ? `${contract.exhaustiveScopeCount} ${contract.exhaustiveScopeLabel}`
+      : contract.exhaustiveScopeLabel;
+  return {
+    objective: `Compare the reviewed ${countText} and report the best matches for the user's stated constraints.`,
+    successCriteria: `Final answer mentions multiple reviewed ${singular} items and explains why they best fit the user's stated constraints.`,
+    dependencies: [],
+    assumptions: [],
+    toolProfile: "read_only",
   };
 }
 
@@ -195,6 +344,29 @@ export function assessTaskContractCoverage(params: {
       params.contract.returnTargets.length > 0 &&
       !params.contract.returnTargets.some((target) => corpus.includes(target)),
   );
+  const exhaustiveLabel = params.contract.exhaustiveScopeLabel;
+  const exhaustiveCount = params.contract.exhaustiveScopeCount;
+  const exhaustiveVariants = exhaustiveLabel
+    ? unique([exhaustiveLabel, singularizePhrase(exhaustiveLabel)])
+    : [];
+  const mentionsExhaustiveLabel =
+    exhaustiveVariants.length === 0
+      ? true
+      : exhaustiveVariants.some((label) => corpus.includes(label));
+  const countWords = exhaustiveCount ? [String(exhaustiveCount)] : [];
+  const countWordVariant = exhaustiveCount ? countWord(exhaustiveCount) : null;
+  if (countWordVariant) countWords.push(countWordVariant);
+  const mentionsExhaustiveCount =
+    countWords.length === 0
+      ? true
+      : countWords.some((value) => corpus.includes(value));
+  const mentionsExhaustiveMarker =
+    /\b(all|every|each|reviewed|checked|inspected|visited)\b/.test(corpus);
+  const missingExhaustiveCoverage = Boolean(
+    exhaustiveLabel &&
+      (!mentionsExhaustiveLabel ||
+        !(mentionsExhaustiveCount || mentionsExhaustiveMarker)),
+  );
   // Multi-return check: when "both"/"all N" is detected, ensure enough
   // distinct entities from the contract are present in the summary
   const multiReturnCount = params.contract.multiReturnCount ?? 0;
@@ -203,16 +375,21 @@ export function assessTaskContractCoverage(params: {
       ? params.contract.requiredEntities.filter((e) => corpus.includes(e))
       : [];
   const multiReturnShortfall =
-    multiReturnCount >= 2 && coveredEntities.length < multiReturnCount;
+    multiReturnCount >= 2 &&
+    params.contract.requiredEntities.length >= multiReturnCount &&
+    coveredEntities.length < multiReturnCount;
 
   return {
     missingEntities,
     missingNumbers,
     missingReturnTarget,
+    missingExhaustiveCoverage,
+    missingMultiReturnCoverage: multiReturnShortfall,
     satisfied:
       missingEntities.length === 0 &&
       missingNumbers.length === 0 &&
       !missingReturnTarget &&
+      !missingExhaustiveCoverage &&
       !multiReturnShortfall,
   };
 }
@@ -278,6 +455,29 @@ export function repairPlanCoverage(params: {
       assumptions: [],
       toolProfile: "read_only",
     });
+  }
+
+  const exhaustiveSynthesisStep = buildExhaustiveSynthesisStep(contract);
+  if (exhaustiveSynthesisStep) {
+    const hasAggregateStep = steps.some((step) => {
+      const objective = normalize(step.objective);
+      const criteria = normalize(step.successCriteria);
+      const aggregateObjective =
+        /^(compare|report|recommend|rank|summari[sz]e)\b/.test(objective) ||
+        /\b(report|recommend|rank|summari[sz]e)\b/.test(objective);
+      const finalAnswerCriteria =
+        criteria.includes("final answer") ||
+        criteria.includes("user's stated constraints") ||
+        criteria.includes("user constraints") ||
+        criteria.includes("best matches");
+      return aggregateObjective && finalAnswerCriteria;
+    });
+    if (!hasAggregateStep) {
+      steps.push({
+        ...exhaustiveSynthesisStep,
+        dependencies: steps.length > 0 ? [steps.length - 1] : [],
+      });
+    }
   }
 
   return steps;
@@ -348,6 +548,69 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
       dependencies: steps.length > 0 ? [steps.length - 1] : [],
       assumptions: [],
       toolProfile: "read_only",
+    });
+  }
+
+  return steps.length >= 2 ? steps : null;
+}
+
+export function synthesizeBatchedExhaustivePlan(query: string): Array<{
+  objective: string;
+  successCriteria: string;
+  dependencies: number[];
+  assumptions: string[];
+  toolProfile?: string;
+}> | null {
+  const contract = buildTaskContract(query);
+  const count = contract.exhaustiveScopeCount;
+  const label = contract.exhaustiveScopeLabel;
+  if (
+    !label ||
+    !count ||
+    count < 5 ||
+    !contract.requiresAggregateReport ||
+    !contract.requiresSequentialDetailReview
+  ) {
+    return null;
+  }
+
+  const reviewStepCount = Math.min(4, count);
+  const batchSize = Math.max(1, Math.ceil(count / reviewStepCount));
+  const singular = singularizePhrase(label);
+  const steps: Array<{
+    objective: string;
+    successCriteria: string;
+    dependencies: number[];
+    assumptions: string[];
+    toolProfile?: string;
+  }> = [];
+
+  for (let start = 1; start <= count; start += batchSize) {
+    const end = Math.min(count, start + batchSize - 1);
+    const batchLabel =
+      start === end ? `#${start}` : `#${start} through #${end}`;
+    const objective =
+      start === end
+        ? `Review ${singular} ${batchLabel} by opening it, reading its full details, and returning to the original ${label} list.`
+        : `Review ${label} ${batchLabel} one by one by opening each item, reading the full details, and returning to the original ${label} list after each review.`;
+    const successCriteria =
+      start === end
+        ? `${singular} ${batchLabel} has been reviewed and the original ${label} list is visible again.`
+        : `${label} ${batchLabel} have all been reviewed and the original ${label} list is visible again.`;
+    steps.push({
+      objective,
+      successCriteria,
+      dependencies: steps.length > 0 ? [steps.length - 1] : [],
+      assumptions: [],
+      toolProfile: "full",
+    });
+  }
+
+  const synthesisStep = buildExhaustiveSynthesisStep(contract);
+  if (synthesisStep) {
+    steps.push({
+      ...synthesisStep,
+      dependencies: steps.length > 0 ? [steps.length - 1] : [],
     });
   }
 

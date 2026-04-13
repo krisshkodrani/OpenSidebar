@@ -1,0 +1,27 @@
+{
+  "id": "cart-modify-checkout",
+  "name": "Cart Modify Checkout",
+  "description": "Modify an existing cart state, verify the requested result, then apply incentives and continue to checkout safely.",
+  "tags": ["workflow", "shopping", "cart", "checkout"],
+  "triggers": [
+    "swap item in cart",
+    "replace product and keep cart state",
+    "apply coupon and checkout"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "find_element",
+    "click_element",
+    "type_text",
+    "read_element",
+    "update_notes"
+  ],
+  "discouragedTools": [],
+  "memoryScope": "turn",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Read cart state before and after mutation.",
+    "Do not proceed to checkout until cart contents are confirmed."
+  ]
+}

@@ -3,8 +3,10 @@ import type { LLMClientOptions } from "../llm";
 import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
+import { synthesizeBatchedExhaustivePlan } from "../agent/task-contract";
 import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
+import { selectPrimarySkill } from "./skills";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_ELEMENT,
@@ -118,6 +120,7 @@ interface DecompositionStep {
 }
 
 function stepsToNodes(
+  query: string,
   steps: DecompositionStep[],
   phase: "planned" | "planner_replan" = "planned",
 ): TaskNode[] {
@@ -156,6 +159,19 @@ function stepsToNodes(
   const assignments = validatePlannerAssignments(rawAssignments);
 
   return assignments.map((assignment, index) => ({
+    ...(() => {
+      const selection = selectPrimarySkill({
+        query,
+        objective: assignment.objective,
+        successCriteria: assignment.successCriteria,
+      });
+      return selection
+        ? {
+            selectedSkillId: selection.id,
+            selectedSkillReason: selection.reason,
+          }
+        : {};
+    })(),
     id: nodeIds[index],
     role: assignment.role,
     description: assignment.objective,
@@ -203,12 +219,26 @@ export class OrchestratorPlanner {
       pageUrl,
       signal,
     );
+    const batchedExhaustiveFallback = synthesizeBatchedExhaustivePlan(query);
 
     const difficulty: Difficulty = decomposition?.difficulty ?? "moderate";
 
     let nodes: TaskNode[];
-    if (decomposition?.steps?.length) {
-      nodes = stepsToNodes(decomposition.steps);
+    const shouldUseBatchedFallback =
+      batchedExhaustiveFallback &&
+      (!decomposition ||
+        (decomposition.steps?.length ?? 0) === 0 ||
+        ((decomposition.subtasks?.length ?? 0) <= 1 &&
+          !(decomposition.steps?.length ?? 0)));
+    if (shouldUseBatchedFallback) {
+      nodes = stepsToNodes(query, batchedExhaustiveFallback);
+      logger.info(
+        "orchestrator",
+        "Planner fallback replaced with compact exhaustive review graph",
+        { count: nodes.length },
+      );
+    } else if (decomposition?.steps?.length) {
+      nodes = stepsToNodes(query, decomposition.steps);
       logger.info(
         "orchestrator",
         "Planner produced structured graph assignments",
@@ -226,7 +256,7 @@ export class OrchestratorPlanner {
         dependencies: i > 0 ? [i - 1] : [],
         assumptions: [],
       }));
-      nodes = stepsToNodes(fallbackSteps);
+      nodes = stepsToNodes(query, fallbackSteps);
     }
 
     logger.info("orchestrator", "Planner generated nodes", {
@@ -267,7 +297,21 @@ export class OrchestratorPlanner {
     if (steps.length < 2) return null;
 
     const nodeIds = steps.map(() => crypto.randomUUID());
-    const expanded: TaskNode[] = steps.map((step, index) => ({
+    const expanded: TaskNode[] = steps.map((step, index) => {
+      const selection = selectPrimarySkill({
+        query: node.description,
+        objective: step.objective,
+        successCriteria: step.successCriteria,
+        pageTitle,
+        pageUrl,
+      });
+      return {
+        ...(selection
+          ? {
+              selectedSkillId: selection.id,
+              selectedSkillReason: selection.reason,
+            }
+          : {}),
       id: nodeIds[index],
       role: "executor",
       description: step.objective,
@@ -301,7 +345,8 @@ export class OrchestratorPlanner {
       verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
       status: "pending",
       retries: 0,
-    }));
+      };
+    });
 
     logger.info("orchestrator", "Planner expanded node into subgraph", {
       sourceNodeId: node.id,
@@ -349,7 +394,7 @@ export class OrchestratorPlanner {
 
     if (steps.length === 0) return null;
 
-    const nodes = stepsToNodes(steps as DecompositionStep[], "planned");
+    const nodes = stepsToNodes(query, steps as DecompositionStep[], "planned");
 
     logger.info("orchestrator", "Planner produced horizon expansion nodes", {
       count: nodes.length,

@@ -20,7 +20,7 @@ import {
 } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
-import { isElementVisible, addDynamicTag, resetStableIds } from "./tagging";
+import { isElementVisible, dismissElement, addDynamicTag, resetStableIds } from "./tagging";
 
 logger.info("system", "Content Script Loaded");
 
@@ -455,7 +455,7 @@ function autoDismissModals(): DismissResult {
         classes: el.className.toString().slice(0, 50),
       });
     } else {
-      el.style.display = "none";
+      dismissElement(el);
       dismissed++;
       logger.info("tools", "Auto-hid overlay", {
         tag: el.tagName,
@@ -497,7 +497,7 @@ function autoDismissModals(): DismissResult {
         backdrop: isBackdropElement(el),
       });
     } else {
-      el.style.display = "none";
+      dismissElement(el);
       dismissed++;
       logger.info("tools", isBackdropElement(el)
         ? "Hid backdrop overlay"

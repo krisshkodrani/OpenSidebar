@@ -76,6 +76,7 @@ describe("StructuredEvidence", () => {
 
   test("buildVerifierContext includes evidence chain from handoff artifacts", () => {
     const node = makeNode({
+      selectedSkillId: "transactional-act-check-act",
       handoffArtifacts: [
         {
           role: "executor",
@@ -96,6 +97,7 @@ describe("StructuredEvidence", () => {
       node,
       "- [completed] Prior node :: Done",
     );
+    expect(context).toContain("Skill verification contract:");
     expect(context).toContain("Structured evidence chain:");
     expect(context).toContain("[tool_output]");
     expect(context).toContain("Form submitted");

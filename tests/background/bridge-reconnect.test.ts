@@ -60,6 +60,9 @@ describe("Content script reinjection flow", () => {
       executeScript: vi.fn(() => Promise.resolve()),
     };
     (chrome.tabs as any).get = vi.fn(() => Promise.resolve({ id: 1, url: "https://example.com" }));
+    (chrome.tabs as any).update = vi.fn((_tabId: number, update: { url?: string }) =>
+      Promise.resolve({ id: 1, url: update.url ?? "https://example.com" }),
+    );
     (chrome.tabs as any).reload = vi.fn(() => Promise.resolve());
     (chrome.tabs as any).sendMessage = vi.fn(() => Promise.resolve({
       payload: { result: "OK" },
@@ -222,4 +225,40 @@ describe("Content script reinjection flow", () => {
     ).resolves.toBe("clicked");
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
   });
+
+  test("executeContentTool falls back to reopening the current page when reinjection recovery fails", async () => {
+    let toolAttempts = 0;
+    let probeAttempts = 0;
+    (chrome.scripting as any).executeScript = vi.fn(() =>
+      Promise.reject(new Error("loader unavailable")),
+    );
+    (chrome.webNavigation as any).onCompleted = {
+      addListener: (cb: (details: { tabId: number; frameId: number }) => void) =>
+        setTimeout(() => cb({ tabId: 108, frameId: 0 }), 0),
+      removeListener: () => {},
+    };
+    (chrome.webNavigation as any).onErrorOccurred = {
+      addListener: () => {},
+      removeListener: () => {},
+    };
+    (chrome.tabs as any).sendMessage = vi.fn((_tabId: number, message: any) => {
+      if (message.type === "TOOL_EXECUTE") {
+        toolAttempts += 1;
+        if (toolAttempts < 3) {
+          return Promise.reject(new Error("Receiving end does not exist"));
+        }
+        return Promise.resolve({ payload: { result: "clicked-after-hard-reload" } });
+      }
+      probeAttempts += 1;
+      if (probeAttempts < 3) {
+        return Promise.reject(new Error("Receiving end does not exist"));
+      }
+      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+    });
+
+    await expect(
+      executeContentTool(ToolName.CLICK_ELEMENT, { elementId: "e1" }, 108),
+    ).resolves.toBe("clicked-after-hard-reload");
+    expect(chrome.tabs.update).toHaveBeenCalled();
+  }, 15000);
 });

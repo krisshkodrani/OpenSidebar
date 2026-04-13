@@ -299,6 +299,7 @@ export interface TraceSession {
     steps: Array<{
       objective: string;
       successCriteria: string;
+      selectedSkillId?: string;
       dependencies: number[];
       assumptions: string[];
       verifyAfter?: { trigger: string; action: string; pattern?: string };

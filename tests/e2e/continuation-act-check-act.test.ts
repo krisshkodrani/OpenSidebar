@@ -24,15 +24,15 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForOutcome,
   waitForTaskCompletion,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
-import { findAllNewTraceFiles, readTrace } from "./helpers/diagnostics";
+import { extractDoneSummary, findAllNewTraceFiles } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 15, testLabel: "act-check-act" });
 
@@ -40,17 +40,7 @@ const TURN_TIMEOUT = 180_000;
 
 /** Extract the done() message from trace files */
 function extractDoneMessage(traceFiles: string[]): string {
-  for (const f of traceFiles) {
-    const turns = readTrace(f);
-    for (const t of turns) {
-      for (const tc of (t as any).toolCalls ?? []) {
-        if (tc.name === "done" && tc.args?.message) {
-          return tc.args.message;
-        }
-      }
-    }
-  }
-  return "";
+  return extractDoneSummary(traceFiles);
 }
 
 describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
@@ -74,7 +64,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
 
     await sendUserChat(
       h.ctx,
-      "There are some popups on this page. Dismiss all of them so I can see the content underneath.",
+      "Close the cookie banner at the bottom and the newsletter popup so I can see the page.",
       tabId,
       workspaceId,
     );
@@ -107,8 +97,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
     const tracesAfterTurn1 = findAllNewTraceFiles(h.tracesBefore);
 
     // =================================================================
@@ -149,8 +138,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 3: Act on the form — fill email + delete account

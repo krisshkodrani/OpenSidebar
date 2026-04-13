@@ -1,5 +1,13 @@
-# GBrain configuration for OpenSidebar Lab
+# GBrain configuration sketch for OpenSidebar Lab
 # https://github.com/garrytan/gbrain
+#
+# NOTE:
+# The pinned GBrain build used in this repo does not currently consume this YAML
+# directly. Runtime behavior is owned by the OpenSidebar lab wrappers in
+# `lab/bin/`, which isolate GBrain into project-local state and invoke the
+# upstream CLI.
+#
+# Keep this file as a design reference for the desired integrated lab config.
 
 name: opensidebar-knowledge-base
 description: >

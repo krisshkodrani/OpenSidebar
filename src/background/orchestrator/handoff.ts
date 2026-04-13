@@ -5,6 +5,11 @@ import {
   StructuredEvidence,
   TaskNode,
 } from "./types";
+import {
+  getLoadedSkillContract,
+  selectPrimarySkill,
+  summarizeSkillForVerifier,
+} from "./skills";
 
 const MAX_HANDOFF_ARTIFACTS = 8;
 const MAX_NOTE_LEN = 400;
@@ -161,6 +166,7 @@ export function buildExecutorInstruction(
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
+  const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
   const assumptions =
     node.assumptions.length > 0
       ? node.assumptions.map((item) => `- ${normalizeNote(item)}`).join("\n")
@@ -181,6 +187,24 @@ export function buildExecutorInstruction(
     "Planner assumptions (validate against current page before acting):",
     assumptions,
     "",
+    ...(loadedSkill
+      ? [
+          "Selected workflow skill:",
+          `- ${loadedSkill.id}: ${loadedSkill.description}`,
+          ...(node.selectedSkillReason
+            ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
+            : []),
+          "Skill procedure:",
+          loadedSkill.procedureMarkdown,
+          ...(loadedSkill.requiredEvidence?.length
+            ? [
+                "Skill evidence requirements:",
+                ...loadedSkill.requiredEvidence.map((item) => `- ${item}`),
+              ]
+            : []),
+          "",
+        ]
+      : []),
     "Handoff context:",
     handoffBrief,
     "",
@@ -267,7 +291,13 @@ export function buildVerifierContext(
   taskStateBrief: string,
 ): string {
   const nodeHandoff = formatHandoffBrief(node.handoffArtifacts);
-  const sections = ["Node handoff context:", nodeHandoff];
+  const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
+  const skillSummary = summarizeSkillForVerifier(loadedSkill);
+  const sections = [
+    ...(skillSummary ? ["Skill verification contract:", skillSummary, ""] : []),
+    "Node handoff context:",
+    nodeHandoff,
+  ];
 
   const allEvidence = node.handoffArtifacts
     .filter((a) => a.evidence && a.evidence.length > 0)
@@ -381,7 +411,18 @@ export function createRerouteNode(
   rerouteObjective: string,
   rerouteReason: string,
 ): TaskNode {
+  const selection = selectPrimarySkill({
+    query: sourceNode.description,
+    objective: rerouteObjective,
+    successCriteria: sourceNode.successCriteria,
+  });
   return {
+    ...(selection
+      ? {
+          selectedSkillId: selection.id,
+          selectedSkillReason: selection.reason,
+        }
+      : {}),
     id: crypto.randomUUID(),
     role: "executor",
     description: rerouteObjective.trim(),

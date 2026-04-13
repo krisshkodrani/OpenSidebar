@@ -8,7 +8,12 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
-import { readTrace, TraceTurn } from "./diagnostics";
+import {
+  extractRunIdFromTraceFile,
+  readSkillSummaryForRun,
+  readTrace,
+  TraceTurn,
+} from "./diagnostics";
 
 const PROJECT_ROOT = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")), "../../..");
 
@@ -19,16 +24,80 @@ interface TestRecord {
   traceFiles: string[];
 }
 
+interface RunMetadata {
+  provider: string;
+  lane: string;
+  configuredExecutorModel?: string | null;
+  diagnosticMode?: boolean;
+}
+
 interface TraceCostData {
   turns: number;
   cost: number;
 }
+
+type FailureClass = "provider" | "harness" | "product" | null;
 
 interface TraceAnalysis extends TraceCostData {
   toolCounts: Record<string, number>;
   repeatedTools: string[];
   model: string | undefined;
   turnDetails: TraceTurn[];
+  runIds: string[];
+  skillsUsed: string[];
+  nodeSkills: Array<{ nodeId: string; skillId: string; reason?: string }>;
+  failureClass: FailureClass;
+}
+
+/**
+ * Classify a test failure by inspecting trace evidence.
+ *
+ * - **provider**: LLM API errors, 429/500/502/503 status codes, empty responses,
+ *   timeout from the provider side, model refusals.
+ * - **harness**: synchronization failures, bridge disconnects, extension lifecycle
+ *   issues, tab/page management errors, content script injection problems.
+ * - **product**: assertion failures from the agent's behavior — wrong tool calls,
+ *   stagnation, task contract mismatches, incorrect actions.
+ */
+function classifyFailure(turns: TraceTurn[]): FailureClass {
+  // Provider signals: API errors, empty responses, rate limits
+  const providerSignals = [
+    /\b(429|500|502|503|504)\b/,
+    /\b(rate.?limit|too many requests|service unavailable|bad gateway|gateway timeout)\b/i,
+    /\b(empty response|no response|model refused|content filter|api error|provider error)\b/i,
+    /\b(timeout|timed out|ETIMEDOUT|ECONNREFUSED|fetch failed)\b/i,
+  ];
+
+  // Harness signals: extension lifecycle, bridge, sync issues
+  const harnessSignals = [
+    /\b(bridge disconnect|content script .* not .* respond|extension context invalidated)\b/i,
+    /\b(tab (was )?closed|no active tab|tab not found|Cannot access)\b/i,
+    /\b(navigation timeout|page crashed|target closed|session closed)\b/i,
+    /\b(injecting content script|reinjection|chrome\.runtime)\b/i,
+  ];
+
+  let providerHits = 0;
+  let harnessHits = 0;
+
+  for (const turn of turns) {
+    const texts = [
+      turn.llmContent || "",
+      ...turn.toolResults.map((tr) => `${tr.result} ${tr.error || ""}`),
+    ];
+
+    for (const text of texts) {
+      for (const pattern of providerSignals) {
+        if (pattern.test(text)) providerHits++;
+      }
+      for (const pattern of harnessSignals) {
+        if (pattern.test(text)) harnessHits++;
+      }
+    }
+  }
+
+  if (providerHits > 0 && providerHits >= harnessHits) return "provider";
+  if (harnessHits > 0) return "harness";
+  return "product";
 }
 
 function analyzeTraces(traceFiles: string[]): TraceAnalysis {
@@ -37,6 +106,9 @@ function analyzeTraces(traceFiles: string[]): TraceAnalysis {
   const toolCounts: Record<string, number> = {};
   let model: string | undefined;
   const allTurns: TraceTurn[] = [];
+  const runIds = new Set<string>();
+  const skillsUsed = new Set<string>();
+  const nodeSkills = new Map<string, { skillId: string; reason?: string }>();
 
   for (const filePath of traceFiles) {
     if (!existsSync(filePath)) continue;
@@ -62,6 +134,21 @@ function analyzeTraces(traceFiles: string[]): TraceAnalysis {
         toolCounts[tc.name] = (toolCounts[tc.name] || 0) + 1;
       }
     }
+
+    const runId = extractRunIdFromTraceFile(filePath);
+    if (runId) {
+      runIds.add(runId);
+      const skillSummary = readSkillSummaryForRun(runId);
+      for (const skillId of skillSummary?.skillIds || []) {
+        skillsUsed.add(skillId);
+      }
+      for (const item of skillSummary?.nodeSkills || []) {
+        nodeSkills.set(item.nodeId, {
+          skillId: item.skillId,
+          ...(item.reason ? { reason: item.reason } : {}),
+        });
+      }
+    }
   }
 
   // Detect repeated consecutive tool calls (stagnation signal)
@@ -74,7 +161,22 @@ function analyzeTraces(traceFiles: string[]): TraceAnalysis {
     }
   }
 
-  return { turns: totalTurns, cost: totalCost, toolCounts, repeatedTools, model, turnDetails: allTurns };
+  return {
+    turns: totalTurns,
+    cost: totalCost,
+    toolCounts,
+    repeatedTools,
+    model,
+    turnDetails: allTurns,
+    runIds: [...runIds],
+    skillsUsed: [...skillsUsed].sort(),
+    nodeSkills: [...nodeSkills.entries()].map(([nodeId, value]) => ({
+      nodeId,
+      skillId: value.skillId,
+      ...(value.reason ? { reason: value.reason } : {}),
+    })),
+    failureClass: null, // classified per-test, not per-trace-set
+  };
 }
 
 function formatDuration(ms: number): string {
@@ -101,6 +203,11 @@ function padLeft(s: string, len: number): string {
 class SuiteReport {
   private records: TestRecord[] = [];
   private printed = false;
+  private runMetadata: RunMetadata | null = null;
+
+  setRunMetadata(metadata: RunMetadata): void {
+    this.runMetadata = metadata;
+  }
 
   record(
     name: string,
@@ -115,10 +222,13 @@ class SuiteReport {
     if (this.printed || this.records.length === 0) return;
     this.printed = true;
 
-    const analyses = this.records.map((rec) => ({
-      rec,
-      analysis: analyzeTraces(rec.traceFiles),
-    }));
+    const analyses = this.records.map((rec) => {
+      const analysis = analyzeTraces(rec.traceFiles);
+      if (rec.passed === false) {
+        analysis.failureClass = classifyFailure(analysis.turnDetails);
+      }
+      return { rec, analysis };
+    });
 
     // Console table
     this.printConsoleTable(analyses);
@@ -195,13 +305,23 @@ class SuiteReport {
     }
 
     const model = analyses.find((a) => a.analysis.model)?.analysis.model || "unknown";
+    const provider = this.runMetadata?.provider ?? "unknown";
+    const lane = this.runMetadata?.lane ?? "unknown";
+    const configuredExecutorModel = this.runMetadata?.configuredExecutorModel;
+    const diagnosticMode = this.runMetadata?.diagnosticMode === true;
     const md: string[] = [];
 
     // Header
     md.push(`# E2E Test Report`);
     md.push("");
     md.push(`**Date:** ${dateStr} ${timeStr}`);
+    md.push(`**Lane:** ${lane}`);
+    md.push(`**Provider:** ${provider}`);
     md.push(`**Model:** ${model}`);
+    md.push(`**Diagnostic Mode:** ${diagnosticMode ? "on" : "off"}`);
+    if (configuredExecutorModel) {
+      md.push(`**Configured Executor Model:** ${configuredExecutorModel}`);
+    }
     md.push(`**Result:** ${passCount}/${analyses.length} passed${failCount > 0 ? ` (${failCount} failed)` : ""}`);
     md.push(`**Total Cost:** ${formatCost(totalCost)}`);
     md.push(`**Total Time:** ${formatDuration(totalDuration)}`);
@@ -210,14 +330,44 @@ class SuiteReport {
     // Results table
     md.push("## Results");
     md.push("");
-    md.push("| Test | Result | Turns | Cost | Time |");
-    md.push("|------|--------|------:|-----:|-----:|");
+    md.push("| Test | Result | Class | Turns | Cost | Time | Skills |");
+    md.push("|------|--------|-------|------:|-----:|-----:|--------|");
 
     for (const { rec, analysis } of analyses) {
       const result = rec.passed == null ? "UNK" : rec.passed ? "PASS" : "**FAIL**";
+      const failClass = analysis.failureClass ?? "-";
       md.push(
-        `| ${rec.name} | ${result} | ${analysis.turns} | ${formatCost(analysis.cost)} | ${formatDuration(rec.durationMs)} |`,
+        `| ${rec.name} | ${result} | ${failClass} | ${analysis.turns} | ${formatCost(analysis.cost)} | ${formatDuration(rec.durationMs)} | ${analysis.skillsUsed.length > 0 ? analysis.skillsUsed.map((s) => `\`${s}\``).join(", ") : "-"} |`,
       );
+    }
+    md.push("");
+
+    md.push("## Skill Summary");
+    md.push("");
+    const skillUsageCounts = new Map<string, { total: number; passed: number; failed: number }>();
+    for (const { rec, analysis } of analyses) {
+      for (const skillId of analysis.skillsUsed) {
+        const current = skillUsageCounts.get(skillId) || {
+          total: 0,
+          passed: 0,
+          failed: 0,
+        };
+        current.total += 1;
+        if (rec.passed) current.passed += 1;
+        else if (rec.passed === false) current.failed += 1;
+        skillUsageCounts.set(skillId, current);
+      }
+    }
+    if (skillUsageCounts.size === 0) {
+      md.push("No workflow skills were detected in the linked run traces.");
+    } else {
+      for (const [skillId, counts] of [...skillUsageCounts.entries()].sort((a, b) =>
+        a[0].localeCompare(b[0]),
+      )) {
+        md.push(
+          `- \`${skillId}\`: used in ${counts.total} case(s); ${counts.passed} passing, ${counts.failed} failing`,
+        );
+      }
     }
     md.push("");
 
@@ -234,6 +384,22 @@ class SuiteReport {
       if (Object.keys(analysis.toolCounts).length > 0) {
         const sorted = Object.entries(analysis.toolCounts).sort((a, b) => b[1] - a[1]);
         md.push(`**Tools used:** ${sorted.map(([name, count]) => `${name}(${count})`).join(", ")}`);
+        md.push("");
+      }
+      if (analysis.skillsUsed.length > 0) {
+        md.push(`**Skills used:** ${analysis.skillsUsed.map((s) => `\`${s}\``).join(", ")}`);
+        md.push("");
+      }
+      if (analysis.nodeSkills.length > 0) {
+        md.push("**Skill routing:**");
+        md.push("");
+        md.push("| Node | Skill | Reason |");
+        md.push("|------|-------|--------|");
+        for (const item of analysis.nodeSkills) {
+          md.push(
+            `| ${item.nodeId.slice(0, 8)} | \`${item.skillId}\` | ${item.reason || "-"} |`,
+          );
+        }
         md.push("");
       }
 
@@ -289,10 +455,16 @@ class SuiteReport {
         );
       }
 
-      // Flag failures
+      // Flag failures with classification
       if (rec.passed === false) {
+        const classLabel =
+          analysis.failureClass === "provider"
+            ? "provider/transport error"
+            : analysis.failureClass === "harness"
+              ? "harness/sync failure"
+              : "product/assertion failure";
         critiques.push(
-          `- **${rec.name}**: FAILED — review trace for root cause.`,
+          `- **${rec.name}**: FAILED (${classLabel}) — review trace for root cause.`,
         );
       }
 

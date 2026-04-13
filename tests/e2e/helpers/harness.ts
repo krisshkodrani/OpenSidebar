@@ -40,6 +40,13 @@ export interface HarnessOptions {
   testLabel?: string;
 }
 
+type ProviderMode = "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
+type E2ELane = "dev" | "validation";
+
+function isDiagnosticModeEnabled(): boolean {
+  return process.env.E2E_DIAGNOSTIC === "true";
+}
+
 export interface E2EHarness {
   apiKey: string | undefined;
   readonly ctx: ExtensionContext;
@@ -83,13 +90,35 @@ function loadFireworksApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
-/** Detect provider mode from E2E_PROVIDER env var (default: openrouter) */
-function detectProviderMode(): "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks" {
+/** Detect provider mode from E2E_PROVIDER env var (default: fireworks) */
+function detectProviderMode(): ProviderMode {
   const prov = process.env.E2E_PROVIDER?.toLowerCase();
   if (prov === "groq" || prov === "openrouter-groq") return "openrouter-groq";
   if (prov === "openai-groq") return "openai-groq";
-  if (prov === "fireworks") return "fireworks";
-  return "openrouter";
+  if (prov === "openrouter") return "openrouter";
+  return "fireworks";
+}
+
+function deriveLane(providerMode: ProviderMode): E2ELane {
+  return providerMode === "fireworks" ? "dev" : "validation";
+}
+
+async function waitForTraceFiles(
+  tracesBefore: Set<string>,
+  workspaceId?: string | null,
+  timeoutMs: number = 2_000,
+): Promise<string[]> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const traceFiles = filterTraceFilesByWorkspace(
+      findAllNewTraceFiles(tracesBefore),
+      workspaceId,
+    );
+    if (traceFiles.length > 0) return traceFiles;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  return filterTraceFilesByWorkspace(findAllNewTraceFiles(tracesBefore), workspaceId);
 }
 
 export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
@@ -126,7 +155,8 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       await startLogServer();
       await startFixtureServer();
       ctx = await launchWithExtension();
-      detachConsole = await attachSwConsole(ctx.browser);
+      const diagnosticMode = isDiagnosticModeEnabled();
+      detachConsole = await attachSwConsole(ctx.browser, { diagnosticMode });
 
       const pages = await ctx.browser.pages();
       page =
@@ -135,11 +165,18 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
 
       const helper = await openHelperPage(ctx);
       const providerMode = detectProviderMode();
+      const lane = deriveLane(providerMode);
       const groqKey = providerMode !== "openrouter" ? loadGroqApiKey() : undefined;
       const fireworksKey = providerMode === "fireworks" ? loadFireworksApiKey() : undefined;
       const executorModel = process.env.E2E_EXECUTOR_MODEL || undefined;
       const temperature = process.env.E2E_TEMPERATURE ? parseFloat(process.env.E2E_TEMPERATURE) : undefined;
       const useVLExecutor = process.env.E2E_USE_VL_EXECUTOR === "true" || undefined;
+      suiteReport.setRunMetadata({
+        provider: providerMode,
+        lane,
+        configuredExecutorModel: executorModel ?? null,
+        diagnosticMode,
+      });
       await helper.evaluate(
         async (key: string, turns: number, mode: string, gKey: string | null, fwKey: string | null, execModel: string | null, temp: number | null, vlExec: boolean | null) => {
           const localData: Record<string, string> = { openRouterApiKey_local: key };
@@ -202,11 +239,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
     },
 
     async printTraceSummary(workspaceId?: string | null) {
-      await new Promise((r) => setTimeout(r, 2_000));
-      const traceFiles = filterTraceFilesByWorkspace(
-        findAllNewTraceFiles(tracesBefore),
-        workspaceId,
-      );
+      const traceFiles = await waitForTraceFiles(tracesBefore, workspaceId);
       const allTurns = traceFiles.flatMap((f) => readTrace(f));
 
       for (const f of traceFiles) {

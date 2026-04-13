@@ -90,7 +90,7 @@ function buildFormBatchHint(elements: TaggedElement[]): string | null {
     inputCount +
     " input fields. " +
     "You may call multiple type_text actions in a single response — they will execute in parallel. " +
-    "Fill all visible fields at once, then click the submit button."
+    "Fill all visible fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
   );
 }
 

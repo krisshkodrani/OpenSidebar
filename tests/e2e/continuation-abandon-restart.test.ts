@@ -23,10 +23,10 @@ import {
 import { createE2EHarness } from "./helpers/harness";
 import {
   assertNoGhostSession,
-  clearMonitoredEvents,
   getActiveTabId,
   navigateAndWait,
   sendUserChat,
+  settleWorkspaceBetweenTurns,
   waitForOutcome,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
@@ -105,8 +105,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 2: Scrap and restart with Bob
@@ -159,8 +158,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
     // =================================================================
     // TRANSITION
     // =================================================================
-    await new Promise((r) => setTimeout(r, 4_000));
-    await clearMonitoredEvents(h.ctx.serviceWorker);
+    await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
 
     // =================================================================
     // TURN 3: Select category and submit
@@ -169,7 +167,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
 
     await sendUserChat(
       h.ctx,
-      "Select Technical Support for the category, pick the Medium budget, and submit the form.",
+      "Select Business for the category, pick the Standard budget, and submit the form.",
       tabId,
       workspaceId,
     );
@@ -198,7 +196,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
     expect(result.name).toBe("Bob Martinez");
     expect(result.email).toBe("bob@company.com");
     expect(result.phone).toBe("555-0200");
-    expect(result.category.toLowerCase()).toContain("technical");
+    expect(result.category.toLowerCase()).toContain("business");
     expect(result.refNumber).toBeTruthy();
 
     console.log(`[abandon] Turn 3 PASS — Submitted as ${result.name}`);

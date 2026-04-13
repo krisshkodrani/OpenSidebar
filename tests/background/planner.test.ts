@@ -65,6 +65,7 @@ import {
 } from "../../src/background/agent/planner";
 import { buildInitialPlanState } from "../../src/background/orchestrator";
 import { OrchestratorPlanner } from "../../src/background/orchestrator/planner";
+import { selectPrimarySkill } from "../../src/background/orchestrator/skills";
 import { AgentLoop } from "../../src/background/agent/loop";
 
 // ═══════════════════════════════════════════════════════════
@@ -707,6 +708,43 @@ Execution policy:
         expect(result!.instrumentation?.parsedStepCount).toBe(2);
     });
 
+    test("prefers compact batched plan for bounded exhaustive detail-review tasks", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                steps: [
+                    { objective: "Click the first job listing to view its full details", successCriteria: "Job detail page loaded with full job description visible", dependencies: [], assumptions: [] },
+                    { objective: "Return to the job listings page", successCriteria: "Job listings page with all 10 job cards visible", dependencies: [0], assumptions: [] },
+                    { objective: "Click the second job listing to view its full details", successCriteria: "Job detail page loaded with full job description visible", dependencies: [1], assumptions: [] },
+                    { objective: "Return to the job listings page", successCriteria: "Job listings page with all 10 job cards visible", dependencies: [2], assumptions: [] },
+                    { objective: "Click the third job listing to view its full details", successCriteria: "Job detail page loaded with full job description visible", dependencies: [3], assumptions: [] },
+                    { objective: "Return to the job listings page", successCriteria: "Job listings page with all 10 job cards visible", dependencies: [4], assumptions: [] },
+                    { objective: "Click the fourth job listing to view its full details", successCriteria: "Job detail page loaded with full job description visible", dependencies: [5], assumptions: [] },
+                    { objective: "Return to the job listings page", successCriteria: "Job listings page with all 10 job cards visible", dependencies: [6], assumptions: [] },
+                    { objective: "Click the fifth job listing to view its full details", successCriteria: "Job detail page loaded with full job description visible", dependencies: [7], assumptions: [] },
+                    { objective: "Return to the job listings page", successCriteria: "Job listings page with all 10 job cards visible", dependencies: [8], assumptions: [] },
+                    { objective: "Compare the reviewed job listings and report the best matches", successCriteria: "Final answer mentions multiple reviewed job listings and explains why they best fit the user's stated constraints.", dependencies: [9], assumptions: [] },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            "I'm looking for a fully remote frontend role. Please review all 10 job listings on this page, click into each one to read the full details, then come back to the listings page. After reviewing every job, tell me which ones are the best matches for my profile and why.",
+            "TechJobs Board",
+            "https://example.com/job-board",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps!.length).toBeLessThanOrEqual(5);
+        expect(result!.steps![0].objective).toMatch(/review job listings #1/i);
+        expect(result!.steps![result!.steps!.length - 1].objective).toMatch(/best matches/i);
+    });
+
     test("reports usage via callback", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -952,6 +990,34 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes).toHaveLength(3);
     });
 
+    test("uses compact exhaustive fallback graph when planner decomposition collapses to a single fallback node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                steps: [
+                    {
+                        objective: "Review all 10 job listings and recommend the best matches",
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "I'm looking for a fully remote frontend role. Please review all 10 job listings on this page, click into each one to read the full details, then come back to the listings page. After reviewing every job, tell me which ones are the best matches for my profile and why.",
+            "TechJobs Board",
+            "https://example.com/job-board",
+        );
+
+        expect(result.isSingleNode).toBe(false);
+        expect(result.nodes.length).toBeLessThanOrEqual(5);
+        expect(result.nodes[0].description).toMatch(/review job listings #1/i);
+        expect(result.nodes[result.nodes.length - 1].description).toMatch(/best matches/i);
+    });
+
     test("defaults difficulty to moderate when missing", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1002,6 +1068,131 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
         expect(result.nodes[1].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
+    });
+
+    test("selects continuation-edit for draft revision workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "moderate"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Draft accept reply; change to decline + Monday; make casual and mention Q3 numbers",
+            "Email Compose",
+            "https://example.com/email-compose",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("continuation-edit");
+        expect(result.nodes[0].selectedSkillReason).toContain("revising prior work");
+    });
+
+    test("selects cart-modify-checkout for cart swap workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                subtasks: ["Swap to Air Zoom Pegasus 41", "Apply SAVE10", "Checkout"],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Add UltraBoost 24; swap to Air Zoom Pegasus 41; apply SAVE10 and checkout",
+            "Cart",
+            "https://example.com/cart",
+        );
+
+        expect(result.nodes.length).toBeGreaterThan(0);
+        expect(result.nodes[0].selectedSkillId).toBe("cart-modify-checkout");
+    });
+
+    test("selects hover-reveal-navigation for hover-dependent menu workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "moderate"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
+            "Hover Menus & Tooltips",
+            "https://example.com/hover-menus",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("hover-reveal-navigation");
+        expect(result.nodes[0].selectedSkillReason).toContain("hover");
+    });
+
+    test("selects budget-aware-execution when the task explicitly mentions turn budget pressure", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "moderate"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "You are near the turn limit. Use the remaining turns carefully, avoid blind retries, and report the narrowest unresolved step if needed.",
+            "Status Page",
+            "https://example.com/status",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("budget-aware-execution");
+        expect(result.nodes[0].selectedSkillReason).toContain("remaining turns");
+    });
+});
+
+describe("selectPrimarySkill", () => {
+    test("matches cross-tab compare workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Read Overview; read Reports; compare both tabs",
+                objective: "Compare both tabs",
+                successCriteria: "Answer based on both tabs",
+            })?.id,
+        ).toBe("cross-tab-compare");
+    });
+
+    test("matches hover reveal workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
+                objective: "Hover the Products menu to reveal Electronics and continue",
+                successCriteria: "Electronics selected and SKU searched",
+            })?.id,
+        ).toBe("hover-reveal-navigation");
+    });
+
+    test("matches explicit turn-budget conservation workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Use the remaining turns carefully and avoid max turns waste",
+                objective: "Conserve the remaining turn budget and report the smallest unresolved step",
+                successCriteria: "No blind retries near turn limit",
+            })?.id,
+        ).toBe("budget-aware-execution");
+    });
+
+    test("returns null for generic simple navigation", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Open the site homepage",
+                objective: "Open the site homepage",
+                successCriteria: "Homepage visible",
+            }),
+        ).toBeNull();
     });
 });
 

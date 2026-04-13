@@ -22,6 +22,7 @@ const moduleDir = import.meta.url.startsWith("file:")
 const __dirname = moduleDir;
 const PROJECT_ROOT = resolve(__dirname, "../../..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
+const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
 const LOG_SERVER_PORT = 7589;
 
@@ -166,7 +167,7 @@ function traceFileBelongsToWorkspace(filePath: string, workspaceId: string): boo
 
 // ── Trace reader + formatter ──────────────────────────────────────
 
-interface TraceTurn {
+export interface TraceTurn {
   turnNumber: number;
   modelTier?: string;
   model?: string;
@@ -180,6 +181,44 @@ interface TraceTurn {
   }>;
   durationMs?: number;
   url?: string;
+}
+
+interface RunTraceEventRecord {
+  traceKind?: string;
+  runId?: string;
+  type?: string;
+  role?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface SkillTraceSummary {
+  runId: string;
+  skillIds: string[];
+  nodeSkills: Array<{
+    nodeId: string;
+    skillId: string;
+    reason?: string;
+  }>;
+}
+
+export function extractDoneSummary(traceFiles: string[]): string {
+  for (const filePath of traceFiles) {
+    const turns = readTrace(filePath);
+    for (const turn of turns) {
+      for (const toolCall of turn.toolCalls) {
+        if (toolCall.name !== "done") continue;
+        const summary = toolCall.args?.summary;
+        if (typeof summary === "string" && summary.trim().length > 0) {
+          return summary;
+        }
+        const message = toolCall.args?.message;
+        if (typeof message === "string" && message.trim().length > 0) {
+          return message;
+        }
+      }
+    }
+  }
+  return "";
 }
 
 export function readTrace(filePath: string): TraceTurn[] {
@@ -223,6 +262,81 @@ export function readTrace(filePath: string): TraceTurn[] {
       }
     })
     .filter(Boolean) as TraceTurn[];
+}
+
+export function extractRunIdFromTraceFile(filePath: string): string | null {
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      const entry = JSON.parse(line);
+      if (typeof entry?.runId === "string" && entry.runId.length > 0) {
+        return entry.runId;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function readSkillSummaryForRun(runId: string): SkillTraceSummary | null {
+  if (!runId || !existsSync(RUN_TRACE_DIR)) return null;
+  const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+  if (!existsSync(traceFile)) return null;
+
+  try {
+    const lines = readFileSync(traceFile, "utf-8").trim().split("\n").filter(Boolean);
+    const nodeSkills = new Map<string, { skillId: string; reason?: string }>();
+    const skillIds = new Set<string>();
+
+    for (const line of lines) {
+      const entry = JSON.parse(line) as RunTraceEventRecord;
+      if (entry.traceKind !== "orchestrator.run.event") continue;
+      if (!entry.data || typeof entry.data !== "object") continue;
+
+      if (entry.type === "plan_decomposed" && Array.isArray(entry.data.skills)) {
+        for (const item of entry.data.skills) {
+          if (!item || typeof item !== "object") continue;
+          const nodeId = typeof (item as any).nodeId === "string" ? (item as any).nodeId : "";
+          const skillId = typeof (item as any).skillId === "string" ? (item as any).skillId : "";
+          const reason = typeof (item as any).reason === "string" ? (item as any).reason : undefined;
+          if (!nodeId || !skillId) continue;
+          nodeSkills.set(nodeId, { skillId, reason });
+          skillIds.add(skillId);
+        }
+      }
+
+      if (entry.type === "node_started") {
+        const nodeId =
+          typeof entry.data.nodeId === "string" ? entry.data.nodeId : "";
+        const skillId =
+          typeof entry.data.selectedSkillId === "string"
+            ? entry.data.selectedSkillId
+            : "";
+        const reason =
+          typeof entry.data.selectedSkillReason === "string"
+            ? entry.data.selectedSkillReason
+            : undefined;
+        if (!nodeId || !skillId) continue;
+        nodeSkills.set(nodeId, { skillId, reason });
+        skillIds.add(skillId);
+      }
+    }
+
+    return {
+      runId,
+      skillIds: [...skillIds].sort(),
+      nodeSkills: [...nodeSkills.entries()].map(([nodeId, value]) => ({
+        nodeId,
+        skillId: value.skillId,
+        ...(value.reason ? { reason: value.reason } : {}),
+      })),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function safeParseArgs(raw: string | Record<string, unknown>): Record<string, unknown> {
@@ -292,7 +406,11 @@ function formatArgs(args: Record<string, unknown>): string {
 
 // ── CDP service worker console capture ────────────────────────────
 
-export async function attachSwConsole(browser: Browser): Promise<() => void> {
+export async function attachSwConsole(
+  browser: Browser,
+  options: { diagnosticMode?: boolean } = {},
+): Promise<() => void> {
+  const diagnosticMode = options.diagnosticMode === true;
   // Find the existing SW target (already discovered by launchWithExtension)
   const swTarget = browser
     .targets()
@@ -319,7 +437,7 @@ export async function attachSwConsole(browser: Browser): Promise<() => void> {
     const level = event.type ?? "log";
 
     // Filter to agent-relevant output (skip noisy internal logs)
-    if (shouldPrint(level, text)) {
+    if (shouldPrint(level, text, diagnosticMode)) {
       const tag = level === "error" ? "ERR" : level === "warn" ? "WRN" : "   ";
       console.log(`[sw:${tag}] ${text}`);
     }
@@ -333,7 +451,8 @@ export async function attachSwConsole(browser: Browser): Promise<() => void> {
   };
 }
 
-function shouldPrint(level: string, text: string): boolean {
+function shouldPrint(level: string, text: string, diagnosticMode: boolean = false): boolean {
+  if (diagnosticMode) return true;
   // Always show errors and warnings
   if (level === "error" || level === "warn") return true;
   // Show agent loop messages

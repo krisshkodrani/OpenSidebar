@@ -1,0 +1,24 @@
+{
+  "id": "continuation-edit",
+  "name": "Continuation Edit",
+  "description": "Revise prior work in the same workspace while preserving stable prior constraints unless explicitly overridden.",
+  "tags": ["workflow", "continuation", "editing", "memory"],
+  "triggers": [
+    "change previous draft",
+    "revise prior answer",
+    "continue previous task"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "update_notes",
+    "type_text"
+  ],
+  "discouragedTools": ["navigate"],
+  "memoryScope": "workspace",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Read existing content before editing.",
+    "Apply the requested delta, not a full rewrite unless necessary."
+  ]
+}

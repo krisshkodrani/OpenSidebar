@@ -1,0 +1,28 @@
+{
+  "id": "hover-reveal-navigation",
+  "name": "Hover Reveal Navigation",
+  "description": "Expose hover-dependent menus or hidden targets with an explicit hover, wait, verify, then act sequence.",
+  "tags": ["workflow", "hover", "navigation", "reveal"],
+  "triggers": [
+    "hover menus",
+    "dropdown appears on hover",
+    "hidden target must be revealed before click"
+  ],
+  "maturity": "candidate",
+  "preferredTools": [
+    "read_page",
+    "hover_element",
+    "click_element",
+    "read_element",
+    "update_notes"
+  ],
+  "discouragedTools": [
+    "done"
+  ],
+  "memoryScope": "turn",
+  "verifierMode": "hybrid",
+  "notes": [
+    "Do not assume hover succeeded just because the pointer moved.",
+    "Verify revealed content before clicking into it."
+  ]
+}

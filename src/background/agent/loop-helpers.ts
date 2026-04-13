@@ -1164,6 +1164,16 @@ export function evaluateDoneTaskContractGuard(params: {
       `final summary is missing required values: ${summaryCoverage.missingNumbers.join(", ")}`,
     );
   }
+  if (summaryCoverage.missingExhaustiveCoverage) {
+    reasons.push(
+      "final summary does not confirm exhaustive coverage of the requested items",
+    );
+  }
+  if (summaryCoverage.missingMultiReturnCoverage) {
+    reasons.push(
+      "final summary does not cover all required requested results",
+    );
+  }
   if (returnTargetCoverage?.missingReturnTarget) {
     reasons.push(
       `you have not actually returned to the required page before finishing`,

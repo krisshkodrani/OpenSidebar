@@ -828,6 +828,9 @@ describe("Form batch hint", () => {
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("4 input fields");
     expect(systemContent).toContain("type_text");
+    expect(systemContent).toContain(
+      "Do not click Next or Submit unless the user or the current plan step explicitly asks for it.",
+    );
   });
 
   test("system message does NOT contain batch hint with only 1 input field", () => {
@@ -884,6 +887,9 @@ describe("Form batch hint", () => {
     const systemContent = prompt[0].content as string;
     expect(systemContent).toContain("Batch hint");
     expect(systemContent).toContain("3 input fields");
+    expect(systemContent).toContain(
+      "Do not click Next or Submit unless the user or the current plan step explicitly asks for it.",
+    );
   });
 });
 
