@@ -280,7 +280,7 @@ export function PlanTimelineCard() {
                 <div
                   className={`pb-2 min-w-0 flex-1 ${
                     row.status === "running"
-                      ? "border-l-2 border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
+                      ? "border-l-[3px] border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
                       : ""
                   }`}
                 >

@@ -272,6 +272,11 @@ export function PlanStrip({
                         className="text-xs text-left text-blue-800 dark:text-blue-200 leading-relaxed hover:text-blue-600 dark:hover:text-blue-100 transition-colors w-full"
                       >
                         {node.description}
+                        {node.selectedSkillId && (
+                          <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 font-normal align-middle">
+                            {node.selectedSkillId}
+                          </span>
+                        )}
                         {node.successCriteria && (
                           <ChevronDown
                             size={10}
@@ -392,7 +397,7 @@ export function PlanStrip({
                       <div
                         className={`pb-2 min-w-0 flex-1 ${
                           row.status === "running"
-                            ? "border-l-2 border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
+                            ? "border-l-[3px] border-primary-400 dark:border-primary-600 pl-2 -ml-0.5"
                             : ""
                         }`}
                       >
@@ -406,6 +411,11 @@ export function PlanStrip({
                           }`}
                         >
                           {row.description}
+                          {row.selectedSkillId && (
+                            <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 font-normal align-middle">
+                              {row.selectedSkillId}
+                            </span>
+                          )}
                         </span>
                         {/* Live activity label under running step */}
                         {row.status === "running" && latestStepLabel && (

@@ -34,6 +34,7 @@ import {
 } from "../workspaces/tab-group-appearance";
 import { waitForContentScriptReady } from "../tab-ready";
 import { OrchestratorPlanner } from "./planner";
+import { selectPrimarySkill } from "./skills";
 import { inferToolProfileForStep } from "../agent/planner";
 import {
   assessTaskContractCoverage,
@@ -112,6 +113,36 @@ function summaryOfCompletedNodes(nodes: TaskNode[]): string {
     .join("\n");
 }
 
+function isGlobalGoalShortcutSkip(node: TaskNode): boolean {
+  return (
+    node.status === "skipped" &&
+    String(node.result || "").includes("Skipped: global goal already achieved")
+  );
+}
+
+function isActionOrMutationNode(node: TaskNode): boolean {
+  const text = `${node.description}\n${node.successCriteria}`.toLowerCase();
+  return [
+    "search",
+    "submit",
+    "apply",
+    "type ",
+    "enter ",
+    "fill ",
+    "click ",
+    "select ",
+    "remove ",
+    "add ",
+    "swap ",
+    "replace ",
+    "checkout",
+    "purchase",
+    "delete ",
+    "save ",
+    "send ",
+  ].some((token) => text.includes(token));
+}
+
 export function buildInitialPlanState(
   task: OrchestratorTask,
   activeNodeId?: string,
@@ -148,6 +179,9 @@ export function buildInitialPlanState(
               node.successCriteria,
             ),
           }
+        : {}),
+      ...(node.selectedSkillId
+        ? { selectedSkillId: node.selectedSkillId }
         : {}),
     })),
     currentIndex:
@@ -1478,6 +1512,9 @@ export class Orchestrator {
         planner.buildNodes(plannerQuery, tab.title || "Untitled", tab.url || ""),
       );
       nodes = buildResult.nodes;
+      const selectedSkills = nodes
+        .filter((node) => node.selectedSkillId)
+        .map((node) => `${node.id.slice(0, 6)}:${node.selectedSkillId}`);
       task.planClassification = {
         isSingleNode: buildResult.isSingleNode,
         difficulty: buildResult.difficulty,
@@ -1496,6 +1533,13 @@ export class Orchestrator {
           structured: true,
           isSingleNode: buildResult.isSingleNode,
           difficulty: buildResult.difficulty,
+          skills: nodes
+            .filter((node) => node.selectedSkillId)
+            .map((node) => ({
+              nodeId: node.id,
+              skillId: node.selectedSkillId,
+              reason: node.selectedSkillReason,
+            })),
         },
         "planner",
       );
@@ -1507,6 +1551,9 @@ export class Orchestrator {
             id: crypto.randomUUID(),
             type: "info",
             label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
+            ...(selectedSkills.length > 0
+              ? { detail: `Skills: ${selectedSkills.join(", ")}` }
+              : {}),
             status: "done",
             timestamp: Date.now(),
           },
@@ -1518,7 +1565,19 @@ export class Orchestrator {
         error: error?.message,
       });
       nodes = [
-        {
+        (() => {
+          const selection = selectPrimarySkill({
+            query: input.query,
+            objective: input.query,
+            successCriteria: "The user goal is completed and verified.",
+          });
+          return {
+          ...(selection
+            ? {
+                selectedSkillId: selection.id,
+                selectedSkillReason: selection.reason,
+              }
+            : {}),
           id: crypto.randomUUID(),
           role: "executor",
           description: input.query,
@@ -1538,7 +1597,8 @@ export class Orchestrator {
           handoffDepth: 0,
           status: "pending",
           retries: 0,
-        },
+          };
+        })(),
       ];
       task.planClassification = {
         isSingleNode: true,
@@ -1551,6 +1611,13 @@ export class Orchestrator {
           nodeCount: 1,
           structured: false,
           fallback: true,
+          skills: nodes
+            .filter((node) => node.selectedSkillId)
+            .map((node) => ({
+              nodeId: node.id,
+              skillId: node.selectedSkillId,
+              reason: node.selectedSkillReason,
+            })),
         },
         "planner",
       );
@@ -1799,6 +1866,8 @@ export class Orchestrator {
         "node_started",
         {
           nodeId: node.id,
+          selectedSkillId: node.selectedSkillId,
+          selectedSkillReason: node.selectedSkillReason,
           retries: node.retries,
           handoffDepth: node.handoffDepth,
           hasReflexion: node.reflexionLog.length > 0,
@@ -2820,7 +2889,8 @@ export class Orchestrator {
                 !contract.requiresRoundTrip &&
                 contract.reportTargets.length <= 1 &&
                 contract.requiredEntities.length <= 1 &&
-                contract.requiredNumbers.length === 0;
+                contract.requiredNumbers.length === 0 &&
+                !remainingPending.some((node) => isActionOrMutationNode(node));
               if (
                 allowGlobalShortcut &&
                 goalCheck.satisfied &&
@@ -3083,13 +3153,16 @@ export class Orchestrator {
     });
 
     const subtaskResults = this.buildSubtaskResults(task);
+    const penalizedSkipped = task.nodes.filter(
+      (node) => node.status === "skipped" && !isGlobalGoalShortcutSkip(node),
+    ).length;
 
     let completionStatus: "completed" | "partial" | "failed" =
       failed > 0
-        ? completed > 0 || skipped > 0
+        ? completed > 0 || penalizedSkipped > 0
           ? "partial"
           : "failed"
-        : skipped > 0
+        : penalizedSkipped > 0
           ? "partial"
           : "completed";
 
@@ -3148,9 +3221,17 @@ export class Orchestrator {
       if (coverage.missingReturnTarget) {
         missingParts.push("missing return-to target evidence");
       }
+      if (coverage.missingExhaustiveCoverage) {
+        missingParts.push("missing exhaustive coverage evidence");
+      }
+      if (coverage.missingMultiReturnCoverage) {
+        missingParts.push("missing required multi-result coverage");
+      }
       task.terminationReason =
         task.terminationReason ||
-        `Task contract incomplete: ${missingParts.join("; ")}`;
+        (missingParts.length > 0
+          ? `Task contract incomplete: ${missingParts.join("; ")}`
+          : "Task contract incomplete");
     }
 
     const completionPayload: TaskCompletionMessage["payload"] = {
@@ -3407,7 +3488,7 @@ export class Orchestrator {
         type: "DOM_SNAPSHOT_REQUEST",
         requestId: crypto.randomUUID(),
         source: MessageSource.BACKGROUND,
-        payload: { refresh: true },
+        payload: { refresh: true, autoDismiss: false },
       });
       return response.payload.snapshot;
     } catch (err) {
@@ -3997,6 +4078,7 @@ export class Orchestrator {
         nodes: nodes.map((n) => ({
           description: n.description,
           successCriteria: n.successCriteria,
+          ...(n.selectedSkillId ? { selectedSkillId: n.selectedSkillId } : {}),
         })),
         difficulty,
         query,
