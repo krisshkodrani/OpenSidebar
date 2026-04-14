@@ -7,15 +7,15 @@
  * Usage:
  *   npx tsx scripts/process-logo.ts [path-to-source]
  *
- * Default source: public/icons/logo-source.png
- * Output: public/icons/icon-{16,48,128}.png
+ * Default source: apps/extension/public/icons/logo-source.png
+ * Output: apps/extension/public/icons/icon-{16,48,128}.png
  */
 
 import sharp from "sharp";
 import path from "path";
 
-const SOURCE = process.argv[2] || "public/icons/logo-source.png";
-const OUT_DIR = "public/icons";
+const SOURCE = process.argv[2] || "apps/extension/public/icons/logo-source.png";
+const OUT_DIR = "apps/extension/public/icons";
 const SIZES = [16, 48, 128] as const;
 
 async function processLogo() {
@@ -37,7 +37,7 @@ async function processLogo() {
     console.log(`  -> icon-${s}.png`);
   }
 
-  console.log("\nDone. Icons written to public/icons/");
+  console.log("\nDone. Icons written to apps/extension/public/icons/");
 }
 
 processLogo().catch((err) => {

@@ -25,14 +25,13 @@ Models are configurable in Settings.
 
 ## Core Subsystems
 
-- `src/background/agent/`: main execution loop, context management, recovery, tracing
-- `src/background/orchestrator/`: planner/executor/verifier pipeline
-- `src/background/perception/`: visual interpretation and prompt construction
-- `src/background/tools/`: tool registry, schemas, risk metadata, routing
-- `src/content/`: page snapshotting, tagging, DOM actions
-- `src/sidepanel/`: chat UI, settings, approvals, plan display
-- `src/prompts/`: compiled prompt registry and render helpers
-- `src/trace-viewer/`: trace inspection UI
+- `apps/extension/src/background/`: main execution loop, orchestrator, perception, tools, and tracing
+- `apps/extension/src/content/`: page snapshotting, tagging, and DOM actions
+- `apps/extension/src/sidepanel/`: chat UI, settings, approvals, and plan display
+- `apps/extension/src/trace-viewer/`: trace inspection UI
+- `apps/backend/src/`: local backend service for memory and scheduled tasks
+- `packages/prompts/src/`: compiled prompt registry and render helpers
+- `packages/shared-types/src/`: shared runtime and domain contracts
 
 ## Execution Flow
 

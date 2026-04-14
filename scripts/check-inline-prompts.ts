@@ -3,8 +3,8 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN_DIRS = [join(ROOT, "src")];
-const EXCLUDE_SUFFIXES = [join("src", "prompts", "generated.ts")];
+const SCAN_DIRS = [join(ROOT, "apps", "extension", "src")];
+const EXCLUDE_SUFFIXES = [join("apps", "extension", "src", "prompts", "generated.ts")];
 const MARKERS = [
   "You are ",
   "Execution policy:",
@@ -82,7 +82,7 @@ function main(): void {
       console.error(`- ${v.file}: ${v.snippet}...`);
     }
     console.error(
-      "Move prompt text into root prompts/ templates and reference via src/prompts.",
+      "Move prompt text into root prompts/ templates and reference via apps/extension/src/prompts.",
     );
     process.exit(1);
   }

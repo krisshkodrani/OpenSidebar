@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "../../.tsbuild/apps/extension"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
+  "references": [
+    { "path": "../../packages/shared-types/tsconfig.json" },
+    { "path": "../../packages/prompts/tsconfig.json" }
+  ]
+}

@@ -13,7 +13,6 @@ for (let i = 0; i < lines.length; i++) {
   const tools = d.toolExecutions?.length ?? 0;
   const toolNames = (d.toolExecutions ?? []).map((t: any) => t.toolName).join(",");
   const respTools = d.llmResponse?.toolCalls?.length ?? 0;
-  const respText = d.llmResponse?.content ? d.llmResponse.content.slice(0, 60) : "";
   console.log(
     `T${String(turn).padStart(3)} | elems=${String(elems).padStart(3)} | tools=${tools} ${toolNames.padEnd(20)} | llmTools=${respTools} | ${url}`
   );

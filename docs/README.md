@@ -1,5 +1,7 @@
 # Documentation
 
+Path note: the main entry-point docs below are aligned to the current `apps/` and `packages/` layout. Some older deep-dive architecture and bug-analysis pages still use legacy root-relative `src/` and `tests/` shorthand for file paths.
+
 ## Getting Started
 
 - [Getting Started](./getting-started.md)
@@ -32,6 +34,8 @@
 ## Guides
 
 - [Developer Guide](./developer-guide.md)
+- [Repo Structure](./repo-structure.md)
+- [Release Checklist](./release-checklist.md)
 - [Agent Strategy Letter](./guides/agent-strategy-letter.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [Model Benchmark Reference](./model-benchmark-reference.md)
@@ -40,6 +44,10 @@
 ## Articles
 
 - [When to Stop](./articles/when-to-stop.md)
+
+## Release Reports
+
+- [E2E Report 2026-04-14](./e2e-report-2026-04-14.md)
 
 ## Other
 

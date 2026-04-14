@@ -14,7 +14,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURES_DIR = path.resolve(__dirname, "../tests/e2e/fixtures");
+const FIXTURES_DIR = path.resolve(__dirname, "../apps/extension/tests/e2e/fixtures");
 const PORT = 3333;
 
 const MIME_TYPES: Record<string, string> = {
@@ -244,7 +244,7 @@ function buildIndexPage(): string {
     ${cards}
   </div>
   <div class="footer">
-    Served from tests/e2e/fixtures/ &middot; Port ${PORT}
+    Served from apps/extension/tests/e2e/fixtures/ &middot; Port ${PORT}
   </div>
 </body>
 </html>`;

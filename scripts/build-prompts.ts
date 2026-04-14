@@ -122,7 +122,7 @@ function toGeneratedTs(prompts: CompiledPrompt[], root: string): string {
 function main(): void {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const promptsRoot = join(repoRoot, "prompts");
-  const outDir = join(repoRoot, "src", "prompts");
+  const outDir = join(repoRoot, "packages", "prompts", "src");
   const outTs = join(outDir, "generated.ts");
   const outManifest = join(outDir, "manifest.json");
 

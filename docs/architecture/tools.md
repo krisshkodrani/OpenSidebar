@@ -1,6 +1,6 @@
 # Tool System
 
-OpenSidebar implements **38 tools** across four categories. Tools are defined in `src/background/tools/index.ts` with metadata in `src/background/tools/metadata.ts`.
+OpenSidebar implements **38 tools** across four categories. Tools are defined in `apps/extension/src/background/tools/index.ts` with metadata in `apps/extension/src/background/tools/metadata.ts`.
 
 ## Tool Categories
 
@@ -104,7 +104,7 @@ sequenceDiagram
 
 ### Step 1: Define the Tool Schema
 
-In `src/background/tools/index.ts`:
+In `apps/extension/src/background/tools/index.ts`:
 
 ```typescript
 const MY_NEW_TOOL_DEF: ToolDefinition = {
@@ -147,7 +147,7 @@ toolRegistry.register(
 
 ### Step 3: Add Metadata (Optional)
 
-In `src/background/tools/metadata.ts`:
+In `apps/extension/src/background/tools/metadata.ts`:
 
 ```typescript
 // If tool modifies DOM (triggers snapshot refresh)
@@ -209,7 +209,7 @@ All tools return a string result:
 
 If the LLM returns tool calls as plain text instead of structured JSON, the system attempts to recover them:
 
-See `src/background/agent/tool-recovery.ts` for the `recoverToolCallsFromText()` function.
+See `apps/extension/src/background/agent/tool-recovery.ts` for the `recoverToolCallsFromText()` function.
 
 ## Testing Tools
 
@@ -218,15 +218,15 @@ See `src/background/agent/tool-recovery.ts` for the `recoverToolCallsFromText()`
 npx vitest run --grep "tool"
 
 # Test specific tool execution
-npx vitest run tests/background/tools.test.ts
+npx vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
 ```
 
 ## Key Files
 
 | File                               | Purpose                        |
 | ---------------------------------- | ------------------------------ |
-| `src/background/tools/index.ts`    | Tool definitions and executors |
-| `src/background/tools/registry.ts` | ToolRegistry class             |
-| `src/background/tools/metadata.ts` | Tool metadata (risk, flags)    |
-| `src/content/actions.ts`           | DOM tool implementations       |
-| `src/background/agent/executor.ts` | Tool execution orchestration   |
+| `apps/extension/src/background/tools/index.ts`    | Tool definitions and executors |
+| `apps/extension/src/background/tools/registry.ts` | ToolRegistry class             |
+| `apps/extension/src/background/tools/metadata.ts` | Tool metadata (risk, flags)    |
+| `apps/extension/src/content/actions/`             | DOM tool implementations       |
+| `apps/extension/src/background/agent/loop.ts`     | Tool execution orchestration   |

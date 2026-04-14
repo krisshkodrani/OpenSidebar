@@ -64,7 +64,7 @@ function runWithTimeout(
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const E2E_DIR = path.resolve(__dirname, "../tests/e2e");
+const E2E_DIR = path.resolve(__dirname, "../apps/extension/tests/e2e");
 const TRACE_DIR = path.resolve(__dirname, "../traces");
 const RUN_TRACE_DIR = path.join(TRACE_DIR, "runs");
 const dirArg = process.argv.find((a) => a.startsWith("--dir="));

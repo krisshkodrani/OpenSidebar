@@ -13,7 +13,7 @@
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
   Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows autonomously.<br />
-  Bring your own provider key. No subscription, no telemetry, no hosted backend.
+  Bring your own provider key. No subscription, no telemetry, and an optional local backend for memory and scheduled tasks.
 </p>
 
 ---
@@ -70,11 +70,22 @@ npm run build
 ```bash
 npm run dev        # Extension + log server + trace viewer
 npm run build      # Production build
-npm test           # Unit + integration tests
+npm test           # Extension unit + integration tests
+npm run test:backend
 npm run test:e2e   # Real-browser E2E tests
 npm run lint       # ESLint
+npm run release:verify
 npm run fmt        # Prettier
 ```
+
+## Repo Layout
+
+- `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
+- `apps/backend/` - local backend service for memory and scheduled task support
+- `packages/shared-types/` - shared runtime and domain types
+- `packages/prompts/` - compiled prompt runtime and generated prompt registry
+- `prompts/` - prompt source templates
+- `scripts/` - repo-level build, observability, and maintenance scripts
 
 ## Trace Viewer
 
@@ -93,6 +104,8 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Getting Started](./docs/getting-started.md)
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Developer Guide](./docs/developer-guide.md)
+- [Repo Structure](./docs/repo-structure.md)
+- [Release Checklist](./docs/release-checklist.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)
 - [Tools Reference](./docs/features/tools.md)
 

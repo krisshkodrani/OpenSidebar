@@ -31,7 +31,7 @@ while ((match = defPattern.exec(source)) !== null) {
   const objStr = source.slice(startIdx, i);
 
   // Convert TypeScript to valid JSON-ish: replace ToolName.XXX with "xxx" 
-  let jsonish = objStr
+  const jsonish = objStr
     // Replace ToolName.XXX_YYY with the snake_case string
     .replace(/ToolName\.(\w+)/g, (_, name) => `"${name.toLowerCase()}"`)
     // Remove trailing commas before } or ]

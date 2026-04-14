@@ -5,6 +5,26 @@ All notable changes to OpenSidebar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-04-14
+
+### Added
+
+- Local backend service for memory and scheduled task support
+- Shared prompt runtime package and shared type package to support the staged repo split
+- Release checklist documenting release verification, E2E smoke validation, and artifact checks
+
+### Changed
+
+- Reorganized the repository into `apps/extension`, `apps/backend`, and `packages/*`
+- Preserved root developer commands while localizing app-specific Vite, Vitest, and TypeScript config
+- CI now aligns with the current repo layout by running lint, extension tests, backend tests, and build
+
+### Fixed
+
+- Scheduled tasks now wait for real orchestrator completion before being marked finished
+- Site knowledge metadata now round-trips through backend memory storage
+- Trace viewer backend memory details no longer show stale content under the wrong expanded row
+
 ## [0.5.0] - 2026-02-25
 
 ### Changed

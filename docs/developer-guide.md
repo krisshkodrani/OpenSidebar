@@ -42,7 +42,7 @@ npm test
 Run a single file:
 
 ```bash
-npx vitest run tests/background/tools.test.ts
+npx vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
 ```
 
 ### Run E2E tests
@@ -61,8 +61,8 @@ npm run test:e2e
 
 Related surfaces:
 
-- fixtures in `tests/e2e/fixtures/`
-- helper utilities in `tests/e2e/helpers/`
+- fixtures in `apps/extension/tests/e2e/fixtures/`
+- helper utilities in `apps/extension/tests/e2e/helpers/`
 - dated reports in `docs/e2e-report-YYYY-MM-DD.md`
 
 ### Inspect traces and logs
@@ -84,7 +84,7 @@ Viewer:
 - side panel UI: React 18 + Zustand
 - service worker: agent loop, orchestrator, tool routing, tracing
 - content script: DOM tagging, snapshots, page actions
-- prompts: compiled prompt registry under `src/prompts/`
+- prompts: compiled prompt registry under `packages/prompts/`
 
 ## Current Model Defaults
 
@@ -95,45 +95,48 @@ Viewer:
 | Planner | `minimax/minimax-m2.5` |
 | Perception | `x-ai/grok-4.1-fast` |
 
-Settings overrides live in `src/types/settings.ts` and are exposed in the settings drawer.
+Settings overrides live in `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
 
 ## Main Directories
 
 ```text
-src/
-  background/
-    agent/          Main execution loop and recovery logic
-    llm/            Model routing, provider pools, pricing, streaming
-    orchestrator/   Planner/executor/verifier pipeline
-    perception/     Visual interpretation and prompt building
-    tools/          Tool schemas, metadata, and dispatch
-    workspaces/     Workspace and tab-group runtime state
-  content/          DOM snapshots, tagging, and page actions
-  prompts/          Generated prompt registry
-  sidepanel/        React UI
-  types/            Shared enums and interfaces
-  utils/            Logging, storage, support utilities
+apps/
+  extension/
+    src/
+      background/   Main execution loop, orchestrator, providers, tools
+      content/      DOM snapshots, tagging, page actions
+      sidepanel/    React UI
+      trace-viewer/ Trace inspection UI
+      utils/        Logging, storage, support utilities
+    tests/          Extension unit, integration, and E2E tests
+  backend/
+    src/            Backend service, routes, persistence
+    tests/          Backend tests
 
-tests/              Unit, integration, and e2e tests
+packages/
+  shared-types/     Shared runtime and domain contracts
+  prompts/          Prompt runtime and generated prompt assets
+
 scripts/            Build, prompts, logs, and maintenance scripts
 ```
 
 ## Important Files
 
-- `src/background/agent/loop.ts`: executor runtime and guardrails
-- `src/background/agent/context.ts`: system prompt assembly and history compression
-- `src/background/llm/client.ts`: executor/planner model defaults and provider routing
-- `src/background/orchestrator/index.ts`: multi-step runtime orchestration
-- `src/background/perception/perception-agent.ts`: stateful visual interpretation
-- `src/background/perception/prompt-builder.ts`: perception prompt assembly
-- `src/background/tools/metadata.ts`: tool risk metadata and tool profiles
-- `src/content/tagging/index.ts`: stable tag generation and candidate filtering
-- `src/content/actions/`: DOM action implementations
-- `src/sidepanel/components/SettingsDrawer.tsx`: model override UI
+- `apps/extension/src/background/agent/loop.ts`: executor runtime and guardrails
+- `apps/extension/src/background/agent/context.ts`: system prompt assembly and history compression
+- `apps/extension/src/background/llm/client.ts`: executor/planner model defaults and provider routing
+- `apps/extension/src/background/orchestrator/index.ts`: multi-step runtime orchestration
+- `apps/extension/src/background/perception/perception-agent.ts`: stateful visual interpretation
+- `apps/extension/src/background/perception/prompt-builder.ts`: perception prompt assembly
+- `apps/extension/src/background/tools/metadata.ts`: tool risk metadata and tool profiles
+- `apps/extension/src/content/tagging/index.ts`: stable tag generation and candidate filtering
+- `apps/extension/src/content/actions/`: DOM action implementations
+- `apps/extension/src/sidepanel/components/SettingsDrawer.tsx`: model override UI
+- `apps/backend/src/server.ts`: backend runtime entrypoint
 
 ## Tooling
 
-OpenSidebar currently exposes 38 tool names in `src/types/enums.ts`.
+OpenSidebar currently exposes 38 tool names in `packages/shared-types/src/index.ts` and extension-facing compatibility exports.
 
 Common groups:
 
@@ -142,7 +145,7 @@ Common groups:
 - inspection: read page, read element, find element, inspect hidden, xray page, execute js
 - control flow: done, escalate, wait, clarify, update plan, update notes
 
-Tool filtering happens through focused tool profiles in `src/background/tools/metadata.ts`.
+Tool filtering happens through focused tool profiles in `apps/extension/src/background/tools/metadata.ts`.
 
 ## Perception
 
@@ -161,18 +164,19 @@ Production perception uses the unified v6 contract:
 - side panel UI: user interaction and settings
 - service worker: agent loop, orchestration, tool routing, tracing
 - content script: DOM tagging, snapshots, page actions
+- backend service: memory and scheduled task support
 
 ### E2E harness
 
-- Vitest config: `tests/e2e/vitest.e2e.config.ts`
-- global startup: `tests/e2e/global-setup.ts`
-- reusable harness: `tests/e2e/helpers/harness.ts`
+- Vitest config: `apps/extension/tests/e2e/vitest.e2e.config.ts`
+- global startup: `apps/extension/tests/e2e/global-setup.ts`
+- reusable harness: `apps/extension/tests/e2e/helpers/harness.ts`
 - fixture serving: `scripts/serve-fixtures.ts`
 
 ### Tracing and logs
 
 - log server: `scripts/log-server.ts`
-- trace viewer: `src/trace-viewer/`
+- trace viewer: `apps/extension/src/trace-viewer/`
 - trace files: `traces/`
 - query CLI: `npm run traces`
 
@@ -185,14 +189,16 @@ Production perception uses the unified v6 contract:
 | `npm run dev` | you want the main local stack running | starts build/watch, log server, trace viewer |
 | `npm run build` | you need fresh production assets | required before loading `dist/` manually |
 | `npm run lint` | you want a lint pass | source-focused ESLint run |
-| `npm run fmt` | you want formatting only | formats `src/` |
+| `npm run fmt` | you want formatting only | formats extension source and shared packages |
 
 ### Tests
 
 | Command | Use this when | Notes |
 | --- | --- | --- |
-| `npm test` | you want the normal fast test suite | excludes the browser E2E run |
+| `npm test` | you want the normal fast extension suite | excludes backend and browser E2E runs |
+| `npm run test:backend` | you changed backend routes or persistence | backend-only Vitest run |
 | `npm run test:e2e` | you need real-browser validation | requires `OPENROUTER_API_KEY` |
+| `npm run release:verify` | you want the release gate | lint + extension tests + backend tests + build |
 | `npx vitest run <file>` | you want one focused test file | useful during iteration |
 
 ### Observability
@@ -207,5 +213,5 @@ Production perception uses the unified v6 contract:
 ## Development Notes
 
 - Prefer `rg` for search.
-- Prompt changes usually require `npm run build` because prompts are compiled into `src/prompts/generated.ts`.
+- Prompt changes usually require `npm run build` because prompts are compiled into `packages/prompts/src/generated.ts`.
 - If docs disagree with code, update the docs after checking the runtime source of truth.

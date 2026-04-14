@@ -1,35 +1,10 @@
 {
-    "compilerOptions": {
-        "target": "ESNext",
-        "useDefineForClassFields": true,
-        "lib": [
-            "DOM",
-            "DOM.Iterable",
-            "ESNext"
-        ],
-        "allowJs": false,
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "strict": true,
-        "forceConsistentCasingInFileNames": true,
-        "module": "ESNext",
-        "moduleResolution": "Node",
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "noEmit": true,
-        "jsx": "react-jsx",
-        "baseUrl": ".",
-        "paths": {
-            "@/*": [
-                "./src/*"
-            ]
-        },
-        "types": [
-            "chrome"
-        ]
-    },
-    "include": [
-        "src"
-    ]
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "./packages/shared-types/tsconfig.json" },
+    { "path": "./packages/prompts/tsconfig.json" },
+    { "path": "./apps/extension/tsconfig.json" },
+    { "path": "./apps/backend/tsconfig.json" }
+  ]
 }

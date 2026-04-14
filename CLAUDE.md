@@ -7,8 +7,9 @@ Repository guide for coding agents working on OpenSidebar.
 ```bash
 npm run dev        # Extension dev stack + log server + trace viewer
 npm run build      # Production build
-npm run lint       # ESLint for src/
-npm test           # Vitest suite
+npm run lint       # ESLint for maintained app/packages/scripts source
+npm test           # Extension Vitest suite
+npm run test:backend
 npm run test:e2e   # Real-browser E2E tests
 npm run fixtures   # Serve local fixture pages
 
@@ -25,7 +26,7 @@ npm run prompts:check
 
 When writing an E2E summary, use:
 
-- `lab/e2e-reports/e2e-report-YYYY-MM-DD.md`
+- `docs/e2e-report-YYYY-MM-DD.md`
 
 Do not create or update an undated `e2e-report.md`.
 
@@ -62,18 +63,18 @@ OpenSidebar is a Manifest V3 Chrome extension with three contexts:
 Side Panel <-> Service Worker <-> Content Script
 ```
 
-- `src/background/`: agent loop, orchestrator, provider routing, tool dispatch
-- `src/content/`: DOM tagging, snapshots, actions
-- `src/sidepanel/`: React UI, chat, settings, approvals, progress
-- `src/trace-viewer/`: trace inspection UI
-- `src/prompts/`: compiled prompt registry
+- `apps/extension/src/background/`: agent loop, orchestrator, provider routing, tool dispatch
+- `apps/extension/src/content/`: DOM tagging, snapshots, actions
+- `apps/extension/src/sidepanel/`: React UI, chat, settings, approvals, progress
+- `apps/extension/src/trace-viewer/`: trace inspection UI
+- `packages/prompts/src/`: compiled prompt registry
 
 ## Active Product Surface
 
 - Planner, executor, and verifier lanes
 - Provider routing across OpenRouter, OpenAI, Groq, and Fireworks
 - Trace recording and structured logs
-- Real-browser E2E fixtures under `tests/e2e/`
+- Real-browser E2E fixtures under `apps/extension/tests/e2e/`
 
 ## Cleanup Principle
 
