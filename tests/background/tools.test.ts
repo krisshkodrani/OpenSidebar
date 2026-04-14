@@ -38,9 +38,9 @@ beforeEach(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 37 tools are registered", () => {
+    test("all 38 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(37);
+        expect(defs.length).toBe(38);
     });
 
     test("every ToolName enum value has a registered definition", () => {

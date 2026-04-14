@@ -68,6 +68,7 @@ export enum ToolName {
   UPDATE_NOTES = "update_notes",
   CREATE_WINDOW = "create_window",
   UPDATE_PLAN = "update_plan",
+  SCHEDULE_TASK = "schedule_task",
 }
 
 /** Risk classification for a tool invocation */

@@ -319,4 +319,13 @@ export type ToolArgsMap = {
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
+  [ToolName.SCHEDULE_TASK]: ScheduleTaskArgs;
 };
+
+export interface ScheduleTaskArgs {
+  description: string;
+  query: string;
+  schedule?: string;
+  runAt?: string;
+  tabUrl?: string;
+}

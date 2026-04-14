@@ -750,3 +750,38 @@ export const UPDATE_PLAN_DEF: ToolDefinition = {
     },
   },
 };
+
+export const SCHEDULE_TASK_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SCHEDULE_TASK,
+    description:
+      "Schedule a task to run at a future time or on a recurring schedule. Use this when the user asks you to do something later, periodically, or on a schedule. The task is persisted and will be executed automatically when the time arrives.",
+    parameters: {
+      type: "object",
+      properties: {
+        description: {
+          type: "string",
+          description: "Human-readable name for the task (e.g. 'Check Hacker News top stories').",
+        },
+        query: {
+          type: "string",
+          description: "The full instruction to execute when the task fires. Write it as if the user typed it.",
+        },
+        schedule: {
+          type: "string",
+          description: "Cron expression for recurring tasks (e.g. '0 9 * * *' for daily at 9am, '0 9 * * 1' for Mondays at 9am). Omit for one-shot tasks.",
+        },
+        runAt: {
+          type: "string",
+          description: "ISO 8601 datetime for one-shot tasks (e.g. '2026-04-15T15:00:00'). Omit for recurring tasks.",
+        },
+        tabUrl: {
+          type: "string",
+          description: "URL to open before executing the task. If omitted, the task runs on the active tab.",
+        },
+      },
+      required: ["description", "query"],
+    },
+  },
+};

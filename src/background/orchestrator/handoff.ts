@@ -163,6 +163,7 @@ export function buildExecutorInstruction(
   originalQuery?: string,
   priorTurnMemoryBrief?: string,
   verificationTurnMode = false,
+  siteKnowledgeBrief?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -228,6 +229,10 @@ export function buildExecutorInstruction(
         ]
       : ["- Call done() only when success criteria are satisfied."]),
   );
+
+  if (siteKnowledgeBrief) {
+    sections.push("", siteKnowledgeBrief);
+  }
 
   if (node.verificationGate) {
     const gate = node.verificationGate;

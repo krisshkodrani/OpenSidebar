@@ -136,6 +136,8 @@ export interface OrchestratorTask {
   _streamHasContent?: boolean;
   /** Tab IDs created by the orchestrator for worker nodes (cleaned up on task end) */
   createdWorkerTabIds?: number[];
+  /** Site-specific knowledge injected into executor instructions */
+  siteKnowledgeBrief?: string;
 }
 
 export interface OrchestratorCheckpoint {

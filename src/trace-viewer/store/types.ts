@@ -100,9 +100,14 @@ export interface TracesSlice {
   collapseAllRunGroups: () => void;
 }
 
+export type TopLevelView = "traces" | "backend";
+
 // ── Combined Store ─────────────────────────────────────────────
 
-export type Store = TracesSlice;
+export type Store = TracesSlice & {
+  topLevelView: TopLevelView;
+  setTopLevelView: (view: TopLevelView) => void;
+};
 
 export type SliceCreator<T> = StateCreator<
   Store,
