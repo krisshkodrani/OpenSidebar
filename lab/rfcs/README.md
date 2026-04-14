@@ -15,6 +15,7 @@ Feature proposals and technical decisions for OpenSidebar.
 | [Post-Action Verification](./rfc-post-action-verification.md) | **Partially implemented** | Verify DOM state after actions via `ActionEffect` tracking and zero-effect detection |
 | [Strategic Resilience](./rfc-strategic-resilience.md) | **Proposed** | Fallback plans and state checkpointing for recovery from failed strategies |
 | [Context Efficiency](../rfcs/rfc-context-efficiency.md) | **Proposed** | Prompt-first optimizations from literature review — caching, compression, context management |
+| [Site-Specific Learning](./rfc-site-specific-learning.md) | **Implemented** | LLM-powered extraction of site-specific tips at completion, domain-tagged storage in GBrain, injection into planner + executor. Based on AWM/WebCoach/HMT/TIMA research. |
 
 ## Retired RFCs (implemented and deleted per process)
 

@@ -105,6 +105,13 @@
     "sourcePath": "prompts/runtime/orchestrator/advisory_system.md"
   },
   {
+    "id": "orchestrator.site_knowledge_extraction.system",
+    "version": "v1",
+    "hash": "b51d9250",
+    "description": "System prompt for extracting reusable site-specific knowledge from prior browser task execution.",
+    "sourcePath": "prompts/runtime/orchestrator/site_knowledge_extraction_system.md"
+  },
+  {
     "id": "orchestrator.verifier.system",
     "version": "v2",
     "hash": "56e8ffa6",

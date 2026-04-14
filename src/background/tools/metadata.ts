@@ -209,6 +209,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: true,
   },
+
+  // Task scheduling (intercepted in loop, POSTs to backend)
+  [ToolName.SCHEDULE_TASK]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: true,
+  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {

@@ -27,6 +27,17 @@ import {
   loadWorkspaceTurnMemory,
   saveWorkspaceTurnRecord,
 } from "../agent/memory";
+import { postMemory, searchMemory, searchMemoryByDomain, formatBackendMemoriesForPrompt } from "../infrastructure/backend-client";
+import {
+  extractDomain,
+  buildExtractionContext,
+  extractSiteKnowledge as extractSiteKnowledgeLLM,
+  extractSiteKnowledgeFallback,
+  deduplicateSiteKnowledge,
+  formatSiteKnowledgeForPrompt,
+  type SiteKnowledgeEntry,
+} from "./site-knowledge";
+import { LLMClient } from "../llm/client";
 import { workspaceManager } from "../workspaces/manager";
 import {
   updateTabGroupAppearance,
@@ -276,6 +287,10 @@ export class Orchestrator {
       payload: TaskCompletionMessage["payload"];
       timestamp: number;
     }
+  >();
+  private completionWaiters = new Map<
+    string,
+    Set<(payload: TaskCompletionMessage["payload"]) => void>
   >();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
@@ -1422,9 +1437,32 @@ export class Orchestrator {
       await loadWorkspaceTurnMemory(input.workspaceId).catch(() => null);
     const priorTurnMemoryBrief =
       formatWorkspaceTurnMemoryForPrompt(priorTurnMemory);
+
+    // Long-term memory from backend/GBrain (non-blocking, falls back to empty)
+    const longTermMemories = await searchMemory(input.query, 5).catch(() => []);
+    const longTermBrief = formatBackendMemoriesForPrompt(longTermMemories);
+
+    // Site-specific knowledge by domain (non-blocking)
+    let siteKnowledgeBrief = "";
+    try {
+      const tab = await chrome.tabs.get(input.tabId);
+      const currentDomain = extractDomain(tab.url || "");
+      if (currentDomain) {
+        const siteMemories = await searchMemoryByDomain(currentDomain, 10).catch(() => []);
+        siteKnowledgeBrief = formatSiteKnowledgeForPrompt(
+          deduplicateSiteKnowledge(siteMemories),
+        );
+      }
+    } catch {
+      // Tab may not be accessible — skip site knowledge
+    }
+
+    const combinedMemoryBrief = [priorTurnMemoryBrief, longTermBrief, siteKnowledgeBrief]
+      .filter(Boolean)
+      .join("\n\n");
     const plannerQuery = buildQueryWithTurnMemory(
       input.query,
-      priorTurnMemoryBrief,
+      combinedMemoryBrief,
     );
     const turnNumber = (priorTurnMemory?.turns.length ?? 0) + 1;
 
@@ -1437,6 +1475,7 @@ export class Orchestrator {
       query: input.query,
       turnNumber,
       priorTurnMemoryBrief: priorTurnMemoryBrief || undefined,
+      siteKnowledgeBrief: siteKnowledgeBrief || undefined,
       status: "planning",
       createdAt: Date.now(),
       nodes: [],
@@ -2149,6 +2188,7 @@ export class Orchestrator {
           task.query,
           task.priorTurnMemoryBrief,
           verificationTurnMode,
+          task.siteKnowledgeBrief,
         );
 
         // Inject predecessor trajectory for same-tab sequential nodes.
@@ -3295,6 +3335,48 @@ export class Orchestrator {
     return recent.payload.status === "failed" ? "failed" : "completed";
   }
 
+  waitForTaskCompletion(
+    workspaceId: string,
+    timeoutMs = 60 * 60 * 1000,
+  ): Promise<TaskCompletionMessage["payload"] | null> {
+    const hasActiveTask = this.tasksByWorkspace.has(workspaceId);
+    if (!hasActiveTask) {
+      const cached = this.recentCompletion.get(workspaceId);
+      return Promise.resolve(cached?.payload ?? null);
+    }
+
+    return new Promise((resolve) => {
+      const listeners =
+        this.completionWaiters.get(workspaceId) ?? new Set();
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const handleCompletion = (payload: TaskCompletionMessage["payload"]) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        listeners.delete(handleCompletion);
+        if (listeners.size === 0) {
+          this.completionWaiters.delete(workspaceId);
+        }
+        resolve(payload);
+      };
+
+      listeners.add(handleCompletion);
+      this.completionWaiters.set(workspaceId, listeners);
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        listeners.delete(handleCompletion);
+        if (listeners.size === 0) {
+          this.completionWaiters.delete(workspaceId);
+        }
+        resolve(null);
+      }, timeoutMs);
+      timer.unref?.();
+    });
+  }
+
   async stopTask(workspaceId?: string): Promise<void> {
     if (workspaceId) {
       await this.stopWorkspace(workspaceId);
@@ -3665,6 +3747,11 @@ export class Orchestrator {
       payload,
       timestamp: Date.now(),
     });
+    const waiters = this.completionWaiters.get(workspaceId);
+    if (waiters) {
+      for (const resolve of waiters) resolve(payload);
+      this.completionWaiters.delete(workspaceId);
+    }
 
     // Persist summary as a chat message directly to storage (bypasses panel)
     if (payload.summary) {
@@ -3720,11 +3807,85 @@ export class Orchestrator {
           finalUrl,
         }),
       );
+
+      // Long-term memory via backend/GBrain (fire-and-forget)
+      postMemory({
+        category: "execution-result",
+        title: `${payload.status}: ${task.query.slice(0, 80)}`,
+        content: [
+          `User request: ${task.query}`,
+          `Outcome: ${payload.status}`,
+          `Summary: ${payload.summary}`,
+          finalUrl ? `Final URL: ${finalUrl}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        workspaceId: task.workspaceId,
+        metadata: { taskId: task.id, outcome: payload.status },
+      }).catch(() => {});
+
+      // Site-specific knowledge extraction (fire-and-forget)
+      this.extractAndStoreSiteKnowledge(task, payload, finalUrl).catch(() => {});
     } catch (error) {
       logger.debug("orchestrator", "Failed to persist workspace turn memory", {
         error,
         workspaceId: task.workspaceId,
         taskId: task.id,
+      });
+    }
+  }
+
+  private async extractAndStoreSiteKnowledge(
+    task: OrchestratorTask,
+    payload: TaskCompletionMessage["payload"],
+    finalUrl: string | null,
+  ): Promise<void> {
+    const domain = extractDomain(finalUrl || "");
+    if (!domain) return;
+
+    const context = buildExtractionContext(task, payload, finalUrl);
+
+    // Try LLM extraction, fall back to rule-based
+    let entries: SiteKnowledgeEntry[];
+    try {
+      const settings = await loadSettings();
+      if (!settings) throw new Error("no settings");
+      const mode = settings.providerMode ?? "fireworks";
+      const activeKey =
+        mode === "fireworks" ? settings.fireworksApiKey :
+        mode === "openai-groq" ? settings.openaiApiKey :
+        settings.openRouterApiKey;
+      if (!activeKey) throw new Error("no api key");
+
+      const client = new LLMClient(activeKey, {
+        providerMode: mode,
+        fireworksApiKey: settings.fireworksApiKey,
+      });
+      entries = await extractSiteKnowledgeLLM(context, domain, client);
+    } catch {
+      entries = extractSiteKnowledgeFallback(task, payload, domain);
+    }
+
+    for (const entry of entries) {
+      postMemory({
+        category: "site-knowledge",
+        title: `${entry.domain}: ${entry.tip.slice(0, 60)}`,
+        content: entry.tip,
+        workspaceId: task.workspaceId,
+        metadata: {
+          domain: entry.domain,
+          tipType: entry.tipType,
+          confidence: entry.confidence,
+          taskId: task.id,
+        },
+      }).catch(() => {});
+    }
+
+    if (entries.length > 0) {
+      logger.info("orchestrator", "Extracted site knowledge", {
+        domain,
+        count: entries.length,
+        tips: entries.map((e) => e.tip.slice(0, 50)),
       });
     }
   }

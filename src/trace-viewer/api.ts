@@ -63,3 +63,85 @@ export async function fetchSessionLogs(
     `/api/logs/${encodeURIComponent(sessionId)}${query ? `?${query}` : ""}`,
   );
 }
+
+// ── Backend agent service (port 7590) ─────────────────────
+
+const BACKEND_URL = "http://127.0.0.1:7590";
+
+export interface BackendMemoryRecord {
+  slug: string;
+  title: string;
+  type: string;
+}
+
+export interface BackendMemoryDetail {
+  slug: string;
+  title: string;
+  category: string;
+  content: string;
+  score: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BackendScheduledTask {
+  id: string;
+  description: string;
+  query: string;
+  tabUrl: string | null;
+  workspaceId: string | null;
+  schedule: string | null;
+  runAt: number | null;
+  status: string;
+  lastRunAt: number | null;
+  result: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BackendHealth {
+  status: string;
+  uptime: number;
+  gbrainConnected: boolean;
+  pendingTasks: number;
+  memoryStats?: { pageCount: number };
+}
+
+async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`${BACKEND_URL}${path}`, init);
+  if (!r.ok) throw new Error(`Backend HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function fetchBackendHealth(): Promise<BackendHealth> {
+  return backendFetch("/health");
+}
+
+export async function fetchMemoryList(category?: string): Promise<BackendMemoryRecord[]> {
+  const params = category ? `?category=${encodeURIComponent(category)}` : "";
+  const data = await backendFetch<{ results: BackendMemoryRecord[] }>(`/memory/list${params}`);
+  return data.results;
+}
+
+export async function fetchMemorySearch(query: string): Promise<BackendMemoryDetail[]> {
+  const data = await backendFetch<{ results: BackendMemoryDetail[] }>(
+    `/memory/search?q=${encodeURIComponent(query)}&limit=20`,
+  );
+  return data.results;
+}
+
+export async function fetchMemoryDetail(slug: string): Promise<BackendMemoryDetail> {
+  return backendFetch(`/memory/${encodeURIComponent(slug)}`);
+}
+
+export async function deleteMemory(slug: string): Promise<void> {
+  await fetch(`${BACKEND_URL}/memory/${encodeURIComponent(slug)}`, { method: "DELETE" });
+}
+
+export async function fetchScheduledTasks(): Promise<BackendScheduledTask[]> {
+  const data = await backendFetch<{ tasks: BackendScheduledTask[] }>("/tasks?limit=100");
+  return data.tasks;
+}
+
+export async function deleteScheduledTask(id: string): Promise<void> {
+  await fetch(`${BACKEND_URL}/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

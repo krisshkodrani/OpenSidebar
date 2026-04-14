@@ -95,6 +95,12 @@ export const GENERATED_PROMPTS = {
     description: "Pre-execution advisory for retried/rerouted nodes.",
     template: "You are a brief advisor for a browser automation executor about to retry or continue from a prior failed attempt.\n\nGiven the executor instruction and current page state, provide a 2-4 sentence advisory covering:\n- Mismatches between what the instruction assumes and what the page actually shows\n- Potential blockers visible on the page (modals, auth walls, changed layout)\n- Recommended approach adjustments based on current page reality\n\nIf the instruction and page state look well-aligned, respond with exactly: \"No advisory needed.\"\n\nKeep your response concise and actionable. No JSON - plain text only.",
   }, // prompts/runtime/orchestrator/advisory_system.md
+  "orchestrator.site_knowledge_extraction.system": {
+    id: "orchestrator.site_knowledge_extraction.system",
+    version: "v1",
+    description: "System prompt for extracting reusable site-specific knowledge from prior browser task execution.",
+    template: "You are a web automation knowledge extractor. Given an execution summary for a browser task, extract reusable site-specific tips that would help a future agent on the SAME website.\n\nOutput a JSON array. Each entry:\n{\n  \"tip\": \"Dismiss the cookie consent banner before interacting with form elements\",\n  \"tipType\": \"strategy\" | \"recovery\" | \"optimization\",\n  \"confidence\": 0.0-1.0\n}\n\nTip types:\n- strategy: What approach works on this site (e.g., \"scroll to load dynamic content before reading\")\n- recovery: What to do when something fails (e.g., \"if element is blocked, use dismiss_overlays first\")\n- optimization: Shortcuts or tricks (e.g., \"search form is in the hamburger menu, not the header\")\n\nRules:\n- Use SEMANTIC descriptions (\"the main search input\", \"the submit button at page bottom\"), never DOM IDs or tag numbers\n- Only extract tips that are site-specific, not generic web browsing advice\n- Max 4 tips per extraction\n- Each tip should be 10-25 words, actionable, imperative voice\n- If the execution was straightforward with no notable patterns, return []\n- Confidence: 0.9 for patterns from multiple retries, 0.7 for single-failure recovery, 0.5 for optimization shortcuts\n\nReturn ONLY the JSON array, no markdown fencing or explanation.",
+  }, // prompts/runtime/orchestrator/site_knowledge_extraction_system.md
   "orchestrator.verifier.system": {
     id: "orchestrator.verifier.system",
     version: "v2",
@@ -197,6 +203,7 @@ export const GENERATED_PROMPT_DESCRIPTORS = {
   "agent.system": { id: "agent.system", version: "v4", hash: "689ad7e1" },
   "demos.multi_item_shopping": { id: "demos.multi_item_shopping", version: "v2", hash: "7981a852" },
   "orchestrator.advisory.system": { id: "orchestrator.advisory.system", version: "v1", hash: "cd82de63" },
+  "orchestrator.site_knowledge_extraction.system": { id: "orchestrator.site_knowledge_extraction.system", version: "v1", hash: "b51d9250" },
   "orchestrator.verifier.system": { id: "orchestrator.verifier.system", version: "v2", hash: "56e8ffa6" },
   "perception.interpret_page": { id: "perception.interpret_page", version: "v6", hash: "dbb15fc6" },
   "planner.decompose.system": { id: "planner.decompose.system", version: "v3", hash: "64982e54" },

@@ -1,6 +1,7 @@
 export type PromptId =
   | "orchestrator.verifier.system"
   | "orchestrator.advisory.system"
+  | "orchestrator.site_knowledge_extraction.system"
   | "planner.decompose.system"
   | "planner.validate_done.system"
   | "planner.replan.system"

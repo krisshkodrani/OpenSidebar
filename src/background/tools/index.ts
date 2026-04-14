@@ -47,6 +47,7 @@ import {
   UPDATE_NOTES_DEF,
   CREATE_WINDOW_DEF,
   UPDATE_PLAN_DEF,
+  SCHEDULE_TASK_DEF,
 } from "./definitions";
 import {
   formatUnknownError,
@@ -932,6 +933,12 @@ export function registerTools() {
   toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
     // Fallback — the loop intercepts update_plan before reaching here
     return `Plan updated: ${(args.summary as string) || "no summary"}`;
+  });
+
+  // Schedule task tool (intercepted by agent loop, POSTs to backend)
+  toolRegistry.register(ToolName.SCHEDULE_TASK, SCHEDULE_TASK_DEF, async (args) => {
+    // Fallback — the loop intercepts schedule_task before reaching here
+    return `Task scheduling requested: ${(args.description as string) || "no description"}`;
   });
 
   logger.info(

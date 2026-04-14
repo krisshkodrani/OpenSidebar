@@ -15,6 +15,8 @@ import TurnTimeline from "./components/traces/TurnTimeline";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
 import StoryPanel from "./components/traces/StoryPanel";
+import BackendPanel from "./components/BackendPanel";
+import type { TopLevelView } from "./store/types";
 
 // ── URL hash helpers ───────────────────────────────────────
 
@@ -31,44 +33,84 @@ function parseHash(): { session?: string; view?: string; turn?: number } {
 }
 
 const VALID_SUBVIEWS = new Set(["turns", "perception", "logs", "story"]);
-
 // ── App ────────────────────────────────────────────────────
 
 export default function App() {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const activeSubview = useStore((s) => s.activeSubview);
+  const topLevelView = useStore((s) => s.topLevelView);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setTopLevelView = useStore((s) => s.setTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
 
   useEffect(() => {
     const { session, view, turn } = parseHash();
-    if (session) setCurrentSessionId(session);
-    if (view && VALID_SUBVIEWS.has(view))
-      setActiveSubview(view as "turns" | "perception" | "logs" | "story");
-    if (turn && !isNaN(turn)) {
-      setTimeout(() => navigateToTurn(turn), 500);
+    if (view === "backend") {
+      setTopLevelView("backend");
+    } else {
+      if (session) setCurrentSessionId(session);
+      if (view && VALID_SUBVIEWS.has(view))
+        setActiveSubview(view as "turns" | "perception" | "logs" | "story");
+      if (turn && !isNaN(turn)) {
+        setTimeout(() => navigateToTurn(turn), 500);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const parts: string[] = [];
-    if (currentSessionId) parts.push(`session=${currentSessionId}`);
-    if (activeSubview && activeSubview !== "turns")
-      parts.push(`view=${activeSubview}`);
+    if (topLevelView === "backend") {
+      parts.push("view=backend");
+    } else {
+      if (currentSessionId) parts.push(`session=${currentSessionId}`);
+      if (activeSubview && activeSubview !== "turns")
+        parts.push(`view=${activeSubview}`);
+    }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
     if (window.location.hash !== newHash) {
       window.history.replaceState(null, "", newHash || window.location.pathname);
     }
-  }, [currentSessionId, activeSubview]);
+  }, [currentSessionId, activeSubview, topLevelView]);
 
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <ViewerHeader />
+      <TopLevelToggle />
       <ViewerErrorBoundary>
-        <ViewerBody />
+        {topLevelView === "backend" ? <BackendPanel /> : <ViewerBody />}
       </ViewerErrorBoundary>
+    </div>
+  );
+}
+
+// ── Top-level tab toggle ──────────────────────────────────
+
+function TopLevelToggle() {
+  const topLevelView = useStore((s) => s.topLevelView);
+  const setTopLevelView = useStore((s) => s.setTopLevelView);
+
+  const tabs: { key: TopLevelView; label: string }[] = [
+    { key: "traces", label: "Sessions" },
+    { key: "backend", label: "Memory & Tasks" },
+  ];
+
+  return (
+    <div className="flex gap-0.5 px-5 bg-trace-panel border-b border-trace-border shrink-0">
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => setTopLevelView(tab.key)}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+            topLevelView === tab.key
+              ? "text-trace-accent-light border-trace-accent"
+              : "text-trace-muted border-transparent hover:text-[#4C3D80]"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
     </div>
   );
 }

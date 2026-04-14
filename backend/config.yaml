@@ -1,0 +1,19 @@
+name: opensidebar-backend
+description: >
+  Backend agent service for OpenSidebar.
+  Provides long-term memory (GBrain) and task scheduling (SQLite).
+
+server:
+  port: 7590
+  host: "127.0.0.1"
+
+gbrain:
+  enabled: true
+  database_path: ../data/agent-brain.pglite
+  mcp_command: bun
+  mcp_args: ["run", "lab/agents/gbrain/repo/src/cli.ts", "serve"]
+
+tasks:
+  database_path: ../data/backend-tasks.sqlite
+  tick_interval_seconds: 60
+  max_concurrent: 1
