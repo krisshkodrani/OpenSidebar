@@ -15,15 +15,18 @@ This document describes the active build, test, and runtime setup for OpenSideba
 
 ```text
 opensidebar/
-|- src/
-|  |- background/    # service worker, agent loop, orchestrator, providers
-|  |- content/       # page snapshotting, tagging, DOM actions
-|  |- prompts/       # prompt registry and generated prompt bundle
-|  |- sidepanel/     # React UI, hooks, Zustand store
-|  |- trace-viewer/  # local trace viewer UI
-|  `- types/         # shared TypeScript contracts
-|- tests/            # unit and integration tests
+|- apps/
+|  |- extension/
+|  |  |- src/        # service worker, content script, side panel, trace viewer
+|  |  `- tests/      # extension unit, integration, and E2E tests
+|  `- backend/
+|     |- src/        # backend routes, services, persistence
+|     `- tests/      # backend tests
+|- packages/
+|  |- prompts/       # prompt runtime and generated prompt bundle
+|  `- shared-types/  # shared TypeScript contracts
 |- scripts/          # build and maintenance scripts
+|- prompts/          # prompt source templates
 |- docs/             # product and architecture documentation
 |- traces/           # local trace output
 `- logs/             # local structured logs
@@ -38,11 +41,13 @@ npm run build
 npm run ci:lint
 npm run ci:test
 npm run ci:build
+npm run test:backend
+npm run release:verify
 ```
 
 ## Prompts
 
-Prompt templates live under `prompts/` and compile into the generated registry in `src/prompts/generated.ts`.
+Prompt templates live under `prompts/` and compile into the generated registry in `packages/prompts/src/generated.ts`.
 
 ```bash
 npm run prompts:build

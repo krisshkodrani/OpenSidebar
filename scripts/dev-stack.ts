@@ -108,13 +108,13 @@ async function main(): Promise<void> {
       `[dev:stack] Reusing existing backend service on port ${BACKEND_PORT}.`,
     );
   } else {
-    console.log("[dev:stack] Starting backend agent service...");
+        console.log("[dev:stack] Starting backend agent service...");
     backend = IS_WINDOWS
       ? spawnWithExited(process.execPath, [
           path.resolve("node_modules/tsx/dist/cli.mjs"),
-          "backend/server.ts",
+          "apps/backend/src/server.ts",
         ], { stdio: "inherit" })
-      : spawnWithExited("npx", ["tsx", "backend/server.ts"], {
+      : spawnWithExited("npx", ["tsx", "apps/backend/src/server.ts"], {
           stdio: "inherit",
           shell: true,
         });

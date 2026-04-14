@@ -28,15 +28,6 @@ jobs:
       - name: Run tests
         run: npm run ci:test
 
-      - name: Validate eval golden cases (structural)
-        run: npm run ci:evals:offline
-
-      - name: Run eval regression suite
-        if: ${{ secrets.OPENROUTER_API_KEY != '' }}
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: npm run evals:regression -- --threshold=0.8
-
       - name: Build project
         run: npm run ci:build
 

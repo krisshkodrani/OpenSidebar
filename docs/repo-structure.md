@@ -1,0 +1,48 @@
+# Repo Structure
+
+OpenSidebar now uses a lightweight app-and-packages layout while keeping root developer commands intact.
+
+## Current Layout
+
+- `apps/extension/`: the browser extension app
+- `apps/backend/`: the local backend service
+- `packages/shared-types/`: shared runtime and domain types
+- `packages/prompts/`: prompt runtime and generated prompt registry
+- `prompts/`: prompt source templates
+- `scripts/`: repo-level developer scripts
+- `docs/`: product, architecture, and release documentation
+- `traces/`: local run traces
+
+## How The Pieces Fit
+
+- The extension is the main product surface and owns:
+  - service worker runtime
+  - content script
+  - side panel UI
+  - trace viewer
+  - extension tests and E2E harness
+- The backend is an app-local service used for:
+  - memory persistence
+  - task scheduling
+  - backend health and task APIs
+- Shared packages keep cross-app contracts stable:
+  - `packages/shared-types/` for shared types
+  - `packages/prompts/` for prompt helpers and generated prompt assets
+- Prompt source files remain under `prompts/` and compile into `packages/prompts/src/generated.ts`
+
+## Build And Test Entry Points
+
+From the repo root:
+
+- `npm run dev`: extension dev stack with logs and trace viewer
+- `npm run build`: production extension build into `dist/`
+- `npm test`: extension unit and integration tests
+- `npm run test:backend`: backend tests
+- `npm run test:e2e`: browser E2E validation
+- `npm run release:verify`: lint, tests, and build
+
+## Compatibility Notes
+
+- Root `vite.config.ts` and `vitest.config.ts` remain as thin shims so existing root commands still work.
+- The production build still emits the extension artifact to root `dist/` because the load-unpacked and E2E flows depend on that location.
+- Some extension compatibility wrappers still exist under `apps/extension/src/prompts/` and `apps/extension/src/types/` to avoid a mass import rewrite while the repo settles.

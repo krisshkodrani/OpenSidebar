@@ -41,6 +41,8 @@ coverage/
 # Vite
 .vite/
 *.timestamp-*
+.tsbuild/
+*.tsbuildinfo
 
 challenge-runner/tasks-manifest.json
 challenge-runner/tasks-manifest.diagnostics.json
@@ -65,8 +67,7 @@ lab/agents/hermes/repo/
 lab/agents/gbrain/repo/
 data/
 
-# E2E reports at docs root (legacy, now in lab/e2e-reports/)
-docs/e2e-*
+# Legacy ad-hoc docs artifacts
 docs/shopping-trace-*
 docs/test-prompt.md
 

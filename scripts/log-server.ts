@@ -31,7 +31,6 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
 
 let entryCount = 0;
-let traceEntryCount = 0;
 
 /* ── Node.js HTTP helpers ─────────────────────────────────── */
 
@@ -417,7 +416,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
       await appendFile(traceFile, JSON.stringify(entry) + "\n");
-      traceEntryCount++;
       sendEmpty(res, 204);
     } catch (err) {
       sendText(res, `Trace error: ${err}`, 500);
