@@ -1,188 +1,254 @@
 # OpenSidebar Lab
 
-A scientific laboratory for empirical research on browser-agent harness design.
+The lab is the repo's research surface for browser-agent work.
 
-## Operator Surface
+Use it when you need to:
 
-The lab is operated through OpenSidebar-owned wrappers, not by calling the
-vendored agent repos directly.
+- investigate recurring E2E failures
+- turn traces into reusable harness ideas
+- write dated research notes and RFCs
+- preserve findings so they survive beyond one coding session
 
-Primary entrypoints:
+This is not a second docs folder. It is an operating system for research.
 
-- `npm run lab:setup` -- initialize submodules, create local lab state, bootstrap GBrain, index core content
-- `npm run lab:doctor` -- verify tools, env vars, submodules, and local brain state
-- `npm run lab:index` -- re-index lab and docs markdown into the local GBrain store
-- `npm run lab:analyze-traces -- --days 7 --limit 200` -- generate a dated trace-analysis note and re-index it
-- `npm run lab:question -- "question"` -- capture a development question or pathology into the research queue
-- `npm run lab:research -- "question"` -- run Hermes as the lab research assistant from the repo root
-- `npm run lab:research -- --save note-name "question"` -- save the research note to `lab/research/` and re-index it
-- `npm run lab:skill-candidates -- --days 7 --limit 200` -- analyze recent traces and save a prioritized list of possible new workflow skills
-- `bun run lab/bin/gbrain-mcp.ts` -- start the GBrain MCP server used by `.mcp.json`
-- `npx tsx lab/bin/hermes.ts ...` -- run Hermes through the lab wrapper
+## What The Lab Does
 
-Runtime state is kept under `data/`:
+The lab combines two things:
 
-- `data/gbrain/brain.pglite` -- local GBrain database
-- `data/lab-home/.gbrain/` -- isolated GBrain config home used by the wrappers
+- **Hermes** for research and synthesis
+- **GBrain** for local knowledge persistence and search
 
-## Thesis
+OpenSidebar wraps both of them behind repo-owned scripts so contributors do not
+need to work directly inside the vendored agent repos.
 
-Building a reliable browser-automation harness is not purely a programming exercise
--- it is an **empirical discipline**. Each E2E run is an experiment. Each RFC is a
-hypothesis. Each trace is raw data. Findings that are not systematically recorded
-decay within days.
+The intended loop is:
 
-This lab exists to:
+1. observe a problem in traces, E2Es, or development work
+2. capture the question
+3. research or analyze it
+4. write down the finding
+5. feed the result back into prompts, skills, orchestration, or tests
 
-1. **Preserve knowledge** -- observations, hypotheses, and evidence survive across
-   sessions and contributors.
-2. **Structure inquiry** -- every change to the harness follows the loop:
-   *observe -> hypothesise -> experiment -> measure -> record*.
-3. **Automate review** -- lab-assistant agents periodically scan new traces, papers,
-   and upstream changes to surface relevant insights.
-4. **Improve the harness** -- research should identify pathologies, generalize them,
-   and feed them back into better orchestration, skills, prompts, and verification.
+## How It Works
 
-## Research Intake
+At a high level:
 
-Questions that arise during development should not disappear into chat history.
-They should land in `lab/questions/` as explicit research work items.
+```text
+Question / trace pathology
+        ->
+OpenSidebar lab wrapper
+        ->
+Hermes produces a research note
+        ->
+Note is saved in lab/research/
+        ->
+GBrain indexes it into the local knowledge base
+        ->
+Later sessions can search and reuse it
+```
 
-Good intake items include:
+Important boundaries:
 
-- recurring trace pathologies
-- repeated E2E failures that suggest a missing abstraction
-- suspicious regressions after harness or prompt changes
-- evidence that generic tools are hitting their ceiling
-- interesting ideas from books, essays, or competitor systems worth validating
+- The supported entrypoint is the OpenSidebar wrapper, not raw Hermes commands.
+- Research notes are first-class artifacts. Chat output is not enough.
+- The local knowledge base lives under `data/`, not in some external hosted system.
 
-Capture one with:
+Runtime state:
+
+- `data/gbrain/brain.pglite` - local GBrain database
+- `data/lab-home/` - isolated home/config space used by lab wrappers
+
+## Recommended Commands
+
+This README intentionally does **not** list every lab command. These are the few
+you should actually start with.
+
+### 1. Verify The Lab
+
+```bash
+npm run lab:doctor
+```
+
+Use this first.
+
+It checks:
+
+- required API keys
+- Hermes availability
+- GBrain availability
+- local brain initialization
+
+If `lab:doctor` is not clean, do not trust later research runs.
+
+### 2. Capture A Real Research Question
 
 ```bash
 npm run lab:question -- "Why does the executor over-commit before verification in transactional workflows?"
 ```
 
-Then investigate it with the normal lab loop:
+Use this when a problem shows up during coding or E2E work and you do not want
+it to disappear into chat history.
 
-1. sample traces
-2. generalize the issue
-3. research alternatives
-4. write an RFC or experiment
-5. measure whether the harness improves
+This creates a durable intake item under `lab/questions/`.
 
-If the question is specifically about missing workflow skills, use:
+### 3. Run A Fast Local Research Pass
 
 ```bash
-npm run lab:skill-candidates -- --days 7 --limit 200
+npm run lab:research -- "Summarize the current OpenSidebar lab environment in 5 short bullets."
 ```
 
-That workflow:
+This is the safest default research command.
 
-1. refreshes the latest trace-analysis note
-2. asks the lab researcher to inspect recent pathologies for reusable workflow shapes
-3. saves a candidate-skill list into `lab/research/`
+Current behavior:
 
-## Skills Planning
+- uses the lab wrapper around Hermes
+- runs in **local** mode by default
+- relies on the repo context bundle rather than external browsing
+- is good for repo-grounded synthesis and lab summaries
 
-For the current workflow-skill and meta-skill roadmap, see [docs/skills-roadmap-2026-04-13.md](../docs/skills-roadmap-2026-04-13.md).
+Use this for:
 
-Use the lab workflows to evolve that roadmap:
+- "what do we already know?"
+- "summarize the current state of X in this repo"
+- "turn existing lab material into a concise brief"
 
-- `npm run lab:analyze-traces`
-- `npm run lab:skill-candidates -- --days 7 --limit 200`
-- `npm run lab:question -- "question"`
-- `npm run lab:research -- "question"`
+### 4. Save A Research Note Back Into The Lab
 
-## Directory Layout
-
-```
-lab/
-  README.md              # This file -- lab charter
-  rfcs/                  # Requests for Comments (hypotheses & designs)
-  research/              # Literature reviews, benchmark studies, evaluations
-  questions/             # Open research questions and pathologies from development
-  reports/               # E2E run reports and benchmark results
-  e2e-reports/           # Per-run E2E reports (natural-v2, v3, v4, etc.)
-  books/                 # Reference books (PDFs) and reading notes
-  articles/              # Short-form articles and essays
-  archive/               # Superseded plans and historical notes
-  experiments/           # Structured experiment logs (one dir per experiment)
-  knowledge/             # Accumulated knowledge base (GBrain indexed)
-  agents/                # Lab-assistant agent configurations
-    hermes/              # Hermes Agent -- task orchestration & research automation
-    gbrain/              # GBrain -- knowledge persistence & semantic search
-  traces/                # Symlink/pointer to ../traces/ (raw experiment data)
-  logs/                  # Symlink/pointer to ../logs/ (raw session logs)
+```bash
+npm run lab:research -- --save note-name "What are the main failure patterns in recent continuation traces?"
 ```
 
-## Methodology
+Use this when you want a durable artifact, not just terminal output.
 
-### The Experiment Loop
+What happens:
 
+1. Hermes produces a note
+2. the wrapper validates the output
+3. the note is saved into `lab/research/`
+4. GBrain re-indexes the result
+
+If Hermes returns junk or a stub, the wrapper now fails the save and writes a
+diagnostic artifact under `lab/research/_failed/` instead of polluting the
+knowledge base.
+
+### 5. Re-index The Knowledge Base
+
+```bash
+npm run lab:index
 ```
-1. OBSERVE   -- Read traces, E2E reports, user sessions. What failed? What surprised?
-2. HYPOTHESISE -- Write an RFC: "We believe X because Y. If true, changing Z should ..."
-3. EXPERIMENT -- Implement the change. Run E2E suite. Collect traces.
-4. MEASURE   -- Compare before/after pass rates, turn counts, token costs.
-5. RECORD    -- Write a report in lab/reports/. Update knowledge base. Close the RFC.
+
+Use this after:
+
+- editing research notes manually
+- adding RFCs
+- adding book notes
+- cleaning up or reorganizing lab content
+
+This refreshes the local searchable knowledge base from lab and docs markdown.
+
+## Research Modes
+
+`lab:research` now supports two modes:
+
+### Local Mode
+
+```bash
+npm run lab:research -- --mode local "Summarize the current workflow-skills roadmap."
 ```
 
-### Naming Conventions
+This is the default.
 
-| Artifact           | Pattern                                      | Example                                  |
-|--------------------|----------------------------------------------|------------------------------------------|
-| RFC                | `rfc-<slug>.md`                              | `rfc-state-diff-verification.md`         |
-| E2E Report         | `e2e-report-YYYY-MM-DD.md`                   | `e2e-report-2026-04-12.md`               |
-| Experiment         | `exp-NNN-<slug>/`                            | `exp-001-deepseek-executor-eval/`        |
-| Literature Note    | `lit-<source-slug>.md`                       | `lit-designing-multi-agent-systems.md`   |
-| Knowledge Entry    | indexed by GBrain (Markdown source in knowledge/) |                                     |
+Use it when the answer should come from:
 
-### Evidence Grades
+- repo files
+- lab notes
+- existing indexed knowledge
 
-- **A -- Replicated**: Result reproduced in >=3 independent E2E runs.
-- **B -- Single-run**: Observed once with full trace evidence.
-- **C -- Anecdotal**: Observed informally, no trace captured.
-- **D -- Theoretical**: Derived from literature or reasoning, untested.
+This is best for internal synthesis.
 
-## Lab Assistants
+### External Mode
 
-Two agents power the lab's automation:
+```bash
+npm run lab:research -- --mode external --save note-name "What is the current state of the art in browser-agent memory systems?"
+```
 
-### Hermes Agent (nousresearch/hermes-agent)
+Use this when the question is genuinely outward-facing and current:
 
-Task orchestration and research automation. Hermes can:
-- Spawn parallel research subagents
-- Schedule periodic literature reviews (cron)
-- Maintain persistent memory across sessions
-- Route queries to any model provider (Fireworks, OpenRouter, etc.)
+- vendor capability research
+- product comparisons
+- external state-of-the-art scans
 
-Configuration: `lab/agents/hermes/`
+In external mode, the prompt allows normal research behavior rather than forcing
+repo-only summarization.
 
-### GBrain (garrytan/gbrain)
+## What Good Lab Usage Looks Like
 
-Knowledge persistence and semantic search. GBrain:
-- Indexes all lab Markdown into a searchable knowledge base
-- Hybrid search (keyword + vector embeddings)
-- Periodic autonomous enrichment via cron
-- Exposes 30 tools via MCP server for Claude Code integration
+Good usage:
 
-Configuration: `lab/agents/gbrain/`
+- capture concrete questions from real traces or regressions
+- write dated notes with a clear scope
+- connect findings back to harness design
+- keep evidence and conclusions separate
 
-### Default Model
+Bad usage:
 
-Hermes defaults to **Kimi K2.5 via Fireworks** for cost-efficient research flows.
+- using `lab/` as a random notes dump
+- saving low-signal AI output with no operational consequence
+- treating one research note as proven truth
+- asking the lab to replace direct code reading when the answer is already local
 
-The pinned GBrain build in this repo currently uses `OPENAI_API_KEY` for embeddings
-and query expansion. It is wrapped into the lab environment and isolated into
-project-local state, but it is not yet Fireworks-native.
+## Directory Guide
 
-## Relationship to docs/
+The important directories are:
 
-`docs/` is for **users and contributors** of the extension:
-- Getting started, manual, architecture, features, developer guide.
+- `lab/questions/` - intake queue for researchable development questions
+- `lab/research/` - saved research notes and literature-style writeups
+- `lab/rfcs/` - design proposals and hypotheses
+- `lab/reports/` - benchmark and evaluation summaries
+- `lab/e2e-reports/` - per-run E2E reporting
+- `lab/knowledge/` - accumulated synthesized knowledge
+- `lab/agents/` - Hermes and GBrain configuration
 
-`lab/` is for **researchers and harness engineers**:
-- RFCs, experiments, traces, literature, knowledge base.
+## Evidence Standard
 
-The repo README links to `docs/`. The lab README (this file) is the entry point
-for research work.
+The lab should preserve the distinction between:
+
+- **A - Replicated**: seen repeatedly across independent runs
+- **B - Single-run**: one run, but with trace evidence
+- **C - Anecdotal**: observed informally
+- **D - Theoretical**: reasoned or literature-derived, not yet validated here
+
+If a note does not make its evidence level clear, it is weaker than it looks.
+
+## Suggested Workflow
+
+If you only remember one workflow, use this:
+
+1. `npm run lab:doctor`
+2. `npm run lab:question -- "..."` for the concrete problem
+3. `npm run lab:research -- --save note-name "..."` to create a durable note
+4. `npm run lab:index` after any manual edits
+5. convert the useful part into an RFC, test, or code change
+
+## Relationship To `docs/`
+
+Use `docs/` for:
+
+- contributor-facing documentation
+- product and architecture explanations
+- manuals and guides
+
+Use `lab/` for:
+
+- research intake
+- dated findings
+- trace-driven diagnosis
+- RFCs and experiments
+- knowledge you want future sessions to be able to recover
+
+## Related Files
+
+- [examples/README.md](./examples/README.md)
+- [agents/README.md](./agents/README.md)
+- [questions/README.md](./questions/README.md)
+- [../docs/skills-roadmap-2026-04-13.md](../docs/skills-roadmap-2026-04-13.md)

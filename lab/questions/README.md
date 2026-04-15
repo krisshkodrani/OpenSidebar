@@ -34,6 +34,7 @@ development friction into structured research that can improve the harness.
   - human-readable index of open / active / resolved questions
 - `open/`
   - one markdown file per open question
+  - may also include a few clearly-labeled `Status: Example` reference items that show what a strong intake question looks like
 - `active/`
   - questions currently under focused investigation
 - `resolved/`
