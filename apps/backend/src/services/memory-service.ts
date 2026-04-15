@@ -58,13 +58,11 @@ export async function queryMemoriesByDomain(
   const list = await listMemories(`domain-${domain}`, limit);
   if (list.length === 0) return [];
 
-  // Fetch content for each result
-  const results: MemoryResult[] = [];
-  for (const item of list) {
-    const detail = await getMemory(item.slug).catch(() => null);
-    if (detail) results.push(detail);
-  }
-  return results;
+  // Fetch details in parallel so prompt injection stays within the extension timeout budget.
+  const details = await Promise.all(
+    list.map((item) => getMemory(item.slug).catch(() => null)),
+  );
+  return details.filter((detail): detail is MemoryResult => detail !== null);
 }
 
 export async function removeMemory(slug: string): Promise<void> {

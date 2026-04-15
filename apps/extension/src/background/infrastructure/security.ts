@@ -11,8 +11,23 @@ const VALID_TOOL_NAMES = new Set<string>(Object.values(ToolName));
  */
 export function classifyRisk(
   toolName: ToolName,
-  _args: Record<string, unknown>,
+  args: Record<string, unknown>,
 ): RiskLevel {
+  if (toolName === ToolName.GET_PROFILE_FIELDS) {
+    const fields = Array.isArray(args.fields)
+      ? args.fields.filter((field): field is string => typeof field === "string")
+      : [];
+    if (
+      fields.some(
+        (field) =>
+          field === "sensitive" ||
+          field.startsWith("sensitive.") ||
+          field.startsWith("profile.sensitive."),
+      )
+    ) {
+      return RiskLevel.HIGH;
+    }
+  }
   return getToolMeta(toolName)?.risk ?? RiskLevel.HIGH;
 }
 

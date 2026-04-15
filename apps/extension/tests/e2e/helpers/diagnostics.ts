@@ -339,6 +339,36 @@ export function readSkillSummaryForRun(runId: string): SkillTraceSummary | null 
   }
 }
 
+export function collectSkillIdsForTraceFiles(traceFiles: string[]): string[] {
+  const skillIds = new Set<string>();
+
+  for (const filePath of traceFiles) {
+    const runId = extractRunIdFromTraceFile(filePath);
+    if (!runId) continue;
+
+    const summary = readSkillSummaryForRun(runId);
+    for (const skillId of summary?.skillIds ?? []) {
+      skillIds.add(skillId);
+    }
+  }
+
+  return [...skillIds].sort();
+}
+
+export function traceFilesContainText(traceFiles: string[], text: string): boolean {
+  for (const filePath of traceFiles) {
+    if (!existsSync(filePath)) continue;
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      if (raw.includes(text)) return true;
+    } catch {
+      // Ignore unreadable trace files and keep scanning the rest.
+    }
+  }
+
+  return false;
+}
+
 function safeParseArgs(raw: string | Record<string, unknown>): Record<string, unknown> {
   if (typeof raw === "object") return raw;
   try {

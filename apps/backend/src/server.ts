@@ -17,12 +17,13 @@ import { initDatabase, closeDatabase } from "./db.js";
 import { connectGBrain, disconnectGBrain } from "./gbrain-client.js";
 import { handleHealth } from "./routes/health.js";
 import { handleMemoryRoutes } from "./routes/memory.js";
+import { handleProfileRoutes } from "./routes/profile.js";
 import { handleTaskRoutes } from "./routes/tasks.js";
 import { startTaskTick, stopTaskTick } from "./services/task-scheduler.js";
 import type { BackendConfig } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, "..");
+const PROJECT_ROOT = resolve(__dirname, "..", "..", "..");
 
 // ── Load config ──
 
@@ -122,6 +123,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Memory routes
     if (pathname.startsWith("/memory")) {
       await handleMemoryRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
+      return;
+    }
+
+    // Profile routes
+    if (pathname.startsWith("/profile")) {
+      await handleProfileRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
       return;
     }
 

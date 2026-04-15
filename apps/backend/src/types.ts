@@ -35,6 +35,29 @@ export interface MemoryListResult {
   type: string;
 }
 
+// —— Profile types (filesystem-backed) ——
+
+export type ProfileScalar = string | number | boolean | null;
+export type ProfileValue =
+  | ProfileScalar
+  | ProfileScalar[]
+  | Record<string, unknown>;
+
+export interface PersonalProfileDocument {
+  profile: Record<string, unknown>;
+}
+
+export interface ProfileResolveInput {
+  fields: string[];
+}
+
+export interface ProfileResolveResult {
+  profilePath: string;
+  values: Record<string, ProfileValue>;
+  missing: string[];
+  sensitiveFields: string[];
+}
+
 // ── Task types (SQLite-backed) ──
 
 export interface TaskInput {

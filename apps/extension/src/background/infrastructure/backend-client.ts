@@ -8,7 +8,7 @@
 import { logger } from "../../utils";
 
 const BACKEND_URL = "http://127.0.0.1:7590";
-const TIMEOUT_MS = 2000;
+const TIMEOUT_MS = 5000;
 
 // ── Types ──
 
@@ -35,6 +35,13 @@ export interface PendingTask {
   query: string;
   tabUrl: string | null;
   workspaceId: string | null;
+}
+
+export interface ProfileResolveResult {
+  profilePath: string;
+  values: Record<string, unknown>;
+  missing: string[];
+  sensitiveFields: string[];
 }
 
 // ── Helpers ──
@@ -95,6 +102,21 @@ export async function searchMemoryByDomain(
   }
 }
 
+export async function resolveProfileFields(
+  fields: string[],
+): Promise<ProfileResolveResult | null> {
+  try {
+    const res = await backendFetch("/profile/resolve", {
+      method: "POST",
+      body: JSON.stringify({ fields }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ProfileResolveResult;
+  } catch {
+    return null;
+  }
+}
+
 // ── Tasks ──
 
 export async function pollPendingTasks(): Promise<PendingTask[]> {
@@ -105,45 +127,6 @@ export async function pollPendingTasks(): Promise<PendingTask[]> {
     return data.tasks ?? [];
   } catch {
     return [];
-  }
-}
-
-export async function markTaskRunning(id: string): Promise<void> {
-  try {
-    await backendFetch(`/tasks/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "running" }),
-    });
-  } catch {
-    logger.debug("backend-client", "Task status update failed");
-  }
-}
-
-export async function markTaskCompleted(
-  id: string,
-  result: string,
-): Promise<void> {
-  try {
-    await backendFetch(`/tasks/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "completed", result }),
-    });
-  } catch {
-    logger.debug("backend-client", "Task completion update failed");
-  }
-}
-
-export async function markTaskFailed(
-  id: string,
-  result: string,
-): Promise<void> {
-  try {
-    await backendFetch(`/tasks/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: "failed", result }),
-    });
-  } catch {
-    logger.debug("backend-client", "Task failure update failed");
   }
 }
 

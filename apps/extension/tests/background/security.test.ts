@@ -19,6 +19,7 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.ESCALATE, { reason: "riddle" })).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.READ_ELEMENT, { id: 1 })).toBe(RiskLevel.LOW);
         expect(classifyRisk(ToolName.LIST_TABS, {})).toBe(RiskLevel.LOW);
+        expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["identity.first_name"] })).toBe(RiskLevel.LOW);
     });
 
     test("mutation tools are MEDIUM risk", () => {
@@ -37,6 +38,7 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.CLOSE_TAB, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.GO_BACK, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.EXECUTE_JS, { code: "alert(1)" })).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["sensitive.date_of_birth"] })).toBe(RiskLevel.HIGH);
     });
 
     test("unknown tool names default to HIGH", () => {

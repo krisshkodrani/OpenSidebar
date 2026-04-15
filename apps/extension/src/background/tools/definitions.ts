@@ -1,5 +1,5 @@
 /**
- * Tool definitions - OpenAI function-calling schema for all 35 tools
+ * Tool definitions - OpenAI function-calling schema for all tools
  */
 
 import { ToolName, ToolDefinition } from "../../types";
@@ -418,6 +418,30 @@ export const UPDATE_NOTES_DEF: ToolDefinition = {
         },
       },
       required: ["note"],
+    },
+  },
+};
+
+export const GET_PROFILE_FIELDS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GET_PROFILE_FIELDS,
+    description:
+      "Read exact fields from the user's local personal profile for form filling. Request only the fields you need, using paths like identity.first_name or address.postal_code. Sensitive fields under sensitive.* require approval.",
+    parameters: {
+      type: "object",
+      properties: {
+        fields: {
+          type: "array",
+          items: {
+            type: "string",
+            description: "Field path relative to the profile root.",
+          },
+          description:
+            "Exact profile field paths to retrieve, e.g. [\"identity.first_name\", \"identity.last_name\"].",
+        },
+      },
+      required: ["fields"],
     },
   },
 };

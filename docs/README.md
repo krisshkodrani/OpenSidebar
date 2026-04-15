@@ -34,6 +34,7 @@ Path note: the main entry-point docs below are aligned to the current `apps/` an
 ## Guides
 
 - [Developer Guide](./developer-guide.md)
+- [Personal Profile](./personal-profile.md)
 - [Repo Structure](./repo-structure.md)
 - [Release Checklist](./release-checklist.md)
 - [Agent Strategy Letter](./guides/agent-strategy-letter.md)

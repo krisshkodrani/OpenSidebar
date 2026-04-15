@@ -363,10 +363,13 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
   "structured-form-fill": {
     procedureMarkdown: [
       "1. Identify all relevant fields before typing.",
-      "2. Map each requested value to a specific input, select, or checkbox.",
-      "3. Fill fields one by one without submitting early.",
-      "4. Re-check required fields and validation messages before submission.",
-      "5. Submit only when all requested values are present and no obvious validation blocker remains.",
+      "2. If the user references a saved profile or explicit profile field paths, call get_profile_fields for the exact needed fields before navigating away or inventing values.",
+      "3. Map each requested value to a specific input, select, or checkbox.",
+      "4. Prefer the returned profile values as the source of truth for name, email, and address fields.",
+      "5. Stay on the current form unless the page itself shows that login or authentication is required.",
+      "6. Fill fields one by one without submitting early.",
+      "7. Re-check required fields and validation messages before submission.",
+      "8. Submit only when all requested values are present and no obvious validation blocker remains.",
     ].join("\n"),
     requiredEvidence: [
       "Field mapping for requested values",
@@ -507,6 +510,8 @@ const cartPattern =
   /\b(cart|checkout|coupon|promo|discount|swap|replace|remove|add to cart)\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
+const profileFieldPattern =
+  /\b(saved profile|profile field|profile data|identity\.(?:first_name|last_name|email)|full name|email address)\b/i;
 const transactionPattern =
   /\b(verify|confirm|check|delete account|dismiss popups?|inspect|status|activity feed|posted comment|ticket status)\b/i;
 const navigateReturnPattern =
@@ -583,6 +588,7 @@ export function selectPrimarySkill(input: {
     input.pageTitle,
     input.pageUrl,
   ]);
+  const stepCorpus = buildCorpus([input.objective, input.successCriteria]);
 
   if (budgetPattern.test(corpus)) {
     return {
@@ -639,7 +645,26 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (cartPattern.test(corpus)) {
+  if (
+    profileFieldPattern.test(stepCorpus) &&
+    /\b(fill|checkout|form|field|name|email|submit|place order)\b/i.test(stepCorpus)
+  ) {
+    return {
+      id: "structured-form-fill",
+      reason:
+        "Current step requires filling form fields from saved profile data before submission.",
+    };
+  }
+
+  if (transactionPattern.test(stepCorpus)) {
+    return {
+      id: "transactional-act-check-act",
+      reason:
+        "Current step requires an action followed by explicit intermediate verification.",
+    };
+  }
+
+  if (cartPattern.test(stepCorpus) || cartPattern.test(corpus)) {
     return {
       id: "cart-modify-checkout",
       reason:
@@ -648,8 +673,8 @@ export function selectPrimarySkill(input: {
   }
 
   if (
-    formPattern.test(corpus) &&
-    /\b(fill|form|field|dropdown|checkbox|input)\b/i.test(corpus)
+    formPattern.test(stepCorpus) &&
+    /\b(fill|form|field|dropdown|checkbox|input)\b/i.test(stepCorpus)
   ) {
     return {
       id: "structured-form-fill",

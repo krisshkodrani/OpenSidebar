@@ -31,7 +31,12 @@ import {
   waitForTaskCompletion,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
-import { extractDoneSummary, findAllNewTraceFiles } from "./helpers/diagnostics";
+import {
+  collectSkillIdsForTraceFiles,
+  extractDoneSummary,
+  findAllNewTraceFiles,
+  traceFilesContainText,
+} from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 12, testLabel: "paginated-memory" });
 
@@ -168,6 +173,23 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Paginated Memory", () => {
     expect(
       /\$?\d[\d,]+/.test(turn3Answer),
       "Turn 3 should include salary figures",
+    ).toBe(true);
+
+    const allTraceFiles = [...turn1Traces, ...turn2Traces, ...turn3Traces];
+    const laterTurnTraces = [...turn2Traces, ...turn3Traces];
+    const skillIds = collectSkillIdsForTraceFiles(allTraceFiles);
+
+    expect(
+      skillIds,
+      "The paginated comparison should route through the cross-tab compare skill",
+    ).toContain("cross-tab-compare");
+    expect(
+      traceFilesContainText(allTraceFiles, "Selected workflow skill:"),
+      "The executor prompt should include the selected workflow skill contract",
+    ).toBe(true);
+    expect(
+      traceFilesContainText(laterTurnTraces, "PRIOR WORKSPACE TURNS:"),
+      "Later turns should include prior workspace turn memory in the executor prompt",
     ).toBe(true);
 
     // =================================================================
