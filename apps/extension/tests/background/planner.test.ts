@@ -406,7 +406,7 @@ describe("TaskPlanner.decompose", () => {
                 "Fill Full name and Email, then place the order",
                 "The order confirmation is visible",
             ),
-        ).toBe("form_fill");
+        ).toBe("submit_form");
     });
 
     test("prefers direct-action profile over recovery wording in stitched handoff objectives", () => {
@@ -1066,8 +1066,81 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         // orchestrator node level (prevents permanent tool blocking on replan).
         expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.GET_PROFILE_FIELDS);
         expect(result.nodes[1].allowedTools).toContain(ToolName.TYPE_TEXT);
         expect(result.nodes[1].allowedTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(result.nodes[1].allowedTools).toContain(ToolName.GET_PROFILE_FIELDS);
+    });
+
+    test("expandNode keeps the initial node tool baseline for replanned child steps", async () => {
+        let callCount = 0;
+        completeImpl = () => {
+            callCount++;
+            if (callCount === 1) {
+                return Promise.resolve({
+                    role: "assistant",
+                    content: JSON.stringify({
+                        isMultiStep: true,
+                        steps: [
+                            {
+                                objective: "Complete checkout",
+                                successCriteria: "Order confirmation is visible",
+                                dependencies: [],
+                                assumptions: [],
+                            },
+                        ],
+                    }),
+                    tool_calls: undefined,
+                    finish_reason: "stop",
+                });
+            }
+
+            return Promise.resolve({
+                role: "assistant",
+                content: JSON.stringify({
+                    isMultiStep: true,
+                    steps: [
+                        {
+                            objective: "Fill the checkout form",
+                            successCriteria: "All required checkout fields are populated",
+                            dependencies: [],
+                            assumptions: [],
+                            toolProfile: "form_fill",
+                        },
+                        {
+                            objective: "Place the order",
+                            successCriteria: "Order confirmation is visible",
+                            dependencies: [0],
+                            assumptions: [],
+                            toolProfile: "submit_form",
+                        },
+                    ],
+                }),
+                tool_calls: undefined,
+                finish_reason: "stop",
+            });
+        };
+
+        const planner = new OrchestratorPlanner("test-key");
+        const initial = await planner.buildNodes(
+            "Complete checkout",
+            "Checkout",
+            "https://shop.com/checkout",
+        );
+
+        expect(initial.nodes).toHaveLength(1);
+
+        const expanded = await planner.expandNode(
+            initial.nodes[0],
+            "Checkout",
+            "https://shop.com/checkout",
+            "Split form fill from final submission",
+        );
+
+        expect(expanded).not.toBeNull();
+        expect(expanded).toHaveLength(2);
+        expect(expanded![0].allowedTools).toEqual(initial.nodes[0].allowedTools);
+        expect(expanded![1].allowedTools).toEqual(initial.nodes[0].allowedTools);
     });
 
     test("selects continuation-edit for draft revision workflows", async () => {
@@ -1194,6 +1267,36 @@ describe("selectPrimarySkill", () => {
             }),
         ).toBeNull();
     });
+
+    test("prefers structured-form-fill for saved-profile checkout step", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Add the Air Zoom Pegasus 41 to cart, choose standard shipping, and use my saved profile for checkout.",
+                objective: "Complete checkout using saved profile (identity.first_name, identity.last_name, identity.email) without inventing new details",
+                successCriteria: "Checkout form shows full name and email from the saved profile and order is submitted",
+            })?.id,
+        ).toBe("structured-form-fill");
+    });
+
+    test("keeps cart-modify-checkout for earlier cart step even when query mentions saved profile", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Add the Air Zoom Pegasus 41 to cart, choose standard shipping, and use my saved profile for checkout.",
+                objective: "Add the Air Zoom Pegasus 41 to cart",
+                successCriteria: "Cart shows Pegasus 41 with quantity 1",
+            })?.id,
+        ).toBe("cart-modify-checkout");
+    });
+
+    test("prefers the current step semantics over earlier cart wording for confirmation checks", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Add the Air Zoom Pegasus 41 to cart, choose standard shipping, and use my saved profile for checkout.",
+                objective: "Verify order confirmation is visible",
+                successCriteria: "Confirmation page shows the completed order",
+            })?.id,
+        ).toBe("transactional-act-check-act");
+    });
 });
 
 describe("TaskPlanner.validateDone", () => {
@@ -1269,6 +1372,31 @@ describe("TaskPlanner.validateDone", () => {
         const result = await guardian.validateDone("Task", plan, "Done", "Page", "https://example.com");
 
         expect(result.approved).toBe(true);
+    });
+
+    test("does not approve all-complete checkout plans when confirmation evidence is missing", async () => {
+        completeImpl = () => Promise.reject(new Error("API timeout"));
+
+        const guardian = new TaskPlanner("test-key");
+        const plan = [
+            { description: "Fill checkout form", status: "completed" as const, turnsUsed: 2, turnBudget: 5 },
+            { description: "Place order", status: "completed" as const, turnsUsed: 1, turnBudget: 5 },
+        ];
+
+        const result = await guardian.validateDone(
+            "Buy item",
+            plan,
+            "Filled the checkout form and verified the details.",
+            "Checkout",
+            "https://shop.com/checkout",
+            undefined,
+            "Checkout form with full name and email fields populated. No confirmation banner or order number is visible.",
+            "Order confirmation is visible",
+            "Full name and email fields were typed into the form.",
+        );
+
+        expect(result.approved).toBe(false);
+        expect(result.reason || "").toMatch(/evidence|confirmation|continue/i);
     });
 });
 

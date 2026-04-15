@@ -4,7 +4,6 @@ import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { synthesizeBatchedExhaustivePlan } from "../agent/task-contract";
-import { resolveToolProfile, type ToolProfile } from "../tools/metadata";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { selectPrimarySkill } from "./skills";
 
@@ -32,6 +31,7 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.READ_ELEMENT,
   ToolName.INSPECT_HIDDEN,
   ToolName.XRAY_PAGE,
+  ToolName.GET_PROFILE_FIELDS,
   ToolName.DISMISS_OVERLAYS,
   ToolName.ESCALATE,
   ToolName.DONE,
@@ -318,9 +318,7 @@ export class OrchestratorPlanner {
       successCriteria:
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: resolveToolProfile(
-        step.toolProfile as ToolProfile | undefined,
-      ) ?? [...node.allowedTools],
+      allowedTools: [...node.allowedTools],
       dependencies: [
         ...(index === 0 ? node.dependencies : []),
         ...(step.dependencies || [])

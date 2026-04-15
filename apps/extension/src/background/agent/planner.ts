@@ -249,7 +249,7 @@ export function inferToolProfileForStep(
     );
 
   if (requiresFieldEntryBeforeSubmit) {
-    return "form_fill";
+    return "submit_form";
   }
 
   if (
@@ -1009,6 +1009,46 @@ export class TaskPlanner {
           reason: `Planner unavailable. Structural check: ${completedCount}/${plan.length} subtasks completed. Continue.`,
         };
       }
+
+      const fallbackCorpus = [
+        query,
+        doneSummary,
+        pageTitle,
+        pageUrl,
+        perception,
+        successCriteria,
+        stateEvidence,
+      ]
+        .filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        )
+        .join("\n")
+        .toLowerCase();
+
+      const requiresExplicitCompletionEvidence =
+        /\b(checkout|place order|order confirmation|confirm order|submit order|purchase|payment|receipt)\b/.test(
+          fallbackCorpus,
+        );
+      const hasExplicitCompletionEvidence =
+        /\b(order confirmation|order confirmed|confirmation page|confirmation visible|order number|receipt|thank you(?: for your order)?|purchase complete|order complete|success banner|submitted successfully)\b/.test(
+          fallbackCorpus,
+        );
+      const hasExplicitNegativeEvidence =
+        /\b(no confirmation|no confirmation banner|no order number|not visible|still on checkout|still on cart)\b/.test(
+          fallbackCorpus,
+        );
+
+      if (
+        requiresExplicitCompletionEvidence &&
+        (!hasExplicitCompletionEvidence || hasExplicitNegativeEvidence)
+      ) {
+        return {
+          approved: false,
+          reason:
+            "Planner unavailable. Structural check completed, but explicit completion evidence is missing. Continue until confirmation is visible.",
+        };
+      }
+
       return { approved: true };
     }
   }
