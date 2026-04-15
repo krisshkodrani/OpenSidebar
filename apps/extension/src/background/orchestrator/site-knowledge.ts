@@ -29,6 +29,41 @@ export interface SiteKnowledgeMemo {
   confidence: number;
 }
 
+const SITE_KNOWLEDGE_STOP_WORDS = new Set([
+  "a",
+  "all",
+  "an",
+  "and",
+  "are",
+  "before",
+  "for",
+  "from",
+  "get",
+  "give",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "list",
+  "me",
+  "my",
+  "of",
+  "on",
+  "please",
+  "question",
+  "questions",
+  "show",
+  "that",
+  "the",
+  "this",
+  "to",
+  "up",
+  "use",
+  "what",
+  "with",
+]);
+
 // ── Domain utility ──
 
 export function extractDomain(url: string): string | null {
@@ -262,6 +297,47 @@ export function deduplicateSiteKnowledge(
   }
 
   return results;
+}
+
+function tokenizeForRanking(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3 && !SITE_KNOWLEDGE_STOP_WORDS.has(token));
+}
+
+export function rankSiteKnowledgeForTask(
+  entries: SiteKnowledgeMemo[],
+  query: string,
+  maxEntries = 3,
+): SiteKnowledgeMemo[] {
+  if (entries.length === 0) return [];
+
+  const queryTokens = new Set(tokenizeForRanking(query));
+  const ranked = entries
+    .map((entry, index) => {
+      const tipTokens = tokenizeForRanking(entry.tip);
+      const overlapCount = tipTokens.filter((token) => queryTokens.has(token)).length;
+      const overlapScore = overlapCount * 0.35;
+      const tipTypeBoost =
+        entry.tipType === "strategy" ? 0.08 :
+        entry.tipType === "recovery" ? 0.04 :
+        0;
+      return {
+        entry,
+        index,
+        score: entry.confidence + overlapScore + tipTypeBoost,
+        overlapCount,
+      };
+    })
+    .sort((a, b) => {
+      if (b.overlapCount !== a.overlapCount) return b.overlapCount - a.overlapCount;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.index - b.index;
+    })
+    .slice(0, maxEntries);
+
+  return ranked.map((item) => item.entry);
 }
 
 // ── Prompt formatting ──

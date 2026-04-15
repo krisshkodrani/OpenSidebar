@@ -2,18 +2,20 @@ import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { join } from "path";
 import { tmpdir } from "os";
-import { unlinkSync } from "fs";
+import { unlinkSync, writeFileSync } from "fs";
 import { initDatabase, closeDatabase } from "../src/db";
 
 // We test the route handlers directly by building a minimal server,
 // bypassing GBrain (memory endpoints need GBrain which is too heavy for unit tests).
 
 import { handleTaskRoutes } from "../src/routes/tasks";
+import { handleProfileRoutes } from "../src/routes/profile";
 import type { RouteContext } from "../src/server";
 
 let server: Server;
 let baseUrl: string;
 let dbPath: string;
+let profilePath: string;
 
 function parseJsonBody(req: NodeJS.ReadableStream): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -46,7 +48,21 @@ function sendError(res: any, message: string, status = 400): void {
 
 beforeAll(async () => {
   dbPath = join(tmpdir(), `test-server-${Date.now()}.sqlite`);
+  profilePath = join(tmpdir(), `test-profile-${Date.now()}.yaml`);
   initDatabase(dbPath);
+  process.env.OPENSIDEBAR_PROFILE_PATH = profilePath;
+  writeFileSync(
+    profilePath,
+    [
+      "profile:",
+      "  identity:",
+      "    first_name: Kai",
+      "    last_name: Schmidt",
+      "  sensitive:",
+      '    date_of_birth: "1990-01-01"',
+      "",
+    ].join("\n"),
+  );
 
   server = createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
@@ -70,6 +86,11 @@ beforeAll(async () => {
       return;
     }
 
+    if (url.pathname.startsWith("/profile")) {
+      await handleProfileRoutes(req, res, ctx);
+      return;
+    }
+
     sendError(res, "Not found", 404);
   });
 
@@ -89,9 +110,11 @@ afterAll(() => {
     unlinkSync(dbPath);
     unlinkSync(dbPath + "-wal");
     unlinkSync(dbPath + "-shm");
+    unlinkSync(profilePath);
   } catch {
     // best-effort cleanup
   }
+  delete process.env.OPENSIDEBAR_PROFILE_PATH;
 });
 
 // Helper
@@ -115,6 +138,29 @@ describe("GET /health", () => {
     const { status, data } = await api("/health");
     expect(status).toBe(200);
     expect(data.status).toBe("ok");
+  });
+});
+
+describe("POST /profile/resolve", () => {
+  test("returns exact requested fields and marks sensitive ones", async () => {
+    const { status, data } = await api("/profile/resolve", {
+      method: "POST",
+      body: JSON.stringify({
+        fields: [
+          "identity.first_name",
+          "sensitive.date_of_birth",
+          "identity.email",
+        ],
+      }),
+    });
+
+    expect(status).toBe(200);
+    expect(data.values).toEqual({
+      "identity.first_name": "Kai",
+      "sensitive.date_of_birth": "1990-01-01",
+    });
+    expect(data.missing).toEqual(["identity.email"]);
+    expect(data.sensitiveFields).toEqual(["sensitive.date_of_birth"]);
   });
 });
 

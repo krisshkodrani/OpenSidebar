@@ -38,9 +38,9 @@ beforeEach(() => {
 });
 
 describe("Tool Registration", () => {
-    test("all 38 tools are registered", () => {
+    test("all 39 tools are registered", () => {
         const defs = toolRegistry.getDefinitions();
-        expect(defs.length).toBe(38);
+        expect(defs.length).toBe(39);
     });
 
     test("every ToolName enum value has a registered definition", () => {
@@ -281,6 +281,15 @@ describe("Tool Registration", () => {
         expect(def!.function.parameters.required).toContain("note");
         expect(def!.function.parameters.properties.note.type).toBe("string");
         expect(def!.function.description).toContain("persistent working memory");
+    });
+
+    test("get_profile_fields requires a fields array", () => {
+        const defs = toolRegistry.getDefinitions();
+        const def = defs.find(d => d.function.name === ToolName.GET_PROFILE_FIELDS);
+        expect(def).toBeDefined();
+        expect(def!.function.parameters.required).toContain("fields");
+        expect(def!.function.parameters.properties.fields.type).toBe("array");
+        expect(def!.function.description).toContain("local personal profile");
     });
 
     test("go_back reports the destination URL after history navigation changes the page", async () => {

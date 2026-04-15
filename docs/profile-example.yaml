@@ -1,0 +1,26 @@
+profile:
+  identity:
+    first_name: Kai
+    last_name: Schmidt
+    full_name: Kai Schmidt
+    email: kai@example.com
+    phone: "+49 170 1234567"
+
+  address:
+    line1: Musterstrasse 12
+    line2: ""
+    city: Berlin
+    state: Berlin
+    postal_code: "10115"
+    country: Germany
+
+  work:
+    company: Example GmbH
+    title: Product Engineer
+
+  preferences:
+    default_country: Germany
+    preferred_language: en
+
+  sensitive:
+    date_of_birth: "1990-01-01"

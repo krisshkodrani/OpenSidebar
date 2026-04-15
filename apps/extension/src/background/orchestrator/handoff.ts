@@ -10,6 +10,7 @@ import {
   selectPrimarySkill,
   summarizeSkillForVerifier,
 } from "./skills";
+import { ToolName } from "../../types";
 
 const MAX_HANDOFF_ARTIFACTS = 8;
 const MAX_NOTE_LEN = 400;
@@ -232,6 +233,24 @@ export function buildExecutorInstruction(
 
   if (siteKnowledgeBrief) {
     sections.push("", siteKnowledgeBrief);
+  }
+
+  const activeObjective = objectiveOverride || node.description;
+  const mentionsSavedProfile =
+    /\b(saved profile|profile data|profile field|identity\.(?:first_name|last_name|email))\b/i.test(
+      `${activeObjective}\n${originalQuery || ""}`,
+    );
+  const allowsProfileFields = node.allowedTools.includes(ToolName.GET_PROFILE_FIELDS);
+
+  if (mentionsSavedProfile && allowsProfileFields) {
+    sections.push(
+      "",
+      "PROFILE DATA POLICY:",
+      "- The user's saved profile is available through get_profile_fields.",
+      "- If the current step needs name, email, or other saved profile values, call get_profile_fields for the exact fields before typing or navigating away.",
+      "- Treat returned profile values as the source of truth; do not invent replacements when the profile is expected to provide them.",
+      "- Do not leave the current checkout or form page to search for a login/profile page unless the page explicitly shows authentication is required.",
+    );
   }
 
   if (node.verificationGate) {

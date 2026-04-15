@@ -272,6 +272,12 @@ export interface UpdateNotesArgs {
   note: string;
 }
 
+/** Arguments for get_profile_fields — fetch exact fields from the local personal profile */
+export interface GetProfileFieldsArgs {
+  /** Field paths relative to the `profile` root, e.g. `identity.first_name` */
+  fields: string[];
+}
+
 // --- Tool Routing Types ---
 
 /** Maps tool names to their execution handlers */
@@ -317,6 +323,7 @@ export type ToolArgsMap = {
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.CLARIFY]: ClarifyArgs;
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
+  [ToolName.GET_PROFILE_FIELDS]: GetProfileFieldsArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
   [ToolName.SCHEDULE_TASK]: ScheduleTaskArgs;

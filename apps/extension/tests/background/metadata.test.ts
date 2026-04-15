@@ -105,6 +105,14 @@ describe("Tool Metadata", () => {
       expect(classifyRisk(ToolName.XRAY_PAGE, {})).toBe(RiskLevel.LOW);
     });
 
+    test("get_profile_fields is LOW risk for non-sensitive fields", () => {
+      expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["identity.first_name"] })).toBe(RiskLevel.LOW);
+    });
+
+    test("get_profile_fields becomes HIGH risk for sensitive fields", () => {
+      expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["sensitive.date_of_birth"] })).toBe(RiskLevel.HIGH);
+    });
+
   });
 
   describe("page assist tools metadata", () => {
@@ -169,6 +177,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.CLICK_ELEMENT);
       expect(tools).toContain(ToolName.TYPE_TEXT);
       expect(tools).toContain(ToolName.SELECT_OPTION);
+      expect(tools).toContain(ToolName.GET_PROFILE_FIELDS);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).not.toContain(ToolName.CREATE_TAB);
       expect(tools).not.toContain(ToolName.GO_BACK);

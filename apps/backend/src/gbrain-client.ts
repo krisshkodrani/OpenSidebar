@@ -7,7 +7,10 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { stringify as stringifyYaml } from "yaml";
@@ -26,6 +29,78 @@ const BACKEND_HOME = resolve(__dirname, "..", "data", "backend-home");
 let client: Client | null = null;
 let transport: StdioClientTransport | null = null;
 let connected = false;
+let connectedConfig: BackendConfig["gbrain"] | null = null;
+let connectedProjectRoot: string | null = null;
+
+export function buildGBrainHomeConfig(databasePath: string): string {
+  return JSON.stringify(
+    {
+      engine: "pglite",
+      database_path: databasePath,
+    },
+    null,
+    2,
+  );
+}
+
+export function resolveCliCommand(command: string): string {
+  if (process.platform !== "win32" || command !== "bun") {
+    return command;
+  }
+
+  const appData = process.env.APPDATA;
+  if (!appData) {
+    return command;
+  }
+
+  const bunExe = resolve(appData, "npm", "node_modules", "bun", "bin", "bun.exe");
+  return existsSync(bunExe) ? bunExe : command;
+}
+
+export function ensureGBrainHomeConfig(
+  homeDir: string,
+  databasePath: string,
+): void {
+  const configDir = resolve(homeDir, ".gbrain");
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(dirname(databasePath), { recursive: true });
+  writeFileSync(
+    resolve(configDir, "config.json"),
+    buildGBrainHomeConfig(databasePath),
+    "utf-8",
+  );
+}
+
+export function ensureGBrainDatabaseInitialized(
+  config: BackendConfig["gbrain"],
+  projectRoot: string,
+): void {
+  const initArgs = [
+    "run",
+    "lab/agents/gbrain/repo/src/cli.ts",
+    "init",
+    "--pglite",
+    "--path",
+    config.databasePath,
+  ];
+
+  const result = spawnSync(resolveCliCommand(config.mcpCommand), initArgs, {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+      HOME: BACKEND_HOME,
+      USERPROFILE: BACKEND_HOME,
+    },
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+
+  if ((result.status ?? 1) !== 0) {
+    const detail = (result.stderr || result.stdout || "unknown error").trim();
+    throw new Error(`Failed to initialize backend GBrain database: ${detail}`);
+  }
+}
 
 // ── Connection lifecycle ──
 
@@ -33,6 +108,9 @@ export async function connectGBrain(
   config: BackendConfig["gbrain"],
   projectRoot: string,
 ): Promise<void> {
+  ensureGBrainHomeConfig(BACKEND_HOME, config.databasePath);
+  ensureGBrainDatabaseInitialized(config, projectRoot);
+
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
@@ -56,6 +134,8 @@ export async function connectGBrain(
 
   await client.connect(transport);
   connected = true;
+  connectedConfig = config;
+  connectedProjectRoot = projectRoot;
 }
 
 export function disconnectGBrain(): void {
@@ -69,6 +149,8 @@ export function disconnectGBrain(): void {
   client = null;
   transport = null;
   connected = false;
+  connectedConfig = null;
+  connectedProjectRoot = null;
 }
 
 export function isGBrainConnected(): boolean {
@@ -77,10 +159,61 @@ export function isGBrainConnected(): boolean {
 
 // ── Tool call helper ──
 
-async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-  if (!client || !connected) throw new Error("GBrain not connected");
+function callToolViaCli(
+  name: string,
+  args: Record<string, unknown>,
+): unknown {
+  if (!connectedConfig || !connectedProjectRoot) {
+    throw new Error("GBrain connection context unavailable");
+  }
 
-  const result = await client.callTool({ name, arguments: args });
+  const result = spawnSync(
+    resolveCliCommand(connectedConfig.mcpCommand),
+    [
+      "run",
+      "lab/agents/gbrain/repo/src/cli.ts",
+      "call",
+      name,
+      JSON.stringify(args),
+    ],
+    {
+      cwd: connectedProjectRoot,
+      env: {
+        ...process.env,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+        HOME: BACKEND_HOME,
+        USERPROFILE: BACKEND_HOME,
+      },
+      stdio: "pipe",
+      encoding: "utf-8",
+    },
+  );
+
+  if ((result.status ?? 1) !== 0) {
+    const detail = (result.stderr || result.stdout || "unknown error").trim();
+    throw new Error(detail);
+  }
+
+  const stdout = (result.stdout || "").trim();
+  if (!stdout) return null;
+  return JSON.parse(stdout);
+}
+
+async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  if (!connected) throw new Error("GBrain not connected");
+  return callToolViaCli(name, args);
+
+  let result: Awaited<ReturnType<typeof client.callTool>>;
+  try {
+    result = await Promise.race([
+      client.callTool({ name, arguments: args }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timed out calling ${name}`)), MCP_CALL_TIMEOUT_MS),
+      ),
+    ]);
+  } catch {
+    return callToolViaCli(name, args);
+  }
 
   // MCP tool results have content array — extract text
   if (result.content && Array.isArray(result.content)) {
@@ -88,6 +221,21 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
       .filter((c: { type: string }) => c.type === "text")
       .map((c: { text: string }) => c.text);
     const text = textParts.join("");
+    if ((result as { isError?: boolean }).isError) {
+      try {
+        const parsed = JSON.parse(text) as {
+          message?: string;
+          error?: string;
+          code?: string;
+        };
+        throw new Error(parsed.message || parsed.error || parsed.code || text);
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message !== text) {
+          throw parseError;
+        }
+        throw new Error(text);
+      }
+    }
     try {
       return JSON.parse(text);
     } catch {
@@ -119,11 +267,70 @@ export function buildPageContent(input: MemoryInput): string {
   return `---\n${frontmatter}\n---\n${input.content}`;
 }
 
+function buildPageDocument(slug: string, input: MemoryInput): string {
+  const tags = ["agent-memory", input.category];
+  if (input.workspaceId) tags.push(`workspace-${input.workspaceId}`);
+  if (input.metadata?.domain) tags.push(`domain-${input.metadata.domain}`);
+
+  const frontmatter = stringifyYaml({
+    slug,
+    type: "concept",
+    title: input.title,
+    tags,
+    ...(input.metadata ? { metadata: input.metadata } : {}),
+  }).trimEnd();
+
+  return `---\n${frontmatter}\n---\n${input.content}`;
+}
+
+function importMemoryWithoutEmbedding(
+  slug: string,
+  input: MemoryInput,
+): void {
+  if (!connectedConfig || !connectedProjectRoot) {
+    throw new Error("GBrain connection context unavailable");
+  }
+
+  const tempDir = mkdtempSync(resolve(tmpdir(), "opensidebar-backend-memory-"));
+  const filePath = resolve(tempDir, "memory.md");
+
+  try {
+    writeFileSync(filePath, buildPageDocument(slug, input), "utf-8");
+
+    const result = spawnSync(
+      resolveCliCommand(connectedConfig.mcpCommand),
+      [
+        "run",
+        "lab/agents/gbrain/repo/src/cli.ts",
+        "import",
+        tempDir,
+        "--no-embed",
+      ],
+      {
+        cwd: connectedProjectRoot,
+        env: {
+          ...process.env,
+          OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+          HOME: BACKEND_HOME,
+          USERPROFILE: BACKEND_HOME,
+        },
+        stdio: "pipe",
+        encoding: "utf-8",
+      },
+    );
+
+    if ((result.status ?? 1) !== 0) {
+      const detail = (result.stderr || result.stdout || "unknown error").trim();
+      throw new Error(`Failed to import backend memory: ${detail}`);
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 export async function putMemory(input: MemoryInput): Promise<string> {
   const slug = generateSlug(input.category);
-  const content = buildPageContent(input);
-
-  await callTool("put_page", { slug, content });
+  importMemoryWithoutEmbedding(slug, input);
 
   return slug;
 }

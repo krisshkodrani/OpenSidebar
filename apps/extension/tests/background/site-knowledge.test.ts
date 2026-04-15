@@ -4,6 +4,7 @@ import {
   buildExtractionContext,
   extractSiteKnowledgeFallback,
   deduplicateSiteKnowledge,
+  rankSiteKnowledgeForTask,
   formatSiteKnowledgeForPrompt,
 } from "../../src/background/orchestrator/site-knowledge";
 import type { OrchestratorTask } from "../../src/background/orchestrator/types";
@@ -445,5 +446,36 @@ describe("formatSiteKnowledgeForPrompt", () => {
 
     const result = formatSiteKnowledgeForPrompt(entries);
     expect(result.length).toBeLessThanOrEqual(850);
+  });
+});
+
+describe("rankSiteKnowledgeForTask", () => {
+  test("prefers query-relevant tips over higher-confidence noise", () => {
+    const ranked = rankSiteKnowledgeForTask(
+      [
+        { tip: "probe tip final", tipType: "strategy", confidence: 0.99 },
+        {
+          tip: "The dashboard's report list is behind the Reports tab. Open Reports before answering questions about available reports.",
+          tipType: "strategy",
+          confidence: 0.98,
+        },
+        { tip: "probe tip five", tipType: "strategy", confidence: 0.99 },
+      ],
+      "What reports are available on this dashboard? Give me the report names.",
+    );
+
+    expect(ranked[0]?.tip).toContain("dashboard's report list");
+  });
+
+  test("limits ranked results to top 3 entries", () => {
+    const ranked = rankSiteKnowledgeForTask(
+      Array.from({ length: 6 }, (_, i) => ({
+        tip: `Tip ${i} for dashboard reports`,
+        confidence: 0.5 + i * 0.01,
+      })),
+      "dashboard reports",
+    );
+
+    expect(ranked).toHaveLength(3);
   });
 });

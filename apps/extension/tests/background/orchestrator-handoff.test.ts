@@ -90,8 +90,30 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Selected workflow skill:");
     expect(instruction).toContain("structured-form-fill");
     expect(instruction).toContain("Skill procedure:");
-    expect(instruction).toContain("Map each requested value to a specific input");
+    expect(instruction).toContain("call get_profile_fields for the exact needed fields");
     expect(instruction).toContain("Skill evidence requirements:");
+  });
+
+  test("adds saved-profile policy when current step can use profile fields", () => {
+    const node = makeNode([]);
+    node.allowedTools = [
+      ToolName.READ_PAGE,
+      ToolName.GET_PROFILE_FIELDS,
+      ToolName.TYPE_TEXT,
+      ToolName.DONE,
+    ];
+
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      "Complete checkout using saved profile fields for full name and email",
+      "Use my saved profile for checkout. identity.first_name, identity.last_name, identity.email.",
+    );
+
+    expect(instruction).toContain("PROFILE DATA POLICY:");
+    expect(instruction).toContain("get_profile_fields");
+    expect(instruction).toContain("Do not leave the current checkout or form page");
   });
 
   test("uses active plan objective override when provided", () => {

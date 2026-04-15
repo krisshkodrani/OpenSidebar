@@ -34,6 +34,7 @@ import {
   extractSiteKnowledge as extractSiteKnowledgeLLM,
   extractSiteKnowledgeFallback,
   deduplicateSiteKnowledge,
+  rankSiteKnowledgeForTask,
   formatSiteKnowledgeForPrompt,
   type SiteKnowledgeEntry,
 } from "./site-knowledge";
@@ -1450,7 +1451,10 @@ export class Orchestrator {
       if (currentDomain) {
         const siteMemories = await searchMemoryByDomain(currentDomain, 10).catch(() => []);
         siteKnowledgeBrief = formatSiteKnowledgeForPrompt(
-          deduplicateSiteKnowledge(siteMemories),
+          rankSiteKnowledgeForTask(
+            deduplicateSiteKnowledge(siteMemories),
+            input.query,
+          ),
         );
       }
     } catch {

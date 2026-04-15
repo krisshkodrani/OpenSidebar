@@ -2,6 +2,7 @@ import { toolRegistry } from "./registry";
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
+import { resolveProfileFields } from "../infrastructure/backend-client";
 import { workspaceManager } from "../workspaces/manager";
 import {
   clearTabReady,
@@ -45,6 +46,7 @@ import {
   INSPECT_HIDDEN_DEF,
   XRAY_PAGE_DEF,
   UPDATE_NOTES_DEF,
+  GET_PROFILE_FIELDS_DEF,
   CREATE_WINDOW_DEF,
   UPDATE_PLAN_DEF,
   SCHEDULE_TASK_DEF,
@@ -909,6 +911,45 @@ export function registerTools() {
     async (_args) => {
       // This executor is a fallback — the loop intercepts update_notes before reaching here
       return "Note saved.";
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.GET_PROFILE_FIELDS,
+    GET_PROFILE_FIELDS_DEF,
+    async (args) => {
+      const fields = Array.isArray(args.fields)
+        ? args.fields
+            .filter((field): field is string => typeof field === "string")
+            .map((field) => field.trim())
+            .filter(Boolean)
+        : [];
+
+      if (fields.length === 0) {
+        return "Error: provide at least one profile field path.";
+      }
+
+      const result = await resolveProfileFields(fields);
+      if (!result) {
+        return "Error: Could not read local profile fields. Ensure the backend is running and the profile file exists.";
+      }
+
+      const lines = ["PROFILE FIELDS:"];
+      for (const [field, value] of Object.entries(result.values)) {
+        const rendered =
+          value === null
+            ? "null"
+            : typeof value === "object"
+              ? JSON.stringify(value)
+              : String(value);
+        lines.push(`- ${field}: ${rendered}`);
+      }
+
+      if (result.missing.length > 0) {
+        lines.push("", `Missing: ${result.missing.join(", ")}`);
+      }
+
+      return lines.join("\n");
     },
   );
 

@@ -104,6 +104,7 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Getting Started](./docs/getting-started.md)
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Developer Guide](./docs/developer-guide.md)
+- [Personal Profile](./docs/personal-profile.md)
 - [Repo Structure](./docs/repo-structure.md)
 - [Release Checklist](./docs/release-checklist.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)

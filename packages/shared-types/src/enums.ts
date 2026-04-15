@@ -66,6 +66,7 @@ export enum ToolName {
   DISMISS_OVERLAYS = "dismiss_overlays",
   CLARIFY = "clarify",
   UPDATE_NOTES = "update_notes",
+  GET_PROFILE_FIELDS = "get_profile_fields",
   CREATE_WINDOW = "create_window",
   UPDATE_PLAN = "update_plan",
   SCHEDULE_TASK = "schedule_task",

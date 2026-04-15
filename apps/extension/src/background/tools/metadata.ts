@@ -196,6 +196,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
   },
 
+  [ToolName.GET_PROFILE_FIELDS]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+
   // Window management
   [ToolName.CREATE_WINDOW]: {
     risk: RiskLevel.HIGH,
@@ -288,6 +294,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.HOVER_ELEMENT,
     ToolName.DISMISS_OVERLAYS,
     ToolName.CLICK_COORDINATES,
+    ToolName.GET_PROFILE_FIELDS,
     // System
     ToolName.DONE,
     ToolName.ESCALATE,
@@ -429,6 +436,7 @@ export function buildDomAwareProfile(
     ToolName.ESCALATE,
     ToolName.CLARIFY,
     ToolName.UPDATE_NOTES,
+    ToolName.GET_PROFILE_FIELDS,
     // Inspection — low-risk, help recovery
     ToolName.INSPECT_HIDDEN,
     ToolName.XRAY_PAGE,
