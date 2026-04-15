@@ -103,7 +103,7 @@ async function dispatchScheduledTask(task: {
   tabUrl: string | null;
 }): Promise<void> {
   const { markTaskRunning, markTaskCompleted, markTaskFailed } =
-    await import("./backend-client");
+    await import("./backend-client-tasks");
 
   // Mark as running so it won't be picked up again on next poll
   await markTaskRunning(task.id);
@@ -134,7 +134,10 @@ async function dispatchScheduledTask(task: {
     }
 
     // 2. Import orchestrator lazily to avoid circular dependencies
-    const { orchestrator } = await import("../orchestrator");
+    const {
+      startScheduledOrchestratorTask,
+      waitForScheduledTaskCompletion,
+    } = await import("../orchestrator/scheduled-dispatch");
     const { loadSettings } = await import("../../utils/settings-storage");
 
     const settings = await loadSettings();
@@ -158,7 +161,7 @@ async function dispatchScheduledTask(task: {
     const workspaceId = `scheduled-${task.id.slice(0, 8)}`;
 
     await startKeepalive();
-    await orchestrator.startTask({
+    await startScheduledOrchestratorTask({
       query: task.query,
       tabId,
       workspaceId,
@@ -166,7 +169,7 @@ async function dispatchScheduledTask(task: {
       openRouterApiKey: activeKey || settings.openRouterApiKey,
     });
 
-    const completion = await orchestrator.waitForTaskCompletion(workspaceId);
+    const completion = await waitForScheduledTaskCompletion(workspaceId);
     if (!completion) {
       await markTaskFailed(
         task.id,
