@@ -18,6 +18,10 @@ import {
   ReflexionEntry,
   TaskNode,
 } from "./types";
+import type {
+  PendingApprovalInteraction,
+  PendingUserInteraction,
+} from "../agent/loop-types";
 import { clampConfidence, normalizeEscalationOptionId } from "./utils";
 
 export const TOOL_NAME_VALUES = new Set<string>(Object.values(ToolName));
@@ -192,6 +196,75 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
   return node;
 }
 
+function sanitizePendingInteraction(
+  raw: unknown,
+): PendingUserInteraction | null {
+  if (!isRecord(raw)) return null;
+  if (raw.kind === "approval") {
+    if (
+      typeof raw.approvalId !== "string" ||
+      !TOOL_NAME_VALUES.has(String(raw.toolName)) ||
+      !isRecord(raw.args) ||
+      typeof raw.context !== "string" ||
+      !isNonNegativeInteger(raw.requestedAt) ||
+      !isNonNegativeInteger(raw.timeoutMs)
+    ) {
+      return null;
+    }
+    if (raw.approved !== undefined && typeof raw.approved !== "boolean") {
+      return null;
+    }
+    return {
+      kind: "approval",
+      nodeId: typeof raw.nodeId === "string" ? raw.nodeId : null,
+      requestedAt: raw.requestedAt,
+      approvalId: raw.approvalId,
+      toolName: raw.toolName as PendingApprovalInteraction["toolName"],
+      args: raw.args,
+      context: raw.context,
+      timeoutMs: raw.timeoutMs,
+      ...(typeof raw.approved === "boolean"
+        ? { approved: raw.approved }
+        : {}),
+    };
+  }
+
+  if (raw.kind === "clarification") {
+    if (
+      typeof raw.clarificationId !== "string" ||
+      typeof raw.question !== "string" ||
+      !isNonNegativeInteger(raw.requestedAt) ||
+      !isNonNegativeInteger(raw.timeoutMs)
+    ) {
+      return null;
+    }
+    if (
+      raw.suggestions !== undefined &&
+      (!Array.isArray(raw.suggestions) ||
+        raw.suggestions.some((item) => typeof item !== "string"))
+    ) {
+      return null;
+    }
+    if (raw.answer !== undefined && typeof raw.answer !== "string") {
+      return null;
+    }
+    return {
+      kind: "clarification",
+      nodeId: typeof raw.nodeId === "string" ? raw.nodeId : null,
+      requestedAt: raw.requestedAt,
+      clarificationId: raw.clarificationId,
+      question: raw.question,
+      ...(Array.isArray(raw.suggestions)
+        ? { suggestions: raw.suggestions }
+        : {}),
+      timeoutMs: raw.timeoutMs,
+      ...(typeof raw.answer === "string" ? { answer: raw.answer } : {}),
+    };
+  }
+
+  return null;
+}
+
 export function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || raw.id.length === 0) return null;
@@ -298,6 +371,11 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
       };
     }
     task.pendingEscalation = { packet, selectedOption };
+  }
+  if (raw.pendingInteraction !== undefined) {
+    const pendingInteraction = sanitizePendingInteraction(raw.pendingInteraction);
+    if (!pendingInteraction) return null;
+    task.pendingInteraction = pendingInteraction;
   }
 
   if (raw.startedAt !== undefined) {

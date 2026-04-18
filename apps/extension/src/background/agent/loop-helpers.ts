@@ -114,6 +114,45 @@ export function formatActionEffect(effect: ActionEffect): string | null {
   return `[Action effect: ${parts.join(", ")}]`;
 }
 
+export interface ZeroEffectDecision {
+  kind: "none" | "warn" | "escalate";
+  message?: string;
+}
+
+export function buildZeroEffectDecision(params: {
+  consecutiveTurns: number;
+  failureBrief?: string;
+  warningThreshold: number;
+  escalateThreshold: number;
+}): ZeroEffectDecision {
+  const {
+    consecutiveTurns,
+    failureBrief,
+    warningThreshold,
+    escalateThreshold,
+  } = params;
+
+  if (consecutiveTurns >= escalateThreshold) {
+    return {
+      kind: "escalate",
+      message: failureBrief
+        ? `[Verification: ${consecutiveTurns} consecutive actions had no observable effect.\n${failureBrief}\nEscalate or replan now instead of retrying the same approach.]`
+        : `[Verification: ${consecutiveTurns} consecutive actions had no observable effect on the page. Escalate or replan now instead of retrying the same approach.]`,
+    };
+  }
+
+  if (consecutiveTurns >= warningThreshold) {
+    return {
+      kind: "warn",
+      message: failureBrief
+        ? `[Verification: Your last action had no observable effect.\n${failureBrief}\nTry one different action. If the page still does not change, escalate or replan.]`
+        : `[Verification: Your last action had no observable effect on the page. Try one different action. If the page still does not change, escalate or replan.]`,
+    };
+  }
+
+  return { kind: "none" };
+}
+
 /**
  * Format an ActionEffect into structured evidence for the validateDone verifier.
  * Returns null if the effect is negligible (no meaningful DOM change).

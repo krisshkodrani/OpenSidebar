@@ -6,6 +6,8 @@ export interface ToolMeta {
   sequential: boolean;
   /** Cache type for tool result caching. Omit or set false for non-cacheable tools. */
   cacheable?: "dom" | "memory" | "static" | false;
+  /** True if repeating this tool after a restart could cause unintended duplicate side-effects. */
+  mutationSensitive?: boolean;
 }
 
 const TOOL_METADATA: Record<ToolName, ToolMeta> = {
@@ -13,16 +15,19 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.MEDIUM,
     domModifying: true,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.TYPE_TEXT]: {
     risk: RiskLevel.MEDIUM,
     domModifying: true,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.SELECT_OPTION]: {
     risk: RiskLevel.MEDIUM,
     domModifying: true,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.HOVER_ELEMENT]: {
     risk: RiskLevel.LOW,
@@ -43,6 +48,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.DONE]: {
     risk: RiskLevel.LOW,
@@ -70,6 +76,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.MEDIUM,
     domModifying: false,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.WAIT]: {
     risk: RiskLevel.LOW,
@@ -80,11 +87,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.CLOSE_TAB]: {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.SWITCH_TAB]: {
     risk: RiskLevel.MEDIUM,
@@ -106,16 +115,19 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.HIGH,
     domModifying: true,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.UPLOAD_FILE]: {
     risk: RiskLevel.MEDIUM,
     domModifying: true,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.GO_BACK]: {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
   [ToolName.LIST_TABS]: {
     risk: RiskLevel.LOW,
@@ -132,6 +144,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.MEDIUM,
     domModifying: true,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.CLICK_COORDINATES]: {
     risk: RiskLevel.MEDIUM,
@@ -153,11 +166,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.DELETE_COOKIE]: {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: false,
+    mutationSensitive: true,
   },
   [ToolName.SEARCH_HISTORY]: {
     risk: RiskLevel.LOW,
@@ -207,6 +222,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
 
   // Plan update (intercepted in loop)
@@ -221,6 +237,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     risk: RiskLevel.LOW,
     domModifying: false,
     sequential: true,
+    mutationSensitive: true,
   },
 };
 
@@ -248,6 +265,13 @@ export const CACHEABLE_TOOLS: Map<ToolName, "dom" | "memory" | "static"> =
       .filter(([, m]) => !!m.cacheable)
       .map(([name, m]) => [name, m.cacheable as "dom" | "memory" | "static"]),
   );
+
+/** Tools whose side-effects are unsafe to repeat after a service worker restart. */
+export const MUTATION_SENSITIVE_TOOLS: Set<ToolName> = new Set(
+  (Object.entries(TOOL_METADATA) as [ToolName, ToolMeta][])
+    .filter(([, m]) => !!m.mutationSensitive)
+    .map(([name]) => name),
+);
 
 export type ToolProfile =
   | "full"

@@ -32,6 +32,7 @@ export type RuntimeMessage =
   | AgentResponseMessage
   | AgentStatusMessage
   | TaskRecoveryMessage
+  | E2ESeedPendingInteractionMessage
   | EscalationRequestMessage
   | EscalationDecisionMessage
   | ApprovalRequestMessage
@@ -358,6 +359,28 @@ export interface TaskRecoveryMessage extends BaseMessage {
     totalSubtasks: number;
     completedSubtasks: number;
     pendingSubtasks: number;
+  };
+}
+
+/** Test-only hook to seed a durable pending interaction without invoking the planner/executor. */
+export interface E2ESeedPendingInteractionMessage extends BaseMessage {
+  type: "E2E_SEED_PENDING_INTERACTION";
+  source: string;
+  payload: {
+    tabId: number;
+    workspaceId: string;
+    interaction:
+      | {
+          kind: "approval";
+          toolName: ToolName;
+          args?: Record<string, unknown>;
+          context: string;
+        }
+      | {
+          kind: "clarification";
+          question: string;
+          suggestions?: string[];
+        };
   };
 }
 

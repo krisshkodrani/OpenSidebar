@@ -6,7 +6,12 @@
  *   closeExtension(ctx)   → void
  */
 
-import puppeteer, { type Browser, type Page, type WebWorker } from "puppeteer";
+import puppeteer, {
+  type Browser,
+  type Page,
+  type Target,
+  type WebWorker,
+} from "puppeteer";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -14,11 +19,61 @@ export interface ExtensionContext {
   browser: Browser;
   extensionId: string;
   serviceWorker: WebWorker;
+  serviceWorkerTarget: Target;
   serviceWorkerUrl: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
+
+async function waitForLiveServiceWorker(
+  browser: Browser,
+  extensionId: string,
+  timeoutMs: number = 15_000,
+): Promise<{ target: Target; worker: WebWorker }> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const wakePage = await browser.newPage().catch(() => null);
+    if (wakePage) {
+      try {
+        await wakePage.goto(
+          `chrome-extension://${extensionId}/e2e-helper.html`,
+          { waitUntil: "domcontentloaded", timeout: 2_000 },
+        );
+      } catch {
+        // Extension may still be restarting.
+      } finally {
+        await wakePage.close().catch(() => {});
+      }
+    }
+
+    const candidates = browser
+      .targets()
+      .filter(
+        (target) =>
+          target.type() === "service_worker" &&
+          target.url().startsWith(`chrome-extension://${extensionId}/`),
+      );
+
+    for (const target of candidates) {
+      const worker = await target.worker().catch(() => null);
+      if (!worker) continue;
+      try {
+        const isAlive = await worker.evaluate(() => Boolean(chrome?.runtime?.id));
+        if (isAlive) {
+          return { target, worker };
+        }
+      } catch {
+        // Worker is still restarting. Keep polling.
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out after waiting ${timeoutMs}ms`);
+}
 
 /**
  * Launch Chrome with the extension from dist/ loaded.
@@ -57,7 +112,13 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
   }
   const extensionId = match[1];
 
-  return { browser, extensionId, serviceWorker, serviceWorkerUrl: swUrl };
+  return {
+    browser,
+    extensionId,
+    serviceWorker,
+    serviceWorkerTarget: swTarget,
+    serviceWorkerUrl: swUrl,
+  };
 }
 
 /**
@@ -103,4 +164,27 @@ export async function openHelperPage(ctx: ExtensionContext): Promise<Page> {
     throw new Error(`e2e-helper.html did not load correctly (url=${url}, title=${title})`);
   }
   return helperPage;
+}
+
+/**
+ * Reload the extension in-place and update the context with the fresh service worker.
+ * This simulates extension/service-worker restart while preserving local storage.
+ */
+export async function reloadExtension(ctx: ExtensionContext): Promise<void> {
+  try {
+    await ctx.serviceWorker.evaluate(() => {
+      self.close();
+    });
+  } catch {
+    // If the current worker is already gone, continue and let the wake-up path
+    // start a fresh one below.
+  }
+
+  const { target, worker } = await waitForLiveServiceWorker(
+    ctx.browser,
+    ctx.extensionId,
+  );
+  ctx.serviceWorker = worker;
+  ctx.serviceWorkerTarget = target;
+  ctx.serviceWorkerUrl = target.url();
 }

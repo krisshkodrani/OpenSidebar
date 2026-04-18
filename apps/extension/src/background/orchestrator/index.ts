@@ -45,7 +45,7 @@ import {
   resetTabGroupAppearance,
 } from "../workspaces/tab-group-appearance";
 import { waitForContentScriptReady } from "../tab-ready";
-import { OrchestratorPlanner } from "./planner";
+import { buildFallbackNodes, OrchestratorPlanner } from "./planner";
 import { selectPrimarySkill } from "./skills";
 import { inferToolProfileForStep } from "../agent/planner";
 import {
@@ -77,7 +77,10 @@ import {
   buildVerifierContext,
   shouldUseVerificationTurnMode,
 } from "./handoff";
-import { matchSuccessCriteria } from "../agent/loop-helpers";
+import {
+  getSnapshotFingerprint,
+  matchSuccessCriteria,
+} from "../agent/loop-helpers";
 import { buildRoleExecutionContract } from "./contracts";
 import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
@@ -118,6 +121,29 @@ import {
   normalizeEscalationOptionId,
   toSubtasks,
 } from "./utils";
+import {
+  turnCheckpointKey,
+  sanitizeTurnCheckpoint,
+} from "../agent/checkpoint-types";
+import type { SideEffectEntry, TurnCheckpoint } from "../agent/checkpoint-types";
+import type { PendingUserInteraction } from "../agent/loop-types";
+
+function isTurnCheckpointCompatible(
+  checkpoint: TurnCheckpoint,
+  snapshot:
+    | {
+        url?: string;
+        elements?: { length: number };
+        visibleContent?: string;
+        pageContent?: string;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!snapshot) return false;
+  if ((snapshot.url ?? null) !== checkpoint.pageUrl) return false;
+  return getSnapshotFingerprint(snapshot) === checkpoint.snapshotFingerprint;
+}
 
 function summaryOfCompletedNodes(nodes: TaskNode[]): string {
   return nodes
@@ -153,6 +179,26 @@ function isActionOrMutationNode(node: TaskNode): boolean {
     "save ",
     "send ",
   ].some((token) => text.includes(token));
+}
+
+function formatRecentSideEffects(entries: SideEffectEntry[] | undefined): string {
+  if (!entries || entries.length === 0) return "";
+  const recent = entries.slice(-3);
+  return recent
+    .map((entry) => {
+      const result = String(entry.result || "").trim();
+      return `${entry.toolName}: ${result.slice(0, 120) || "executed"}`;
+    })
+    .join("; ");
+}
+
+function appendRecentSideEffects(
+  message: string,
+  entries: SideEffectEntry[] | undefined,
+): string {
+  const sideEffects = formatRecentSideEffects(entries);
+  if (!sideEffects) return message;
+  return `${message}\nRecent side effects: ${sideEffects}`;
 }
 
 export function buildInitialPlanState(
@@ -279,6 +325,8 @@ const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
 const CHECKPOINT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_PERSISTED_MESSAGES = 200;
+const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
+const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
@@ -306,6 +354,10 @@ export class Orchestrator {
   private pendingPlanConfirmationResolvers = new Map<
     string,
     (result: { decision: "approve" | "cancel"; feedback?: string }) => void
+  >();
+  private pendingInteractionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
   >();
   private laneSupervisorsByWorkspace = new Map<
     string,
@@ -530,6 +582,7 @@ export class Orchestrator {
   }
 
   private cleanupWorkspaceRuntime(workspaceId: string): void {
+    this.clearPendingInteractionTimer(workspaceId);
     const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
     for (const lane of ["planner", "executor", "verifier"] as const) {
       const supervisor = supervisors?.[lane];
@@ -1088,7 +1141,17 @@ export class Orchestrator {
 
   private async clearTaskCheckpoint(workspaceId: string): Promise<void> {
     const checkpoints = await this.loadCheckpoints();
-    if (!checkpoints[workspaceId]) return;
+    const cp = checkpoints[workspaceId];
+    if (!cp) return;
+
+    // Also clean up any turn checkpoints for this task's nodes
+    const turnKeys = (cp.task.nodes || []).map((n) =>
+      turnCheckpointKey(workspaceId, n.id),
+    );
+    if (turnKeys.length > 0) {
+      chrome.storage.local.remove(turnKeys).catch(() => {});
+    }
+
     delete checkpoints[workspaceId];
     await this.saveCheckpoints(checkpoints);
   }
@@ -1150,6 +1213,280 @@ export class Orchestrator {
     };
   }
 
+  private getPendingInteractionRemainingMs(
+    interaction: PendingUserInteraction,
+  ): number {
+    return Math.max(
+      0,
+      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
+    );
+  }
+
+  private isPendingInteractionResolved(
+    interaction: PendingUserInteraction | undefined,
+  ): boolean {
+    if (!interaction) return false;
+    return interaction.kind === "approval"
+      ? typeof interaction.approved === "boolean"
+      : typeof interaction.answer === "string";
+  }
+
+  private clearPendingInteractionTimer(workspaceId: string): void {
+    const timer = this.pendingInteractionTimers.get(workspaceId);
+    if (timer) clearTimeout(timer);
+    this.pendingInteractionTimers.delete(workspaceId);
+  }
+
+  private emitPendingInteraction(task: OrchestratorTask): void {
+    const interaction = task.pendingInteraction;
+    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
+    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    if (remainingMs <= 0) return;
+
+    if (interaction.kind === "approval") {
+      this.sendMessage({
+        type: "APPROVAL_REQUEST",
+        workspaceId: task.workspaceId,
+        payload: {
+          approvalId: interaction.approvalId,
+          toolName: interaction.toolName,
+          args: interaction.args,
+          risk: "high",
+          context: interaction.context,
+          timeoutMs: remainingMs,
+        },
+      });
+      return;
+    }
+
+    this.sendMessage({
+      type: "CLARIFICATION_REQUEST",
+      workspaceId: task.workspaceId,
+      payload: {
+        clarificationId: interaction.clarificationId,
+        question: interaction.question,
+        suggestions: interaction.suggestions,
+        timeoutMs: remainingMs,
+      },
+    });
+  }
+
+  private isSyntheticPendingInteractionTask(task: OrchestratorTask): boolean {
+    return task.query.startsWith(E2E_SYNTHETIC_QUERY_PREFIX);
+  }
+
+  private buildSyntheticPendingInteractionSummary(
+    interaction: PendingUserInteraction,
+  ): string {
+    if (interaction.kind === "approval") {
+      return interaction.approved
+        ? `E2E synthetic approval recovered and approved for ${interaction.toolName}.`
+        : `E2E synthetic approval recovered and denied for ${interaction.toolName}.`;
+    }
+    const answer = String(interaction.answer || "").trim();
+    return answer
+      ? `E2E synthetic clarification recovered and answered: ${answer}`
+      : "E2E synthetic clarification recovered without an answer.";
+  }
+
+  private async finalizeSyntheticPendingInteractionTask(
+    task: OrchestratorTask,
+  ): Promise<void> {
+    const interaction = task.pendingInteraction;
+    if (!interaction || !this.isPendingInteractionResolved(interaction)) {
+      return;
+    }
+
+    const summary = this.buildSyntheticPendingInteractionSummary(interaction);
+    const terminalStatus =
+      interaction.kind === "approval" && interaction.approved === false
+        ? "failed"
+        : "completed";
+
+    task.pendingInteraction = undefined;
+    task.finishedAt = Date.now();
+    task.status = terminalStatus;
+    task.sessionMetrics.totalSessionTimeMs =
+      task.finishedAt - (task.startedAt || task.createdAt);
+
+    if (interaction.nodeId) {
+      const targetNode = task.nodes.find((node) => node.id === interaction.nodeId);
+      if (targetNode) {
+        targetNode.status = terminalStatus === "completed" ? "completed" : "failed";
+        targetNode.result = summary;
+        if (terminalStatus === "failed") {
+          targetNode.error = summary;
+        }
+      }
+    }
+
+    task.currentIndex = currentIndex(task.nodes);
+    this.sendMessage({
+      type: "STREAM_CHUNK",
+      workspaceId: task.workspaceId,
+      payload: { delta: "", done: false, replaceContent: summary },
+    });
+    this.sendMessage({
+      type: "STREAM_CHUNK",
+      workspaceId: task.workspaceId,
+      payload: { delta: "", done: true },
+    });
+
+    const completionPayload: TaskCompletionMessage["payload"] = {
+      taskId: task.id,
+      status: terminalStatus === "completed" ? "completed" : "failed",
+      totalTurnsUsed: 0,
+      totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
+      summary,
+      subtaskResults: this.buildSubtaskResults(task),
+      urlHistory: [],
+      metrics: task.sessionMetrics,
+      terminationReason:
+        terminalStatus === "failed" ? summary : undefined,
+    };
+
+    this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    this.sendMessage({
+      type: "TASK_COMPLETION",
+      workspaceId: task.workspaceId,
+      payload: completionPayload,
+    });
+    this.sendStatus(
+      task.workspaceId,
+      AgentStatus.IDLE,
+      terminalStatus === "completed" ? "Task complete" : "Task failed",
+      completionPayload.status,
+    );
+    this.tasksByWorkspace.delete(task.workspaceId);
+    this.cleanupWorkspaceRuntime(task.workspaceId);
+    await this.clearTaskCheckpoint(task.workspaceId);
+  }
+
+  private async resumeTaskAfterInteraction(
+    task: OrchestratorTask,
+  ): Promise<void> {
+    if (this.isSyntheticPendingInteractionTask(task)) {
+      await this.finalizeSyntheticPendingInteractionTask(task);
+      return;
+    }
+
+    const resumeTabId = await this.resolveResumeTabId(
+      task.workspaceId,
+      task.rootTabId,
+    );
+    if (!resumeTabId) {
+      logger.warn(
+        "orchestrator",
+        "Cannot resume after pending interaction, no live workspace tab",
+        {
+          workspaceId: task.workspaceId,
+          taskId: task.id,
+        },
+      );
+      task.status = "failed";
+      task.finishedAt = Date.now();
+      task.terminationReason = "Could not resume after user interaction.";
+      await this.sendTerminationCompletion(task, task.terminationReason);
+      await this.clearTaskCheckpoint(task.workspaceId);
+      this.tasksByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
+      return;
+    }
+
+    const resumeInput = await this.buildResumeInput(task, resumeTabId);
+    if (!resumeInput) {
+      task.status = "failed";
+      task.finishedAt = Date.now();
+      task.terminationReason = "Could not rebuild runtime settings after user interaction.";
+      await this.sendTerminationCompletion(task, task.terminationReason);
+      await this.clearTaskCheckpoint(task.workspaceId);
+      this.tasksByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
+      return;
+    }
+
+    this.sendStatus(task.workspaceId, AgentStatus.ACTING, "Resuming...");
+    this.sendProgress(task);
+    this.runTask(task, resumeInput).catch(async (error) => {
+      logger.error("orchestrator", "Resumed interaction task failed", {
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        error,
+      });
+      task.status = "failed";
+      task.finishedAt = Date.now();
+      await this.sendTerminationCompletion(
+        task,
+        "Task failed after resuming from user interaction",
+      );
+      await this.clearTaskCheckpoint(task.workspaceId);
+      this.tasksByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
+      this.sendStatus(
+        task.workspaceId,
+        AgentStatus.ERROR,
+        "Task failed after resuming from user interaction",
+      );
+    });
+  }
+
+  private armPendingInteractionTimeout(task: OrchestratorTask): void {
+    this.clearPendingInteractionTimer(task.workspaceId);
+    const interaction = task.pendingInteraction;
+    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
+
+    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    if (remainingMs <= 0) {
+      void this.handlePendingInteractionTimeout(task.workspaceId);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void this.handlePendingInteractionTimeout(task.workspaceId);
+    }, remainingMs);
+    this.pendingInteractionTimers.set(task.workspaceId, timer);
+  }
+
+  private async handlePendingInteractionTimeout(
+    workspaceId: string,
+  ): Promise<void> {
+    const task = this.tasksByWorkspace.get(workspaceId);
+    const interaction = task?.pendingInteraction;
+    if (!task || !interaction || this.isPendingInteractionResolved(interaction)) {
+      return;
+    }
+
+    const resolvedInteraction: PendingUserInteraction =
+      interaction.kind === "approval"
+        ? { ...interaction, approved: false }
+        : { ...interaction, answer: "No response from user." };
+
+    logger.warn("orchestrator", "Pending interaction timed out", {
+      workspaceId,
+      taskId: task.id,
+      nodeId: resolvedInteraction.nodeId,
+      kind: resolvedInteraction.kind,
+    });
+    await this.resolvePendingInteraction(task, resolvedInteraction);
+  }
+
+  private async resolvePendingInteraction(
+    task: OrchestratorTask,
+    interaction: PendingUserInteraction,
+  ): Promise<void> {
+    task.pendingInteraction = interaction;
+    this.clearPendingInteractionTimer(task.workspaceId);
+    if (interaction.nodeId) {
+      const targetNode = task.nodes.find((node) => node.id === interaction.nodeId);
+      if (targetNode?.status === "running") {
+        targetNode.status = "pending";
+      }
+    }
+    task.currentIndex = currentIndex(task.nodes);
+    await this.persistTaskCheckpoint(task);
+    await this.resumeTaskAfterInteraction(task);
+  }
+
   public async restoreFromCheckpoints(): Promise<void> {
     const checkpoints = await this.pruneCheckpoints(
       await this.loadCheckpoints(),
@@ -1195,10 +1532,42 @@ export class Orchestrator {
         continue;
       }
 
-      // "running" is transient; restart these nodes as pending and continue.
-      task.nodes = task.nodes.map((node) =>
-        node.status === "running" ? { ...node, status: "pending" } : node,
+      // Load durable turn checkpoints for nodes that were running when SW died.
+      const turnCheckpointsByNodeId = new Map<string, TurnCheckpoint>();
+      for (const node of task.nodes) {
+        if (node.status === "running") {
+          try {
+            const cpKey = turnCheckpointKey(task.workspaceId, node.id);
+            const stored = await chrome.storage.local.get(cpKey);
+            const turnCp = sanitizeTurnCheckpoint(stored[cpKey]);
+            if (turnCp) {
+              turnCheckpointsByNodeId.set(node.id, turnCp);
+              logger.info("orchestrator", "Loaded turn checkpoint for node", {
+                nodeId: node.id,
+                turn: turnCp.turnCount,
+                ledgerEntries: turnCp.stepMutationLedger?.length ?? 0,
+              });
+            }
+          } catch {
+            // Best-effort — node will start fresh
+          }
+        }
+      }
+
+      // Stash the map on the task for the executor to consume
+      (task as any)._turnCheckpoints = turnCheckpointsByNodeId;
+
+      const hasPendingInteraction = Boolean(task.pendingInteraction);
+      const pendingInteractionResolved = this.isPendingInteractionResolved(
+        task.pendingInteraction,
       );
+
+      // "running" is transient; restart these nodes as pending and continue.
+      if (!hasPendingInteraction || pendingInteractionResolved) {
+        task.nodes = task.nodes.map((node) =>
+          node.status === "running" ? { ...node, status: "pending" } : node,
+        );
+      }
       if (!task.runId) {
         task.runId = crypto.randomUUID();
       }
@@ -1240,10 +1609,20 @@ export class Orchestrator {
       });
       this.sendStatus(
         task.workspaceId,
-        AgentStatus.ACTING,
-        "Recovered task, resuming...",
+        hasPendingInteraction && !pendingInteractionResolved
+          ? AgentStatus.PAUSED
+          : AgentStatus.ACTING,
+        hasPendingInteraction && !pendingInteractionResolved
+          ? "Recovered task, awaiting user input..."
+          : "Recovered task, resuming...",
       );
       this.sendProgress(task);
+
+      if (hasPendingInteraction && !pendingInteractionResolved) {
+        this.emitPendingInteraction(task);
+        this.armPendingInteractionTimeout(task);
+        continue;
+      }
 
       // Fire-and-forget: each task resumes independently.
       this.runTask(task, resumeInput).catch(async (error) => {
@@ -1265,6 +1644,127 @@ export class Orchestrator {
         );
       });
     }
+  }
+
+  public async seedE2EPendingInteraction(input: {
+    tabId: number;
+    workspaceId: string;
+    interaction:
+      | {
+          kind: "approval";
+          toolName: ToolName;
+          args?: Record<string, unknown>;
+          context: string;
+        }
+      | {
+          kind: "clarification";
+          question: string;
+          suggestions?: string[];
+        };
+  }): Promise<{
+    taskId: string;
+    workspaceId: string;
+    interactionId: string;
+  }> {
+    const existing = this.tasksByWorkspace.get(input.workspaceId);
+    if (existing) {
+      await this.stopTask(input.workspaceId);
+    }
+
+    const now = Date.now();
+    const taskId = crypto.randomUUID();
+    const nodeId = `e2e-pending-interaction-${taskId.slice(0, 8)}`;
+    const pendingInteraction: PendingUserInteraction =
+      input.interaction.kind === "approval"
+        ? {
+            kind: "approval",
+            nodeId,
+            requestedAt: now,
+            approvalId: crypto.randomUUID(),
+            toolName: input.interaction.toolName,
+            args: input.interaction.args ?? {},
+            context: input.interaction.context,
+            timeoutMs: E2E_PENDING_INTERACTION_TIMEOUT_MS,
+          }
+        : {
+            kind: "clarification",
+            nodeId,
+            requestedAt: now,
+            clarificationId: crypto.randomUUID(),
+            question: input.interaction.question,
+            suggestions: input.interaction.suggestions,
+            timeoutMs: E2E_PENDING_INTERACTION_TIMEOUT_MS,
+          };
+
+    const task: OrchestratorTask = {
+      runId: crypto.randomUUID(),
+      id: taskId,
+      workspaceId: input.workspaceId,
+      rootTabId: input.tabId,
+      query: `${E2E_SYNTHETIC_QUERY_PREFIX}${pendingInteraction.kind}`,
+      status: "running",
+      createdAt: now,
+      startedAt: now,
+      nodes: [
+        {
+          id: nodeId,
+          role: "executor",
+          description:
+            pendingInteraction.kind === "approval"
+              ? `Await user approval for ${pendingInteraction.toolName}`
+              : "Await user clarification",
+          successCriteria:
+            pendingInteraction.kind === "approval"
+              ? "Approval response is captured and resumable after recovery."
+              : "Clarification response is captured and resumable after recovery.",
+          allowedTools:
+            pendingInteraction.kind === "approval"
+              ? [pendingInteraction.toolName]
+              : [ToolName.DONE],
+          dependencies: [],
+          assumptions: [],
+          handoffArtifacts: [],
+          reflexionLog: [],
+          handoffDepth: 0,
+          status: "running",
+          retries: 0,
+        },
+      ],
+      plannerReflexionLog: [],
+      maxWorkers: 1,
+      maxReplans: 0,
+      replansUsed: 0,
+      horizonExpansions: 0,
+      currentIndex: 0,
+      sessionMetrics: emptySessionMetrics(),
+      budget: {
+        maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
+        maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
+        maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
+      },
+      pendingInteraction,
+    };
+
+    this.tasksByWorkspace.set(input.workspaceId, task);
+    this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
+    await this.persistTaskCheckpoint(task);
+    this.sendStatus(
+      input.workspaceId,
+      AgentStatus.PAUSED,
+      "Awaiting user input...",
+    );
+    this.sendProgress(task);
+    this.emitPendingInteraction(task);
+    this.armPendingInteractionTimeout(task);
+
+    return {
+      taskId,
+      workspaceId: input.workspaceId,
+      interactionId:
+        pendingInteraction.kind === "approval"
+          ? pendingInteraction.approvalId
+          : pendingInteraction.clarificationId,
+    };
   }
 
   hasActiveTasks(): boolean {
@@ -1296,8 +1796,16 @@ export class Orchestrator {
       // Task is in-flight — re-send current status + progress
       this.sendStatus(
         workspaceId,
-        task.status === "planning" ? AgentStatus.THINKING : AgentStatus.ACTING,
-        task.status === "planning" ? "Planning…" : "Working…",
+        task.status === "planning"
+          ? AgentStatus.THINKING
+          : task.pendingInteraction
+            ? AgentStatus.PAUSED
+            : AgentStatus.ACTING,
+        task.status === "planning"
+          ? "Planning…"
+          : task.pendingInteraction
+            ? "Awaiting user input…"
+            : "Working…",
       );
       this.sendProgress(task);
       if (task.sessionMetrics) {
@@ -1306,6 +1814,10 @@ export class Orchestrator {
           workspaceId,
           payload: { ...task.sessionMetrics },
         });
+      }
+      if (task.pendingInteraction) {
+        this.emitPendingInteraction(task);
+        this.armPendingInteractionTimeout(task);
       }
     } else {
       // Task finished (completed / failed / stopped) — re-send completion
@@ -1604,47 +2116,12 @@ export class Orchestrator {
         },
       });
     } catch (error: any) {
-      logger.warn("orchestrator", "Planner failed, using single node", {
+      logger.warn("orchestrator", "Planner failed, using synthesized fallback graph", {
         error: error?.message,
       });
-      nodes = [
-        (() => {
-          const selection = selectPrimarySkill({
-            query: input.query,
-            objective: input.query,
-            successCriteria: "The user goal is completed and verified.",
-          });
-          return {
-          ...(selection
-            ? {
-                selectedSkillId: selection.id,
-                selectedSkillReason: selection.reason,
-              }
-            : {}),
-          id: crypto.randomUUID(),
-          role: "executor",
-          description: input.query,
-          successCriteria: "The user goal is completed and verified.",
-          allowedTools: Object.values(ToolName),
-          dependencies: [],
-          assumptions: [],
-          handoffArtifacts: [
-            {
-              role: "planner",
-              phase: "planned",
-              note: "Planner fallback: single executor objective from original query.",
-              timestamp: Date.now(),
-            },
-          ],
-          reflexionLog: [],
-          handoffDepth: 0,
-          status: "pending",
-          retries: 0,
-          };
-        })(),
-      ];
+      nodes = buildFallbackNodes(input.query);
       task.planClassification = {
-        isSingleNode: true,
+        isSingleNode: nodes.length === 1,
         difficulty: "moderate",
       };
       this.emitTraceEvent(
@@ -1977,6 +2454,41 @@ export class Orchestrator {
       nodeTabMap.set(node.id, tabId);
 
       const snapshot = await this.getSnapshot(tabId);
+      const recoveredTurnCheckpoints = (task as any)._turnCheckpoints as
+        | Map<string, TurnCheckpoint>
+        | undefined;
+      const candidateTurnCheckpoint =
+        recoveredTurnCheckpoints?.get(node.id) ?? null;
+      let validatedTurnCheckpoint: TurnCheckpoint | null = null;
+      if (candidateTurnCheckpoint) {
+        recoveredTurnCheckpoints?.delete(node.id);
+        if (isTurnCheckpointCompatible(candidateTurnCheckpoint, snapshot)) {
+          validatedTurnCheckpoint = candidateTurnCheckpoint;
+          logger.info(
+            "orchestrator",
+            "Using durable turn checkpoint for recovered node",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              turn: candidateTurnCheckpoint.turnCount,
+            },
+          );
+        } else {
+          logger.warn(
+            "orchestrator",
+            "Discarding incompatible turn checkpoint for recovered node",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              checkpointUrl: candidateTurnCheckpoint.pageUrl,
+              liveUrl: snapshot?.url ?? null,
+              checkpointFingerprint:
+                candidateTurnCheckpoint.snapshotFingerprint,
+              liveFingerprint: getSnapshotFingerprint(snapshot ?? null),
+            },
+          );
+        }
+      }
       const driftSignal = buildAssumptionDriftSignal(node, snapshot);
       const driftDetected = driftSignal.startsWith(
         "Potential plan-reality drift",
@@ -2161,9 +2673,16 @@ export class Orchestrator {
           provider: input.settings.provider,
           openaiApiKey: input.settings.openaiApiKey,
         groqApiKey: input.settings.groqApiKey,
-        fireworksApiKey: input.settings.fireworksApiKey,
-        temperature: input.settings.temperature,
-        useVLExecutor: input.settings.useVLExecutor,
+          fireworksApiKey: input.settings.fireworksApiKey,
+          temperature: input.settings.temperature,
+          useVLExecutor: input.settings.useVLExecutor,
+          // Durable turn checkpoint: injected by orchestrator on SW restart recovery
+          turnCheckpoint: validatedTurnCheckpoint,
+          // Resumable approval/clarification state: injected after user response.
+          resumeInteraction:
+            task.pendingInteraction?.nodeId === node.id
+              ? task.pendingInteraction
+              : null,
         },
       });
 
@@ -2326,6 +2845,25 @@ export class Orchestrator {
         if (node.status !== "running") {
           return;
         }
+        if (
+          result.outcome === "awaiting_approval" ||
+          result.outcome === "awaiting_clarification"
+        ) {
+          task.pendingInteraction = result.pendingInteraction;
+          this.armPendingInteractionTimeout(task);
+          this.sendStatus(
+            task.workspaceId,
+            AgentStatus.PAUSED,
+            result.outcome === "awaiting_approval"
+              ? "Awaiting approval..."
+              : "Awaiting clarification...",
+          );
+          return;
+        }
+        if (task.pendingInteraction?.nodeId === node.id) {
+          task.pendingInteraction = undefined;
+          this.clearPendingInteractionTimer(task.workspaceId);
+        }
         const executorEvidence: StructuredEvidence[] = [
           {
             claim: result.summary || "Executor finished without summary.",
@@ -2366,7 +2904,9 @@ export class Orchestrator {
             }
             const programmaticResult = programmaticVerify({
               output: result.summary,
+              objective: node.description,
               successCriteria: node.successCriteria,
+              evidence: executorEvidence,
               previousUrl: snapshot?.url,
               currentUrl,
               previousTitle: snapshot?.title,
@@ -2395,6 +2935,11 @@ export class Orchestrator {
                   output: result.summary,
                   handoffContext: verifierHandoffContext,
                   executorOutcome: result.outcome,
+                  evidence: executorEvidence,
+                  previousUrl: snapshot?.url,
+                  currentUrl,
+                  previousTitle: snapshot?.title,
+                  currentTitle,
                 }),
               );
             }
@@ -2543,7 +3088,10 @@ export class Orchestrator {
                     note: reason,
                   });
                   node.status = "failed";
-                  node.error = reason;
+                  node.error = appendRecentSideEffects(
+                    reason,
+                    result.sideEffectsLog,
+                  );
 
                   logger.warn(
                     "orchestrator",
@@ -2620,7 +3168,10 @@ export class Orchestrator {
                   } catch (error) {
                     if (isLaneIsolationError(error, "planner")) {
                       node.status = "failed";
-                      node.error = `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`;
+                      node.error = appendRecentSideEffects(
+                        `Planner lane isolated during replan: ${error instanceof Error ? error.message : String(error)}`,
+                        result.sideEffectsLog,
+                      );
 
                       replanned = true;
                       logger.warn(
@@ -2741,7 +3292,10 @@ export class Orchestrator {
                   );
                   node.status = "pending";
                   node.retries += 1;
-                  node.error = verification.reason;
+                  node.error = appendRecentSideEffects(
+                    verification.reason,
+                    result.sideEffectsLog,
+                  );
                   if (
                     verification.decision === "reroute" &&
                     verification.rerouteObjective
@@ -2762,7 +3316,10 @@ export class Orchestrator {
                   }
                 } else {
                   node.status = "failed";
-                  node.error = `Verifier ${verification.decision}: ${verification.reason} (${retryDecision.rationale})`;
+                  node.error = appendRecentSideEffects(
+                    `Verifier ${verification.decision}: ${verification.reason} (${retryDecision.rationale})`,
+                    result.sideEffectsLog,
+                  );
                 }
               }
             } else {
@@ -2775,7 +3332,10 @@ export class Orchestrator {
                 note: verification.reason,
               });
               node.status = "failed";
-              node.error = `Verifier ${verification.decision}: ${verification.reason}`;
+              node.error = appendRecentSideEffects(
+                `Verifier ${verification.decision}: ${verification.reason}`,
+                result.sideEffectsLog,
+              );
             }
           } // end verification pipeline
         } else {
@@ -2789,10 +3349,16 @@ export class Orchestrator {
           if (retryDecision.shouldRetry && task.status === "running") {
             node.status = "pending";
             node.retries += 1;
-            node.error = `${result.summary} (${retryDecision.rationale})`;
+            node.error = appendRecentSideEffects(
+              `${result.summary} (${retryDecision.rationale})`,
+              result.sideEffectsLog,
+            );
           } else {
             node.status = "failed";
-            node.error = `${result.summary} (${retryDecision.rationale})`;
+            node.error = appendRecentSideEffects(
+              `${result.summary} (${retryDecision.rationale})`,
+              result.sideEffectsLog,
+            );
           }
         }
       } catch (error: any) {
@@ -2878,6 +3444,11 @@ export class Orchestrator {
     };
 
     while (task.status === "running") {
+      if (task.pendingInteraction && !this.isPendingInteractionResolved(task.pendingInteraction)) {
+        this.sendStatus(task.workspaceId, AgentStatus.PAUSED, "Awaiting user input...");
+        await this.persistTaskCheckpoint(task);
+        return;
+      }
       const runnable = getRunnablePendingNodes(task.nodes);
       const executorMaxConcurrent = this.getLaneRuntimeState(
         task.workspaceId,
@@ -3489,6 +4060,8 @@ export class Orchestrator {
     );
     task.status = "stopped";
     task.finishedAt = Date.now();
+    this.clearPendingInteractionTimer(workspaceId);
+    task.pendingInteraction = undefined;
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
     if (pendingEscalationId) {
       this.pendingEscalationResolvers.delete(pendingEscalationId);
@@ -3596,6 +4169,9 @@ export class Orchestrator {
     const lastCompleted = [...task.nodes]
       .reverse()
       .find((n) => n.status === "completed");
+    const lastFailed = [...task.nodes]
+      .reverse()
+      .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
 
     // Single-node completed: show executor's actual output directly
     if (
@@ -3632,6 +4208,10 @@ export class Orchestrator {
 
     if (completedNodes.length > 0 && lastCompleted?.result) {
       return lastCompleted.result;
+    }
+
+    if (failed > 0 && lastFailed?.error) {
+      return lastFailed.error;
     }
 
     return "";
@@ -4202,6 +4782,59 @@ export class Orchestrator {
       escalationId: payload.escalationId,
       optionId,
       rerouteObjective: payload.rerouteObjective,
+    });
+    return true;
+  }
+
+  public resolveApprovalResponse(
+    payload: { approvalId: string; approved: boolean },
+    workspaceId?: string | null,
+  ): boolean {
+    const task =
+      (workspaceId
+        ? this.tasksByWorkspace.get(workspaceId)
+        : [...this.tasksByWorkspace.values()].find(
+            (candidate) =>
+              candidate.pendingInteraction?.kind === "approval" &&
+              candidate.pendingInteraction.approvalId === payload.approvalId,
+          )) ?? null;
+    if (
+      !task ||
+      task.pendingInteraction?.kind !== "approval" ||
+      task.pendingInteraction.approvalId !== payload.approvalId
+    ) {
+      return false;
+    }
+    void this.resolvePendingInteraction(task, {
+      ...task.pendingInteraction,
+      approved: payload.approved,
+    });
+    return true;
+  }
+
+  public resolveClarificationResponse(
+    payload: { clarificationId: string; answer: string },
+    workspaceId?: string | null,
+  ): boolean {
+    const task =
+      (workspaceId
+        ? this.tasksByWorkspace.get(workspaceId)
+        : [...this.tasksByWorkspace.values()].find(
+            (candidate) =>
+              candidate.pendingInteraction?.kind === "clarification" &&
+              candidate.pendingInteraction.clarificationId ===
+                payload.clarificationId,
+          )) ?? null;
+    if (
+      !task ||
+      task.pendingInteraction?.kind !== "clarification" ||
+      task.pendingInteraction.clarificationId !== payload.clarificationId
+    ) {
+      return false;
+    }
+    void this.resolvePendingInteraction(task, {
+      ...task.pendingInteraction,
+      answer: payload.answer,
     });
     return true;
   }

@@ -1,5 +1,6 @@
 import { AgentLoop } from "../agent";
 import type { Difficulty } from "../agent/constants";
+import type { PendingUserInteraction } from "../agent/loop-types";
 import {
   AgentRole,
   EscalationDecisionMessage,
@@ -128,6 +129,7 @@ export interface OrchestratorTask {
     packet: EscalationPacket;
     selectedOption?: EscalationDecisionMessage["payload"];
   };
+  pendingInteraction?: PendingUserInteraction;
   planClassification?: {
     isSingleNode: boolean;
     difficulty: Difficulty;

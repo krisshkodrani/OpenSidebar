@@ -7,7 +7,7 @@
 
 import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
-import { openHelperPage } from "./browser";
+import { openHelperPage, reloadExtension } from "./browser";
 
 type TaskCompletionState = "completed" | "partial" | "failed" | "none";
 
@@ -48,8 +48,8 @@ function hasIdleAfterTerminalCompletion(events: any[]): boolean {
 
 /**
  * Set up event monitoring in the service worker context.
- * Wraps `chrome.runtime.sendMessage` to capture AGENT_STATUS, AGENT_STEP,
- * TASK_PROGRESS, and TASK_COMPLETION events locally in `__agentEvents`.
+ * Wraps `chrome.runtime.sendMessage` to capture key background runtime events
+ * locally in `__agentEvents`.
  *
  * This avoids needing a visible helper page tab for event collection.
  */
@@ -89,7 +89,10 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           t === "AGENT_STATUS" ||
           t === "AGENT_STEP" ||
           t === "TASK_PROGRESS" ||
-          t === "TASK_COMPLETION"
+          t === "TASK_COMPLETION" ||
+          t === "APPROVAL_REQUEST" ||
+          t === "CLARIFICATION_REQUEST" ||
+          t === "TASK_RECOVERY"
         ) {
           g.__agentEvents.push({
             type: t,
@@ -103,6 +106,13 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
             subtasks: message?.payload?.subtasks ?? null,
             currentIndex: message?.payload?.currentIndex ?? null,
             subtaskResults: message?.payload?.subtaskResults ?? null,
+            approvalId: message?.payload?.approvalId ?? null,
+            approved: message?.payload?.approved ?? null,
+            clarificationId: message?.payload?.clarificationId ?? null,
+            question: message?.payload?.question ?? null,
+            context: message?.payload?.context ?? null,
+            timeoutMs: message?.payload?.timeoutMs ?? null,
+            payload: message?.payload ?? null,
           });
           if (g.__agentEvents.length > g.__e2eEventBufferLimit) g.__agentEvents.shift();
         }
@@ -124,6 +134,29 @@ export async function getMonitoredEvents(
     const events = (self as any).__agentEvents ?? [];
     return events.slice(-n);
   }, last);
+}
+
+export async function waitForMonitoredEvent(
+  worker: WebWorker,
+  predicate: (event: any) => boolean,
+  timeoutMs: number = 20_000,
+  workspaceId?: string | null,
+): Promise<any> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const rawEvents = await getMonitoredEvents(worker, 120);
+    const events =
+      workspaceId == null
+        ? rawEvents
+        : rawEvents.filter(
+            (event: any) =>
+              event.workspaceId == null || event.workspaceId === workspaceId,
+          );
+    const match = [...events].reverse().find(predicate);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for monitored event`);
 }
 
 /**
@@ -299,6 +332,211 @@ export async function sendUserChat(
     await helperPage.close().catch(() => {});
   }
   return effectiveWorkspaceId;
+}
+
+export async function sendApprovalResponse(
+  ctx: ExtensionContext,
+  approvalId: string,
+  approved: boolean,
+  workspaceId: string,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  try {
+    await helperPage.evaluate(
+      async (id: string, decision: boolean, wsId: string) => {
+        await chrome.runtime.sendMessage({
+          type: "APPROVAL_RESPONSE",
+          requestId: crypto.randomUUID(),
+          source: "sidepanel",
+          workspaceId: wsId,
+          payload: { approvalId: id, approved: decision },
+        });
+      },
+      approvalId,
+      approved,
+      workspaceId,
+    );
+  } finally {
+    await helperPage.close().catch(() => {});
+  }
+}
+
+export async function seedPendingInteraction(
+  ctx: ExtensionContext,
+  input: {
+    workspaceId?: string | null;
+    tabId: number;
+    interaction:
+      | {
+          kind: "approval";
+          toolName: string;
+          args?: Record<string, unknown>;
+          context: string;
+        }
+      | {
+          kind: "clarification";
+          question: string;
+          suggestions?: string[];
+        };
+  },
+): Promise<{
+  taskId: string;
+  workspaceId: string;
+  interactionId: string;
+}> {
+  const workspaceId = input.workspaceId ?? `e2e-${crypto.randomUUID()}`;
+  const helperPage = await openHelperPage(ctx);
+  try {
+    const response = await helperPage.evaluate(
+      async (
+        payload: {
+          tabId: number;
+          workspaceId: string;
+          interaction:
+            | {
+                kind: "approval";
+                toolName: string;
+                args?: Record<string, unknown>;
+                context: string;
+              }
+            | {
+                kind: "clarification";
+                question: string;
+                suggestions?: string[];
+              };
+        },
+      ) => {
+        return await chrome.runtime.sendMessage({
+          type: "E2E_SEED_PENDING_INTERACTION",
+          requestId: crypto.randomUUID(),
+          source: "e2e",
+          payload,
+        });
+      },
+      {
+        tabId: input.tabId,
+        workspaceId,
+        interaction: input.interaction,
+      },
+    );
+
+    if (!response?.ok) {
+      throw new Error(response?.detail || "Failed to seed pending interaction");
+    }
+
+    return {
+      taskId: String(response.taskId),
+      workspaceId,
+      interactionId: String(response.interactionId),
+    };
+  } finally {
+    await helperPage.close().catch(() => {});
+  }
+}
+
+export async function sendClarificationResponse(
+  ctx: ExtensionContext,
+  clarificationId: string,
+  answer: string,
+  workspaceId: string,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  try {
+    await helperPage.evaluate(
+      async (id: string, response: string, wsId: string) => {
+        await chrome.runtime.sendMessage({
+          type: "CLARIFICATION_RESPONSE",
+          requestId: crypto.randomUUID(),
+          source: "sidepanel",
+          workspaceId: wsId,
+          payload: { clarificationId: id, answer: response },
+        });
+      },
+      clarificationId,
+      answer,
+      workspaceId,
+    );
+  } finally {
+    await helperPage.close().catch(() => {});
+  }
+}
+
+export async function updateUserSettings(
+  ctx: ExtensionContext,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  try {
+    await helperPage.evaluate(async (nextPatch: Record<string, unknown>) => {
+      const existing =
+        ((await chrome.storage.sync.get("userSettings")).userSettings as
+          | Record<string, unknown>
+          | undefined) ?? {};
+      await chrome.storage.sync.set({
+        userSettings: { ...existing, ...nextPatch },
+      });
+    }, patch);
+  } finally {
+    await helperPage.close().catch(() => {});
+  }
+}
+
+export async function resyncWorkspace(
+  ctx: ExtensionContext,
+  workspaceId: string,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  try {
+    await helperPage.evaluate(async (wsId: string) => {
+      await chrome.runtime.sendMessage({
+        type: "WORKSPACE_SYNC",
+        requestId: crypto.randomUUID(),
+        source: "sidepanel",
+        payload: { workspaceId: wsId },
+      });
+    }, workspaceId);
+  } finally {
+    await helperPage.close().catch(() => {});
+  }
+}
+
+export async function restartExtensionAndMonitor(
+  ctx: ExtensionContext,
+): Promise<void> {
+  await reloadExtension(ctx);
+  await setupEventMonitor(ctx.serviceWorker);
+}
+
+export async function getUserTabUrls(
+  worker: WebWorker,
+): Promise<string[]> {
+  return worker.evaluate(async () => {
+    const tabs = await (globalThis as any).chrome.tabs.query({});
+    return tabs
+      .map((tab: any) => tab?.url)
+      .filter(
+        (url: string | undefined) =>
+          typeof url === "string" &&
+          !url.startsWith("chrome-extension://") &&
+          url !== "about:blank",
+      );
+  });
+}
+
+export async function waitForTabCount(
+  worker: WebWorker,
+  expectedCount: number,
+  timeoutMs: number = 20_000,
+): Promise<string[]> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const urls = await getUserTabUrls(worker);
+    if (urls.length === expectedCount) return urls;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for ${expectedCount} user tabs`,
+  );
 }
 
 /**

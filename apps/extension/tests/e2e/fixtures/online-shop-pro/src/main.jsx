@@ -35,6 +35,7 @@ import MessagingThread from "./routes/messaging-thread";
 import EmailCompose from "./routes/email-compose";
 import SupportTicket from "./routes/support-ticket";
 import JobBoard from "./routes/job-board";
+import WorkspaceChoice from "./routes/workspace-choice";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -70,6 +71,7 @@ const routes = [
   { path: "/email-compose", label: "Email", title: "Q3 Strategy Meeting — Scheduling", component: EmailCompose },
   { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
   { path: "/job-board", label: "Jobs", title: "TechJobs Board", component: JobBoard },
+  { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
 ];
 
 function Layout({ children, currentPath }) {
