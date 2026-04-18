@@ -55,6 +55,89 @@ describe("synthesizeSpeech", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("sends correct request to Gemini and converts PCM to WAV", async () => {
+    const pcmBase64 = Buffer.from(Uint8Array.from([0, 0, 255, 127])).toString("base64");
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.generationConfig.responseModalities).toEqual(["AUDIO"]);
+      expect(
+        body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
+      ).toBe("Kore");
+      expect(body.contents[0].parts[0].text).toContain("[friendly, warm]");
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: "audio/L16;rate=24000",
+                      data: pcmBase64,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as any;
+
+    const blob = await synthesizeSpeech({
+      text: "Hello from Gemini",
+      provider: "gemini",
+      apiKey: "AIza-test",
+      voice: "Kore",
+      stylePreset: "friendly",
+    });
+
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe("audio/wav");
+    expect(blob.size).toBeGreaterThan(44);
+  });
+
+  it("retries Gemini on transient 500s", async () => {
+    const pcmBase64 = Buffer.from(Uint8Array.from([1, 2, 3, 4])).toString("base64");
+    let callCount = 0;
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response("temporary failure", { status: 500 });
+      }
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: "audio/L16;rate=24000",
+                      data: pcmBase64,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as any;
+
+    const blob = await synthesizeSpeech({
+      text: "Retry me",
+      provider: "gemini",
+      apiKey: "AIza-test",
+      voice: "Kore",
+    });
+
+    expect(callCount).toBe(2);
+    expect(blob.type).toBe("audio/wav");
+  });
+
   it("sends full text without truncation", async () => {
     const longText = "A".repeat(3000);
     globalThis.fetch = vi.fn(async (_url, init) => {

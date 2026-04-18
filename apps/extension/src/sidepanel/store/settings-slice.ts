@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   requireApprovals: true,
   allowNavigation: true,
   requirePlanConfirmation: true,
+  ttsStylePreset: "neutral",
 };
 
 export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({

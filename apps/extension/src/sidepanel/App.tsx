@@ -404,7 +404,7 @@ export default function App() {
       !isAgentRunning &&
       settings.enableVoiceOutput &&
       settings.autoVoiceResponse &&
-      (settings.groqApiKey || settings.openaiApiKey)
+      (settings.groqApiKey || settings.openaiApiKey || settings.geminiApiKey)
     ) {
       const msgs = useStore.getState().messages;
       for (let i = msgs.length - 1; i >= 0; i--) {
@@ -415,9 +415,11 @@ export default function App() {
             {
               groqApiKey: settings.groqApiKey,
               openaiApiKey: settings.openaiApiKey,
+              geminiApiKey: settings.geminiApiKey,
             },
             settings.ttsVoice || "nova",
             settings.ttsProvider,
+            settings.ttsStylePreset,
           ).catch(() => {});
           break;
         }

@@ -6,6 +6,15 @@ import type { AgentLoopState } from "./agent";
 
 // --- Configuration Types ---
 
+export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
+
+export type TTSStylePreset =
+  | "neutral"
+  | "friendly"
+  | "calm"
+  | "excited"
+  | "serious";
+
 export interface UserSettings {
   openRouterApiKey: string;
   /** Provider mode: how LLM providers are combined across roles */
@@ -16,6 +25,8 @@ export interface UserSettings {
   openaiApiKey?: string;
   /** Groq API key (required for hybrid modes) */
   groqApiKey?: string;
+  /** Gemini API key (optional, used for Gemini TTS) */
+  geminiApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;
   maxTurns: number;
@@ -48,12 +59,14 @@ export interface UserSettings {
   useVLExecutor?: boolean;
   /** Enable voice input via microphone (STT) */
   enableVoiceInput?: boolean;
-  /** Enable voice output on assistant messages (TTS) — requires OpenAI key */
+  /** Enable voice output on assistant messages (TTS) */
   enableVoiceOutput?: boolean;
-  /** Preferred TTS provider (auto picks Groq first, then OpenAI) */
-  ttsProvider?: "auto" | "groq" | "openai";
+  /** Preferred TTS provider (auto picks Groq first, then OpenAI, then Gemini) */
+  ttsProvider?: TTSProviderMode;
   /** TTS voice selection for the active provider */
   ttsVoice?: string;
+  /** Expressive speech preset for Gemini TTS */
+  ttsStylePreset?: TTSStylePreset;
   /** Automatically speak the final assistant response when the agent finishes */
   autoVoiceResponse?: boolean;
 }
