@@ -12,6 +12,7 @@ const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
 const LOCAL_KEY = "openRouterApiKey_local";
 const LOCAL_OPENAI_KEY = "openaiApiKey_local";
 const LOCAL_GROQ_KEY = "groqApiKey_local";
+const LOCAL_GEMINI_KEY = "geminiApiKey_local";
 const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
 
 /**
@@ -19,12 +20,20 @@ const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
  * Both openRouterApiKey and openaiApiKey are credentials — never sync them.
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
-  const { openRouterApiKey, openaiApiKey, groqApiKey, fireworksApiKey, ...rest } = settings;
+  const {
+    openRouterApiKey,
+    openaiApiKey,
+    groqApiKey,
+    geminiApiKey,
+    fireworksApiKey,
+    ...rest
+  } = settings;
   await Promise.all([
     chrome.storage.local.set({
       [LOCAL_KEY]: openRouterApiKey,
       [LOCAL_OPENAI_KEY]: openaiApiKey ?? "",
       [LOCAL_GROQ_KEY]: groqApiKey ?? "",
+      [LOCAL_GEMINI_KEY]: geminiApiKey ?? "",
       [LOCAL_FIREWORKS_KEY]: fireworksApiKey ?? "",
     }),
     chrome.storage.sync.set({ [SYNC_KEY]: rest }),
@@ -39,7 +48,13 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
 export async function loadSettings(): Promise<UserSettings | null> {
   const [syncResult, localResult, sessionResult] = await Promise.all([
     chrome.storage.sync.get(SYNC_KEY),
-    chrome.storage.local.get([LOCAL_KEY, LOCAL_OPENAI_KEY, LOCAL_GROQ_KEY, LOCAL_FIREWORKS_KEY]),
+    chrome.storage.local.get([
+      LOCAL_KEY,
+      LOCAL_OPENAI_KEY,
+      LOCAL_GROQ_KEY,
+      LOCAL_GEMINI_KEY,
+      LOCAL_FIREWORKS_KEY,
+    ]),
     // Check legacy session key for migration
     chrome.storage.session
       .get(SESSION_KEY)
@@ -52,9 +67,12 @@ export async function loadSettings(): Promise<UserSettings | null> {
     (sessionResult[SESSION_KEY] as string | undefined);
   const openaiApiKey = (localResult[LOCAL_OPENAI_KEY] as string | undefined) || "";
   const groqApiKey = (localResult[LOCAL_GROQ_KEY] as string | undefined) || "";
+  const geminiApiKey = (localResult[LOCAL_GEMINI_KEY] as string | undefined) || "";
   const fireworksApiKey = (localResult[LOCAL_FIREWORKS_KEY] as string | undefined) || "";
 
-  if (!syncSettings && !apiKey) return null;
+  if (!syncSettings && !apiKey && !openaiApiKey && !groqApiKey && !geminiApiKey && !fireworksApiKey) {
+    return null;
+  }
 
   const raw: Record<string, unknown> = { ...(syncSettings ?? {}) };
 
@@ -86,6 +104,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
   // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;
   delete raw.groqApiKey;
+  delete raw.geminiApiKey;
   delete raw.fireworksApiKey;
 
   return {
@@ -93,6 +112,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
     openRouterApiKey: apiKey ?? "",
     openaiApiKey: openaiApiKey,
     groqApiKey: groqApiKey,
+    geminiApiKey: geminiApiKey,
     fireworksApiKey: fireworksApiKey,
   } as UserSettings;
 }

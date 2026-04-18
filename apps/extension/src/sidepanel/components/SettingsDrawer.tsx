@@ -41,6 +41,23 @@ const GROQ_TTS_VOICES = [
   { value: "autumn", label: "Autumn" },
 ];
 
+const GEMINI_TTS_VOICES = [
+  { value: "Kore", label: "Kore" },
+  { value: "Puck", label: "Puck" },
+  { value: "Zephyr", label: "Zephyr" },
+  { value: "Leda", label: "Leda" },
+  { value: "Enceladus", label: "Enceladus" },
+  { value: "Charon", label: "Charon" },
+];
+
+const GEMINI_TTS_STYLE_PRESETS = [
+  { value: "neutral", label: "Neutral" },
+  { value: "friendly", label: "Friendly" },
+  { value: "calm", label: "Calm" },
+  { value: "excited", label: "Excited" },
+  { value: "serious", label: "Serious" },
+];
+
 function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
   if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
   if (mode === "openrouter") return "All roles via OpenRouter";
@@ -50,7 +67,10 @@ function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
 }
 
 /** Which provider modes use which key */
-function getKeyUsage(key: "openRouter" | "fireworks" | "openai" | "groq", mode: string): string {
+function getKeyUsage(
+  key: "openRouter" | "fireworks" | "openai" | "groq" | "gemini",
+  mode: string,
+): string {
   const uses: string[] = [];
   if (key === "openRouter") {
     if (mode === "openrouter" || mode === "openrouter-groq") uses.push("agent");
@@ -65,6 +85,9 @@ function getKeyUsage(key: "openRouter" | "fireworks" | "openai" | "groq", mode: 
   if (key === "groq") {
     if (mode === "openrouter-groq" || mode === "openai-groq") uses.push("agent");
     uses.push("voice (STT/TTS)");
+  }
+  if (key === "gemini") {
+    uses.push("voice (TTS expressive)");
   }
   return uses.length ? `Used by: ${uses.join(", ")}` : "Not used by current mode";
 }
@@ -203,14 +226,32 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const providerMode = formState.providerMode || "fireworks";
   const useUnifiedVision =
     formState.useVLExecutor ?? providerMode === "fireworks";
-  const hasAnyTTSKey = Boolean(formState.groqApiKey || formState.openaiApiKey);
+  const hasAnyTTSKey = Boolean(
+    formState.groqApiKey || formState.openaiApiKey || formState.geminiApiKey,
+  );
+  const inferredTTSProvider =
+    (formState.groqApiKey
+      ? "groq"
+      : formState.openaiApiKey
+        ? "openai"
+        : formState.geminiApiKey
+          ? "gemini"
+          : "auto");
+  const selectedTTSProvider = formState.ttsProvider || "auto";
   const effectiveTTSProvider =
-    formState.ttsProvider ||
-    (formState.groqApiKey ? "groq" : formState.openaiApiKey ? "openai" : "auto");
+    selectedTTSProvider === "auto" ? inferredTTSProvider : selectedTTSProvider;
   const ttsVoiceOptions =
-    effectiveTTSProvider === "openai" ? OPENAI_TTS_VOICES : GROQ_TTS_VOICES;
+    effectiveTTSProvider === "openai"
+      ? OPENAI_TTS_VOICES
+      : effectiveTTSProvider === "gemini"
+        ? GEMINI_TTS_VOICES
+        : GROQ_TTS_VOICES;
   const defaultTTSVoice =
-    effectiveTTSProvider === "openai" ? "nova" : "hannah";
+    effectiveTTSProvider === "openai"
+      ? "nova"
+      : effectiveTTSProvider === "gemini"
+        ? "Kore"
+        : "hannah";
 
   const tabClass = (tab: SettingsTab) =>
     `px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -527,6 +568,18 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   />
                   <p className={hintCls}>{getKeyUsage("groq", providerMode)}</p>
                 </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">Gemini</label>
+                  <input
+                    type="password"
+                    value={formState.geminiApiKey || ""}
+                    onChange={(e) => handleChange("geminiApiKey", e.target.value)}
+                    className={inputCls}
+                    placeholder="AIza..."
+                  />
+                  <p className={hintCls}>{getKeyUsage("gemini", providerMode)}</p>
+                </div>
               </section>
 
               {/* PROVIDER STACK */}
@@ -688,7 +741,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     <p className="text-xs text-warm-400 dark:text-warm-500">
                       {hasAnyTTSKey
                         ? "Read assistant messages aloud"
-                        : "Requires a Groq or OpenAI key"}
+                        : "Requires a Groq, OpenAI, or Gemini key"}
                     </p>
                   </div>
                   <input
@@ -724,13 +777,17 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         Provider
                       </label>
                       <select
-                        value={effectiveTTSProvider}
+                        value={selectedTTSProvider}
                         onChange={(e) => {
-                          const nextProvider = e.target.value as "auto" | "groq" | "openai";
+                          const nextProvider = e.target.value as "auto" | "groq" | "openai" | "gemini";
                           handleChange("ttsProvider", nextProvider);
                           handleChange(
                             "ttsVoice",
-                            nextProvider === "openai" ? "nova" : "hannah",
+                            nextProvider === "openai"
+                              ? "nova"
+                              : nextProvider === "gemini"
+                                ? "Kore"
+                                : "hannah",
                           );
                         }}
                         className={inputCls}
@@ -741,6 +798,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         </option>
                         <option value="openai" disabled={!formState.openaiApiKey}>
                           OpenAI
+                        </option>
+                        <option value="gemini" disabled={!formState.geminiApiKey}>
+                          Gemini (Preview)
                         </option>
                       </select>
                     </div>
@@ -759,16 +819,38 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         ))}
                       </select>
                     </div>
+
+                    {effectiveTTSProvider === "gemini" && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-warm-400 dark:text-warm-500">
+                          Gemini delivery
+                        </label>
+                        <select
+                          value={formState.ttsStylePreset || "neutral"}
+                          onChange={(e) => handleChange("ttsStylePreset", e.target.value)}
+                          className={inputCls}
+                        >
+                          {GEMINI_TTS_STYLE_PRESETS.map((preset) => (
+                            <option key={preset.value} value={preset.value}>
+                              {preset.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-warm-400 dark:text-warm-500">
+                          Gemini-only expressive preset. If tagged delivery fails, OpenSidebar retries with plain speech.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
 
                 {!hasAnyTTSKey && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
-                    Add a Groq or OpenAI key in the Models tab to enable voice.
+                    Add a Groq, OpenAI, or Gemini key in the Models tab to enable voice.
                   </p>
                 )}
                 <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Groq TTS requires accepting model terms at console.groq.com. Falls back to OpenAI automatically if Groq fails.
+                  Groq TTS requires accepting model terms at console.groq.com. Gemini expressive TTS is preview-only and currently used only for voice output.
                 </p>
               </section>
             </>

@@ -1,5 +1,5 @@
 /**
- * useTextToSpeech — React hook for OpenAI TTS playback.
+ * useTextToSpeech — React hook for provider-backed TTS playback.
  *
  * Module-level singleton ensures only one audio stream plays at a time
  * across all hook instances (e.g. multiple MessageBubbles).
@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { synthesizeSpeech, TTSProvider } from "../../background/llm/audio";
+import type { TTSStylePreset } from "../../types";
 import { stripMarkdownForTTS } from "../../utils/strip-markdown";
 
 // ── Global singleton ────────────────────────────────────────────────
@@ -58,12 +59,12 @@ export function isTTSPlaying(): boolean {
 }
 
 /**
- * Play text through OpenAI TTS. Stops any current playback first.
- * Strips markdown and truncates to 4096 chars (OpenAI limit).
+ * Play text through the selected TTS provider. Stops any current playback first.
+ * Strips markdown and truncates to 4096 chars to keep requests bounded.
  * Returns a promise that resolves when audio starts playing.
  */
 function resolveTTSProvider(
-  keys: { groqApiKey?: string; openaiApiKey?: string },
+  keys: { groqApiKey?: string; openaiApiKey?: string; geminiApiKey?: string },
   preferred?: "auto" | TTSProvider,
 ): { provider: TTSProvider; apiKey: string } | null {
   if (preferred === "openai" && keys.openaiApiKey) {
@@ -72,20 +73,27 @@ function resolveTTSProvider(
   if (preferred === "groq" && keys.groqApiKey) {
     return { provider: "groq", apiKey: keys.groqApiKey };
   }
+  if (preferred === "gemini" && keys.geminiApiKey) {
+    return { provider: "gemini", apiKey: keys.geminiApiKey };
+  }
   if (keys.groqApiKey) {
     return { provider: "groq", apiKey: keys.groqApiKey };
   }
   if (keys.openaiApiKey) {
     return { provider: "openai", apiKey: keys.openaiApiKey };
   }
+  if (keys.geminiApiKey) {
+    return { provider: "gemini", apiKey: keys.geminiApiKey };
+  }
   return null;
 }
 
 export async function speakText(
   text: string,
-  keys: { groqApiKey?: string; openaiApiKey?: string },
+  keys: { groqApiKey?: string; openaiApiKey?: string; geminiApiKey?: string },
   voice: string,
   preferredProvider?: "auto" | TTSProvider,
+  stylePreset: TTSStylePreset = "neutral",
 ): Promise<void> {
   stopCurrentTTS();
   const gen = ++speakGeneration; // claim this generation
@@ -95,22 +103,26 @@ export async function speakText(
 
   const resolved = resolveTTSProvider(keys, preferredProvider);
   if (!resolved) {
-    throw new Error("Groq or OpenAI API key required for text-to-speech.");
+    throw new Error("Groq, OpenAI, or Gemini API key required for text-to-speech.");
   }
 
   // Map voice to valid options per provider — don't send OpenAI voices to Groq or vice versa
   const GROQ_VOICES = new Set(["autumn", "diana", "hannah", "austin", "daniel", "troy"]);
   const OPENAI_VOICES = new Set(["nova", "alloy", "echo", "shimmer", "onyx", "fable"]);
+  const GEMINI_VOICES = new Set(["Kore", "Puck", "Zephyr", "Leda", "Enceladus", "Charon"]);
   const resolvedVoice = resolved.provider === "groq"
     ? (GROQ_VOICES.has(voice) ? voice : "hannah")
-    : (OPENAI_VOICES.has(voice) ? voice : "nova");
+    : resolved.provider === "gemini"
+      ? (GEMINI_VOICES.has(voice) ? voice : "Kore")
+      : (OPENAI_VOICES.has(voice) ? voice : "nova");
 
   const limit = 4096;
   const truncated = clean.slice(0, limit);
   const wasClipped = clean.length > limit;
 
   // Check cache before making an API call
-  const cacheKey = ttsCacheKey(resolved.provider, resolvedVoice, truncated);
+  const styleKey = resolved.provider === "gemini" ? stylePreset : "neutral";
+  const cacheKey = ttsCacheKey(resolved.provider, `${resolvedVoice}:${styleKey}`, truncated);
   let blob = ttsCache.get(cacheKey);
 
   if (!blob) {
@@ -120,6 +132,7 @@ export async function speakText(
         provider: resolved.provider,
         apiKey: resolved.apiKey,
         voice: resolvedVoice,
+        stylePreset: resolved.provider === "gemini" ? stylePreset : undefined,
       });
     } catch (err: any) {
       // Fallback: if Groq TTS failed and we have an OpenAI key, retry with OpenAI
@@ -131,6 +144,15 @@ export async function speakText(
           provider: "openai",
           apiKey: keys.openaiApiKey,
           voice: fallbackVoice,
+        });
+      } else if (resolved.provider === "gemini" && stylePreset !== "neutral") {
+        console.warn("[TTS] Gemini expressive TTS failed, retrying with plain speech:", err.message);
+        blob = await synthesizeSpeech({
+          text: truncated,
+          provider: "gemini",
+          apiKey: resolved.apiKey,
+          voice: resolvedVoice,
+          stylePreset: "neutral",
         });
       } else {
         throw err;
@@ -184,9 +206,10 @@ export interface TextToSpeechActions {
 }
 
 export function useTextToSpeech(
-  keys: { groqApiKey?: string; openaiApiKey?: string },
+  keys: { groqApiKey?: string; openaiApiKey?: string; geminiApiKey?: string },
   provider?: "auto" | TTSProvider,
   voice?: string,
+  stylePreset: TTSStylePreset = "neutral",
 ): TextToSpeechState & TextToSpeechActions {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,8 +230,8 @@ export function useTextToSpeech(
 
   const speak = useCallback(
     async (text: string) => {
-      if (!keys.groqApiKey && !keys.openaiApiKey) {
-        setError("Groq or OpenAI API key required for text-to-speech.");
+      if (!keys.groqApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+        setError("Groq, OpenAI, or Gemini API key required for text-to-speech.");
         return;
       }
       if (!text.trim()) return;
@@ -216,14 +239,14 @@ export function useTextToSpeech(
       setError(null);
 
       try {
-        await speakText(text, keys, voice || "nova", provider);
+        await speakText(text, keys, voice || "nova", provider, stylePreset);
         setIsSpeaking(true);
       } catch (err: any) {
         setError(err.message || "Text-to-speech failed.");
         setIsSpeaking(false);
       }
     },
-    [keys, provider, voice],
+    [keys, provider, voice, stylePreset],
   );
 
   return { isSpeaking, error, speak, stop };

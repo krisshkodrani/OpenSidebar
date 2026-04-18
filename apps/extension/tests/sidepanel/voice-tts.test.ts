@@ -94,6 +94,37 @@ describe("voice mapping", () => {
 
     await speakText("Hello", { openaiApiKey: "sk-test" }, "shimmer");
   });
+
+  it("maps invalid Gemini voice to Gemini default", async () => {
+    const pcmBase64 = Buffer.from(Uint8Array.from([0, 0, 0, 0])).toString("base64");
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      expect(
+        body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName,
+      ).toBe("Kore");
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: "audio/L16;rate=24000",
+                      data: pcmBase64,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as any;
+
+    await speakText("Hello", { geminiApiKey: "AIza-test" }, "nova", "gemini");
+  });
 });
 
 // ═══════════════ Provider fallback ═══════════════
@@ -139,6 +170,53 @@ describe("provider fallback", () => {
     // "troy" is a Groq voice, should fall back to "nova" on OpenAI
     await speakText("Hello", { groqApiKey: "gsk-test", openaiApiKey: "sk-test" }, "troy");
     expect(openaiVoice).toBe("nova");
+  });
+
+  it("retries Gemini without expressive tags when expressive delivery fails", async () => {
+    const prompts: string[] = [];
+    const pcmBase64 = Buffer.from(Uint8Array.from([0, 0, 0, 0])).toString("base64");
+
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      const prompt = body.contents[0].parts[0].text as string;
+      prompts.push(prompt);
+
+      if (prompt.includes("[excitedly, upbeat, energetic]")) {
+        return new Response("bad expressive prompt", { status: 400 });
+      }
+
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: "audio/L16;rate=24000",
+                      data: pcmBase64,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as any;
+
+    await speakText(
+      "Hello",
+      { geminiApiKey: "AIza-test" },
+      "Kore",
+      "gemini",
+      "excited",
+    );
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("[excitedly, upbeat, energetic]");
+    expect(prompts[1]).not.toContain("[excitedly, upbeat, energetic]");
   });
 });
 

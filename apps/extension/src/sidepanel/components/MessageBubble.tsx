@@ -306,9 +306,16 @@ export const MessageBubble = React.memo(function MessageBubble({
   const voiceOutputEnabled = useStore((s) => s.settings.enableVoiceOutput ?? false);
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
+  const geminiApiKey = useStore((s) => s.settings.geminiApiKey);
   const ttsProvider = useStore((s) => s.settings.ttsProvider);
   const ttsVoice = useStore((s) => s.settings.ttsVoice);
-  const tts = useTextToSpeech({ groqApiKey, openaiApiKey }, ttsProvider, ttsVoice);
+  const ttsStylePreset = useStore((s) => s.settings.ttsStylePreset);
+  const tts = useTextToSpeech(
+    { groqApiKey, openaiApiKey, geminiApiKey },
+    ttsProvider,
+    ttsVoice,
+    ttsStylePreset,
+  );
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
 
@@ -441,7 +448,7 @@ export const MessageBubble = React.memo(function MessageBubble({
       )}
 
       {/* TTS speaker icon — assistant messages with content */}
-      {voiceOutputEnabled && (groqApiKey || openaiApiKey) && !isUser && renderedHtml && !message.isStreaming && (
+      {voiceOutputEnabled && (groqApiKey || openaiApiKey || geminiApiKey) && !isUser && renderedHtml && !message.isStreaming && (
         <div className="flex items-center gap-1.5 mt-1">
           <button
             onClick={() => tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")}
