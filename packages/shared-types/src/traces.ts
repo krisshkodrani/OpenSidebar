@@ -273,7 +273,13 @@ export interface TraceSession {
   endTime: number;
   query: string;
   startUrl: string;
-  outcome: "completed" | "stopped" | "max_turns" | "error";
+  outcome:
+    | "completed"
+    | "stopped"
+    | "max_turns"
+    | "error"
+    | "awaiting_approval"
+    | "awaiting_clarification";
   turnCount: number;
   summary: string;
   metrics: SessionMetrics | null;

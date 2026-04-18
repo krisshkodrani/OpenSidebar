@@ -1,14 +1,32 @@
 import { beforeEach, describe, expect, vi, test } from "vitest";
 import "../setup";
 import { SessionMetrics, ToolName, UserSettings } from "../../src/types";
+import {
+  TURN_CHECKPOINT_VERSION,
+  TurnCheckpoint,
+} from "../../src/background/agent/checkpoint-types";
+import { getSnapshotFingerprint } from "../../src/background/agent/loop-helpers";
 import { TaskNode } from "../../src/background/orchestrator/types";
 import { Orchestrator, OrchestratorDeps } from "../../src/background/orchestrator/index";
 
 type MockLoopConfig = {
   nodeId?: string;
+  turnCheckpoint?: {
+    turnCount?: number;
+    pageUrl?: string | null;
+    snapshotFingerprint?: string;
+  } | null;
+  resumeInteraction?: {
+    kind?: string;
+    approvalId?: string;
+    clarificationId?: string;
+    approved?: boolean;
+    answer?: string;
+  } | null;
 };
 
 const createdLoopNodeIds: string[] = [];
+const createdLoopConfigs: MockLoopConfig[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
 const stoppedLoopNodeIds: string[] = [];
 
@@ -29,7 +47,18 @@ let verifierDecisionImpl: (...args: unknown[]) => Promise<{
 let loopStartImpl: (
   nodeId: string | undefined,
   instruction: string,
-) => Promise<{ outcome: "completed" | "failed"; summary: string; metrics?: SessionMetrics }>;
+) => Promise<{
+  outcome:
+    | "completed"
+    | "failed"
+    | "error"
+    | "awaiting_approval"
+    | "awaiting_clarification";
+  summary: string;
+  metrics?: SessionMetrics;
+  pendingInteraction?: Record<string, unknown>;
+  sideEffectsLog?: Array<Record<string, unknown>>;
+}>;
 let loopEmitStaleSignal = false;
 let orchestratorDeps: OrchestratorDeps;
 let activeOrchestrator: Orchestrator | null = null;
@@ -85,9 +114,95 @@ function makeInput(query = "integration task") {
   };
 }
 
+function makeTurnCheckpoint(
+  overrides: Partial<TurnCheckpoint> = {},
+): TurnCheckpoint {
+  const snapshot = {
+    url: "https://example.com/catalog",
+    visibleContent: "product list and add to cart",
+    elements: [],
+  };
+  return {
+    version: TURN_CHECKPOINT_VERSION,
+    workspaceId: "ws-1",
+    nodeId: "n1",
+    savedAt: Date.now(),
+    turnCount: 3,
+    maxTurns: 10,
+    currentPlanIndex: 0,
+    turnsOnCurrentStep: 1,
+    escalationsOnCurrentStep: 0,
+    guardAfterDoneRejection: false,
+    history: {
+      recentMessages: [],
+      olderSummaries: [],
+      originalCount: 0,
+    },
+    planStatus: null,
+    workingNotes: "",
+    lastActionOutcome: null,
+    modelTier: "executor",
+    isFirstTurn: false,
+    snapshotFingerprint: getSnapshotFingerprint(snapshot),
+    pageUrl: snapshot.url,
+    stepMutationLedger: [],
+    sideEffectsLog: [],
+    ...overrides,
+  };
+}
+
+function makeRecoveryTaskCheckpoint(
+  taskId: string,
+  taskOverrides: Record<string, unknown> = {},
+) {
+  return {
+    version: 1,
+    savedAt: Date.now(),
+    task: {
+      id: taskId,
+      query: "recover me",
+      workspaceId: "ws-1",
+      rootTabId: 101,
+      status: "running" as const,
+      nodes: [makeNode("n1", "recoverable step")].map((node) => ({
+        ...node,
+        status: "running" as const,
+      })),
+      createdAt: Date.now(),
+      startedAt: Date.now(),
+      maxWorkers: 1,
+      currentIndex: 0,
+      maxReplans: 2,
+      replansUsed: 0,
+      horizonExpansions: 0,
+      budget: {
+        maxSessionTimeMs: 60_000,
+        maxTotalTokens: 100_000,
+        maxTotalCostUsd: 10,
+      },
+      sessionMetrics: {
+        totalPromptTokens: 0,
+        totalCompletionTokens: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        totalCostActual: 0,
+        totalCostEstimated: 0,
+        costMode: "none" as const,
+        totalLlmTimeMs: 0,
+        totalSessionTimeMs: 0,
+        llmCallCount: 0,
+        totalCachedTokens: 0,
+        modelBreakdown: {},
+      },
+      ...taskOverrides,
+    },
+  };
+}
+
 describe("Orchestrator integration join tests", () => {
   beforeEach(() => {
     createdLoopNodeIds.length = 0;
+    createdLoopConfigs.length = 0;
     capturedInstructions.length = 0;
     stoppedLoopNodeIds.length = 0;
 
@@ -103,6 +218,7 @@ describe("Orchestrator integration join tests", () => {
 
     const runtimeMessages: any[] = [];
     const checkpointStore: Record<string, unknown> = {};
+    const localStore: Record<string, unknown> = {};
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -142,23 +258,54 @@ describe("Orchestrator integration join tests", () => {
     });
     (globalThis as any).__runtimeMessages = runtimeMessages;
 
-    (chrome.storage.local as any).get = vi.fn(async (key: string) => {
+    (chrome.storage.local as any).get = vi.fn(async (key: string | string[] | null) => {
+      if (key === null) {
+        return {
+          "opensidebar:orchestrator:checkpoints": checkpointStore,
+          ...localStore,
+        };
+      }
+      if (Array.isArray(key)) {
+        return Object.fromEntries(
+          key.map((entry) => [
+            entry,
+            entry === "opensidebar:orchestrator:checkpoints"
+              ? checkpointStore
+              : localStore[entry],
+          ]),
+        );
+      }
       if (key === "opensidebar:orchestrator:checkpoints") {
         return { [key]: checkpointStore };
       }
-      return {};
+      return { [key]: localStore[key] };
     });
     (chrome.storage.local as any).set = vi.fn(async (payload: Record<string, unknown>) => {
       const key = "opensidebar:orchestrator:checkpoints";
-      if (payload[key]) {
-        const value = payload[key] as Record<string, unknown>;
-        for (const [k, v] of Object.entries(value)) checkpointStore[k] = v;
-        for (const k of Object.keys(checkpointStore)) {
-          if (!(k in value)) delete checkpointStore[k];
+      for (const [entryKey, value] of Object.entries(payload)) {
+        if (entryKey === key) {
+          const checkpointValue = value as Record<string, unknown>;
+          for (const [k, v] of Object.entries(checkpointValue)) checkpointStore[k] = v;
+          for (const k of Object.keys(checkpointStore)) {
+            if (!(k in checkpointValue)) delete checkpointStore[k];
+          }
+          continue;
         }
+        localStore[entryKey] = value;
+      }
+    });
+    (chrome.storage.local as any).remove = vi.fn(async (keys: string | string[]) => {
+      const keyList = Array.isArray(keys) ? keys : [keys];
+      for (const entryKey of keyList) {
+        if (entryKey === "opensidebar:orchestrator:checkpoints") {
+          for (const k of Object.keys(checkpointStore)) delete checkpointStore[k];
+          continue;
+        }
+        delete localStore[entryKey];
       }
     });
     (globalThis as any).__checkpointStore = checkpointStore;
+    (globalThis as any).__localStore = localStore;
 
     (chrome.storage.sync as any).get = vi.fn(async (_key: string) => ({
       userSettings: baseSettings,
@@ -205,6 +352,7 @@ describe("Orchestrator integration join tests", () => {
           | { onStep?: (step: any, update: boolean) => void }
           | undefined;
         createdLoopNodeIds.push(cfg.nodeId);
+        createdLoopConfigs.push(cfg);
         return {
           async start(instruction: string) {
             capturedInstructions.push({ nodeId: cfg.nodeId, instruction });
@@ -711,6 +859,245 @@ describe("Orchestrator integration join tests", () => {
     expect(
       String(completion?.payload?.subtaskResults?.[0]?.result || ""),
     ).toContain("Planner lane isolated during replan");
+  });
+
+  test("planner failure falls back to a synthesized executor objective", async () => {
+    plannerBuildNodesImpl = async () => {
+      throw new Error("planner upstream unavailable");
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const query =
+      "Please find the Warehouse Beta inventory count and tell me the exact number.";
+
+    await orchestrator.startTask(makeInput(query));
+
+    expect(capturedInstructions).toHaveLength(1);
+    expect(capturedInstructions[0].instruction).toMatch(
+      /gather the requested result for Warehouse Beta/i,
+    );
+    expect(capturedInstructions[0].instruction).not.toContain(
+      `Objective: ${query}`,
+    );
+  });
+
+  test("restores a compatible turn checkpoint only on the first recovered launch", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "recoverable step")];
+
+    let loopAttempt = 0;
+    loopStartImpl = async () => {
+      loopAttempt += 1;
+      if (loopAttempt === 1) {
+        return { outcome: "failed", summary: "needs retry", metrics: undefined };
+      }
+      return { outcome: "completed", summary: "recovered", metrics: undefined };
+    };
+    verifierDecisionImpl = async () =>
+      loopAttempt === 1
+        ? { decision: "retry", reason: "retry once" }
+        : { decision: "accept", reason: "ok" };
+
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<
+      string,
+      unknown
+    >;
+    const localStore = (globalThis as any).__localStore as Record<string, unknown>;
+
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-1");
+    localStore["opensidebar:turn-checkpoint:ws-1:n1"] = makeTurnCheckpoint();
+
+    createdLoopNodeIds.length = 0;
+    createdLoopConfigs.length = 0;
+    capturedInstructions.length = 0;
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n1"]);
+    expect(createdLoopConfigs[0]?.turnCheckpoint).not.toBeNull();
+    expect(createdLoopConfigs[0]?.turnCheckpoint?.turnCount).toBe(3);
+    expect(createdLoopConfigs[1]?.turnCheckpoint ?? null).toBeNull();
+  });
+
+  test("discards an incompatible recovered turn checkpoint", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "recoverable step")];
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: "fresh start",
+      metrics: undefined,
+    });
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<
+      string,
+      unknown
+    >;
+    const localStore = (globalThis as any).__localStore as Record<string, unknown>;
+
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-2");
+    localStore["opensidebar:turn-checkpoint:ws-1:n1"] = makeTurnCheckpoint({
+      pageUrl: "https://example.com/other-page",
+      snapshotFingerprint: "https://example.com/other-page|0|123",
+    });
+
+    createdLoopNodeIds.length = 0;
+    createdLoopConfigs.length = 0;
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    expect(createdLoopConfigs[0]?.turnCheckpoint ?? null).toBeNull();
+  });
+
+  test("pauses on approval request and resumes with the resolved approval", async () => {
+    let launchCount = 0;
+    loopStartImpl = async () => {
+      launchCount += 1;
+      if (launchCount === 1) {
+        return {
+          outcome: "awaiting_approval",
+          summary: "Awaiting approval",
+          pendingInteraction: {
+            kind: "approval",
+            nodeId: "n1",
+            requestedAt: Date.now(),
+            approvalId: "approval-1",
+            toolName: ToolName.CLICK_ELEMENT,
+            args: { id: 4 },
+            context: "Click [4]",
+            timeoutMs: 60_000,
+          },
+        };
+      }
+      return {
+        outcome: "completed",
+        summary: "clicked after approval",
+      };
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("needs approval"));
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    expect(
+      orchestrator.resolveApprovalResponse(
+        { approvalId: "approval-1", approved: true },
+        "ws-1",
+      ),
+    ).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n1"]);
+    expect(createdLoopConfigs[1]?.resumeInteraction?.kind).toBe("approval");
+    expect(createdLoopConfigs[1]?.resumeInteraction?.approved).toBe(true);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.summary).toContain("clicked after approval");
+  });
+
+  test("restores a pending clarification request and resumes only after the answer arrives", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<
+      string,
+      unknown
+    >;
+    const localStore = (globalThis as any).__localStore as Record<
+      string,
+      unknown
+    >;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint(
+      "task-recover-clarify",
+      {
+        pendingInteraction: {
+          kind: "clarification",
+          nodeId: "n1",
+          requestedAt: Date.now(),
+          clarificationId: "clarify-1",
+          question: "Which account should I use?",
+          suggestions: ["Account A", "Account B"],
+          timeoutMs: 120_000,
+        },
+      },
+    );
+    localStore["opensidebar:turn-checkpoint:ws-1:n1"] = makeTurnCheckpoint();
+
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: "resumed after clarification",
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual([]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    expect(messages.some((m) => m.type === "CLARIFICATION_REQUEST")).toBe(true);
+
+    expect(
+      orchestrator.resolveClarificationResponse(
+        { clarificationId: "clarify-1", answer: "Account B" },
+        "ws-1",
+      ),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    expect(createdLoopConfigs[0]?.resumeInteraction?.kind).toBe(
+      "clarification",
+    );
+    expect(createdLoopConfigs[0]?.resumeInteraction?.answer).toBe("Account B");
+  });
+
+  test("includes recent side effects in failed task completion summaries", async () => {
+    loopStartImpl = async () => ({
+      outcome: "error",
+      summary: "executor failed",
+      sideEffectsLog: [
+        {
+          id: "fx-1",
+          turn: 2,
+          planIndex: 0,
+          toolName: ToolName.CREATE_TAB,
+          args: { url: "https://example.com/details" },
+          result: "Opened a new tab for details.",
+          timestamp: Date.now(),
+          snapshotFingerprint: "snap-1",
+        },
+      ],
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("fail after mutation"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("failed");
+    expect(String(completion?.payload?.summary || "")).toContain(
+      "Recent side effects",
+    );
+    expect(
+      String(completion?.payload?.subtaskResults?.[0]?.result || ""),
+    ).toContain("create_tab");
   });
 
   test("stops timed-out executor worker to prevent lane contamination", async () => {

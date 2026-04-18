@@ -9,7 +9,6 @@ import {
 import { loadSettings } from "../utils/settings-storage";
 import { storageLogger } from "../utils/storage-logger";
 import { getBlockedRuleForUrl } from "../utils/site-access";
-import { AgentLoop } from "./agent";
 import { workspaceManager } from "./workspaces/manager";
 import { sanitizeUserInput } from "./security";
 import {
@@ -373,6 +372,22 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, _sender, sendResponse) => {
+    if ((message as any).type === "E2E_SEED_PENDING_INTERACTION") {
+      const payload = (message as any).payload;
+      (async () => {
+        try {
+          const result = await orchestrator.seedE2EPendingInteraction(payload);
+          sendResponse({ ok: true, ...result });
+        } catch (error: any) {
+          sendResponse({
+            ok: false,
+            detail: error?.message ?? String(error),
+          });
+        }
+      })();
+      return true;
+    }
+
     // 1. Chat (or hint injection)
     if (
       message.source === MessageSource.SIDEPANEL &&
@@ -459,9 +474,9 @@ chrome.runtime.onMessage.addListener(
       message.source === MessageSource.SIDEPANEL &&
       message.type === "APPROVAL_RESPONSE"
     ) {
-      AgentLoop.resolveApproval(
-        message.payload.approvalId,
-        message.payload.approved,
+      orchestrator.resolveApprovalResponse(
+        message.payload,
+        message.workspaceId,
       );
       return false;
     }
@@ -494,9 +509,9 @@ chrome.runtime.onMessage.addListener(
       message.source === MessageSource.SIDEPANEL &&
       message.type === "CLARIFICATION_RESPONSE"
     ) {
-      AgentLoop.resolveClarification(
-        message.payload.clarificationId,
-        message.payload.answer,
+      orchestrator.resolveClarificationResponse(
+        message.payload,
+        message.workspaceId,
       );
       return false;
     }

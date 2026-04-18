@@ -20,6 +20,7 @@ import {
   DOM_MODIFYING_TOOLS,
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
+  MUTATION_SENSITIVE_TOOLS,
   resolveToolProfile,
   buildDomAwareProfile,
 } from "../tools/metadata";
@@ -63,6 +64,16 @@ import { parseNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { AgentMiddleware } from "./middleware";
 import {
+  TURN_CHECKPOINT_VERSION,
+  turnCheckpointKey,
+  buildMutationKey,
+} from "./checkpoint-types";
+import type {
+  TurnCheckpoint,
+  MutationLedgerEntry,
+  SideEffectEntry,
+} from "./checkpoint-types";
+import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
   LLM_CONFIG,
@@ -88,12 +99,18 @@ import type { Difficulty, RuntimeLimits } from "./constants";
 // reassessRuntimeLimits is available from "./constants" for mid-session S5 reassessment
 import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
+import type {
+  PendingApprovalInteraction,
+  PendingClarificationInteraction,
+  PendingUserInteraction,
+} from "./loop-types";
 import {
   BlockedAction,
   buildFailureBrief,
   buildFailureRecovery,
   buildHandoffBriefing,
   buildStructuredFailureContext,
+  buildZeroEffectDecision,
   buildFirstTurnTextOnlyNudge,
   classifyTurnError,
   detectInstructionContradiction,
@@ -102,7 +119,6 @@ import {
   extractAttemptSummary,
   evaluateDoneTaskContractGuard,
   findPriorFailure,
-  formatActionEffect,
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
@@ -466,6 +482,17 @@ function shouldTrackRepeatAction(toolName: ToolName): boolean {
   return !REPEAT_ACTION_EXEMPT_TOOLS.has(toolName);
 }
 
+class PendingInteractionYield extends Error {
+  constructor(readonly pendingInteraction: PendingUserInteraction) {
+    super(
+      pendingInteraction.kind === "approval"
+        ? "Awaiting approval"
+        : "Awaiting clarification",
+    );
+    this.name = "PendingInteractionYield";
+  }
+}
+
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
 export * from "./loop-prompts";
@@ -489,38 +516,6 @@ export * from "./loop-helpers";
  * - Model escalation on stuck
  */
 export class AgentLoop {
-  private static approvalWaiters = new Map<
-    string,
-    (approved: boolean) => void
-  >();
-
-  public static resolveApproval(
-    approvalId: string,
-    approved: boolean,
-  ): boolean {
-    const waiter = AgentLoop.approvalWaiters.get(approvalId);
-    if (!waiter) return false;
-    AgentLoop.approvalWaiters.delete(approvalId);
-    waiter(approved);
-    return true;
-  }
-
-  private static clarificationWaiters = new Map<
-    string,
-    (answer: string) => void
-  >();
-
-  public static resolveClarification(
-    clarificationId: string,
-    answer: string,
-  ): boolean {
-    const waiter = AgentLoop.clarificationWaiters.get(clarificationId);
-    if (!waiter) return false;
-    AgentLoop.clarificationWaiters.delete(clarificationId);
-    waiter(answer);
-    return true;
-  }
-
   /**
    * Set the moment done() is accepted, BEFORE post-processing (trace, metrics,
    * verification). The orchestrator reads this after a lane timeout to avoid
@@ -600,6 +595,14 @@ export class AgentLoop {
   private stagnation = new StagnationMonitor();
   /** Tracks (tool+args) → result for non-idempotent action dedup after done() rejection */
   private executedActions = new Map<string, string>();
+  /** Durable step-scoped mutation ledger — survives turns and restarts within a plan step. */
+  private stepMutationLedger: MutationLedgerEntry[] = [];
+  /** Durable log of externally-relevant side effects for failure reporting. */
+  private sideEffectsLog: SideEffectEntry[] = [];
+  /** Turn checkpoint to restore from (injected by orchestrator on restart). */
+  private pendingTurnCheckpoint: TurnCheckpoint | null = null;
+  /** Pending interaction response injected by orchestrator on resume. */
+  private resumeInteraction: PendingUserInteraction | null = null;
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   /** When true, executedActions persists across turns (set after done() rejection) */
@@ -937,6 +940,10 @@ export class AgentLoop {
       fireworksApiKey?: string;
       temperature?: number;
       useVLExecutor?: boolean;
+      /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
+      turnCheckpoint?: TurnCheckpoint | null;
+      /** Pending user interaction state injected by the orchestrator on resume. */
+      resumeInteraction?: PendingUserInteraction | null;
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
@@ -1012,6 +1019,8 @@ export class AgentLoop {
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});
     this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
+    this.pendingTurnCheckpoint = options?.turnCheckpoint ?? null;
+    this.resumeInteraction = options?.resumeInteraction ?? null;
 
     this.applyInitialPlanState();
   }
@@ -1060,6 +1069,220 @@ export class AgentLoop {
       })),
       this.initialPlanState.currentIndex,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Durable turn checkpoints (Phase 1 + 2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Persist loop-local state so a fresh AgentLoop can resume after SW restart.
+   * Called once per turn, after tool results are committed and before the next
+   * LLM call. Fire-and-forget — checkpoint failure must not block the loop.
+   */
+  private async saveTurnCheckpoint(): Promise<void> {
+    if (!this.nodeId || !this.workspaceId) return;
+    try {
+      const snapshot = this.context.getSnapshot?.() ?? null;
+      const cp: TurnCheckpoint = {
+        version: TURN_CHECKPOINT_VERSION,
+        workspaceId: this.workspaceId,
+        nodeId: this.nodeId,
+        savedAt: Date.now(),
+
+        // Loop runtime
+        turnCount: this.turnCount,
+        maxTurns: this.maxTurns,
+        currentPlanIndex: this.lastPlanIndex,
+        turnsOnCurrentStep: this.turnsOnCurrentStep,
+        escalationsOnCurrentStep: this.escalationsOnCurrentStep,
+        guardAfterDoneRejection: this.guardAfterDoneRejection,
+
+        // Context / prompt state
+        history: this.context.exportForCheckpoint(),
+        planStatus: this.context.getPlanStatusRaw(),
+        workingNotes: this.context.getWorkingNotes(),
+        lastActionOutcome: this.context.getLastActionOutcome(),
+        modelTier: this.llm.isPlannerTier() ? "planner" : "executor",
+        isFirstTurn: this.context.getIsFirstTurn(),
+
+        // Resume validation
+        snapshotFingerprint: getSnapshotFingerprint(snapshot),
+        pageUrl: snapshot?.url ?? null,
+
+        // Phase 2
+        stepMutationLedger: this.stepMutationLedger,
+
+        // Phase 4
+        sideEffectsLog: this.sideEffectsLog,
+      };
+      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
+      await chrome.storage.local.set({ [key]: cp });
+    } catch (e) {
+      this.log.warn("agent", "Failed to save turn checkpoint", { error: e });
+    }
+  }
+
+  /**
+   * Restore loop-local state from a durable turn checkpoint injected by the
+   * orchestrator. Returns true if restoration succeeded, false otherwise.
+   *
+   * The caller (start path) should compare the live page fingerprint before
+   * calling this — if the page diverged materially, skip restore.
+   */
+  private restoreFromTurnCheckpoint(cp: TurnCheckpoint): boolean {
+    try {
+      // Runtime counters
+      this.turnCount = cp.turnCount;
+      this.maxTurns = Math.max(this.maxTurns, cp.maxTurns);
+      this.lastPlanIndex = cp.currentPlanIndex;
+      this.turnsOnCurrentStep = cp.turnsOnCurrentStep;
+      this.escalationsOnCurrentStep = cp.escalationsOnCurrentStep;
+      this.guardAfterDoneRejection = cp.guardAfterDoneRejection;
+
+      // Context / history
+      this.context.restoreFromCheckpointHistory(cp.history, cp.isFirstTurn);
+      if (cp.planStatus) {
+        this.context.setPlanStatus(cp.planStatus.subtasks, cp.planStatus.currentIndex);
+      }
+      if (cp.workingNotes) {
+        this.context.setWorkingNotes(cp.workingNotes);
+      }
+      if (cp.lastActionOutcome) {
+        this.context.setLastActionOutcome(cp.lastActionOutcome);
+      }
+      if (cp.modelTier === "planner") {
+        this.llm.switchToPlanner();
+      } else {
+        this.llm.switchToExecutor();
+      }
+
+      // Phase 2 — mutation ledger
+      this.stepMutationLedger = Array.isArray(cp.stepMutationLedger)
+        ? cp.stepMutationLedger
+        : [];
+
+      // Phase 4 — side effects log
+      this.sideEffectsLog = Array.isArray(cp.sideEffectsLog)
+        ? cp.sideEffectsLog
+        : [];
+
+      this.log.info("agent", "Restored from turn checkpoint", {
+        turn: cp.turnCount,
+        historyMessages: cp.history.originalCount,
+        ledgerEntries: this.stepMutationLedger.length,
+        sideEffects: this.sideEffectsLog.length,
+      });
+      return true;
+    } catch (e) {
+      this.log.warn("agent", "Failed to restore turn checkpoint", { error: e });
+      return false;
+    }
+  }
+
+  /**
+   * Delete the turn checkpoint for this node (called on terminal states).
+   */
+  private async clearTurnCheckpoint(): Promise<void> {
+    if (!this.nodeId || !this.workspaceId) return;
+    try {
+      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
+      await chrome.storage.local.remove(key);
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
+  private lookupMutationReplay(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): { result: string; source: "ledger" | "ephemeral" } | null {
+    if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return null;
+    const mutKey = buildMutationKey(toolName, args);
+    const ledgerHit = this.stepMutationLedger.find((entry) => entry.key === mutKey);
+    if (ledgerHit) {
+      return { result: ledgerHit.result, source: "ledger" };
+    }
+    const ephemeralHit = this.executedActions.get(mutKey);
+    if (ephemeralHit) {
+      return { result: ephemeralHit, source: "ephemeral" };
+    }
+    return null;
+  }
+
+  private replayMutationSensitiveAction(
+    toolCallId: string,
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): boolean {
+    const replay = this.lookupMutationReplay(toolName, args);
+    if (!replay) return false;
+
+    this.log.info("agent", "Idempotency guard: returning cached result", {
+      turn: this.turnCount,
+      tool: toolName,
+      source: replay.source,
+      args: JSON.stringify(args).slice(0, 100),
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        replay.result +
+        "\n[Note: This action was already executed earlier in this step. " +
+        "The result above is from the previous execution. The page state already reflects this action — do NOT repeat it.]",
+    });
+    return true;
+  }
+
+  private recordMutationSensitiveAction(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+  ): void {
+    if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return;
+
+    const mutKey = buildMutationKey(toolName, args);
+    this.executedActions.set(mutKey, result);
+
+    const ledgerEntry: MutationLedgerEntry = {
+      key: mutKey,
+      toolName,
+      args,
+      result: result.slice(0, 500),
+      recordedAt: Date.now(),
+      planIndex: this.lastPlanIndex,
+      snapshotFingerprint: getSnapshotFingerprint(
+        this.context.getSnapshot?.() ?? null,
+      ),
+    };
+    const existingEntryIndex = this.stepMutationLedger.findIndex(
+      (entry) => entry.key === mutKey,
+    );
+    if (existingEntryIndex >= 0) {
+      this.stepMutationLedger[existingEntryIndex] = ledgerEntry;
+    } else {
+      this.stepMutationLedger.push(ledgerEntry);
+      if (this.stepMutationLedger.length > 50) {
+        this.stepMutationLedger = this.stepMutationLedger.slice(-50);
+      }
+    }
+
+    this.sideEffectsLog.push({
+      id: crypto.randomUUID(),
+      turn: this.turnCount,
+      planIndex: this.lastPlanIndex,
+      toolName,
+      args,
+      result: result.slice(0, 300),
+      timestamp: Date.now(),
+      snapshotFingerprint: getSnapshotFingerprint(
+        this.context.getSnapshot?.() ?? null,
+      ),
+    });
+    if (this.sideEffectsLog.length > 100) {
+      this.sideEffectsLog = this.sideEffectsLog.slice(-100);
+    }
   }
 
   private syncPlanStatus(
@@ -1204,13 +1427,101 @@ export class AgentLoop {
     });
   }
 
+  private getMatchingApprovalInteraction(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    context: string,
+  ): PendingApprovalInteraction | null {
+    if (this.resumeInteraction?.kind !== "approval") return null;
+    const interaction = this.resumeInteraction;
+    const currentKey = buildMutationKey(toolName, args);
+    const pendingKey = buildMutationKey(interaction.toolName, interaction.args);
+    if (pendingKey !== currentKey || interaction.context !== context) {
+      return null;
+    }
+    return interaction;
+  }
+
+  private getMatchingClarificationInteraction(
+    question: string,
+    suggestions?: string[],
+  ): PendingClarificationInteraction | null {
+    if (this.resumeInteraction?.kind !== "clarification") return null;
+    const interaction = this.resumeInteraction;
+    const currentSuggestions = JSON.stringify(suggestions ?? []);
+    const pendingSuggestions = JSON.stringify(interaction.suggestions ?? []);
+    if (
+      interaction.question !== question ||
+      currentSuggestions !== pendingSuggestions
+    ) {
+      return null;
+    }
+    return interaction;
+  }
+
   private async requestApproval(
     toolName: ToolName,
     args: Record<string, unknown>,
     context: string,
   ): Promise<boolean> {
-    const approvalId = crypto.randomUUID();
-    this.statusHandler(AgentStatus.ACTING, "Waiting for approval...");
+    const interaction =
+      this.getMatchingApprovalInteraction(toolName, args, context) ?? {
+        kind: "approval" as const,
+        nodeId: this.nodeId,
+        requestedAt: Date.now(),
+        approvalId: crypto.randomUUID(),
+        toolName,
+        args,
+        context,
+        timeoutMs: this.approvalTimeoutMs,
+      };
+    const remainingTimeoutMs = Math.max(
+      0,
+      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
+    );
+
+    if (remainingTimeoutMs <= 0) {
+      this.resumeInteraction = null;
+      this.log.warn("policy", "Approval timed out before resume", {
+        approvalId: interaction.approvalId,
+        turn: this.turnCount,
+        toolName,
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
+      });
+      this.traceRecorder?.recordEvent("approval", {
+        approvalId: interaction.approvalId,
+        stage: "settled",
+        turn: this.turnCount,
+        toolName,
+        outcome: "timeout",
+        approved: false,
+      });
+      return false;
+    }
+
+    if (typeof interaction.approved === "boolean") {
+      this.resumeInteraction = null;
+      this.log.info("policy", "Approval decision restored", {
+        approvalId: interaction.approvalId,
+        turn: this.turnCount,
+        toolName,
+        approved: interaction.approved,
+        workspaceId: this.workspaceId,
+        workerId: this.workerId,
+      });
+      this.traceRecorder?.recordEvent("approval", {
+        approvalId: interaction.approvalId,
+        stage: "settled",
+        turn: this.turnCount,
+        toolName,
+        outcome: interaction.approved ? "approved" : "rejected",
+        approved: interaction.approved,
+      });
+      return interaction.approved;
+    }
+
+    this.statusHandler(AgentStatus.PAUSED, "Waiting for approval...");
     const approvalStep: AgentStep = {
       id: crypto.randomUUID(),
       type: "info",
@@ -1219,117 +1530,51 @@ export class AgentLoop {
       timestamp: Date.now(),
     };
     this.stepHandler(approvalStep, false);
-    this.log.info("policy", "Approval request created", {
-      approvalId,
+    this.log.info("policy", "Approval request yielded to orchestrator", {
+      approvalId: interaction.approvalId,
       turn: this.turnCount,
       toolName,
       context,
-      timeoutMs: this.approvalTimeoutMs,
-      bypassApprovals: this.bypassApprovals,
+      timeoutMs: interaction.timeoutMs,
+      remainingTimeoutMs,
       workspaceId: this.workspaceId,
       workerId: this.workerId,
     });
     this.traceRecorder?.recordEvent("approval", {
-      approvalId,
+      approvalId: interaction.approvalId,
       stage: "requested",
       turn: this.turnCount,
       toolName,
       context,
-      timeoutMs: this.approvalTimeoutMs,
+      timeoutMs: interaction.timeoutMs,
       bypassApprovals: this.bypassApprovals,
     });
-
-    const approvalPromise = new Promise<boolean>((resolve) => {
-      let settled = false;
-      const settle = (
-        approved: boolean,
-        outcome: "approved" | "rejected" | "timeout" | "dispatch_failed",
-      ) => {
-        if (settled) return;
-        settled = true;
-        AgentLoop.approvalWaiters.delete(approvalId);
-        const stepStatus = approved ? "done" : "error";
-        const errorMessage =
-          outcome === "timeout"
-            ? "Approval timed out."
-            : outcome === "dispatch_failed"
-              ? "Approval request dispatch failed."
-              : outcome === "rejected"
-                ? "Approval rejected by user."
-                : undefined;
-        this.stepHandler(
-          {
-            ...approvalStep,
-            label: approved
-              ? `Approval granted: ${context}`
-              : `Approval denied: ${context}`,
-            status: stepStatus,
-            durationMs: Date.now() - approvalStep.timestamp,
-            errorMessage,
-          },
-          true,
-        );
-        this.log.info("policy", "Approval decision settled", {
-          approvalId,
+    chrome.runtime
+      .sendMessage({
+        type: "APPROVAL_REQUEST",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId: this.workspaceId,
+        payload: {
+          approvalId: interaction.approvalId,
+          toolName,
+          args,
+          risk: RiskLevel.HIGH,
+          context,
+          timeoutMs: remainingTimeoutMs,
+        },
+      } as RuntimeMessage)
+      .catch((error: any) => {
+        this.log.warn("policy", "Approval request dispatch failed", {
+          approvalId: interaction.approvalId,
           turn: this.turnCount,
           toolName,
-          outcome,
-          approved,
+          error: error?.message ?? String(error),
           workspaceId: this.workspaceId,
           workerId: this.workerId,
         });
-        this.traceRecorder?.recordEvent("approval", {
-          approvalId,
-          stage: "settled",
-          turn: this.turnCount,
-          toolName,
-          outcome,
-          approved,
-        });
-        resolve(approved);
-      };
-
-      const timer = setTimeout(() => {
-        settle(false, "timeout");
-      }, this.approvalTimeoutMs);
-
-      AgentLoop.approvalWaiters.set(approvalId, (approved: boolean) => {
-        clearTimeout(timer);
-        settle(approved, approved ? "approved" : "rejected");
       });
-
-      // Register waiter before emitting the request to avoid missing
-      // synchronous approval responses from tests or fast UI handlers.
-      chrome.runtime
-        .sendMessage({
-          type: "APPROVAL_REQUEST",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId: this.workspaceId,
-          payload: {
-            approvalId,
-            toolName,
-            args,
-            risk: RiskLevel.HIGH,
-            context,
-            timeoutMs: this.approvalTimeoutMs,
-          },
-        } as RuntimeMessage)
-        .catch((error: any) => {
-          clearTimeout(timer);
-          this.log.error("policy", "Failed to dispatch approval request", {
-            approvalId,
-            turn: this.turnCount,
-            toolName,
-            error: error?.message ?? String(error),
-            workspaceId: this.workspaceId,
-            workerId: this.workerId,
-          });
-          settle(false, "dispatch_failed");
-        });
-    });
-
-    return await approvalPromise;
+    throw new PendingInteractionYield(interaction);
   }
 
   private static readonly CLARIFICATION_TIMEOUT_MS = 120_000;
@@ -1338,8 +1583,50 @@ export class AgentLoop {
     question: string,
     suggestions?: string[],
   ): Promise<string> {
-    const clarificationId = crypto.randomUUID();
-    const timeoutMs = AgentLoop.CLARIFICATION_TIMEOUT_MS;
+    const interaction =
+      this.getMatchingClarificationInteraction(question, suggestions) ?? {
+        kind: "clarification" as const,
+        nodeId: this.nodeId,
+        requestedAt: Date.now(),
+        clarificationId: crypto.randomUUID(),
+        question,
+        ...(suggestions ? { suggestions } : {}),
+        timeoutMs: AgentLoop.CLARIFICATION_TIMEOUT_MS,
+      };
+    const remainingTimeoutMs = Math.max(
+      0,
+      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
+    );
+
+    if (remainingTimeoutMs <= 0) {
+      this.resumeInteraction = null;
+      this.log.warn("agent", "Clarification timed out before resume", {
+        clarificationId: interaction.clarificationId,
+        turn: this.turnCount,
+      });
+      this.traceRecorder?.recordEvent("clarification", {
+        clarificationId: interaction.clarificationId,
+        stage: "settled",
+        turn: this.turnCount,
+        outcome: "timeout",
+      });
+      return "No response from user.";
+    }
+
+    if (typeof interaction.answer === "string") {
+      this.resumeInteraction = null;
+      this.log.info("agent", "Clarification response restored", {
+        clarificationId: interaction.clarificationId,
+        turn: this.turnCount,
+      });
+      this.traceRecorder?.recordEvent("clarification", {
+        clarificationId: interaction.clarificationId,
+        stage: "settled",
+        turn: this.turnCount,
+        outcome: "answered",
+      });
+      return interaction.answer;
+    }
 
     this.statusHandler(AgentStatus.PAUSED, "Waiting for user clarification...");
     const clarifyStep: AgentStep = {
@@ -1351,82 +1638,39 @@ export class AgentLoop {
     };
     this.stepHandler(clarifyStep, false);
 
-    this.log.info("agent", "Clarification requested", {
-      clarificationId,
+    this.log.info("agent", "Clarification yielded to orchestrator", {
+      clarificationId: interaction.clarificationId,
       turn: this.turnCount,
       question: question.slice(0, 200),
+      timeoutMs: interaction.timeoutMs,
+      remainingTimeoutMs,
     });
     this.traceRecorder?.recordEvent("clarification", {
-      clarificationId,
+      clarificationId: interaction.clarificationId,
       stage: "requested",
       turn: this.turnCount,
       question,
     });
-
-    return new Promise<string>((resolve) => {
-      let settled = false;
-      const settle = (answer: string, outcome: "answered" | "timeout") => {
-        if (settled) return;
-        settled = true;
-        AgentLoop.clarificationWaiters.delete(clarificationId);
-        this.stepHandler(
-          {
-            ...clarifyStep,
-            label:
-              outcome === "timeout"
-                ? "Clarification timed out"
-                : `Clarification answered`,
-            status: outcome === "timeout" ? "error" : "done",
-            durationMs: Date.now() - clarifyStep.timestamp,
-          },
-          true,
-        );
-        this.log.info("agent", "Clarification settled", {
-          clarificationId,
-          turn: this.turnCount,
-          outcome,
+    chrome.runtime
+      .sendMessage({
+        type: "CLARIFICATION_REQUEST",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId: this.workspaceId,
+        payload: {
+          clarificationId: interaction.clarificationId,
+          question,
+          suggestions,
+          timeoutMs: remainingTimeoutMs,
+        },
+      } as RuntimeMessage)
+      .catch((error: any) => {
+        this.log.warn("agent", "Clarification request dispatch failed", {
+          clarificationId: interaction.clarificationId,
+          error: error?.message ?? String(error),
         });
-        this.traceRecorder?.recordEvent("clarification", {
-          clarificationId,
-          stage: "settled",
-          turn: this.turnCount,
-          outcome,
-        });
-        resolve(answer);
-      };
-
-      const timer = setTimeout(() => {
-        settle("No response from user.", "timeout");
-      }, timeoutMs);
-
-      // Register waiter BEFORE sending message
-      AgentLoop.clarificationWaiters.set(clarificationId, (answer: string) => {
-        clearTimeout(timer);
-        settle(answer, "answered");
       });
-
-      chrome.runtime
-        .sendMessage({
-          type: "CLARIFICATION_REQUEST",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId: this.workspaceId,
-          payload: {
-            clarificationId,
-            question,
-            suggestions,
-            timeoutMs,
-          },
-        } as RuntimeMessage)
-        .catch((error: any) => {
-          clearTimeout(timer);
-          this.log.error("agent", "Failed to dispatch clarification request", {
-            clarificationId,
-            error: error?.message ?? String(error),
-          });
-          settle("No response from user.", "timeout");
-        });
-    });
+    throw new PendingInteractionYield(interaction);
   }
 
   private async ensureToolApproval(
@@ -1565,6 +1809,20 @@ export class AgentLoop {
       await this.context.loadState();
     }
     this.applyInitialPlanState();
+
+    // Durable checkpoint restore: if the orchestrator injected a turn checkpoint
+    // from a prior SW lifetime, restore loop-local state before proceeding.
+    if (this.pendingTurnCheckpoint) {
+      const cp = this.pendingTurnCheckpoint;
+      this.pendingTurnCheckpoint = null;
+      const restored = this.restoreFromTurnCheckpoint(cp);
+      if (restored) {
+        this.log.info("agent", "Resumed from durable turn checkpoint", {
+          priorTurn: cp.turnCount,
+          nodeId: this.nodeId,
+        });
+      }
+    }
 
     // Ensure we have a snapshot — either from the orchestrator, warmup cache, or by fetching our own
     let snapshot = initialSnapshot;
@@ -2022,7 +2280,31 @@ export class AgentLoop {
     try {
       result = await this.loop(tabId);
     } catch (error: any) {
-      if (error.name === "AbortError") {
+      if (error instanceof PendingInteractionYield) {
+        const awaitingSummary =
+          error.pendingInteraction.kind === "approval"
+            ? "Awaiting approval"
+            : "Awaiting clarification";
+        this.log.info("agent", "Loop yielded for user interaction", {
+          outcome:
+            error.pendingInteraction.kind === "approval"
+              ? "awaiting_approval"
+              : "awaiting_clarification",
+          nodeId: this.nodeId,
+          turn: this.turnCount,
+        });
+        result = {
+          outcome:
+            error.pendingInteraction.kind === "approval"
+              ? "awaiting_approval"
+              : "awaiting_clarification",
+          turnCount: this.turnCount,
+          summary: awaitingSummary,
+          failure: { category: "none", code: "none" },
+          metrics: this.getMetrics(),
+          pendingInteraction: error.pendingInteraction,
+        };
+      } else if (error.name === "AbortError") {
         this.log.info("agent", "Agent stopped by user");
         this.statusHandler(AgentStatus.IDLE, "Stopped");
         result = {
@@ -2061,8 +2343,20 @@ export class AgentLoop {
         };
       }
     } finally {
+      result.sideEffectsLog = [...this.sideEffectsLog];
+
+      if (
+        result.outcome !== "awaiting_approval" &&
+        result.outcome !== "awaiting_clarification"
+      ) {
+        // Clean up durable turn checkpoint — node has reached a terminal state
+        this.clearTurnCheckpoint().catch(() => {});
+      }
+
       if (
         result.outcome !== "completed" &&
+        result.outcome !== "awaiting_approval" &&
+        result.outcome !== "awaiting_clarification" &&
         this.taskId &&
         this.planSubtasks.length > 0
       ) {
@@ -2243,6 +2537,7 @@ export class AgentLoop {
     // 2. Clear history and idempotency ledger (keeps DOM snapshot)
     this.context.clearHistory();
     this.executedActions.clear();
+    this.stepMutationLedger = [];
 
     // 3. Re-inject original query
     this.context.addMessage({
@@ -3389,6 +3684,7 @@ export class AgentLoop {
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.stepRetryCount = 0;
+      this.stepMutationLedger = [];
     }
     return advancedTo;
   }
@@ -3431,6 +3727,7 @@ export class AgentLoop {
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.executedActions.clear();
+      this.stepMutationLedger = [];
     }
 
     return resolvedIndex;
@@ -4429,7 +4726,9 @@ export class AgentLoop {
         let doneSignaled = false;
         let domModified = false;
         let visuallyModified = false;
+        let lastDomAffectingToolName: string | null = null;
         this.lastDomStep = null;
+        this.context.setLastActionOutcome(null);
 
         // --- Safety gate: validate tool calls before dispatch ---
         const validated = validateToolCalls(response.tool_calls);
@@ -4881,6 +5180,7 @@ export class AgentLoop {
                   domModified = true;
                   if (toolName !== ToolName.READ_PAGE) {
                     visuallyModified = true;
+                    lastDomAffectingToolName = toolName;
                   }
                   this.lastDomStep = {
                     ...toolStep,
@@ -6177,6 +6477,9 @@ export class AgentLoop {
 
             // SCHEDULE_TASK tool — persist task for future execution via backend
             if (toolName === ToolName.SCHEDULE_TASK) {
+              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+                continue;
+              }
               const description = (args.description as string) || "Scheduled task";
               const query = (args.query as string) || "";
               const schedule = args.schedule as string | undefined;
@@ -6222,6 +6525,11 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: `Task scheduled: "${description}" — ${when} (ID: ${task.id})`,
                 });
+                this.recordMutationSensitiveAction(
+                  toolName,
+                  args,
+                  `Task scheduled: "${description}" — ${when} (ID: ${task.id})`,
+                );
                 this.log.info("agent", "SCHEDULE_TASK created", {
                   turn: this.turnCount,
                   taskId: task.id,
@@ -6499,6 +6807,9 @@ export class AgentLoop {
 
             // CLOSE_TAB — workspace-scoped, prevents closing current tab
             if (toolName === ToolName.CLOSE_TAB) {
+              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+                continue;
+              }
               if (this.shouldBlockTabManagementTools()) {
                 const blockedMessage =
                   "Blocked: close_tab requires explicit user instruction to manage tabs. " +
@@ -6571,6 +6882,11 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: `Closed tab ${targetTabId}.`,
                 });
+                this.recordMutationSensitiveAction(
+                  toolName,
+                  args,
+                  `Closed tab ${targetTabId}.`,
+                );
               } catch (e: any) {
                 this.context.addMessage({
                   role: "tool",
@@ -6587,6 +6903,9 @@ export class AgentLoop {
 
             // CREATE_TAB — workspace-scoped, auto-adds to workspace
             if (toolName === ToolName.CREATE_TAB) {
+              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+                continue;
+              }
               if (this.shouldBlockTabManagementTools()) {
                 const blockedMessage =
                   "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
@@ -6646,6 +6965,11 @@ export class AgentLoop {
                   tool_call_id: toolCall.id,
                   content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
                 });
+                this.recordMutationSensitiveAction(
+                  toolName,
+                  args,
+                  `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
+                );
                 this.log.info("agent", "CREATE_TAB", {
                   turn: this.turnCount,
                   newTabId: newTab.id,
@@ -6662,31 +6986,11 @@ export class AgentLoop {
               continue;
             }
 
-            // Idempotency guard: prevent re-execution of non-idempotent DOM actions
-            // within the same plan step. Returns cached result on exact (tool+args) match.
-            if (
-              DOM_MODIFYING_TOOLS.has(toolName) &&
-              toolName !== ToolName.READ_PAGE &&
-              toolName !== ToolName.SCROLL_PAGE
-            ) {
-              const actionKey = `${toolName}:${JSON.stringify(args)}`;
-              const cached = this.executedActions.get(actionKey);
-              if (cached) {
-                this.log.info("agent", "Idempotency guard: returning cached result", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  args: JSON.stringify(args).slice(0, 100),
-                });
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    cached +
-                    "\n[Note: This action was already executed earlier in this step. " +
-                    "The result above is from the previous execution. The page state already reflects this action — do NOT repeat it.]",
-                });
-                continue;
-              }
+            // Idempotency guard: prevent re-execution of mutation-sensitive actions
+            // within the same plan step. Checks the durable step mutation ledger first
+            // (survives SW restart), then the ephemeral turn cache.
+            if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+              continue;
             }
 
             const toolStepId = crypto.randomUUID();
@@ -6746,17 +7050,7 @@ export class AgentLoop {
                 toolMs,
                 preDecision.riskLevel,
               );
-              // Store in idempotency ledger for non-idempotent DOM actions
-              if (
-                DOM_MODIFYING_TOOLS.has(toolName) &&
-                toolName !== ToolName.READ_PAGE &&
-                toolName !== ToolName.SCROLL_PAGE
-              ) {
-                this.executedActions.set(
-                  `${toolName}:${JSON.stringify(args)}`,
-                  result,
-                );
-              }
+              this.recordMutationSensitiveAction(toolName, args, result);
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
               const errorMsg = toolError.message || String(toolError);
@@ -6814,6 +7108,7 @@ export class AgentLoop {
               this.consecutiveAutoAdvances = 0;
               if (toolName !== ToolName.READ_PAGE) {
                 visuallyModified = true;
+                lastDomAffectingToolName = toolName;
               }
               this.lastDomStep = {
                 ...toolStep,
@@ -7874,19 +8169,22 @@ export class AgentLoop {
               // Use visuallyModified (not domModified) so read_page doesn't produce misleading deltas
               const actionEffect = this.stagnation.lastActionEffect;
               if (actionEffect && visuallyModified) {
-                const effectLine = formatActionEffect(actionEffect);
-                if (effectLine) {
-                  this.context.addMessage({
-                    role: "user",
-                    content: effectLine,
-                  });
-                  this.traceRecorder?.recordEvent("action_effect", {
-                    deltaPercent: actionEffect.deltaPercent,
-                    urlChanged: actionEffect.urlChanged,
-                    elementsAdded: actionEffect.elementsAdded,
-                    elementsRemoved: actionEffect.elementsRemoved,
-                  });
-                }
+                this.context.setLastActionOutcome({
+                  toolName: lastDomAffectingToolName ?? "unknown",
+                  deltaPercent: actionEffect.deltaPercent,
+                  urlChanged: actionEffect.urlChanged,
+                  prevUrl: actionEffect.prevUrl,
+                  currentUrl: actionEffect.currentUrl,
+                  elementsAdded: actionEffect.elementsAdded,
+                  elementsRemoved: actionEffect.elementsRemoved,
+                });
+                this.traceRecorder?.recordEvent("action_effect", {
+                  toolName: lastDomAffectingToolName ?? "unknown",
+                  deltaPercent: actionEffect.deltaPercent,
+                  urlChanged: actionEffect.urlChanged,
+                  elementsAdded: actionEffect.elementsAdded,
+                  elementsRemoved: actionEffect.elementsRemoved,
+                });
 
                 const planAfterAction = this.context.getPlanStatusRaw();
                 if (
@@ -8046,31 +8344,101 @@ export class AgentLoop {
                   }
                 }
 
-                // P1b: Track consecutive zero-effect turns for dual-gating
+                // P1b: Track consecutive zero-effect turns with warn-then-escalate recovery
                 if (
                   actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
                   !actionEffect.urlChanged
                 ) {
                   this.consecutiveZeroEffectTurns++;
+                  const failureBrief = buildFailureBrief(subgoalAttempts);
+                  const zeroEffectDecision = buildZeroEffectDecision({
+                    consecutiveTurns: this.consecutiveZeroEffectTurns,
+                    failureBrief,
+                    warningThreshold: ACTION_EFFECT.WARNING_THRESHOLD,
+                    escalateThreshold: ACTION_EFFECT.ESCALATE_THRESHOLD,
+                  });
+
                   if (
-                    this.consecutiveZeroEffectTurns >=
-                    ACTION_EFFECT.WARNING_THRESHOLD
+                    zeroEffectDecision.kind === "warn" &&
+                    zeroEffectDecision.message
                   ) {
-                    // Use cumulative failure brief if we have enough data
-                    const failureBrief = buildFailureBrief(subgoalAttempts);
-                    const warningContent = failureBrief
-                      ? `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect. Here is what was tried:\n${failureBrief}\nTry a fundamentally different strategy.]`
-                      : `[Verification: Last ${this.consecutiveZeroEffectTurns} actions had no observable effect on the page. Your current approach is not working — try a fundamentally different strategy (different element, different tool, or different page area).]`;
                     this.context.addMessage({
                       role: "user",
-                      content: warningContent,
+                      content: zeroEffectDecision.message,
                     });
                     this.traceRecorder?.recordEvent("zero_effect_warning", {
                       consecutiveTurns: this.consecutiveZeroEffectTurns,
                       hasFailureBrief: !!failureBrief,
                     });
-                    this.consecutiveZeroEffectTurns = 0; // reset after warning
-                    subgoalAttempts.length = 0; // reset after injection
+                  } else if (
+                    zeroEffectDecision.kind === "escalate" &&
+                    zeroEffectDecision.message &&
+                    escalationTier === 0 &&
+                    cooldownRemaining <= 0
+                  ) {
+                    this.context.addMessage({
+                      role: "user",
+                      content: zeroEffectDecision.message,
+                    });
+                    this.traceRecorder?.recordEvent("zero_effect_escalation", {
+                      consecutiveTurns: this.consecutiveZeroEffectTurns,
+                      hasFailureBrief: !!failureBrief,
+                    });
+
+                    const zeroEffectReplanOk = await this.replanOnEscalation(
+                      tabId,
+                      subgoalAttempts,
+                      this.abortController?.signal,
+                    );
+                    if (zeroEffectReplanOk) {
+                      this.stagnation.resetEscalation();
+                      subgoalAttempts.length = 0;
+                      recentOutcomes.length = 0;
+                      consecutiveTextOnly = 0;
+                      recentSuccesses.length = 0;
+                      consecutiveProgressSignals = 0;
+                      this.consecutiveZeroEffectTurns = 0;
+                      wasStuck = false;
+                      continue;
+                    }
+
+                    this.perception.invalidateCache();
+                    const attemptSummary = extractAttemptSummary(
+                      this.context.getMessages(),
+                    );
+                    this.escalateModel();
+                    this.escalationsOnCurrentStep++;
+                    escalationTier = 1;
+                    orientationPhase = false;
+                    plannerModelStartTurn = this.turnCount;
+                    await this.strategyPivot(tabId, attemptSummary);
+                    this.stagnation.resetEscalation();
+                    this.context.addMessage({
+                      role: "user",
+                      content:
+                        this.escalationsOnCurrentStep >= 2
+                          ? ESCALATION_RECOVERY(this.escalationsOnCurrentStep)
+                          : ESCALATION_REFLECTION(
+                              "repeated DOM actions had no observable effect",
+                            ),
+                    });
+                    consecutiveTextOnly = 0;
+                    recentSuccesses.length = 0;
+                    consecutiveProgressSignals = 0;
+                    this.consecutiveZeroEffectTurns = 0;
+                    subgoalAttempts.length = 0;
+                    this.stepHandler(
+                      {
+                        id: crypto.randomUUID(),
+                        type: "info",
+                        label:
+                          "Repeated no-effect actions - escalating to planner model",
+                        status: "done",
+                        timestamp: Date.now(),
+                      },
+                      false,
+                    );
+                    continue;
                   }
                 } else {
                   this.consecutiveZeroEffectTurns = 0;
@@ -8680,6 +9048,9 @@ export class AgentLoop {
           content: TEXT_ONLY_CORRECTION,
         });
 
+        // Durable checkpoint: persist loop state for SW restart recovery
+        this.saveTurnCheckpoint().catch(() => {});
+
         // Trace: flush turn
         await this.traceRecorder?.endTurn();
         this.broadcast({
@@ -8688,6 +9059,9 @@ export class AgentLoop {
         });
         continue;
       }
+
+      // Durable checkpoint: persist loop state for SW restart recovery
+      this.saveTurnCheckpoint().catch(() => {});
 
       // Trace: flush turn at end of each iteration
       await this.traceRecorder?.endTurn();
