@@ -1,24 +1,34 @@
 /**
- * E2E suite report — collects per-test results and writes both a console
- * summary table AND a dated markdown critique report to docs/.
+ * E2E suite report.
  *
- * Module-level singleton. Registers a beforeExit handler so the report
- * is always written, even on unexpected exits.
+ * Collects per-test results, prints a concise console summary, and writes a
+ * dated markdown report to docs/ in the repository-standard format.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { resolve, dirname } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { basename, dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+import type {
+  TraceEntry,
+  TraceLLMMessage,
+  TraceSession,
+} from "../../../src/types/traces";
+import {
+  computeSessionDiagnostics,
+  type SessionDiagnostics,
+} from "../../../src/trace-viewer/diagnostics";
 import {
   extractRunIdFromTraceFile,
   readSkillSummaryForRun,
   readTrace,
-  TraceTurn,
+  type TraceTurn,
 } from "./diagnostics";
 
 const PROJECT_ROOT = resolve(
-  dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")),
+  dirname(fileURLToPath(import.meta.url)),
   "../../../../..",
 );
+const TRACE_INDEX = resolve(PROJECT_ROOT, "traces", "index.jsonl");
 
 interface TestRecord {
   name: string;
@@ -42,28 +52,162 @@ interface TraceCostData {
 type FailureClass = "provider" | "harness" | "product" | null;
 
 interface TraceAnalysis extends TraceCostData {
+  traceCount: number;
+  pageInterpretationTurns: number;
+  promptUsed: string;
   toolCounts: Record<string, number>;
   repeatedTools: string[];
   model: string | undefined;
   turnDetails: TraceTurn[];
   runIds: string[];
+  sessionIds: string[];
   skillsUsed: string[];
   nodeSkills: Array<{ nodeId: string; skillId: string; reason?: string }>;
+  diagnostics: SessionDiagnostics;
   failureClass: FailureClass;
+}
+
+function createEmptyDiagnostics(): SessionDiagnostics {
+  return {
+    productiveTurns: 0,
+    wastedTurns: 0,
+    loopTurns: 0,
+    escalations: 0,
+    failovers: 0,
+    perceptionCalls: 0,
+    perceptionCacheHits: 0,
+    structuredPerceptionTurns: 0,
+    vlScreenshotTurns: 0,
+    elementOnlyTurns: 0,
+    degradedPerceptionTurns: 0,
+    contextHotTurns: 0,
+    toolFailureTurns: 0,
+    perceptionSources: {},
+    perceptionFreshness: {},
+    perceptionFallbacks: {},
+    perceptionScreenshots: {},
+  };
+}
+
+function mergeCounters<T extends string>(
+  target: Partial<Record<T, number>>,
+  source: Partial<Record<T, number>>,
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (!value) continue;
+    const typedKey = key as T;
+    target[typedKey] = (target[typedKey] ?? 0) + value;
+  }
+}
+
+function mergeDiagnostics(
+  target: SessionDiagnostics,
+  source: SessionDiagnostics,
+): SessionDiagnostics {
+  target.productiveTurns += source.productiveTurns;
+  target.wastedTurns += source.wastedTurns;
+  target.loopTurns += source.loopTurns;
+  target.escalations += source.escalations;
+  target.failovers += source.failovers;
+  target.perceptionCalls += source.perceptionCalls;
+  target.perceptionCacheHits += source.perceptionCacheHits;
+  target.structuredPerceptionTurns += source.structuredPerceptionTurns;
+  target.vlScreenshotTurns += source.vlScreenshotTurns;
+  target.elementOnlyTurns += source.elementOnlyTurns;
+  target.degradedPerceptionTurns += source.degradedPerceptionTurns;
+  target.contextHotTurns += source.contextHotTurns;
+  target.toolFailureTurns += source.toolFailureTurns;
+  mergeCounters(target.perceptionSources, source.perceptionSources);
+  mergeCounters(target.perceptionFreshness, source.perceptionFreshness);
+  mergeCounters(target.perceptionFallbacks, source.perceptionFallbacks);
+  mergeCounters(target.perceptionScreenshots, source.perceptionScreenshots);
+  return target;
+}
+
+function readTraceEntries(filePath: string): TraceEntry[] {
+  if (!existsSync(filePath)) return [];
+  return readFileSync(filePath, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as TraceEntry;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as TraceEntry[];
+}
+
+function readTraceSessions(): Map<string, TraceSession> {
+  const sessions = new Map<string, TraceSession>();
+  if (!existsSync(TRACE_INDEX)) return sessions;
+
+  const lines = readFileSync(TRACE_INDEX, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  for (const line of lines) {
+    try {
+      const session = JSON.parse(line) as TraceSession;
+      if (
+        typeof session.sessionId === "string" &&
+        session.sessionId.length > 0
+      ) {
+        sessions.set(session.sessionId, session);
+      }
+    } catch {
+      // Ignore malformed session records and keep scanning the index.
+    }
+  }
+  return sessions;
+}
+
+function getSessionIdFromTraceFile(
+  filePath: string,
+  entries: TraceEntry[],
+): string {
+  const entrySessionId = entries[0]?.sessionId;
+  if (typeof entrySessionId === "string" && entrySessionId.length > 0) {
+    return entrySessionId;
+  }
+  return basename(filePath, ".jsonl");
+}
+
+function compactPrompt(prompt: string, maxLength: number = 140): string {
+  const compact = prompt.replace(/\s+/g, " ").trim();
+  if (!compact) return "-";
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, maxLength - 3)}...`;
+}
+
+function messageContainsPageInterpretation(message: TraceLLMMessage): boolean {
+  return (
+    typeof message.content === "string" &&
+    message.content.includes("Page Interpretation")
+  );
+}
+
+function countPageInterpretationTurns(entries: TraceEntry[]): number {
+  let turns = 0;
+  for (const entry of entries) {
+    const messages = entry.llmRequest?.messages ?? [];
+    if (messages.some(messageContainsPageInterpretation)) {
+      turns++;
+    }
+  }
+  return turns;
 }
 
 /**
  * Classify a test failure by inspecting trace evidence.
  *
- * - **provider**: LLM API errors, 429/500/502/503 status codes, empty responses,
- *   timeout from the provider side, model refusals.
- * - **harness**: synchronization failures, bridge disconnects, extension lifecycle
- *   issues, tab/page management errors, content script injection problems.
- * - **product**: assertion failures from the agent's behavior — wrong tool calls,
- *   stagnation, task contract mismatches, incorrect actions.
+ * - provider: LLM/API failures and transport-level issues.
+ * - harness: browser/extension lifecycle and synchronization failures.
+ * - product: agent behavior or assertion failures.
  */
 function classifyFailure(turns: TraceTurn[]): FailureClass {
-  // Provider signals: API errors, empty responses, rate limits
   const providerSignals = [
     /\b(429|500|502|503|504)\b/,
     /\b(rate.?limit|too many requests|service unavailable|bad gateway|gateway timeout)\b/i,
@@ -71,7 +215,6 @@ function classifyFailure(turns: TraceTurn[]): FailureClass {
     /\b(timeout|timed out|ETIMEDOUT|ECONNREFUSED|fetch failed)\b/i,
   ];
 
-  // Harness signals: extension lifecycle, bridge, sync issues
   const harnessSignals = [
     /\b(bridge disconnect|content script .* not .* respond|extension context invalidated)\b/i,
     /\b(tab (was )?closed|no active tab|tab not found|Cannot access)\b/i,
@@ -85,7 +228,9 @@ function classifyFailure(turns: TraceTurn[]): FailureClass {
   for (const turn of turns) {
     const texts = [
       turn.llmContent || "",
-      ...turn.toolResults.map((tr) => `${tr.result} ${tr.error || ""}`),
+      ...turn.toolResults.map(
+        (result) => `${result.result} ${result.error || ""}`,
+      ),
     ];
 
     for (const text of texts) {
@@ -103,40 +248,67 @@ function classifyFailure(turns: TraceTurn[]): FailureClass {
   return "product";
 }
 
-function analyzeTraces(traceFiles: string[]): TraceAnalysis {
+function analyzeTraces(
+  traceFiles: string[],
+  sessionIndex: Map<string, TraceSession> = readTraceSessions(),
+): TraceAnalysis {
   let totalCost = 0;
   let totalTurns = 0;
-  const toolCounts: Record<string, number> = {};
   let model: string | undefined;
+  let pageInterpretationTurns = 0;
+  const toolCounts: Record<string, number> = {};
   const allTurns: TraceTurn[] = [];
   const runIds = new Set<string>();
+  const sessionIds = new Set<string>();
+  const prompts = new Set<string>();
   const skillsUsed = new Set<string>();
   const nodeSkills = new Map<string, { skillId: string; reason?: string }>();
+  const diagnostics = createEmptyDiagnostics();
 
   for (const filePath of traceFiles) {
     if (!existsSync(filePath)) continue;
 
-    // Extract cost from raw JSON (faster than full parse)
-    const raw = readFileSync(filePath, "utf-8");
-    const lines = raw.trim().split("\n").filter(Boolean);
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        totalTurns++;
-        const cost = entry.llmResponse?.usage?.cost;
-        if (typeof cost === "number") totalCost += cost;
-        if (!model && entry.llmRequest?.model) model = entry.llmRequest.model;
-      } catch {
-        // Ignore malformed trace lines while extracting lightweight cost/model data.
-      }
+    const entries = readTraceEntries(filePath);
+    if (entries.length === 0) continue;
+
+    totalTurns += entries.length;
+    pageInterpretationTurns += countPageInterpretationTurns(entries);
+    model ||= entries.find((entry) => entry.llmRequest?.model)?.llmRequest
+      ?.model;
+
+    for (const entry of entries) {
+      const cost = entry.llmResponse?.usage?.cost;
+      if (typeof cost === "number") totalCost += cost;
     }
 
-    // Detailed turn data for critique
+    const sessionId = getSessionIdFromTraceFile(filePath, entries);
+    sessionIds.add(sessionId);
+
+    const session =
+      sessionIndex.get(sessionId) ??
+      ({
+        sessionId,
+        startTime: entries[0]?.timestamp ?? 0,
+        endTime: entries.at(-1)?.timestamp ?? entries[0]?.timestamp ?? 0,
+        query: "",
+        startUrl: entries[0]?.snapshot?.url ?? "",
+        outcome: "completed",
+        turnCount: entries.length,
+        summary: "",
+        metrics: null,
+      } satisfies TraceSession);
+
+    if (session.query?.trim()) {
+      prompts.add(session.query);
+    }
+
+    mergeDiagnostics(diagnostics, computeSessionDiagnostics(session, entries));
+
     const turns = readTrace(filePath);
     allTurns.push(...turns);
     for (const turn of turns) {
-      for (const tc of turn.toolCalls) {
-        toolCounts[tc.name] = (toolCounts[tc.name] || 0) + 1;
+      for (const toolCall of turn.toolCalls) {
+        toolCounts[toolCall.name] = (toolCounts[toolCall.name] || 0) + 1;
       }
     }
 
@@ -156,31 +328,37 @@ function analyzeTraces(traceFiles: string[]): TraceAnalysis {
     }
   }
 
-  // Detect repeated consecutive tool calls (stagnation signal)
   const repeatedTools: string[] = [];
   for (let i = 1; i < allTurns.length; i++) {
-    const prev = allTurns[i - 1].toolCalls.map((t) => t.name).join(",");
-    const curr = allTurns[i].toolCalls.map((t) => t.name).join(",");
-    if (prev && prev === curr && !repeatedTools.includes(prev)) {
-      repeatedTools.push(prev);
+    const previous = allTurns[i - 1].toolCalls
+      .map((tool) => tool.name)
+      .join(",");
+    const current = allTurns[i].toolCalls.map((tool) => tool.name).join(",");
+    if (previous && previous === current && !repeatedTools.includes(previous)) {
+      repeatedTools.push(previous);
     }
   }
 
   return {
     turns: totalTurns,
     cost: totalCost,
+    traceCount: traceFiles.length,
+    pageInterpretationTurns,
+    promptUsed: compactPrompt([...prompts].join(" / ")),
     toolCounts,
     repeatedTools,
     model,
     turnDetails: allTurns,
     runIds: [...runIds],
+    sessionIds: [...sessionIds],
     skillsUsed: [...skillsUsed].sort(),
     nodeSkills: [...nodeSkills.entries()].map(([nodeId, value]) => ({
       nodeId,
       skillId: value.skillId,
       ...(value.reason ? { reason: value.reason } : {}),
     })),
-    failureClass: null, // classified per-test, not per-trace-set
+    diagnostics,
+    failureClass: null,
   };
 }
 
@@ -197,12 +375,103 @@ function formatCost(cost: number): string {
   return `$${cost.toFixed(3)}`;
 }
 
-function padRight(s: string, len: number): string {
-  return s.length >= len ? s : s + " ".repeat(len - s.length);
+function padRight(value: string, length: number): string {
+  return value.length >= length
+    ? value
+    : value + " ".repeat(length - value.length);
 }
 
-function padLeft(s: string, len: number): string {
-  return s.length >= len ? s : " ".repeat(len - s.length) + s;
+function padLeft(value: string, length: number): string {
+  return value.length >= length
+    ? value
+    : " ".repeat(length - value.length) + value;
+}
+
+function formatCounterSummary(
+  counts: Partial<Record<string, number>>,
+  maxItems: number = 3,
+): string {
+  const items = Object.entries(counts)
+    .filter(([, value]) => typeof value === "number" && value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxItems);
+  if (items.length === 0) return "none";
+  return items.map(([key, value]) => `${key}(${value})`).join(", ");
+}
+
+function buildMarkdownReport(
+  analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
+  runMetadata: RunMetadata | null,
+  now: Date = new Date(),
+): string {
+  const dateStr = now.toISOString().split("T")[0];
+  const timeStr = now.toISOString().split("T")[1].split(".")[0] + " UTC";
+  const passedCount = analyses.filter(({ rec }) => rec.passed).length;
+  const failedCount = analyses.filter(({ rec }) => rec.passed === false).length;
+
+  const suiteDiagnostics = analyses.reduce(
+    (acc, { analysis }) => mergeDiagnostics(acc, analysis.diagnostics),
+    createEmptyDiagnostics(),
+  );
+
+  const provider = runMetadata?.provider ?? "unknown";
+  const lane = runMetadata?.lane ?? "unknown";
+  const executorModel = runMetadata?.configuredExecutorModel ?? "default";
+  const diagnosticMode = runMetadata?.diagnosticMode === true ? "on" : "off";
+
+  const lines: string[] = [];
+  lines.push("# E2E Final Report");
+  lines.push("");
+  lines.push(`Date: ${dateStr} ${timeStr}`);
+  lines.push(
+    `Scope: ${analyses.length} case(s); lane=${lane}; provider=${provider}; executor=${executorModel}; diagnostic=${diagnosticMode}`,
+  );
+  lines.push(
+    `Overall result: ${passedCount}/${analyses.length} passed${failedCount > 0 ? `, ${failedCount} failed` : ""}`,
+  );
+  lines.push("");
+  lines.push("| Case | Success | Turns | Perceptions | Traces | Prompt used |");
+  lines.push("|------|---------|------:|------------:|-------:|-------------|");
+  for (const { rec, analysis } of analyses) {
+    lines.push(
+      `| ${rec.name} | ${rec.passed ? "Yes" : rec.passed === false ? "No" : "Unknown"} | ${analysis.turns} | ${analysis.pageInterpretationTurns} | ${analysis.traceCount} | ${analysis.promptUsed} |`,
+    );
+  }
+  lines.push("");
+  lines.push("## Metric Definitions");
+  lines.push("");
+  lines.push(
+    "- `Turns`: Total recorded trace turns across the trace file(s) for that case.",
+  );
+  lines.push(
+    "- `Perceptions`: Turns where the recorded trace input included `Page Interpretation`.",
+  );
+  lines.push(
+    "- `Traces`: Number of trace sessions produced for that case, including retries or replans.",
+  );
+  lines.push(
+    "- `Success`: Whether the case completed successfully in the run.",
+  );
+  lines.push("");
+  lines.push("## Stability Notes");
+  lines.push("");
+  lines.push(
+    `- Perception path mix: structured ${suiteDiagnostics.structuredPerceptionTurns}, VL screenshot ${suiteDiagnostics.vlScreenshotTurns}, element-only ${suiteDiagnostics.elementOnlyTurns}.`,
+  );
+  lines.push(
+    `- Cached perception: ${suiteDiagnostics.perceptionCacheHits}/${suiteDiagnostics.perceptionCalls} calls; degraded perception turns: ${suiteDiagnostics.degradedPerceptionTurns}.`,
+  );
+  lines.push(
+    `- Freshness hotspots: ${formatCounterSummary(suiteDiagnostics.perceptionFreshness)}.`,
+  );
+  lines.push(
+    `- Fallback hotspots: ${formatCounterSummary(suiteDiagnostics.perceptionFallbacks)}.`,
+  );
+  lines.push(
+    `- Screenshot status mix: ${formatCounterSummary(suiteDiagnostics.perceptionScreenshots)}.`,
+  );
+
+  return lines.join("\n") + "\n";
 }
 
 class SuiteReport {
@@ -227,18 +496,16 @@ class SuiteReport {
     if (this.printed || this.records.length === 0) return;
     this.printed = true;
 
+    const sessionIndex = readTraceSessions();
     const analyses = this.records.map((rec) => {
-      const analysis = analyzeTraces(rec.traceFiles);
+      const analysis = analyzeTraces(rec.traceFiles, sessionIndex);
       if (rec.passed === false) {
         analysis.failureClass = classifyFailure(analysis.turnDetails);
       }
       return { rec, analysis };
     });
 
-    // Console table
     this.printConsoleTable(analyses);
-
-    // Markdown critique report
     this.writeMarkdownReport(analyses);
   }
 
@@ -252,8 +519,8 @@ class SuiteReport {
     const COL_TIME = 8;
     const LINE_WIDTH = 62;
 
-    const border = "\u2550".repeat(LINE_WIDTH);
-    const divider = "\u2500".repeat(LINE_WIDTH);
+    const border = "=".repeat(LINE_WIDTH);
+    const divider = "-".repeat(LINE_WIDTH);
 
     let totalCost = 0;
     let totalDuration = 0;
@@ -262,7 +529,7 @@ class SuiteReport {
     const lines: string[] = [];
     lines.push("");
     lines.push(`  ${border}`);
-    lines.push(`    E2E SUITE REPORT`);
+    lines.push("    E2E SUITE REPORT");
     lines.push(`  ${border}`);
     lines.push(
       `  ${padRight("Test", COL_NAME)}  ${padRight("Result", COL_RESULT)}  ${padLeft("Turns", COL_TURNS)}  ${padLeft("Cost", COL_COST)}  ${padLeft("Time", COL_TIME)}`,
@@ -293,209 +560,26 @@ class SuiteReport {
   private writeMarkdownReport(
     analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
   ): void {
-    const now = new Date();
-    const dateStr = now.toISOString().split("T")[0];
-    const timeStr = now.toISOString().split("T")[1].split(".")[0];
-
-    let totalCost = 0;
-    let totalDuration = 0;
-    let passCount = 0;
-    let failCount = 0;
-
-    for (const { rec, analysis } of analyses) {
-      totalCost += analysis.cost;
-      totalDuration += rec.durationMs;
-      if (rec.passed) passCount++;
-      else if (rec.passed === false) failCount++;
-    }
-
-    const model = analyses.find((a) => a.analysis.model)?.analysis.model || "unknown";
-    const provider = this.runMetadata?.provider ?? "unknown";
-    const lane = this.runMetadata?.lane ?? "unknown";
-    const configuredExecutorModel = this.runMetadata?.configuredExecutorModel;
-    const diagnosticMode = this.runMetadata?.diagnosticMode === true;
-    const md: string[] = [];
-
-    // Header
-    md.push(`# E2E Test Report`);
-    md.push("");
-    md.push(`**Date:** ${dateStr} ${timeStr}`);
-    md.push(`**Lane:** ${lane}`);
-    md.push(`**Provider:** ${provider}`);
-    md.push(`**Model:** ${model}`);
-    md.push(`**Diagnostic Mode:** ${diagnosticMode ? "on" : "off"}`);
-    if (configuredExecutorModel) {
-      md.push(`**Configured Executor Model:** ${configuredExecutorModel}`);
-    }
-    md.push(`**Result:** ${passCount}/${analyses.length} passed${failCount > 0 ? ` (${failCount} failed)` : ""}`);
-    md.push(`**Total Cost:** ${formatCost(totalCost)}`);
-    md.push(`**Total Time:** ${formatDuration(totalDuration)}`);
-    md.push("");
-
-    // Results table
-    md.push("## Results");
-    md.push("");
-    md.push("| Test | Result | Class | Turns | Cost | Time | Skills |");
-    md.push("|------|--------|-------|------:|-----:|-----:|--------|");
-
-    for (const { rec, analysis } of analyses) {
-      const result = rec.passed == null ? "UNK" : rec.passed ? "PASS" : "**FAIL**";
-      const failClass = analysis.failureClass ?? "-";
-      md.push(
-        `| ${rec.name} | ${result} | ${failClass} | ${analysis.turns} | ${formatCost(analysis.cost)} | ${formatDuration(rec.durationMs)} | ${analysis.skillsUsed.length > 0 ? analysis.skillsUsed.map((s) => `\`${s}\``).join(", ") : "-"} |`,
-      );
-    }
-    md.push("");
-
-    md.push("## Skill Summary");
-    md.push("");
-    const skillUsageCounts = new Map<string, { total: number; passed: number; failed: number }>();
-    for (const { rec, analysis } of analyses) {
-      for (const skillId of analysis.skillsUsed) {
-        const current = skillUsageCounts.get(skillId) || {
-          total: 0,
-          passed: 0,
-          failed: 0,
-        };
-        current.total += 1;
-        if (rec.passed) current.passed += 1;
-        else if (rec.passed === false) current.failed += 1;
-        skillUsageCounts.set(skillId, current);
-      }
-    }
-    if (skillUsageCounts.size === 0) {
-      md.push("No workflow skills were detected in the linked run traces.");
-    } else {
-      for (const [skillId, counts] of [...skillUsageCounts.entries()].sort((a, b) =>
-        a[0].localeCompare(b[0]),
-      )) {
-        md.push(
-          `- \`${skillId}\`: used in ${counts.total} case(s); ${counts.passed} passing, ${counts.failed} failing`,
-        );
-      }
-    }
-    md.push("");
-
-    // Per-test trace details
-    md.push("## Test Details");
-    md.push("");
-
-    for (const { rec, analysis } of analyses) {
-      const result = rec.passed == null ? "UNK" : rec.passed ? "PASS" : "FAIL";
-      md.push(`### ${rec.name} — ${result}`);
-      md.push("");
-
-      // Tool usage summary
-      if (Object.keys(analysis.toolCounts).length > 0) {
-        const sorted = Object.entries(analysis.toolCounts).sort((a, b) => b[1] - a[1]);
-        md.push(`**Tools used:** ${sorted.map(([name, count]) => `${name}(${count})`).join(", ")}`);
-        md.push("");
-      }
-      if (analysis.skillsUsed.length > 0) {
-        md.push(`**Skills used:** ${analysis.skillsUsed.map((s) => `\`${s}\``).join(", ")}`);
-        md.push("");
-      }
-      if (analysis.nodeSkills.length > 0) {
-        md.push("**Skill routing:**");
-        md.push("");
-        md.push("| Node | Skill | Reason |");
-        md.push("|------|-------|--------|");
-        for (const item of analysis.nodeSkills) {
-          md.push(
-            `| ${item.nodeId.slice(0, 8)} | \`${item.skillId}\` | ${item.reason || "-"} |`,
-          );
-        }
-        md.push("");
-      }
-
-      // Turn-by-turn trace (compact)
-      if (analysis.turnDetails.length > 0) {
-        md.push("<details>");
-        md.push(`<summary>Trace (${analysis.turnDetails.length} turns)</summary>`);
-        md.push("");
-        md.push("```");
-        for (const turn of analysis.turnDetails) {
-          const tier = turn.modelTier ? `[${turn.modelTier}]` : "";
-          const ms = turn.durationMs ? ` (${(turn.durationMs / 1000).toFixed(1)}s)` : "";
-          if (turn.toolCalls.length > 0) {
-            for (const tc of turn.toolCalls) {
-              const args = Object.entries(tc.args)
-                .filter(([, v]) => v !== undefined)
-                .map(([k, v]) => `${k}=${typeof v === "string" ? `"${(v as string).slice(0, 40)}"` : v}`)
-                .join(", ");
-              md.push(`T${turn.turnNumber} ${tier} -> ${tc.name}(${args})${ms}`);
-            }
-          } else if (turn.llmContent) {
-            md.push(`T${turn.turnNumber} ${tier} -- "${turn.llmContent.slice(0, 80).replace(/\n/g, " ")}"${ms}`);
-          }
-          for (const tr of turn.toolResults) {
-            const icon = tr.success ? "ok" : "FAIL";
-            md.push(`    ${icon}: ${tr.result.slice(0, 100)}`);
-          }
-        }
-        md.push("```");
-        md.push("</details>");
-        md.push("");
-      }
-    }
-
-    // Critique section
-    md.push("## Critique");
-    md.push("");
-
-    const critiques: string[] = [];
-
-    for (const { rec, analysis } of analyses) {
-      // Flag high turn count
-      if (analysis.turns > 15) {
-        critiques.push(
-          `- **${rec.name}**: Used ${analysis.turns} turns — consider if the agent is exploring too much or failing to find elements efficiently.`,
-        );
-      }
-
-      // Flag repeated tool calls (stagnation)
-      if (analysis.repeatedTools.length > 0) {
-        critiques.push(
-          `- **${rec.name}**: Repeated consecutive tool calls detected: ${analysis.repeatedTools.join(", ")}. Possible stagnation or retry loop.`,
-        );
-      }
-
-      // Flag failures with classification
-      if (rec.passed === false) {
-        const classLabel =
-          analysis.failureClass === "provider"
-            ? "provider/transport error"
-            : analysis.failureClass === "harness"
-              ? "harness/sync failure"
-              : "product/assertion failure";
-        critiques.push(
-          `- **${rec.name}**: FAILED (${classLabel}) — review trace for root cause.`,
-        );
-      }
-
-      // Flag high cost
-      if (analysis.cost > 0.05) {
-        critiques.push(
-          `- **${rec.name}**: Cost ${formatCost(analysis.cost)} — higher than typical. Check if unnecessary perception calls or long context.`,
-        );
-      }
-    }
-
-    if (critiques.length === 0) {
-      md.push("No issues detected. All tests passed within expected turn counts and costs.");
-    } else {
-      md.push(...critiques);
-    }
-    md.push("");
-
-    // Write file
     const reportsDir = resolve(PROJECT_ROOT, "docs");
     if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
-    const reportPath = resolve(reportsDir, `e2e-report-${dateStr}.md`);
-    writeFileSync(reportPath, md.join("\n"), "utf-8");
+
+    const today = new Date().toISOString().split("T")[0];
+    const reportPath = resolve(reportsDir, `e2e-report-${today}.md`);
+    const markdown = buildMarkdownReport(analyses, this.runMetadata);
+
+    writeFileSync(reportPath, markdown, "utf-8");
     console.log(`\n[report] Written to ${reportPath}`);
   }
 }
+
+export const __testOnly = {
+  analyzeTraces,
+  buildMarkdownReport,
+  compactPrompt,
+  countPageInterpretationTurns,
+  createEmptyDiagnostics,
+  mergeDiagnostics,
+};
 
 export const suiteReport = new SuiteReport();
 
