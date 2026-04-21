@@ -98,7 +98,7 @@ export function PlanTimelineCard() {
   // --- Border color per mode ---
   const borderClass =
     mode === "confirmation"
-      ? "border-blue-200 dark:border-blue-800"
+      ? "border-primary-200 dark:border-primary-800"
       : mode === "completion"
         ? "border-green-200 dark:border-green-800"
         : "border-warm-200 dark:border-warm-700";
@@ -114,17 +114,17 @@ export function PlanTimelineCard() {
           <div className="flex items-center gap-2 mb-2">
             <ClipboardList
               size={14}
-              className="shrink-0 text-blue-600 dark:text-blue-400"
+              className="shrink-0 text-primary-600 dark:text-primary-400"
             />
-            <span className="text-xs font-medium text-blue-800 dark:text-blue-200">
+            <span className="text-xs font-medium text-primary-800 dark:text-primary-200">
               Plan ready
             </span>
             {pendingPlan.difficulty && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
                 {pendingPlan.difficulty}
               </span>
             )}
-            <span className="text-[10px] text-blue-500 dark:text-blue-400 ml-auto">
+            <span className="text-[10px] text-primary-600 dark:text-primary-400 ml-auto">
               {pendingPlan.nodes.length} steps
             </span>
           </div>
@@ -135,11 +135,11 @@ export function PlanTimelineCard() {
               <div key={i} className="flex items-start gap-2">
                 {/* Connector + number */}
                 <div className="flex flex-col items-center">
-                  <span className="w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40 text-[10px] font-medium text-blue-600 dark:text-blue-300 shrink-0">
+                  <span className="w-5 h-5 flex items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/40 text-[10px] font-medium text-primary-700 dark:text-primary-300 shrink-0">
                     {i + 1}
                   </span>
                   {i < pendingPlan.nodes.length - 1 && (
-                    <div className="w-px flex-1 min-h-[12px] bg-blue-200/60 dark:bg-blue-700/40" />
+                    <div className="w-px flex-1 min-h-[12px] bg-primary-200/60 dark:bg-primary-700/40" />
                   )}
                 </div>
                 {/* Step content */}
@@ -148,7 +148,7 @@ export function PlanTimelineCard() {
                     onClick={() =>
                       setExpandedStep(expandedStep === i ? null : i)
                     }
-                    className="text-xs text-left text-blue-800 dark:text-blue-200 leading-relaxed hover:text-blue-600 dark:hover:text-blue-100 transition-colors w-full"
+                    className="text-xs text-left text-primary-800 dark:text-primary-200 leading-relaxed hover:text-primary-700 dark:hover:text-primary-100 transition-colors w-full"
                   >
                     {node.description}
                     {node.successCriteria && (
@@ -159,7 +159,7 @@ export function PlanTimelineCard() {
                     )}
                   </button>
                   {expandedStep === i && node.successCriteria && (
-                    <div className="mt-1 text-[10px] text-blue-500 dark:text-blue-400 italic leading-relaxed">
+                    <div className="mt-1 text-[10px] text-primary-600 dark:text-primary-400 italic leading-relaxed">
                       {node.successCriteria}
                     </div>
                   )}
@@ -172,7 +172,7 @@ export function PlanTimelineCard() {
           {!showFeedback ? (
             <button
               onClick={() => setShowFeedback(true)}
-              className="text-[10px] text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 mb-2 transition-colors"
+              className="text-[10px] text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 mb-2 transition-colors"
             >
               + Add guidance
             </button>
@@ -182,7 +182,7 @@ export function PlanTimelineCard() {
               onChange={(e) => setFeedback(e.target.value)}
               placeholder="Add guidance or corrections..."
               rows={2}
-              className="w-full px-2 py-1.5 mb-2 text-xs border border-blue-200 dark:border-blue-700 rounded-md bg-white dark:bg-blue-950/30 text-blue-800 dark:text-blue-200 placeholder:text-blue-400 dark:placeholder:text-blue-600 outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+              className="w-full px-2 py-1.5 mb-2 text-xs border border-primary-200 dark:border-primary-700 rounded-md bg-white dark:bg-primary-950/20 text-primary-800 dark:text-primary-200 placeholder:text-primary-400 dark:placeholder:text-primary-500 outline-none focus:ring-1 focus:ring-primary-400 resize-none"
               autoFocus
             />
           )}
@@ -191,13 +191,13 @@ export function PlanTimelineCard() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => void sendDecision("cancel")}
-              className="flex-1 rounded border border-blue-300 dark:border-blue-700 px-2 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+              className="flex-1 rounded border border-primary-300 dark:border-primary-700 px-2 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={() => void sendDecision("approve")}
-              className="flex-1 rounded bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+              className="flex-1 rounded bg-primary-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-700 transition-colors"
             >
               {feedback.trim() ? "Replan & Start" : "Start"}
             </button>
@@ -220,12 +220,12 @@ export function PlanTimelineCard() {
                 : `Step ${(taskProgress?.currentIndex ?? 0) + 1} of ${rows.length}`}
             </span>
             {taskProgress && (
-              <span className="text-[10px] text-warm-400 dark:text-warm-500 ml-auto tabular-nums">
+              <span className="text-[10px] text-warm-500 dark:text-warm-400 ml-auto tabular-nums">
                 {taskProgress.totalTurnsUsed} turns
               </span>
             )}
             {taskCompletion && (
-              <span className="text-[10px] text-warm-400 dark:text-warm-500 ml-auto tabular-nums">
+              <span className="text-[10px] text-warm-500 dark:text-warm-400 ml-auto tabular-nums">
                 {taskCompletion.totalTurnsUsed} turns
               </span>
             )}
@@ -289,7 +289,7 @@ export function PlanTimelineCard() {
                       row.status === "running"
                         ? "text-warm-800 dark:text-warm-100 font-medium"
                         : row.status === "pending"
-                          ? "text-warm-400 dark:text-warm-500"
+                          ? "text-warm-500 dark:text-warm-400"
                           : "text-warm-600 dark:text-warm-300"
                     }`}
                   >
@@ -303,7 +303,7 @@ export function PlanTimelineCard() {
                   {row.evidenceSnippet &&
                     row.status !== "pending" &&
                     row.status !== "running" && (
-                      <div className="mt-0.5 text-[10px] text-warm-400 dark:text-warm-500 line-clamp-2 leading-relaxed">
+                      <div className="mt-0.5 text-[10px] text-warm-500 dark:text-warm-400 line-clamp-2 leading-relaxed">
                         {row.evidenceSnippet}
                       </div>
                     )}

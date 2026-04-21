@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   theme: "system",
   showSessionMetrics: true,
   showMessageDetailsByDefault: false,
+  showDebugScreenshots: false,
   siteAccessMode: "allow_all",
   siteAccessBlocklist: [],
   requireApprovals: true,

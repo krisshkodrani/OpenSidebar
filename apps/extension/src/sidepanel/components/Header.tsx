@@ -22,7 +22,7 @@ export function Header({
         ) : null}
       </div>
 
-      <span className="text-[11px] font-medium text-warm-400 dark:text-warm-500 tracking-wide select-none">
+      <span className="text-[11px] font-semibold text-warm-600 dark:text-warm-300 tracking-[0.08em] select-none">
         OpenSidebar
       </span>
 

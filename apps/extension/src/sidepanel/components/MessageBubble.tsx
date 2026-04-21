@@ -318,6 +318,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   );
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
+  const isGuidance = isFeedback;
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
@@ -407,18 +408,18 @@ export const MessageBubble = React.memo(function MessageBubble({
             isUser
               ? clsx(
                   "px-3 py-2 rounded-2xl whitespace-pre-wrap",
-                  isFeedback
-                    ? "bg-amber-500/80 text-white"
+                  isGuidance
+                    ? "border border-primary-200 bg-primary-50/90 text-primary-900 dark:border-primary-800 dark:bg-primary-950/20 dark:text-primary-100"
                     : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
                 )
               : "text-warm-800 dark:text-warm-100",
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >
-          {isFeedback && (
-            <div className="flex items-center gap-1 text-xs opacity-75 mb-1">
-              <MessageCircle size={10} />
-              <span>feedback</span>
+          {isGuidance && (
+            <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-primary-600 dark:text-primary-300">
+              <MessageCircle size={11} />
+              <span>Guidance</span>
             </div>
           )}
           {!isUser && message.thinking && (
