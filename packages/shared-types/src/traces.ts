@@ -41,6 +41,39 @@ export interface TraceContextMetrics {
   cachedPrefixLength: number;
 }
 
+export type TracePerceptionMode =
+  | "structured"
+  | "vl_screenshot_only"
+  | "element_only";
+
+export type TracePerceptionSource = "fresh" | "warmup" | "cached" | "fallback";
+
+export type TracePerceptionFreshnessReason =
+  | "new_fingerprint"
+  | "fingerprint_cache_hit"
+  | "stale_fingerprint"
+  | "render_hash_changed"
+  | "warmup_cache"
+  | "vl_screenshot"
+  | "dom_fallback";
+
+export type TracePerceptionFallbackReason =
+  | "sparse_dom"
+  | "inactive_tab"
+  | "screenshot_unavailable"
+  | "capture_failed"
+  | "no_api_key"
+  | "timeout"
+  | "provider_exhausted"
+  | "empty_response";
+
+export type TracePerceptionScreenshotStatus =
+  | "captured"
+  | "cached"
+  | "missing"
+  | "capture_failed"
+  | "not_requested";
+
 /** A single turn's full-fidelity recording for offline eval replay */
 export interface TraceEntry {
   /** Trace schema version (optional for backward compatibility with older traces) */
@@ -125,6 +158,11 @@ export interface TraceEntry {
     model: string;
     providerId?: string;
     durationMs: number;
+    mode?: TracePerceptionMode;
+    source?: TracePerceptionSource;
+    freshnessReason?: TracePerceptionFreshnessReason;
+    fallbackReason?: TracePerceptionFallbackReason;
+    screenshotStatus?: TracePerceptionScreenshotStatus;
     screenshotPath?: string;
     /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
     screenshotDataUrl?: string;
@@ -234,6 +272,36 @@ export interface TraceEventPayloadByType {
     reason: string;
     replanNumber: number;
   };
+  skill_tool_ranking_applied: {
+    turn: number;
+    skillId: string;
+    preferredTools: ToolName[];
+    discouragedTools: ToolName[];
+    originalOrder: ToolName[];
+    rankedOrder: ToolName[];
+  };
+  skill_tool_selected: {
+    turn: number;
+    skillId: string;
+    toolName: ToolName;
+    preference: "preferred" | "neutral" | "discouraged";
+    mode: "parallel" | "sequential";
+  };
+  bridge_recovery_attempt: {
+    turn?: number;
+    toolName?: ToolName;
+    phase: "transient_probe" | "reinject" | "hard_reload";
+    context: "tool_execution" | "snapshot";
+    error?: string;
+  };
+  bridge_recovery_result: {
+    turn?: number;
+    toolName?: ToolName;
+    phase: "transient_probe" | "reinject" | "hard_reload";
+    context: "tool_execution" | "snapshot";
+    success: boolean;
+    error?: string;
+  };
 }
 
 type KnownTraceEvent = {
@@ -251,6 +319,17 @@ type GenericTraceEvent = {
 };
 
 export type TraceEvent = KnownTraceEvent | GenericTraceEvent;
+
+export interface TraceSkillToolMetrics {
+  skillId: string;
+  rankingApplications: number;
+  totalSelections: number;
+  preferredSelections: number;
+  neutralSelections: number;
+  discouragedSelections: number;
+  preferredSelectionRate: number;
+  discouragedSelectionRate: number;
+}
 
 /** Session-level metadata written to traces/index.jsonl on session end */
 export interface TraceSession {
@@ -317,6 +396,8 @@ export interface TraceSession {
       };
     }>;
   };
+  /** Session-level summary of skill-guided tool ranking and tool choice */
+  skillToolMetrics?: TraceSkillToolMetrics;
 }
 
 /** Normalized failure info for trace/session rollups */

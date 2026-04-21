@@ -7,12 +7,10 @@ import {
   ShieldCheck,
   ChevronDown,
   Check,
-  Square,
   Mic,
   Loader2,
 } from "lucide-react";
 import { useStore } from "../store";
-import { StatusLine } from "./StatusLine";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
 import { ClarificationOverlay } from "./ClarificationOverlay";
@@ -176,7 +174,6 @@ export function InputArea({
   if (pendingApproval) {
     return (
       <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
-        <StatusLine />
         <ApprovalOverlay />
       </div>
     );
@@ -186,7 +183,6 @@ export function InputArea({
   if (pendingEscalation) {
     return (
       <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
-        <StatusLine />
         <EscalationOverlay />
       </div>
     );
@@ -196,7 +192,6 @@ export function InputArea({
   if (pendingClarification) {
     return (
       <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
-        <StatusLine />
         <ClarificationOverlay />
       </div>
     );
@@ -204,7 +199,6 @@ export function InputArea({
 
   return (
     <div className="bg-warm-50 dark:bg-warm-900 relative border-t border-warm-200 dark:border-warm-800">
-      <StatusLine />
       {/* Risk banner when autonomous mode is on */}
       {autonomousMode && !isAgentRunning && (
         <div className="mx-2 mt-1 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
@@ -216,54 +210,40 @@ export function InputArea({
         {/* Running-state panel: prominent stop + optional feedback input */}
         {isAgentRunning ? (
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2 bg-warm-100 dark:bg-warm-800 px-3 py-2 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-60 animate-ping" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-500" />
-                  </span>
-                  <span className="text-xs font-medium text-warm-700 dark:text-warm-200 truncate">
-                    Working on your task...
-                  </span>
-                </div>
+            <div className="px-1">
+              <div className="text-[11px] font-medium text-warm-600 dark:text-warm-300">
+                Guide the agent
               </div>
-              <button
-                onClick={onStop}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
-                aria-label="Stop agent"
-              >
-                <Square size={12} fill="currentColor" />
-                Stop
-              </button>
+              <div className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
+                Add guidance, a correction, or a new constraint while the current run continues.
+              </div>
             </div>
-            {/* Feedback input row */}
             <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
               <textarea
                 ref={textareaRef}
                 value={inputText}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Reply to agent..."
+                placeholder="Guide the agent..."
                 className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
                 rows={1}
               />
               {hasText && (
                 <button
                   onClick={handleSubmit}
-                  className="w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white"
-                  aria-label="Send feedback"
+                  className="w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white"
+                  aria-label="Send guidance"
                 >
                   <ArrowUp size={16} />
                 </button>
               )}
             </div>
-            <p className="text-center text-[10px] text-warm-400 dark:text-warm-500 select-none">
-              Press{" "}
+            <p className="px-1 text-[10px] text-warm-400 dark:text-warm-500 select-none">
+              Guidance is sent into the current run. Press{" "}
               <kbd className="px-1 py-0.5 rounded bg-warm-200/60 dark:bg-warm-700/60 text-warm-500 dark:text-warm-400 font-mono text-[9px]">
                 Esc
               </kbd>{" "}
-              to stop
+              to stop immediately.
             </p>
           </div>
         ) : (
@@ -338,7 +318,7 @@ export function InputArea({
                   )}
                 >
                   {autonomousMode ? (
-                    <Play size={10} className="shrink-0" />
+                    <ShieldAlert size={10} className="shrink-0" />
                   ) : (
                     <ShieldCheck size={10} className="shrink-0" />
                   )}
