@@ -165,13 +165,16 @@ describe("Content script reinjection flow", () => {
   });
 
   test("reinjectContentScript reload fallback is opt-in", async () => {
-    let messageAttempts = 0;
+    let reloaded = false;
     (chrome.scripting as any).executeScript = vi.fn(() =>
       Promise.reject(new Error("loader unavailable")),
     );
+    (chrome.tabs as any).reload = vi.fn(() => {
+      reloaded = true;
+      return Promise.resolve();
+    });
     (chrome.tabs as any).sendMessage = vi.fn(() => {
-      messageAttempts += 1;
-      if (messageAttempts < 2) {
+      if (!reloaded) {
         return Promise.reject(new Error("Receiving end does not exist"));
       }
       return Promise.resolve({ payload: { result: "OK" } });
@@ -207,15 +210,79 @@ describe("Content script reinjection flow", () => {
     expect((chrome.tabs as any).sendMessage).toHaveBeenCalled();
   });
 
+  test("recoverContentScriptBridge emits structured trace callbacks", async () => {
+    const events: Array<Record<string, unknown>> = [];
+
+    let attempts = 0;
+    (chrome.tabs as any).sendMessage = vi.fn(() => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(new Error("Receiving end does not exist"));
+      }
+      return Promise.resolve({ payload: { result: "OK", waitedMs: 25, elementCount: 4 } });
+    });
+
+    await expect(
+      recoverContentScriptBridge(111, {
+        traceHook: (event) => events.push(event),
+        context: "snapshot",
+      }),
+    ).resolves.toBe(true);
+
+    expect(events).toEqual([
+      {
+        stage: "attempt",
+        phase: "reinject",
+        context: "snapshot",
+        toolName: undefined,
+      },
+      {
+        stage: "result",
+        phase: "reinject",
+        context: "snapshot",
+        toolName: undefined,
+        success: true,
+      },
+    ]);
+  });
+
+  test("recoverContentScriptBridge tolerates a few failed probes before succeeding", async () => {
+    let probeAttempts = 0;
+    (chrome.tabs as any).sendMessage = vi.fn(() => {
+      probeAttempts += 1;
+      if (probeAttempts <= 3) {
+        return Promise.reject(new Error("Receiving end does not exist"));
+      }
+      return Promise.resolve({ payload: { result: "OK", waitedMs: 25, elementCount: 4 } });
+    });
+
+    await expect(
+      recoverContentScriptBridge(109, { allowReloadFallback: false, ensureTimeoutMs: 50, domReadyTimeoutMs: 25 }),
+    ).resolves.toBe(true);
+    expect(chrome.scripting.executeScript).toHaveBeenCalled();
+    expect(probeAttempts).toBeGreaterThan(3);
+  });
+
   test("executeContentTool recovers after a bridge disconnect", async () => {
     let attempts = 0;
+    let reinjected = false;
+    (chrome.scripting as any).executeScript = vi.fn(() => {
+      reinjected = true;
+      return Promise.resolve();
+    });
     (chrome.tabs as any).sendMessage = vi.fn((_tabId: number, message: any) => {
       if (message.type === "TOOL_EXECUTE") {
         attempts += 1;
         if (attempts === 1) {
           return Promise.reject(new Error("Receiving end does not exist"));
         }
+        if (!reinjected) {
+          return Promise.reject(new Error("Receiving end does not exist"));
+        }
         return Promise.resolve({ payload: { result: "clicked" } });
+      }
+      if (!reinjected) {
+        return Promise.reject(new Error("Receiving end does not exist"));
       }
       return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
     });
@@ -224,6 +291,70 @@ describe("Content script reinjection flow", () => {
       executeContentTool(ToolName.CLICK_ELEMENT, { elementId: "e1" }, 107),
     ).resolves.toBe("clicked");
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
+  });
+
+  test("executeContentTool retries immediately after a transient bridge disconnect", async () => {
+    let toolAttempts = 0;
+    let probeAttempts = 0;
+    (chrome.tabs as any).sendMessage = vi.fn((_tabId: number, message: any) => {
+      if (message.type === "TOOL_EXECUTE") {
+        toolAttempts += 1;
+        if (toolAttempts === 1) {
+          return Promise.reject(new Error("Receiving end does not exist"));
+        }
+        return Promise.resolve({ payload: { result: "clicked-after-transient-probe" } });
+      }
+      probeAttempts += 1;
+      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+    });
+
+    await expect(
+      executeContentTool(ToolName.CLICK_ELEMENT, { elementId: "e2" }, 110),
+    ).resolves.toBe("clicked-after-transient-probe");
+    expect(probeAttempts).toBeGreaterThan(0);
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+  });
+
+  test("executeContentTool emits transient probe bridge trace callbacks", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    let toolAttempts = 0;
+
+    (chrome.tabs as any).sendMessage = vi.fn((_tabId: number, message: any) => {
+      if (message.type === "TOOL_EXECUTE") {
+        toolAttempts += 1;
+        if (toolAttempts === 1) {
+          return Promise.reject(new Error("Receiving end does not exist"));
+        }
+        return Promise.resolve({ payload: { result: "clicked-after-transient-probe" } });
+      }
+      return Promise.resolve({ payload: { result: "OK", waitedMs: 10, elementCount: 3 } });
+    });
+
+    await expect(
+      executeContentTool(
+        ToolName.CLICK_ELEMENT,
+        { elementId: "e3" },
+        112,
+        (event) => events.push(event),
+      ),
+    ).resolves.toBe("clicked-after-transient-probe");
+
+    expect(events).toEqual([
+      {
+        stage: "attempt",
+        phase: "transient_probe",
+        context: "tool_execution",
+        toolName: ToolName.CLICK_ELEMENT,
+        error: "Receiving end does not exist",
+      },
+      {
+        stage: "result",
+        phase: "transient_probe",
+        context: "tool_execution",
+        toolName: ToolName.CLICK_ELEMENT,
+        success: true,
+      },
+    ]);
   });
 
   test("executeContentTool falls back to reopening the current page when reinjection recovery fails", async () => {

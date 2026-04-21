@@ -1,22 +1,37 @@
 /**
- * Content script bridge - communication and error recovery for tool execution
+ * Content script bridge - communication and error recovery for tool execution.
  */
 
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import {
-  ensureContentScript,
   probeContentScript,
   waitForContentScriptReady,
   waitForDomReady,
 } from "../tab-ready";
+
+export type BridgeRecoveryPhase =
+  | "transient_probe"
+  | "reinject"
+  | "hard_reload";
+
+export type BridgeRecoveryContext = "tool_execution" | "snapshot";
+
+export type BridgeRecoveryTraceHook = (event: {
+  stage: "attempt" | "result";
+  phase: BridgeRecoveryPhase;
+  context: BridgeRecoveryContext;
+  toolName?: ToolName;
+  success?: boolean;
+  error?: string;
+}) => void;
 
 export function formatUnknownError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
 
-/** Detect Chrome bridge disconnect errors that indicate the content script is gone */
+/** Detect Chrome bridge disconnect errors that indicate the content script is gone. */
 export function isBridgeDisconnect(errorMsg: string): boolean {
   return (
     errorMsg.includes("Receiving end does not exist") ||
@@ -27,20 +42,83 @@ export function isBridgeDisconnect(errorMsg: string): boolean {
   );
 }
 
-/** Re-inject the content script into a tab after a bridge disconnect */
+async function confirmResponsiveBridge(
+  tabId: number,
+  options: {
+    readyTimeoutMs?: number;
+    domReadyTimeoutMs?: number;
+    probeAttempts?: number;
+  } = {},
+): Promise<boolean> {
+  const {
+    readyTimeoutMs = 3000,
+    domReadyTimeoutMs = 400,
+    probeAttempts = 3,
+  } = options;
+
+  await waitForContentScriptReady(tabId, readyTimeoutMs);
+
+  for (let attempt = 0; attempt < Math.max(1, probeAttempts); attempt++) {
+    await waitForDomReady(tabId, {
+      timeoutMs: domReadyTimeoutMs + attempt * 250,
+      waitForElements: true,
+    });
+
+    if (await probeContentScript(tabId, 150 + attempt * 100)) {
+      return true;
+    }
+
+    if (attempt < probeAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
+  return false;
+}
+
+/** Re-inject the content script into a tab after a bridge disconnect. */
 export async function reinjectContentScript(
   tabId: number,
-  options: { allowReloadFallback?: boolean } = {},
+  options: {
+    allowReloadFallback?: boolean;
+    traceHook?: BridgeRecoveryTraceHook;
+    context?: BridgeRecoveryContext;
+    toolName?: ToolName;
+  } = {},
 ): Promise<boolean> {
-  const { allowReloadFallback = false } = options;
-  // Attempt 1: file-based injection from manifest
+  const {
+    allowReloadFallback = false,
+    traceHook,
+    context = "tool_execution",
+    toolName,
+  } = options;
+
+  traceHook?.({
+    stage: "attempt",
+    phase: "reinject",
+    context,
+    toolName,
+  });
+
   try {
     const manifest = chrome.runtime.getManifest();
     const files = manifest.content_scripts?.[0]?.js;
     if (files?.length) {
       await chrome.scripting.executeScript({ target: { tabId }, files });
-      const ready = await ensureContentScript(tabId, 3000);
-      if (ready || (await probeContentScript(tabId, 150))) {
+      if (
+        await confirmResponsiveBridge(tabId, {
+          readyTimeoutMs: 3000,
+          domReadyTimeoutMs: 400,
+          probeAttempts: 3,
+        })
+      ) {
+        traceHook?.({
+          stage: "result",
+          phase: "reinject",
+          context,
+          toolName,
+          success: true,
+        });
         return true;
       }
     }
@@ -51,15 +129,39 @@ export async function reinjectContentScript(
     });
   }
 
+  // If file-based injection failed because the script was already present or just
+  // needed a moment to settle, accept the existing bridge before escalating.
+  if (
+    await confirmResponsiveBridge(tabId, {
+      readyTimeoutMs: 500,
+      domReadyTimeoutMs: 250,
+      probeAttempts: 2,
+    })
+  ) {
+    traceHook?.({
+      stage: "result",
+      phase: "reinject",
+      context,
+      toolName,
+      success: true,
+    });
+    return true;
+  }
+
   if (!allowReloadFallback) {
     logger.warn("tools", "Content script reinjection failed without reload fallback", {
       tabId,
     });
+    traceHook?.({
+      stage: "result",
+      phase: "reinject",
+      context,
+      toolName,
+      success: false,
+    });
     return false;
   }
 
-  // Attempt 2: reload the tab so Chrome re-injects content scripts via manifest
-  // This handles CRXJS dev mode where the loader file can't be dynamically loaded
   try {
     await chrome.tabs.reload(tabId);
     await new Promise<void>((resolve) => {
@@ -79,11 +181,31 @@ export async function reinjectContentScript(
       chrome.webNavigation?.onErrorOccurred.addListener(onNav);
       const timer = setTimeout(done, 10_000);
     });
-    await waitForContentScriptReady(tabId, 5000);
-    return await ensureContentScript(tabId, 1000);
+
+    const recovered = await confirmResponsiveBridge(tabId, {
+      readyTimeoutMs: 5000,
+      domReadyTimeoutMs: 1000,
+      probeAttempts: 4,
+    });
+    traceHook?.({
+      stage: "result",
+      phase: "reinject",
+      context,
+      toolName,
+      success: recovered,
+    });
+    return recovered;
   } catch (e: any) {
     logger.error("tools", "Content script reinjection failed (file + reload)", {
       tabId,
+      error: e.message,
+    });
+    traceHook?.({
+      stage: "result",
+      phase: "reinject",
+      context,
+      toolName,
+      success: false,
       error: e.message,
     });
     return false;
@@ -92,8 +214,8 @@ export async function reinjectContentScript(
 
 /**
  * Re-establish a responsive content-script bridge after navigation/disconnect.
- * This adds a DOM-ready/probe phase after reinjection so callers do not race
- * an immediately reloaded or history-restored page.
+ * Adds a DOM-ready/probe phase after reinjection so callers do not race a
+ * reloaded or history-restored page.
  */
 export async function recoverContentScriptBridge(
   tabId: number,
@@ -101,50 +223,60 @@ export async function recoverContentScriptBridge(
     allowReloadFallback?: boolean;
     ensureTimeoutMs?: number;
     domReadyTimeoutMs?: number;
+    traceHook?: BridgeRecoveryTraceHook;
+    context?: BridgeRecoveryContext;
+    toolName?: ToolName;
   } = {},
 ): Promise<boolean> {
   const {
     allowReloadFallback = false,
     ensureTimeoutMs = 3000,
     domReadyTimeoutMs = 400,
+    traceHook,
+    context = "tool_execution",
+    toolName,
   } = options;
 
-  const reinjected = await reinjectContentScript(tabId, { allowReloadFallback });
+  const reinjected = await reinjectContentScript(tabId, {
+    allowReloadFallback,
+    traceHook,
+    context,
+    toolName,
+  });
   if (!reinjected) {
     return false;
   }
 
-  const ready = await ensureContentScript(tabId, ensureTimeoutMs);
-  if (!ready) {
-    return false;
-  }
-
-  await waitForDomReady(tabId, {
-    timeoutMs: domReadyTimeoutMs,
-    waitForElements: true,
+  return confirmResponsiveBridge(tabId, {
+    readyTimeoutMs: ensureTimeoutMs,
+    domReadyTimeoutMs,
+    probeAttempts: 4,
   });
-
-  if (await probeContentScript(tabId, 150)) {
-    return true;
-  }
-
-  const rechecked = await ensureContentScript(tabId, Math.min(ensureTimeoutMs, 2000));
-  if (!rechecked) {
-    return false;
-  }
-
-  await waitForDomReady(tabId, {
-    timeoutMs: domReadyTimeoutMs,
-    waitForElements: true,
-  });
-  return probeContentScript(tabId, 150);
 }
 
 async function hardReloadActivePage(
   tabId: number,
-  options: { ensureTimeoutMs?: number; domReadyTimeoutMs?: number } = {},
+  options: {
+    ensureTimeoutMs?: number;
+    domReadyTimeoutMs?: number;
+    traceHook?: BridgeRecoveryTraceHook;
+    context?: BridgeRecoveryContext;
+    toolName?: ToolName;
+  } = {},
 ): Promise<boolean> {
-  const { ensureTimeoutMs = 5000, domReadyTimeoutMs = 1000 } = options;
+  const {
+    ensureTimeoutMs = 5000,
+    domReadyTimeoutMs = 1000,
+    traceHook,
+    context = "tool_execution",
+    toolName,
+  } = options;
+  traceHook?.({
+    stage: "attempt",
+    phase: "hard_reload",
+    context,
+    toolName,
+  });
   try {
     const tab = await chrome.tabs.get(tabId);
     const targetUrl =
@@ -160,18 +292,30 @@ async function hardReloadActivePage(
     }
 
     await waitForNavigation(tabId, 10_000);
-    await waitForContentScriptReady(tabId, ensureTimeoutMs);
-    const ready = await ensureContentScript(tabId, ensureTimeoutMs);
-    if (!ready) return false;
-
-    await waitForDomReady(tabId, {
-      timeoutMs: domReadyTimeoutMs,
-      waitForElements: true,
+    const recovered = await confirmResponsiveBridge(tabId, {
+      readyTimeoutMs: ensureTimeoutMs,
+      domReadyTimeoutMs,
+      probeAttempts: 4,
     });
-    return probeContentScript(tabId, 250);
+    traceHook?.({
+      stage: "result",
+      phase: "hard_reload",
+      context,
+      toolName,
+      success: recovered,
+    });
+    return recovered;
   } catch (e: any) {
     logger.error("tools", "Hard page reload recovery failed", {
       tabId,
+      error: e?.message ?? String(e),
+    });
+    traceHook?.({
+      stage: "result",
+      phase: "hard_reload",
+      context,
+      toolName,
+      success: false,
       error: e?.message ?? String(e),
     });
     return false;
@@ -182,12 +326,13 @@ export async function executeContentTool(
   startName: ToolName,
   args: any,
   tabId: number,
+  traceHook?: BridgeRecoveryTraceHook,
 ): Promise<string> {
   if (tabId === chrome.tabs.TAB_ID_NONE) {
     return "Error: No active tab to execute tool on.";
   }
 
-  logger.debug("tools", `bridge → ${startName}`, { tabId, args });
+  logger.debug("tools", `bridge -> ${startName}`, { tabId, args });
 
   const sendMessage = () =>
     chrome.tabs.sendMessage(tabId, {
@@ -209,7 +354,7 @@ export async function executeContentTool(
       ),
     ]);
     if (!response?.payload?.result && response?.payload?.result !== "") {
-      throw new Error("Empty response from content script — bridge may be disconnected");
+      throw new Error("Empty response from content script - bridge may be disconnected");
     }
     return response.payload.result;
   } catch (e: any) {
@@ -218,7 +363,6 @@ export async function executeContentTool(
       return `Error: Could not communicate with content script. Is the tab active? (${e.message})`;
     }
 
-    // Bridge disconnected — check if tab is still alive
     logger.warn("tools", "Bridge disconnect detected, attempting reinject", {
       tabId,
       error: e.message,
@@ -229,22 +373,74 @@ export async function executeContentTool(
       return "Error: Tab has been closed.";
     }
 
-    // Tab alive — reinject content script and retry once
-    // Allow reload fallback: file-based injection fails in CRXJS dev builds,
-    // and a page reload (which re-injects via manifest) is better than a
-    // permanent disconnect that leaves the agent unable to interact.
+    // A small subset of disconnects are transient. If the bridge is already
+    // responsive again, retry immediately and avoid a disruptive reload path.
+    traceHook?.({
+      stage: "attempt",
+      phase: "transient_probe",
+      context: "tool_execution",
+      toolName: startName,
+      error: e.message,
+    });
+    if (await probeContentScript(tabId, 150)) {
+      try {
+        const transientRetryResponse = await sendMessage();
+        logger.info("tools", "Bridge reconnect successful after transient probe", {
+          tabId,
+          tool: startName,
+        });
+        traceHook?.({
+          stage: "result",
+          phase: "transient_probe",
+          context: "tool_execution",
+          toolName: startName,
+          success: true,
+        });
+        return transientRetryResponse.payload.result;
+      } catch (retryErr: any) {
+        if (!isBridgeDisconnect(retryErr.message || "")) {
+          logger.error("tools", "Bridge retry failed after transient probe", {
+            tabId,
+            error: retryErr.message,
+          });
+          traceHook?.({
+            stage: "result",
+            phase: "transient_probe",
+            context: "tool_execution",
+            toolName: startName,
+            success: false,
+            error: retryErr.message,
+          });
+          return `Error: Could not communicate with content script. Is the tab active? (${retryErr.message})`;
+        }
+      }
+    }
+    traceHook?.({
+      stage: "result",
+      phase: "transient_probe",
+      context: "tool_execution",
+      toolName: startName,
+      success: false,
+    });
+
     const recovered = await recoverContentScriptBridge(tabId, {
       allowReloadFallback: true,
       ensureTimeoutMs: 5000,
       domReadyTimeoutMs: 1000,
+      traceHook,
+      context: "tool_execution",
+      toolName: startName,
     });
     if (!recovered) {
       const hardRecovered = await hardReloadActivePage(tabId, {
         ensureTimeoutMs: 5000,
         domReadyTimeoutMs: 1000,
+        traceHook,
+        context: "tool_execution",
+        toolName: startName,
       });
       if (!hardRecovered) {
-        return `Error: Content script disconnected and reinjection failed. Try refreshing the page.`;
+        return "Error: Content script disconnected and reinjection failed. Try refreshing the page.";
       }
     }
 
@@ -260,6 +456,9 @@ export async function executeContentTool(
         const hardRecovered = await hardReloadActivePage(tabId, {
           ensureTimeoutMs: 5000,
           domReadyTimeoutMs: 1000,
+          traceHook,
+          context: "tool_execution",
+          toolName: startName,
         });
         if (hardRecovered) {
           try {

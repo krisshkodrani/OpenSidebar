@@ -219,6 +219,7 @@ describe("Orchestrator integration join tests", () => {
     const runtimeMessages: any[] = [];
     const checkpointStore: Record<string, unknown> = {};
     const localStore: Record<string, unknown> = {};
+    const runTraceEvents: any[] = [];
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -235,6 +236,14 @@ describe("Orchestrator integration join tests", () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
       if (url.startsWith("http://127.0.0.1:7589/")) {
+        try {
+          const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+          if (url.endsWith("/run-traces") || url.endsWith("/run-traces/session")) {
+            runTraceEvents.push({ url, body });
+          }
+        } catch {
+          // ignore malformed trace payloads in tests
+        }
         return new Response(null, { status: 204 });
       }
       // Router classifier calls — return "plan" so planner always runs
@@ -257,6 +266,7 @@ describe("Orchestrator integration join tests", () => {
       return { ok: true };
     });
     (globalThis as any).__runtimeMessages = runtimeMessages;
+    (globalThis as any).__runTraceEvents = runTraceEvents;
 
     (chrome.storage.local as any).get = vi.fn(async (key: string | string[] | null) => {
       if (key === null) {
@@ -645,6 +655,19 @@ describe("Orchestrator integration join tests", () => {
     expect(String(completion?.payload?.subtaskResults?.[0]?.result || "")).toContain(
       "Blocked by missing dependencies",
     );
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "node_failure_attribution" &&
+          entry.body.data?.reason === "unsatisfiable_dependencies" &&
+          entry.body.data?.nodeId === "n1",
+      ),
+    ).toBe(true);
   });
 
   test("replans node on drift + retry into replacement subgraph", async () => {
@@ -799,7 +822,7 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.metrics?.totalTokens).toBe(1100000);
   });
 
-  test("preflight defers excess nodes when plan exceeds budget envelope", async () => {
+  test("preflight warns on excess nodes without failing them upfront", async () => {
     plannerBuildNodesImpl = async () =>
       Array.from({ length: 10 }, (_, i) => makeNode(`p${i + 1}`, `plan step ${i + 1}`));
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
@@ -808,20 +831,32 @@ describe("Orchestrator integration join tests", () => {
     activeOrchestrator = orchestrator;
     await orchestrator.startTask(makeInput("preflight budget fit task"));
 
-    expect(createdLoopNodeIds).toEqual(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]);
+    expect(createdLoopNodeIds).toEqual([
+      "p1",
+      "p2",
+      "p3",
+      "p4",
+      "p5",
+      "p6",
+      "p7",
+      "p8",
+      "p9",
+      "p10",
+    ]);
     const messages = (globalThis as any).__runtimeMessages as Array<{
       type?: string;
       payload?: any;
     }>;
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
-    expect(completion?.payload?.status).toBe("partial");
-    const subtaskResults = completion?.payload?.subtaskResults || [];
     expect(
-      subtaskResults.some((item: any) =>
-        String(item.result || "").includes("Deferred by budget preflight"),
+      messages.some(
+        (m) =>
+          m.type === "AGENT_STEP" &&
+          String(m.payload?.step?.label || "").includes("Planner preflight budget gate"),
       ),
     ).toBe(true);
+    expect(completion?.payload?.status).toBe("completed");
   });
 
   test("isolates planner lane at runtime and fails node explicitly", async () => {
@@ -955,6 +990,64 @@ describe("Orchestrator integration join tests", () => {
     expect(createdLoopConfigs[0]?.turnCheckpoint ?? null).toBeNull();
   });
 
+  test("emits checkpoint restore and discard run-trace events during recovery", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<
+      string,
+      unknown
+    >;
+    const localStore = (globalThis as any).__localStore as Record<string, unknown>;
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-3");
+    localStore["opensidebar:turn-checkpoint:ws-1:n1"] = makeTurnCheckpoint();
+
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: "used restored checkpoint",
+    });
+
+    let orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "checkpoint_turn_restored" &&
+          entry.body.data?.nodeId === "n1",
+      ),
+    ).toBe(true);
+
+    runTraceEvents.length = 0;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-4");
+    localStore["opensidebar:turn-checkpoint:ws-1:n1"] = makeTurnCheckpoint({
+      pageUrl: "https://example.com/other-page",
+      snapshotFingerprint: "https://example.com/other-page|0|123",
+    });
+    createdLoopNodeIds.length = 0;
+    createdLoopConfigs.length = 0;
+
+    orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "checkpoint_turn_discarded" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.reason === "snapshot_mismatch",
+      ),
+    ).toBe(true);
+  });
+
   test("pauses on approval request and resumes with the resolved approval", async () => {
     let launchCount = 0;
     loopStartImpl = async () => {
@@ -1064,6 +1157,72 @@ describe("Orchestrator integration join tests", () => {
     expect(createdLoopConfigs[0]?.resumeInteraction?.answer).toBe("Account B");
   });
 
+  test("emits pending interaction restore and timeout run-trace events", async () => {
+    const checkpointStore = (globalThis as any).__checkpointStore as Record<
+      string,
+      unknown
+    >;
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-approval", {
+      pendingInteraction: {
+        kind: "approval",
+        nodeId: "n1",
+        requestedAt: Date.now(),
+        approvalId: "approval-restore-1",
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 4 },
+        context: "Click [4]",
+        timeoutMs: 60_000,
+      },
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "pending_interaction_restored" &&
+          entry.body.data?.kind === "approval" &&
+          entry.body.data?.interactionId === "approval-restore-1",
+      ),
+    ).toBe(true);
+
+    runTraceEvents.length = 0;
+    checkpointStore["ws-1"] = makeRecoveryTaskCheckpoint("task-recover-timeout", {
+      pendingInteraction: {
+        kind: "clarification",
+        nodeId: "n1",
+        requestedAt: Date.now() - 100,
+        clarificationId: "clarify-timeout-1",
+        question: "Which account should I use?",
+        suggestions: ["Account A", "Account B"],
+        timeoutMs: 10,
+      },
+    });
+
+    activeOrchestrator = new Orchestrator(orchestratorDeps);
+    await activeOrchestrator.restoreFromCheckpoints();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "pending_interaction_timed_out" &&
+          entry.body.data?.kind === "clarification" &&
+          entry.body.data?.interactionId === "clarify-timeout-1",
+      ),
+    ).toBe(true);
+  });
+
   test("includes recent side effects in failed task completion summaries", async () => {
     loopStartImpl = async () => ({
       outcome: "error",
@@ -1119,17 +1278,30 @@ describe("Orchestrator integration join tests", () => {
 
     const orchestrator = new Orchestrator(orchestratorDeps);
     activeOrchestrator = orchestrator;
-    await orchestrator.startTask(makeInput("executor timeout cleanup"));
+    const runPromise = orchestrator.startTask(makeInput("executor timeout cleanup"));
 
-    expect(stoppedLoopNodeIds).toContain("n1");
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
 
-    const messages = (globalThis as any).__runtimeMessages as Array<{
-      type?: string;
-      payload?: any;
-    }>;
-    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
-    expect(completion).toBeDefined();
-    expect(completion?.payload?.status).toBe("failed");
+    const laneState = (orchestrator as any).getLaneRuntimeState("ws-1", "executor");
+    expect(laneState.isolatedUntilMs).toBeGreaterThan(Date.now());
+
+    const workersByWorkspace = (orchestrator as any).workersByWorkspace as Map<
+      string,
+      { executor?: Map<string, unknown> }
+    >;
+    expect(workersByWorkspace.get("ws-1")?.executor?.size ?? 0).toBe(0);
+
+    const tasksByWorkspace = (orchestrator as any).tasksByWorkspace as Map<
+      string,
+      { nodes: Array<{ id: string; status: string; retries: number }> }
+    >;
+    const task = tasksByWorkspace.get("ws-1");
+    const node = task?.nodes.find((item) => item.id === "n1");
+    expect(node?.status).toBe("pending");
+    expect(node?.retries).toBe(1);
+
+    await orchestrator.stopTask("ws-1");
+    await runPromise;
   });
 
   test("isolates verifier lane and stops cross-node contamination", async () => {
@@ -1278,17 +1450,26 @@ describe("Orchestrator integration join tests", () => {
     await runPromise;
   });
 
-  test("isolates executor lane and fails runnable nodes with containment", async () => {
+  test("retries executor work after transient lane isolation instead of failing runnable nodes", async () => {
     plannerBuildNodesImpl = async () => [
       makeNode("n1", "executor isolate one"),
       makeNode("n2", "executor isolate two"),
     ];
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
-    loopStartImpl = async () => {
-      throw new Error("executor transport unavailable");
+    let firstAttempt = true;
+    loopStartImpl = async (nodeId) => {
+      if (firstAttempt) {
+        firstAttempt = false;
+        throw new Error("executor transport unavailable");
+      }
+      return {
+        outcome: "completed",
+        summary: `completed ${nodeId || "unknown"}`,
+        metrics: undefined,
+      };
     };
     orchestratorDeps.lanePolicies = {
-      executor: { maxFailuresBeforeIsolation: 1, isolationCooldownMs: 60_000 },
+      executor: { maxFailuresBeforeIsolation: 1, isolationCooldownMs: 10, maxConcurrent: 1 },
     };
 
     const orchestrator = new Orchestrator(orchestratorDeps);
@@ -1308,12 +1489,15 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
-    expect(completion?.payload?.status).toBe("failed");
+    expect(completion?.payload?.status).toBe("completed");
     const subtaskResults = completion?.payload?.subtaskResults || [];
     expect(subtaskResults.length).toBeGreaterThan(0);
     expect(
+      subtaskResults.every((item: any) => item.status === "completed"),
+    ).toBe(true);
+    expect(
       subtaskResults.some((item: any) =>
-        String(item.result || "").includes("Critical lane isolation while executing node"),
+        String(item.result || "").includes("completed n1"),
       ),
     ).toBe(true);
   });

@@ -27,7 +27,12 @@ import {
   loadWorkspaceTurnMemory,
   saveWorkspaceTurnRecord,
 } from "../agent/memory";
-import { postMemory, searchMemory, searchMemoryByDomain, formatBackendMemoriesForPrompt } from "../infrastructure/backend-client";
+import {
+  postMemory,
+  searchMemory,
+  searchMemoryByDomain,
+  formatBackendMemoriesForPrompt,
+} from "../infrastructure/backend-client";
 import {
   extractDomain,
   buildExtractionContext,
@@ -70,6 +75,7 @@ import {
   buildAssumptionDriftSignal,
   buildCompletedStepsSummary,
   buildExecutorInstruction,
+  compactExecutorSummaryForNode,
   createRerouteNode,
   formatPlannerReflexionContext,
   MAX_HANDOFF_DEPTH,
@@ -125,7 +131,10 @@ import {
   turnCheckpointKey,
   sanitizeTurnCheckpoint,
 } from "../agent/checkpoint-types";
-import type { SideEffectEntry, TurnCheckpoint } from "../agent/checkpoint-types";
+import type {
+  SideEffectEntry,
+  TurnCheckpoint,
+} from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 
 function isTurnCheckpointCompatible(
@@ -181,7 +190,9 @@ function isActionOrMutationNode(node: TaskNode): boolean {
   ].some((token) => text.includes(token));
 }
 
-function formatRecentSideEffects(entries: SideEffectEntry[] | undefined): string {
+function formatRecentSideEffects(
+  entries: SideEffectEntry[] | undefined,
+): string {
   if (!entries || entries.length === 0) return "";
   const recent = entries.slice(-3);
   return recent
@@ -453,6 +464,25 @@ export class Orchestrator {
           data,
         });
       });
+  }
+
+  private emitNodeFailureAttribution(
+    task: OrchestratorTask,
+    node: TaskNode,
+    reason: string,
+    detail?: Record<string, unknown>,
+  ): void {
+    this.emitTraceEvent(
+      task,
+      "node_failure_attribution",
+      {
+        taskId: task.id,
+        nodeId: node.id,
+        reason,
+        ...(detail ?? {}),
+      },
+      "system",
+    );
   }
 
   private buildTaskManifest(
@@ -1187,11 +1217,15 @@ export class Orchestrator {
     resumeTabId: number,
   ): Promise<OrchestratorStartInput | null> {
     const settings = (await loadSettings()) ?? ({} as UserSettings);
-    const mode = settings.providerMode ?? (settings.openRouterApiKey ? "openrouter" : "fireworks");
+    const mode =
+      settings.providerMode ??
+      (settings.openRouterApiKey ? "openrouter" : "fireworks");
     const activeKey =
-      mode === "fireworks" ? settings.fireworksApiKey :
-      mode === "openai-groq" ? settings.openaiApiKey :
-      settings.openRouterApiKey;
+      mode === "fireworks"
+        ? settings.fireworksApiKey
+        : mode === "openai-groq"
+          ? settings.openaiApiKey
+          : settings.openRouterApiKey;
     if (!activeKey) {
       logger.warn(
         "orchestrator",
@@ -1310,9 +1344,12 @@ export class Orchestrator {
       task.finishedAt - (task.startedAt || task.createdAt);
 
     if (interaction.nodeId) {
-      const targetNode = task.nodes.find((node) => node.id === interaction.nodeId);
+      const targetNode = task.nodes.find(
+        (node) => node.id === interaction.nodeId,
+      );
       if (targetNode) {
-        targetNode.status = terminalStatus === "completed" ? "completed" : "failed";
+        targetNode.status =
+          terminalStatus === "completed" ? "completed" : "failed";
         targetNode.result = summary;
         if (terminalStatus === "failed") {
           targetNode.error = summary;
@@ -1341,8 +1378,7 @@ export class Orchestrator {
       subtaskResults: this.buildSubtaskResults(task),
       urlHistory: [],
       metrics: task.sessionMetrics,
-      terminationReason:
-        terminalStatus === "failed" ? summary : undefined,
+      terminationReason: terminalStatus === "failed" ? summary : undefined,
     };
 
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
@@ -1397,7 +1433,8 @@ export class Orchestrator {
     if (!resumeInput) {
       task.status = "failed";
       task.finishedAt = Date.now();
-      task.terminationReason = "Could not rebuild runtime settings after user interaction.";
+      task.terminationReason =
+        "Could not rebuild runtime settings after user interaction.";
       await this.sendTerminationCompletion(task, task.terminationReason);
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
@@ -1452,7 +1489,11 @@ export class Orchestrator {
   ): Promise<void> {
     const task = this.tasksByWorkspace.get(workspaceId);
     const interaction = task?.pendingInteraction;
-    if (!task || !interaction || this.isPendingInteractionResolved(interaction)) {
+    if (
+      !task ||
+      !interaction ||
+      this.isPendingInteractionResolved(interaction)
+    ) {
       return;
     }
 
@@ -1467,6 +1508,20 @@ export class Orchestrator {
       nodeId: resolvedInteraction.nodeId,
       kind: resolvedInteraction.kind,
     });
+    this.emitTraceEvent(
+      task,
+      "pending_interaction_timed_out",
+      {
+        taskId: task.id,
+        nodeId: resolvedInteraction.nodeId,
+        kind: resolvedInteraction.kind,
+        interactionId:
+          resolvedInteraction.kind === "approval"
+            ? resolvedInteraction.approvalId
+            : resolvedInteraction.clarificationId,
+      },
+      "system",
+    );
     await this.resolvePendingInteraction(task, resolvedInteraction);
   }
 
@@ -1477,7 +1532,9 @@ export class Orchestrator {
     task.pendingInteraction = interaction;
     this.clearPendingInteractionTimer(task.workspaceId);
     if (interaction.nodeId) {
-      const targetNode = task.nodes.find((node) => node.id === interaction.nodeId);
+      const targetNode = task.nodes.find(
+        (node) => node.id === interaction.nodeId,
+      );
       if (targetNode?.status === "running") {
         targetNode.status = "pending";
       }
@@ -1619,6 +1676,22 @@ export class Orchestrator {
       this.sendProgress(task);
 
       if (hasPendingInteraction && !pendingInteractionResolved) {
+        const interaction = task.pendingInteraction!;
+        this.emitTraceEvent(
+          task,
+          "pending_interaction_restored",
+          {
+            taskId: task.id,
+            nodeId: interaction.nodeId,
+            kind: interaction.kind,
+            remainingMs: this.getPendingInteractionRemainingMs(interaction),
+            interactionId:
+              interaction.kind === "approval"
+                ? interaction.approvalId
+                : interaction.clarificationId,
+          },
+          "system",
+        );
         this.emitPendingInteraction(task);
         this.armPendingInteractionTimeout(task);
         continue;
@@ -1893,33 +1966,24 @@ export class Orchestrator {
 
     if (deferred.length === 0) return;
     const reason =
-      `Planner preflight deferred ${deferred.length} node(s): ` +
+      `Planner preflight estimated ${deferred.length} node(s) may exceed the current budget envelope: ` +
       `capacity=${capacity.maxNodesOverall}, budget(tokens/time/cost)=` +
       `${capacity.maxNodesByTokens}/${capacity.maxNodesByTime}/${capacity.maxNodesByCost}, ` +
       `estimate(tokens/time/cost-per-node)=` +
       `${estimate.tokensPerNode.toFixed(0)}/${estimate.timeMsPerNode.toFixed(0)}/${estimate.costUsdPerNode.toFixed(4)} ` +
       `(samples=${estimate.samples}).`;
-    for (const node of deferred) {
-      node.status = "failed";
-      node.error = `Deferred by budget preflight. ${reason} Deferred objective: ${node.description}`;
-      this.appendHandoffArtifact(node, {
-        role: "planner",
-        phase: "planner_replan",
-        note: "Deferred by budget preflight.",
-      });
-    }
 
     logger.warn(
       "orchestrator",
-      "Planner preflight deferred nodes due to budget",
+      "Planner preflight estimated plan exceeds budget envelope",
       {
         taskId: task.id,
         originalNodeCount: originalPending.length,
         keptNodeCount: selectedIds.size,
-        deferredNodeCount: deferred.length,
+        atRiskNodeCount: deferred.length,
         capacity,
         estimate,
-        deferredNodeIds: deferred.map((n) => n.id),
+        atRiskNodeIds: deferred.map((n) => n.id),
       },
     );
 
@@ -1946,8 +2010,9 @@ export class Orchestrator {
       await this.stopTask(input.workspaceId);
     }
 
-    const priorTurnMemory =
-      await loadWorkspaceTurnMemory(input.workspaceId).catch(() => null);
+    const priorTurnMemory = await loadWorkspaceTurnMemory(
+      input.workspaceId,
+    ).catch(() => null);
     const priorTurnMemoryBrief =
       formatWorkspaceTurnMemoryForPrompt(priorTurnMemory);
 
@@ -1961,7 +2026,10 @@ export class Orchestrator {
       const tab = await chrome.tabs.get(input.tabId);
       const currentDomain = extractDomain(tab.url || "");
       if (currentDomain) {
-        const siteMemories = await searchMemoryByDomain(currentDomain, 10).catch(() => []);
+        const siteMemories = await searchMemoryByDomain(
+          currentDomain,
+          10,
+        ).catch(() => []);
         siteKnowledgeBrief = formatSiteKnowledgeForPrompt(
           rankSiteKnowledgeForTask(
             deduplicateSiteKnowledge(siteMemories),
@@ -1973,7 +2041,11 @@ export class Orchestrator {
       // Tab may not be accessible — skip site knowledge
     }
 
-    const combinedMemoryBrief = [priorTurnMemoryBrief, longTermBrief, siteKnowledgeBrief]
+    const combinedMemoryBrief = [
+      priorTurnMemoryBrief,
+      longTermBrief,
+      siteKnowledgeBrief,
+    ]
       .filter(Boolean)
       .join("\n\n");
     const plannerQuery = buildQueryWithTurnMemory(
@@ -2055,6 +2127,7 @@ export class Orchestrator {
         openaiApiKey: input.settings.openaiApiKey,
         groqApiKey: input.settings.groqApiKey,
         temperature: input.settings.temperature,
+        perceptionMode: input.settings.perceptionMode,
         useVLExecutor: input.settings.useVLExecutor,
         fireworksApiKey: input.settings.fireworksApiKey,
       };
@@ -2064,7 +2137,11 @@ export class Orchestrator {
       );
       const tab = await chrome.tabs.get(input.tabId);
       const buildResult = await this.runInLane(task, "planner", async () =>
-        planner.buildNodes(plannerQuery, tab.title || "Untitled", tab.url || ""),
+        planner.buildNodes(
+          plannerQuery,
+          tab.title || "Untitled",
+          tab.url || "",
+        ),
       );
       nodes = buildResult.nodes;
       const selectedSkills = nodes
@@ -2116,9 +2193,13 @@ export class Orchestrator {
         },
       });
     } catch (error: any) {
-      logger.warn("orchestrator", "Planner failed, using synthesized fallback graph", {
-        error: error?.message,
-      });
+      logger.warn(
+        "orchestrator",
+        "Planner failed, using synthesized fallback graph",
+        {
+          error: error?.message,
+        },
+      );
       nodes = buildFallbackNodes(input.query);
       task.planClassification = {
         isSingleNode: nodes.length === 1,
@@ -2464,6 +2545,19 @@ export class Orchestrator {
         recoveredTurnCheckpoints?.delete(node.id);
         if (isTurnCheckpointCompatible(candidateTurnCheckpoint, snapshot)) {
           validatedTurnCheckpoint = candidateTurnCheckpoint;
+          this.emitTraceEvent(
+            task,
+            "checkpoint_turn_restored",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              checkpointTurn: candidateTurnCheckpoint.turnCount,
+              pageUrl: candidateTurnCheckpoint.pageUrl,
+              snapshotFingerprint:
+                candidateTurnCheckpoint.snapshotFingerprint,
+            },
+            "system",
+          );
           logger.info(
             "orchestrator",
             "Using durable turn checkpoint for recovered node",
@@ -2474,6 +2568,21 @@ export class Orchestrator {
             },
           );
         } else {
+          this.emitTraceEvent(
+            task,
+            "checkpoint_turn_discarded",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              reason: "snapshot_mismatch",
+              checkpointUrl: candidateTurnCheckpoint.pageUrl,
+              liveUrl: snapshot?.url ?? null,
+              checkpointFingerprint:
+                candidateTurnCheckpoint.snapshotFingerprint,
+              liveFingerprint: getSnapshotFingerprint(snapshot ?? null),
+            },
+            "system",
+          );
           logger.warn(
             "orchestrator",
             "Discarding incompatible turn checkpoint for recovered node",
@@ -2505,6 +2614,7 @@ export class Orchestrator {
         task.nodes,
         node.id,
         "executor",
+        node,
       );
       const verifierTaskStateBrief = buildTaskStateBrief(
         task.nodes,
@@ -2564,7 +2674,9 @@ export class Orchestrator {
               );
             }
             const isSingleNode = task.planClassification?.isSingleNode === true;
-            const resolvedLabel = isSingleNode ? step.label : `Executor: ${step.label}`;
+            const resolvedLabel = isSingleNode
+              ? step.label
+              : `Executor: ${step.label}`;
             this.sendMessage({
               type: "AGENT_STEP",
               workspaceId: task.workspaceId,
@@ -2603,6 +2715,7 @@ export class Orchestrator {
           nodeId: node.id,
           runId: task.runId || task.id,
           correlationId: task.runId || task.id,
+          selectedSkillId: node.selectedSkillId,
           suppressUiBroadcast: true,
           // For single-node tasks, forward clean content to the side panel.
           // Suppresses intermediate text deltas (raw reasoning/JSON) — the user
@@ -2672,9 +2785,10 @@ export class Orchestrator {
           providerMode: input.settings.providerMode,
           provider: input.settings.provider,
           openaiApiKey: input.settings.openaiApiKey,
-        groqApiKey: input.settings.groqApiKey,
+          groqApiKey: input.settings.groqApiKey,
           fireworksApiKey: input.settings.fireworksApiKey,
           temperature: input.settings.temperature,
+          perceptionMode: input.settings.perceptionMode,
           useVLExecutor: input.settings.useVLExecutor,
           // Durable turn checkpoint: injected by orchestrator on SW restart recovery
           turnCheckpoint: validatedTurnCheckpoint,
@@ -2864,9 +2978,13 @@ export class Orchestrator {
           task.pendingInteraction = undefined;
           this.clearPendingInteractionTimer(task.workspaceId);
         }
+        const compactResultSummary = compactExecutorSummaryForNode(
+          node,
+          result.summary,
+        );
         const executorEvidence: StructuredEvidence[] = [
           {
-            claim: result.summary || "Executor finished without summary.",
+            claim: compactResultSummary || "Executor finished without summary.",
             basis: "tool_output",
             confidence: result.outcome === "completed" ? 1.0 : 0.5,
           },
@@ -2874,7 +2992,7 @@ export class Orchestrator {
         this.appendHandoffArtifact(node, {
           role: "executor",
           phase: "executor_finished",
-          note: result.summary || "Executor finished without summary.",
+          note: compactResultSummary || "Executor finished without summary.",
           evidence: executorEvidence,
         });
         this.emitTraceEvent(
@@ -3042,7 +3160,7 @@ export class Orchestrator {
                 note: verification.reason,
               });
               node.status = "completed";
-              node.result = result.summary;
+              node.result = compactResultSummary;
             } else if (
               verification.decision === "reroute" &&
               verification.rerouteObjective &&
@@ -3101,6 +3219,16 @@ export class Orchestrator {
                       nodeId: node.id,
                       replansUsed: task.replansUsed,
                       maxReplans: task.maxReplans,
+                    },
+                  );
+                  this.emitNodeFailureAttribution(
+                    task,
+                    node,
+                    "replan_budget_exhausted",
+                    {
+                      replansUsed: task.replansUsed,
+                      maxReplans: task.maxReplans,
+                      verifierReason: verification.reason,
                     },
                   );
                   this.sendMessage({
@@ -3386,6 +3514,41 @@ export class Orchestrator {
           isLaneIsolationError(error, "verifier") ||
           isLaneIsolationError(error, "planner")
         ) {
+          if (isLaneIsolationError(error, "executor") && task.status === "running") {
+            const retryDecision = decideRetryPolicy(
+              {
+                source: "system",
+                errorMessage: error?.message || String(error),
+              },
+              node.retries,
+            );
+            if (retryDecision.shouldRetry) {
+              node.status = "pending";
+              node.retries += 1;
+              node.error = `Executor lane cooldown: ${error?.message || String(error)} (${retryDecision.rationale})`;
+              logger.warn(
+                "orchestrator",
+                "Retrying node after executor lane isolation",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  retries: node.retries,
+                  error,
+                },
+              );
+              this.emitTraceEvent(
+                task,
+                "scheduler_executor_lane_retry",
+                {
+                  nodeId: node.id,
+                  retries: node.retries,
+                  reason: error?.message || String(error),
+                },
+                "system",
+              );
+              return;
+            }
+          }
           node.status = "failed";
           node.error = `Critical lane isolation while executing node: ${error?.message || String(error)}`;
           logger.warn("orchestrator", "Failing node due to lane isolation", {
@@ -3393,6 +3556,14 @@ export class Orchestrator {
             nodeId: node.id,
             error,
           });
+          this.emitNodeFailureAttribution(
+            task,
+            node,
+            "executor_lane_isolation",
+            {
+              error: error?.message || String(error),
+            },
+          );
           return;
         }
         const retryDecision = decideRetryPolicy(
@@ -3444,8 +3615,15 @@ export class Orchestrator {
     };
 
     while (task.status === "running") {
-      if (task.pendingInteraction && !this.isPendingInteractionResolved(task.pendingInteraction)) {
-        this.sendStatus(task.workspaceId, AgentStatus.PAUSED, "Awaiting user input...");
+      if (
+        task.pendingInteraction &&
+        !this.isPendingInteractionResolved(task.pendingInteraction)
+      ) {
+        this.sendStatus(
+          task.workspaceId,
+          AgentStatus.PAUSED,
+          "Awaiting user input...",
+        );
         await this.persistTaskCheckpoint(task);
         return;
       }
@@ -3656,11 +3834,30 @@ export class Orchestrator {
             runnableNodeIds: runnable.map((node) => node.id),
           },
         );
-        for (const node of runnable) {
-          node.status = "failed";
-          node.error = reason;
-        }
-        break;
+        this.emitTraceEvent(
+          task,
+          "scheduler_executor_lane_wait",
+          {
+            taskId: task.id,
+            reason,
+            runnableNodeIds: runnable.map((node) => node.id),
+            remainingMs: Math.max(
+              0,
+              executorLaneState.isolatedUntilMs - Date.now(),
+            ),
+          },
+          "system",
+        );
+        await new Promise((resolve) =>
+          setTimeout(
+            resolve,
+            Math.min(
+              1_000,
+              Math.max(25, executorLaneState.isolatedUntilMs - Date.now()),
+            ),
+          ),
+        );
+        continue;
       }
 
       while (runnable.length > 0 && running.size < schedulerConcurrency) {
@@ -3709,6 +3906,28 @@ export class Orchestrator {
             dependencies: blockedNode.dependencies,
           },
         );
+        this.emitNodeFailureAttribution(
+          task,
+          blockedNode,
+          "unsatisfiable_dependencies",
+          {
+            failedDeps: depState.failedDeps,
+            missingDeps: depState.missingDeps,
+            dependencies: blockedNode.dependencies,
+          },
+        );
+        this.emitTraceEvent(
+          task,
+          "scheduler_dependency_failed",
+          {
+            taskId: task.id,
+            nodeId: blockedNode.id,
+            failedDeps: depState.failedDeps,
+            missingDeps: depState.missingDeps,
+            dependencies: blockedNode.dependencies,
+          },
+          "system",
+        );
       }
 
       if (task.nodes.some((n) => n.status === "failed")) {
@@ -3719,6 +3938,15 @@ export class Orchestrator {
         taskId: task.id,
         pendingNodeIds: pendingNodes.map((n) => n.id),
       });
+      this.emitTraceEvent(
+        task,
+        "scheduler_deadlock",
+        {
+          taskId: task.id,
+          pendingNodeIds: pendingNodes.map((n) => n.id),
+        },
+        "system",
+      );
       break;
     }
 
@@ -3921,8 +4149,7 @@ export class Orchestrator {
     }
 
     return new Promise((resolve) => {
-      const listeners =
-        this.completionWaiters.get(workspaceId) ?? new Set();
+      const listeners = this.completionWaiters.get(workspaceId) ?? new Set();
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -4409,7 +4636,9 @@ export class Orchestrator {
       }).catch(() => {});
 
       // Site-specific knowledge extraction (fire-and-forget)
-      this.extractAndStoreSiteKnowledge(task, payload, finalUrl).catch(() => {});
+      this.extractAndStoreSiteKnowledge(task, payload, finalUrl).catch(
+        () => {},
+      );
     } catch (error) {
       logger.debug("orchestrator", "Failed to persist workspace turn memory", {
         error,
@@ -4436,9 +4665,11 @@ export class Orchestrator {
       if (!settings) throw new Error("no settings");
       const mode = settings.providerMode ?? "fireworks";
       const activeKey =
-        mode === "fireworks" ? settings.fireworksApiKey :
-        mode === "openai-groq" ? settings.openaiApiKey :
-        settings.openRouterApiKey;
+        mode === "fireworks"
+          ? settings.fireworksApiKey
+          : mode === "openai-groq"
+            ? settings.openaiApiKey
+            : settings.openRouterApiKey;
       if (!activeKey) throw new Error("no api key");
 
       const client = new LLMClient(activeKey, {
