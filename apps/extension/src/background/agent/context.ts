@@ -12,6 +12,7 @@ import {
 } from "./context-formatting";
 import {
   EXECUTOR_PERSONA,
+  LastActionOutcome,
   PLANNER_PERSONA,
   REFERENCE_VALUE_TOOLS,
   CompressionLevel,
@@ -21,6 +22,7 @@ import type {
   PlanStatus,
   PlanStatusGate,
 } from "./context-types";
+import type { CompressedHistory } from "./checkpoint-types";
 
 // Re-export submodules for barrel compatibility
 export * from "./context-types";
@@ -113,6 +115,7 @@ export class ContextManager {
   private turnMax = 0;
   private startTimeMs = 0;
   private workingNotes = "";
+  private lastActionOutcome: LastActionOutcome | null = null;
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
@@ -158,6 +161,11 @@ export class ContextManager {
     this.startTimeMs = startTimeMs;
   }
 
+  /** Store the normalized outcome of the most recent DOM-affecting action. */
+  public setLastActionOutcome(outcome: LastActionOutcome | null): void {
+    this.lastActionOutcome = outcome;
+  }
+
   /** Append a working note (ring-buffer, max 500 chars). */
   public appendWorkingNote(note: string): void {
     const trimmed = note.slice(0, 500);
@@ -170,6 +178,62 @@ export class ContextManager {
     if (this.workingNotes.length > 500) {
       this.workingNotes = this.workingNotes.slice(-500);
     }
+  }
+
+  /** Get the current working notes string. */
+  public getWorkingNotes(): string {
+    return this.workingNotes;
+  }
+
+  /** Replace working notes entirely (used for checkpoint restore). */
+  public setWorkingNotes(notes: string): void {
+    this.workingNotes = (notes || "").slice(-500);
+  }
+
+  /** Get the most recent action outcome. */
+  public getLastActionOutcome(): LastActionOutcome | null {
+    return this.lastActionOutcome;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Turn checkpoint export / restore
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Export compressed history for durable turn checkpoint.
+   * Keeps the most recent `recentWindow` messages verbatim and summarizes
+   * older messages into one-line entries via `summarizeHistory()`.
+   */
+  public exportForCheckpoint(recentWindow = 8): CompressedHistory {
+    const recent = this.history.slice(-recentWindow);
+    const older = this.history.slice(0, Math.max(0, this.history.length - recentWindow));
+    const olderSummaries = summarizeHistory(older, 30);
+    return {
+      recentMessages: recent,
+      olderSummaries,
+      originalCount: this.history.length,
+    };
+  }
+
+  /**
+   * Restore history from a durable turn checkpoint.
+   * Injects older summaries as a compact system message, then appends the
+   * recent messages verbatim. This gives the LLM enough context to continue
+   * without re-executing prior turns.
+   */
+  public restoreFromCheckpointHistory(
+    cp: CompressedHistory,
+    isFirstTurn: boolean,
+  ): void {
+    this.history = [];
+    if (cp.olderSummaries.length > 0) {
+      this.history.push({
+        role: "system",
+        content: `Prior turns (compressed, ${cp.originalCount - cp.recentMessages.length} messages):\n${cp.olderSummaries.join("\n")}`,
+      });
+    }
+    this.history.push(...cp.recentMessages);
+    this.isFirstTurn = isFirstTurn;
   }
 
   /** Dynamically adjust the context window size (e.g. expand on escalation). */
@@ -820,10 +884,35 @@ Do NOT call done() until every planned step is complete.
       content = content.replace("{{turnBudget}}", "");
     }
 
+    content = content.replace(
+      "{{lastActionOutcome}}",
+      this.formatLastActionOutcome(),
+    );
+
     return {
       role: "system",
       content: content,
     };
+  }
+
+  private formatLastActionOutcome(): string {
+    if (!this.lastActionOutcome) return "No recent DOM-affecting action recorded.";
+
+    const outcome = this.lastActionOutcome;
+    const roundedDelta = Math.round(outcome.deltaPercent * 100);
+    const effectSummary =
+      roundedDelta === 0 && !outcome.urlChanged
+        ? "No observable page change."
+        : "Observable page change detected.";
+
+    const signals = [
+      `${roundedDelta}% DOM delta`,
+      outcome.urlChanged ? "URL changed" : "same URL",
+      `+${outcome.elementsAdded}`,
+      `-${outcome.elementsRemoved}`,
+    ].join(" | ");
+
+    return `Tool: ${outcome.toolName}\nResult: ${effectSummary}\nSignals: ${signals}`;
   }
 
   /**
@@ -1331,6 +1420,8 @@ Do NOT call done() until every planned step is complete.
         this.history = data[this.storageKey].history || [];
         this.planStatus = data[this.storageKey].planStatus || null;
         this.capturedOverlays = data[this.storageKey].capturedOverlays || [];
+        this.lastActionOutcome =
+          data[this.storageKey].lastActionOutcome || null;
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
           hasPlan: !!this.planStatus,
@@ -1349,6 +1440,7 @@ Do NOT call done() until every planned step is complete.
           history: this.history,
           planStatus: this.planStatus,
           capturedOverlays: this.capturedOverlays,
+          lastActionOutcome: this.lastActionOutcome,
         },
       });
     } catch (e) {
@@ -1366,6 +1458,7 @@ Do NOT call done() until every planned step is complete.
     this.pageContent = null;
     this.isFirstTurn = true;
     this.contradictionDetails = null;
+    this.lastActionOutcome = null;
     this.saveState().catch(() => {});
   }
 

@@ -269,14 +269,6 @@ class PerceptionWarmup {
       }
 
       // 4. Run perception (skip if near-empty page — not worth the API call for warmup)
-      if (snapshot.elements.length <= 3) {
-        logger.info("warmup", "Skipping perception for near-empty page", {
-          tabId,
-          elementCount: snapshot.elements.length,
-        });
-        return null;
-      }
-
       if (!screenshotUrl) {
         logger.info("warmup", "No screenshot — skipping perception", { tabId });
         return null;

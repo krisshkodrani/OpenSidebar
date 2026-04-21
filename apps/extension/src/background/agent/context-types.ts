@@ -19,6 +19,16 @@ export interface ContextMetrics {
   compressionLevel: CompressionLevel;
 }
 
+export interface LastActionOutcome {
+  toolName: string;
+  deltaPercent: number;
+  urlChanged: boolean;
+  prevUrl?: string;
+  currentUrl: string;
+  elementsAdded: number;
+  elementsRemoved: number;
+}
+
 export interface PlanStatusGate {
   trigger: string;
   action: "call_done" | "advance_step";

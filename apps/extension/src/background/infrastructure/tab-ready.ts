@@ -200,11 +200,11 @@ export async function ensureContentScript(
   // Attempt to re-inject the content script
   try {
     const manifest = chrome.runtime.getManifest();
-    const contentScriptPath = manifest.content_scripts?.[0]?.js?.[0];
-    if (contentScriptPath) {
+    const contentScriptFiles = manifest.content_scripts?.[0]?.js;
+    if (contentScriptFiles?.length) {
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: [contentScriptPath],
+        files: contentScriptFiles,
       });
     }
   } catch {

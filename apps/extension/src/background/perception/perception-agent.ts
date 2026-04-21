@@ -20,7 +20,14 @@ import { stripThinkTags } from "../llm";
 import type { TokenUsage } from "../llm/types";
 import { buildElementSummary } from "./perception";
 import { buildProductionPerceptionPrompt } from "./prompt-builder";
-import type { TaggedElement } from "../../types";
+import type {
+  TaggedElement,
+  TracePerceptionFallbackReason,
+  TracePerceptionFreshnessReason,
+  TracePerceptionMode,
+  TracePerceptionScreenshotStatus,
+  TracePerceptionSource,
+} from "../../types";
 import type {
   ObservationEntry,
   ObserveInput,
@@ -39,7 +46,8 @@ const OPENAI_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
 const OPENAI_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-const FIREWORKS_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
+const FIREWORKS_API_URL =
+  "https://api.fireworks.ai/inference/v1/chat/completions";
 const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
@@ -75,6 +83,29 @@ function getStaleThreshold(lastToolName?: string): number {
   return STALE_THRESHOLD_DEFAULT;
 }
 
+function hashRenderContent(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${value.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function resolveRenderHash(input: ObserveInput): string {
+  if (input.renderHash) return input.renderHash;
+  if (!input.screenshotDataUrl) return "";
+  return hashRenderContent(input.screenshotDataUrl);
+}
+
+interface PerceptionTraceMeta {
+  mode: TracePerceptionMode;
+  source: TracePerceptionSource;
+  freshnessReason: TracePerceptionFreshnessReason;
+  fallbackReason?: TracePerceptionFallbackReason;
+  screenshotStatus: TracePerceptionScreenshotStatus;
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -89,10 +120,13 @@ interface PerceptionProvider {
 
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
-  const mode = settings.providerMode ?? (
-    settings.provider === "groq" ? "openrouter-groq" :
-    settings.provider === "openai" ? "openai-groq" : "openrouter"
-  );
+  const mode =
+    settings.providerMode ??
+    (settings.provider === "groq"
+      ? "openrouter-groq"
+      : settings.provider === "openai"
+        ? "openai-groq"
+        : "openrouter");
 
   // Fireworks mode: use Kimi K2.5 Turbo for perception
   if (mode === "fireworks" && settings.fireworksApiKey) {
@@ -106,7 +140,10 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
   }
 
   // Hybrid modes: Groq as primary perception provider (fast, cheap)
-  if ((mode === "openrouter-groq" || mode === "openai-groq") && settings.groqApiKey) {
+  if (
+    (mode === "openrouter-groq" || mode === "openai-groq") &&
+    settings.groqApiKey
+  ) {
     providers.push({
       baseUrl: GROQ_API_URL,
       apiKey: settings.groqApiKey,
@@ -324,6 +361,48 @@ export function validatePerceptionTagIds(
   return interpretation.replace(affordancesMatch[0], prefix + correctedBody);
 }
 
+function makeResult(
+  base: Omit<
+    PerceptionResult,
+    "mode" | "source" | "freshnessReason" | "screenshotStatus"
+  >,
+  meta: PerceptionTraceMeta,
+): PerceptionResult {
+  return {
+    ...base,
+    ...meta,
+  };
+}
+
+function inferFailureMeta(
+  interpretation: string,
+  screenshotProvided: boolean,
+  freshnessReason: TracePerceptionFreshnessReason,
+): PerceptionTraceMeta {
+  let fallbackReason: TracePerceptionFallbackReason | undefined;
+  if (/\[Visual perception timed out\]/i.test(interpretation)) {
+    fallbackReason = "timeout";
+  } else if (
+    /\[Visual perception failed: all providers exhausted\]/i.test(
+      interpretation,
+    )
+  ) {
+    fallbackReason = "provider_exhausted";
+  } else if (
+    /\[Visual perception returned no content\]/i.test(interpretation)
+  ) {
+    fallbackReason = "empty_response";
+  }
+
+  return {
+    mode: "structured",
+    source: fallbackReason ? "fallback" : "fresh",
+    freshnessReason,
+    ...(fallbackReason ? { fallbackReason } : {}),
+    screenshotStatus: screenshotProvided ? "captured" : "missing",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // PerceptionAgent class
 // ---------------------------------------------------------------------------
@@ -332,12 +411,19 @@ export class PerceptionAgent {
   // Observation state
   private observationLog: ObservationEntry[] = [];
   private lastFingerprint = "";
+  private _lastRenderHash = "";
   private fingerprintAge = 0;
   private _lastScreenshotUrl: string | null = null;
   private _hasRunPanoramicPerception = false;
   private _turnCounter = 0;
   private _lastInterpretation: string | null = null;
   private _lastObservedUrl = "";
+  private _lastTraceMeta: PerceptionTraceMeta = {
+    mode: "structured",
+    source: "fresh",
+    freshnessReason: "new_fingerprint",
+    screenshotStatus: "not_requested",
+  };
   /** Stored panoramic shots from first-turn capture (for retroactive T1 trace recording) */
   private _lastPanoramicShots: PanoramicShot[] | null = null;
 
@@ -369,6 +455,10 @@ export class PerceptionAgent {
     return this._lastPanoramicShots;
   }
 
+  getLastTraceMeta(): PerceptionTraceMeta {
+    return { ...this._lastTraceMeta };
+  }
+
   setPanoramicShots(shots: PanoramicShot[] | null): void {
     this._lastPanoramicShots = shots;
   }
@@ -396,7 +486,18 @@ export class PerceptionAgent {
   ): void {
     this._lastInterpretation = interpretation;
     this.lastFingerprint = fingerprint;
+    this._lastRenderHash = screenshotUrl
+      ? hashRenderContent(screenshotUrl)
+      : "";
     this._lastScreenshotUrl = screenshotUrl;
+    this._lastTraceMeta = {
+      mode: interpretation.startsWith("[VL mode]")
+        ? "vl_screenshot_only"
+        : "structured",
+      source: "warmup",
+      freshnessReason: "warmup_cache",
+      screenshotStatus: screenshotUrl ? "cached" : "not_requested",
+    };
     this._turnCounter++;
 
     // Create initial observation entry from warmup interpretation
@@ -413,12 +514,19 @@ export class PerceptionAgent {
   reset(): void {
     this.observationLog = [];
     this.lastFingerprint = "";
+    this._lastRenderHash = "";
     this.fingerprintAge = 0;
     this._lastScreenshotUrl = null;
     this._hasRunPanoramicPerception = false;
     this._turnCounter = 0;
     this._lastInterpretation = null;
     this._lastObservedUrl = "";
+    this._lastTraceMeta = {
+      mode: "structured",
+      source: "fresh",
+      freshnessReason: "new_fingerprint",
+      screenshotStatus: "not_requested",
+    };
     this._lastPanoramicShots = null;
   }
 
@@ -436,6 +544,7 @@ export class PerceptionAgent {
   restoreState(state: PerceptionState): void {
     this.observationLog = [...state.observationLog];
     this.lastFingerprint = state.lastFingerprint;
+    this._lastRenderHash = "";
     this.fingerprintAge = state.fingerprintAge;
     this._turnCounter = state.turnCounter;
   }
@@ -474,36 +583,77 @@ export class PerceptionAgent {
 
     // 1. Fingerprint cache check
     const staleThreshold = getStaleThreshold(lastToolName);
+    const screenshotProvided = input.screenshotDataUrl.length > 0;
+    const renderHash = resolveRenderHash(input);
+    let freshnessReason: TracePerceptionFreshnessReason = "new_fingerprint";
     if (fingerprint === this.lastFingerprint && this._lastInterpretation) {
-      this.fingerprintAge++;
-      if (this.fingerprintAge < staleThreshold) {
-        return {
-          interpretation: this._lastInterpretation,
-          model: OPENROUTER_PERCEPTION_MODEL,
-          durationMs: 0,
-          cached: true,
-        };
+      if (renderHash !== this._lastRenderHash) {
+        freshnessReason = "render_hash_changed";
+        this.fingerprintAge = 0;
+        logger.info("perception", "Forced re-interpret after render change", {
+          fingerprint,
+        });
+      } else {
+        this.fingerprintAge++;
+        if (this.fingerprintAge < staleThreshold) {
+          const meta: PerceptionTraceMeta = {
+            ...this._lastTraceMeta,
+            source: "cached",
+            freshnessReason: "fingerprint_cache_hit",
+          };
+          return makeResult(
+            {
+              interpretation: this._lastInterpretation,
+              model: OPENROUTER_PERCEPTION_MODEL,
+              durationMs: 0,
+              cached: true,
+            },
+            meta,
+          );
+        }
+        freshnessReason = "stale_fingerprint";
+        logger.info(
+          "perception",
+          "Forced re-interpret after stale fingerprint",
+          {
+            age: this.fingerprintAge,
+          },
+        );
       }
-      logger.info("perception", "Forced re-interpret after stale fingerprint", {
-        age: this.fingerprintAge,
-      });
     } else {
       this.fingerprintAge = 0;
     }
 
     // 2. Near-empty DOM fallback (≤3 elements)
-    if (input.elements.length <= 3) {
-      const interpretation = this.buildNearEmptyFallback(input);
+    if (!screenshotProvided) {
+      const interpretation = this.buildElementOnlyFallback(
+        input,
+        "Screenshot unavailable - using DOM-only grounding.",
+      );
+      const meta: PerceptionTraceMeta = {
+        mode: "element_only",
+        source: "fallback",
+        freshnessReason,
+        fallbackReason: "screenshot_unavailable",
+        screenshotStatus: "missing",
+      };
       this._lastInterpretation = interpretation;
       this.lastFingerprint = fingerprint;
+      this._lastRenderHash = renderHash;
       this._lastScreenshotUrl = null;
-      return {
-        interpretation,
-        model: "dom-fallback",
-        durationMs: 0,
-        cached: false,
-      };
+      this._lastTraceMeta = meta;
+      return makeResult(
+        {
+          interpretation,
+          model: "dom-fallback",
+          durationMs: 0,
+          cached: false,
+        },
+        meta,
+      );
     }
+    this._lastRenderHash = renderHash;
+    this._lastScreenshotUrl = input.screenshotDataUrl;
 
     // 3. Get API key
     const settings = (await loadSettings()) ?? ({} as UserSettings);
@@ -513,12 +663,25 @@ export class PerceptionAgent {
       const interpretation =
         "[No API key — visual perception unavailable. Agent relies on element list only.]";
       this._lastInterpretation = interpretation;
-      return {
-        interpretation,
-        model: OPENROUTER_PERCEPTION_MODEL,
-        durationMs: 0,
-        cached: false,
+      const meta: PerceptionTraceMeta = {
+        mode: "element_only",
+        source: "fallback",
+        freshnessReason,
+        fallbackReason: "no_api_key",
+        screenshotStatus: screenshotProvided ? "captured" : "missing",
       };
+      this.lastFingerprint = fingerprint;
+      this._lastRenderHash = renderHash;
+      this._lastTraceMeta = meta;
+      return makeResult(
+        {
+          interpretation,
+          model: OPENROUTER_PERCEPTION_MODEL,
+          durationMs: 0,
+          cached: false,
+        },
+        meta,
+      );
     }
 
     // 4. Build prompt with prior observations
@@ -532,6 +695,7 @@ export class PerceptionAgent {
       promptText,
       input.screenshotDataUrl,
       input.panoramicScreenshots,
+      freshnessReason,
       callStart,
       signal,
     );
@@ -558,6 +722,16 @@ export class PerceptionAgent {
 
     this._lastInterpretation = result.interpretation;
     this.lastFingerprint = fingerprint;
+    this._lastRenderHash = renderHash;
+    this._lastTraceMeta = {
+      mode: result.mode,
+      source: result.source,
+      freshnessReason: result.freshnessReason,
+      ...(result.fallbackReason
+        ? { fallbackReason: result.fallbackReason }
+        : {}),
+      screenshotStatus: result.screenshotStatus,
+    };
 
     return result;
   }
@@ -645,6 +819,24 @@ export class PerceptionAgent {
     ].join("\n");
   }
 
+  private buildElementOnlyFallback(
+    input: ObserveInput,
+    blockerText: string,
+  ): string {
+    const elemDescs = input.elements
+      .slice(0, 10)
+      .map((el) => `[${el.tag}] ${el.tagName} "${el.text.slice(0, 60)}"`);
+    return [
+      `1. LOCATION: ${input.title || "Unknown"} (${input.url || "Unknown"})`,
+      `2. CHANGES: Visual state unavailable - relying on the live element list only.`,
+      `3. BLOCKERS: ${blockerText}`,
+      `4. VISUAL-ONLY: Screenshot unavailable.`,
+      elemDescs.length > 0
+        ? `5. AFFORDANCES: ${elemDescs.join("; ")}`
+        : `5. AFFORDANCES: None.`,
+    ].join("\n");
+  }
+
   // -------------------------------------------------------------------------
   // Internal: VLM call (same retry/failover as perceive())
   // -------------------------------------------------------------------------
@@ -654,6 +846,7 @@ export class PerceptionAgent {
     promptText: string,
     screenshotDataUrl: string,
     panoramicScreenshots: PanoramicShot[] | undefined,
+    freshnessReason: TracePerceptionFreshnessReason,
     callStart: number,
     signal?: AbortSignal,
   ): Promise<PerceptionResult> {
@@ -746,13 +939,20 @@ export class PerceptionAgent {
             logger.warn("perception", "Model returned empty content", {
               provider: provider.providerId,
             });
-            return {
-              interpretation: "[Visual perception returned no content]",
-              model: provider.model,
-              providerId: provider.providerId,
-              durationMs: Date.now() - callStart,
-              cached: false,
-            };
+            return makeResult(
+              {
+                interpretation: "[Visual perception returned no content]",
+                model: provider.model,
+                providerId: provider.providerId,
+                durationMs: Date.now() - callStart,
+                cached: false,
+              },
+              inferFailureMeta(
+                "[Visual perception returned no content]",
+                screenshotDataUrl.length > 0,
+                freshnessReason,
+              ),
+            );
           }
 
           const cleaned = stripThinkTags(text);
@@ -775,27 +975,43 @@ export class PerceptionAgent {
             observationLogSize: this.observationLog.length,
           });
 
-          return {
-            interpretation: cleaned,
-            usage,
-            model: provider.model,
-            providerId: provider.providerId,
-            durationMs: Date.now() - callStart,
-            cached: false,
-          };
+          return makeResult(
+            {
+              interpretation: cleaned,
+              usage,
+              model: provider.model,
+              providerId: provider.providerId,
+              durationMs: Date.now() - callStart,
+              cached: false,
+            },
+            {
+              mode: "structured",
+              source: "fresh",
+              freshnessReason,
+              screenshotStatus:
+                screenshotDataUrl.length > 0 ? "captured" : "missing",
+            },
+          );
         } catch (error: any) {
           if (error.name === "AbortError" || error.name === "TimeoutError") {
             logger.warn("perception", "Aborted or timed out", {
               provider: provider.providerId,
               error: error.message,
             });
-            return {
-              interpretation: "[Visual perception timed out]",
-              model: provider.model,
-              providerId: provider.providerId,
-              durationMs: Date.now() - callStart,
-              cached: false,
-            };
+            return makeResult(
+              {
+                interpretation: "[Visual perception timed out]",
+                model: provider.model,
+                providerId: provider.providerId,
+                durationMs: Date.now() - callStart,
+                cached: false,
+              },
+              inferFailureMeta(
+                "[Visual perception timed out]",
+                screenshotDataUrl.length > 0,
+                freshnessReason,
+              ),
+            );
           }
           logger.warn(
             "perception",
@@ -815,12 +1031,19 @@ export class PerceptionAgent {
     }
 
     logger.error("perception", "All providers failed");
-    return {
-      interpretation: "[Visual perception failed: all providers exhausted]",
-      model: providers[providers.length - 1].model,
-      providerId: providers[providers.length - 1].providerId,
-      durationMs: Date.now() - callStart,
-      cached: false,
-    };
+    return makeResult(
+      {
+        interpretation: "[Visual perception failed: all providers exhausted]",
+        model: providers[providers.length - 1].model,
+        providerId: providers[providers.length - 1].providerId,
+        durationMs: Date.now() - callStart,
+        cached: false,
+      },
+      inferFailureMeta(
+        "[Visual perception failed: all providers exhausted]",
+        screenshotDataUrl.length > 0,
+        freshnessReason,
+      ),
+    );
   }
 }

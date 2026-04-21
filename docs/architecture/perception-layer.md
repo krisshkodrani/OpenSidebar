@@ -1,10 +1,15 @@
 # Perception Layer
 
-OpenSidebar uses a stateful perception layer to turn screenshots plus DOM context into a compact page interpretation for the executor and planner.
+OpenSidebar now supports two observation paths, but only one is primary at runtime:
+
+- `unified_vl`: screenshot goes directly to the executor
+- `structured`: dedicated perception model produces `Page Interpretation`
+
+The primary path is `unified_vl` on Fireworks. The structured perception layer remains a compatibility and fallback path for non-Fireworks stacks, eval replay, and targeted debugging.
 
 ## Current Contract
 
-Production perception is a unified v6 prompt that returns five sections:
+When the runtime is in `structured` mode, production perception uses a unified v6 prompt that returns five sections:
 
 1. `LOCATION`
 2. `CHANGES`
@@ -14,9 +19,15 @@ Production perception is a unified v6 prompt that returns five sections:
 
 This contract is shared between production and the corrected perception eval harness.
 
-## Current Model
+## Current Runtime Decision
 
-- default perception model: `x-ai/grok-4.1-fast`
+- settings field: `perceptionMode`
+- `auto` resolves to `unified_vl` on Fireworks and `structured` elsewhere
+- legacy `useVLExecutor` is migration-only and should not be used for new code
+
+## Structured Path Model
+
+- default structured-perception model: `x-ai/grok-4.1-fast`
 - provider: OpenRouter
 - prompt source: `prompts/runtime/perception/interpret_page.md`
 
@@ -24,13 +35,13 @@ The perception layer used to rely on older Gemini-based prompt variants. Those o
 
 ## Runtime Shape
 
-Primary code:
+Primary code for the structured path:
 
 - `src/background/perception/perception-agent.ts`
 - `src/background/perception/prompt-builder.ts`
 - `src/background/perception/types.ts`
 
-The agent:
+The structured agent:
 
 - captures the current screenshot
 - builds a compact element summary from tagged DOM elements
@@ -38,7 +49,7 @@ The agent:
 - sends the multimodal prompt to the perception model
 - stores the structured interpretation for later turns
 
-## Why It Exists
+## Why The Structured Path Exists
 
 The DOM snapshot alone is not enough for:
 
@@ -48,17 +59,19 @@ The DOM snapshot alone is not enough for:
 - persistent blocker tracking
 - stable change detection across turns
 
-Perception gives the runtime a short, structured page-state summary instead of forcing the executor to infer everything from raw visible text.
+Structured perception gives the runtime a short page-state summary instead of forcing the executor to infer everything from raw visible text.
+
+In unified VL mode, that same visual burden shifts to the executor directly, and traces should be read accordingly.
 
 ## Observation History
 
-`PerceptionAgent` is stateful. It keeps recent observations so the model can describe what changed rather than re-describing the page from scratch every turn.
+`PerceptionAgent` is stateful only for the structured path. It keeps recent observations so the model can describe what changed rather than re-describing the page from scratch every turn.
 
 That is what makes `CHANGES` meaningful and lets the model carry forward persistent blockers or prerequisites.
 
 ## Freshness Policy
 
-Perception is refreshed more aggressively after navigation and more lazily after routine actions. The runtime uses tool-aware stale thresholds rather than calling the vision model on every single turn.
+Structured perception is refreshed more aggressively after navigation and more lazily after routine actions. The runtime uses tool-aware stale thresholds rather than calling the vision model on every single turn.
 
 Routine actions:
 
@@ -90,5 +103,6 @@ This section is historical reference only. The old perception eval commands have
 
 ## Guardrails
 
+- Do not treat all “perception” traces as structured perception traces. Check the recorded runtime path first.
 - Treat pre-v6 perception reports as historical artifacts, not comparable baselines.
-- Compare future prompt or model changes against the frozen Grok baseline.
+- Compare structured prompt or model changes against the frozen Grok baseline, not against unified VL turns.

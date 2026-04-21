@@ -5,7 +5,15 @@
  * and provide clean imports for the PerceptionAgent class.
  */
 
-import type { TaggedElement, PageSkeletonNode } from "../../types";
+import type {
+  TaggedElement,
+  PageSkeletonNode,
+  TracePerceptionFallbackReason,
+  TracePerceptionFreshnessReason,
+  TracePerceptionMode,
+  TracePerceptionScreenshotStatus,
+  TracePerceptionSource,
+} from "../../types";
 import type { TokenUsage } from "../llm/types";
 
 /** A single observation entry from one perception turn. */
@@ -25,8 +33,19 @@ export interface ObservationEntry {
 }
 
 /** Input for PerceptionAgent.observe() — goal-free, no objective/subtask. */
+export interface PerceptionTaskContext {
+  objective: string;
+  successCriteria?: string;
+  expectedStateDescription?: string;
+  toolProfile?: string;
+  currentStepIndex?: number;
+  totalSteps?: number;
+}
+
 export interface ObserveInput {
   screenshotDataUrl: string;
+  /** Optional visual-state hash used to invalidate cache on screenshot-only changes. */
+  renderHash?: string;
   /** Additional viewport screenshots for panoramic perception */
   panoramicScreenshots?: PanoramicShot[];
   elements: TaggedElement[];
@@ -37,6 +56,8 @@ export interface ObserveInput {
   skeleton?: PageSkeletonNode[];
   /** Page language from <html lang> (e.g., "de", "ja"). Omitted for English pages. */
   lang?: string;
+  /** Current plan step context for task-conditioned pruning and prompting. */
+  taskContext?: PerceptionTaskContext;
 }
 
 /** Additional viewport screenshot captured at a different scroll position */
@@ -62,6 +83,11 @@ export interface PerceptionResult {
   providerId?: string;
   durationMs: number;
   cached: boolean;
+  mode: TracePerceptionMode;
+  source: TracePerceptionSource;
+  freshnessReason: TracePerceptionFreshnessReason;
+  fallbackReason?: TracePerceptionFallbackReason;
+  screenshotStatus: TracePerceptionScreenshotStatus;
   /** The parsed observation from this call (undefined on cache hit or fallback) */
   observation?: ObservationEntry;
 }

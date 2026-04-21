@@ -184,8 +184,10 @@ export const STAGNATION_DETECTION = {
 export const ACTION_EFFECT = {
   /** Below this delta fraction, the action had ~no observable effect */
   ZERO_THRESHOLD: 0.02,
-  /** Consecutive zero-effect turns before injecting a strategy-change warning */
-  WARNING_THRESHOLD: 3,
+  /** First consecutive zero-effect turn gets a compact warning */
+  WARNING_THRESHOLD: 1,
+  /** Second consecutive zero-effect turn escalates or replans immediately */
+  ESCALATE_THRESHOLD: 2,
 } as const;
 
 /** Timing constants (milliseconds) */
