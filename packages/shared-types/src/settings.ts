@@ -7,6 +7,7 @@ import type { AgentLoopState } from "./agent";
 // --- Configuration Types ---
 
 export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
+export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
 
 export type TTSStylePreset =
   | "neutral"
@@ -35,6 +36,8 @@ export interface UserSettings {
   showSessionMetrics: boolean;
   /** Expand step timeline + tool logs by default in each assistant message */
   showMessageDetailsByDefault?: boolean;
+  /** Show debug screenshot toasts in the sidepanel when captures are emitted */
+  showDebugScreenshots?: boolean;
   /** Site access policy for agent execution */
   siteAccessMode?: "allow_all" | "blocklist";
   /** Blocked domains when `siteAccessMode` is `blocklist` */
@@ -55,6 +58,14 @@ export interface UserSettings {
   useNitro?: boolean;
   /** Override default LLM temperature (default: 0.0 for deterministic agentic behavior) */
   temperature?: number;
+  /**
+   * Runtime observation path.
+   * - `auto`: unified VL on Fireworks, structured perception elsewhere
+   * - `unified_vl`: screenshot goes directly to the executor
+   * - `structured`: dedicated perception layer produces `Page Interpretation`
+   */
+  perceptionMode?: PerceptionRuntimeMode;
+  /** @deprecated Use `perceptionMode` instead. */
   /** Use VL model as unified executor+perception — screenshot sent directly to executor (default: false) */
   useVLExecutor?: boolean;
   /** Enable voice input via microphone (STT) */

@@ -119,37 +119,20 @@ export function buildElementSummary(
   if (counts.link) parts.push(`${counts.link} links`);
   if (counts.other) parts.push(`${counts.other} other`);
 
-  // Include elements with IDs: inputs, buttons, and a sample of others (cap ~50 lines)
+  // Surface a prioritized candidate set with explicit grounding hints so the
+  // model can map screenshot regions back to concrete tag IDs more reliably.
   const lines: string[] = [];
   const VAGUE_CTA =
     /^(click\s*(me|here)|press\s*(me|here)|go|submit|ok|yes|no)$/i;
   const textCounts: Record<string, number> = {};
 
-  for (const el of elements) {
-    if (lines.length >= 50) break;
-    const text = el.text;
-    const isInput = ["input", "textarea", "select"].includes(el.tagName);
-    const isButton =
-      el.tagName === "button" ||
-      el.role === "button" ||
-      el.attributes.type === "submit";
+  const candidateElements = [...elements]
+    .sort((a, b) => scoreElementForGrounding(b) - scoreElementForGrounding(a))
+    .slice(0, 36);
 
-    if (isInput || isButton || lines.length < 30) {
-      // Position hint for off-screen elements (mirrors formatElementCompact)
-      let posHint = "";
-      if (viewport && el.rect) {
-        if (el.rect.y < 0 || el.rect.y >= viewport.height) {
-          if (el.rect.pageY != null) {
-            posHint = ` @y${el.rect.pageY}`;
-          } else if (el.rect.y < 0) {
-            posHint = " ^above";
-          } else {
-            posHint = ` v${Math.round(el.rect.y - viewport.height)}px`;
-          }
-        }
-      }
-      lines.push(`[${el.tag}] ${el.tagName} "${text}"${posHint}`);
-    }
+  for (const el of candidateElements) {
+    const text = el.text;
+    lines.push(formatElementForGrounding(el, viewport));
 
     // Track duplicate vague text
     const normalized = text.trim().toLowerCase();
@@ -173,12 +156,66 @@ export function buildElementSummary(
 
   summary += `${elements.length} interactive (${parts.join(", ")})`;
   if (lines.length > 0) {
-    summary += `\nElements:\n${lines.join("\n")}`;
+    summary += `\nAction candidates (prioritized):\n${lines.join("\n")}`;
   }
   if (suspicious.length > 0) {
     summary += `\n⚠ Suspicious duplicates: ${suspicious.join(", ")}`;
   }
   return summary;
+}
+
+function scoreElementForGrounding(el: TaggedElement): number {
+  let score = 0;
+  const tag = el.tagName.toLowerCase();
+  const type = (el.attributes.type || "").toLowerCase();
+
+  if (["input", "textarea", "select"].includes(tag)) score += 120;
+  if (tag === "button" || el.role === "button") score += 140;
+  if (tag === "a" || el.role === "link") score += 70;
+  if (["submit", "button", "radio", "checkbox"].includes(type)) score += 50;
+  if (el.isVisible) score += 40;
+  if (!el.isDisabled) score += 15;
+
+  const text = el.text.trim();
+  if (text.length > 0) score += Math.min(text.length, 40) / 4;
+
+  const area = Math.max(0, (el.rect?.width || 0) * (el.rect?.height || 0));
+  score += Math.min(area, 20_000) / 2_000;
+
+  return score;
+}
+
+function formatElementForGrounding(
+  el: TaggedElement,
+  viewport?: { height: number; scrollY: number },
+): string {
+  const tag = el.tagName.toLowerCase();
+  const role = el.role ? ` role=${el.role}` : "";
+  const type = el.attributes.type ? ` type=${el.attributes.type}` : "";
+  const text = el.text ? ` "${el.text}"` : "";
+  const disabled = el.isDisabled ? " disabled" : "";
+
+  let position = "";
+  if (el.rect) {
+    const x = Math.round(el.rect.x);
+    const y = Math.round(el.rect.y);
+    const width = Math.round(el.rect.width);
+    const height = Math.round(el.rect.height);
+
+    if (viewport && (y < 0 || y >= viewport.height)) {
+      const offscreen =
+        el.rect.pageY != null
+          ? `pageY=${Math.round(el.rect.pageY)}`
+          : y < 0
+            ? "above-fold"
+            : "below-fold";
+      position = ` @offscreen(${offscreen})`;
+    } else {
+      position = ` @box(${x},${y} ${width}x${height})`;
+    }
+  }
+
+  return `[${el.tag}] ${tag}${role}${type}${text}${position}${disabled}`;
 }
 
 /**

@@ -1038,3 +1038,36 @@ describe("Turn Budget", () => {
     expect(systemContent).not.toContain("Turn 0/0");
   });
 });
+
+describe("Last Action Outcome", () => {
+  test("renders normalized last action outcome in system prompt", () => {
+    const ctx = new ContextManager();
+    ctx.setLastActionOutcome({
+      toolName: "click_element",
+      deltaPercent: 0.34,
+      urlChanged: false,
+      currentUrl: "https://example.com/dashboard",
+      elementsAdded: 2,
+      elementsRemoved: 1,
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("## Last Action Outcome");
+    expect(systemContent).toContain("Tool: click_element");
+    expect(systemContent).toContain("Result: Observable page change detected.");
+    expect(systemContent).toContain("Signals: 34% DOM delta | same URL | +2 | -1");
+  });
+
+  test("shows no recent action outcome when cleared", () => {
+    const ctx = new ContextManager();
+    ctx.setLastActionOutcome(null);
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("## Last Action Outcome");
+    expect(systemContent).toContain(
+      "No recent DOM-affecting action recorded.",
+    );
+  });
+});
