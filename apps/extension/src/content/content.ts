@@ -11,6 +11,7 @@
  */
 
 import { detectFramework } from "./framework-detect";
+import { deriveAgentCueTransition } from "./agent-cue";
 import { logger } from "../utils";
 import {
   RuntimeMessage,
@@ -559,12 +560,28 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       if (message.source !== MessageSource.BACKGROUND) return;
 
       if (message.type === "AGENT_ACTIVITY") {
-        setAgentBorder(message.payload.active, message.payload.outcome);
+        agentSessionActive = message.payload.active;
+        clearAgentCueTimer();
+        if (message.payload.active) {
+          ensureAgentBorderVisible("active");
+        } else {
+          setAgentBorder(false, message.payload.outcome);
+        }
         return;
       }
 
       if (message.type === "AGENT_STEP_LABEL") {
+        const transition = deriveAgentCueTransition({
+          sessionActive: agentSessionActive,
+          stepStatus: message.payload.status,
+        });
+        if (transition.showCue && transition.borderState) {
+          setAgentBorder(true, undefined, transition.borderState);
+        }
         updateFloatingStepLabel(message.payload.label, message.payload.status);
+        if (transition.hideAfterMs != null) {
+          scheduleAgentCueHide(transition.hideAfterMs);
+        }
         return;
       }
 
@@ -801,10 +818,138 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 // --- Agent Activity Border Overlay ---
 
 const BORDER_ID = "opensidebar-agent-border";
+const BORDER_STYLE_ID = "opensidebar-agent-border-style";
 const STOP_BTN_ID = "opensidebar-stop-btn";
 const STEP_LABEL_ID = "opensidebar-step-label";
 const FLOATING_WRAP_ID = "opensidebar-floating-wrap";
 const DIVIDER_ID = "opensidebar-divider";
+let agentSessionActive = false;
+let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
+
+type AgentBorderVisualState = "active" | "settle";
+
+const AGENT_BORDER_ACTIVE_SHADOW = [
+  "inset 0 0 0 2px rgba(90,102,214,0.84)",
+  "inset 0 0 0 6px rgba(90,102,214,0.40)",
+  "inset 0 0 0 12px rgba(90,102,214,0.22)",
+  "inset 0 0 0 20px rgba(90,102,214,0.12)",
+  "inset 0 0 40px rgba(90,102,214,0.16)",
+  "inset 0 0 84px rgba(90,102,214,0.08)",
+].join(", ");
+const AGENT_BORDER_PULSE_SHADOW = [
+  "inset 0 0 0 2px rgba(90,102,214,0.98)",
+  "inset 0 0 0 7px rgba(90,102,214,0.54)",
+  "inset 0 0 0 15px rgba(90,102,214,0.30)",
+  "inset 0 0 0 24px rgba(90,102,214,0.16)",
+  "inset 0 0 56px rgba(90,102,214,0.24)",
+  "inset 0 0 120px rgba(90,102,214,0.12)",
+].join(", ");
+const AGENT_BORDER_SETTLE_SHADOW = [
+  "inset 0 0 0 2px rgba(90,102,214,0.64)",
+  "inset 0 0 0 5px rgba(90,102,214,0.24)",
+  "inset 0 0 0 10px rgba(90,102,214,0.13)",
+  "inset 0 0 28px rgba(90,102,214,0.10)",
+  "inset 0 0 72px rgba(90,102,214,0.05)",
+].join(", ");
+
+function clearAgentCueTimer() {
+  if (agentCueTimer) {
+    clearTimeout(agentCueTimer);
+    agentCueTimer = null;
+  }
+}
+
+function scheduleAgentCueHide(delayMs: number) {
+  clearAgentCueTimer();
+  agentCueTimer = setTimeout(() => {
+    if (agentSessionActive) {
+      hideFloatingCue();
+    } else {
+      setAgentBorder(false);
+    }
+    agentCueTimer = null;
+  }, delayMs);
+}
+
+function ensureAgentBorderStyles() {
+  if (document.getElementById(BORDER_STYLE_ID)) return;
+
+  const style = document.createElement("style");
+  style.id = BORDER_STYLE_ID;
+  style.textContent = `
+    @keyframes opensidebar-agent-border-breathe {
+      0%, 100% {
+        box-shadow: ${AGENT_BORDER_ACTIVE_SHADOW};
+        opacity: 0.94;
+      }
+      50% {
+        box-shadow: ${AGENT_BORDER_PULSE_SHADOW};
+        opacity: 1;
+      }
+    }
+
+    #${BORDER_ID}[data-state="active"] {
+      box-shadow: ${AGENT_BORDER_ACTIVE_SHADOW};
+      opacity: 0.96;
+      animation: opensidebar-agent-border-breathe 2.6s ease-in-out infinite;
+    }
+
+    #${BORDER_ID}[data-state="settle"] {
+      box-shadow: ${AGENT_BORDER_SETTLE_SHADOW};
+      opacity: 0.92;
+      animation: none;
+    }
+  `;
+  document.documentElement.appendChild(style);
+}
+
+function setAgentBorderVisualState(state: AgentBorderVisualState) {
+  const existing = document.getElementById(BORDER_ID);
+  if (!existing) return;
+  existing.setAttribute("data-state", state);
+}
+
+function ensureAgentBorderVisible(state: AgentBorderVisualState = "active") {
+  const existing = document.getElementById(BORDER_ID);
+  if (existing) {
+    setAgentBorderVisualState(state);
+    return;
+  }
+
+  ensureAgentBorderStyles();
+
+  const overlay = document.createElement("div");
+  overlay.id = BORDER_ID;
+  overlay.setAttribute("data-state", state);
+  Object.assign(overlay.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "2147483646",
+    pointerEvents: "none",
+    boxShadow:
+      state === "active"
+        ? AGENT_BORDER_ACTIVE_SHADOW
+        : AGENT_BORDER_SETTLE_SHADOW,
+    opacity: "0",
+  });
+  document.documentElement.appendChild(overlay);
+
+  overlay.animate([{ opacity: "0" }, { opacity: "1" }], {
+    duration: 600,
+    easing: "ease-out",
+    fill: "forwards",
+  });
+}
+
+function hideFloatingCue() {
+  const existingBtn = document.getElementById(FLOATING_WRAP_ID);
+  if (!existingBtn) return;
+  existingBtn.style.opacity = "0";
+  existingBtn.style.transform = "translateX(-50%) translateY(8px)";
+  setTimeout(() => {
+    if (existingBtn.isConnected) existingBtn.remove();
+  }, 400);
+}
 
 /** Update the step label text above the floating stop button */
 function updateFloatingStepLabel(label: string, status: "running" | "done" | "error") {
@@ -830,6 +975,7 @@ function updateFloatingStepLabel(label: string, status: "running" | "done" | "er
 function setAgentBorder(
   active: boolean,
   outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
+  visualState: AgentBorderVisualState = "active",
 ) {
   const existing = document.getElementById(BORDER_ID);
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
@@ -839,34 +985,7 @@ function setAgentBorder(
     // Cool indigo glow at the viewport edge, fading smoothly inward.
     // Layered inset box-shadows with decreasing opacity simulate the gradient.
     // No animation — just a persistent "agent is active" indicator.
-    if (!existing) {
-      const overlay = document.createElement("div");
-      overlay.id = BORDER_ID;
-      Object.assign(overlay.style, {
-        position: "fixed",
-        inset: "0",
-        zIndex: "2147483646",
-        pointerEvents: "none",
-        boxShadow: [
-          "inset 0 0 0 2px rgba(90,102,214,0.72)",
-          "inset 0 0 0 5px rgba(90,102,214,0.48)",
-          "inset 0 0 0 9px rgba(90,102,214,0.30)",
-          "inset 0 0 0 14px rgba(90,102,214,0.18)",
-          "inset 0 0 0 20px rgba(90,102,214,0.09)",
-          "inset 0 0 40px rgba(90,102,214,0.10)",
-          "inset 0 0 80px rgba(90,102,214,0.04)",
-        ].join(", "),
-        opacity: "0",
-      });
-      document.documentElement.appendChild(overlay);
-
-      // Gentle fade-in
-      overlay.animate([{ opacity: "0" }, { opacity: "1" }], {
-        duration: 600,
-        easing: "ease-out",
-        fill: "forwards",
-      });
-    }
+    ensureAgentBorderVisible(visualState);
 
     // --- Floating HUD bar: [ ● Step label…  ⏹ Stop ] ---
     if (!existingBtn) {
@@ -891,18 +1010,17 @@ function setAgentBorder(
         left: "50%",
         transform: "translateX(-50%) translateY(8px)",
         zIndex: "2147483647",
-        width: "360px",
+        width: "320px",
         display: "flex",
         alignItems: "center",
-        background: "rgba(20,19,40,0.60)",
-        backdropFilter: "blur(16px) saturate(1.4)",
-        WebkitBackdropFilter: "blur(16px) saturate(1.4)",
-        border: "1px solid rgba(90,102,214,0.20)",
-        borderRadius: "24px",
+        background: "rgba(20,19,40,0.42)",
+        backdropFilter: "blur(12px) saturate(1.2)",
+        WebkitBackdropFilter: "blur(12px) saturate(1.2)",
+        border: "1px solid rgba(90,102,214,0.14)",
+        borderRadius: "20px",
         boxShadow: [
-          "0 4px 24px rgba(0,0,0,0.20)",
-          "0 0 0 1px rgba(90,102,214,0.06)",
-          "0 0 16px rgba(90,102,214,0.08)",
+          "0 8px 18px rgba(0,0,0,0.14)",
+          "0 0 0 1px rgba(90,102,214,0.04)",
         ].join(", "),
         opacity: "0",
         transition: "opacity 0.4s ease-out, transform 0.4s ease-out",
@@ -917,13 +1035,13 @@ function setAgentBorder(
         display: "flex",
         alignItems: "center",
         gap: "8px",
-        padding: "10px 0 10px 16px",
+        padding: "9px 0 9px 14px",
       });
 
       const dot = document.createElement("span");
       Object.assign(dot.style, {
-        width: "7px",
-        height: "7px",
+        width: "6px",
+        height: "6px",
         borderRadius: "50%",
         background: "rgba(90,102,214,0.9)",
         flexShrink: "0",
@@ -936,7 +1054,7 @@ function setAgentBorder(
       labelText.textContent = "Starting\u2026";
       Object.assign(labelText.style, {
         color: "rgba(210,214,251,0.75)",
-        fontSize: "12px",
+        fontSize: "11px",
         fontWeight: "400",
         fontFamily: FONT,
         whiteSpace: "nowrap",
@@ -955,8 +1073,8 @@ function setAgentBorder(
       divider.id = DIVIDER_ID;
       Object.assign(divider.style, {
         width: "1px",
-        height: "18px",
-        background: "rgba(90,102,214,0.20)",
+        height: "16px",
+        background: "rgba(90,102,214,0.14)",
         flexShrink: "0",
         transition: "opacity 0.3s",
       });
@@ -973,20 +1091,20 @@ function setAgentBorder(
         pointerEvents: "auto",
         display: "flex",
         alignItems: "center",
-        padding: "10px 18px 10px 14px",
+        padding: "9px 16px 9px 12px",
         background: "transparent",
         color: "rgba(210,214,251,0.75)",
-        fontSize: "12px",
+        fontSize: "11px",
         fontWeight: "500",
         fontFamily: FONT,
         border: "none",
-        borderRadius: "0 24px 24px 0",
+        borderRadius: "0 20px 20px 0",
         cursor: "pointer",
         flexShrink: "0",
         transition: "background 0.2s, color 0.2s, opacity 0.3s",
       });
       btn.addEventListener("mouseenter", () => {
-        btn.style.background = "rgba(90,102,214,0.15)";
+        btn.style.background = "rgba(90,102,214,0.10)";
         btn.style.color = "rgba(210,214,251,0.95)";
       });
       btn.addEventListener("mouseleave", () => {
@@ -1068,9 +1186,7 @@ function setAgentBorder(
         }).onfinish = () => existing.remove();
       }
       if (existingBtn) {
-        existingBtn.style.opacity = "0";
-        existingBtn.style.transform = "translateX(-50%) translateY(8px)";
-        setTimeout(() => existingBtn.remove(), 400);
+        hideFloatingCue();
       }
     }, fadeDelay);
   }
