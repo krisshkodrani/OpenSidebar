@@ -41,9 +41,13 @@ Path note: the main entry-point docs below are aligned to the current `apps/` an
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [Model Benchmark Reference](./model-benchmark-reference.md)
 - [Skills Roadmap](./skills-roadmap-2026-04-13.md)
+- [Trace Lab Researcher Workflow](./guides/trace-lab-researcher-workflow.md)
+- [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
+- [Trace Viewer And Lab Roadmap](./trace-viewer-and-lab-roadmap-2026-04-21.md)
 
 ## Articles
 
+- [Harness Transformation](./articles/harness-transformation-2026-04-15.md)
 - [When to Stop](./articles/when-to-stop.md)
 
 ## Release Reports
