@@ -11,6 +11,11 @@ export interface NodeVerificationInput {
   output: string;
   handoffContext?: string;
   executorOutcome?: string;
+  evidence?: StructuredEvidence[];
+  previousUrl?: string;
+  currentUrl?: string;
+  previousTitle?: string;
+  currentTitle?: string;
 }
 
 export type VerificationFailureType =
@@ -93,6 +98,52 @@ const GOAL_TOKEN_STOPWORDS = new Set([
   "warehouse",
 ]);
 
+const EVIDENCE_SENSITIVE_MARKERS = [
+  "submit",
+  "checkout",
+  "place order",
+  "order confirmation",
+  "purchase",
+  "buy",
+  "confirm",
+  "delete",
+  "remove",
+  "save changes",
+  "register",
+  "sign up",
+  "book",
+  "reserve",
+  "send",
+];
+
+const READ_ONLY_OBJECTIVE_MARKERS = [
+  "summarize",
+  "summary",
+  "read",
+  "extract",
+  "find",
+  "report",
+  "count",
+  "list",
+  "identify",
+  "compare",
+  "describe",
+  "inspect",
+];
+
+const EXPLICIT_COMPLETION_MARKERS = [
+  /\border confirmed\b/i,
+  /\border number\b/i,
+  /\bpurchase confirmed\b/i,
+  /\bpurchase complete\b/i,
+  /\bconfirmation number\b/i,
+  /\bnew tab\b/i,
+  /\btab id\b/i,
+  /\bstore url\b/i,
+  /\bmarked complete\b/i,
+  /\bchecked off\b/i,
+];
+
 function hasGoalTokenSupport(
   text: string,
   objective: string,
@@ -112,6 +163,41 @@ function hasGoalTokenSupport(
 
   if (goalTokens.length === 0) return true;
   return goalTokens.some((token) => outputTokens.has(token));
+}
+
+function isEvidenceSensitiveObjective(
+  taskQuery: string,
+  objective: string,
+  successCriteria: string,
+): boolean {
+  const corpus = `${taskQuery} ${objective} ${successCriteria}`.toLowerCase();
+  return EVIDENCE_SENSITIVE_MARKERS.some((marker) => corpus.includes(marker));
+}
+
+function isReadOnlyObjective(
+  taskQuery: string,
+  objective: string,
+  successCriteria: string,
+): boolean {
+  const corpus = `${taskQuery} ${objective} ${successCriteria}`.toLowerCase();
+  return READ_ONLY_OBJECTIVE_MARKERS.some((marker) => corpus.includes(marker));
+}
+
+function hasSubstantiveAlignedOutput(
+  output: string,
+  objective: string,
+  successCriteria: string,
+  evidence?: StructuredEvidence[],
+): boolean {
+  const trimmed = output.trim();
+  if (!trimmed) return false;
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 6) return false;
+  return hasGoalTokenSupport(trimmed, objective, successCriteria, evidence);
+}
+
+function hasExplicitCompletionEvidence(text: string): boolean {
+  return EXPLICIT_COMPLETION_MARKERS.some((pattern) => pattern.test(text));
 }
 
 /**
@@ -191,6 +277,15 @@ export function programmaticVerify(
       decision: "accept",
       reason: "Output indicates success with structured evidence support.",
       confidence: 0.85,
+    };
+  }
+
+  // Success keywords + explicit completion details in the summary → accept
+  if (hasSuccessMarker && hasGoalSupport && hasExplicitCompletionEvidence(input.output)) {
+    return {
+      decision: "accept",
+      reason: "Output contains explicit completion evidence aligned with the success criteria.",
+      confidence: 0.8,
     };
   }
 
@@ -275,25 +370,82 @@ export function deriveVerifierFallbackDecision(
     };
   }
 
+  const programmaticResult = programmaticVerify({
+    output: input.output,
+    objective: input.objective,
+    successCriteria: input.successCriteria,
+    evidence: input.evidence,
+    previousUrl: input.previousUrl,
+    currentUrl: input.currentUrl,
+    previousTitle: input.previousTitle,
+    currentTitle: input.currentTitle,
+    executorOutcome: input.executorOutcome,
+  });
+  if (programmaticResult) return programmaticResult;
+
   // Executor explicitly called done() but verifier LLM failed.
   // Accept with low confidence — the executor's own done() signal is the best
   // evidence available when the verifier is unreachable. Returning "retry"
   // here would loop if the provider is consistently failing, eventually
   // marking the node as failed even though the executor completed successfully.
   if (input.executorOutcome === "completed") {
+    const hasAlignedOutput =
+      hasSubstantiveAlignedOutput(
+        input.output,
+        input.objective,
+        input.successCriteria,
+        input.evidence,
+      ) ||
+      (isReadOnlyObjective(
+        input.taskQuery,
+        input.objective,
+        input.successCriteria,
+      ) &&
+        input.output.trim().split(/\s+/).filter(Boolean).length >= 8);
+
+    if (
+      isEvidenceSensitiveObjective(
+        input.taskQuery,
+        input.objective,
+        input.successCriteria,
+      )
+    ) {
+      return {
+        decision: "accept",
+        reason: hasAlignedOutput
+          ? "Executor completed an action-sensitive step with answer-aligned output while verifier LLM was unavailable; accepting to avoid replaying side effects."
+          : "Executor completed an action-sensitive step without deterministic evidence; accepting low-confidence completion because retry could replay side effects while verifier LLM was unavailable.",
+        confidence: hasAlignedOutput ? 0.55 : 0.4,
+      };
+    }
+    if (hasAlignedOutput) {
+      return {
+        decision: "accept",
+        reason:
+          "Executor completed with answer-aligned output while verifier LLM was unavailable.",
+        confidence: 0.55,
+      };
+    }
     return {
-      decision: "accept",
+      decision: "retry",
       reason:
-        "Executor completed; verifier LLM unreachable, accepting on executor signal.",
-      confidence: 0.5,
+        "Executor completed but the output does not contain enough aligned evidence to confirm success.",
+      confidence: 0.6,
+      failureType: "insufficient_evidence",
     };
   }
 
   if (
-    text.includes("completed") ||
-    text.includes("success") ||
-    text.includes("done") ||
-    text.includes("verified")
+    (text.includes("completed") ||
+      text.includes("success") ||
+      text.includes("done") ||
+      text.includes("verified")) &&
+    hasGoalTokenSupport(
+      input.output,
+      input.objective,
+      input.successCriteria,
+      input.evidence,
+    )
   ) {
     return {
       decision: "accept",

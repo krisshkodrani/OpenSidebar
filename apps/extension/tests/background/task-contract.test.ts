@@ -132,6 +132,31 @@ describe("task contract helpers", () => {
     expect(contract.multiReturnCount).toBeUndefined();
   });
 
+  test("does not turn imperative schedule phrasing into fake missing entities", () => {
+    const contract = buildTaskContract(
+      [
+        "Read David Park's email about the Q3 strategy meeting and draft a reply.",
+        "Decline both proposed times — you have a client demo on Thursday and a team offsite on Friday.",
+        "Suggest Monday at 2 PM instead.",
+        "Keep it professional, 3-4 sentences. Don't send it, just draft.",
+      ].join(" "),
+    );
+
+    expect(contract.requiredEntities).not.toContain("suggest monday");
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: [
+        "Successfully drafted a professional reply to David Park about the Q3 strategy meeting.",
+        "The draft says Thursday does not work because of a client demo, Friday does not work because of a team offsite, and asks whether Monday at 2 PM would work instead.",
+        "The reply remains unsent as a draft.",
+      ].join(" "),
+    });
+
+    expect(coverage.missingEntities).not.toContain("suggest monday");
+    expect(coverage.satisfied).toBe(true);
+  });
+
   test("does not enforce multi-return coverage when no concrete targets are extracted", () => {
     const contract = buildTaskContract(
       "Based on what you saw in both tabs, which area of the business looks strongest?",
@@ -261,13 +286,18 @@ describe("task contract helpers", () => {
     );
 
     expect(synthesized).not.toBeNull();
-    expect(synthesized!.length).toBeLessThanOrEqual(5);
+    expect(synthesized!.length).toBe(11);
     expect(
       synthesized!.some((step) =>
-        /job listings #1 through #3|job listings #1 through #4/i.test(
+        /job listing #1\b/i.test(
           step.objective,
         ),
       ),
+    ).toBe(true);
+    expect(
+      synthesized!
+        .slice(0, 10)
+        .every((step) => step.toolProfile === "navigate"),
     ).toBe(true);
     expect(synthesized![synthesized!.length - 1].objective).toMatch(
       /best matches/i,

@@ -1,5 +1,5 @@
 /**
- * Popup Triage — Perception-guided nuisance popup auto-dismiss.
+ * Popup Triage - Perception-guided nuisance popup auto-dismiss.
  *
  * Parses the BLOCKERS section of a perception interpretation to extract
  * nuisance overlays (cookie/consent/promo/newsletter/ads) with their
@@ -8,6 +8,8 @@
  *
  * RELEVANT blockers (login/checkout/confirmation) are left untouched.
  */
+
+import type { TaggedElement } from "../../types";
 
 /** A nuisance popup identified by perception with a known dismiss target. */
 export interface NuisanceBlocker {
@@ -19,13 +21,39 @@ export interface NuisanceBlocker {
   description: string;
 }
 
+export interface RejectedNuisanceBlocker extends NuisanceBlocker {
+  reason: string;
+}
+
+function extractBlockersText(interpretation: string): string | null {
+  const blockersMatch = interpretation.match(
+    /BLOCKERS:(.+?)(?=\n\d+\.\s|\n[A-Z]+:|$)/s,
+  );
+  return blockersMatch ? blockersMatch[1] : null;
+}
+
+function isDismissCandidate(el: TaggedElement | undefined): boolean {
+  if (!el || el.isDisabled || !el.isVisible) return false;
+
+  const tag = el.tagName.toLowerCase();
+  const role = el.role.toLowerCase();
+  const type = (el.attributes.type || "").toLowerCase();
+
+  return (
+    tag === "button" ||
+    tag === "a" ||
+    role === "button" ||
+    ["button", "submit", "reset"].includes(type)
+  );
+}
+
 /**
  * Parse the BLOCKERS section of a perception interpretation and extract
  * nuisance popups with actionable dismiss targets.
  *
  * Expected format from perception:
- *   NUISANCE [12] "cookie consent banner" → click [15]
- *   RELEVANT [20] "login modal" → user must authenticate
+ *   NUISANCE [12] "cookie consent banner" -> click [15]
+ *   RELEVANT [20] "login modal" -> user must authenticate
  *
  * Returns only NUISANCE entries that have a `click [N]` dismiss target.
  */
@@ -34,24 +62,18 @@ export function parseNuisanceBlockers(
 ): NuisanceBlocker[] {
   if (!interpretation) return [];
 
-  // Find the BLOCKERS section — everything after "BLOCKERS:" until the next
-  // numbered section (e.g. "6. SPATIAL:") or end of string.
-  const blockersMatch = interpretation.match(
-    /BLOCKERS:(.+?)(?=\n\d+\.\s|\n[A-Z]+:|$)/s,
-  );
-  if (!blockersMatch) return [];
-
-  const blockersText = blockersMatch[1];
+  const blockersText = extractBlockersText(interpretation);
+  if (!blockersText) return [];
 
   // "None" or empty means no blockers
   if (/^\s*none\.?\s*$/i.test(blockersText)) return [];
 
   const results: NuisanceBlocker[] = [];
 
-  // Match lines like: NUISANCE [12] "cookie banner" → click [15]
-  // Allow for unicode arrow (→) or ASCII arrow (->)
+  // Allow either ASCII arrow or the Unicode right arrow frequently used
+  // in model outputs.
   const linePattern =
-    /NUISANCE\s+\[(\d+)\]\s+"([^"]+)"\s*(?:→|->)\s*click\s+\[(\d+)\]/gi;
+    /NUISANCE\s+\[(\d+)\]\s+"([^"]+)"\s*(?:->|\u2192|Ã¢â€ â€™)\s*click\s+\[(\d+)\]/gi;
 
   let match: RegExpExecArray | null;
   while ((match = linePattern.exec(blockersText)) !== null) {
@@ -65,4 +87,50 @@ export function parseNuisanceBlockers(
   }
 
   return results;
+}
+
+export function validateNuisanceBlockers(
+  interpretation: string,
+  elements: TaggedElement[],
+): {
+  valid: NuisanceBlocker[];
+  rejected: RejectedNuisanceBlocker[];
+} {
+  const parsed = parseNuisanceBlockers(interpretation);
+  if (parsed.length === 0) {
+    return { valid: [], rejected: [] };
+  }
+
+  const tagMap = new Map<number, TaggedElement>();
+  for (const el of elements) {
+    tagMap.set(el.tag, el);
+  }
+
+  const valid: NuisanceBlocker[] = [];
+  const rejected: RejectedNuisanceBlocker[] = [];
+
+  for (const blocker of parsed) {
+    const overlay = tagMap.get(blocker.overlayTagId);
+    const dismiss = tagMap.get(blocker.dismissTagId);
+
+    if (!overlay) {
+      rejected.push({ ...blocker, reason: "overlay tag missing from live DOM" });
+      continue;
+    }
+    if (!dismiss) {
+      rejected.push({ ...blocker, reason: "dismiss tag missing from live DOM" });
+      continue;
+    }
+    if (!isDismissCandidate(dismiss)) {
+      rejected.push({
+        ...blocker,
+        reason: `dismiss tag [${blocker.dismissTagId}] is not a visible actionable control`,
+      });
+      continue;
+    }
+
+    valid.push(blocker);
+  }
+
+  return { valid, rejected };
 }

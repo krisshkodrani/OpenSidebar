@@ -114,4 +114,22 @@ describe("buildCompletedStepsSummary", () => {
     const summary = buildCompletedStepsSummary(nodes);
     expect(summary).toContain("Something went wrong");
   });
+
+  test("compacts repeated list-detail review results", () => {
+    const node = makeCompletedNode(
+      "n1",
+      "Review job listing #1",
+      "Reviewed Senior Frontend Engineer at Nextera Tech. Hybrid role in Berlin with salary $150k-$180k. React, TypeScript, and GraphQL stack. Returned to listings after reading the full description and benefits.",
+    );
+    node.selectedSkillId = "list-detail-review-loop";
+
+    const summary = buildCompletedStepsSummary([node]);
+
+    expect(summary).toContain('1. "Review job listing #1"');
+    expect(summary).toContain("location=hybrid");
+    expect(summary).toContain("salary=$150k-$180k");
+    expect(summary).toContain("stack=React/TypeScript/GraphQL");
+    expect(summary).toContain("returned to listings");
+    expect(summary).not.toContain("benefits");
+  });
 });

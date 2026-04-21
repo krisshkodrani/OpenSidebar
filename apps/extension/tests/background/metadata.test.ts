@@ -183,6 +183,18 @@ describe("Tool Metadata", () => {
       expect(tools).not.toContain(ToolName.GO_BACK);
     });
 
+    test('resolveToolProfile("edit_surface") keeps inline-edit actions and drops heavy exploration', () => {
+      const tools = resolveToolProfile("edit_surface");
+      expect(tools).not.toBeNull();
+      expect(tools).toContain(ToolName.RIGHT_CLICK);
+      expect(tools).toContain(ToolName.CLICK_ELEMENT);
+      expect(tools).toContain(ToolName.TYPE_TEXT);
+      expect(tools).toContain(ToolName.PRESS_KEY);
+      expect(tools).not.toContain(ToolName.EXECUTE_JS);
+      expect(tools).not.toContain(ToolName.CLICK_COORDINATES);
+      expect(tools).not.toContain(ToolName.NAVIGATE);
+    });
+
     test('resolveToolProfile("read_only") excludes DOM-modifying interaction tools', () => {
       const tools = resolveToolProfile("read_only");
       expect(tools).not.toBeNull();
@@ -248,6 +260,7 @@ describe("Tool Metadata", () => {
       for (const profile of [
         "read_only",
         "form_fill",
+        "edit_surface",
         "navigate",
         "enter_code",
         "submit_form",
