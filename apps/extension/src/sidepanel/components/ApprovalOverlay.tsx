@@ -1,13 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AlertTriangle } from "lucide-react";
 import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
+import { formatStepLabel } from "../../background/agent/step-labels";
+
+function describeRisk(toolName: string): string {
+  if (/submit|delete|close|download|upload|cookie|navigate/i.test(toolName)) {
+    return "This action can change page state, navigation, or account data.";
+  }
+  return "This action can have a visible side effect, so the agent is pausing for confirmation.";
+}
 
 export function ApprovalOverlay() {
   const pendingApproval = useStore((s) => s.pendingApproval);
   const clearPendingApproval = useStore((s) => s.clearPendingApproval);
   const [nowMs, setNowMs] = useState(Date.now());
+  const approveButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   const remainingMs = useMemo(() => {
     if (!pendingApproval) return 0;
@@ -23,9 +41,20 @@ export function ApprovalOverlay() {
     );
   }, [pendingApproval, remainingMs]);
 
+  const proposedAction = useMemo(() => {
+    if (!pendingApproval) return "";
+    return formatStepLabel(pendingApproval.toolName, pendingApproval.args);
+  }, [pendingApproval]);
+
+  const riskDescription = useMemo(() => {
+    if (!pendingApproval) return "";
+    return describeRisk(String(pendingApproval.toolName));
+  }, [pendingApproval]);
+
   useEffect(() => {
     if (!pendingApproval) return;
     setNowMs(Date.now());
+    approveButtonRef.current?.focus();
 
     const tick = setInterval(() => setNowMs(Date.now()), 250);
     const elapsed = Date.now() - pendingApproval.requestedAt;
@@ -66,18 +95,36 @@ export function ApprovalOverlay() {
   if (!pendingApproval) return null;
 
   return (
-    <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/80 dark:bg-red-900/20 p-2.5">
+    <div
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50/80 dark:bg-red-900/20 p-2.5"
+    >
       <div className="flex items-start gap-2 mb-2">
         <AlertTriangle
           size={14}
           className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
         />
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-red-800 dark:text-red-200">
-            High-risk action
+          <div
+            id={titleId}
+            className="text-xs font-medium uppercase tracking-[0.08em] text-red-800 dark:text-red-200"
+          >
+            Approval required
           </div>
-          <div className="text-xs text-red-700 dark:text-red-300 truncate mt-0.5">
+          <div className="mt-1 text-sm font-medium leading-snug text-red-900 dark:text-red-100">
+            {proposedAction}
+          </div>
+          <div
+            id={descriptionId}
+            className="mt-1 text-xs leading-relaxed text-red-700 dark:text-red-300"
+          >
             {pendingApproval.context}
+          </div>
+          <div className="mt-1 text-[11px] leading-relaxed text-red-700/90 dark:text-red-300/90">
+            {riskDescription}
           </div>
         </div>
       </div>
@@ -105,9 +152,10 @@ export function ApprovalOverlay() {
         </button>
         <button
           onClick={() => void sendDecision(true)}
+          ref={approveButtonRef}
           className="flex-1 rounded bg-red-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors"
         >
-          Approve
+          Approve action
         </button>
       </div>
     </div>

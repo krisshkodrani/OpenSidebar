@@ -1,12 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
-import { UserSettings } from "../../types";
+import { PerceptionRuntimeMode, UserSettings } from "../../types";
+import { resolvePerceptionRuntimeMode } from "../../utils/perception-mode";
 import { saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
-import { MODEL_EXECUTOR, MODEL_PLANNER, OPENAI_MODEL_EXECUTOR, GROQ_MODEL_PLANNER, GROQ_MODEL_PERCEPTION, FIREWORKS_MODEL_EXECUTOR, FIREWORKS_MODEL_PLANNER } from "../../background/llm/client";
+import {
+  MODEL_EXECUTOR,
+  MODEL_PLANNER,
+  OPENAI_MODEL_EXECUTOR,
+  GROQ_MODEL_PLANNER,
+  GROQ_MODEL_PERCEPTION,
+  FIREWORKS_MODEL_EXECUTOR,
+  FIREWORKS_MODEL_PLANNER,
+} from "../../background/llm/client";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
-import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
+import {
+  getProviderModelCatalogNote,
+  getProviderModelOptions,
+  useOpenRouterModels,
+} from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
 
 const PERCEPTION_MODEL_DEFAULT = "x-ai/grok-4.1-fast";
@@ -61,9 +74,26 @@ const GEMINI_TTS_STYLE_PRESETS = [
 function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
   if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
   if (mode === "openrouter") return "All roles via OpenRouter";
-  if (mode === "openrouter-groq") return "Executor via OpenRouter, Planner + Perception via Groq";
-  if (mode === "openai-groq") return "Executor via OpenAI, Planner + Perception via Groq";
+  if (mode === "openrouter-groq")
+    return "Executor via OpenRouter, Planner + Perception via Groq";
+  if (mode === "openai-groq")
+    return "Executor via a Fireworks-backed OpenAI-compatible endpoint, Planner + Perception via Groq";
   return "";
+}
+
+function getPerceptionModeDescription(
+  selectedMode: PerceptionRuntimeMode,
+  providerMode: UserSettings["providerMode"] = "fireworks",
+): string {
+  if (selectedMode === "auto") {
+    return providerMode === "fireworks"
+      ? "Recommended. Fireworks uses unified VL as the primary path."
+      : "Recommended. Non-Fireworks stacks use structured perception by default.";
+  }
+  if (selectedMode === "unified_vl") {
+    return "Primary Fireworks path. Screenshot goes straight to the executor.";
+  }
+  return "Compatibility path. A dedicated perception model produces Page Interpretation.";
 }
 
 /** Which provider modes use which key */
@@ -83,13 +113,16 @@ function getKeyUsage(
     uses.push("voice (TTS)");
   }
   if (key === "groq") {
-    if (mode === "openrouter-groq" || mode === "openai-groq") uses.push("agent");
+    if (mode === "openrouter-groq" || mode === "openai-groq")
+      uses.push("agent");
     uses.push("voice (STT/TTS)");
   }
   if (key === "gemini") {
     uses.push("voice (TTS expressive)");
   }
-  return uses.length ? `Used by: ${uses.join(", ")}` : "Not used by current mode";
+  return uses.length
+    ? `Used by: ${uses.join(", ")}`
+    : "Not used by current mode";
 }
 
 export function SettingsDrawer({ isOpen, onClose }: Props) {
@@ -192,10 +225,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   };
 
   const handleDataControl = async (
-    action:
-      | "clear_logs"
-      | "clear_chat_history"
-      | "clear_local_data",
+    action: "clear_logs" | "clear_chat_history" | "clear_local_data",
   ) => {
     setDataControlStatus("Applying...");
     try {
@@ -224,19 +254,47 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   if (!isOpen) return null;
 
   const providerMode = formState.providerMode || "fireworks";
-  const useUnifiedVision =
-    formState.useVLExecutor ?? providerMode === "fireworks";
+  const hasOpenRouterKey = Boolean(formState.openRouterApiKey);
+  const executorModels = getProviderModelOptions({
+    providerMode,
+    role: "executor",
+    openRouterModels: models,
+  });
+  const plannerModels = getProviderModelOptions({
+    providerMode,
+    role: "planner",
+    openRouterModels: models,
+  });
+  const perceptionModels = getProviderModelOptions({
+    providerMode,
+    role: "perception",
+    openRouterModels: models,
+  });
+  const openRouterCatalogActive =
+    providerMode === "openrouter" || providerMode === "openrouter-groq";
+  const selectedPerceptionMode =
+    formState.perceptionMode ??
+    (typeof formState.useVLExecutor === "boolean"
+      ? formState.useVLExecutor
+        ? "unified_vl"
+        : "structured"
+      : "auto");
+  const resolvedPerceptionMode = resolvePerceptionRuntimeMode({
+    perceptionMode: selectedPerceptionMode,
+    useVLExecutor: formState.useVLExecutor,
+    providerMode,
+  });
+  const useUnifiedVision = resolvedPerceptionMode === "unified_vl";
   const hasAnyTTSKey = Boolean(
     formState.groqApiKey || formState.openaiApiKey || formState.geminiApiKey,
   );
-  const inferredTTSProvider =
-    (formState.groqApiKey
-      ? "groq"
-      : formState.openaiApiKey
-        ? "openai"
-        : formState.geminiApiKey
-          ? "gemini"
-          : "auto");
+  const inferredTTSProvider = formState.groqApiKey
+    ? "groq"
+    : formState.openaiApiKey
+      ? "openai"
+      : formState.geminiApiKey
+        ? "gemini"
+        : "auto";
   const selectedTTSProvider = formState.ttsProvider || "auto";
   const effectiveTTSProvider =
     selectedTTSProvider === "auto" ? inferredTTSProvider : selectedTTSProvider;
@@ -261,7 +319,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     }`;
 
   // Shared input class for API key fields
-  const inputCls = "w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100";
+  const inputCls =
+    "w-full px-3 py-2 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100";
   const hintCls = "text-[11px] text-warm-400 dark:text-warm-500 mt-0.5";
 
   return (
@@ -293,13 +352,22 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
         {/* Tab bar */}
         <div className="flex border-b border-warm-200 dark:border-warm-800 px-4">
-          <button className={tabClass("general")} onClick={() => setActiveTab("general")}>
+          <button
+            className={tabClass("general")}
+            onClick={() => setActiveTab("general")}
+          >
             General
           </button>
-          <button className={tabClass("models")} onClick={() => setActiveTab("models")}>
+          <button
+            className={tabClass("models")}
+            onClick={() => setActiveTab("models")}
+          >
             Models
           </button>
-          <button className={tabClass("voice")} onClick={() => setActiveTab("voice")}>
+          <button
+            className={tabClass("voice")}
+            onClick={() => setActiveTab("voice")}
+          >
             Voice
           </button>
         </div>
@@ -399,9 +467,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     className="w-full text-sm border border-warm-300 dark:border-warm-700 rounded px-2 py-1.5 bg-warm-50 dark:bg-warm-900 dark:text-warm-100 outline-none"
                   >
                     <option value="allow_all">Allow all sites</option>
-                    <option value="blocklist">
-                      Block listed domains
-                    </option>
+                    <option value="blocklist">Block listed domains</option>
                   </select>
                   {formState.siteAccessMode === "blocklist" && (
                     <>
@@ -466,6 +532,25 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Show debug screenshots
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Developer-only screenshot toast when debug captures are emitted
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formState.showDebugScreenshots)}
+                    onChange={(e) =>
+                      handleChange("showDebugScreenshots", e.target.checked)
+                    }
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
               </section>
 
               {/* DATA */}
@@ -522,43 +607,63 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </h3>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">OpenRouter</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    OpenRouter
+                  </label>
                   <input
                     type="password"
                     value={formState.openRouterApiKey}
-                    onChange={(e) => handleChange("openRouterApiKey", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("openRouterApiKey", e.target.value)
+                    }
                     className={inputCls}
                     placeholder="sk-or-..."
                   />
-                  <p className={hintCls}>{getKeyUsage("openRouter", providerMode)}</p>
+                  <p className={hintCls}>
+                    {getKeyUsage("openRouter", providerMode)}
+                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">Fireworks AI</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Fireworks AI
+                  </label>
                   <input
                     type="password"
                     value={formState.fireworksApiKey || ""}
-                    onChange={(e) => handleChange("fireworksApiKey", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("fireworksApiKey", e.target.value)
+                    }
                     className={inputCls}
                     placeholder="fw_..."
                   />
-                  <p className={hintCls}>{getKeyUsage("fireworks", providerMode)}</p>
+                  <p className={hintCls}>
+                    {getKeyUsage("fireworks", providerMode)}
+                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">OpenAI</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    OpenAI
+                  </label>
                   <input
                     type="password"
                     value={formState.openaiApiKey || ""}
-                    onChange={(e) => handleChange("openaiApiKey", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("openaiApiKey", e.target.value)
+                    }
                     className={inputCls}
                     placeholder="sk-..."
                   />
-                  <p className={hintCls}>{getKeyUsage("openai", providerMode)}</p>
+                  <p className={hintCls}>
+                    {getKeyUsage("openai", providerMode)}
+                  </p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">Groq</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Groq
+                  </label>
                   <input
                     type="password"
                     value={formState.groqApiKey || ""}
@@ -570,15 +675,21 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">Gemini</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Gemini
+                  </label>
                   <input
                     type="password"
                     value={formState.geminiApiKey || ""}
-                    onChange={(e) => handleChange("geminiApiKey", e.target.value)}
+                    onChange={(e) =>
+                      handleChange("geminiApiKey", e.target.value)
+                    }
                     className={inputCls}
                     placeholder="AIza..."
                   />
-                  <p className={hintCls}>{getKeyUsage("gemini", providerMode)}</p>
+                  <p className={hintCls}>
+                    {getKeyUsage("gemini", providerMode)}
+                  </p>
                 </div>
               </section>
 
@@ -590,14 +701,21 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 <select
                   value={providerMode}
                   onChange={(e) =>
-                    handleChange("providerMode", e.target.value as "fireworks" | "openrouter" | "openrouter-groq" | "openai-groq")
+                    handleChange(
+                      "providerMode",
+                      e.target.value as
+                        | "fireworks"
+                        | "openrouter"
+                        | "openrouter-groq"
+                        | "openai-groq",
+                    )
                   }
                   className={inputCls}
                 >
                   <option value="fireworks">Fireworks AI (Kimi K2.5)</option>
                   <option value="openrouter">OpenRouter (GPT-5.4-mini)</option>
                   <option value="openrouter-groq">OpenRouter + Groq</option>
-                  <option value="openai-groq">OpenAI + Groq</option>
+                  <option value="openai-groq">OpenAI-Compatible + Groq</option>
                 </select>
                 <p className="text-xs text-warm-400 dark:text-warm-500">
                   {getProviderOneLiner(providerMode)}
@@ -611,37 +729,107 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </h3>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">Executor</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Executor
+                  </label>
                   <p className="text-xs text-warm-400 dark:text-warm-500">
                     Fast model for tool execution and page interaction
                   </p>
+                  <p className="text-xs text-warm-500 dark:text-warm-400">
+                    {getProviderModelCatalogNote({
+                      providerMode,
+                      role: "executor",
+                      hasOpenRouterKey,
+                    })}
+                  </p>
                   <ModelSelector
                     value={formState.executorModel || ""}
-                    onChange={(v) => handleChange("executorModel", v || undefined)}
-                    defaultModel={providerMode === "openai-groq" ? OPENAI_MODEL_EXECUTOR : providerMode === "fireworks" ? FIREWORKS_MODEL_EXECUTOR : MODEL_EXECUTOR}
-                    models={models}
-                    loading={modelsLoading}
+                    onChange={(v) =>
+                      handleChange("executorModel", v || undefined)
+                    }
+                    defaultModel={
+                      providerMode === "openai-groq"
+                        ? OPENAI_MODEL_EXECUTOR
+                        : providerMode === "fireworks"
+                          ? FIREWORKS_MODEL_EXECUTOR
+                          : MODEL_EXECUTOR
+                    }
+                    models={executorModels}
+                    loading={openRouterCatalogActive ? modelsLoading : false}
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium dark:text-warm-300">Planner</label>
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Planner
+                  </label>
                   <p className="text-xs text-warm-400 dark:text-warm-500">
                     Reasoning model for task decomposition and escalation
                   </p>
+                  <p className="text-xs text-warm-500 dark:text-warm-400">
+                    {getProviderModelCatalogNote({
+                      providerMode,
+                      role: "planner",
+                      hasOpenRouterKey,
+                    })}
+                  </p>
                   <ModelSelector
                     value={formState.plannerModel || ""}
-                    onChange={(v) => handleChange("plannerModel", v || undefined)}
-                    defaultModel={providerMode === "fireworks" ? FIREWORKS_MODEL_PLANNER : providerMode !== "openrouter" ? GROQ_MODEL_PLANNER : MODEL_PLANNER}
-                    models={models}
-                    loading={modelsLoading}
+                    onChange={(v) =>
+                      handleChange("plannerModel", v || undefined)
+                    }
+                    defaultModel={
+                      providerMode === "fireworks"
+                        ? FIREWORKS_MODEL_PLANNER
+                        : providerMode !== "openrouter"
+                          ? GROQ_MODEL_PLANNER
+                          : MODEL_PLANNER
+                    }
+                    models={plannerModels}
+                    loading={providerMode === "openrouter" ? modelsLoading : false}
                   />
                 </div>
 
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Observation Path
+                  </label>
+                  <p className="text-xs text-warm-400 dark:text-warm-500">
+                    Keep one runtime path explicit instead of relying on
+                    provider-specific hidden defaults
+                  </p>
+                  <select
+                    value={selectedPerceptionMode}
+                    onChange={(e) =>
+                      handleChange(
+                        "perceptionMode",
+                        e.target.value as PerceptionRuntimeMode,
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    <option value="auto">Auto (recommended)</option>
+                    <option value="unified_vl">Unified VL executor</option>
+                    <option value="structured">
+                      Structured perception layer
+                    </option>
+                  </select>
+                  <p className="text-xs text-warm-400 dark:text-warm-500">
+                    {getPerceptionModeDescription(
+                      selectedPerceptionMode,
+                      providerMode,
+                    )}{" "}
+                    Active path:{" "}
+                    {useUnifiedVision ? "unified VL" : "structured perception"}.
+                  </p>
+                </div>
+
                 {/* Unified Vision toggle */}
-                <div className="flex items-center justify-between py-1">
+                <div className="hidden">
                   <div>
-                    <span className="text-sm font-medium dark:text-warm-300">Unified Vision</span>
+                    <span className="text-sm font-medium dark:text-warm-300">
+                      Unified Vision
+                    </span>
                     <p className="text-xs text-warm-400 dark:text-warm-500 mt-0.5">
                       Send screenshot to executor — skip perception model
                     </p>
@@ -649,36 +837,60 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <button
                     role="switch"
                     aria-checked={useUnifiedVision}
-                    onClick={() => handleChange("useVLExecutor", !useUnifiedVision)}
+                    onClick={() =>
+                      handleChange("useVLExecutor", !useUnifiedVision)
+                    }
                     className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useUnifiedVision ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
                   >
-                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useUnifiedVision ? "translate-x-4" : "translate-x-0"}`} />
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useUnifiedVision ? "translate-x-4" : "translate-x-0"}`}
+                    />
                   </button>
                 </div>
 
                 {/* Perception model — hidden when unified VL is active */}
-                {!useUnifiedVision && (
+                {resolvedPerceptionMode === "structured" && (
                   <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">Perception</label>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Perception
+                    </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Vision model for interpreting page screenshots
+                      Vision model for the standalone structured perception path
+                    </p>
+                    <p className="text-xs text-warm-500 dark:text-warm-400">
+                      {getProviderModelCatalogNote({
+                        providerMode,
+                        role: "perception",
+                        hasOpenRouterKey,
+                      })}
                     </p>
                     <ModelSelector
                       value={formState.perceptionModel || ""}
-                      onChange={(v) => handleChange("perceptionModel", v || undefined)}
-                      defaultModel={providerMode === "fireworks" ? FIREWORKS_MODEL_EXECUTOR : providerMode !== "openrouter" ? GROQ_MODEL_PERCEPTION : PERCEPTION_MODEL_DEFAULT}
-                      models={models}
-                      loading={modelsLoading}
+                      onChange={(v) =>
+                        handleChange("perceptionModel", v || undefined)
+                      }
+                      defaultModel={
+                        providerMode === "fireworks"
+                          ? FIREWORKS_MODEL_EXECUTOR
+                          : providerMode !== "openrouter"
+                            ? GROQ_MODEL_PERCEPTION
+                            : PERCEPTION_MODEL_DEFAULT
+                      }
+                      models={perceptionModels}
+                      loading={providerMode === "openrouter" ? modelsLoading : false}
                       filterVisionOnly
                     />
                   </div>
                 )}
 
                 {/* Nitro toggle — OpenRouter modes only */}
-                {(providerMode === "openrouter" || providerMode === "openrouter-groq") && (
+                {(providerMode === "openrouter" ||
+                  providerMode === "openrouter-groq") && (
                   <div className="flex items-center justify-between py-1">
                     <div>
-                      <span className="text-sm font-medium dark:text-warm-300">Nitro</span>
+                      <span className="text-sm font-medium dark:text-warm-300">
+                        Nitro
+                      </span>
                       <p className="text-xs text-warm-400 dark:text-warm-500 mt-0.5">
                         Route through faster :nitro endpoints
                       </p>
@@ -686,10 +898,14 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     <button
                       role="switch"
                       aria-checked={Boolean(formState.useNitro)}
-                      onClick={() => handleChange("useNitro", !formState.useNitro)}
+                      onClick={() =>
+                        handleChange("useNitro", !formState.useNitro)
+                      }
                       className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${formState.useNitro ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
                     >
-                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${formState.useNitro ? "translate-x-4" : "translate-x-0"}`} />
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${formState.useNitro ? "translate-x-4" : "translate-x-0"}`}
+                      />
                     </button>
                   </div>
                 )}
@@ -717,15 +933,19 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={Boolean(formState.enableVoiceInput)}
-                    onChange={(e) => handleChange("enableVoiceInput", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("enableVoiceInput", e.target.checked)
+                    }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
                 </div>
-                {formState.enableVoiceInput && !formState.groqApiKey && !formState.openaiApiKey && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
-                    Needs a Groq or OpenAI key. Add one in the Models tab.
-                  </p>
-                )}
+                {formState.enableVoiceInput &&
+                  !formState.groqApiKey &&
+                  !formState.openaiApiKey && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+                      Needs a Groq or OpenAI key. Add one in the Models tab.
+                    </p>
+                  )}
               </section>
 
               {/* TTS */}
@@ -747,7 +967,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <input
                     type="checkbox"
                     checked={Boolean(formState.enableVoiceOutput)}
-                    onChange={(e) => handleChange("enableVoiceOutput", e.target.checked)}
+                    onChange={(e) =>
+                      handleChange("enableVoiceOutput", e.target.checked)
+                    }
                     disabled={!hasAnyTTSKey}
                     className="w-4 h-4 text-primary-600 rounded disabled:opacity-40"
                   />
@@ -767,7 +989,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       <input
                         type="checkbox"
                         checked={Boolean(formState.autoVoiceResponse)}
-                        onChange={(e) => handleChange("autoVoiceResponse", e.target.checked)}
+                        onChange={(e) =>
+                          handleChange("autoVoiceResponse", e.target.checked)
+                        }
                         className="w-4 h-4 text-primary-600 rounded"
                       />
                     </div>
@@ -779,7 +1003,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       <select
                         value={selectedTTSProvider}
                         onChange={(e) => {
-                          const nextProvider = e.target.value as "auto" | "groq" | "openai" | "gemini";
+                          const nextProvider = e.target.value as
+                            | "auto"
+                            | "groq"
+                            | "openai"
+                            | "gemini";
                           handleChange("ttsProvider", nextProvider);
                           handleChange(
                             "ttsVoice",
@@ -796,20 +1024,30 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         <option value="groq" disabled={!formState.groqApiKey}>
                           Groq
                         </option>
-                        <option value="openai" disabled={!formState.openaiApiKey}>
+                        <option
+                          value="openai"
+                          disabled={!formState.openaiApiKey}
+                        >
                           OpenAI
                         </option>
-                        <option value="gemini" disabled={!formState.geminiApiKey}>
+                        <option
+                          value="gemini"
+                          disabled={!formState.geminiApiKey}
+                        >
                           Gemini (Preview)
                         </option>
                       </select>
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs text-warm-400 dark:text-warm-500">Voice</label>
+                      <label className="text-xs text-warm-400 dark:text-warm-500">
+                        Voice
+                      </label>
                       <select
                         value={formState.ttsVoice || defaultTTSVoice}
-                        onChange={(e) => handleChange("ttsVoice", e.target.value)}
+                        onChange={(e) =>
+                          handleChange("ttsVoice", e.target.value)
+                        }
                         className={inputCls}
                       >
                         {ttsVoiceOptions.map((voice) => (
@@ -827,7 +1065,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         </label>
                         <select
                           value={formState.ttsStylePreset || "neutral"}
-                          onChange={(e) => handleChange("ttsStylePreset", e.target.value)}
+                          onChange={(e) =>
+                            handleChange("ttsStylePreset", e.target.value)
+                          }
                           className={inputCls}
                         >
                           {GEMINI_TTS_STYLE_PRESETS.map((preset) => (
@@ -837,7 +1077,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                           ))}
                         </select>
                         <p className="text-xs text-warm-400 dark:text-warm-500">
-                          Gemini-only expressive preset. If tagged delivery fails, OpenSidebar retries with plain speech.
+                          Gemini-only expressive preset. If tagged delivery
+                          fails, OpenSidebar retries with plain speech.
                         </p>
                       </div>
                     )}
@@ -846,11 +1087,14 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                 {!hasAnyTTSKey && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
-                    Add a Groq, OpenAI, or Gemini key in the Models tab to enable voice.
+                    Add a Groq, OpenAI, or Gemini key in the Models tab to
+                    enable voice.
                   </p>
                 )}
                 <p className="text-xs text-warm-400 dark:text-warm-500">
-                  Groq TTS requires accepting model terms at console.groq.com. Gemini expressive TTS is preview-only and currently used only for voice output.
+                  Groq TTS requires accepting model terms at console.groq.com.
+                  Gemini expressive TTS is preview-only and currently used only
+                  for voice output.
                 </p>
               </section>
             </>

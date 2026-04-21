@@ -88,14 +88,24 @@ Viewer:
 
 ## Current Model Defaults
 
-| Role | Default |
-| --- | --- |
-| Executor | `google/gemini-3-flash-preview` |
-| Executor fallback | `google/gemini-3.1-flash-lite-preview` |
-| Planner | `minimax/minimax-m2.5` |
-| Perception | `x-ai/grok-4.1-fast` |
+| Role                  | Default                                      |
+| --------------------- | -------------------------------------------- |
+| Provider stack        | `fireworks`                                  |
+| Executor              | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Executor fallback     | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Planner               | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Structured perception | `x-ai/grok-4.1-fast`                         |
 
 Settings overrides live in `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
+
+## Observation Path
+
+- source of truth setting: `perceptionMode`
+- `auto`: unified VL on Fireworks, structured perception elsewhere
+- `unified_vl`: screenshot goes directly to the executor and no separate `Page Interpretation` model runs
+- `structured`: dedicated perception model produces the v6 `LOCATION/CHANGES/BLOCKERS/VISUAL-ONLY/AFFORDANCES` contract
+
+When debugging traces, do not assume every screenshot-backed turn used the structured perception layer. Check the recorded perception mode first.
 
 ## Main Directories
 
@@ -149,7 +159,7 @@ Tool filtering happens through focused tool profiles in `apps/extension/src/back
 
 ## Perception
 
-Production perception uses the unified v6 contract:
+Structured perception uses the unified v6 contract:
 
 - `LOCATION`
 - `CHANGES`
@@ -184,31 +194,31 @@ Production perception uses the unified v6 contract:
 
 ### Local development
 
-| Command | Use this when | Notes |
-| --- | --- | --- |
-| `npm run dev` | you want the main local stack running | starts build/watch, log server, trace viewer |
-| `npm run build` | you need fresh production assets | required before loading `dist/` manually |
-| `npm run lint` | you want a lint pass | source-focused ESLint run |
-| `npm run fmt` | you want formatting only | formats extension source and shared packages |
+| Command         | Use this when                         | Notes                                        |
+| --------------- | ------------------------------------- | -------------------------------------------- |
+| `npm run dev`   | you want the main local stack running | starts build/watch, log server, trace viewer |
+| `npm run build` | you need fresh production assets      | required before loading `dist/` manually     |
+| `npm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
+| `npm run fmt`   | you want formatting only              | formats extension source and shared packages |
 
 ### Tests
 
-| Command | Use this when | Notes |
-| --- | --- | --- |
-| `npm test` | you want the normal fast extension suite | excludes backend and browser E2E runs |
-| `npm run test:backend` | you changed backend routes or persistence | backend-only Vitest run |
-| `npm run test:e2e` | you need real-browser validation | requires `OPENROUTER_API_KEY` |
-| `npm run release:verify` | you want the release gate | lint + extension tests + backend tests + build |
-| `npx vitest run <file>` | you want one focused test file | useful during iteration |
+| Command                  | Use this when                             | Notes                                          |
+| ------------------------ | ----------------------------------------- | ---------------------------------------------- |
+| `npm test`               | you want the normal fast extension suite  | excludes backend and browser E2E runs          |
+| `npm run test:backend`   | you changed backend routes or persistence | backend-only Vitest run                        |
+| `npm run test:e2e`       | you need real-browser validation          | requires `OPENROUTER_API_KEY`                  |
+| `npm run release:verify` | you want the release gate                 | lint + extension tests + backend tests + build |
+| `npx vitest run <file>`  | you want one focused test file            | useful during iteration                        |
 
 ### Observability
 
-| Command | Use this when | Notes |
-| --- | --- | --- |
-| `npm run logs` | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
-| `npm run logs:tail` | you want recent logs quickly | last 50 entries |
-| `npm run logs:errors` | you only care about errors | filters by log level |
-| `npm run traces` | you want trace CLI queries | session list, turns, stats |
+| Command               | Use this when                            | Notes                             |
+| --------------------- | ---------------------------------------- | --------------------------------- |
+| `npm run logs`        | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
+| `npm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
+| `npm run logs:errors` | you only care about errors               | filters by log level              |
+| `npm run traces`      | you want trace CLI queries               | session list, turns, stats        |
 
 ## Development Notes
 

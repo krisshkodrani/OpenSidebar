@@ -65,12 +65,22 @@ export async function loadSettings(): Promise<UserSettings | null> {
   const apiKey =
     (localResult[LOCAL_KEY] as string | undefined) ||
     (sessionResult[SESSION_KEY] as string | undefined);
-  const openaiApiKey = (localResult[LOCAL_OPENAI_KEY] as string | undefined) || "";
+  const openaiApiKey =
+    (localResult[LOCAL_OPENAI_KEY] as string | undefined) || "";
   const groqApiKey = (localResult[LOCAL_GROQ_KEY] as string | undefined) || "";
-  const geminiApiKey = (localResult[LOCAL_GEMINI_KEY] as string | undefined) || "";
-  const fireworksApiKey = (localResult[LOCAL_FIREWORKS_KEY] as string | undefined) || "";
+  const geminiApiKey =
+    (localResult[LOCAL_GEMINI_KEY] as string | undefined) || "";
+  const fireworksApiKey =
+    (localResult[LOCAL_FIREWORKS_KEY] as string | undefined) || "";
 
-  if (!syncSettings && !apiKey && !openaiApiKey && !groqApiKey && !geminiApiKey && !fireworksApiKey) {
+  if (
+    !syncSettings &&
+    !apiKey &&
+    !openaiApiKey &&
+    !groqApiKey &&
+    !geminiApiKey &&
+    !fireworksApiKey
+  ) {
     return null;
   }
 
@@ -100,6 +110,13 @@ export async function loadSettings(): Promise<UserSettings | null> {
     else raw.providerMode = "openrouter";
     delete raw.provider;
   }
+
+  // Migrate legacy unified-vision toggle to explicit perception mode.
+  if (!("perceptionMode" in raw) && "useVLExecutor" in raw) {
+    raw.perceptionMode =
+      raw.useVLExecutor === true ? "unified_vl" : "structured";
+  }
+  delete raw.useVLExecutor;
 
   // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;

@@ -67,7 +67,6 @@ export function PlanStrip({
   const taskProgress = useStore((s) => s.taskProgress);
   const taskCompletion = useStore((s) => s.taskCompletion);
   const taskRecovery = useStore((s) => s.taskRecovery);
-  const latestStepLabel = useStore((s) => s.latestStepLabel);
   const isPlanning = useStore((s) => s.isPlanning);
   const clearPending = useStore((s) => s.clearPendingPlanConfirmation);
   const setInputText = useStore((s) => s.setInputText);
@@ -175,12 +174,12 @@ export function PlanStrip({
   // --- Collapsed bar styles per mode ---
   const barBg =
     mode === "planning"
-      ? "bg-warm-50/50 dark:bg-warm-900/10 border-warm-200 dark:border-warm-700"
+      ? "bg-warm-50/60 dark:bg-warm-900/15 border-warm-200 dark:border-warm-700"
       : mode === "confirmation"
-        ? "bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800"
+        ? "bg-primary-50/40 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800"
         : mode === "completion"
-          ? "bg-green-50/30 dark:bg-green-900/10 border-green-200 dark:border-green-800"
-          : "bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700";
+          ? "bg-warm-50/60 dark:bg-warm-900/15 border-warm-200 dark:border-warm-700"
+          : "bg-warm-50/60 dark:bg-warm-900/15 border-warm-200 dark:border-warm-700";
 
   const Chevron = isExpanded ? ChevronUp : ChevronDown;
 
@@ -189,47 +188,56 @@ export function PlanStrip({
       {/* === Collapsed bar === */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] cursor-pointer select-none"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 min-h-[30px] cursor-pointer select-none"
       >
         {mode === "planning" ? (
           <>
             <ClipboardList
-              size={12}
+              size={11}
               className="shrink-0 text-warm-400 dark:text-warm-500 animate-pulse"
             />
-            <span className="text-[11px] font-medium text-warm-500 dark:text-warm-400 animate-pulse">
+            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400 animate-pulse">
+              Plan
+            </span>
+            <span className="text-[11px] text-warm-500 dark:text-warm-400">
               Planning...
             </span>
           </>
         ) : mode === "confirmation" && pendingPlan ? (
           <>
             <ClipboardList
-              size={12}
-              className="shrink-0 text-blue-600 dark:text-blue-400"
+              size={11}
+              className="shrink-0 text-primary-600 dark:text-primary-400"
             />
+            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-primary-600 dark:text-primary-400">
+              Plan
+            </span>
             <span
-              className={`text-[11px] font-medium text-blue-800 dark:text-blue-200 ${confirmed ? "animate-pulse" : ""}`}
+              className={`text-[11px] text-primary-800 dark:text-primary-200 ${confirmed ? "animate-pulse" : ""}`}
             >
               {confirmed ? "Starting..." : "Plan ready"}
             </span>
             {pendingPlan.difficulty && (
-              <span className="text-[9px] px-1 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300">
+              <span className="text-[9px] px-1 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
                 {pendingPlan.difficulty}
               </span>
             )}
-            <span className="text-[10px] text-blue-500 dark:text-blue-400 ml-auto tabular-nums">
+            <span className="text-[10px] text-primary-600 dark:text-primary-400 ml-auto tabular-nums">
               {pendingPlan.nodes.length} steps
             </span>
           </>
         ) : (
           <>
+            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400">
+              Plan
+            </span>
             <ProgressBar rows={rows} />
-            <span className="text-[11px] font-medium text-warm-700 dark:text-warm-200 ml-1 tabular-nums">
+            <span className="text-[11px] text-warm-700 dark:text-warm-200 ml-1 tabular-nums">
               {mode === "completion"
                 ? "Complete"
                 : `Step ${currentIndex + 1}/${rows.length}`}
             </span>
-            <span className="text-[10px] text-warm-400 dark:text-warm-500 ml-auto tabular-nums">
+            <span className="text-[10px] text-warm-500 dark:text-warm-400 ml-auto tabular-nums">
               {mode === "completion"
                 ? `${taskCompletion?.totalTurnsUsed ?? 0}t`
                 : formatElapsed(elapsed)}
@@ -238,7 +246,7 @@ export function PlanStrip({
         )}
         <Chevron
           size={12}
-          className="shrink-0 text-warm-400 dark:text-warm-500 ml-1"
+          className="shrink-0 text-warm-500 dark:text-warm-400 ml-1"
         />
       </button>
 
@@ -256,11 +264,11 @@ export function PlanStrip({
                 {pendingPlan.nodes.map((node, i) => (
                   <div key={i} className="flex items-start gap-2">
                     <div className="flex flex-col items-center">
-                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40 text-[10px] font-medium text-blue-600 dark:text-blue-300 shrink-0">
+                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/40 text-[10px] font-medium text-primary-700 dark:text-primary-300 shrink-0">
                         {i + 1}
                       </span>
                       {i < pendingPlan.nodes.length - 1 && (
-                        <div className="w-px flex-1 min-h-[12px] bg-blue-200/60 dark:bg-blue-700/40" />
+                        <div className="w-px flex-1 min-h-[12px] bg-primary-200/60 dark:bg-primary-700/40" />
                       )}
                     </div>
                     <div className="pb-2 min-w-0 flex-1">
@@ -269,11 +277,11 @@ export function PlanStrip({
                           e.stopPropagation();
                           setExpandedStep(expandedStep === i ? null : i);
                         }}
-                        className="text-xs text-left text-blue-800 dark:text-blue-200 leading-relaxed hover:text-blue-600 dark:hover:text-blue-100 transition-colors w-full"
+                        className="text-xs text-left text-primary-800 dark:text-primary-200 leading-relaxed hover:text-primary-700 dark:hover:text-primary-100 transition-colors w-full"
                       >
                         {node.description}
                         {node.selectedSkillId && (
-                          <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 font-normal align-middle">
+                          <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-normal align-middle">
                             {node.selectedSkillId}
                           </span>
                         )}
@@ -285,7 +293,7 @@ export function PlanStrip({
                         )}
                       </button>
                       {expandedStep === i && node.successCriteria && (
-                        <div className="mt-1 text-[10px] text-blue-500 dark:text-blue-400 italic leading-relaxed">
+                        <div className="mt-1 text-[10px] text-primary-600 dark:text-primary-400 italic leading-relaxed">
                           {node.successCriteria}
                         </div>
                       )}
@@ -295,7 +303,7 @@ export function PlanStrip({
               </div>
 
               {confirmed ? (
-                <div className="text-[11px] text-blue-500 dark:text-blue-400 animate-pulse py-1">
+                <div className="text-[11px] text-primary-600 dark:text-primary-400 animate-pulse py-1">
                   Starting...
                 </div>
               ) : (
@@ -306,7 +314,7 @@ export function PlanStrip({
                         e.stopPropagation();
                         setShowFeedback(true);
                       }}
-                      className="text-[10px] text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 mb-2 transition-colors"
+                      className="text-[10px] text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 mb-2 transition-colors"
                     >
                       + Add guidance
                     </button>
@@ -317,7 +325,7 @@ export function PlanStrip({
                       onClick={(e) => e.stopPropagation()}
                       placeholder="Add guidance or corrections..."
                       rows={2}
-                      className="w-full px-2 py-1.5 mb-2 text-xs border border-blue-200 dark:border-blue-700 rounded-md bg-white dark:bg-blue-950/30 text-blue-800 dark:text-blue-200 placeholder:text-blue-400 dark:placeholder:text-blue-600 outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+                      className="w-full px-2 py-1.5 mb-2 text-xs border border-primary-200 dark:border-primary-700 rounded-md bg-white dark:bg-primary-950/20 text-primary-800 dark:text-primary-200 placeholder:text-primary-400 dark:placeholder:text-primary-500 outline-none focus:ring-1 focus:ring-primary-400 resize-none"
                       autoFocus
                     />
                   )}
@@ -328,7 +336,7 @@ export function PlanStrip({
                         e.stopPropagation();
                         void sendDecision("cancel");
                       }}
-                      className="flex-1 rounded border border-blue-300 dark:border-blue-700 px-2 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                      className="flex-1 rounded border border-primary-300 dark:border-primary-700 px-2 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
                     >
                       Cancel
                     </button>
@@ -337,7 +345,7 @@ export function PlanStrip({
                         e.stopPropagation();
                         void sendDecision("approve");
                       }}
-                      className="flex-1 rounded bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+                      className="flex-1 rounded bg-primary-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-700 transition-colors"
                     >
                       {feedback.trim() ? "Replan & Start" : "Start"}
                     </button>
@@ -406,27 +414,21 @@ export function PlanStrip({
                             row.status === "running"
                               ? "text-warm-800 dark:text-warm-100 font-medium"
                               : row.status === "pending"
-                                ? "text-warm-400 dark:text-warm-500"
+                                ? "text-warm-500 dark:text-warm-400"
                                 : "text-warm-600 dark:text-warm-300"
                           }`}
                         >
                           {row.description}
                           {row.selectedSkillId && (
-                            <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-300 font-normal align-middle">
+                            <span className="inline-flex ml-1.5 px-1 py-0.5 text-[9px] rounded bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-normal align-middle">
                               {row.selectedSkillId}
                             </span>
                           )}
                         </span>
-                        {/* Live activity label under running step */}
-                        {row.status === "running" && latestStepLabel && (
-                          <div className="text-[10px] text-primary-500 dark:text-primary-400 truncate mt-0.5">
-                            {latestStepLabel}
-                          </div>
-                        )}
                         {row.evidenceSnippet &&
                           row.status !== "pending" &&
                           row.status !== "running" && (
-                            <div className="mt-0.5 text-[10px] text-warm-400 dark:text-warm-500 line-clamp-2 leading-relaxed">
+                            <div className="mt-0.5 text-[10px] text-warm-500 dark:text-warm-400 line-clamp-2 leading-relaxed">
                               {row.evidenceSnippet}
                             </div>
                           )}

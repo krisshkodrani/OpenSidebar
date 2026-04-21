@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -123,7 +123,13 @@ function toolIcon(step: AgentStep): React.ReactNode {
   }
 }
 
-function StepRow({ step }: { step: AgentStep }) {
+function StepRow({
+  step,
+  showMedia,
+}: {
+  step: AgentStep;
+  showMedia: boolean;
+}) {
   const isRunning = step.status === "running";
 
   return (
@@ -143,7 +149,7 @@ function StepRow({ step }: { step: AgentStep }) {
           {step.label}
         </span>
       </div>
-      {step.screenshotUrl && (
+      {showMedia && step.screenshotUrl && (
         <div className="ml-6 mt-0.5 mb-1.5">
           <img
             src={step.screenshotUrl}
@@ -166,6 +172,7 @@ function StepRow({ step }: { step: AgentStep }) {
 const COLLAPSE_THRESHOLD = 5;
 /** How many recent steps remain visible when collapsed */
 const VISIBLE_TAIL = 3;
+const ACTIVE_VISIBLE_TAIL = 2;
 
 export const StepTimeline = React.memo(function StepTimeline({
   steps,
@@ -177,10 +184,18 @@ export const StepTimeline = React.memo(function StepTimeline({
   if (steps.length === 0) return null;
 
   const hasRunning = steps.some((s) => s.status === "running");
-  const shouldCollapse =
-    !expanded && !hasRunning && steps.length > COLLAPSE_THRESHOLD;
-  const visibleSteps = shouldCollapse ? steps.slice(-VISIBLE_TAIL) : steps;
+  const collapseThreshold = hasRunning ? ACTIVE_VISIBLE_TAIL : COLLAPSE_THRESHOLD;
+  const visibleTail = hasRunning ? ACTIVE_VISIBLE_TAIL : VISIBLE_TAIL;
+  const shouldCollapse = !expanded && steps.length > collapseThreshold;
+  const visibleSteps = shouldCollapse ? steps.slice(-visibleTail) : steps;
   const hiddenCount = steps.length - visibleSteps.length;
+  const showMedia = expanded || (!shouldCollapse && steps.length <= 2);
+  const helperLabel = useMemo(() => {
+    if (hasRunning) {
+      return `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
+    }
+    return `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
+  }, [hasRunning, hiddenCount]);
 
   return (
     <div className="max-w-[92%] mb-1">
@@ -191,12 +206,10 @@ export const StepTimeline = React.memo(function StepTimeline({
             className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
           >
             <ChevronRight size={11} />
-            <span>
-              {hiddenCount} earlier step{hiddenCount > 1 ? "s" : ""}
-            </span>
+            <span>{helperLabel}</span>
           </button>
         )}
-        {expanded && hiddenCount === 0 && steps.length > COLLAPSE_THRESHOLD && (
+        {expanded && hiddenCount === 0 && steps.length > collapseThreshold && (
           <button
             onClick={() => setExpanded(false)}
             className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
@@ -206,7 +219,7 @@ export const StepTimeline = React.memo(function StepTimeline({
           </button>
         )}
         {visibleSteps.map((step) => (
-          <StepRow key={step.id} step={step} />
+          <StepRow key={step.id} step={step} showMedia={showMedia} />
         ))}
       </div>
     </div>

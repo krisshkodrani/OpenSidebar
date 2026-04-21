@@ -20,7 +20,14 @@ import { logger } from "../utils";
 import { speakText } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
-import { Header, MessageBubble, InputArea, PlanStrip } from "./components";
+import {
+  Header,
+  MessageBubble,
+  InputArea,
+  PlanStrip,
+  PrimaryTaskRail,
+  StalledRecoveryCard,
+} from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SavedPromptsDrawer } from "./components/SavedPromptsDrawer";
@@ -295,6 +302,9 @@ export default function App() {
   useEffect(() => {
     const cleanup = initializeBridge(useStore, {
       onScreenshot: (payload) => {
+        if (!useStore.getState().settings.showDebugScreenshots) {
+          return;
+        }
         if (screenshotTimerRef.current) {
           clearTimeout(screenshotTimerRef.current);
         }
@@ -325,6 +335,16 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (settings.showDebugScreenshots === false && screenshot) {
+      setScreenshot(null);
+      if (screenshotTimerRef.current) {
+        clearTimeout(screenshotTimerRef.current);
+        screenshotTimerRef.current = null;
+      }
+    }
+  }, [settings.showDebugScreenshots, screenshot]);
 
   // Auto-scroll — uses message count + streaming flag as lightweight trigger
   // instead of the full messages array reference (which changes on every delta).
@@ -565,7 +585,7 @@ export default function App() {
               OpenSidebar
             </span>
           </div>
-          <span className="text-xs text-warm-400 dark:text-warm-500">
+          <span className="text-xs text-warm-500 dark:text-warm-400">
             Loading...
           </span>
         </div>
@@ -621,6 +641,8 @@ export default function App() {
         />
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
+          <PrimaryTaskRail />
+          <StalledRecoveryCard />
           {blockedSiteWarning && (
             <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               {blockedSiteWarning}
@@ -710,7 +732,7 @@ export default function App() {
           />
         </div>
 
-        {screenshot && (
+        {screenshot && settings.showDebugScreenshots && (
           <div className="fixed bottom-4 right-4 z-50 max-w-md">
             <div className="bg-warm-50 dark:bg-warm-800 rounded-lg shadow-xl border border-warm-200 dark:border-warm-700 overflow-hidden">
               <div className="p-2 bg-warm-100 dark:bg-warm-900 border-b border-warm-200 dark:border-warm-700 flex justify-between items-center">
