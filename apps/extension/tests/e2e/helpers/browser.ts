@@ -21,10 +21,21 @@ export interface ExtensionContext {
   serviceWorker: WebWorker;
   serviceWorkerTarget: Target;
   serviceWorkerUrl: string;
+  helperPage?: Page | null;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
+const HELPER_PATH = "/e2e-helper.html";
+
+async function createBrowserPage(browser: Browser): Promise<Page> {
+  try {
+    return await browser.newPage();
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return browser.newPage();
+  }
+}
 
 async function waitForLiveServiceWorker(
   browser: Browser,
@@ -34,7 +45,7 @@ async function waitForLiveServiceWorker(
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const wakePage = await browser.newPage().catch(() => null);
+    const wakePage = await createBrowserPage(browser).catch(() => null);
     if (wakePage) {
       try {
         await wakePage.goto(
@@ -118,6 +129,7 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
     serviceWorker,
     serviceWorkerTarget: swTarget,
     serviceWorkerUrl: swUrl,
+    helperPage: null,
   };
 }
 
@@ -151,16 +163,21 @@ export async function closeNonExtensionPages(
  * Useful for stable chrome.runtime/chrome.storage interactions in E2E tests.
  */
 export async function openHelperPage(ctx: ExtensionContext): Promise<Page> {
-  const helperPage = await ctx.browser.newPage();
-  await helperPage.goto(
-    `chrome-extension://${ctx.extensionId}/e2e-helper.html`,
-    { waitUntil: "domcontentloaded" },
-  );
+  const helperUrl = `chrome-extension://${ctx.extensionId}${HELPER_PATH}`;
+  let helperPage =
+    ctx.helperPage && !ctx.helperPage.isClosed() ? ctx.helperPage : null;
+  if (!helperPage) {
+    helperPage = await createBrowserPage(ctx.browser);
+    ctx.helperPage = helperPage;
+  }
+  if (helperPage.url() !== helperUrl) {
+    await helperPage.goto(helperUrl, { waitUntil: "domcontentloaded" });
+  }
   const [url, title] = await Promise.all([
     helperPage.url(),
     helperPage.title(),
   ]);
-  if (!url.endsWith("/e2e-helper.html") || title !== "E2E Helper") {
+  if (!url.endsWith(HELPER_PATH) || title !== "E2E Helper") {
     throw new Error(`e2e-helper.html did not load correctly (url=${url}, title=${title})`);
   }
   return helperPage;

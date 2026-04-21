@@ -203,7 +203,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         temperature ?? null,
         useVLExecutor ?? null,
       );
-      await helper.close();
 
       await setupEventMonitor(ctx.serviceWorker);
     },

@@ -64,7 +64,10 @@ import {
     inferToolProfileForStep,
 } from "../../src/background/agent/planner";
 import { buildInitialPlanState } from "../../src/background/orchestrator";
-import { OrchestratorPlanner } from "../../src/background/orchestrator/planner";
+import {
+    buildFallbackNodes,
+    OrchestratorPlanner,
+} from "../../src/background/orchestrator/planner";
 import { selectPrimarySkill } from "../../src/background/orchestrator/skills";
 import { AgentLoop } from "../../src/background/agent/loop";
 
@@ -92,6 +95,54 @@ describe("TaskPlanner.decompose", () => {
         expect(result).not.toBeNull();
         expect(result!.subtasks).toHaveLength(4);
         expect(result!.subtasks[0]).toBe("Add to cart");
+    });
+
+    test("preserves sequential multi-step plans even when the planner marks difficulty as simple", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "simple",
+                steps: [
+                    {
+                        objective: "Click the Notification Settings action button",
+                        successCriteria: "Notification Settings is activated",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Click the Privacy Settings action button",
+                        successCriteria: "Privacy Settings is activated",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Turn on dark mode",
+                        successCriteria: "Dark mode is enabled",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            "Activate the Notification Settings and Privacy Settings actions, then turn on dark mode.",
+            "Web Components",
+            "https://example.com/web-components",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toBeDefined();
+        expect(result!.steps).toHaveLength(3);
+        expect(result!.subtasks).toEqual([
+            "Click the Notification Settings action button",
+            "Click the Privacy Settings action button",
+            "Turn on dark mode",
+        ]);
     });
 
     test("synthesizes multi-step plan when model under-decomposes a round-trip task", async () => {
@@ -407,6 +458,18 @@ describe("TaskPlanner.decompose", () => {
                 "The order confirmation is visible",
             ),
         ).toBe("submit_form");
+        expect(
+            inferToolProfileForStep(
+                "In the spreadsheet, change the Q1 Sales value in the first row to 999",
+                "The Q1 Sales cell in row 1 shows 999",
+            ),
+        ).toBe("edit_surface");
+        expect(
+            inferToolProfileForStep(
+                "Rename the document Q3 Report.pdf to Q3 Financial Report 2026.pdf",
+                "The document list shows the new file name",
+            ),
+        ).toBe("edit_surface");
     });
 
     test("prefers direct-action profile over recovery wording in stitched handoff objectives", () => {
@@ -1033,6 +1096,21 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.isSingleNode).toBe(true);
     });
 
+    test("buildFallbackNodes preserves explicit user constraints in the fallback objective", () => {
+        const query =
+            "Please find the Warehouse Beta inventory count, do not navigate away, and tell me the exact number.";
+
+        const nodes = buildFallbackNodes(query);
+
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].description).toMatch(/warehouse beta inventory count/i);
+        expect(nodes[0].description).toMatch(/do not navigate away/i);
+        expect(nodes[0].successCriteria).toMatch(/warehouse beta/i);
+        expect(nodes[0].assumptions || []).toContain(
+            "Preserve all explicit constraints from the user's original request: Please find the Warehouse Beta inventory count, do not navigate away, and tell me the exact number.",
+        );
+    });
+
     test("all nodes get full default tools (profile filtering at loop level)", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1206,6 +1284,49 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillReason).toContain("hover");
     });
 
+    test("selects list-detail-review-loop for repeated listing review workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "complex"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Please review all 10 job listings on this page, open each one to read the details, and come back to the listings page after each review.",
+            "TechJobs Board",
+            "https://example.com/job-board",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("list-detail-review-loop");
+        expect(result.nodes[0].selectedSkillReason).toContain("detail view");
+    });
+
+    test("selects multi-tab-procurement-loop for repeated tabbed procurement workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Open the first store in a new tab", "Purchase the first item", "Return and check it off"]}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.",
+            "Procurement List",
+            "https://example.com/procurement",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-procurement-loop");
+        expect(result.nodes[0].selectedSkillReason).toContain("checklist workflow");
+        expect(result.nodes[0].description).toMatch(/open the first store in a new tab/i);
+        expect(result.nodes[0].description).toMatch(/purchase the first item/i);
+        expect(result.nodes[0].description).toMatch(/return and check it off/i);
+    });
+
     test("selects budget-aware-execution when the task explicitly mentions turn budget pressure", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1224,6 +1345,26 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes).toHaveLength(1);
         expect(result.nodes[0].selectedSkillId).toBe("budget-aware-execution");
         expect(result.nodes[0].selectedSkillReason).toContain("remaining turns");
+    });
+
+    test("selects inline-edit-surface for spreadsheet edit workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "moderate"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "In the spreadsheet, change the Q1 Sales value in the first row to 999.",
+            "Spreadsheet Editor",
+            "https://example.com/keyboard-nav",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("inline-edit-surface");
+        expect(result.nodes[0].selectedSkillReason).toContain("inline editor");
     });
 });
 
@@ -1296,6 +1437,51 @@ describe("selectPrimarySkill", () => {
                 successCriteria: "Confirmation page shows the completed order",
             })?.id,
         ).toBe("transactional-act-check-act");
+    });
+
+    test("prefers the current continuation step over stale overlay context", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Previously: close the cookie banner and newsletter popup so the form is usable. Now continue the task.",
+                objective:
+                    "Fill in the email field with test@example.com, then click the delete account button and confirm the deletion.",
+                successCriteria:
+                    "The email field shows test@example.com and account deletion is confirmed.",
+                pageTitle: "Account Settings",
+                pageUrl: "https://example.com/account-settings",
+            })?.id,
+        ).toBe("transactional-act-check-act");
+    });
+
+    test("matches inline edit workflows for spreadsheet edits", () => {
+        expect(
+            selectPrimarySkill({
+                query: "In the spreadsheet, change the Q1 Sales value in the first row to 999.",
+                objective: "Update the Q1 Sales cell in row 1 to 999",
+                successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row",
+            })?.id,
+        ).toBe("inline-edit-surface");
+    });
+
+    test("matches inline rename workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Rename Q3 Report.pdf to Q3 Financial Report 2026.pdf from the context menu.",
+                objective: "Rename the document inline to Q3 Financial Report 2026.pdf",
+                successCriteria: "The document list shows Q3 Financial Report 2026.pdf",
+            })?.id,
+        ).toBe("inline-edit-surface");
+    });
+
+    test("matches procurement workflows that require new tabs and checklist return", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.",
+                objective: "Open the matching store in a new tab and complete the purchase loop",
+                successCriteria: "The purchased row is checked off on the procurement list",
+            })?.id,
+        ).toBe("multi-tab-procurement-loop");
     });
 });
 

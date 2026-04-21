@@ -1,3 +1,5 @@
+import { ToolName } from "../../types";
+
 export interface SkillDescriptor {
   id: string;
   name: string;
@@ -12,9 +14,26 @@ export interface SkillDescriptor {
   notes?: string[];
 }
 
+export interface SkillToolPolicy {
+  preferredTools: ToolName[];
+  discouragedTools: ToolName[];
+}
+
+export interface SkillToolSuppressionPolicy {
+  temporarilySuppressedTools: ToolName[];
+  exemptTools: ToolName[];
+}
+
 export interface SkillSelection {
   id: string;
   reason: string;
+}
+
+export interface SkillExecutionContract {
+  sequencing?: string[];
+  toolDiscipline?: string[];
+  completionChecks?: string[];
+  failureRecovery?: string[];
 }
 
 export interface LoadedSkillContract extends SkillDescriptor {
@@ -24,6 +43,7 @@ export interface LoadedSkillContract extends SkillDescriptor {
     signal: string;
     recovery: string;
   }>;
+  executionContract?: SkillExecutionContract;
 }
 
 const SKILL_CATALOG: SkillDescriptor[] = [
@@ -157,6 +177,35 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: ["Map values to fields before typing."],
   },
   {
+    id: "inline-edit-surface",
+    name: "Inline Edit Surface",
+    description:
+      "Edit a value directly inside a grid cell, table row, inline rename field, or other in-place editor, then commit and verify the change.",
+    tags: ["workflow", "editing", "inline-edit", "grid", "rename"],
+    triggers: [
+      "edit spreadsheet cell",
+      "rename inline",
+      "update table cell value",
+      "change a value in place",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "click_element",
+      "press_key",
+      "type_text",
+      "read_page",
+      "read_element",
+      "find_element",
+    ],
+    discouragedTools: ["click_coordinates", "done"],
+    memoryScope: "turn",
+    verifierMode: "deterministic",
+    notes: [
+      "Commit the edit before calling done.",
+      "Prefer tagged targets over coordinate clicks for inline editors.",
+    ],
+  },
+  {
     id: "continuation-edit",
     name: "Continuation Edit",
     description:
@@ -187,6 +236,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     maturity: "candidate",
     preferredTools: ["read_page", "switch_tab", "read_element", "update_notes"],
+    discouragedTools: ["navigate", "go_back", "click_coordinates", "done"],
     memoryScope: "workspace",
     verifierMode: "deterministic",
     notes: ["Gather all required facts before synthesizing."],
@@ -250,6 +300,66 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Verify the return landed on the expected origin page before continuing.",
     ],
   },
+  {
+    id: "multi-tab-procurement-loop",
+    name: "Multi-Tab Procurement Loop",
+    description:
+      "Work through a checklist that requires opening store pages in new tabs, completing a purchase, returning to the source tab, and marking the completed item before repeating.",
+    tags: ["workflow", "procurement", "tabs", "shopping", "checklist"],
+    triggers: [
+      "procurement list",
+      "open each store in a new tab",
+      "purchase the item then check it off",
+      "buy from multiple stores and return to the list",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "create_tab",
+      "switch_tab",
+      "click_element",
+      "type_text",
+      "set_checkbox",
+      "update_notes",
+    ],
+    discouragedTools: ["navigate", "go_back", "click_coordinates", "done"],
+    memoryScope: "workspace",
+    verifierMode: "hybrid",
+    notes: [
+      "Use the checklist row as the source of truth for the target item, store, and quantity.",
+      "Return to the source checklist tab only after the purchase is actually confirmed.",
+      "If the checklist counter increases after marking the row complete, treat that as authoritative completion evidence instead of probing checkbox internals.",
+    ],
+  },
+  {
+    id: "list-detail-review-loop",
+    name: "List Detail Review Loop",
+    description:
+      "Review a series of visible list items by opening each detail view, capturing the requested facts, and returning to the list before continuing.",
+    tags: ["workflow", "list", "detail", "review", "round-trip"],
+    triggers: [
+      "review all listings",
+      "open each item and come back",
+      "read each detail page then return to the list",
+      "review job listings one by one",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "click_element",
+      "read_page",
+      "update_notes",
+      "scroll_page",
+      "find_element",
+    ],
+    discouragedTools: ["read_element", "navigate", "go_back", "done"],
+    memoryScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "When a tagged list action is already visible, click it directly instead of inspecting its attributes.",
+      "Use one detail-page read to extract the facts, then return to the list immediately.",
+      "Prefer the page's own back or return control over browser history when the detail view appears in-place.",
+    ],
+  },
 ];
 
 const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescriptor>> = {
@@ -283,6 +393,23 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "capture the value once, then move directly into the downstream action that depends on it",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Reveal first, then verify the revealed UI, then act on the revealed target.",
+        "Capture any revealed value before leaving the revealed area.",
+      ],
+      toolDiscipline: [
+        "Prefer hover_element before click_element when the target depends on hover.",
+        "Use read_page or read_element after the hover to prove the UI appeared.",
+      ],
+      completionChecks: [
+        "The revealed UI is visibly present before any downstream click or read.",
+        "Any downstream action that depended on the revealed target actually started or completed.",
+      ],
+      failureRecovery: [
+        "If the reveal collapses, re-ground and repeat the reveal instead of guessing.",
+      ],
+    },
   },
   "budget-aware-execution": {
     procedureMarkdown: [
@@ -333,6 +460,23 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "verify state transition before the next mutation",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Ground current state before the mutation.",
+        "Perform one state-changing action at a time.",
+        "Re-ground immediately after the mutation before any follow-up action.",
+      ],
+      toolDiscipline: [
+        "Do not chain multiple click_element or type_text mutations without an intervening read_page or read_element.",
+      ],
+      completionChecks: [
+        "The expected post-action state is visible before continuing.",
+        "Call done() only after the post-action state satisfies the step success criteria.",
+      ],
+      failureRecovery: [
+        "If the post-action state is unclear, pause and re-read instead of issuing another mutation.",
+      ],
+    },
   },
   "cart-modify-checkout": {
     procedureMarkdown: [
@@ -359,6 +503,20 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "confirm cart contents first, then apply coupon",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Read the cart before mutation, mutate the cart, verify the new cart state, then proceed to coupon or checkout.",
+      ],
+      toolDiscipline: [
+        "Avoid checkout actions until the requested cart state is visible.",
+      ],
+      completionChecks: [
+        "The requested item state and pricing state are visible before checkout.",
+      ],
+      failureRecovery: [
+        "If the cart shows both old and new items, repair the cart before any checkout action.",
+      ],
+    },
   },
   "structured-form-fill": {
     procedureMarkdown: [
@@ -386,6 +544,74 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "re-read labels and verify mapping before resubmitting",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Map fields before typing.",
+        "Fill values field-by-field.",
+        "Submit only after the full required set is present.",
+      ],
+      toolDiscipline: [
+        "Use get_profile_fields for exact saved-profile values when the task calls for them.",
+        "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
+      ],
+      completionChecks: [
+        "All requested values are visibly present in the intended fields.",
+        "No obvious validation blocker remains before submit.",
+        "After submit, either a success state or a concrete validation state is visible.",
+      ],
+      failureRecovery: [
+        "If a value lands in the wrong field, re-read labels and repair the mapping before resubmitting.",
+        "If submission fires too early, return to the remaining fields and finish the mapping before trying again.",
+      ],
+    },
+  },
+  "inline-edit-surface": {
+    procedureMarkdown: [
+      "1. Identify the exact editable surface that must change: the target grid cell, table row, filename, or inline field.",
+      "2. Focus the target directly with a tagged click instead of using coordinates when possible.",
+      "3. Enter edit mode if needed, typically with Enter or a second focused click.",
+      "4. Type the replacement value into the active inline editor.",
+      "5. Commit the edit explicitly, for example with Enter, Tab, or the page's apply/rename control.",
+      "6. Re-read the page and verify the committed value is visible in the non-editing surface.",
+      "7. If an inline editor is still visible, the task is not done yet. Commit or apply the edit first.",
+    ].join("\n"),
+    requiredEvidence: [
+      "The target editable surface identified before editing",
+      "The replacement value entered into the active inline editor",
+      "Visible evidence that the edit was committed",
+      "The committed value shown in the non-editing page state",
+    ],
+    commonFailures: [
+      {
+        signal: "typing into an inline editor but never committing the change",
+        recovery: "commit explicitly with Enter, Tab, or the page's apply action before calling done",
+      },
+      {
+        signal: "falling back to coordinate clicks while tagged targets are still available",
+        recovery: "re-ground the page and use the tagged cell, row, or rename target directly",
+      },
+      {
+        signal: "calling done while the editor input is still active",
+        recovery: "commit the edit, then verify the value is visible in the committed page state",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Focus the editable surface, enter edit mode, type the replacement, commit the edit, then verify the committed value.",
+      ],
+      toolDiscipline: [
+        "Prefer click_element, press_key, and type_text over click_coordinates for inline editors.",
+        "Use read_page or read_element after committing the edit to verify the non-editing state.",
+      ],
+      completionChecks: [
+        "The requested replacement value is visible in the committed page state.",
+        "The inline editor is no longer active when done() is called.",
+      ],
+      failureRecovery: [
+        "If the editor is still active, commit it explicitly instead of exploring elsewhere.",
+        "If the target is lost, re-find the editable surface by text or row label rather than using coordinates first.",
+      ],
+    },
   },
   "continuation-edit": {
     procedureMarkdown: [
@@ -411,6 +637,18 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "edit the existing artifact in place where possible",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Read prior workspace context, read the current artifact, then apply only the requested delta.",
+      ],
+      completionChecks: [
+        "The requested change is present.",
+        "Stable prior constraints are still preserved unless explicitly replaced.",
+      ],
+      failureRecovery: [
+        "If the draft drifts, re-anchor on the prior artifact and re-apply only the requested delta.",
+      ],
+    },
   },
   "cross-tab-compare": {
     procedureMarkdown: [
@@ -435,6 +673,22 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "store normalized notes before leaving the tab",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Collect evidence for every comparison target before synthesizing.",
+        "Normalize findings into notes before switching away from a target.",
+      ],
+      toolDiscipline: [
+        "Prefer read_page, read_element, switch_tab, and update_notes over early done().",
+      ],
+      completionChecks: [
+        "Each comparison target has a fact set.",
+        "The final comparison cites only gathered evidence.",
+      ],
+      failureRecovery: [
+        "If one target is still unread, continue collecting instead of synthesizing early.",
+      ],
+    },
   },
   "modal-overlay-recovery": {
     procedureMarkdown: [
@@ -464,6 +718,23 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "always re-read after dismiss_overlays to verify and detect remaining overlays",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Dismiss one overlay, re-read, then move to the next overlay.",
+        "Do not return to the underlying task until all blocking overlays are gone.",
+      ],
+      toolDiscipline: [
+        "Prefer click_element on the actual dismiss control over dismiss_overlays.",
+      ],
+      completionChecks: [
+        "Initial overlay count is known.",
+        "Each dismissal is confirmed by a re-read.",
+        "Final page state shows no blocking overlays remain.",
+      ],
+      failureRecovery: [
+        "If an overlay remains, find a fresh dismiss target or use Escape, then re-read again.",
+      ],
+    },
   },
   "navigate-read-return": {
     procedureMarkdown: [
@@ -495,6 +766,123 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "combine navigate and read into a bounded step where possible",
       },
     ],
+    executionContract: {
+      sequencing: [
+        "Record the origin, navigate to the target, extract the fact, store it, then return and verify the origin.",
+      ],
+      toolDiscipline: [
+        "Use update_notes before leaving the target page if the fact will be needed after return.",
+      ],
+      completionChecks: [
+        "The target fact is captured before returning.",
+        "The return page matches the expected origin.",
+      ],
+      failureRecovery: [
+        "If the return lands on the wrong page, re-ground and restore the original context before proceeding.",
+      ],
+    },
+  },
+  "multi-tab-procurement-loop": {
+    procedureMarkdown: [
+      "1. Start on the checklist tab and identify the next requested row to fulfill.",
+      "2. Capture the target item, store, quantity, and any budget constraint from that row before leaving it.",
+      "3. Open the matching store page in a new tab and switch into that tab directly.",
+      "4. On the store page, buy only the requested item and quantity instead of browsing unrelated products.",
+      "5. As soon as the purchase is confirmed, store the essential completion facts in notes before leaving the store tab.",
+      "6. Switch back to the original checklist tab and mark only the completed row as done.",
+      "7. Repeat the same bounded loop for the next requested row.",
+      "8. Call done only after every requested checklist row is marked complete on the source page.",
+    ].join("\n"),
+    requiredEvidence: [
+      "The checklist row identifying the requested item and store",
+      "Evidence that the matching store page was opened in a new tab",
+      "Visible order or purchase confirmation for each completed item",
+      "Evidence that the completed checklist row was marked done after returning",
+    ],
+    commonFailures: [
+      {
+        signal: "browsing or comparing unrelated products after the target item is already visible",
+        recovery: "buy the requested item immediately and stop exploratory shopping behavior",
+      },
+      {
+        signal: "returning to the checklist before purchase confirmation exists",
+        recovery: "stay on the store tab until the purchase is visibly confirmed, then return",
+      },
+      {
+        signal: "using browser-history navigation between source and store tabs",
+        recovery: "use create_tab and switch_tab so the source checklist tab remains stable",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Read the checklist row, open the matching store in a new tab, complete the purchase, switch back, then mark the row done.",
+        "Do not start the next row until the current row is either confirmed complete or explicitly blocked.",
+      ],
+      toolDiscipline: [
+        "Prefer create_tab and switch_tab over browser-history navigation.",
+        "Reuse the known checklist tab and created store-tab IDs instead of repeatedly rediscovering tabs when they are already known.",
+        "Prefer visible purchase controls over exploratory reads once the correct product is on screen.",
+        "Treat a checklist completion counter or row-complete state as stronger evidence than checkbox attribute inspection.",
+        "Use update_notes only for compact completion facts such as item, store, and order number.",
+      ],
+      completionChecks: [
+        "A visible order or purchase confirmation exists before leaving the store tab.",
+        "The corresponding checklist row is visibly marked complete after returning to the source tab.",
+      ],
+      failureRecovery: [
+        "If the wrong store tab is active, switch back to the checklist tab, re-read the target row, and reopen the correct store.",
+        "If the purchase confirmation is unclear, re-read the current store page instead of opening a new path.",
+      ],
+    },
+  },
+  "list-detail-review-loop": {
+    procedureMarkdown: [
+      "1. Start on the visible list page and identify the next requested item in sequence.",
+      "2. If the list already shows a tagged action such as View Details or Open, click it directly instead of reading button attributes or re-finding it.",
+      "3. Once the detail view is open, use one read_page call to capture the requested facts from the detail page.",
+      "4. Store only the essential facts in notes before returning.",
+      "5. Return to the list with the page's own back, return, or listings control, then verify the list is visible again.",
+      "6. Continue immediately with the next requested list item instead of re-reading the whole list page when the next tagged action is already visible.",
+      "7. Call done only after every requested item in the loop has been reviewed and the list has been restored for the final time.",
+    ].join("\n"),
+    requiredEvidence: [
+      "The requested list items were opened from the list view",
+      "Facts extracted from each detail page",
+      "Evidence that notes were updated before leaving a detail view",
+      "The list view restored after each return",
+    ],
+    commonFailures: [
+      {
+        signal: "reading or inspecting list buttons instead of clicking visible tagged actions",
+        recovery: "use the tagged View Details or Open button directly when it is already visible",
+      },
+      {
+        signal: "remaining on the detail page after capturing the needed facts",
+        recovery: "use the page's own back or return control immediately once the required facts are stored",
+      },
+      {
+        signal: "re-reading the full list page between every item without using the visible next action",
+        recovery: "continue directly to the next tagged list action when the list is already visible",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Open the next list item, read the detail page once, store the required fact, return to the list, then continue to the next item.",
+      ],
+      toolDiscipline: [
+        "Prefer click_element over read_element for visible list-entry actions.",
+        "Prefer the list's own back or return control over browser-history go_back when returning from a detail view.",
+        "Use update_notes only for compact extracted facts, not for rephrasing the whole page.",
+      ],
+      completionChecks: [
+        "Each requested item in the current loop segment has been opened and reviewed.",
+        "The list page is visible again before the step is considered complete.",
+      ],
+      failureRecovery: [
+        "If the list is not visible after returning, re-ground and restore the list before continuing.",
+        "If the next requested list item is off-screen, scroll to reveal it instead of re-reading unrelated content.",
+      ],
+    },
   },
 };
 
@@ -505,7 +893,13 @@ const hoverRevealPattern =
 const budgetPattern =
   /\b(turn budget|remaining turns|max turns|max_turns|turn limit|budget exhaustion|conservation mode)\b/i;
 const continuationPattern =
-  /\b(change|revise|rewrite|edit|make (?:it|the tone)|one more change|previous draft|draft reply|reply|casual)\b/i;
+  /\b(change|revise|rewrite|edit|one more change|previous draft|draft reply|continue previous task|make (?:it|the tone)|reply|casual)\b/i;
+const continuationArtifactPattern =
+  /\b(draft|reply|tone|email|message|copy|text|wording|paragraph|sentence)\b/i;
+const gridEditPattern =
+  /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
+const inlineEditPattern =
+  /\b(rename|inline edit|inline rename|change .* value|update .* value|replace .* value|edit .* cell|rename .* to|filename|file name|document name|table cell|grid cell)\b/i;
 const cartPattern =
   /\b(cart|checkout|coupon|promo|discount|swap|replace|remove|add to cart)\b/i;
 const formPattern =
@@ -516,6 +910,12 @@ const transactionPattern =
   /\b(verify|confirm|check|delete account|dismiss popups?|inspect|status|activity feed|posted comment|ticket status)\b/i;
 const navigateReturnPattern =
   /\b(go (?:to|back)|come back|return (?:to|after)|look up .* (?:then|and) return|check .* (?:then|and) (?:come|go) back|find .* details|job (?:listing|board|posting)|round.?trip)\b/i;
+const listDetailReviewPattern =
+  /\b(review|read|open|check)\b[\s\S]{0,120}\b(each|every|all)\b[\s\S]{0,120}\b(listing|listings|jobs|job listing|postings|items|results)\b/i;
+const listReturnPattern =
+  /\b(return|come back|go back|back to (?:the )?(?:list|listings)|one by one)\b/i;
+const procurementLoopPattern =
+  /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
 const overlayRecoveryPattern =
   /\b(close .* (?:banner|popup|modal|overlay|dialog)|dismiss .* (?:popup|modal|overlay|banner)|cookie (?:banner|consent|popup)|newsletter (?:popup|modal)|can'?t see the page|blocking (?:modal|overlay|popup)|popups? (?:blocking|covering|obscuring)|clear (?:the )?(?:popup|modal|overlay)s?)\b/i;
 
@@ -549,6 +949,125 @@ export function getLoadedSkillContract(
   };
 }
 
+const TOOL_NAME_VALUES = new Set<string>(Object.values(ToolName));
+
+function normalizeSkillTools(tools?: string[]): ToolName[] {
+  if (!Array.isArray(tools)) return [];
+  return tools.filter(
+    (tool): tool is ToolName =>
+      typeof tool === "string" && TOOL_NAME_VALUES.has(tool),
+  );
+}
+
+export function getSkillToolPolicy(
+  id?: string,
+): SkillToolPolicy | null {
+  const descriptor = getSkillDescriptor(id || "");
+  if (!descriptor) return null;
+  return {
+    preferredTools: normalizeSkillTools(descriptor.preferredTools),
+    discouragedTools: normalizeSkillTools(descriptor.discouragedTools),
+  };
+}
+
+const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
+  string,
+  SkillToolSuppressionPolicy
+> = {
+  "structured-form-fill": {
+    temporarilySuppressedTools: [ToolName.PRESS_KEY],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "inline-edit-surface": {
+    temporarilySuppressedTools: [ToolName.CLICK_COORDINATES],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "modal-overlay-recovery": {
+    temporarilySuppressedTools: [
+      ToolName.DISMISS_OVERLAYS,
+      ToolName.NAVIGATE,
+      ToolName.TYPE_TEXT,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "multi-tab-procurement-loop": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.GO_BACK,
+      ToolName.READ_ELEMENT,
+      ToolName.LIST_TABS,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "list-detail-review-loop": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.GO_BACK,
+      ToolName.PRESS_KEY,
+      ToolName.READ_ELEMENT,
+      ToolName.FIND_ELEMENT,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "cross-tab-compare": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.GO_BACK,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+};
+
+export function getSkillToolSuppressionPolicy(
+  id?: string,
+): SkillToolSuppressionPolicy | null {
+  if (!id) return null;
+  return SKILL_TOOL_SUPPRESSION_POLICIES[id] ?? null;
+}
+
 export function summarizeSkillForVerifier(
   contract: LoadedSkillContract | null,
 ): string {
@@ -564,6 +1083,20 @@ export function summarizeSkillForVerifier(
     lines.push(
       "Required evidence:",
       ...contract.requiredEvidence.map((item) => `- ${item}`),
+    );
+  }
+
+  if (contract.executionContract?.completionChecks?.length) {
+    lines.push(
+      "Completion checks:",
+      ...contract.executionContract.completionChecks.map((item) => `- ${item}`),
+    );
+  }
+
+  if (contract.executionContract?.failureRecovery?.length) {
+    lines.push(
+      "Failure recovery:",
+      ...contract.executionContract.failureRecovery.map((item) => `- ${item}`),
     );
   }
 
@@ -589,6 +1122,16 @@ export function selectPrimarySkill(input: {
     input.pageUrl,
   ]);
   const stepCorpus = buildCorpus([input.objective, input.successCriteria]);
+  const currentStepLooksLikeInlineEdit =
+    (gridEditPattern.test(stepCorpus) || inlineEditPattern.test(stepCorpus)) &&
+    /\b(change|edit|update|set|replace|rename|enter|type)\b/i.test(stepCorpus);
+  const currentStepLooksLikeFormFill =
+    formPattern.test(stepCorpus) &&
+    /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
+      stepCorpus,
+    );
+  const currentStepNeedsTransactionalCheck =
+    transactionPattern.test(stepCorpus);
 
   if (budgetPattern.test(corpus)) {
     return {
@@ -598,18 +1141,17 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (overlayRecoveryPattern.test(corpus)) {
+  if (
+    overlayRecoveryPattern.test(stepCorpus) ||
+    (overlayRecoveryPattern.test(corpus) &&
+      !currentStepLooksLikeInlineEdit &&
+      !currentStepLooksLikeFormFill &&
+      !currentStepNeedsTransactionalCheck)
+  ) {
     return {
       id: "modal-overlay-recovery",
       reason:
         "Task requires dismissing blocking overlays before the underlying content is accessible.",
-    };
-  }
-
-  if (comparePattern.test(corpus)) {
-    return {
-      id: "cross-tab-compare",
-      reason: "Comparison-oriented task spans multiple tabs or pages.",
     };
   }
 
@@ -624,13 +1166,55 @@ export function selectPrimarySkill(input: {
     };
   }
 
+  if (currentStepLooksLikeInlineEdit) {
+    return {
+      id: "inline-edit-surface",
+      reason:
+        "Current step edits a value directly inside an inline editor, grid cell, table row, or rename surface.",
+    };
+  }
+
   if (
     continuationPattern.test(corpus) &&
-    /\b(draft|reply|tone|previous|change|revise|rewrite|edit)\b/i.test(corpus)
+    continuationArtifactPattern.test(corpus) &&
+    !gridEditPattern.test(stepCorpus)
   ) {
     return {
       id: "continuation-edit",
       reason: "Task requests revising prior work while preserving earlier intent.",
+    };
+  }
+
+  if (comparePattern.test(corpus)) {
+    return {
+      id: "cross-tab-compare",
+      reason: "Comparison-oriented task spans multiple tabs or pages.",
+    };
+  }
+
+  if (
+    procurementLoopPattern.test(corpus) ||
+    (/\b(procurement list|store)\b/i.test(corpus) &&
+      /\b(new tab|another tab)\b/i.test(corpus) &&
+      /\b(buy|purchase)\b/i.test(corpus) &&
+      /\b(check off|mark .* done|checkbox)\b/i.test(corpus))
+  ) {
+    return {
+      id: "multi-tab-procurement-loop",
+      reason:
+        "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.",
+    };
+  }
+
+  if (
+    listDetailReviewPattern.test(corpus) &&
+    listReturnPattern.test(corpus) &&
+    /\b(detail|details|view details|open)\b/i.test(corpus)
+  ) {
+    return {
+      id: "list-detail-review-loop",
+      reason:
+        "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence.",
     };
   }
 
@@ -656,7 +1240,7 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (transactionPattern.test(stepCorpus)) {
+  if (currentStepNeedsTransactionalCheck) {
     return {
       id: "transactional-act-check-act",
       reason:
@@ -672,10 +1256,7 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (
-    formPattern.test(stepCorpus) &&
-    /\b(fill|form|field|dropdown|checkbox|input)\b/i.test(stepCorpus)
-  ) {
+  if (currentStepLooksLikeFormFill) {
     return {
       id: "structured-form-fill",
       reason:
