@@ -241,7 +241,7 @@ describe("AgentLoop", () => {
       text: "",
       attributes: {
         type: "text",
-        placeholder: "Type to search products...",
+        placeholder: "Start typing to search products...",
         id: "product-input",
         autocomplete: "off",
       },
@@ -289,6 +289,34 @@ describe("AgentLoop", () => {
         "Fill in the address from the suggestions, then enter your phone number 555-0123",
       element: target,
       typedText: "555-0123",
+    });
+
+    expect(rewrite).toBeNull();
+  });
+
+  test("rewriteAutocompleteTextEntry does not rewrite plain search input without autocomplete cues", () => {
+    const target: TaggedElement = {
+      tag: 35,
+      tagName: "input",
+      role: "textbox",
+      text: "",
+      attributes: {
+        type: "text",
+        placeholder: "Enter SKU (e.g. SKU-4829)",
+        id: "sku-search",
+        name: "skuSearch",
+      },
+      rect: { x: 0, y: 0, width: 240, height: 30 },
+      isVisible: true,
+      isDisabled: false,
+    };
+
+    const rewrite = rewriteAutocompleteTextEntry({
+      objectiveText: "Search for the SKU number for Widget X in the search field.",
+      originalQuery:
+        "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
+      element: target,
+      typedText: "SKU-4829",
     });
 
     expect(rewrite).toBeNull();
@@ -560,6 +588,60 @@ describe("AgentLoop", () => {
     expect(names).not.toContain(ToolName.EXECUTE_JS);
   });
 
+  test("infers edit-surface tool profile from the running step when planner omitted one", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Rename the document Q3 Report.pdf to Q3 Financial Report 2026.pdf",
+              status: "running",
+            },
+          ],
+        },
+      },
+    );
+
+    const logInfo = vi.spyOn((agent as any).log, "info");
+    (agent as any).planSteps = [
+      { successCriteria: "The document list shows Q3 Financial Report 2026.pdf" },
+    ];
+
+    const tools = [
+      { function: { name: ToolName.RIGHT_CLICK } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.PRESS_KEY } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.CLICK_COORDINATES } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+    const event = logInfo.mock.calls.find(
+      (call: any[]) => call[1] === "Tool profile applied",
+    );
+
+    expect(event).toBeDefined();
+    expect(event![2].profile).toBe("edit_surface");
+    expect(event![2].source).toBe("step_inference");
+    expect(names).toContain(ToolName.RIGHT_CLICK);
+    expect(names).toContain(ToolName.TYPE_TEXT);
+    expect(names).toContain(ToolName.PRESS_KEY);
+    expect(names).not.toContain(ToolName.EXECUTE_JS);
+    expect(names).not.toContain(ToolName.CLICK_COORDINATES);
+  });
+
   test("widens injected tool profile after step stagnation", () => {
     const agent = new AgentLoop(
       "test-key",
@@ -601,6 +683,140 @@ describe("AgentLoop", () => {
 
     expect(filtered).toHaveLength(tools.length);
     expect(event).toBeDefined();
+  });
+
+  test("applySkillToolRanking prefers skill tools and demotes discouraged ones", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "structured-form-fill",
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.PRESS_KEY } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.DONE } },
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.SELECT_OPTION } },
+    ] as any;
+
+    const ranked = (agent as any).applySkillToolRanking(tools);
+    const names = ranked.map((t: any) => t.function.name);
+
+    expect(names).toEqual([
+      ToolName.READ_PAGE,
+      ToolName.TYPE_TEXT,
+      ToolName.SELECT_OPTION,
+      ToolName.CLICK_ELEMENT,
+      ToolName.DONE,
+      ToolName.PRESS_KEY,
+    ]);
+  });
+
+  test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "inline-edit-surface",
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.CLICK_COORDINATES } },
+      { function: { name: ToolName.DONE } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.PRESS_KEY } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.READ_PAGE } },
+    ] as any;
+
+    const ranked = (agent as any).applySkillToolRanking(tools);
+    const names = ranked.map((t: any) => t.function.name);
+
+    expect(names).toEqual([
+      ToolName.CLICK_ELEMENT,
+      ToolName.PRESS_KEY,
+      ToolName.TYPE_TEXT,
+      ToolName.READ_PAGE,
+      ToolName.CLICK_COORDINATES,
+      ToolName.DONE,
+    ]);
+  });
+
+  test("applySkillToolRanking returns the original order when no skill is selected", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    const tools = [
+      { function: { name: ToolName.PRESS_KEY } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.TYPE_TEXT } },
+    ] as any;
+
+    const ranked = (agent as any).applySkillToolRanking(tools);
+    expect(ranked).toEqual(tools);
+  });
+
+  test("caps max turns for list-detail review loop skill", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+        maxTurns: 45,
+      },
+    );
+
+    expect((agent as any).maxTurns).toBe(20);
+  });
+
+  test("recordSkillToolSelection traces the chosen tool preference for the active skill", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "structured-form-fill",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).turnCount = 3;
+
+    (agent as any).recordSkillToolSelection(
+      ToolName.PRESS_KEY,
+      "sequential",
+    );
+
+    expect(recordEvent).toHaveBeenCalledWith("skill_tool_selected", {
+      turn: 3,
+      skillId: "structured-form-fill",
+      toolName: ToolName.PRESS_KEY,
+      preference: "discouraged",
+      mode: "sequential",
+    });
   });
 
   test("syncPlanStatus preserves tool profiles when advancing steps", () => {
@@ -901,6 +1117,396 @@ describe("AgentLoop", () => {
 
     expect(callIdx).toBeGreaterThanOrEqual(3);
     expect(result.outcome).not.toBe("completed");
+  });
+
+  test("bypasses stale plan rejection for satisfied spreadsheet edit tasks", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
+        { description: "Clear the previous cell value if needed", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
+        { successCriteria: "Old value is no longer present in the edited cell" },
+      ],
+      snapshotText:
+        "Spreadsheet row 1 Q1 Sales value 999 is visible in the edited cell.",
+    });
+    (agent as any).originalQuery =
+      "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary: "Updated the spreadsheet so the first-row Q1 Sales cell now shows 999.",
+      currentStepIndex: 0,
+    });
+
+    expect(result).toBe(true);
+  });
+
+  test("bypasses stale plan rejection for satisfied procurement loop tasks", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Open the store in a new tab", status: "completed" },
+        { description: "Switch to the newly opened store tab", status: "running" },
+        { description: "Add the item to cart and place the order", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Store tab opened" },
+        { successCriteria: "Store tab is active" },
+        { successCriteria: "Order confirmation visible" },
+      ],
+      snapshotText:
+        "Procurement List shows 1 of 3 items completed after returning from the store tab.",
+    });
+    (agent as any).selectedSkillId = "multi-tab-procurement-loop";
+    (agent as any).originalQuery =
+      "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.";
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary:
+        "Purchased the first procurement item, returned to the procurement list, and checked off the completed row.",
+      currentStepIndex: 1,
+    });
+
+    expect(result).toBe(true);
+  });
+
+  test("bypasses stale plan rejection when the page already shows final submission confirmation", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Select Business for the category", status: "completed" },
+        { description: "Pick the Standard budget", status: "running" },
+        { description: "Submit the form", status: "pending" },
+      ],
+      planSteps: [
+        { successCriteria: "Business category is selected" },
+        { successCriteria: "Standard budget is selected" },
+        { successCriteria: "Submission confirmation is visible" },
+      ],
+      snapshotText:
+        "Submission Complete! Bob Martinez bob@company.com Reference Number REF-20481. Your request has been submitted successfully.",
+    });
+    (agent as any).originalQuery =
+      "Select Business for the category, pick the Standard budget, and submit the form.";
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary:
+        "Submitted the form successfully and reached the submission complete page with Bob's details and a reference number.",
+      currentStepIndex: 1,
+    });
+
+    expect(result).toBe(true);
+  });
+
+  test("redirects procurement return to the existing checklist tab", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        workspaceId: "ws-1",
+        selectedSkillId: "multi-tab-procurement-loop",
+      },
+    );
+
+    workspaceManager.getWorkspaceById = (async () => ({
+      id: "ws-1",
+      name: "Test",
+      color: "blue",
+      tabGroupId: 1,
+      tabIds: [123, 789],
+    })) as any;
+
+    const originalGet = chrome.tabs.get;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => {
+      if (id === 123) {
+        return {
+          id,
+          title: "TechDirect Store",
+          url: "http://127.0.0.1:65055/procurement?store=techdirect",
+          active: true,
+        };
+      }
+      return {
+        id,
+        title: "Procurement List",
+        url: "http://127.0.0.1:65055/procurement",
+        active: false,
+      };
+    });
+
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "TechDirect Store",
+      url: "http://127.0.0.1:65055/procurement?store=techdirect",
+      elements: [
+        {
+          tag: 17,
+          tagName: "a",
+          role: "link",
+          text: "Procurement",
+          attributes: { href: "/procurement" },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      pageContent: "Order confirmed for Ergonomic Keyboard.",
+      visibleContent: "Order confirmed for Ergonomic Keyboard.",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+    (agent as any).context.getCurrentUrl = vi.fn(
+      () => "http://127.0.0.1:65055/procurement?store=techdirect",
+    );
+
+    const redirect = await (agent as any).getProcurementLoopToolRedirect({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 17 },
+      currentTabId: 123,
+    });
+
+    expect(redirect).toContain('switch_tab({"tabId": 789})');
+    expect(redirect).toContain("checklist");
+
+    (chrome.tabs as any).get = originalGet;
+  });
+
+  test("redirects procurement store reopen to the existing store tab", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        workspaceId: "ws-1",
+        selectedSkillId: "multi-tab-procurement-loop",
+      },
+    );
+
+    workspaceManager.getWorkspaceById = (async () => ({
+      id: "ws-1",
+      name: "Test",
+      color: "blue",
+      tabGroupId: 1,
+      tabIds: [123, 789],
+    })) as any;
+
+    const originalGet = chrome.tabs.get;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => {
+      if (id === 123) {
+        return {
+          id,
+          title: "Procurement List",
+          url: "http://127.0.0.1:65055/procurement",
+          active: true,
+        };
+      }
+      return {
+        id,
+        title: "TechDirect Store",
+        url: "http://127.0.0.1:65055/procurement?store=techdirect",
+        active: false,
+      };
+    });
+
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Procurement List",
+      url: "http://127.0.0.1:65055/procurement",
+      elements: [
+        {
+          tag: 38,
+          tagName: "a",
+          role: "link",
+          text: "Open TechDirect",
+          attributes: { href: "/procurement?store=techdirect" },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      pageContent: "0 of 3 items completed.",
+      visibleContent: "0 of 3 items completed.",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+    (agent as any).context.getCurrentUrl = vi.fn(
+      () => "http://127.0.0.1:65055/procurement",
+    );
+
+    const redirect = await (agent as any).getProcurementLoopToolRedirect({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 38 },
+      currentTabId: 123,
+    });
+
+    expect(redirect).toContain('switch_tab({"tabId": 789})');
+    expect(redirect).toContain("already open");
+
+    (chrome.tabs as any).get = originalGet;
+  });
+
+  test("rejects done while an inline spreadsheet edit field is still active", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
+      ],
+      planSteps: [
+        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
+      ],
+      snapshotText:
+        "Spreadsheet row 1 Q1 Sales value 999 is visible while the cell is still marked (editing).",
+    });
+    (agent as any).originalQuery =
+      "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Quarterly Sales Sheet",
+      url: "https://example.com/sheet",
+      elements: [
+        {
+          tagName: "input",
+          text: "999",
+          isVisible: true,
+          attributes: { type: "text", value: "999", "aria-label": "Q1 Sales editor" },
+        },
+      ],
+      pageContent:
+        "Quarterly Sales spreadsheet. Row 1 Q1 Sales value 999. Cell remains (editing).",
+      visibleContent:
+        "Quarterly Sales spreadsheet. Row 1 Q1 Sales value 999. Cell remains (editing).",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = (agent as any).getUncommittedInlineEditDoneRejection(0);
+
+    expect(result).toContain("Commit the edit");
+  });
+
+  test("retargets inline-edit text entry from the cell tag to the active input", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
+      ],
+      planSteps: [
+        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
+      ],
+      snapshotText:
+        "Spreadsheet editor is open for row 1 Q1 Sales while the cell is being edited.",
+    });
+    (agent as any).originalQuery =
+      "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Quarterly Sales Sheet",
+      url: "https://example.com/sheet",
+      elements: [
+        {
+          tag: 37,
+          tagName: "td",
+          role: "gridcell",
+          text: "130",
+          isVisible: true,
+          isDisabled: false,
+          rect: { x: 10, y: 10, width: 80, height: 24 },
+          attributes: {},
+        },
+        {
+          tag: 44,
+          tagName: "input",
+          role: "textbox",
+          text: "130",
+          isVisible: true,
+          isDisabled: false,
+          rect: { x: 12, y: 12, width: 76, height: 20 },
+          attributes: { type: "text", value: "130", "aria-label": "Q1 Sales editor" },
+        },
+      ],
+      pageContent:
+        "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
+      visibleContent:
+        "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = (agent as any).retargetInlineEditTextEntry({
+      targetId: 37,
+      currentStepIndex: 0,
+    });
+
+    expect(result).toEqual({
+      retargetedId: 44,
+      reason:
+        "Retargeted type_text from [37] to the active inline editor [44] for this edit-surface step.",
+    });
+  });
+
+  test("requires a verification read after committing an inline edit", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).pendingInlineEditVerification = {
+      stepIndex: 0,
+      reason: "You likely just committed an inline edit on this step.",
+    };
+
+    const mutationBlock = (agent as any).getPendingInlineEditVerificationBlock(
+      ToolName.CLICK_ELEMENT,
+      0,
+    );
+    expect(mutationBlock).toContain("Verify the committed page state");
+
+    const readAllowed = (agent as any).getPendingInlineEditVerificationBlock(
+      ToolName.READ_PAGE,
+      0,
+    );
+    expect(readAllowed).toBeNull();
+
+    const staleStep = (agent as any).getPendingInlineEditVerificationBlock(
+      ToolName.CLICK_ELEMENT,
+      1,
+    );
+    expect(staleStep).toBeNull();
+    expect((agent as any).pendingInlineEditVerification).toBeNull();
   });
 });
 

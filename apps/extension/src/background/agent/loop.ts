@@ -4,6 +4,7 @@ import {
   AgentStep,
   Citation,
   MessageSource,
+  PerceptionRuntimeMode,
   RuntimeMessage,
   RiskLevel,
   SessionMetrics,
@@ -14,6 +15,7 @@ import {
   ToolName,
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
+import { resolvePerceptionRuntimeMode } from "../../utils/perception-mode";
 import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
 import {
@@ -30,10 +32,15 @@ import { waitForDomReady, ensureContentScript } from "../tab-ready";
 import {
   isBridgeDisconnect,
   recoverContentScriptBridge,
+  type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
 import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
-import { ContextManager, summarizeCausalChain, summarizeHistory } from "./context";
+import {
+  ContextManager,
+  summarizeCausalChain,
+  summarizeHistory,
+} from "./context";
 import {
   assessDoneSummary,
   checkSummaryStepCoherence,
@@ -43,7 +50,7 @@ import {
 import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
-import type { PanoramicShot } from "../perception/types";
+import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import { CompletionResponse, TokenUsage } from "../llm/types";
@@ -60,7 +67,7 @@ import {
   PlanMonitorResult,
 } from "./planner";
 import { TraceRecorder } from "./trace";
-import { parseNuisanceBlockers } from "./popup-triage";
+import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { AgentMiddleware } from "./middleware";
 import {
@@ -105,6 +112,10 @@ import type {
   PendingUserInteraction,
 } from "./loop-types";
 import {
+  getSkillToolPolicy,
+  type SkillToolPolicy,
+} from "../orchestrator/skills";
+import {
   BlockedAction,
   buildFailureBrief,
   buildFailureRecovery,
@@ -138,10 +149,7 @@ import {
   validateElementIds,
   extractDiscoveredTagIds,
 } from "./loop-helpers";
-import {
-  assessTaskContractCoverage,
-  buildTaskContract,
-} from "./task-contract";
+import { assessTaskContractCoverage, buildTaskContract } from "./task-contract";
 import {
   DEESCALATION_REFLECTION,
   ESCALATION_RECOVERY,
@@ -150,6 +158,20 @@ import {
   PIVOT_MESSAGE,
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
+
+const SKILL_TURN_CAPS: Record<string, number> = {
+  "multi-tab-procurement-loop": 20,
+  "list-detail-review-loop": 20,
+};
+
+function applySkillTurnCap(
+  selectedSkillId: string | null | undefined,
+  maxTurns: number,
+): number {
+  if (!selectedSkillId) return maxTurns;
+  const cap = SKILL_TURN_CAPS[selectedSkillId];
+  return typeof cap === "number" ? Math.min(maxTurns, cap) : maxTurns;
+}
 
 /**
  * Count explicit numbered steps in a user query.
@@ -254,6 +276,19 @@ function isTextLikeInputElement(
     "file",
     "hidden",
   ].includes(type);
+}
+
+function rectsLikelyOverlap(
+  a: DomSnapshot["elements"][number]["rect"] | undefined,
+  b: DomSnapshot["elements"][number]["rect"] | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return !(
+    a.x + a.width < b.x ||
+    b.x + b.width < a.x ||
+    a.y + a.height < b.y ||
+    b.y + b.height < a.y
+  );
 }
 
 function inferElementInputKind(
@@ -397,18 +432,20 @@ function isAutocompleteLikeElement(
 
   const attrs = element.attributes || {};
   const role = normalizeGuardText(element.role);
-  const attributeBlob = [
+  const semanticAttributeBlob = [
     element.text,
     attrs["aria-label"],
     attrs.placeholder,
-    attrs.id,
-    attrs.name,
     attrs["aria-controls"],
     attrs["aria-haspopup"],
     attrs["aria-autocomplete"],
     attrs.list,
-    attrs.autocomplete,
   ]
+    .map((value) => normalizeGuardText(value))
+    .filter(Boolean)
+    .join(" ");
+
+  const identifierBlob = [attrs.id, attrs.name, attrs.autocomplete]
     .map((value) => normalizeGuardText(value))
     .filter(Boolean)
     .join(" ");
@@ -418,8 +455,13 @@ function isAutocompleteLikeElement(
     role === "listbox" ||
     "aria-autocomplete" in attrs ||
     "list" in attrs ||
-    /listbox|option|suggest|dropdown/.test(String(attrs["aria-controls"] || "")) ||
-    /suggest|autocomplete|typeahead|start typing|search/.test(attributeBlob)
+    /listbox|option|suggest|dropdown/.test(
+      String(attrs["aria-controls"] || ""),
+    ) ||
+    /\b(suggest|suggestions|autocomplete|typeahead|start typing|search and select|search\/select)\b/.test(
+      semanticAttributeBlob,
+    ) ||
+    /\b(combobox|autocomplete|typeahead|suggest)\b/.test(identifierBlob)
   );
 }
 
@@ -446,12 +488,10 @@ export function rewriteAutocompleteTextEntry(params: {
   originalQuery?: string;
   element: DomSnapshot["elements"][number] | null | undefined;
   typedText: string;
-}):
-  | {
-      rewrittenText: string;
-      reason: string;
-    }
-  | null {
+}): {
+  rewrittenText: string;
+  reason: string;
+} | null {
   const { objectiveText, originalQuery, element, typedText } = params;
   const trimmed = typedText.trim();
   if (trimmed.length < 4) return null;
@@ -516,6 +556,104 @@ export * from "./loop-helpers";
  * - Model escalation on stuck
  */
 export class AgentLoop {
+  private getActiveSkillToolPolicy(): SkillToolPolicy | null {
+    return getSkillToolPolicy(this.selectedSkillId ?? undefined);
+  }
+
+  private classifySkillToolPreference(
+    toolName: ToolName,
+  ): "preferred" | "discouraged" | "neutral" | null {
+    const policy = this.getActiveSkillToolPolicy();
+    if (!policy) return null;
+    if (policy.preferredTools.includes(toolName)) return "preferred";
+    if (policy.discouragedTools.includes(toolName)) return "discouraged";
+    return "neutral";
+  }
+
+  private applySkillToolRanking(tools: ToolDefinition[]): ToolDefinition[] {
+    const policy = this.getActiveSkillToolPolicy();
+    if (!policy) return tools;
+
+    const preferredIndex = new Map<ToolName, number>(
+      policy.preferredTools.map((toolName, index) => [toolName, index]),
+    );
+    const discouragedIndex = new Map<ToolName, number>(
+      policy.discouragedTools.map((toolName, index) => [toolName, index]),
+    );
+
+    const ranked = [...tools]
+      .map((tool, originalIndex) => {
+        const toolName = tool.function.name as ToolName;
+        if (preferredIndex.has(toolName)) {
+          return {
+            tool,
+            bucket: 0,
+            policyIndex: preferredIndex.get(toolName) ?? 0,
+            originalIndex,
+          };
+        }
+        if (discouragedIndex.has(toolName)) {
+          return {
+            tool,
+            bucket: 2,
+            policyIndex: discouragedIndex.get(toolName) ?? 0,
+            originalIndex,
+          };
+        }
+        return {
+          tool,
+          bucket: 1,
+          policyIndex: Number.MAX_SAFE_INTEGER,
+          originalIndex,
+        };
+      })
+      .sort((a, b) => {
+        if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+        if (a.policyIndex !== b.policyIndex)
+          return a.policyIndex - b.policyIndex;
+        return a.originalIndex - b.originalIndex;
+      })
+      .map((entry) => entry.tool);
+
+    const originalOrder = tools.map((tool) => tool.function.name).join(",");
+    const rankedOrder = ranked.map((tool) => tool.function.name).join(",");
+    if (originalOrder !== rankedOrder) {
+      this.log.info("agent", "Skill tool ranking applied", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId,
+        preferredTools: policy.preferredTools,
+        discouragedTools: policy.discouragedTools,
+        originalToolCount: tools.length,
+        rankedToolCount: ranked.length,
+      });
+      this.traceRecorder?.recordEvent("skill_tool_ranking_applied", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId,
+        preferredTools: policy.preferredTools,
+        discouragedTools: policy.discouragedTools,
+        originalOrder: tools.map((tool) => tool.function.name),
+        rankedOrder: ranked.map((tool) => tool.function.name),
+      });
+    }
+
+    return ranked;
+  }
+
+  private recordSkillToolSelection(
+    toolName: ToolName,
+    mode: "parallel" | "sequential",
+  ): void {
+    const preference = this.classifySkillToolPreference(toolName);
+    if (!this.selectedSkillId || !preference) return;
+    this.traceRecorder?.recordEvent("skill_tool_selected", {
+      turn: this.turnCount,
+      skillId: this.selectedSkillId,
+      toolName,
+      preference,
+      mode,
+    });
+  }
+
   /**
    * Set the moment done() is accepted, BEFORE post-processing (trace, metrics,
    * verification). The orchestrator reads this after a lane timeout to avoid
@@ -586,6 +724,7 @@ export class AgentLoop {
   public readonly nodeId: string | null;
   public readonly runId: string | null;
   public readonly correlationId: string | null;
+  public readonly selectedSkillId: string | null;
 
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
@@ -672,6 +811,10 @@ export class AgentLoop {
     baselineLoadingKeywords: string[];
     reason: string;
     startedTurn: number;
+  } | null = null;
+  private pendingInlineEditVerification: {
+    stepIndex: number;
+    reason: string;
   } | null = null;
 
   /** Collected source citations (deduplicated by URL) */
@@ -899,6 +1042,7 @@ export class AgentLoop {
       nodeId?: string | null;
       runId?: string | null;
       correlationId?: string | null;
+      selectedSkillId?: string | null;
       suppressUiBroadcast?: boolean;
       /** Called for STREAM_CHUNK even when suppressUiBroadcast is true.
        *  Allows orchestrator to forward content for single-node tasks. */
@@ -933,12 +1077,17 @@ export class AgentLoop {
       executorModel?: string;
       plannerModel?: string;
       useNitro?: boolean;
-      providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
+      providerMode?:
+        | "openrouter"
+        | "openrouter-groq"
+        | "openai-groq"
+        | "fireworks";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
       openaiApiKey?: string;
       groqApiKey?: string;
       fireworksApiKey?: string;
       temperature?: number;
+      perceptionMode?: PerceptionRuntimeMode;
       useVLExecutor?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
@@ -947,8 +1096,14 @@ export class AgentLoop {
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
-    // VL mode: defaults to ON for Fireworks (verified), OFF otherwise. User can override in settings.
-    this.useVLExecutor = options?.useVLExecutor ?? (options?.providerMode === "fireworks");
+    // Observation path: Fireworks defaults to unified VL; other stacks default
+    // to structured perception unless explicitly overridden.
+    this.useVLExecutor =
+      resolvePerceptionRuntimeMode({
+        perceptionMode: options?.perceptionMode,
+        useVLExecutor: options?.useVLExecutor,
+        providerMode: options?.providerMode,
+      }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
     this.verificationTurnMode = options?.verificationTurnMode ?? false;
@@ -960,6 +1115,7 @@ export class AgentLoop {
     this.nodeId = options?.nodeId ?? null;
     this.runId = options?.runId ?? null;
     this.correlationId = options?.correlationId ?? this.runId ?? null;
+    this.selectedSkillId = options?.selectedSkillId ?? null;
     this.suppressUiBroadcast = options?.suppressUiBroadcast ?? false;
     this.onStreamChunk = options?.onStreamChunk ?? null;
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
@@ -1018,7 +1174,9 @@ export class AgentLoop {
     this.statusHandler = callbacks.onStatusUpdate;
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});
-    this.maxTurns = options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
+    const requestedMaxTurns =
+      options?.maxTurns ?? AGENT_LIMITS.MAX_TURNS_DEFAULT;
+    this.maxTurns = applySkillTurnCap(this.selectedSkillId, requestedMaxTurns);
     this.pendingTurnCheckpoint = options?.turnCheckpoint ?? null;
     this.resumeInteraction = options?.resumeInteraction ?? null;
 
@@ -1045,7 +1203,8 @@ export class AgentLoop {
     this.planSteps = this.initialPlanState.subtasks.map((subtask) => ({
       objective: subtask.description,
       successCriteria:
-        subtask.successCriteria || "The current step is completed and verified.",
+        subtask.successCriteria ||
+        "The current step is completed and verified.",
       dependencies: [],
       assumptions: [],
       ...(subtask.verificationGate
@@ -1134,7 +1293,10 @@ export class AgentLoop {
     try {
       // Runtime counters
       this.turnCount = cp.turnCount;
-      this.maxTurns = Math.max(this.maxTurns, cp.maxTurns);
+      this.maxTurns = applySkillTurnCap(
+        this.selectedSkillId,
+        Math.max(this.maxTurns, cp.maxTurns),
+      );
       this.lastPlanIndex = cp.currentPlanIndex;
       this.turnsOnCurrentStep = cp.turnsOnCurrentStep;
       this.escalationsOnCurrentStep = cp.escalationsOnCurrentStep;
@@ -1143,7 +1305,10 @@ export class AgentLoop {
       // Context / history
       this.context.restoreFromCheckpointHistory(cp.history, cp.isFirstTurn);
       if (cp.planStatus) {
-        this.context.setPlanStatus(cp.planStatus.subtasks, cp.planStatus.currentIndex);
+        this.context.setPlanStatus(
+          cp.planStatus.subtasks,
+          cp.planStatus.currentIndex,
+        );
       }
       if (cp.workingNotes) {
         this.context.setWorkingNotes(cp.workingNotes);
@@ -1199,7 +1364,9 @@ export class AgentLoop {
   ): { result: string; source: "ledger" | "ephemeral" } | null {
     if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return null;
     const mutKey = buildMutationKey(toolName, args);
-    const ledgerHit = this.stepMutationLedger.find((entry) => entry.key === mutKey);
+    const ledgerHit = this.stepMutationLedger.find(
+      (entry) => entry.key === mutKey,
+    );
     if (ledgerHit) {
       return { result: ledgerHit.result, source: "ledger" };
     }
@@ -1464,17 +1631,20 @@ export class AgentLoop {
     args: Record<string, unknown>,
     context: string,
   ): Promise<boolean> {
-    const interaction =
-      this.getMatchingApprovalInteraction(toolName, args, context) ?? {
-        kind: "approval" as const,
-        nodeId: this.nodeId,
-        requestedAt: Date.now(),
-        approvalId: crypto.randomUUID(),
-        toolName,
-        args,
-        context,
-        timeoutMs: this.approvalTimeoutMs,
-      };
+    const interaction = this.getMatchingApprovalInteraction(
+      toolName,
+      args,
+      context,
+    ) ?? {
+      kind: "approval" as const,
+      nodeId: this.nodeId,
+      requestedAt: Date.now(),
+      approvalId: crypto.randomUUID(),
+      toolName,
+      args,
+      context,
+      timeoutMs: this.approvalTimeoutMs,
+    };
     const remainingTimeoutMs = Math.max(
       0,
       interaction.timeoutMs - (Date.now() - interaction.requestedAt),
@@ -1583,16 +1753,18 @@ export class AgentLoop {
     question: string,
     suggestions?: string[],
   ): Promise<string> {
-    const interaction =
-      this.getMatchingClarificationInteraction(question, suggestions) ?? {
-        kind: "clarification" as const,
-        nodeId: this.nodeId,
-        requestedAt: Date.now(),
-        clarificationId: crypto.randomUUID(),
-        question,
-        ...(suggestions ? { suggestions } : {}),
-        timeoutMs: AgentLoop.CLARIFICATION_TIMEOUT_MS,
-      };
+    const interaction = this.getMatchingClarificationInteraction(
+      question,
+      suggestions,
+    ) ?? {
+      kind: "clarification" as const,
+      nodeId: this.nodeId,
+      requestedAt: Date.now(),
+      clarificationId: crypto.randomUUID(),
+      question,
+      ...(suggestions ? { suggestions } : {}),
+      timeoutMs: AgentLoop.CLARIFICATION_TIMEOUT_MS,
+    };
     const remainingTimeoutMs = Math.max(
       0,
       interaction.timeoutMs - (Date.now() - interaction.requestedAt),
@@ -1794,6 +1966,9 @@ export class AgentLoop {
           : this.preferredModelTier),
       initialModel: this.llm.getCurrentModel(),
       allowedTools,
+      ...(this.selectedSkillId
+        ? { selectedSkillId: this.selectedSkillId }
+        : {}),
       workspaceId: this.workspaceId,
       workerId: this.workerId,
       nodeId: this.nodeId,
@@ -1849,12 +2024,17 @@ export class AgentLoop {
           snapshot = entry.snapshot;
           if (entry.perception) warmupPerception = entry.perception;
           warmupScreenshot = entry.screenshotUrl;
-          this.log.info("agent", "Using warmup snapshot" + (entry.screenshotOnly ? " (screenshot-only)" : " + perception"), {
-            tabId,
-            elementCount: snapshot.elements.length,
-            screenshotOnly: entry.screenshotOnly ?? false,
-            provider: entry.perception?.providerId,
-          });
+          this.log.info(
+            "agent",
+            "Using warmup snapshot" +
+              (entry.screenshotOnly ? " (screenshot-only)" : " + perception"),
+            {
+              tabId,
+              elementCount: snapshot.elements.length,
+              screenshotOnly: entry.screenshotOnly ?? false,
+              provider: entry.perception?.providerId,
+            },
+          );
         }
       } else {
         // Check static cache (warmup may have finished already)
@@ -1863,11 +2043,16 @@ export class AgentLoop {
           snapshot = cached.snapshot;
           if (cached.perception) warmupPerception = cached.perception;
           warmupScreenshot = cached.screenshotUrl;
-          this.log.info("agent", "Using cached warmup snapshot" + (cached.screenshotOnly ? " (screenshot-only)" : " + perception"), {
-            tabId,
-            elementCount: snapshot.elements.length,
-            ageMs: Date.now() - cached.timestamp,
-          });
+          this.log.info(
+            "agent",
+            "Using cached warmup snapshot" +
+              (cached.screenshotOnly ? " (screenshot-only)" : " + perception"),
+            {
+              tabId,
+              elementCount: snapshot.elements.length,
+              ageMs: Date.now() - cached.timestamp,
+            },
+          );
         }
       }
 
@@ -1923,7 +2108,9 @@ export class AgentLoop {
       // genuinely has the page content — no need to require an explicit read_page call.
       const initElements = snapshot.elements?.length ?? 0;
       const initContentLen = (
-        snapshot.pageContent ?? snapshot.visibleContent ?? ""
+        snapshot.pageContent ??
+        snapshot.visibleContent ??
+        ""
       ).length;
       if (initElements > 5 && initContentLen > 100) {
         this.hasReadPage = true;
@@ -1936,14 +2123,23 @@ export class AgentLoop {
         this.perception.setScreenshotUrl(warmupScreenshot);
         this.traceRecorder?.recordPerception(
           {
-            interpretation: "[VL mode] Screenshot from warmup cache — no perception call.",
+            interpretation:
+              "[VL mode] Screenshot from warmup cache — no perception call.",
             model: "none (unified VL, warmup)",
             durationMs: 0,
             cached: true,
+            mode: "vl_screenshot_only",
+            source: "warmup",
+            freshnessReason: "warmup_cache",
+            screenshotStatus: "cached",
           },
           warmupScreenshot,
         );
-        this.log.info("agent", "VL mode: using warmup screenshot (skipped VLM)", { tabId });
+        this.log.info(
+          "agent",
+          "VL mode: using warmup screenshot (skipped VLM)",
+          { tabId },
+        );
       } else if (warmupPerception) {
         // Use pre-computed perception — hydrate PerceptionAgent with warmup result
         const warmupFingerprint = computeSnapshotFingerprint(snapshot);
@@ -2497,6 +2693,168 @@ export class AgentLoop {
     return true;
   }
 
+  private isProcurementLoopActive(): boolean {
+    return this.selectedSkillId === "multi-tab-procurement-loop";
+  }
+
+  private getProcurementTabRole(
+    url: string | null | undefined,
+  ): "checklist" | "store" | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname !== "/procurement") return null;
+      return parsed.searchParams.has("store") ? "store" : "checklist";
+    } catch {
+      return null;
+    }
+  }
+
+  private getProcurementStoreKey(url: string | null | undefined): string | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname !== "/procurement") return null;
+      const store = parsed.searchParams.get("store");
+      return store ? store.trim().toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getWorkspaceTabs(): Promise<chrome.tabs.Tab[]> {
+    const wsTabIds = await this.getWorkspaceTabIds();
+    if (!wsTabIds) {
+      return await chrome.tabs.query({});
+    }
+    const tabs: chrome.tabs.Tab[] = [];
+    for (const id of wsTabIds) {
+      try {
+        tabs.push(await chrome.tabs.get(id));
+      } catch {
+        // Ignore tabs closed outside the agent loop.
+      }
+    }
+    return tabs;
+  }
+
+  private async getProcurementLoopTabHints(currentTabId: number): Promise<{
+    checklistTabId: number | null;
+    currentRole: "checklist" | "store" | null;
+    currentStoreKey: string | null;
+  }> {
+    const currentUrl = this.context.getCurrentUrl();
+    const currentRole = this.getProcurementTabRole(currentUrl);
+    const currentStoreKey = this.getProcurementStoreKey(currentUrl);
+    const tabs = await this.getWorkspaceTabs();
+    let checklistTabId: number | null = null;
+
+    for (const tab of tabs) {
+      if (
+        typeof tab.id === "number" &&
+        tab.id !== currentTabId &&
+        this.getProcurementTabRole(tab.url) === "checklist"
+      ) {
+        checklistTabId = tab.id;
+        break;
+      }
+    }
+
+    return {
+      checklistTabId,
+      currentRole,
+      currentStoreKey,
+    };
+  }
+
+  private async getProcurementLoopToolRedirect(params: {
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    currentTabId: number;
+  }): Promise<string | null> {
+    if (!this.isProcurementLoopActive()) return null;
+
+    const { toolName, args, currentTabId } = params;
+    const snapshot = this.context.getSnapshot();
+    const targetId =
+      typeof args.id === "number"
+        ? args.id
+        : typeof args.id === "string"
+          ? parseInt(args.id, 10)
+          : null;
+    const target =
+      toolName === ToolName.CLICK_ELEMENT && targetId
+        ? snapshot?.elements?.find((element) => element.tag === targetId)
+        : null;
+    const targetHref =
+      typeof target?.attributes?.href === "string"
+        ? target.attributes.href
+        : toolName === ToolName.CREATE_TAB && typeof args.url === "string"
+          ? (args.url as string)
+          : null;
+    if (!targetHref) return null;
+
+    let resolvedHref: string;
+    try {
+      resolvedHref = new URL(
+        targetHref,
+        this.context.getCurrentUrl() || "http://127.0.0.1/",
+      ).toString();
+    } catch {
+      return null;
+    }
+
+    const targetRole = this.getProcurementTabRole(resolvedHref);
+    if (!targetRole) return null;
+
+    const { checklistTabId, currentRole, currentStoreKey } =
+      await this.getProcurementLoopTabHints(currentTabId);
+
+    if (
+      targetRole === "checklist" &&
+      currentRole === "store" &&
+      checklistTabId &&
+      checklistTabId !== currentTabId
+    ) {
+      return (
+        `The original procurement checklist is already open as tab ${checklistTabId}. ` +
+        `Use switch_tab({"tabId": ${checklistTabId}}) to return there instead of clicking an in-page Procurement link.`
+      );
+    }
+
+    const targetStoreKey = this.getProcurementStoreKey(resolvedHref);
+    if (!targetStoreKey) return null;
+
+    const tabs = await this.getWorkspaceTabs();
+    const existingStoreTab = tabs.find(
+      (tab) =>
+        typeof tab.id === "number" &&
+        tab.id !== currentTabId &&
+        this.getProcurementStoreKey(tab.url) === targetStoreKey,
+    );
+
+    if (existingStoreTab?.id) {
+      return (
+        `The ${targetStoreKey} store is already open as tab ${existingStoreTab.id}. ` +
+        `Use switch_tab({"tabId": ${existingStoreTab.id}}) instead of reopening the same store page.`
+      );
+    }
+
+    if (
+      currentRole === "store" &&
+      currentStoreKey &&
+      targetStoreKey === currentStoreKey &&
+      toolName === ToolName.CLICK_ELEMENT
+    ) {
+      return (
+        `You are already on the ${currentStoreKey} store page. ` +
+        `Do not reopen the same store from inside this procurement loop; either finish the purchase or switch back to the checklist tab.`
+      );
+    }
+
+    return null;
+  }
+
   /** De-escalate back to executor mode when progress resumes after escalation. */
   private async deescalateModel(
     tabId?: number,
@@ -2578,6 +2936,27 @@ export class AgentLoop {
 
   /** Refresh DOM snapshot and update context. Returns element count or -1 on failure. */
   private async refreshSnapshot(tabId: number): Promise<number> {
+    const recordBridgeRecovery: BridgeRecoveryTraceHook = (event) => {
+      if (event.stage === "attempt") {
+        this.traceRecorder?.recordEvent("bridge_recovery_attempt", {
+          turn: this.turnCount,
+          phase: event.phase,
+          context: event.context,
+          ...(event.toolName ? { toolName: event.toolName } : {}),
+          ...(event.error ? { error: event.error } : {}),
+        });
+        return;
+      }
+      this.traceRecorder?.recordEvent("bridge_recovery_result", {
+        turn: this.turnCount,
+        phase: event.phase,
+        context: event.context,
+        success: Boolean(event.success),
+        ...(event.toolName ? { toolName: event.toolName } : {}),
+        ...(event.error ? { error: event.error } : {}),
+      });
+    };
+
     const sendRequest = () =>
       chrome.tabs.sendMessage(tabId, {
         type: "DOM_SNAPSHOT_REQUEST",
@@ -2608,6 +2987,8 @@ export class AgentLoop {
         );
         const recovered = await recoverContentScriptBridge(tabId, {
           allowReloadFallback: true,
+          context: "snapshot",
+          traceHook: recordBridgeRecovery,
         });
         if (recovered) {
           try {
@@ -2641,30 +3022,43 @@ export class AgentLoop {
    */
   private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
     const planStatus = this.context.getPlanStatusRaw();
-    const currentSubtask = planStatus?.subtasks.find(
-      (s) => s.status === "running",
-    );
+    const currentSubtaskIndex =
+      planStatus?.subtasks.findIndex((s) => s.status === "running") ?? -1;
+    const currentSubtask =
+      currentSubtaskIndex >= 0
+        ? planStatus?.subtasks[currentSubtaskIndex]
+        : undefined;
 
-    // If planner assigned an explicit profile, use it (with stagnation widening)
+    // If planner assigned an explicit profile, use it. Otherwise infer one
+    // from the active step so inline-edit tasks do not fall back to an overly
+    // broad DOM-aware tool set.
     const explicitProfile = currentSubtask?.toolProfile;
-    if (explicitProfile) {
+    const inferredProfile =
+      !explicitProfile && currentSubtask
+        ? inferToolProfileForStep(
+            currentSubtask.description,
+            this.planSteps[currentSubtaskIndex]?.successCriteria || "",
+          )
+        : undefined;
+    const activeProfile = explicitProfile ?? inferredProfile;
+    if (activeProfile) {
       if (this.turnsOnCurrentStep >= this.limits.stepWarnTurns) {
         this.log.info("agent", "Tool profile widened due to step stagnation", {
           turn: this.turnCount,
-          profile: explicitProfile,
+          profile: activeProfile,
           turnsOnCurrentStep: this.turnsOnCurrentStep,
           stepWarnTurns: this.limits.stepWarnTurns,
         });
         this.traceRecorder?.recordEvent("tool_profile_widened", {
           turn: this.turnCount,
-          profile: explicitProfile,
+          profile: activeProfile,
           reason: "step_stagnation",
           turnsOnCurrentStep: this.turnsOnCurrentStep,
         });
         return tools;
       }
 
-      const allowedNames = resolveToolProfile(explicitProfile as ToolProfile);
+      const allowedNames = resolveToolProfile(activeProfile as ToolProfile);
       if (!allowedNames) return tools; // "full" or unknown → no filtering
 
       const allowedSet = new Set<string>(allowedNames);
@@ -2677,16 +3071,16 @@ export class AgentLoop {
       const filtered = tools.filter((t) => allowedSet.has(t.function.name));
       this.log.info("agent", "Tool profile applied", {
         turn: this.turnCount,
-        profile: explicitProfile,
+        profile: activeProfile,
         subtask: currentSubtask?.description,
-        source: "plan_status",
+        source: explicitProfile ? "plan_status" : "step_inference",
         originalToolCount: tools.length,
         filteredToolCount: filtered.length,
       });
       this.traceRecorder?.recordEvent("tool_profile_applied", {
         turn: this.turnCount,
-        profile: explicitProfile,
-        source: "plan_status",
+        profile: activeProfile,
+        source: explicitProfile ? "plan_status" : "step_inference",
         originalToolCount: tools.length,
         filteredToolCount: filtered.length,
       });
@@ -2819,164 +3213,103 @@ export class AgentLoop {
     }
   }
 
+  private getActivePerceptionTaskContext(): PerceptionTaskContext | undefined {
+    if (this.planSteps.length === 0) return undefined;
+
+    let stepIndex = this.planSubtasks.findIndex(
+      (subtask) => subtask.status === "running",
+    );
+    if (
+      stepIndex < 0 &&
+      this.lastPlanIndex >= 0 &&
+      this.lastPlanIndex < this.planSteps.length
+    ) {
+      stepIndex = this.lastPlanIndex;
+    }
+    if (stepIndex < 0 || stepIndex >= this.planSteps.length) return undefined;
+
+    const step = this.planSteps[stepIndex];
+    const objective =
+      step.objective?.trim() ||
+      this.planSubtasks[stepIndex]?.description?.trim();
+    if (!objective) return undefined;
+
+    return {
+      objective,
+      successCriteria: step.successCriteria?.trim() || undefined,
+      expectedStateDescription:
+        step.expectedState?.description?.trim() || undefined,
+      toolProfile: step.toolProfile,
+      currentStepIndex: stepIndex,
+      totalSteps: this.planSteps.length,
+    };
+  }
+
   /**
    * Refresh perception: take a screenshot and send to the PerceptionAgent
-   * for structured page interpretation. The agent handles fingerprint caching,
-   * near-empty DOM fallback, and observation history internally.
+   * for structured page interpretation. The agent handles fingerprint caching
+   * and observation history internally.
    */
   private async refreshPerception(tabId: number): Promise<void> {
     const snapshot = this.context.getSnapshot();
     if (!snapshot) return;
 
     const fingerprint = computeSnapshotFingerprint(snapshot);
+    const taskContext = this.getActivePerceptionTaskContext();
 
     try {
       // Take screenshot (unless near-empty — agent handles fallback)
       let dataUrl: string | undefined;
-      if (snapshot.elements.length > 3) {
-        // Orientation scan: on first perception, scroll to top so the primary
-        // screenshot shows the page beginning (defeats auto-scroll tricks).
-        let primaryScrollY: number | undefined;
-        const isFirstPerception = !this.perception.panoramicDone;
-        if (isFirstPerception && (snapshot.scroll?.y ?? 0) > 0) {
-          await this.scrollContentScript(tabId, 0);
-          await new Promise((r) => setTimeout(r, 150));
-          primaryScrollY = 0;
-        }
+      let screenshotStatus:
+        | "captured"
+        | "cached"
+        | "missing"
+        | "capture_failed"
+        | "not_requested" = "not_requested";
+      // Orientation scan: on first perception, scroll to top so the primary
+      // screenshot shows the page beginning (defeats auto-scroll tricks).
+      let primaryScrollY: number | undefined;
+      const isFirstPerception = !this.perception.panoramicDone;
+      if (isFirstPerception && (snapshot.scroll?.y ?? 0) > 0) {
+        await this.scrollContentScript(tabId, 0);
+        await new Promise((r) => setTimeout(r, 150));
+        primaryScrollY = 0;
+      }
 
-        // Ensure the agent's tab is the visible one before capturing —
-        // captureVisibleTab captures whatever tab is active in the window.
-        const tab = await chrome.tabs.get(tabId);
-        if (!tab.active) {
-          try {
-            await chrome.tabs.update(tabId, { active: true });
-          } catch {
-            // Tab may have been closed — fall back to cache
-          }
-        }
-
+      // Ensure the agent's tab is the visible one before capturing —
+      // captureVisibleTab captures whatever tab is active in the window.
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.active) {
         try {
-          const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
-          dataUrl = await this.captureVisibleTabWithRetry(
-            refreshedTab.windowId,
-            { format: "jpeg", quality: 70 },
-          );
-          setCachedScreenshot(tabId, dataUrl);
+          await chrome.tabs.update(tabId, { active: true });
         } catch {
-          // Quota or other capture error — fall back to shared cache
-          dataUrl = getCachedScreenshot(tabId);
+          // Tab may have been closed — fall back to cache
         }
-        if (dataUrl) {
-          this.perception.setScreenshotUrl(dataUrl);
+      }
+
+      try {
+        const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
+        dataUrl = await this.captureVisibleTabWithRetry(refreshedTab.windowId, {
+          format: "jpeg",
+          quality: 70,
+        });
+        setCachedScreenshot(tabId, dataUrl);
+        screenshotStatus = "captured";
+      } catch {
+        // Quota or other capture error — fall back to shared cache
+        dataUrl = getCachedScreenshot(tabId);
+        screenshotStatus = dataUrl ? "cached" : "capture_failed";
+      }
+      if (dataUrl) {
+        this.perception.setScreenshotUrl(dataUrl);
+      }
+
+      // No screenshot available — use element-only fallback
+      // instead of calling VLM with an invalid image URL.
+      if (!dataUrl) {
+        if (isFirstPerception) {
+          this.perception.markPanoramicDone();
         }
-
-        // No screenshot available — use element-only fallback
-        // instead of calling VLM with an invalid image URL.
-        if (!dataUrl) {
-          if (isFirstPerception) {
-            this.perception.markPanoramicDone();
-          }
-          const result = await this.perception.observe(
-            {
-              screenshotDataUrl: "",
-              elements: snapshot.elements,
-              url: snapshot.url,
-              title: snapshot.title,
-              scroll: snapshot.scroll,
-              skeleton: snapshot.skeleton,
-              lang: snapshot.lang,
-            },
-            fingerprint,
-            this.abortController?.signal,
-            this.lastToolNameForPerception,
-          );
-          this.context.setPageInterpretation(result.interpretation);
-          const elSummary = buildElementSummary(
-            snapshot.elements,
-            snapshot.skeleton,
-          );
-          await this.traceRecorder?.recordPerception(
-            result,
-            undefined,
-            elSummary,
-          );
-          this.log.info(
-            "agent",
-            "Perception: tab not active, using element-only mode",
-            { tabId, url: snapshot.url },
-          );
-        } else {
-          // First-turn panoramic: capture additional viewports for page-level context
-          let panoramicScreenshots: PanoramicShot[] | undefined;
-          if (isFirstPerception) {
-            this.perception.markPanoramicDone();
-            panoramicScreenshots = await this.capturePanoramicScreenshots(
-              tabId,
-              primaryScrollY,
-              // Restore to user's original scroll position after panoramic capture
-              snapshot.scroll?.y,
-            );
-            if (panoramicScreenshots.length > 0) {
-              // Store on perception agent for retroactive T1 trace recording
-              this.perception.setPanoramicShots(panoramicScreenshots);
-              this.log.info(
-                "agent",
-                "Panoramic perception: captured additional viewports",
-                {
-                  count: panoramicScreenshots.length,
-                  labels: panoramicScreenshots.map((s) => s.label),
-                },
-              );
-            } else {
-              panoramicScreenshots = undefined;
-            }
-          }
-
-          // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
-          const scrollOverride =
-            primaryScrollY !== undefined
-              ? { ...snapshot.scroll, y: primaryScrollY }
-              : snapshot.scroll;
-
-          const result = await this.perception.observe(
-            {
-              screenshotDataUrl: dataUrl,
-              panoramicScreenshots,
-              elements: snapshot.elements,
-              url: snapshot.url,
-              title: snapshot.title,
-              scroll: scrollOverride,
-              skeleton: snapshot.skeleton,
-              lang: snapshot.lang,
-            },
-            fingerprint,
-            this.abortController?.signal,
-            this.lastToolNameForPerception,
-          );
-
-          this.context.setPageInterpretation(result.interpretation);
-          const elSummary = buildElementSummary(
-            snapshot.elements,
-            snapshot.skeleton,
-          );
-          await this.traceRecorder?.recordPerception(
-            result,
-            dataUrl,
-            elSummary,
-            panoramicScreenshots,
-          );
-
-          // Track usage for non-cached calls
-          if (result.usage && !result.cached) {
-            this.recordVisionUsage(
-              result.usage,
-              result.durationMs,
-              result.model,
-            );
-          }
-        }
-      } else {
-        // Near-empty DOM: let agent handle fallback
         const result = await this.perception.observe(
           {
             screenshotDataUrl: "",
@@ -2986,6 +3319,82 @@ export class AgentLoop {
             scroll: snapshot.scroll,
             skeleton: snapshot.skeleton,
             lang: snapshot.lang,
+            taskContext,
+          },
+          fingerprint,
+          this.abortController?.signal,
+          this.lastToolNameForPerception,
+        );
+        this.context.setPageInterpretation(result.interpretation);
+        const elSummary = buildElementSummary(
+          snapshot.elements,
+          snapshot.skeleton,
+        );
+        await this.traceRecorder?.recordPerception(
+          {
+            ...result,
+            source: "fallback",
+            fallbackReason:
+              screenshotStatus === "capture_failed"
+                ? "capture_failed"
+                : "screenshot_unavailable",
+            screenshotStatus:
+              screenshotStatus === "capture_failed"
+                ? "capture_failed"
+                : "missing",
+          },
+          undefined,
+          elSummary,
+        );
+        this.log.info(
+          "agent",
+          "Perception: screenshot unavailable, using element-only mode",
+          { tabId, url: snapshot.url },
+        );
+      } else {
+        // First-turn panoramic: capture additional viewports for page-level context
+        let panoramicScreenshots: PanoramicShot[] | undefined;
+        if (isFirstPerception) {
+          this.perception.markPanoramicDone();
+          panoramicScreenshots = await this.capturePanoramicScreenshots(
+            tabId,
+            primaryScrollY,
+            // Restore to user's original scroll position after panoramic capture
+            snapshot.scroll?.y,
+          );
+          if (panoramicScreenshots.length > 0) {
+            // Store on perception agent for retroactive T1 trace recording
+            this.perception.setPanoramicShots(panoramicScreenshots);
+            this.log.info(
+              "agent",
+              "Panoramic perception: captured additional viewports",
+              {
+                count: panoramicScreenshots.length,
+                labels: panoramicScreenshots.map((s) => s.label),
+              },
+            );
+          } else {
+            panoramicScreenshots = undefined;
+          }
+        }
+
+        // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
+        const scrollOverride =
+          primaryScrollY !== undefined
+            ? { ...snapshot.scroll, y: primaryScrollY }
+            : snapshot.scroll;
+
+        const result = await this.perception.observe(
+          {
+            screenshotDataUrl: dataUrl,
+            panoramicScreenshots,
+            elements: snapshot.elements,
+            url: snapshot.url,
+            title: snapshot.title,
+            scroll: scrollOverride,
+            skeleton: snapshot.skeleton,
+            lang: snapshot.lang,
+            taskContext,
           },
           fingerprint,
           this.abortController?.signal,
@@ -2993,20 +3402,24 @@ export class AgentLoop {
         );
 
         this.context.setPageInterpretation(result.interpretation);
-        const elSummary = buildElementSummary(snapshot.elements);
+        const elSummary = buildElementSummary(
+          snapshot.elements,
+          snapshot.skeleton,
+        );
         await this.traceRecorder?.recordPerception(
-          result,
-          undefined,
-          elSummary,
-        );
-        this.log.info(
-          "agent",
-          "Perception: near-empty DOM, skipping vision model",
           {
-            elementCount: snapshot.elements.length,
-            url: snapshot.url,
+            ...result,
+            screenshotStatus,
           },
+          dataUrl,
+          elSummary,
+          panoramicScreenshots,
         );
+
+        // Track usage for non-cached calls
+        if (result.usage && !result.cached) {
+          this.recordVisionUsage(result.usage, result.durationMs, result.model);
+        }
       }
     } catch (e: any) {
       this.log.warn("agent", "Perception failed, using element-only mode", {
@@ -3027,7 +3440,28 @@ export class AgentLoop {
     if (!interpretation) return 0;
     if (this.abortController?.signal.aborted) return 0;
 
-    const blockers = parseNuisanceBlockers(interpretation);
+    const snapshot = this.context.getSnapshot();
+    const { valid: blockers, rejected } = snapshot
+      ? validateNuisanceBlockers(interpretation, snapshot.elements)
+      : { valid: [], rejected: [] };
+    if (rejected.length > 0) {
+      this.traceRecorder?.recordEvent("perception_blocker_validation", {
+        turn: this.turnCount,
+        rejectedCount: rejected.length,
+        reasons: rejected.slice(0, 3).map((b) => b.reason),
+      });
+      this.log.warn(
+        "agent",
+        "Rejected nuisance blockers with invalid grounding",
+        {
+          rejected: rejected.slice(0, 3).map((b) => ({
+            overlayTagId: b.overlayTagId,
+            dismissTagId: b.dismissTagId,
+            reason: b.reason,
+          })),
+        },
+      );
+    }
     if (blockers.length === 0) return 0;
 
     // Cap at 3 dismiss attempts per cycle to prevent infinite loops
@@ -3101,7 +3535,7 @@ export class AgentLoop {
   /** Capture screenshot and store for VL executor injection (no perception VLM call). */
   private async captureScreenshotForVLExecutor(tabId: number): Promise<void> {
     const snapshot = this.context.getSnapshot();
-    if (!snapshot || snapshot.elements.length <= 3) {
+    if (!snapshot) {
       this.context.setScreenshotForExecutor(null);
       this.context.setPageInterpretation(null);
       return;
@@ -3111,12 +3545,14 @@ export class AgentLoop {
       if (!tab.active) {
         try {
           await chrome.tabs.update(tabId, { active: true });
-        } catch { /* tab may be closed */ }
+        } catch {
+          /* tab may be closed */
+        }
       }
-      const dataUrl = await this.captureVisibleTabWithRetry(
-        tab.windowId,
-        { format: "jpeg", quality: 70 },
-      );
+      const dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
+        format: "jpeg",
+        quality: 70,
+      });
       setCachedScreenshot(tabId, dataUrl);
       this.context.setScreenshotForExecutor(dataUrl);
       this.context.setPageInterpretation(null); // VL instructions generated by context
@@ -3124,19 +3560,28 @@ export class AgentLoop {
       // Record synthetic perception entry so trace viewer shows the screenshot
       this.traceRecorder?.recordPerception(
         {
-          interpretation: "[VL mode] Screenshot sent directly to executor — no separate perception call.",
+          interpretation:
+            "[VL mode] Screenshot sent directly to executor — no separate perception call.",
           model: "none (unified VL)",
           durationMs: 0,
           cached: false,
+          mode: "vl_screenshot_only",
+          source: "fresh",
+          freshnessReason: "vl_screenshot",
+          screenshotStatus: "captured",
         },
         dataUrl,
       );
     } catch (e: any) {
       // Capture failed — fall back to 2-call pipeline for this turn
-      this.log.warn("agent", "VL screenshot capture failed, falling back to perception", {
-        error: e?.message,
-        tabId,
-      });
+      this.log.warn(
+        "agent",
+        "VL screenshot capture failed, falling back to perception",
+        {
+          error: e?.message,
+          tabId,
+        },
+      );
       this.context.setScreenshotForExecutor(null);
       await this.refreshPerception(tabId);
       await this.triagePopups(tabId);
@@ -3147,7 +3592,10 @@ export class AgentLoop {
    * Force a grounding refresh for read/report tasks after an ungrounded first move.
    * This keeps summarize-style tasks recoverable within the expected turn budget.
    */
-  private async forceGroundingRefresh(tabId: number, reason: string): Promise<void> {
+  private async forceGroundingRefresh(
+    tabId: number,
+    reason: string,
+  ): Promise<void> {
     const count = await this.refreshSnapshot(tabId);
     if (count >= 0) {
       this.hasReadPage = true;
@@ -3743,9 +4191,16 @@ export class AgentLoop {
     reason?: string;
   } {
     const { summary, consecutiveTextOnly } = params;
-    const runningIdx = this.planSubtasks.findIndex((s) => s.status === "running");
+    const runningIdx = this.planSubtasks.findIndex(
+      (s) => s.status === "running",
+    );
     if (runningIdx < 0) {
-      return { passed: false, runningIdx: -1, isLastStep: false, reason: "no_running_step" };
+      return {
+        passed: false,
+        runningIdx: -1,
+        isLastStep: false,
+        reason: "no_running_step",
+      };
     }
 
     const requiredTextOnlyTurns = this.verificationTurnMode ? 1 : 2;
@@ -3817,6 +4272,235 @@ export class AgentLoop {
       runningIdx,
       isLastStep: pendingCount === 0,
     };
+  }
+
+  private shouldBypassPlanIncompleteDoneRejection(params: {
+    summary: string;
+    currentStepIndex: number;
+  }): boolean {
+    const { summary, currentStepIndex } = params;
+    if (
+      currentStepIndex < 0 ||
+      currentStepIndex >= this.planSubtasks.length - 1 ||
+      currentStepIndex >= this.planSteps.length
+    ) {
+      return false;
+    }
+
+    const currentStep = this.planSteps[currentStepIndex];
+    if (!currentStep?.successCriteria) return false;
+
+    const taskContext = [
+      this.originalQuery,
+      this.planSubtasks[currentStepIndex]?.description,
+      currentStep.successCriteria,
+    ]
+      .filter(
+        (part): part is string => typeof part === "string" && part.length > 0,
+      )
+      .join("\n");
+
+    const sentiment = assessDoneSummary(summary);
+    if (!sentiment.confident) return false;
+
+    const summaryText = normalizeGuardText(summary);
+    const snapshot = this.context.getSnapshot();
+    const snapshotText = normalizeGuardText(
+      `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
+    );
+    const confirmationIntent =
+      /\b(submit|submission|confirm|confirmation|complete|completed|success|sent|saved|applied|placed)\b/i.test(
+        taskContext,
+      );
+    const summaryShowsFinalization =
+      /\b(submitted?|submission complete|completed?|confirmed?|confirmation|saved|applied|sent|placed|finished)\b/i.test(
+        summaryText,
+      );
+    const snapshotShowsFinalState =
+      /\b(submission complete|submitted successfully|success(?:fully)?|thank you|reference(?: number)?|confirmation(?: number| page)?|has been submitted|request received|completed successfully|order confirmed|receipt)\b/i.test(
+        snapshotText,
+      );
+
+    const procurementIntent =
+      this.selectedSkillId === "multi-tab-procurement-loop" ||
+      /\b(procurement|purchase|buy)\b/i.test(taskContext);
+    if (procurementIntent) {
+      const summaryShowsPurchase =
+        /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order)\b/i.test(
+          summaryText,
+        );
+      const summaryShowsChecklistReturn =
+        /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete)|returned? to .* (?:list|checklist|procurement)|back on .* (?:list|checklist|procurement))\b/i.test(
+          summaryText,
+        );
+      const checklistLooksComplete =
+        /\b\d+\s+of\s+\d+\s+items?\s+completed\b/i.test(snapshotText) ||
+        /\b(mark .* as done|all items procured)\b/i.test(snapshotText);
+
+      if (
+        summaryShowsPurchase &&
+        summaryShowsChecklistReturn &&
+        checklistLooksComplete
+      ) {
+        return true;
+      }
+    }
+
+    if (
+      confirmationIntent &&
+      summaryShowsFinalization &&
+      snapshotShowsFinalState
+    ) {
+      return true;
+    }
+
+    const editIntent =
+      /\b(change|edit|update|replace|set|type|enter|revise|rewrite)\b/i.test(
+        taskContext,
+      );
+    const inPlaceSurface =
+      /\b(spreadsheet|grid|cell|row|column|sheet|table|field|value|draft|reply|email|message|text|copy|wording)\b/i.test(
+        taskContext,
+      );
+    if (!editIntent || !inPlaceSurface) return false;
+
+    const criteriaCheck = matchSuccessCriteria({
+      successCriteria: currentStep.successCriteria,
+      snapshot,
+    });
+    if (!criteriaCheck.satisfied) return false;
+
+    const coherence = checkSummaryStepCoherence({
+      summary,
+      currentStepIndex,
+      stepDescriptions: this.planSubtasks.map((s) => s.description),
+    });
+    if (!coherence.coherent) return false;
+
+    return true;
+  }
+
+  private getActiveToolProfileForStep(
+    stepIndex: number,
+  ): ToolProfile | undefined {
+    const subtask = this.planSubtasks[stepIndex];
+    if (!subtask) return undefined;
+    return (
+      subtask.toolProfile ??
+      inferToolProfileForStep(
+        subtask.description,
+        this.planSteps[stepIndex]?.successCriteria || "",
+      )
+    );
+  }
+
+  private getUncommittedInlineEditDoneRejection(
+    currentStepIndex: number,
+  ): string | null {
+    if (this.getActiveToolProfileForStep(currentStepIndex) !== "edit_surface") {
+      return null;
+    }
+
+    const snapshot = this.context.getSnapshot();
+    if (!snapshot?.elements?.length) return null;
+
+    const hasVisibleTextInput = snapshot.elements.some(
+      (element) => element.isVisible !== false && isTextLikeInputElement(element),
+    );
+    if (!hasVisibleTextInput) return null;
+
+    const pageText = `${snapshot.visibleContent || ""}\n${snapshot.pageContent || ""}`;
+    const inlineEditTask =
+      /\b(spreadsheet|grid|cell|row|column|rename|filename|file name|document|inline)\b/i.test(
+        `${this.originalQuery}\n${this.planSubtasks[currentStepIndex]?.description || ""}\n${this.planSteps[currentStepIndex]?.successCriteria || ""}`,
+      );
+    if (!inlineEditTask && !/\(editing\)/i.test(pageText)) {
+      return null;
+    }
+
+    return (
+      "An inline edit field is still active on the page. Commit the edit " +
+      "(for example with Enter or by applying the rename) before calling done()."
+    );
+  }
+
+  private retargetInlineEditTextEntry(params: {
+    targetId: number;
+    currentStepIndex: number;
+  }): { retargetedId: number; reason: string } | null {
+    const { targetId, currentStepIndex } = params;
+    if (this.getActiveToolProfileForStep(currentStepIndex) !== "edit_surface") {
+      return null;
+    }
+
+    const snapshot = this.context.getSnapshot();
+    const target = snapshot?.elements?.find((el) => el.tag === targetId);
+    if (!target || isTextLikeInputElement(target)) {
+      return null;
+    }
+
+    const visibleTextInputs =
+      snapshot?.elements?.filter(
+        (element) =>
+          element.isVisible !== false && isTextLikeInputElement(element),
+      ) ?? [];
+    if (visibleTextInputs.length === 0) {
+      return null;
+    }
+
+    const targetText = normalizeGuardText(target.text);
+    const retarget =
+      visibleTextInputs.find((element) =>
+        rectsLikelyOverlap(target.rect, element.rect),
+      ) ??
+      visibleTextInputs.find((element) => {
+        const liveValue = normalizeGuardText(
+          element.attributes.value || element.text,
+        );
+        return Boolean(targetText) && liveValue === targetText;
+      });
+    if (!retarget) {
+      return null;
+    }
+
+    return {
+      retargetedId: retarget.tag,
+      reason:
+        `Retargeted type_text from [${targetId}] to the active inline editor ` +
+        `[${retarget.tag}] for this edit-surface step.`,
+    };
+  }
+
+  private getPendingInlineEditVerificationBlock(
+    toolName: ToolName,
+    currentStepIndex: number,
+  ): string | null {
+    if (
+      this.pendingInlineEditVerification &&
+      this.pendingInlineEditVerification.stepIndex !== currentStepIndex
+    ) {
+      this.pendingInlineEditVerification = null;
+    }
+    if (
+      !this.pendingInlineEditVerification ||
+      this.pendingInlineEditVerification.stepIndex !== currentStepIndex
+    ) {
+      return null;
+    }
+    if (
+      [
+        ToolName.READ_PAGE,
+        ToolName.READ_ELEMENT,
+        ToolName.FIND_ELEMENT,
+        ToolName.WAIT,
+      ].includes(toolName)
+    ) {
+      return null;
+    }
+    return (
+      `${this.pendingInlineEditVerification.reason} ` +
+      "Verify the committed page state with read_page, read_element, or find_element before taking another action."
+    );
   }
 
   /**
@@ -4122,8 +4806,8 @@ export class AgentLoop {
       // `let` because retry loop may append diagnostic hints (cleaned up after)
       let messages = this.context.getPrompt();
       const allTools = toolRegistry.getDefinitions(this.disabledTools);
-      // Apply tool profile filtering for current plan step
-      const tools = this.applyToolProfile(allTools);
+      // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
+      const tools = this.applySkillToolRanking(this.applyToolProfile(allTools));
 
       // Log context metrics for telemetry (reuse already-computed prompt)
       const metrics = this.context.getPromptMetricsFrom(messages);
@@ -4191,12 +4875,14 @@ export class AgentLoop {
           const elSummary = snap
             ? buildElementSummary(snap.elements)
             : undefined;
+          const perceptionMeta = this.perception.getLastTraceMeta();
           await this.traceRecorder.recordPerception(
             {
               interpretation: this.perception.getInterpretation()!,
               model: "google/gemini-2.5-flash",
               durationMs: 0,
               cached: false,
+              ...perceptionMeta,
             },
             this.perception.getLastScreenshot() || undefined,
             elSummary,
@@ -4675,7 +5361,9 @@ export class AgentLoop {
         // Only nudge (no forced escalation) — stagnation monitor and dead-end
         // detection handle actual stuck loops. Forced escalation caused
         // escalate→de-escalate loops with models that naturally omit reasoning.
-        const hadThinking = rawContent ? extractThinkContent(rawContent) !== null : false;
+        const hadThinking = rawContent
+          ? extractThinkContent(rawContent) !== null
+          : false;
         if (!cleanContent && !toolsRecoveredFromText && !hadThinking) {
           consecutiveBlindToolTurns++;
           if (consecutiveBlindToolTurns === 3) {
@@ -4823,6 +5511,7 @@ export class AgentLoop {
               } catch {
                 // Registry will handle parse error on execute
               }
+              this.recordSkillToolSelection(toolName, "parallel");
 
               if (shouldTrackRepeatAction(toolName)) {
                 const priorRepeatCount = recentToolCalls.filter(
@@ -5011,13 +5700,26 @@ export class AgentLoop {
                 typeof args.id === "number" &&
                 typeof args.text === "string"
               ) {
+                const planStatus = this.context.getPlanStatusRaw();
+                const currentStepIndex = planStatus?.currentIndex ?? -1;
+                const inlineRetarget = this.retargetInlineEditTextEntry({
+                  targetId: args.id,
+                  currentStepIndex,
+                });
+                if (inlineRetarget) {
+                  args.id = inlineRetarget.retargetedId;
+                  toolCall.function.arguments = JSON.stringify(args);
+                  this.context.addMessage({
+                    role: "user",
+                    content: inlineRetarget.reason,
+                  });
+                }
                 const snapshot = this.context.getSnapshot();
                 const target = snapshot?.elements.find(
                   (el) => el.tag === args.id,
                 );
-                const planStatus = this.context.getPlanStatusRaw();
                 const activeObjective =
-                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                  planStatus?.subtasks[currentStepIndex]?.description ??
                   this.originalQuery;
                 const targetError = validateTextEntryTarget(
                   activeObjective,
@@ -5063,6 +5765,39 @@ export class AgentLoop {
                     mode: "parallel",
                   });
                   return { toolCall, result: null, error: blockReason };
+                }
+              }
+
+              if (
+                toolName === ToolName.CLICK_ELEMENT ||
+                toolName === ToolName.CREATE_TAB
+              ) {
+                const procurementRedirect =
+                  await this.getProcurementLoopToolRedirect({
+                    toolName,
+                    args,
+                    currentTabId: tabId,
+                  });
+                if (procurementRedirect) {
+                  this.log.info(
+                    "agent",
+                    "Procurement loop redirected to existing workspace tab",
+                    {
+                      turn: this.turnCount,
+                      tool: toolName,
+                      mode: "parallel",
+                    },
+                  );
+                  this.traceRecorder?.recordEvent("procurement_tab_redirect", {
+                    turn: this.turnCount,
+                    toolName,
+                    mode: "parallel",
+                  });
+                  return {
+                    toolCall,
+                    result: procurementRedirect,
+                    error: null,
+                  };
                 }
               }
 
@@ -5341,6 +6076,7 @@ export class AgentLoop {
             } catch {
               // Registry will handle parse error on execute
             }
+            this.recordSkillToolSelection(toolName, "sequential");
 
             if (shouldTrackRepeatAction(toolName)) {
               const priorRepeatCount = recentToolCalls.filter(
@@ -5562,18 +6298,52 @@ export class AgentLoop {
               });
             }
 
+            const planStatus = this.context.getPlanStatusRaw();
+            const currentStepIndex = planStatus?.currentIndex ?? -1;
+            const inlineVerificationBlock =
+              this.getPendingInlineEditVerificationBlock(
+                toolName,
+                currentStepIndex,
+              );
+            if (inlineVerificationBlock) {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: inlineVerificationBlock,
+              });
+              this.log.warn("agent", "Inline edit verification required", {
+                turn: this.turnCount,
+                tool: toolName,
+                step: currentStepIndex,
+                mode: "sequential",
+              });
+              continue;
+            }
+
             if (
               toolName === ToolName.TYPE_TEXT &&
               typeof args.id === "number" &&
               typeof args.text === "string"
             ) {
+              const planStatus = this.context.getPlanStatusRaw();
+              const inlineRetarget = this.retargetInlineEditTextEntry({
+                targetId: args.id,
+                currentStepIndex,
+              });
+              if (inlineRetarget) {
+                args.id = inlineRetarget.retargetedId;
+                toolCall.function.arguments = JSON.stringify(args);
+                this.context.addMessage({
+                  role: "user",
+                  content: inlineRetarget.reason,
+                });
+              }
               const snapshot = this.context.getSnapshot();
               const target = snapshot?.elements.find(
                 (el) => el.tag === args.id,
               );
-              const planStatus = this.context.getPlanStatusRaw();
               const activeObjective =
-                planStatus?.subtasks[planStatus.currentIndex]?.description ??
+                planStatus?.subtasks[currentStepIndex]?.description ??
                 this.originalQuery;
               const targetError = validateTextEntryTarget(
                 activeObjective,
@@ -5626,6 +6396,40 @@ export class AgentLoop {
                   tool: toolName,
                   id: args.id,
                   explicitValue,
+                  mode: "sequential",
+                });
+                continue;
+              }
+            }
+
+            if (
+              toolName === ToolName.CLICK_ELEMENT ||
+              toolName === ToolName.CREATE_TAB
+            ) {
+              const procurementRedirect =
+                await this.getProcurementLoopToolRedirect({
+                  toolName,
+                  args,
+                  currentTabId: tabId,
+                });
+              if (procurementRedirect) {
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content: procurementRedirect,
+                });
+                this.log.info(
+                  "agent",
+                  "Procurement loop redirected to existing workspace tab",
+                  {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    mode: "sequential",
+                  },
+                );
+                this.traceRecorder?.recordEvent("procurement_tab_redirect", {
+                  turn: this.turnCount,
+                  toolName,
                   mode: "sequential",
                 });
                 continue;
@@ -5701,6 +6505,20 @@ export class AgentLoop {
             }
 
             // DONE tool — planner-validated exit
+            const shouldArmInlineEditVerification =
+              currentStepIndex >= 0 &&
+              this.getActiveToolProfileForStep(currentStepIndex) ===
+                "edit_surface" &&
+              ((toolName === ToolName.PRESS_KEY &&
+                typeof args.key === "string" &&
+                ["enter", "tab"].includes(String(args.key).toLowerCase()) &&
+                this.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
+                  null) ||
+                (toolName === ToolName.TYPE_TEXT &&
+                  args.pressEnter === true &&
+                  this.getUncommittedInlineEditDoneRejection(
+                    currentStepIndex,
+                  ) !== null));
             if (toolName === ToolName.DONE) {
               const summary = (args.summary as string) || "Task completed.";
 
@@ -5708,11 +6526,15 @@ export class AgentLoop {
               // Prevents the LLM from burning turns + LLM calls on repeated
               // done() attempts after it's already been told to stop.
               if (this.doneRejections >= this.limits.maxDoneRejections) {
-                this.log.warn("agent", "DONE hard-gated (max rejections exceeded)", {
-                  turn: this.turnCount,
-                  rejections: this.doneRejections,
-                  max: this.limits.maxDoneRejections,
-                });
+                this.log.warn(
+                  "agent",
+                  "DONE hard-gated (max rejections exceeded)",
+                  {
+                    turn: this.turnCount,
+                    rejections: this.doneRejections,
+                    max: this.limits.maxDoneRejections,
+                  },
+                );
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
@@ -5764,8 +6586,9 @@ export class AgentLoop {
                   ""
                 ).length;
                 if (elementCount > 5 && visibleLen > 100) {
-                  const needsGroundingRead =
-                    requiresGroundingReadBeforeDone(this.originalQuery);
+                  const needsGroundingRead = requiresGroundingReadBeforeDone(
+                    this.originalQuery,
+                  );
                   this.log.warn(
                     "agent",
                     "DONE rejected: read_page never called on substantive page",
@@ -5798,7 +6621,7 @@ export class AgentLoop {
                     this.context.addMessage({
                       role: "user",
                       content:
-                        "The page has been refreshed for grounding. Use the current page content to answer, then call done({\"summary\": \"...\"}).",
+                        'The page has been refreshed for grounding. Use the current page content to answer, then call done({"summary": "..."}).',
                     });
                   }
                   continue;
@@ -5809,7 +6632,11 @@ export class AgentLoop {
               // If the user's query has numbered steps and the agent has barely
               // started, reject once. Uses doneRejections so maxDoneRejections
               // cap prevents ghost sessions.
-              if (this.doneRejections === 0 && this.originalQuery && !this.nodeId) {
+              if (
+                this.doneRejections === 0 &&
+                this.originalQuery &&
+                !this.nodeId
+              ) {
                 const stepCount = countExplicitSteps(this.originalQuery);
                 // Activate for queries with 3+ explicit steps where the agent
                 // has spent very few turns (turnCount includes planner's ~2 turns,
@@ -5874,7 +6701,17 @@ export class AgentLoop {
               // ALL steps and reject because this node only handles one step.
               // The orchestrator's verifier validates node completion instead.
               const taskContractGuard = this.nodeId
-                ? { blocked: false, reason: null, summaryCoverage: { missingEntities: [], missingNumbers: [], missingReturnTarget: false, satisfied: true }, missingReturnTarget: false }
+                ? {
+                    blocked: false,
+                    reason: null,
+                    summaryCoverage: {
+                      missingEntities: [],
+                      missingNumbers: [],
+                      missingReturnTarget: false,
+                      satisfied: true,
+                    },
+                    missingReturnTarget: false,
+                  }
                 : evaluateDoneTaskContractGuard({
                     query: this.originalQuery,
                     summary,
@@ -5893,8 +6730,7 @@ export class AgentLoop {
                       taskContractGuard.summaryCoverage.missingEntities,
                     missingNumbers:
                       taskContractGuard.summaryCoverage.missingNumbers,
-                    missingReturnTarget:
-                      taskContractGuard.missingReturnTarget,
+                    missingReturnTarget: taskContractGuard.missingReturnTarget,
                   },
                 );
                 this.traceRecorder?.recordEvent("done_rejected_task_contract", {
@@ -5904,8 +6740,7 @@ export class AgentLoop {
                     taskContractGuard.summaryCoverage.missingEntities,
                   missingNumbers:
                     taskContractGuard.summaryCoverage.missingNumbers,
-                  missingReturnTarget:
-                    taskContractGuard.missingReturnTarget,
+                  missingReturnTarget: taskContractGuard.missingReturnTarget,
                 });
 
                 if (this.doneRejections >= this.limits.maxDoneRejections) {
@@ -5917,11 +6752,14 @@ export class AgentLoop {
                       rejections: this.doneRejections,
                     },
                   );
-                  this.traceRecorder?.recordEvent("done_blocked_max_rejections", {
-                    rejections: this.doneRejections,
-                    reason: taskContractGuard.reason,
-                    source: "task_contract",
-                  });
+                  this.traceRecorder?.recordEvent(
+                    "done_blocked_max_rejections",
+                    {
+                      rejections: this.doneRejections,
+                      reason: taskContractGuard.reason,
+                      source: "task_contract",
+                    },
+                  );
                   this.context.addMessage({
                     role: "tool",
                     tool_call_id: toolCall.id,
@@ -5955,9 +6793,49 @@ export class AgentLoop {
                 );
                 const effectiveCurrentIdx =
                   runningIdx >= 0 ? runningIdx : completedCount;
-                if (effectiveCurrentIdx < this.planSubtasks.length - 1) {
+                const uncommittedInlineEditRejection =
+                  this.getUncommittedInlineEditDoneRejection(
+                    effectiveCurrentIdx,
+                  );
+                if (uncommittedInlineEditRejection) {
+                  shouldReject = true;
+                  rejectReason = uncommittedInlineEditRejection;
+                }
+                const bypassPlanIncompleteRejection =
+                  shouldReject
+                    ? false
+                    : this.shouldBypassPlanIncompleteDoneRejection({
+                        summary,
+                        currentStepIndex: effectiveCurrentIdx,
+                      });
+                if (
+                  effectiveCurrentIdx < this.planSubtasks.length - 1 &&
+                  !shouldReject &&
+                  !bypassPlanIncompleteRejection
+                ) {
                   shouldReject = true;
                   rejectReason = `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
+                } else if (bypassPlanIncompleteRejection) {
+                  this.log.info(
+                    "agent",
+                    "Bypassing stale plan done rejection for satisfied edit task",
+                    {
+                      turn: this.turnCount,
+                      step: effectiveCurrentIdx,
+                      remainingSteps:
+                        this.planSubtasks.length - effectiveCurrentIdx - 1,
+                      selectedSkillId: this.selectedSkillId,
+                    },
+                  );
+                  this.traceRecorder?.recordEvent(
+                    "done_plan_incomplete_bypassed",
+                    {
+                      step: effectiveCurrentIdx,
+                      remainingSteps:
+                        this.planSubtasks.length - effectiveCurrentIdx - 1,
+                      selectedSkillId: this.selectedSkillId,
+                    },
+                  );
                 }
 
                 const activeAsyncExpectation =
@@ -5978,7 +6856,8 @@ export class AgentLoop {
                   !isPendingAsyncChangeSatisfied({
                     snapshot: this.context.getSnapshot(),
                     expectedTokens: activeAsyncExpectation.expectedTokens,
-                    baselineLoadingKeywords: activeAsyncExpectation.baselineLoadingKeywords,
+                    baselineLoadingKeywords:
+                      activeAsyncExpectation.baselineLoadingKeywords,
                   })
                 ) {
                   shouldReject = true;
@@ -6058,13 +6937,9 @@ export class AgentLoop {
                   // (infinite scroll, pagination), reject done() without
                   // counting toward doneRejections — the executor should
                   // keep trying the same step.
-                  const currentStep =
-                    this.planSteps[effectiveCurrentIdx];
-                  if (
-                    currentStep?.verifyAfter?.action === "retry_step"
-                  ) {
-                    const maxRetries =
-                      currentStep.verifyAfter.maxRetries ?? 8;
+                  const currentStep = this.planSteps[effectiveCurrentIdx];
+                  if (currentStep?.verifyAfter?.action === "retry_step") {
+                    const maxRetries = currentStep.verifyAfter.maxRetries ?? 8;
                     if (this.stepRetryCount < maxRetries) {
                       this.stepRetryCount++;
                       this.context.addMessage({
@@ -6152,10 +7027,8 @@ export class AgentLoop {
                           sentiment: sentiment.confident,
                           criteriaMatched: criteriaCheck.matchedTokens,
                           criteriaTotal: criteriaCheck.totalTokens,
-                          quotedMatched:
-                            criteriaCheck.matchedQuotedPhrases,
-                          quotedTotal:
-                            criteriaCheck.requiredQuotedPhrases,
+                          quotedMatched: criteriaCheck.matchedQuotedPhrases,
+                          quotedTotal: criteriaCheck.requiredQuotedPhrases,
                           numbersMatched: criteriaCheck.matchedNumbers,
                           numbersTotal: criteriaCheck.requiredNumbers,
                           consecutiveAutoAdvances: this.consecutiveAutoAdvances,
@@ -6249,15 +7122,22 @@ export class AgentLoop {
                     : "";
 
                   if (this.doneRejections >= this.limits.maxDoneRejections) {
-                    this.log.warn("agent", "DONE blocked after max rejections", {
-                      turn: this.turnCount,
-                      rejections: this.doneRejections,
-                    });
-                    this.traceRecorder?.recordEvent("done_blocked_max_rejections", {
-                      rejections: this.doneRejections,
-                      reason: rejectReason,
-                      source: "plan_validation",
-                    });
+                    this.log.warn(
+                      "agent",
+                      "DONE blocked after max rejections",
+                      {
+                        turn: this.turnCount,
+                        rejections: this.doneRejections,
+                      },
+                    );
+                    this.traceRecorder?.recordEvent(
+                      "done_blocked_max_rejections",
+                      {
+                        rejections: this.doneRejections,
+                        reason: rejectReason,
+                        source: "plan_validation",
+                      },
+                    );
                     this.context.addMessage({
                       role: "tool",
                       tool_call_id: toolCall.id,
@@ -6477,10 +7357,13 @@ export class AgentLoop {
 
             // SCHEDULE_TASK tool — persist task for future execution via backend
             if (toolName === ToolName.SCHEDULE_TASK) {
-              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+              if (
+                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
+              ) {
                 continue;
               }
-              const description = (args.description as string) || "Scheduled task";
+              const description =
+                (args.description as string) || "Scheduled task";
               const query = (args.query as string) || "";
               const schedule = args.schedule as string | undefined;
               const runAt = args.runAt as string | undefined;
@@ -6510,10 +7393,17 @@ export class AgentLoop {
 
                 if (!res.ok) {
                   const errData = await res.json().catch(() => ({}));
-                  throw new Error((errData as { error?: string }).error || `HTTP ${res.status}`);
+                  throw new Error(
+                    (errData as { error?: string }).error ||
+                      `HTTP ${res.status}`,
+                  );
                 }
 
-                const task = await res.json() as { id: string; runAt?: number; schedule?: string };
+                const task = (await res.json()) as {
+                  id: string;
+                  runAt?: number;
+                  schedule?: string;
+                };
                 const when = task.schedule
                   ? `recurring (${task.schedule})`
                   : task.runAt
@@ -6538,7 +7428,8 @@ export class AgentLoop {
                   runAt: runAt ?? null,
                 });
               } catch (err: unknown) {
-                const message = err instanceof Error ? err.message : String(err);
+                const message =
+                  err instanceof Error ? err.message : String(err);
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
@@ -6561,7 +7452,10 @@ export class AgentLoop {
               const reason = (args.reason as string) || "";
 
               // Signal WAITING status so the UI activity indicator stays visible
-              this.statusHandler(AgentStatus.WAITING_FOR_PAGE_LOAD, `Waiting ${seconds}s…`);
+              this.statusHandler(
+                AgentStatus.WAITING_FOR_PAGE_LOAD,
+                `Waiting ${seconds}s…`,
+              );
               await new Promise((resolve) =>
                 setTimeout(resolve, seconds * 1000),
               );
@@ -6807,7 +7701,9 @@ export class AgentLoop {
 
             // CLOSE_TAB — workspace-scoped, prevents closing current tab
             if (toolName === ToolName.CLOSE_TAB) {
-              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+              if (
+                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
+              ) {
                 continue;
               }
               if (this.shouldBlockTabManagementTools()) {
@@ -6903,7 +7799,9 @@ export class AgentLoop {
 
             // CREATE_TAB — workspace-scoped, auto-adds to workspace
             if (toolName === ToolName.CREATE_TAB) {
-              if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+              if (
+                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
+              ) {
                 continue;
               }
               if (this.shouldBlockTabManagementTools()) {
@@ -6989,7 +7887,9 @@ export class AgentLoop {
             // Idempotency guard: prevent re-execution of mutation-sensitive actions
             // within the same plan step. Checks the durable step mutation ledger first
             // (survives SW restart), then the ephemeral turn cache.
-            if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+            if (
+              this.replayMutationSensitiveAction(toolCall.id, toolName, args)
+            ) {
               continue;
             }
 
@@ -7050,6 +7950,24 @@ export class AgentLoop {
                 toolMs,
                 preDecision.riskLevel,
               );
+              if (
+                this.pendingInlineEditVerification &&
+                this.pendingInlineEditVerification.stepIndex ===
+                  currentStepIndex &&
+                [
+                  ToolName.READ_PAGE,
+                  ToolName.READ_ELEMENT,
+                  ToolName.FIND_ELEMENT,
+                ].includes(toolName)
+              ) {
+                this.pendingInlineEditVerification = null;
+              } else if (shouldArmInlineEditVerification) {
+                this.pendingInlineEditVerification = {
+                  stepIndex: currentStepIndex,
+                  reason:
+                    "You likely just committed an inline edit on this step.",
+                };
+              }
               this.recordMutationSensitiveAction(toolName, args, result);
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
@@ -7200,8 +8118,7 @@ export class AgentLoop {
 
             // Post-type_text DOM settle: detect autocomplete/dropdown appearance
             if (!args.pressEnter) {
-              const preCount =
-                this.context.getSnapshot()?.elements.length ?? 0;
+              const preCount = this.context.getSnapshot()?.elements.length ?? 0;
               await new Promise((r) => setTimeout(r, 400));
               prevElementCount = await this.refreshSnapshotWithRetry(
                 tabId,
@@ -8007,10 +8924,7 @@ export class AgentLoop {
               const taskContractMultiReturn = !this.nodeId
                 ? (buildTaskContract(this.originalQuery).multiReturnCount ?? 0)
                 : 0;
-              if (
-                explicitSuccessSignal &&
-                taskContractMultiReturn < 2
-              ) {
+              if (explicitSuccessSignal && taskContractMultiReturn < 2) {
                 const summary = [
                   `- Verified "${explicitSuccessSignal}" is visible on the page.`,
                   `- URL: ${snap.url}`,
@@ -8086,14 +9000,10 @@ export class AgentLoop {
                   const nextDesc =
                     this.planSubtasks[newIdx]?.description ||
                     "Continue to next step";
-                  this.syncPlanStatus(
-                    newIdx,
-                    "multi_return_step_advanced",
-                    {
-                      signal: explicitSuccessSignal,
-                      advancedTo: newIdx,
-                    },
-                  );
+                  this.syncPlanStatus(newIdx, "multi_return_step_advanced", {
+                    signal: explicitSuccessSignal,
+                    advancedTo: newIdx,
+                  });
                   this.context.addMessage({
                     role: "user",
                     content:
@@ -8215,7 +9125,8 @@ export class AgentLoop {
                       this.pendingAsyncVerification = {
                         stepIndex: planAfterAction.currentIndex,
                         expectedTokens: asyncSignal.expectedTokens,
-                        baselineLoadingKeywords: asyncSignal.baselineLoadingKeywords,
+                        baselineLoadingKeywords:
+                          asyncSignal.baselineLoadingKeywords,
                         reason: asyncSignal.reason,
                         startedTurn: this.turnCount,
                       };
@@ -8754,17 +9665,14 @@ export class AgentLoop {
         ) {
           consecutiveTextOnly++;
           totalTextOnly++;
-          const needsGroundingRead =
-            requiresGroundingReadBeforeDone(this.originalQuery);
-          this.log.info(
-            "agent",
-            "Soft nudge: turn 1 text response",
-            {
-              turn: this.turnCount,
-              textLen: cleanContent.trim().length,
-              requiresGroundingReadBeforeDone: needsGroundingRead,
-            },
+          const needsGroundingRead = requiresGroundingReadBeforeDone(
+            this.originalQuery,
           );
+          this.log.info("agent", "Soft nudge: turn 1 text response", {
+            turn: this.turnCount,
+            textLen: cleanContent.trim().length,
+            requiresGroundingReadBeforeDone: needsGroundingRead,
+          });
           if (needsGroundingRead) {
             await this.forceGroundingRefresh(
               tabId,
@@ -8838,11 +9746,10 @@ export class AgentLoop {
                 const nextDesc =
                   this.planSubtasks[newIdx]?.description ||
                   "Continue to next step";
-                this.syncPlanStatus(
-                  newIdx,
-                  "text_admission_criteria_advance",
-                  { turn: this.turnCount, fromStep: gate.runningIdx },
-                );
+                this.syncPlanStatus(newIdx, "text_admission_criteria_advance", {
+                  turn: this.turnCount,
+                  fromStep: gate.runningIdx,
+                });
                 this.log.info(
                   "agent",
                   "Text admission criteria advanced step",

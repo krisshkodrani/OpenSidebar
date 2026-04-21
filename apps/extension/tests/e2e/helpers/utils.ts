@@ -314,23 +314,19 @@ export async function sendUserChat(
 ): Promise<string> {
   const effectiveWorkspaceId = workspaceId ?? `e2e-${crypto.randomUUID()}`;
   const helperPage = await openHelperPage(ctx);
-  try {
-    await helperPage.evaluate(
-      async (msg: string, tid: number, wsId: string | null) => {
-        await chrome.runtime.sendMessage({
-          type: "USER_CHAT",
-          requestId: crypto.randomUUID(),
-          source: "sidepanel",
-          payload: { text: msg, tabId: tid, workspaceId: wsId },
-        });
-      },
-      message,
-      tabId,
-      effectiveWorkspaceId,
-    );
-  } finally {
-    await helperPage.close().catch(() => {});
-  }
+  await helperPage.evaluate(
+    async (msg: string, tid: number, wsId: string | null) => {
+      await chrome.runtime.sendMessage({
+        type: "USER_CHAT",
+        requestId: crypto.randomUUID(),
+        source: "sidepanel",
+        payload: { text: msg, tabId: tid, workspaceId: wsId },
+      });
+    },
+    message,
+    tabId,
+    effectiveWorkspaceId,
+  );
   return effectiveWorkspaceId;
 }
 
@@ -341,24 +337,20 @@ export async function sendApprovalResponse(
   workspaceId: string,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  try {
-    await helperPage.evaluate(
-      async (id: string, decision: boolean, wsId: string) => {
-        await chrome.runtime.sendMessage({
-          type: "APPROVAL_RESPONSE",
-          requestId: crypto.randomUUID(),
-          source: "sidepanel",
-          workspaceId: wsId,
-          payload: { approvalId: id, approved: decision },
-        });
-      },
-      approvalId,
-      approved,
-      workspaceId,
-    );
-  } finally {
-    await helperPage.close().catch(() => {});
-  }
+  await helperPage.evaluate(
+    async (id: string, decision: boolean, wsId: string) => {
+      await chrome.runtime.sendMessage({
+        type: "APPROVAL_RESPONSE",
+        requestId: crypto.randomUUID(),
+        source: "sidepanel",
+        workspaceId: wsId,
+        payload: { approvalId: id, approved: decision },
+      });
+    },
+    approvalId,
+    approved,
+    workspaceId,
+  );
 }
 
 export async function seedPendingInteraction(
@@ -386,52 +378,48 @@ export async function seedPendingInteraction(
 }> {
   const workspaceId = input.workspaceId ?? `e2e-${crypto.randomUUID()}`;
   const helperPage = await openHelperPage(ctx);
-  try {
-    const response = await helperPage.evaluate(
-      async (
-        payload: {
-          tabId: number;
-          workspaceId: string;
-          interaction:
-            | {
-                kind: "approval";
-                toolName: string;
-                args?: Record<string, unknown>;
-                context: string;
-              }
-            | {
-                kind: "clarification";
-                question: string;
-                suggestions?: string[];
-              };
-        },
-      ) => {
-        return await chrome.runtime.sendMessage({
-          type: "E2E_SEED_PENDING_INTERACTION",
-          requestId: crypto.randomUUID(),
-          source: "e2e",
-          payload,
-        });
+  const response = await helperPage.evaluate(
+    async (
+      payload: {
+        tabId: number;
+        workspaceId: string;
+        interaction:
+          | {
+              kind: "approval";
+              toolName: string;
+              args?: Record<string, unknown>;
+              context: string;
+            }
+          | {
+              kind: "clarification";
+              question: string;
+              suggestions?: string[];
+            };
       },
-      {
-        tabId: input.tabId,
-        workspaceId,
-        interaction: input.interaction,
-      },
-    );
-
-    if (!response?.ok) {
-      throw new Error(response?.detail || "Failed to seed pending interaction");
-    }
-
-    return {
-      taskId: String(response.taskId),
+    ) => {
+      return await chrome.runtime.sendMessage({
+        type: "E2E_SEED_PENDING_INTERACTION",
+        requestId: crypto.randomUUID(),
+        source: "e2e",
+        payload,
+      });
+    },
+    {
+      tabId: input.tabId,
       workspaceId,
-      interactionId: String(response.interactionId),
-    };
-  } finally {
-    await helperPage.close().catch(() => {});
+      interaction: input.interaction,
+    },
+  );
+
+  if (!response?.ok) {
+    throw new Error(response?.detail || "Failed to seed pending interaction");
   }
+
+  return {
+    taskId: String(response.taskId),
+    workspaceId,
+    interactionId: String(response.interactionId),
+  };
 }
 
 export async function sendClarificationResponse(
@@ -441,24 +429,20 @@ export async function sendClarificationResponse(
   workspaceId: string,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  try {
-    await helperPage.evaluate(
-      async (id: string, response: string, wsId: string) => {
-        await chrome.runtime.sendMessage({
-          type: "CLARIFICATION_RESPONSE",
-          requestId: crypto.randomUUID(),
-          source: "sidepanel",
-          workspaceId: wsId,
-          payload: { clarificationId: id, answer: response },
-        });
-      },
-      clarificationId,
-      answer,
-      workspaceId,
-    );
-  } finally {
-    await helperPage.close().catch(() => {});
-  }
+  await helperPage.evaluate(
+    async (id: string, response: string, wsId: string) => {
+      await chrome.runtime.sendMessage({
+        type: "CLARIFICATION_RESPONSE",
+        requestId: crypto.randomUUID(),
+        source: "sidepanel",
+        workspaceId: wsId,
+        payload: { clarificationId: id, answer: response },
+      });
+    },
+    clarificationId,
+    answer,
+    workspaceId,
+  );
 }
 
 export async function updateUserSettings(
@@ -466,19 +450,15 @@ export async function updateUserSettings(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  try {
-    await helperPage.evaluate(async (nextPatch: Record<string, unknown>) => {
-      const existing =
-        ((await chrome.storage.sync.get("userSettings")).userSettings as
-          | Record<string, unknown>
-          | undefined) ?? {};
-      await chrome.storage.sync.set({
-        userSettings: { ...existing, ...nextPatch },
-      });
-    }, patch);
-  } finally {
-    await helperPage.close().catch(() => {});
-  }
+  await helperPage.evaluate(async (nextPatch: Record<string, unknown>) => {
+    const existing =
+      ((await chrome.storage.sync.get("userSettings")).userSettings as
+        | Record<string, unknown>
+        | undefined) ?? {};
+    await chrome.storage.sync.set({
+      userSettings: { ...existing, ...nextPatch },
+    });
+  }, patch);
 }
 
 export async function resyncWorkspace(
@@ -486,18 +466,14 @@ export async function resyncWorkspace(
   workspaceId: string,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  try {
-    await helperPage.evaluate(async (wsId: string) => {
-      await chrome.runtime.sendMessage({
-        type: "WORKSPACE_SYNC",
-        requestId: crypto.randomUUID(),
-        source: "sidepanel",
-        payload: { workspaceId: wsId },
-      });
-    }, workspaceId);
-  } finally {
-    await helperPage.close().catch(() => {});
-  }
+  await helperPage.evaluate(async (wsId: string) => {
+    await chrome.runtime.sendMessage({
+      type: "WORKSPACE_SYNC",
+      requestId: crypto.randomUUID(),
+      source: "sidepanel",
+      payload: { workspaceId: wsId },
+    });
+  }, workspaceId);
 }
 
 export async function restartExtensionAndMonitor(
@@ -736,26 +712,20 @@ export async function resetExtensionState(
     });
   } catch {
     // Agent may not be running — that's fine
-  } finally {
-    await helperPage.close().catch(() => {});
   }
   await waitForAgentIdle(ctx.serviceWorker);
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   const cleanupPage = await openHelperPage(ctx);
-  try {
-    await cleanupPage.evaluate(async () => {
-      const sessionData = await chrome.storage.session.get(null);
-      const keys = Object.keys(sessionData).filter(
-        (key) => key === "agent_context" || key.startsWith("agent_context:"),
-      );
-      if (keys.length > 0) {
-        await chrome.storage.session.remove(keys);
-      }
-    });
-  } finally {
-    await cleanupPage.close().catch(() => {});
-  }
+  await cleanupPage.evaluate(async () => {
+    const sessionData = await chrome.storage.session.get(null);
+    const keys = Object.keys(sessionData).filter(
+      (key) => key === "agent_context" || key.startsWith("agent_context:"),
+    );
+    if (keys.length > 0) {
+      await chrome.storage.session.remove(keys);
+    }
+  });
 
   await clearMonitoredEvents(ctx.serviceWorker);
   // Close ALL non-extension pages and open a fresh one.
