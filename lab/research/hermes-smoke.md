@@ -6,7 +6,7 @@ Research Note: OpenSidebar Lab Environment Summary
 
  **Empirical Methodology Enforced**: All harness work follows the experiment loop OBSERVE (traces/E2E reports) HYPOTHESISE (RFCs) EXPERIMENT (implement + E2E run) MEASURE (pass rates, turn counts, costs) RECORD (dated reports in `lab/reports/`). Evidence is graded A D based on replication depth.
 
- **Active Automation Capabilities**: Hermes runs scheduled tasks (literature review, trace analysis, upstream monitor) and can spawn parallel research subagents. GBrain indexes all Markdown content under `lab/{rfcs,research,reports,knowledge}/` with keyword + vector + RRF ranking. E2E suite generates dated reports (`e2e-report-YYYY-MM-DD.md`) per AGENTS.md spec.
+ **Active Automation Capabilities**: Hermes runs scheduled tasks (literature review, trace analysis, upstream monitor) and can spawn parallel research subagents. GBrain indexes repo-backed research material under `lab/{research,reports,knowledge}/` with keyword + vector + RRF ranking, while active RFC workflow now lives in Notion. E2E suite generates dated reports (`e2e-report-YYYY-MM-DD.md`) per AGENTS.md spec.
 
  **Research Artifacts Indexed**: Current knowledge base contains `failure-taxonomy.md`, `model-observations.md`, `trace-analysis-2026-04-12.md`, literature digests, and agent-comparison studies. Research notes are stored in `lab/research/` and auto-indexed after creation.
 

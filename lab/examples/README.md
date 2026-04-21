@@ -43,7 +43,7 @@ Why this works:
 
 - it turns trace pain into a durable note
 - it nudges the output toward harness changes rather than generic commentary
-- it is the right precursor to an RFC or experiment
+- it is the right precursor to a Notion RFC or experiment
 
 ## 3. External State-Of-The-Art Scan
 
@@ -115,7 +115,7 @@ For a real research task:
 2. capture the question with `lab:question` if it comes from development pain
 3. run one of the example prompts above
 4. save the result if it is worth keeping
-5. turn the useful part into an RFC, test, or code change
+5. turn the useful part into a Notion RFC, test, or code change
 
 ## Related Files
 

@@ -3,7 +3,6 @@ import { resolve } from "path";
 import { LAB_DIR, PROJECT_ROOT, runCommand } from "./common.js";
 
 const TARGETS = [
-  "rfcs",
   "research",
   "reports",
   "e2e-reports",
@@ -36,4 +35,3 @@ if (docsStatus !== 0) process.exit(docsStatus);
 
 console.log("\n=== Index complete ===");
 process.exit(runCommand("npx", ["tsx", "lab/bin/gbrain.ts", "stats"], { cwd: PROJECT_ROOT }));
-

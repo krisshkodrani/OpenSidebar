@@ -59,7 +59,7 @@
 
 1. **Centralization eliminated drift** -- before the prompt registry, runtime prompts
    and eval prompts diverged silently. After centralization, changes propagate automatically.
-   (RFC: `lab/rfcs/rfc-centralized-prompt-management.md`)
+   (RFC: Notion entry for "Centralized Prompt Management")
 
 2. **The natural language rewrite** was the single biggest win: rewriting all 42 E2E
    prompts from structured templates to natural language improved pass rate from
@@ -83,6 +83,6 @@
 
 ## Mapping
 
-- RFC: `lab/rfcs/rfc-centralized-prompt-management.md`
+- RFC (Notion): `Centralized Prompt Management`
 - Code: `src/background/agent/context.ts`, `src/prompts/`, `src/background/perception/`
 - Prompts: `prompts/runtime/`

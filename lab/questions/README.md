@@ -9,7 +9,7 @@ Use it for:
 - recurring E2E failures that suggest a missing abstraction
 - weird model behaviors that need generalization rather than one-off prompt edits
 - ideas from books, papers, or competitor systems worth testing against OpenSidebar
-- design questions that should become RFCs or experiments
+- design questions that should become Notion RFCs or experiments
 
 The goal is not to collect random thoughts. The goal is to convert concrete
 development friction into structured research that can improve the harness.
@@ -25,7 +25,7 @@ development friction into structured research that can improve the harness.
 4. Investigate
    - use `lab:research`, `lab:analyze-traces`, books, and targeted code reading
 5. Promote or close
-   - promote to RFC/experiment when action is clear
+   - promote to a Notion RFC or experiment when action is clear
    - close when resolved, invalidated, or absorbed into shipped behavior
 
 ## Layout

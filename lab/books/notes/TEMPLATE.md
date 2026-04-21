@@ -21,8 +21,8 @@
 
 ## Mapping
 
-- RFC:
-  - `docs/rfc/[rfc-file].md`
+- RFC (Notion):
+  - Title or URL of the relevant Notion RFC
 - Code:
   - `src/[path]`
 - Prompts:

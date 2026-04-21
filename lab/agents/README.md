@@ -101,6 +101,9 @@ npm run lab:index
 
 Use this after manually editing notes, RFCs, or other indexed content.
 
+RFCs are now tracked in Notion, so re-index after editing research notes,
+articles, knowledge entries, or other repo-backed lab artifacts.
+
 ## Research Modes
 
 `lab:research` supports two modes:
