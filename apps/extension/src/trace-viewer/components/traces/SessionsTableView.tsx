@@ -8,6 +8,7 @@ import {
   formatTime,
   formatCost,
   formatDuration,
+  getSessionModels,
   shortModel,
   extractQueryTitle,
   truncate,
@@ -68,6 +69,8 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
   const sessions = useStore((s) => s.sessions);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const tableSort = useStore((s) => s.tableSort);
+  const compareSessionIds = useStore((s) => s.compareSessionIds);
+  const toggleCompareSession = useStore((s) => s.toggleCompareSession);
   const setTableSort = useStore((s) => s.setTableSort);
 
   const sorted = useMemo(
@@ -153,14 +156,19 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                <TableRow session={session} onClick={() => onSelect(session.sessionId)} />
+                <TableRow
+                  session={session}
+                  isCompared={compareSessionIds.includes(session.sessionId)}
+                  onToggleCompare={() => toggleCompareSession(session.sessionId)}
+                  onClick={() => onSelect(session.sessionId)}
+                />
               </div>
             );
           })}
         </div>
       </div>
 
-      <div className="px-4 py-1.5 text-[10px] text-trace-dim border-t border-trace-border/50 shrink-0">
+      <div className="px-4 py-1.5 text-[10px] text-trace-muted border-t border-trace-border/50 shrink-0">
         {sorted.length} sessions
       </div>
     </div>
@@ -169,9 +177,13 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
 
 function TableRow({
   session,
+  isCompared,
+  onToggleCompare,
   onClick,
 }: {
   session: TraceSession;
+  isCompared: boolean;
+  onToggleCompare: () => void;
   onClick: () => void;
 }) {
   const cost = session.metrics?.totalCost
@@ -180,7 +192,7 @@ function TableRow({
   const duration = formatDuration(
     (session.endTime || 0) - (session.startTime || 0),
   );
-  const models = (session.models || []).map(shortModel).join(", ");
+  const models = getSessionModels(session).map(shortModel).join(", ");
   const title = extractQueryTitle(session.query).title;
 
   return (
@@ -219,6 +231,19 @@ function TableRow({
       <span className="w-[120px] text-trace-muted text-[10px] truncate shrink-0">
         {models || "-"}
       </span>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleCompare();
+        }}
+        className={`shrink-0 text-[10px] rounded border px-2 py-1 transition-colors ${
+          isCompared
+            ? "border-trace-accent/40 text-trace-accent-light bg-trace-accent/10"
+            : "border-trace-border text-trace-muted hover:text-trace-text"
+        }`}
+      >
+        {isCompared ? "Queued" : "Compare"}
+      </button>
     </div>
   );
 }

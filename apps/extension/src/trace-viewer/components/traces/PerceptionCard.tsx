@@ -51,8 +51,11 @@ export default function PerceptionCard({
           Turn {turnNum} &rarr;
         </a>
         <Badge variant="model">{p.model || "unknown"}</Badge>
+        {p.mode && <Badge variant="type">{p.mode}</Badge>}
+        {p.source && <Badge variant="category">{p.source}</Badge>}
         {p.cached && <Badge variant="stopped">cached</Badge>}
         {p.elementSummary && <Badge variant="type">exact input</Badge>}
+        {p.fallbackReason && <Badge variant="error">{p.fallbackReason}</Badge>}
       </div>
 
       {/* Body */}
@@ -94,6 +97,10 @@ export default function PerceptionCard({
               Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}
             </span>
             <span>Cached: {p.cached ? "Yes" : "No"}</span>
+            {p.freshnessReason && <span>Freshness: {p.freshnessReason}</span>}
+            {p.screenshotStatus && (
+              <span>Screenshot: {p.screenshotStatus}</span>
+            )}
           </div>
         </div>
       </div>
