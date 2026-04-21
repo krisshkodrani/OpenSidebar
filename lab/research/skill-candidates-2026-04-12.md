@@ -49,8 +49,8 @@ Looking at the trace analysis from 2026-04-12 (20 traces, 95% pass rate) and the
 | Attribute | Value |
 |-----------|-------|
 | **Candidate Name** | `rfc-hypothesis-draft` |
-| **Trigger/Workflow Shape** | When research identifies a harness pathology (from traces, E2E, or user reports), agent must draft an RFC following lab/rfcs/ structure: hypothesis statement, proposed change, predicted impact, verification plan. |
-| **Why Skill vs Tool/Fix** | The lab README emphasizes "Write an RFC: 'We believe X because Y...'" but this is currently manual. A skill ensures consistent RFC structure and links findings to the experiment loop. Not a harness change because RFCs are pre-implementation hypotheses. |
+| **Trigger/Workflow Shape** | When research identifies a harness pathology (from traces, E2E, or user reports), agent must draft a Notion RFC with a clear hypothesis statement, proposed change, predicted impact, and verification plan. |
+| **Why Skill vs Tool/Fix** | The lab workflow still benefits from a consistent RFC shape even though RFCs now live in Notion rather than repo markdown. A skill would keep that structure stable and link findings to the experiment loop. |
 | **Tied Traces/E2E** | Any trace pathology that leads to `lab:question` entries. Connects research findings to actionable experiments. |
 | **Overfitting Risk** | **Low**. Template-driven skill; structure is fixed, content varies. |
 
@@ -74,7 +74,7 @@ Looking at the trace analysis from 2026-04-12 (20 traces, 95% pass rate) and the
 |-----------|-------|
 | **Candidate Name** | `gbrain-grounded-research` |
 | **Trigger/Workflow Shape** | When answering research questions, agent must: (1) query GBrain for indexed RFCs, previous research, trace analyses, (2) incorporate findings as context, (3) cite sources explicitly, (4) identify gaps requiring new experiments. |
-| **Why Skill vs Tool/Fix** | The lab has GBrain indexing (lab/knowledge/, lab/research/, lab/rfcs/) but no explicit skill ensures research uses it. Current workflow may re-derive conclusions already in failure-taxonomy.md or previous trace analyses. |
+| **Why Skill vs Tool/Fix** | The lab has GBrain indexing for repo-backed research material plus a separate Notion RFC workflow, but no explicit skill ensures research uses local knowledge before proposing something new. Current workflow may re-derive conclusions already in failure-taxonomy.md or previous trace analyses. |
 | **Tied Traces/E2E** | All `lab:research` and `lab:question` workflows. Specifically relevant when "investigating latest traces" needs to compare against historical patterns. |
 | **Overfitting Risk** | **Low**. Retrieval-augmented pattern; more context reduces overfitting. |
 

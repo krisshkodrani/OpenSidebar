@@ -43,4 +43,4 @@ Tags: example, verification, admin-flows, browser-automation
 
 - We can state the minimum evidence required before the agent may call the task complete
 - We know whether approval-sensitive admin flows need a special verification contract
-- The result is concrete enough to turn into an RFC, skill contract, or test plan
+- The result is concrete enough to turn into a Notion RFC, skill contract, or test plan

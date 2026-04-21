@@ -12,7 +12,7 @@
 name: opensidebar-knowledge-base
 description: >
   Knowledge persistence and semantic search for the OpenSidebar lab.
-  Indexes RFCs, research, reports, book notes, and experiment logs
+  Indexes research, reports, book notes, and experiment logs
   into a searchable knowledge base with vector embeddings.
 
 # Database: PGLite (zero-setup, local)
@@ -36,10 +36,6 @@ llm:
 
 # Directories to index
 sources:
-  - path: ../../rfcs
-    glob: "**/*.md"
-    description: "Request for Comments -- hypotheses and designs"
-
   - path: ../../research
     glob: "**/*.md"
     description: "Literature reviews and benchmark studies"

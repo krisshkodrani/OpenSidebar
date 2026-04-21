@@ -6,7 +6,7 @@ Use it when you need to:
 
 - investigate recurring E2E failures
 - turn traces into reusable harness ideas
-- write dated research notes and RFCs
+- write dated research notes and open RFCs in Notion
 - preserve findings so they survive beyond one coding session
 
 This is not a second docs folder. It is an operating system for research.
@@ -57,6 +57,11 @@ Runtime state:
 
 - `data/gbrain/brain.pglite` - local GBrain database
 - `data/lab-home/` - isolated home/config space used by lab wrappers
+
+Active RFC workflow now lives in Notion:
+
+- RFC Process: `https://www.notion.so/349b9079bcc28165923ae20959fcfdc0`
+- RFCs database: `https://www.notion.so/5d3d2b1ff5dc45bcb28ffc578a1de365`
 
 ## Recommended Commands
 
@@ -140,8 +145,8 @@ npm run lab:index
 Use this after:
 
 - editing research notes manually
-- adding RFCs
 - adding book notes
+- creating or revising Notion RFCs and then updating local research notes to match
 - cleaning up or reorganizing lab content
 
 This refreshes the local searchable knowledge base from lab and docs markdown.
@@ -203,11 +208,12 @@ The important directories are:
 
 - `lab/questions/` - intake queue for researchable development questions
 - `lab/research/` - saved research notes and literature-style writeups
-- `lab/rfcs/` - design proposals and hypotheses
 - `lab/reports/` - benchmark and evaluation summaries
 - `lab/e2e-reports/` - per-run E2E reporting
 - `lab/knowledge/` - accumulated synthesized knowledge
 - `lab/agents/` - Hermes and GBrain configuration
+
+Active RFCs are no longer stored under `lab/`. Use the Notion RFC workflow instead.
 
 ## Evidence Standard
 
@@ -228,7 +234,7 @@ If you only remember one workflow, use this:
 2. `npm run lab:question -- "..."` for the concrete problem
 3. `npm run lab:research -- --save note-name "..."` to create a durable note
 4. `npm run lab:index` after any manual edits
-5. convert the useful part into an RFC, test, or code change
+5. convert the useful part into a Notion RFC, test, or code change
 
 ## Relationship To `docs/`
 
@@ -243,7 +249,8 @@ Use `lab/` for:
 - research intake
 - dated findings
 - trace-driven diagnosis
-- RFCs and experiments
+- experiments
+- research that informs Notion RFCs
 - knowledge you want future sessions to be able to recover
 
 ## Related Files

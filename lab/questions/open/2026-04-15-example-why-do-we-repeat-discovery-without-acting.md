@@ -37,10 +37,10 @@ Tags: example, traces, grounding, action-selection
 
 - Sample traces where discovery repeats at least 3 times without a state-changing action
 - Compare successful vs failed cases to see what pushes the model from discovery into execution
-- Draft an RFC if the issue looks prompt-contract or orchestration-level rather than fixture-specific
+- Draft a Notion RFC if the issue looks prompt-contract or orchestration-level rather than fixture-specific
 
 ## Exit Criteria
 
 - We can name the main cause of the pattern with evidence from multiple traces
 - We can propose a concrete intervention: prompt rule, tool-result shaping, or loop-level guardrail
-- The question should promote to RFC or experiment if the direction is coherent
+- The question should promote to a Notion RFC or experiment if the direction is coherent

@@ -29,7 +29,7 @@ memory:
 scheduled_tasks:
   - name: literature-review
     description: >
-      Scan lab/books/notes/, lab/rfcs/, and lab/research/ for new entries.
+      Scan lab/books/notes/ and lab/research/ for new entries.
       Cross-reference with upstream repos and recent papers.
       Append findings to lab/knowledge/literature-digest.md.
     schedule: "0 9 * * 1"  # Weekly Monday 9am

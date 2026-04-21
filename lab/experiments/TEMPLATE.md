@@ -14,7 +14,7 @@
 ## Background
 
 What prior observations or RFCs motivated this experiment?
-Link to relevant lab/rfcs/ or lab/knowledge/ entries.
+Link to the relevant Notion RFC and any supporting `lab/knowledge/` entries.
 
 ## Method
 
@@ -48,4 +48,4 @@ What did we learn? Was the hypothesis supported?
 
 ## Follow-up
 
-What should be investigated next? New RFCs to write?
+What should be investigated next? New Notion RFCs to open?

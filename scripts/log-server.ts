@@ -11,6 +11,20 @@ import { existsSync, mkdirSync, statSync, renameSync, unlinkSync, readFileSync, 
 import { appendFile, readFile, writeFile } from "fs/promises";
 import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
+import {
+  extractDomain,
+  getSessionModels,
+  localDayKey,
+  matchesTraceFilters,
+  normalizeAgentSessionRecord,
+  normalizeAgentTurnRecord,
+  normalizeRunEventRecord,
+  normalizeRunManifestRecord,
+  serializeTraceSearchSession,
+  type TraceEntryLike,
+  type TraceSearchFiltersLike,
+  type TraceSessionLike,
+} from "./log-server-helpers";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -25,8 +39,6 @@ const RUN_TRACE_INDEX = join(RUN_TRACE_DIR, "index.jsonl");
 const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 const VIEWER_DIR = join(PROJECT_ROOT, "dist", "src", "trace-viewer");
-const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
-
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
 
@@ -95,149 +107,6 @@ function sendFile(res: ServerResponse, filePath: string, contentType: string, ex
 
 /* ── Normalization helpers ─────────────────────────────────── */
 
-function toRecordedAt(value: unknown, fallbackMs?: number): string {
-  if (typeof value === "string" && value.length > 0) {
-    return value;
-  }
-  if (typeof fallbackMs === "number" && Number.isFinite(fallbackMs)) {
-    return new Date(fallbackMs).toISOString();
-  }
-  return new Date().toISOString();
-}
-
-function normalizeAgentTurnRecord(entry: Record<string, unknown>): Record<string, unknown> {
-  const runId =
-    typeof entry?.runId === "string" && entry.runId.length > 0
-      ? entry.runId
-      : undefined;
-  const sessionId =
-    typeof entry?.sessionId === "string" && entry.sessionId.length > 0
-      ? entry.sessionId
-      : undefined;
-  const correlationId =
-    typeof entry?.correlationId === "string" && entry.correlationId.length > 0
-      ? entry.correlationId
-      : runId ?? sessionId;
-  return {
-    schemaVersion: entry?.schemaVersion ?? TRACE_SCHEMA_VERSION,
-    traceKind: entry?.traceKind ?? "agent.turn",
-    recordedAt: toRecordedAt(entry?.recordedAt, entry?.timestamp),
-    producer: entry?.producer ?? "background.agent.trace-recorder",
-    ...(runId ? { runId } : {}),
-    ...(correlationId ? { correlationId } : {}),
-    ...(typeof entry?.parentRunId === "string" && entry.parentRunId.length > 0
-      ? { parentRunId: entry.parentRunId }
-      : runId
-        ? { parentRunId: runId }
-        : {}),
-    ...entry,
-  };
-}
-
-function normalizeAgentSessionRecord(
-  session: Record<string, unknown>,
-): Record<string, unknown> {
-  const runId =
-    typeof session?.runId === "string" && session.runId.length > 0
-      ? session.runId
-      : undefined;
-  const sessionId =
-    typeof session?.sessionId === "string" && session.sessionId.length > 0
-      ? session.sessionId
-      : undefined;
-  const correlationId =
-    typeof session?.correlationId === "string" && session.correlationId.length > 0
-      ? session.correlationId
-      : runId ?? sessionId;
-  return {
-    schemaVersion: session?.schemaVersion ?? TRACE_SCHEMA_VERSION,
-    traceKind: session?.traceKind ?? "agent.session",
-    recordedAt: toRecordedAt(session?.recordedAt, session?.endTime ?? session?.startTime),
-    producer: session?.producer ?? "background.agent.trace-recorder",
-    ...(runId ? { runId } : {}),
-    ...(correlationId ? { correlationId } : {}),
-    ...(typeof session?.parentRunId === "string" && session.parentRunId.length > 0
-      ? { parentRunId: session.parentRunId }
-      : runId
-        ? { parentRunId: runId }
-        : {}),
-    ...session,
-  };
-}
-
-function normalizeRunEventRecord(event: Record<string, unknown>): Record<string, unknown> {
-  const runId =
-    typeof event?.runId === "string" && event.runId.length > 0
-      ? event.runId
-      : undefined;
-  return {
-    schemaVersion: event?.schemaVersion ?? TRACE_SCHEMA_VERSION,
-    traceKind: event?.traceKind ?? "orchestrator.run.event",
-    recordedAt: toRecordedAt(event?.recordedAt),
-    producer: event?.producer ?? "background.orchestrator.run-trace-writer",
-    ...(runId ? { runId } : {}),
-    ...(typeof event?.correlationId === "string" && event.correlationId.length > 0
-      ? { correlationId: event.correlationId }
-      : runId
-        ? { correlationId: runId }
-        : {}),
-    ...event,
-  };
-}
-
-function normalizeRunManifestRecord(
-  manifest: Record<string, unknown>,
-): Record<string, unknown> {
-  const runId =
-    typeof manifest?.runId === "string" && manifest.runId.length > 0
-      ? manifest.runId
-      : undefined;
-  return {
-    schemaVersion: manifest?.schemaVersion ?? TRACE_SCHEMA_VERSION,
-    traceKind: manifest?.traceKind ?? "orchestrator.run.manifest",
-    recordedAt: toRecordedAt(manifest?.recordedAt),
-    producer: manifest?.producer ?? "background.orchestrator.run-trace-writer",
-    ...(runId ? { runId } : {}),
-    ...(typeof manifest?.correlationId === "string" &&
-    manifest.correlationId.length > 0
-      ? { correlationId: manifest.correlationId }
-      : runId
-        ? { correlationId: runId }
-        : {}),
-    ...manifest,
-  };
-}
-
-type TraceSessionLike = Record<string, unknown> & {
-  startTime?: number;
-  startUrl?: string;
-  outcome?: string;
-  sessionId?: string;
-  query?: string;
-};
-
-function localDayKey(ms: number): string {
-  const d = new Date(ms);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function isIsoDay(value: string | null): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function extractDomain(rawUrl: unknown): string | null {
-  if (typeof rawUrl !== "string" || rawUrl.length === 0) return null;
-  try {
-    const host = new URL(rawUrl).hostname || "";
-    return host.toLowerCase() || null;
-  } catch {
-    return null;
-  }
-}
-
 async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
   if (!existsSync(TRACE_INDEX)) return [];
   const raw = await readFile(TRACE_INDEX, "utf-8");
@@ -253,6 +122,24 @@ async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
       }
     })
     .filter(Boolean) as TraceSessionLike[];
+}
+
+async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
+  const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
+  if (!existsSync(traceFile)) return [];
+  const raw = await readFile(traceFile, "utf-8");
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return normalizeAgentTurnRecord(JSON.parse(line)) as TraceEntryLike;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as TraceEntryLike[];
 }
 
 // Ensure directories exist
@@ -566,15 +453,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const sessions = await readAllTraceSessions();
       const counts = new Map<string, number>();
       for (const s of sessions) {
-        const models: string[] = [];
-        if (Array.isArray((s as any).models)) {
-          models.push(...(s as any).models);
-        }
-        const breakdown = (s as any).metrics?.modelBreakdown;
-        if (breakdown && typeof breakdown === "object") {
-          models.push(...Object.keys(breakdown));
-        }
-        for (const m of models) {
+        for (const m of getSessionModels(s)) {
           if (m === "recording" || m === "manual") continue;
           counts.set(m, (counts.get(m) || 0) + 1);
         }
@@ -600,6 +479,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const sessionPrefix = (url.searchParams.get("sessionIdPrefix") || "").trim();
       const mode = (url.searchParams.get("mode") || "").trim();
       const model = (url.searchParams.get("model") || "").trim();
+      const tier = (url.searchParams.get("tier") || "").trim();
       const q = (url.searchParams.get("q") || "").toLowerCase().trim();
       const runId = (url.searchParams.get("runId") || "").trim();
       const cursor = (url.searchParams.get("cursor") || "").trim();
@@ -610,42 +490,37 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         : 200;
 
       let sessions = await readAllTraceSessions();
+      const baseFilters: TraceSearchFiltersLike = {
+        day,
+        from,
+        to,
+        domain,
+        outcome,
+        sessionPrefix,
+        mode,
+        model,
+        q,
+        runId,
+      };
 
-      sessions = sessions.filter((s) => {
-        const startTime = typeof s.startTime === "number" ? s.startTime : null;
-        const domainValue = extractDomain(s.startUrl);
-        const dayValue = startTime != null ? localDayKey(startTime) : null;
-        const sessionId = typeof s.sessionId === "string" ? s.sessionId : "";
-        const query = typeof s.query === "string" ? s.query.toLowerCase() : "";
-        const startUrl = typeof s.startUrl === "string" ? s.startUrl.toLowerCase() : "";
-        const outcomeValue = typeof s.outcome === "string" ? s.outcome : "";
+      sessions = sessions.filter((s) => matchesTraceFilters(s, baseFilters));
 
-        if (day && day !== "all" && dayValue !== day) return false;
-        if (isIsoDay(from) && (!dayValue || dayValue < from)) return false;
-        if (isIsoDay(to) && (!dayValue || dayValue > to)) return false;
-        if (domain) {
-          if (!domainValue) return false;
-          if (!domainValue.includes(domain)) return false;
-        }
-        if (outcome && outcome !== "all" && outcomeValue !== outcome) return false;
-        if (sessionPrefix && !sessionId.startsWith(sessionPrefix)) return false;
-        if (mode && mode !== "all") {
-          const models = Array.isArray((s as any).models) ? (s as any).models as string[] : [];
-          const hasRecording = models.includes("recording");
-          const hasManual = models.includes("manual");
-          if (mode === "recording" && !hasRecording) return false;
-          if (mode === "manual" && !hasManual) return false;
-          if (mode === "agent" && (hasRecording || hasManual)) return false;
-        }
-        if (model && model !== "all") {
-          const models = Array.isArray((s as any).models) ? (s as any).models as string[] :
-            ((s as any).metrics?.modelBreakdown ? Object.keys((s as any).metrics.modelBreakdown) : []);
-          if (!models.includes(model)) return false;
-        }
-        if (q && !(query.includes(q) || startUrl.includes(q) || sessionId.includes(q.toLowerCase()))) return false;
-        if (runId && !String((s as any).runId || "").startsWith(runId)) return false;
-        return true;
-      });
+      if (tier && tier !== "all") {
+        const withEntries = await Promise.all(
+          sessions.map(async (session) => {
+            if (typeof session.sessionId !== "string" || session.sessionId.length === 0) {
+              return session;
+            }
+            return {
+              ...session,
+              _entries: await readTraceEntries(session.sessionId),
+            };
+          }),
+        );
+        sessions = withEntries.filter((s) =>
+          matchesTraceFilters(s, { ...baseFilters, tier }, s._entries),
+        );
+      }
 
       sessions.sort((a, b) => {
         const t = (b.startTime ?? 0) - (a.startTime ?? 0);
@@ -671,11 +546,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
 
       const page = filtered.slice(0, limit);
-      const sliced = page.map((s) => ({
-        ...s,
-        day: typeof s.startTime === "number" ? localDayKey(s.startTime) : null,
-        domain: extractDomain(s.startUrl),
-      }));
+      const sliced = page.map(serializeTraceSearchSession);
       const nextCursor = filtered.length > limit && page.length > 0
         ? `${page[page.length - 1].startTime || 0}|${page[page.length - 1].sessionId || ""}`
         : null;
