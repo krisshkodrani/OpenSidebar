@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import type { TraceSession } from "../../../types/traces";
 import { useStore } from "../../store";
+import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
 import CollapsibleSection from "../CollapsibleSection";
 import {
@@ -10,6 +11,7 @@ import {
   formatTokens,
   truncate,
   extractQueryTitle,
+  getSessionModels,
 } from "../../utils";
 
 interface TraceDetailHeaderProps {
@@ -58,6 +60,11 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
       count: durations.length,
     };
   }, [currentEntries]);
+  const diagnostics = useMemo(
+    () => computeSessionDiagnostics(session, currentEntries),
+    [session, currentEntries],
+  );
+  const models = getSessionModels(session);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(session.sessionId);
@@ -159,6 +166,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
       <div className="flex gap-4 text-[11px] text-trace-muted mt-1.5 flex-wrap">
         <span>{session.turnCount || 0} turns</span>
         <span>{duration}</span>
+        <span>{models.length} model{models.length === 1 ? "" : "s"}</span>
         {tokens && <span>{tokens}</span>}
         {cost && <span>{cost}</span>}
         {session.startUrl && <span>{truncate(session.startUrl, 50)}</span>}
@@ -182,10 +190,58 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           <span>
             max <span className="text-trace-subtle">{formatDuration(latencyStats.max)}</span>
           </span>
-          <span className="text-trace-dim">({latencyStats.count} calls)</span>
+          <span className="text-trace-muted">({latencyStats.count} calls)</span>
         </div>
       )}
 
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        <Badge variant="type">{diagnostics.productiveTurns} productive</Badge>
+        {diagnostics.wastedTurns > 0 && (
+          <Badge variant="event-stuck_signal">
+            {diagnostics.wastedTurns} wasted
+          </Badge>
+        )}
+        {diagnostics.loopTurns > 0 && (
+          <Badge variant="event-circuit_breaker">
+            {diagnostics.loopTurns} loop turns
+          </Badge>
+        )}
+        {diagnostics.escalations > 0 && (
+          <Badge variant="event-escalation">
+            {diagnostics.escalations} escalations
+          </Badge>
+        )}
+        {diagnostics.failovers > 0 && (
+          <Badge variant="category">{diagnostics.failovers} failovers</Badge>
+        )}
+        {diagnostics.contextHotTurns > 0 && (
+          <Badge variant="tier-planner">
+            {diagnostics.contextHotTurns} context hot
+          </Badge>
+        )}
+        {diagnostics.perceptionCalls > 0 && (
+          <Badge variant="cached">
+            {diagnostics.perceptionCacheHits}/{diagnostics.perceptionCalls} cached perception
+          </Badge>
+        )}
+        {diagnostics.structuredPerceptionTurns > 0 && (
+          <Badge variant="type">
+            {diagnostics.structuredPerceptionTurns} structured
+          </Badge>
+        )}
+        {diagnostics.vlScreenshotTurns > 0 && (
+          <Badge variant="category">
+            {diagnostics.vlScreenshotTurns} VL screenshot
+          </Badge>
+        )}
+        {diagnostics.elementOnlyTurns > 0 && (
+          <Badge variant="event-stuck_signal">
+            {diagnostics.elementOnlyTurns} element-only
+          </Badge>
+        )}
+      </div>
+
+      <SkillPolicySection session={session} />
       <PlanSection session={session} />
     </div>
   );
@@ -223,6 +279,63 @@ function QueryTitle({ query }: { query: string }) {
 }
 
 // ── Plan section ────────────────────────────────────────────────────
+
+function SkillPolicySection({ session }: { session: TraceSession }) {
+  const metrics = session.skillToolMetrics;
+  if (!metrics) return null;
+
+  return (
+    <div className="border-t border-trace-border mt-2.5 pt-2.5">
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
+          Skill Policy
+        </span>
+        <span className="px-1.5 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-medium">
+          {metrics.skillId}
+        </span>
+        <Badge variant="type">{metrics.rankingApplications} rankings</Badge>
+        <Badge variant="type">{metrics.totalSelections} picks</Badge>
+      </div>
+      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2 text-[11px]">
+        <MetricCard
+          label="Preferred"
+          value={`${Math.round(metrics.preferredSelectionRate * 100)}%`}
+          hint={`${metrics.preferredSelections} selections`}
+        />
+        <MetricCard
+          label="Neutral"
+          value={`${metrics.neutralSelections}`}
+          hint="middle-path picks"
+        />
+        <MetricCard
+          label="Discouraged"
+          value={`${Math.round(metrics.discouragedSelectionRate * 100)}%`}
+          hint={`${metrics.discouragedSelections} selections`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded border border-trace-border/70 bg-black/10 px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-trace-muted">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-trace-text">{value}</div>
+      <div className="mt-1 text-[10px] text-trace-muted">{hint}</div>
+    </div>
+  );
+}
 
 function PlanSection({ session }: { session: TraceSession }) {
   const plan = session.planDecomposition;

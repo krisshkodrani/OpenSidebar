@@ -1,3 +1,5 @@
+import type { TraceSession } from "../types/traces";
+
 export function formatTime(ms: number | undefined | null): string {
   if (!ms) return "---";
   const d = new Date(ms);
@@ -61,6 +63,20 @@ export function shortModel(model: string | undefined | null): string {
     .replace("openai/", "")
     .replace("z-ai/", "")
     .replace("-instruct", "");
+}
+
+export function getSessionModels(
+  session: Pick<TraceSession, "models" | "metrics">,
+): string[] {
+  const storedModels = Array.isArray(session.models)
+    ? session.models.filter(
+        (model): model is string => typeof model === "string" && model.length > 0,
+      )
+    : [];
+  const breakdownModels = session.metrics?.modelBreakdown
+    ? Object.keys(session.metrics.modelBreakdown)
+    : [];
+  return Array.from(new Set([...storedModels, ...breakdownModels]));
 }
 
 export function outcomeClass(outcome: string | undefined): string {

@@ -3,11 +3,18 @@ import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
+import FleetOverview from "./components/traces/FleetOverview";
 import FilterBar from "./components/traces/FilterBar";
+import CompareTray from "./components/traces/CompareTray";
+import SavedViewsBar from "./components/traces/SavedViewsBar";
 import SessionsTableView from "./components/traces/SessionsTableView";
+import RunsTableView from "./components/traces/RunsTableView";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
+import SessionCompareView from "./components/traces/SessionCompareView";
+import DiagnosisPanel from "./components/traces/DiagnosisPanel";
 import TraceDetailHeader from "./components/traces/TraceDetailHeader";
+import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
 import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
@@ -121,12 +128,16 @@ function ViewerBody() {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
+  const traceListMode = useStore((s) => s.traceListMode);
+  const compareViewActive = useStore((s) => s.compareViewActive);
+  const compareSessionIds = useStore((s) => s.compareSessionIds);
   const tracesError = useStore((s) => s.tracesError);
   const logsWarning = useStore((s) => s.logsWarning);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSearchQuery = useStore((s) => s.setSearchQuery);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setCompareViewActive = useStore((s) => s.setCompareViewActive);
   const { sessions, refreshSessions } = useTraceData();
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
@@ -138,8 +149,16 @@ function ViewerBody() {
       setCurrentEntries([]);
       setSearchQuery("");
       setActiveSubview("turns");
+      setCompareViewActive(false);
     },
-    [currentSessionId, setCurrentSessionId, setCurrentEntries, setSearchQuery, setActiveSubview],
+    [
+      currentSessionId,
+      setCurrentSessionId,
+      setCurrentEntries,
+      setSearchQuery,
+      setActiveSubview,
+      setCompareViewActive,
+    ],
   );
 
   const deselectSession = useCallback(() => {
@@ -195,8 +214,8 @@ function ViewerBody() {
           >
             &larr; All Sessions
           </button>
-          <span className="text-trace-dim text-[10px]">&middot;</span>
-          <span className="text-[10px] text-trace-dim">
+          <span className="text-trace-muted text-[10px]">&middot;</span>
+          <span className="text-[10px] text-trace-muted">
             {currentIdx + 1} / {sessions.length}
           </span>
           <div className="flex items-center gap-1">
@@ -217,12 +236,13 @@ function ViewerBody() {
               &#8250;
             </button>
           </div>
-          <span className="ml-auto text-[9px] text-trace-dim font-mono">
+          <span className="ml-auto text-[9px] text-trace-muted font-mono">
             Esc &middot; [ ] &middot; j k
           </span>
         </div>
 
         <TraceDetailHeader session={currentSession as any} />
+        <DiagnosisPanel session={currentSession as any} />
         <TraceSubviewToggle />
 
         {activeSubview === "turns" ? (
@@ -269,6 +289,10 @@ function ViewerBody() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <FilterBar onFiltersChanged={refreshSessions} />
+      <SavedViewsBar onFiltersChanged={refreshSessions} />
+      <TraceListModeToggle />
+      <FleetOverview onFiltersChanged={refreshSessions} />
+      <CompareTray />
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -277,8 +301,14 @@ function ViewerBody() {
             onRetry={refreshSessions}
           />
         </div>
+      ) : compareViewActive && compareSessionIds.length === 2 ? (
+        <SessionCompareView sessions={sessions} />
       ) : (
-        <SessionsTableView onSelect={selectSession} />
+        traceListMode === "runs" ? (
+          <RunsTableView onSelectSession={selectSession} />
+        ) : (
+          <SessionsTableView onSelect={selectSession} />
+        )
       )}
     </div>
   );

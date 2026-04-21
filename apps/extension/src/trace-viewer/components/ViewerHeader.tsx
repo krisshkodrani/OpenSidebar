@@ -4,6 +4,7 @@ import { formatCost } from "../utils";
 
 export default function ViewerHeader() {
   const sessions = useStore((s) => s.sessions);
+  const runGroups = useStore((s) => s.runGroups);
   const currentSessionId = useStore((s) => s.currentSessionId);
 
   const totalCost = sessions.reduce(
@@ -34,6 +35,7 @@ export default function ViewerHeader() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <MetricCard label="Runs" value={String(runGroups.length)} />
           <MetricCard label="Sessions" value={String(sessions.length)} />
           <MetricCard label="Completion" value={completionPct} />
           <MetricCard

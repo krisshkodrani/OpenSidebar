@@ -50,11 +50,21 @@ export interface RunGroup {
   expanded: boolean;
 }
 
+export interface SavedTraceView {
+  id: string;
+  name: string;
+  filters: TraceFilters;
+}
+
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
   sessions: TraceSession[];
   runGroups: RunGroup[];
+  traceListMode: "sessions" | "runs";
+  compareSessionIds: string[];
+  compareViewActive: boolean;
+  savedViews: SavedTraceView[];
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
@@ -79,6 +89,13 @@ export interface TracesSlice {
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
   setActiveSubview: (view: "turns" | "perception" | "logs" | "story") => void;
+  setTraceListMode: (mode: "sessions" | "runs") => void;
+  toggleCompareSession: (sessionId: string) => void;
+  clearCompareSessions: () => void;
+  setCompareViewActive: (active: boolean) => void;
+  saveCurrentView: () => void;
+  applySavedView: (id: string) => void;
+  deleteSavedView: (id: string) => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
   /** Switch to Turns tab and scroll to a specific turn */

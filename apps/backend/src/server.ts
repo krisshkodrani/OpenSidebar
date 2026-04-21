@@ -16,6 +16,7 @@ import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { connectGBrain, disconnectGBrain } from "./gbrain-client.js";
 import { handleHealth } from "./routes/health.js";
+import { handleLabTraceRoutes } from "./routes/lab-traces.js";
 import { handleMemoryRoutes } from "./routes/memory.js";
 import { handleProfileRoutes } from "./routes/profile.js";
 import { handleTaskRoutes } from "./routes/tasks.js";
@@ -123,6 +124,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Memory routes
     if (pathname.startsWith("/memory")) {
       await handleMemoryRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
+      return;
+    }
+
+    // Lab trace routes
+    if (
+      pathname.startsWith("/lab/traces") ||
+      pathname === "/lab/research-seed" ||
+      pathname === "/lab/bug-brief"
+    ) {
+      await handleLabTraceRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
       return;
     }
 
