@@ -1,4 +1,5 @@
 import { AgentRole, ToolName, UserSettings } from "../../types";
+import { getSkillToolSuppressionPolicy } from "./skills";
 import { TaskNode } from "./types";
 
 export type ModelTier = "executor" | "planner";
@@ -19,6 +20,20 @@ function applyGlobalToolFlags(
 ): void {
   if (!settings.allowNavigation) {
     allowed.delete(ToolName.NAVIGATE);
+  }
+}
+
+function applySkillToolSuppression(
+  node: TaskNode,
+  allowed: Set<ToolName>,
+): void {
+  const policy = getSkillToolSuppressionPolicy(node.selectedSkillId);
+  if (!policy) return;
+
+  const exemptTools = new Set<ToolName>(policy.exemptTools);
+  for (const tool of policy.temporarilySuppressedTools) {
+    if (exemptTools.has(tool)) continue;
+    allowed.delete(tool);
   }
 }
 
@@ -54,6 +69,7 @@ export function buildRoleExecutionContract(
   const allowed = new Set<ToolName>(node.allowedTools);
   // Executor must always be able to finalize a subtask.
   allowed.add(ToolName.DONE);
+  applySkillToolSuppression(node, allowed);
   applyGlobalToolFlags(settings, allowed);
 
   return {

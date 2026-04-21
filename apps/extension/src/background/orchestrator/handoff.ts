@@ -12,11 +12,17 @@ import {
 } from "./skills";
 import { ToolName } from "../../types";
 
-const MAX_HANDOFF_ARTIFACTS = 8;
-const MAX_NOTE_LEN = 400;
-const MAX_TASK_CONTEXT_NODES = 8;
+const MAX_HANDOFF_ARTIFACTS = 4;
+const MAX_NOTE_LEN = 240;
+const MAX_TASK_CONTEXT_NODES = 5;
 export const MAX_HANDOFF_DEPTH = 2;
 const MIN_ASSUMPTION_TOKEN_LEN = 4;
+const MAX_ORIGINAL_QUERY_EXCERPT = 420;
+const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
+const CROSS_TAB_COMPARE_SKILL_ID = "cross-tab-compare";
+const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const MAX_RESULT_LEN = 500;
+const MAX_COMPACT_LIST_DETAIL_RESULT_LEN = 220;
 const VERIFICATION_TURN_QUERY_PATTERN =
   /\b(did it work|verify|confirm|check if|check whether|does it show|what('s| is) the (status|result|current)|is it there)\b/i;
 
@@ -38,6 +44,213 @@ function normalizeNote(note: string): string {
 function normalizeNodeResult(node: TaskNode): string {
   const detail = node.result || node.error || "No detail provided";
   return normalizeNote(detail);
+}
+
+function extractRelevantKeywords(summary: string): string[] {
+  const keywordMap: Array<[RegExp, string]> = [
+    [/\breact native\b/i, "React Native"],
+    [/\breact\b/i, "React"],
+    [/\btypescript\b/i, "TypeScript"],
+    [/\bjavascript\b/i, "JavaScript"],
+    [/\bnode(?:\.js)?\b/i, "Node"],
+    [/\bgraphql\b/i, "GraphQL"],
+    [/\bangular\b/i, "Angular"],
+    [/\bfrontend\b/i, "Frontend"],
+    [/\bui\b/i, "UI"],
+    [/\bdevops\b/i, "DevOps"],
+  ];
+  const found: string[] = [];
+  for (const [pattern, label] of keywordMap) {
+    if (pattern.test(summary)) found.push(label);
+    if (found.length >= 4) break;
+  }
+  return found;
+}
+
+export function compactExecutorSummaryForNode(
+  node: Pick<TaskNode, "description" | "selectedSkillId" | "result" | "error">,
+  summary?: string,
+): string {
+  const raw = (summary || node.result || node.error || "No detail")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "No detail";
+
+  if (node.selectedSkillId !== LIST_DETAIL_REVIEW_SKILL_ID) {
+    return raw.slice(0, MAX_RESULT_LEN);
+  }
+
+  const facts: string[] = [];
+  const locationMatch = raw.match(/\b(remote|hybrid|on[- ]site)\b/i);
+  if (locationMatch) facts.push(`location=${locationMatch[1].toLowerCase()}`);
+
+  const salaryMatch = raw.match(
+    /([$€£]\s?\d[\d,.]*(?:\s?[kK])?(?:\s*-\s*[$€£]?\s?\d[\d,.]*(?:\s?[kK])?)?(?:\s*\/\s*(?:year|yr|hour|hr))?)/,
+  );
+  if (salaryMatch) facts.push(`salary=${salaryMatch[1]}`);
+
+  const keywords = extractRelevantKeywords(raw);
+  if (keywords.length > 0) facts.push(`stack=${keywords.join("/")}`);
+
+  if (/\b(returned?|back)\b.{0,40}\b(list|listings|results)\b/i.test(raw)) {
+    facts.push("returned to listings");
+  }
+
+  const description = normalizeNote(node.description);
+  const compact =
+    facts.length > 0 ? `${description} :: ${facts.join("; ")}` : description;
+  return compact.slice(0, MAX_COMPACT_LIST_DETAIL_RESULT_LEN);
+}
+
+function compactOriginalQuery(
+  originalQuery: string,
+  activeObjective: string,
+): string {
+  const normalized = originalQuery.replace(/\s+/g, " ").trim();
+  if (normalized.length <= MAX_ORIGINAL_QUERY_EXCERPT) return normalized;
+
+  const objectiveTokens = activeObjective
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= MIN_ASSUMPTION_TOKEN_LEN);
+
+  const candidateClauses = normalized
+    .split(/(?<=[.!?])\s+|\s+(?=and then|then|but|while)\b/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  const prioritized = candidateClauses
+    .map((clause) => {
+      const lower = clause.toLowerCase();
+      let score = 0;
+      if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(clause)) score += 4;
+      if (/\b\d{1,2}(:\d{2})?\s?(am|pm)\b/i.test(clause)) score += 4;
+      if (/["'][^"']+["']/.test(clause)) score += 3;
+      if (/\b(code|coupon|promo|email|name|address|phone|date|time|order)\b/i.test(lower))
+        score += 2;
+      if (objectiveTokens.some((token) => lower.includes(token))) score += 1;
+      return { clause, score };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.clause);
+
+  const source = prioritized.length > 0 ? prioritized : candidateClauses;
+  return source.join(" ").slice(0, MAX_ORIGINAL_QUERY_EXCERPT);
+}
+
+function formatSkillExecutionContract(node: TaskNode): string[] {
+  const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
+  const contract = loadedSkill?.executionContract;
+  if (!loadedSkill || !contract) return [];
+
+  const sections: string[] = [
+    "Skill execution contract:",
+  ];
+
+  if (contract.sequencing?.length) {
+    sections.push(
+      "Sequence to preserve:",
+      ...contract.sequencing.map((item) => `- ${item}`),
+    );
+  }
+
+  if (contract.toolDiscipline?.length) {
+    sections.push(
+      "Tool discipline:",
+      ...contract.toolDiscipline.map((item) => `- ${item}`),
+    );
+  }
+
+  if (contract.completionChecks?.length) {
+    sections.push(
+      "Completion checks:",
+      ...contract.completionChecks.map((item) => `- ${item}`),
+    );
+  }
+
+  if (contract.failureRecovery?.length) {
+    sections.push(
+      "Failure recovery rules:",
+      ...contract.failureRecovery.map((item) => `- ${item}`),
+    );
+  }
+
+  return [...sections, ""];
+}
+
+function buildExecutorSkillSection(node: TaskNode): string[] {
+  const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
+  if (!loadedSkill) return [];
+
+  if (loadedSkill.id === MULTI_TAB_PROCUREMENT_SKILL_ID) {
+    return [
+      "Selected workflow skill:",
+      `- ${loadedSkill.id}: ${loadedSkill.description}`,
+      ...(node.selectedSkillReason
+        ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
+        : []),
+      "Skill operating brief:",
+      "- Re-read the checklist row only long enough to confirm the target item, store, and quantity.",
+      "- Open the matching store in a new tab, switch into it, and buy only the requested item.",
+      "- Once a visible order confirmation exists, store only compact completion facts such as item, store, and order number.",
+      "- Switch back to the source checklist tab and mark only the completed row before moving on.",
+      "- If the checklist counter increases after you mark the row complete, treat that plus the earlier order confirmation as sufficient evidence instead of probing checkbox attributes or rediscovering tabs.",
+      "- Avoid browser-history navigation while the checklist and store tabs are both available.",
+      "",
+    ];
+  }
+
+  if (loadedSkill.id === LIST_DETAIL_REVIEW_SKILL_ID) {
+    return [
+      "Selected workflow skill:",
+      `- ${loadedSkill.id}: ${loadedSkill.description}`,
+      ...(node.selectedSkillReason
+        ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
+        : []),
+      "Skill operating brief:",
+      "- Open the next visible listing detail directly from the listings page.",
+      "- Capture only fit-critical facts: role, company, location, salary, seniority, and core stack.",
+      "- After each review, use the page's visible listings/back-to-results control before continuing.",
+      "- Avoid exploratory recovery tools while visible list actions or return controls exist.",
+      "- Call done() only after the current listing is reviewed and the listings page is visible again.",
+      "",
+    ];
+  }
+
+  if (loadedSkill.id === CROSS_TAB_COMPARE_SKILL_ID) {
+    return [
+      "Selected workflow skill:",
+      `- ${loadedSkill.id}: ${loadedSkill.description}`,
+      ...(node.selectedSkillReason
+        ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
+        : []),
+      "Skill operating brief:",
+      "- Use previously gathered step results and notes as the primary evidence source for the comparison.",
+      "- Synthesize only after every required comparison target has a fact set in prior completed results or fresh grounded evidence.",
+      "- Avoid browser-history navigation or page hopping unless a specific target is still missing evidence.",
+      "- If one target remains unread, gather only that missing evidence and then compare.",
+      "",
+    ];
+  }
+
+  return [
+    "Selected workflow skill:",
+    `- ${loadedSkill.id}: ${loadedSkill.description}`,
+    ...(node.selectedSkillReason
+      ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
+      : []),
+    "Skill procedure:",
+    loadedSkill.procedureMarkdown,
+    ...(loadedSkill.requiredEvidence?.length
+      ? [
+          "Skill evidence requirements:",
+          ...loadedSkill.requiredEvidence.map((item) => `- ${item}`),
+        ]
+      : []),
+    ...formatSkillExecutionContract(node),
+  ];
 }
 
 export function formatHandoffBrief(artifacts: NodeHandoffArtifact[]): string {
@@ -82,6 +295,7 @@ export function buildTaskStateBrief(
   nodes: TaskNode[],
   currentNodeId?: string,
   mode: "executor" | "verifier" = "executor",
+  currentNode?: Pick<TaskNode, "selectedSkillId">,
 ): string {
   if (nodes.length === 0) return "No task-level context available.";
 
@@ -97,10 +311,15 @@ export function buildTaskStateBrief(
     );
     const sections: string[] = [];
 
-    if (completed.length > 0) {
+    if (
+      currentNode?.selectedSkillId === CROSS_TAB_COMPARE_SKILL_ID &&
+      completed.length > 0
+    ) {
+      sections.push("Completed comparison evidence:", buildCompletedStepsSummary(relevant));
+    } else if (completed.length > 0) {
       sections.push(
         "Completed / prior steps:",
-        ...completed.slice(-4).map((node) => {
+        ...completed.slice(-2).map((node) => {
           const status =
             node.status === "completed"
               ? "completed"
@@ -168,7 +387,6 @@ export function buildExecutorInstruction(
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
-  const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
   const assumptions =
     node.assumptions.length > 0
       ? node.assumptions.map((item) => `- ${normalizeNote(item)}`).join("\n")
@@ -189,40 +407,16 @@ export function buildExecutorInstruction(
     "Planner assumptions (validate against current page before acting):",
     assumptions,
     "",
-    ...(loadedSkill
-      ? [
-          "Selected workflow skill:",
-          `- ${loadedSkill.id}: ${loadedSkill.description}`,
-          ...(node.selectedSkillReason
-            ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
-            : []),
-          "Skill procedure:",
-          loadedSkill.procedureMarkdown,
-          ...(loadedSkill.requiredEvidence?.length
-            ? [
-                "Skill evidence requirements:",
-                ...loadedSkill.requiredEvidence.map((item) => `- ${item}`),
-              ]
-            : []),
-          "",
-        ]
-      : []),
+    ...buildExecutorSkillSection(node),
     "Handoff context:",
     handoffBrief,
-    "",
-    "Step-scoped task context:",
-    taskStateBrief || "No sibling node context yet.",
-    "",
-    "Reality check signal:",
-    realitySignal || "No drift signal recorded.",
     "",
     "Execution policy:",
     "- Execute only the current step objective.",
     "- Treat all later steps as out of scope until this step is verified complete.",
-    "- Validate planner assumptions against current page and adjust steps if reality changed.",
-    "- Continue from prior context; do not repeat completed work.",
-    "- Use completed-step context only to avoid duplicating prior work.",
-    "- If verifier requested reroute/retry, adapt strategy before acting.",
+    "- Validate planner assumptions against the current page before acting.",
+    "- Use prior context only to avoid duplicate work or preserve requested literals.",
+    "- If verifier requested reroute or retry, adapt strategy before acting.",
     ...(node.reflexionLog.length > 0
       ? [
           "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
@@ -233,6 +427,14 @@ export function buildExecutorInstruction(
 
   if (siteKnowledgeBrief) {
     sections.push("", siteKnowledgeBrief);
+  }
+
+  if (taskStateBrief && taskStateBrief !== "No sibling node context yet.") {
+    sections.push("", "Step-scoped task context:", taskStateBrief);
+  }
+
+  if (realitySignal && realitySignal !== "No drift signal recorded.") {
+    sections.push("", "Reality check signal:", realitySignal);
   }
 
   const activeObjective = objectiveOverride || node.description;
@@ -287,10 +489,11 @@ export function buildExecutorInstruction(
   }
 
   if (originalQuery) {
+    const compactQuery = compactOriginalQuery(originalQuery, activeObjective);
     sections.push(
       "",
       "Original user request (reference for specific values — names, emails, codes):",
-      originalQuery.slice(0, 2000),
+      compactQuery,
     );
   }
 
@@ -405,7 +608,6 @@ export function buildAssumptionDriftSignal(
 }
 
 const MAX_COMPLETED_SUMMARY_NODES = 10;
-const MAX_RESULT_LEN = 500;
 
 export function buildCompletedStepsSummary(nodes: TaskNode[]): string {
   const completed = nodes.filter((n) => n.status === "completed");
@@ -420,10 +622,7 @@ export function buildCompletedStepsSummary(nodes: TaskNode[]): string {
   }
   shown.forEach((node, i) => {
     const idx = omitted + i + 1;
-    const result = (node.result || node.error || "No detail")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, MAX_RESULT_LEN);
+    const result = compactExecutorSummaryForNode(node);
     lines.push(`${idx}. "${normalizeNote(node.description)}" → ${result}`);
   });
 

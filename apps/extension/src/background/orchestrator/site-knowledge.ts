@@ -5,7 +5,7 @@
  * and formats them for injection into planner and executor prompts.
  *
  * Research basis: AWM, WebCoach, HMT, TIMA, AutoRefine
- * See: lab/rfcs/rfc-site-specific-learning.md
+ * Related design record now lives in the Notion RFC workflow.
  */
 
 import type { LLMClient } from "../llm/client";

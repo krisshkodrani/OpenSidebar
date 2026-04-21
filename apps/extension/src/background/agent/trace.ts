@@ -9,10 +9,16 @@ import {
   TraceEvent,
   TraceEventPayloadByType,
   TraceFailureInfo,
+  TraceSkillToolMetrics,
   TraceSession,
   TraceLLMMessage,
   TraceContextMetrics,
   TracePanoramicShot,
+  TracePerceptionFallbackReason,
+  TracePerceptionFreshnessReason,
+  TracePerceptionMode,
+  TracePerceptionScreenshotStatus,
+  TracePerceptionSource,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
@@ -45,6 +51,14 @@ export class TraceRecorder {
 
   // Retry queue for failed flushes
   private pendingQueue: Array<{ path: string; data: string }> = [];
+  private skillToolMetricsState: {
+    skillId: string;
+    rankingApplications: number;
+    totalSelections: number;
+    preferredSelections: number;
+    neutralSelections: number;
+    discouragedSelections: number;
+  } | null = null;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -214,11 +228,70 @@ export class TraceRecorder {
     data: Record<string, unknown>,
   ): void;
   recordEvent(type: string, data: Record<string, unknown>): void {
+    this.updateSkillToolMetrics(type, data);
     this.turnEvents.push({
       type,
       timestamp: Date.now(),
       data,
     } as TraceEvent);
+  }
+
+  private updateSkillToolMetrics(
+    type: string,
+    data: Record<string, unknown>,
+  ): void {
+    if (type !== "skill_tool_ranking_applied" && type !== "skill_tool_selected") {
+      return;
+    }
+    const skillId = typeof data.skillId === "string" ? data.skillId : null;
+    if (!skillId) return;
+
+    if (!this.skillToolMetricsState || this.skillToolMetricsState.skillId !== skillId) {
+      this.skillToolMetricsState = {
+        skillId,
+        rankingApplications: 0,
+        totalSelections: 0,
+        preferredSelections: 0,
+        neutralSelections: 0,
+        discouragedSelections: 0,
+      };
+    }
+
+    if (type === "skill_tool_ranking_applied") {
+      this.skillToolMetricsState.rankingApplications += 1;
+      return;
+    }
+
+    const preference = typeof data.preference === "string" ? data.preference : null;
+    this.skillToolMetricsState.totalSelections += 1;
+    if (preference === "preferred") {
+      this.skillToolMetricsState.preferredSelections += 1;
+    } else if (preference === "discouraged") {
+      this.skillToolMetricsState.discouragedSelections += 1;
+    } else {
+      this.skillToolMetricsState.neutralSelections += 1;
+    }
+  }
+
+  private buildSkillToolMetrics(): TraceSkillToolMetrics | undefined {
+    if (!this.skillToolMetricsState) return undefined;
+    const totalSelections = this.skillToolMetricsState.totalSelections;
+    return {
+      skillId: this.skillToolMetricsState.skillId,
+      rankingApplications: this.skillToolMetricsState.rankingApplications,
+      totalSelections,
+      preferredSelections: this.skillToolMetricsState.preferredSelections,
+      neutralSelections: this.skillToolMetricsState.neutralSelections,
+      discouragedSelections: this.skillToolMetricsState.discouragedSelections,
+      preferredSelectionRate:
+        totalSelections > 0
+          ? this.skillToolMetricsState.preferredSelections / totalSelections
+          : 0,
+      discouragedSelectionRate:
+        totalSelections > 0
+          ? this.skillToolMetricsState.discouragedSelections / totalSelections
+          : 0,
+    };
   }
 
   /** Record perception data (vision model interpretation) for the current turn */
@@ -229,6 +302,11 @@ export class TraceRecorder {
       providerId?: string;
       durationMs: number;
       cached: boolean;
+      mode?: TracePerceptionMode;
+      source?: TracePerceptionSource;
+      freshnessReason?: TracePerceptionFreshnessReason;
+      fallbackReason?: TracePerceptionFallbackReason;
+      screenshotStatus?: TracePerceptionScreenshotStatus;
     },
     screenshotDataUrl?: string,
     elementSummary?: string,
@@ -241,6 +319,17 @@ export class TraceRecorder {
       providerId: perception.providerId,
       durationMs: perception.durationMs,
       cached: perception.cached,
+      ...(perception.mode ? { mode: perception.mode } : {}),
+      ...(perception.source ? { source: perception.source } : {}),
+      ...(perception.freshnessReason
+        ? { freshnessReason: perception.freshnessReason }
+        : {}),
+      ...(perception.fallbackReason
+        ? { fallbackReason: perception.fallbackReason }
+        : {}),
+      ...(perception.screenshotStatus
+        ? { screenshotStatus: perception.screenshotStatus }
+        : {}),
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
       ...(elementSummary ? { elementSummary } : {}),
       ...(panoramicShots?.length ? { panoramicShots } : {}),
@@ -341,6 +430,12 @@ export class TraceRecorder {
       await this.endTurn();
     }
 
+    const models =
+      metrics && metrics.modelBreakdown
+        ? Object.keys(metrics.modelBreakdown)
+        : undefined;
+    const skillToolMetrics = this.buildSkillToolMetrics();
+
     const session: TraceSession = {
       schemaVersion: TRACE_SCHEMA_VERSION,
       traceKind: "agent.session",
@@ -364,6 +459,7 @@ export class TraceRecorder {
       summary,
       metrics,
       workspaceId: this.workspaceId,
+      ...(models && models.length > 0 ? { models } : {}),
       ...(this.difficultyInfo
         ? {
             difficultyAssessment: this.difficultyInfo.difficulty,
@@ -374,6 +470,7 @@ export class TraceRecorder {
       ...(this.planDecomposition
         ? { planDecomposition: this.planDecomposition }
         : {}),
+      ...(skillToolMetrics ? { skillToolMetrics } : {}),
     };
 
     await this.flush("/traces/session", session);

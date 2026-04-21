@@ -277,6 +277,7 @@ export type ToolProfile =
   | "full"
   | "read_only"
   | "form_fill"
+  | "edit_surface"
   | "navigate"
   | "enter_code"
   | "submit_form"
@@ -320,6 +321,20 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.CLICK_COORDINATES,
     ToolName.GET_PROFILE_FIELDS,
     // System
+    ToolName.DONE,
+    ToolName.ESCALATE,
+    ToolName.CLARIFY,
+    ToolName.WAIT,
+  ],
+  edit_surface: [
+    ToolName.READ_PAGE,
+    ToolName.READ_ELEMENT,
+    ToolName.FIND_ELEMENT,
+    ToolName.SCROLL_PAGE,
+    ToolName.CLICK_ELEMENT,
+    ToolName.RIGHT_CLICK,
+    ToolName.TYPE_TEXT,
+    ToolName.PRESS_KEY,
     ToolName.DONE,
     ToolName.ESCALATE,
     ToolName.CLARIFY,

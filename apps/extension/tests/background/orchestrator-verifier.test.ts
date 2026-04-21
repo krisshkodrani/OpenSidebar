@@ -54,8 +54,44 @@ describe("Orchestrator verifier fallback", () => {
       executorOutcome: "completed",
     });
     expect(decision.decision).toBe("accept");
-    expect(decision.confidence).toBeLessThanOrEqual(0.5);
-    expect(decision.reason).toContain("executor");
+    expect(decision.confidence).toBeGreaterThanOrEqual(0.5);
+    expect(decision.reason).toContain("answer-aligned");
+  });
+
+  test("does not retry completed checkout-style steps without deterministic evidence", () => {
+    const decision = deriveVerifierFallbackDecision({
+      taskQuery: "Complete checkout",
+      objective: "Place the order",
+      successCriteria: "Order confirmation is visible",
+      output: "Filled the form fields and reviewed the page.",
+      executorOutcome: "completed",
+    });
+    expect(decision.decision).toBe("accept");
+    expect(decision.reason).toContain("replay side effects");
+    expect(decision.confidence).toBeLessThan(0.5);
+  });
+
+  test("uses programmatic success evidence before fallback accept", () => {
+    const decision = deriveVerifierFallbackDecision({
+      taskQuery: "Complete checkout",
+      objective: "Place the order",
+      successCriteria: "Order confirmation is visible",
+      output: "Completed successfully and verified the order confirmation.",
+      executorOutcome: "completed",
+      evidence: [
+        {
+          claim: "Order confirmation page became visible",
+          basis: "tool_output",
+          confidence: 0.92,
+        },
+      ],
+      previousUrl: "https://example.com/checkout",
+      currentUrl: "https://example.com/confirmation",
+      previousTitle: "Checkout",
+      currentTitle: "Order Confirmed",
+    });
+    expect(decision.decision).toBe("accept");
+    expect(decision.reason).toContain("DOM change");
   });
 
   test("returns retry when output is inconclusive", () => {
@@ -128,6 +164,38 @@ describe("programmaticVerify", () => {
     expect(result).not.toBeNull();
     expect(result!.decision).toBe("accept");
     expect(result!.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test("returns accept for explicit order confirmation details without DOM change", () => {
+    const result = programmaticVerify({
+      output:
+        "Successfully purchased the first item. Order confirmed with order number ORD-12345 for $79.99.",
+      objective: "Purchase the first item in the store tab",
+      successCriteria: "Purchase confirmation or order complete for first item",
+      previousUrl: "https://example.com/store",
+      currentUrl: "https://example.com/store",
+      previousTitle: "TechDirect",
+      currentTitle: "TechDirect",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("explicit completion evidence");
+  });
+
+  test("returns accept for explicit new-tab creation details without DOM change", () => {
+    const result = programmaticVerify({
+      output:
+        "Successfully opened the second item's store in a new tab. The new tab (ID: 1727714004) contains the OfficeHub store URL.",
+      objective: "Open the second item's store in a new tab",
+      successCriteria: "New tab opened with store URL for second procurement item",
+      previousUrl: "https://example.com/procurement",
+      currentUrl: "https://example.com/procurement",
+      previousTitle: "Procurement List",
+      currentTitle: "Procurement List",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("explicit completion evidence");
   });
 
   test("returns null for ambiguous output", () => {

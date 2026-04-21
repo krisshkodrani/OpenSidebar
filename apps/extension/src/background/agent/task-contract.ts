@@ -93,6 +93,30 @@ function extractNamedEntities(text: string): string[] {
     "Each",
     "Every",
   ]);
+  const imperativeLeads = new Set([
+    "Actually",
+    "Call",
+    "Check",
+    "Click",
+    "Compare",
+    "Decline",
+    "Draft",
+    "Fill",
+    "Find",
+    "Give",
+    "Keep",
+    "List",
+    "Open",
+    "Read",
+    "Report",
+    "Review",
+    "Search",
+    "Show",
+    "Suggest",
+    "Tell",
+    "Type",
+    "Verify",
+  ]);
   return unique(
     matches
       .map((match) => {
@@ -105,6 +129,14 @@ function extractNamedEntities(text: string): string[] {
           index === 0 || /(?:^|[.!?]\s*)$/.test(prefix);
         if (isSingleTitleCaseWord && atSentenceBoundary) {
           return "";
+        }
+        const [firstWord, ...restWords] = value.split(/\s+/);
+        if (
+          restWords.length > 0 &&
+          imperativeLeads.has(firstWord) &&
+          atSentenceBoundary
+        ) {
+          return restWords.join(" ");
         }
         return value;
       })
@@ -574,8 +606,11 @@ export function synthesizeBatchedExhaustivePlan(query: string): Array<{
     return null;
   }
 
-  const reviewStepCount = Math.min(4, count);
-  const batchSize = Math.max(1, Math.ceil(count / reviewStepCount));
+  const batchSize = contract.requiresSequentialDetailReview && count <= 12
+    ? 1
+    : contract.requiresSequentialDetailReview
+      ? 2
+      : Math.max(1, Math.ceil(count / Math.min(4, count)));
   const singular = singularizePhrase(label);
   const steps: Array<{
     objective: string;
@@ -602,7 +637,7 @@ export function synthesizeBatchedExhaustivePlan(query: string): Array<{
       successCriteria,
       dependencies: steps.length > 0 ? [steps.length - 1] : [],
       assumptions: [],
-      toolProfile: "full",
+      toolProfile: "navigate",
     });
   }
 

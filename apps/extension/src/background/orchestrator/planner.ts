@@ -3,7 +3,11 @@ import type { LLMClientOptions } from "../llm";
 import type { Difficulty } from "../agent/constants";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
-import { synthesizeBatchedExhaustivePlan } from "../agent/task-contract";
+import {
+  buildTaskContract,
+  synthesizeBatchedExhaustivePlan,
+  synthesizePlanFromTaskContract,
+} from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
 import { selectPrimarySkill } from "./skills";
 
@@ -119,6 +123,189 @@ interface DecompositionStep {
   toolProfile?: string;
 }
 
+const PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+
+function unionTools(groups: TaskNode[]): ToolName[] {
+  const tools: ToolName[] = [];
+  for (const node of groups) {
+    for (const tool of node.allowedTools) {
+      if (!tools.includes(tool)) tools.push(tool);
+    }
+  }
+  return tools;
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function isProcurementOpenNode(node: TaskNode): boolean {
+  return (
+    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
+    /\bopen\b/i.test(node.description) &&
+    /\bnew tab\b/i.test(node.description)
+  );
+}
+
+function isProcurementPurchaseNode(node: TaskNode): boolean {
+  return (
+    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
+    /\b(purchase|buy)\b/i.test(node.description)
+  );
+}
+
+function isProcurementReturnNode(node: TaskNode): boolean {
+  return (
+    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
+    /\b(check off|mark .* done|return)\b/i.test(node.description)
+  );
+}
+
+function collapseProcurementLoopNodes(nodes: TaskNode[]): TaskNode[] {
+  if (nodes.length < 3 || nodes.length % 3 !== 0) return nodes;
+
+  for (let index = 0; index < nodes.length; index += 3) {
+    const openNode = nodes[index];
+    const purchaseNode = nodes[index + 1];
+    const returnNode = nodes[index + 2];
+    if (
+      !openNode ||
+      !purchaseNode ||
+      !returnNode ||
+      !isProcurementOpenNode(openNode) ||
+      !isProcurementPurchaseNode(purchaseNode) ||
+      !isProcurementReturnNode(returnNode)
+    ) {
+      return nodes;
+    }
+  }
+
+  const collapsed: TaskNode[] = [];
+  for (let index = 0; index < nodes.length; index += 3) {
+    const openNode = nodes[index];
+    const purchaseNode = nodes[index + 1];
+    const returnNode = nodes[index + 2];
+    const collapsedId = openNode.id;
+    const priorCollapsedId = collapsed[collapsed.length - 1]?.id;
+    collapsed.push({
+      ...openNode,
+      id: collapsedId,
+      description: compactText(
+        `${openNode.description}; ${purchaseNode.description}; ${returnNode.description}`,
+      ),
+      successCriteria: compactText(
+        [
+          openNode.successCriteria,
+          purchaseNode.successCriteria,
+          returnNode.successCriteria,
+        ]
+          .filter(Boolean)
+          .join("; "),
+      ),
+      allowedTools: unionTools([openNode, purchaseNode, returnNode]),
+      dependencies: priorCollapsedId ? [priorCollapsedId] : [],
+      assumptions: dedupeStrings([
+        ...(openNode.assumptions || []),
+        ...(purchaseNode.assumptions || []),
+        ...(returnNode.assumptions || []),
+      ]),
+      handoffArtifacts: [
+        ...openNode.handoffArtifacts,
+        ...purchaseNode.handoffArtifacts,
+        ...returnNode.handoffArtifacts,
+      ],
+      verificationGate:
+        returnNode.verificationGate ||
+        purchaseNode.verificationGate ||
+        openNode.verificationGate,
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    });
+  }
+
+  return collapsed;
+}
+
+function compactText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractFallbackNamedTargets(query: string): string[] {
+  const blacklist = new Set([
+    "please",
+    "summarize",
+    "summary",
+    "find",
+    "report",
+    "read",
+    "review",
+    "check",
+    "compare",
+    "revise",
+    "draft",
+    "hover",
+    "menu",
+    "this",
+    "that",
+    "page",
+  ]);
+  const matches = [
+    ...query.matchAll(
+      /\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|[A-Z]{2,}(?:\s+[A-Z][a-z]+)*)\b/g,
+    ),
+  ]
+    .map((match) => compactText(match[0] || ""))
+    .filter((value) => value.length >= 4)
+    .filter((value) => !blacklist.has(value.toLowerCase()));
+
+  return [...new Set(matches)].slice(0, 3);
+}
+
+function buildSingleFallbackStep(query: string): DecompositionStep {
+  const contract = buildTaskContract(query);
+  const compactQuery = compactText(query);
+  const contractTargets = [...contract.requiredEntities, ...contract.requiredNumbers]
+    .filter(Boolean)
+    .slice(0, 3);
+  const shouldSynthesizeTargetedFallback =
+    contractTargets.length > 0 ||
+    (/(find|tell me|exact|inventory|count|price|number|value|result)/i.test(
+      query,
+    ) &&
+      extractFallbackNamedTargets(query).length > 0);
+  const namedTargets = shouldSynthesizeTargetedFallback
+    ? [...contractTargets, ...extractFallbackNamedTargets(query)].slice(0, 3)
+    : [];
+  const targetSummary =
+    namedTargets.length > 0 ? namedTargets.join(" and ") : null;
+  const exhaustiveSummary =
+    contract.exhaustiveScopeLabel && contract.exhaustiveScopeCount
+      ? `${contract.exhaustiveScopeCount} ${contract.exhaustiveScopeLabel}`
+      : null;
+
+  const objective = compactQuery.length > 0
+    ? compactQuery
+    : "Follow the user's exact request on the current page and report the result clearly.";
+
+  const successCriteria = targetSummary
+    ? `Page or tool output shows ${targetSummary} or the requested result needed for the final answer.`
+    : exhaustiveSummary
+      ? `Page or tool output shows the needed findings from the relevant ${exhaustiveSummary}.`
+      : "Page or tool output shows the result needed to answer the user request.";
+
+  return {
+    objective,
+    successCriteria,
+    dependencies: [],
+    assumptions:
+      compactQuery.length > 0
+        ? [`Preserve all explicit constraints from the user's original request: ${compactQuery}`]
+        : [],
+  };
+}
+
 function stepsToNodes(
   query: string,
   steps: DecompositionStep[],
@@ -200,6 +387,17 @@ function stepsToNodes(
   }));
 }
 
+export function buildFallbackNodes(
+  query: string,
+  phase: "planned" | "planner_replan" = "planned",
+): TaskNode[] {
+  const fallbackSteps =
+    synthesizeBatchedExhaustivePlan(query) ||
+    synthesizePlanFromTaskContract(query) ||
+    [buildSingleFallbackStep(query)];
+  return stepsToNodes(query, fallbackSteps, phase);
+}
+
 export class OrchestratorPlanner {
   private planner: TaskPlanner;
 
@@ -244,10 +442,10 @@ export class OrchestratorPlanner {
         "Planner produced structured graph assignments",
         { count: nodes.length },
       );
-    } else {
+    } else if (decomposition?.subtasks?.length) {
       const subtasks = decomposition?.subtasks?.length
         ? decomposition.subtasks
-        : [query];
+        : [];
       // Chain legacy subtasks sequentially: each step depends on the previous.
       // Without this, all nodes launch in parallel (e.g. "apply coupon" runs
       // before "add to cart" finishes → empty cart failure).
@@ -257,6 +455,18 @@ export class OrchestratorPlanner {
         assumptions: [],
       }));
       nodes = stepsToNodes(query, fallbackSteps);
+    } else {
+      nodes = buildFallbackNodes(query);
+    }
+
+    const collapsedProcurementNodes = collapseProcurementLoopNodes(nodes);
+    if (collapsedProcurementNodes !== nodes) {
+      nodes = collapsedProcurementNodes;
+      logger.info(
+        "orchestrator",
+        "Collapsed procurement micro-steps into skill-owned loop nodes",
+        { count: nodes.length },
+      );
     }
 
     logger.info("orchestrator", "Planner generated nodes", {

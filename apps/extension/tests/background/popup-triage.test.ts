@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { parseNuisanceBlockers } from "../../src/background/agent/popup-triage";
+import {
+  parseNuisanceBlockers,
+  validateNuisanceBlockers,
+} from "../../src/background/agent/popup-triage";
+
+function makeElement(
+  tag: number,
+  overrides: Record<string, unknown> = {},
+): any {
+  return {
+    tag,
+    tagName: "button",
+    role: "button",
+    text: "Dismiss",
+    attributes: {},
+    rect: { x: 0, y: 0, width: 80, height: 24, pageY: 0 },
+    isVisible: true,
+    isDisabled: false,
+    ...overrides,
+  };
+}
 
 describe("parseNuisanceBlockers", () => {
   it("returns empty array for empty input", () => {
@@ -134,5 +154,54 @@ NUISANCE [3] "GDPR consent" → click [7]`;
     expect(
       parseNuisanceBlockers("[Visual perception failed: all providers exhausted]"),
     ).toEqual([]);
+  });
+
+  it("rejects nuisance blockers when dismiss tag is missing from the live DOM", () => {
+    const interpretation = `5. BLOCKERS:
+   NUISANCE [12] "cookie banner" -> click [15]`;
+    const result = validateNuisanceBlockers(interpretation, [
+      makeElement(12, { text: "Cookie banner" }),
+    ]);
+    expect(result.valid).toEqual([]);
+    expect(result.rejected).toEqual([
+      {
+        overlayTagId: 12,
+        dismissTagId: 15,
+        description: "cookie banner",
+        reason: "dismiss tag missing from live DOM",
+      },
+    ]);
+  });
+
+  it("rejects nuisance blockers when dismiss tag is not actionable", () => {
+    const interpretation = `5. BLOCKERS:
+   NUISANCE [12] "cookie banner" -> click [15]`;
+    const result = validateNuisanceBlockers(interpretation, [
+      makeElement(12, { text: "Cookie banner" }),
+      makeElement(15, {
+        tagName: "input",
+        role: "",
+        attributes: { type: "text" },
+      }),
+    ]);
+    expect(result.valid).toEqual([]);
+    expect(result.rejected[0]?.reason).toContain("not a visible actionable control");
+  });
+
+  it("keeps nuisance blockers whose overlay and dismiss tags validate", () => {
+    const interpretation = `5. BLOCKERS:
+   NUISANCE [12] "cookie banner" -> click [15]`;
+    const result = validateNuisanceBlockers(interpretation, [
+      makeElement(12, { text: "Cookie banner" }),
+      makeElement(15, { text: "Accept all" }),
+    ]);
+    expect(result.rejected).toEqual([]);
+    expect(result.valid).toEqual([
+      {
+        overlayTagId: 12,
+        dismissTagId: 15,
+        description: "cookie banner",
+      },
+    ]);
   });
 });

@@ -197,6 +197,7 @@ const VALID_TOOL_PROFILES = new Set<ToolProfile>([
   "full",
   "read_only",
   "form_fill",
+  "edit_surface",
   "navigate",
   "enter_code",
   "submit_form",
@@ -227,6 +228,18 @@ function extractPrimaryObjective(text: string): string {
 
   const primary = trimmed.slice(0, cutIndex).trim();
   return primary || trimmed;
+}
+
+function hasSequentialActionSequence(query: string): boolean {
+  const text = query.toLowerCase();
+  if (!/\b(then|after that|afterwards|followed by)\b/.test(text)) return false;
+
+  const actionMatches =
+    text.match(
+      /\b(activate|click|open|go to|navigate|turn on|turn off|enable|disable|select|choose|set|rename|move|drag|apply|fill|type|enter|read|report|summarize|search|find|book)\b/g,
+    ) || [];
+
+  return actionMatches.length >= 2;
 }
 
 export function inferToolProfileForStep(
@@ -266,6 +279,18 @@ export function inferToolProfileForStep(
     )
   ) {
     return "form_fill";
+  }
+
+  const isInlineEditSurfaceTask =
+    /(\brename\b)|(\b(change|update|edit|set|replace)\b[^.\n]{0,90}\b(cell|grid|spreadsheet|table|row|column|value|field|document|filename|file name|name)\b)|(\b(context menu|context-menu|inline edit|inline rename)\b)/.test(
+      primaryText,
+    ) ||
+    /(\brename\b)|(\b(change|update|edit|set|replace)\b[^.\n]{0,120}\b(cell|grid|spreadsheet|table|row|column|value|field|document|filename|file name|name)\b)|(\b(context menu|context-menu|inline edit|inline rename)\b)/.test(
+      fullText,
+    );
+
+  if (isInlineEditSurfaceTask) {
+    return "edit_surface";
   }
 
   if (
@@ -482,7 +507,8 @@ export class TaskPlanner {
       const requiresStructuredPlan =
         taskContract.requiresRoundTrip ||
         taskContract.reportTargets.length > 1 ||
-        taskContract.requiredEntities.length > 1;
+        taskContract.requiredEntities.length > 1 ||
+        hasSequentialActionSequence(query);
       const maxStructuredSteps =
         taskContract.exhaustiveScopeCount &&
         taskContract.requiresAggregateReport
