@@ -1,0 +1,61 @@
+export type E2ESuiteName = "easy" | "medium" | "hard";
+
+export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
+  easy: [
+    "autocomplete.test.ts",
+    "context-menu.test.ts",
+    "data-table.test.ts",
+    "date-picker.test.ts",
+    "delayed-content.test.ts",
+    "faq-accordion.test.ts",
+    "infinite-scroll.test.ts",
+    "kanban.test.ts",
+    "keyboard-nav.test.ts",
+    "login.test.ts",
+    "structural-loading.test.ts",
+    "summarize.test.ts",
+    "support-ticket.test.ts",
+    "web-components.test.ts",
+  ],
+  medium: [
+    "article-research.test.ts",
+    "edge-cases.test.ts",
+    "email-compose.test.ts",
+    "execute-js.test.ts",
+    "go-back-navigation.test.ts",
+    "hover-menus.test.ts",
+    "job-board.test.ts",
+    "messaging-thread.test.ts",
+    "modal-overlays.test.ts",
+    "multi-step-form.test.ts",
+    "navigation-challenge.test.ts",
+    "online-shop.test.ts",
+    "procurement-list.test.ts",
+    "profile-checkout.test.ts",
+    "tab-management.test.ts",
+    "team-chat.test.ts",
+  ],
+  hard: [
+    "approval-recovery.test.ts",
+    "clarification-recovery.test.ts",
+    "continuation-abandon-restart.test.ts",
+    "continuation-act-check-act.test.ts",
+    "continuation-cart-swap.test.ts",
+    "continuation-cross-page-compose.test.ts",
+    "continuation-cross-tab.test.ts",
+    "continuation-paginated-memory.test.ts",
+    "continuation-verify.test.ts",
+    "continuation.test.ts",
+    "mutation-dedupe-recovery.test.ts",
+    "online-shop-boundaries.test.ts",
+    "sequential-tasks.test.ts",
+    "site-knowledge-memory.test.ts",
+  ],
+};
+
+export const E2E_SUITE_ORDER: readonly E2ESuiteName[] = [
+  "easy",
+  "medium",
+  "hard",
+];
+

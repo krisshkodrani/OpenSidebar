@@ -75,6 +75,16 @@ describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
 
     const result = outcome.result as any;
     expect(result.editCount).toBeGreaterThanOrEqual(1);
+    expect(result.currentData?.[0]?.[1]).toBe("999");
+    expect(
+      result.edits.some(
+        (edit: any) =>
+          edit.row === 0 &&
+          edit.col === 1 &&
+          edit.oldVal === "130" &&
+          edit.newVal === "999",
+      ),
+    ).toBe(true);
 
     console.log(`\n[e2e] PASS — Spreadsheet edited`);
     console.log(`[e2e]   Edits: ${JSON.stringify(result.edits)}`);

@@ -105,14 +105,15 @@ describe.skipIf(!h.apiKey)("E2E: Online Shopping", () => {
     );
     expect(orderCount, "Node isolation: expected exactly 1 order").toBe(1);
 
-    // Lane retry guard: only 1 trace = no timeout-triggered worker restarts.
-    // Prevents the Amazon Pampers bug where done() lost the race against the
-    // lane timeout, causing the orchestrator to restart and add items again.
+    // Regression guard: no executor/node bleed across a multi-node checkout.
+    // The planner may legitimately decompose the checkout into multiple nodes,
+    // so raw trace count is no longer a reliable proxy for worker restarts.
     const { traceFiles } = await h.printTraceSummary(workspaceId);
-    expect(
-      traceFiles.length,
-      "Lane retry guard: expected 1 trace (no worker restarts)",
-    ).toBe(1);
+    const allEvents = await getMonitoredEvents(h.ctx.serviceWorker, 200);
+    const wsEvents = allEvents.filter(
+      (e: any) => e.workspaceId == null || e.workspaceId === workspaceId,
+    );
+    assertNodeIsolation(wsEvents, traceFiles);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
   }, 380_000);

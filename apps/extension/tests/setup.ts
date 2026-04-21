@@ -2,6 +2,7 @@
 
 // Vite build-time constants (injected via `define` in vite.config.ts)
 (globalThis as any).__DEV__ = true;
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Avoid noisy ECONNREFUSED errors in tests when optional local log/trace server
 // is not running. Only stub localhost drain endpoints; keep other fetch calls real.
