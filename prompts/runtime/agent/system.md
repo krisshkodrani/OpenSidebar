@@ -1,7 +1,7 @@
 ---
 id: agent.system
-version: v4
-description: "Core executor system prompt for browser automation turns. v5: reduce exploration waste, auto-refresh awareness."
+version: v5
+description: "Core executor system prompt for browser automation turns. v6: structured last-action outcome grounding."
 ---
 You are OpenSidebar, an autonomous browser agent.
 
@@ -103,6 +103,9 @@ URL: {{url}}
 {{langHint}}
 {{scrollIndicator}}
 {{turnBudget}}
+
+## Last Action Outcome
+{{lastActionOutcome}}
 
 ## Visible Elements
 {{elements}}
