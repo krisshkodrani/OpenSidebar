@@ -62,6 +62,13 @@ let loopStartImpl: (
 let loopEmitStaleSignal = false;
 let orchestratorDeps: OrchestratorDeps;
 let activeOrchestrator: Orchestrator | null = null;
+let backendFetchImpl:
+  | ((
+      url: string,
+      init?: RequestInit,
+      parsedBody?: any,
+    ) => Promise<Response> | Response)
+  | null = null;
 let autoEscalationDecision:
   | {
       optionId:
@@ -209,6 +216,7 @@ describe("Orchestrator integration join tests", () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    backendFetchImpl = null;
     loopEmitStaleSignal = false;
     loopStartImpl = async (nodeId) => ({
       outcome: "completed",
@@ -220,6 +228,7 @@ describe("Orchestrator integration join tests", () => {
     const checkpointStore: Record<string, unknown> = {};
     const localStore: Record<string, unknown> = {};
     const runTraceEvents: any[] = [];
+    const backendCalls: Array<{ url: string; method: string; body: any }> = [];
     const chromeAny = chrome as any;
 
     chromeAny.runtime ??= {};
@@ -246,6 +255,26 @@ describe("Orchestrator integration join tests", () => {
         }
         return new Response(null, { status: 204 });
       }
+      if (url.startsWith("http://127.0.0.1:7590/")) {
+        let body: any = null;
+        try {
+          body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+        } catch {
+          body = null;
+        }
+        if (backendFetchImpl) {
+          return await backendFetchImpl(url, init, body);
+        }
+        backendCalls.push({
+          url,
+          method: init?.method ?? "GET",
+          body,
+        });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       // Router classifier calls — return "plan" so planner always runs
       return new Response(JSON.stringify({
         choices: [{ message: { content: '{"route":"plan","confidence":0.9,"reason":"test"}' } }],
@@ -267,6 +296,7 @@ describe("Orchestrator integration join tests", () => {
     });
     (globalThis as any).__runtimeMessages = runtimeMessages;
     (globalThis as any).__runTraceEvents = runTraceEvents;
+    (globalThis as any).__backendCalls = backendCalls;
 
     (chrome.storage.local as any).get = vi.fn(async (key: string | string[] | null) => {
       if (key === null) {
@@ -395,6 +425,9 @@ describe("Orchestrator integration join tests", () => {
       workspaceManager: {
         async getWorkspaceById(_workspaceId: string) {
           return { id: "ws-1", tabIds: [101], tabGroupId: 1 };
+        },
+        async getWorkspaces() {
+          return [{ id: "ws-1", tabIds: [101], tabGroupId: 1 }];
         },
         async addTabToWorkspace(_tabId: number, _workspaceId: string) {},
       },
@@ -1574,6 +1607,222 @@ describe("Orchestrator integration join tests", () => {
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("failed");
+  });
+
+  test("persists durable task-run state to the backend opportunistically", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "durable sync step")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed",
+      summary: `completed ${nodeId || "unknown"}`,
+      sideEffectsLog: [
+        {
+          id: "se-1",
+          turn: 1,
+          planIndex: 0,
+          toolName: "click_element",
+          args: { elementId: 7 },
+          result: "clicked item",
+          timestamp: Date.now(),
+          snapshotFingerprint: "snap-1",
+        },
+      ],
+      metrics: undefined,
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("persist durable run"));
+
+    const backendCalls = (globalThis as any).__backendCalls as Array<{
+      url: string;
+      method: string;
+      body: any;
+    }>;
+
+    await vi.waitFor(() => {
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "POST" &&
+            call.url.includes("/task-runs") &&
+            call.body?.workspaceId === "ws-1",
+        ),
+      ).toBe(true);
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "PUT" &&
+            call.url.includes("/nodes/n1") &&
+            call.body?.description === "durable sync step",
+        ),
+      ).toBe(true);
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "POST" &&
+            call.url.includes("/side-effects") &&
+            Array.isArray(call.body?.entries) &&
+            call.body.entries[0]?.id === "se-1",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  test("restores a running task from backend resume when local checkpoints are missing", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "unused local planner")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed",
+      summary: `completed ${nodeId || "unknown"}`,
+      metrics: undefined,
+    });
+
+    backendFetchImpl = async (url, init) => {
+      if (url.includes("/task-runs?")) {
+        return new Response(
+          JSON.stringify({
+            runs: [
+              {
+                id: "run-backend-1",
+                clientRunId: "task-backend-1",
+                workspaceId: "ws-1",
+                query: "recover from backend",
+                rootTabId: 101,
+                rootTabUrl: null,
+                turnNumber: 1,
+                status: "running",
+                startedAt: Date.now() - 1000,
+                finishedAt: null,
+                terminationReason: null,
+                checkpointSummary: {
+                  currentIndex: 0,
+                  nodeCount: 1,
+                  turnNumber: 1,
+                  activeNodeId: "n1",
+                },
+                sessionMetrics: {
+                  totalPromptTokens: 0,
+                  totalCompletionTokens: 0,
+                  totalTokens: 0,
+                  totalCost: 0,
+                  totalCostActual: 0,
+                  totalCostEstimated: 0,
+                  costMode: "none",
+                  totalLlmTimeMs: 0,
+                  totalSessionTimeMs: 1000,
+                  llmCallCount: 0,
+                  totalCachedTokens: 0,
+                  modelBreakdown: {},
+                },
+                budget: {
+                  maxSessionTimeMs: 10000,
+                  maxTotalTokens: 100000,
+                  maxTotalCostUsd: 1,
+                },
+                resumeStateVersion: 1,
+                createdAt: Date.now() - 5000,
+                updatedAt: Date.now(),
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/task-runs/run-backend-1/resume")) {
+        return new Response(
+          JSON.stringify({
+            run: {
+              id: "run-backend-1",
+              clientRunId: "task-backend-1",
+              workspaceId: "ws-1",
+              query: "recover from backend",
+              rootTabId: 101,
+              rootTabUrl: null,
+              turnNumber: 1,
+              status: "running",
+              startedAt: Date.now() - 1000,
+              finishedAt: null,
+              terminationReason: null,
+              checkpointSummary: {
+                currentIndex: 0,
+                nodeCount: 1,
+                turnNumber: 1,
+                activeNodeId: "n1",
+              },
+              sessionMetrics: {
+                totalPromptTokens: 0,
+                totalCompletionTokens: 0,
+                totalTokens: 0,
+                totalCost: 0,
+                totalCostActual: 0,
+                totalCostEstimated: 0,
+                costMode: "none",
+                totalLlmTimeMs: 0,
+                totalSessionTimeMs: 1000,
+                llmCallCount: 0,
+                totalCachedTokens: 0,
+                modelBreakdown: {},
+              },
+              budget: {
+                maxSessionTimeMs: 10000,
+                maxTotalTokens: 100000,
+                maxTotalCostUsd: 1,
+              },
+              resumeStateVersion: 1,
+              createdAt: Date.now() - 5000,
+              updatedAt: Date.now(),
+            },
+            nodes: [
+              {
+                runId: "run-backend-1",
+                nodeId: "n1",
+                description: "backend recovered step",
+                successCriteria: "finish backend recovered step",
+                selectedSkillId: null,
+                selectedSkillReason: null,
+                allowedTools: ["read_page", "click_element"],
+                dependencies: [],
+                assumptions: [],
+                verificationGate: null,
+                handoffArtifacts: [],
+                reflexionLog: [],
+                handoffDepth: 0,
+                handoffFromNodeId: null,
+                trajectory: null,
+                status: "running",
+                retries: 0,
+                result: null,
+                error: null,
+                createdAt: Date.now() - 4000,
+                updatedAt: Date.now(),
+              },
+            ],
+            progress: [],
+            pendingInteraction: null,
+            recentSideEffects: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.restoreFromCheckpoints();
+
+    await vi.waitFor(() => {
+      expect(createdLoopNodeIds).toContain("n1");
+      expect(
+        capturedInstructions.some((entry) =>
+          entry.instruction.includes("Objective: backend recovered step"),
+        ),
+      ).toBe(true);
+    });
   });
 
 });

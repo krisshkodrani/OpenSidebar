@@ -96,6 +96,188 @@ export interface TaskPatch {
   result?: string;
 }
 
+// Durable task-run types (SQLite-backed)
+
+export type TaskRunStatus =
+  | "planning"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface TaskRunNodeCounts {
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface TaskRunProgressSummary {
+  completedPhases: string[];
+  outstandingQuestions: string[];
+  reviewedItemCount?: number;
+  extractedFactCount?: number;
+}
+
+export interface TaskRunCheckpointSummary {
+  currentIndex: number;
+  nodeCount: number;
+  turnNumber: number | null;
+  activeNodeId?: string | null;
+  pageUrl?: string | null;
+  snapshotFingerprint?: string | null;
+  pendingInteractionKind?: "approval" | "clarification" | null;
+}
+
+export interface TaskRunInput {
+  id: string;
+  clientRunId?: string | null;
+  workspaceId: string;
+  query: string;
+  rootTabId?: number | null;
+  rootTabUrl?: string | null;
+  turnNumber?: number | null;
+  status: TaskRunStatus;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  terminationReason?: string | null;
+  checkpointSummary?: TaskRunCheckpointSummary | null;
+  sessionMetrics?: Record<string, unknown> | null;
+  budget?: Record<string, unknown> | null;
+  resumeStateVersion?: number;
+  nodeCounts?: TaskRunNodeCounts | null;
+  resumeRequestedAt?: number | null;
+  resumeRequestedReason?: string | null;
+  stopRequestedAt?: number | null;
+  stopRequestedReason?: string | null;
+  lastResumeSource?: "local" | "backend" | null;
+  lastKnownResumeSafe?: boolean | null;
+  lastResumeSafetyCheckedAt?: number | null;
+  lastKnownResumeReason?: string | null;
+}
+
+export interface TaskRun {
+  id: string;
+  clientRunId: string | null;
+  workspaceId: string;
+  query: string;
+  rootTabId: number | null;
+  rootTabUrl: string | null;
+  turnNumber: number | null;
+  status: TaskRunStatus;
+  startedAt: number | null;
+  finishedAt: number | null;
+  terminationReason: string | null;
+  checkpointSummary: TaskRunCheckpointSummary | null;
+  sessionMetrics: Record<string, unknown> | null;
+  budget: Record<string, unknown> | null;
+  resumeStateVersion: number;
+  nodeCounts: TaskRunNodeCounts | null;
+  resumeRequestedAt: number | null;
+  resumeRequestedReason: string | null;
+  stopRequestedAt: number | null;
+  stopRequestedReason: string | null;
+  lastResumeSource: "local" | "backend" | null;
+  lastKnownResumeSafe: boolean | null;
+  lastResumeSafetyCheckedAt: number | null;
+  lastKnownResumeReason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskRunSummary extends TaskRun {
+  pendingInteraction: {
+    kind: "approval" | "clarification";
+    requestedAt: number;
+    timeoutAt: number | null;
+    active: boolean;
+  } | null;
+  progressSummary?: TaskRunProgressSummary;
+}
+
+export interface TaskRunNodeInput {
+  nodeId: string;
+  description: string;
+  successCriteria: string;
+  selectedSkillId?: string | null;
+  selectedSkillReason?: string | null;
+  allowedTools: string[];
+  dependencies: string[];
+  assumptions: string[];
+  verificationGate?: Record<string, unknown> | null;
+  handoffArtifacts: unknown[];
+  reflexionLog: unknown[];
+  handoffDepth: number;
+  handoffFromNodeId?: string | null;
+  trajectory?: string[] | null;
+  status: string;
+  retries: number;
+  result?: string | null;
+  error?: string | null;
+}
+
+export interface TaskRunNode extends TaskRunNodeInput {
+  runId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskRunProgressInput {
+  key: string;
+  kind: string;
+  payload: Record<string, unknown> | string[] | string | number | boolean | null;
+}
+
+export interface TaskRunProgress extends TaskRunProgressInput {
+  runId: string;
+  updatedAt: number;
+}
+
+export type PendingInteractionStatus =
+  | "active"
+  | "resolved"
+  | "timed_out"
+  | "cleared";
+
+export interface PendingInteractionRecordInput {
+  nodeId?: string | null;
+  kind: "approval" | "clarification";
+  payload: Record<string, unknown>;
+  requestedAt: number;
+  timeoutAt?: number | null;
+  status: PendingInteractionStatus;
+}
+
+export interface PendingInteractionRecord extends PendingInteractionRecordInput {
+  runId: string;
+  updatedAt: number;
+}
+
+export interface SideEffectRecordInput {
+  id: string;
+  nodeId?: string | null;
+  toolName: string;
+  args: Record<string, unknown>;
+  result: string;
+  timestamp: number;
+  snapshotFingerprint?: string | null;
+}
+
+export interface SideEffectRecord extends SideEffectRecordInput {
+  runId: string;
+}
+
+export interface TaskRunResumeResponse {
+  run: TaskRun;
+  nodes: TaskRunNode[];
+  progress: TaskRunProgress[];
+  pendingInteraction: PendingInteractionRecord | null;
+  recentSideEffects: SideEffectRecord[];
+}
+
+export interface TaskRunDetailResponse extends TaskRunResumeResponse {}
+
 // ── Config ──
 
 export interface BackendConfig {

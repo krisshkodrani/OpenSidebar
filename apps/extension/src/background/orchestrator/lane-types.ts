@@ -128,7 +128,7 @@ export type OrchestratorDeps = {
   createAgentLoop?: (input: CreateAgentLoopInput) => AgentLoop;
   workspaceManager?: Pick<
     typeof workspaceManager,
-    "getWorkspaceById" | "addTabToWorkspace"
+    "getWorkspaceById" | "getWorkspaces" | "addTabToWorkspace"
   >;
   waitForContentScriptReady?: (
     tabId: number,

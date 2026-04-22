@@ -44,6 +44,175 @@ export interface ProfileResolveResult {
   sensitiveFields: string[];
 }
 
+export type DurableTaskRunStatus =
+  | "planning"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface DurableTaskRunCheckpointSummary {
+  currentIndex: number;
+  nodeCount: number;
+  turnNumber: number | null;
+  activeNodeId?: string | null;
+  pageUrl?: string | null;
+  snapshotFingerprint?: string | null;
+  pendingInteractionKind?: "approval" | "clarification" | null;
+}
+
+export interface DurableTaskRun {
+  id: string;
+  clientRunId: string | null;
+  workspaceId: string;
+  query: string;
+  rootTabId: number | null;
+  rootTabUrl: string | null;
+  turnNumber: number | null;
+  status: DurableTaskRunStatus;
+  startedAt: number | null;
+  finishedAt: number | null;
+  terminationReason: string | null;
+  checkpointSummary: DurableTaskRunCheckpointSummary | null;
+  sessionMetrics: Record<string, unknown> | null;
+  budget: Record<string, unknown> | null;
+  resumeStateVersion: number;
+  nodeCounts: {
+    pending: number;
+    running: number;
+    completed: number;
+    failed: number;
+    skipped: number;
+  } | null;
+  resumeRequestedAt: number | null;
+  resumeRequestedReason: string | null;
+  stopRequestedAt: number | null;
+  stopRequestedReason: string | null;
+  lastResumeSource: "local" | "backend" | null;
+  lastKnownResumeSafe: boolean | null;
+  lastResumeSafetyCheckedAt: number | null;
+  lastKnownResumeReason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DurableTaskRunInput {
+  id: string;
+  clientRunId?: string | null;
+  workspaceId: string;
+  query: string;
+  rootTabId?: number | null;
+  rootTabUrl?: string | null;
+  turnNumber?: number | null;
+  status: DurableTaskRunStatus;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  terminationReason?: string | null;
+  checkpointSummary?: DurableTaskRunCheckpointSummary | null;
+  sessionMetrics?: Record<string, unknown> | null;
+  budget?: Record<string, unknown> | null;
+  resumeStateVersion?: number;
+  nodeCounts?: DurableTaskRun["nodeCounts"] | null;
+  resumeRequestedAt?: number | null;
+  resumeRequestedReason?: string | null;
+  stopRequestedAt?: number | null;
+  stopRequestedReason?: string | null;
+  lastResumeSource?: "local" | "backend" | null;
+  lastKnownResumeSafe?: boolean | null;
+  lastResumeSafetyCheckedAt?: number | null;
+  lastKnownResumeReason?: string | null;
+}
+
+export interface DurableTaskRunNodeInput {
+  nodeId: string;
+  description: string;
+  successCriteria: string;
+  selectedSkillId?: string | null;
+  selectedSkillReason?: string | null;
+  allowedTools: string[];
+  dependencies: string[];
+  assumptions: string[];
+  verificationGate?: Record<string, unknown> | null;
+  handoffArtifacts: unknown[];
+  reflexionLog: unknown[];
+  handoffDepth: number;
+  handoffFromNodeId?: string | null;
+  trajectory?: string[] | null;
+  status: string;
+  retries: number;
+  result?: string | null;
+  error?: string | null;
+}
+
+export interface DurableTaskRunNode extends DurableTaskRunNodeInput {
+  runId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DurableTaskRunProgress {
+  runId: string;
+  key: string;
+  kind: string;
+  payload: unknown;
+  updatedAt: number;
+}
+
+export interface DurablePendingInteractionInput {
+  nodeId?: string | null;
+  kind: "approval" | "clarification";
+  payload: Record<string, unknown>;
+  requestedAt: number;
+  timeoutAt?: number | null;
+  status: "active" | "resolved" | "timed_out" | "cleared";
+}
+
+export interface DurablePendingInteractionRecord
+  extends DurablePendingInteractionInput {
+  runId: string;
+  updatedAt: number;
+}
+
+export interface DurableSideEffectInput {
+  id: string;
+  nodeId?: string | null;
+  toolName: string;
+  args: Record<string, unknown>;
+  result: string;
+  timestamp: number;
+  snapshotFingerprint?: string | null;
+}
+
+export interface DurableSideEffectRecord extends DurableSideEffectInput {
+  runId: string;
+}
+
+export interface DurableTaskRunResumeResponse {
+  run: DurableTaskRun;
+  nodes: DurableTaskRunNode[];
+  progress: DurableTaskRunProgress[];
+  pendingInteraction: DurablePendingInteractionRecord | null;
+  recentSideEffects: DurableSideEffectRecord[];
+}
+
+export interface DurableTaskRunSummary extends DurableTaskRun {
+  pendingInteraction: {
+    kind: "approval" | "clarification";
+    requestedAt: number;
+    timeoutAt: number | null;
+    active: boolean;
+  } | null;
+  progressSummary?: {
+    completedPhases: string[];
+    outstandingQuestions: string[];
+    reviewedItemCount?: number;
+    extractedFactCount?: number;
+  };
+}
+
+export interface DurableTaskRunDetailResponse
+  extends DurableTaskRunResumeResponse {}
+
 // ── Helpers ──
 
 async function backendFetch(
@@ -66,7 +235,7 @@ export async function postMemory(input: MemoryInput): Promise<void> {
       body: JSON.stringify(input),
     });
   } catch {
-    logger.debug("backend-client", "Memory write failed (backend may be offline)");
+    logger.debug("system", "Memory write failed (backend may be offline)");
   }
 }
 
@@ -127,6 +296,180 @@ export async function pollPendingTasks(): Promise<PendingTask[]> {
     return data.tasks ?? [];
   } catch {
     return [];
+  }
+}
+
+// Durable task runs
+
+export async function upsertTaskRun(input: DurableTaskRunInput): Promise<void> {
+  try {
+    await backendFetch("/task-runs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  } catch {
+    logger.debug("system", "Task run sync failed (backend may be offline)");
+  }
+}
+
+export async function patchTaskRun(
+  id: string,
+  patch: Partial<DurableTaskRunInput>,
+): Promise<void> {
+  try {
+    await backendFetch(`/task-runs/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  } catch {
+    logger.debug("system", "Task run patch failed (backend may be offline)");
+  }
+}
+
+export async function updateTaskRunCheckpoint(
+  id: string,
+  checkpointSummary: DurableTaskRunCheckpointSummary | null,
+): Promise<void> {
+  try {
+    await backendFetch(`/task-runs/${encodeURIComponent(id)}/checkpoint`, {
+      method: "PUT",
+      body: JSON.stringify({ checkpointSummary }),
+    });
+  } catch {
+    logger.debug("system", "Task run checkpoint sync failed");
+  }
+}
+
+export async function upsertTaskRunNode(
+  runId: string,
+  node: DurableTaskRunNodeInput,
+): Promise<void> {
+  try {
+    await backendFetch(
+      `/task-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(node.nodeId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(node),
+      },
+    );
+  } catch {
+    logger.debug("system", "Task run node sync failed");
+  }
+}
+
+export async function upsertTaskRunPendingInteraction(
+  runId: string,
+  interaction: DurablePendingInteractionInput | null,
+): Promise<void> {
+  try {
+    await backendFetch(
+      `/task-runs/${encodeURIComponent(runId)}/pending-interaction`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ interaction }),
+      },
+    );
+  } catch {
+    logger.debug("system", "Task run pending interaction sync failed");
+  }
+}
+
+export async function appendTaskRunSideEffects(
+  runId: string,
+  entries: DurableSideEffectInput[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    await backendFetch(`/task-runs/${encodeURIComponent(runId)}/side-effects`, {
+      method: "POST",
+      body: JSON.stringify({ entries }),
+    });
+  } catch {
+    logger.debug("system", "Task run side-effect sync failed");
+  }
+}
+
+export async function listTaskRuns(options?: {
+  workspaceId?: string;
+  status?: DurableTaskRunStatus;
+  limit?: number;
+  includeCompleted?: boolean;
+  includeProgressSummary?: boolean;
+  controlRequested?: boolean;
+}): Promise<DurableTaskRunSummary[]> {
+  try {
+    const params = new URLSearchParams();
+    if (options?.workspaceId) params.set("workspace_id", options.workspaceId);
+    if (options?.status) params.set("status", options.status);
+    if (options?.limit != null) params.set("limit", String(options.limit));
+    if (options?.includeCompleted) params.set("include_completed", "true");
+    if (options?.includeProgressSummary) {
+      params.set("include_progress_summary", "true");
+    }
+    if (options?.controlRequested) params.set("control_requested", "true");
+    const suffix = params.size > 0 ? `?${params.toString()}` : "";
+    const res = await backendFetch(`/task-runs${suffix}`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { runs: DurableTaskRunSummary[] };
+    return data.runs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchTaskRunDetail(
+  runId: string,
+): Promise<DurableTaskRunDetailResponse | null> {
+  try {
+    const res = await backendFetch(`/task-runs/${encodeURIComponent(runId)}`);
+    if (!res.ok) return null;
+    return (await res.json()) as DurableTaskRunDetailResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchTaskRunResume(
+  runId: string,
+): Promise<DurableTaskRunResumeResponse | null> {
+  try {
+    const res = await backendFetch(`/task-runs/${encodeURIComponent(runId)}/resume`);
+    if (!res.ok) return null;
+    return (await res.json()) as DurableTaskRunResumeResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestTaskRunResume(
+  runId: string,
+  reason?: string,
+): Promise<DurableTaskRun | null> {
+  try {
+    const res = await backendFetch(`/task-runs/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason ?? null }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as DurableTaskRun;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestTaskRunStop(
+  runId: string,
+  reason?: string,
+): Promise<DurableTaskRun | null> {
+  try {
+    const res = await backendFetch(`/task-runs/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason ?? null }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as DurableTaskRun;
+  } catch {
+    return null;
   }
 }
 

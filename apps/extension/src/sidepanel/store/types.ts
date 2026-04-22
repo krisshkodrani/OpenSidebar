@@ -12,6 +12,7 @@ import type {
   SavedPrompt,
   SessionMetrics,
   StagnationState,
+  DurableRunStatusMessage,
   TaskCompletionMessage,
   TaskProgressMessage,
   TaskRecoveryState,
@@ -52,6 +53,7 @@ export interface AgentSlice {
   taskProgress: TaskProgressMessage["payload"] | null;
   taskCompletion: TaskCompletionMessage["payload"] | null;
   taskRecovery: TaskRecoveryState | null;
+  durableRunStatus: DurableRunStatusMessage["payload"] | null;
   pendingApproval: PendingApproval | null;
   pendingEscalation: PendingEscalation | null;
   pendingPlanConfirmation: PendingPlanConfirmation | null;
@@ -82,6 +84,8 @@ export interface AgentSlice {
   clearLatestStepLabel: () => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
+  setDurableRunStatus: (status: DurableRunStatusMessage["payload"] | null) => void;
+  clearDurableRunStatus: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;
   setLaneTelemetry: (telemetry: LaneTelemetrySnapshot | null) => void;

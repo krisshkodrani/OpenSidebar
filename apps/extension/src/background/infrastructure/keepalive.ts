@@ -90,6 +90,10 @@ function handleAlarm(alarm: chrome.alarms.Alarm): void {
         }
       })
       .catch(() => {});
+
+    void import("../orchestrator").then(({ orchestrator }) =>
+      orchestrator.processDurableRunControlRequests().catch(() => {}),
+    );
   }
 }
 
