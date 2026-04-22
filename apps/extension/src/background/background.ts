@@ -535,7 +535,7 @@ chrome.runtime.onMessage.addListener(
     ) {
       const wsId = message.payload.workspaceId;
       if (wsId) {
-        orchestrator.resyncWorkspaceState(wsId);
+        void orchestrator.resyncWorkspaceState(wsId);
       }
       return false;
     }

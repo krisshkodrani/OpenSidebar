@@ -330,6 +330,21 @@ export async function sendUserChat(
   return effectiveWorkspaceId;
 }
 
+export async function stopAgent(
+  ctx: ExtensionContext,
+  workspaceId?: string | null,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  await helperPage.evaluate(async (wsId: string | null) => {
+    await chrome.runtime.sendMessage({
+      type: "STOP_AGENT",
+      requestId: crypto.randomUUID(),
+      source: "sidepanel",
+      payload: { workspaceId: wsId },
+    });
+  }, workspaceId ?? null);
+}
+
 export async function sendApprovalResponse(
   ctx: ExtensionContext,
   approvalId: string,
@@ -481,6 +496,68 @@ export async function restartExtensionAndMonitor(
 ): Promise<void> {
   await reloadExtension(ctx);
   await setupEventMonitor(ctx.serviceWorker);
+}
+
+export async function waitForLocalCheckpointPersisted(
+  ctx: ExtensionContext,
+  workspaceId: string,
+  timeoutMs: number = 15_000,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const found = await helperPage.evaluate(
+      async (wsId: string) => {
+        const localData = await chrome.storage.local.get(null);
+        const checkpoints =
+          (localData["opensidebar:orchestrator:checkpoints"] as
+            | Record<string, unknown>
+            | undefined) ?? {};
+        const hasOrchestratorCheckpoint = Boolean(checkpoints[wsId]);
+        const hasTurnCheckpoint = Object.keys(localData).some((key) =>
+          key.startsWith(`opensidebar:turn-checkpoint:${wsId}:`),
+        );
+        return hasOrchestratorCheckpoint || hasTurnCheckpoint;
+      },
+      workspaceId,
+    );
+
+    if (found) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for local checkpoints for workspace ${workspaceId}`,
+  );
+}
+
+export async function clearLocalCheckpointsForWorkspace(
+  ctx: ExtensionContext,
+  workspaceId: string,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  await helperPage.evaluate(async (wsId: string) => {
+    const localData = await chrome.storage.local.get(null);
+    const removeKeys = Object.keys(localData).filter((key) =>
+      key.startsWith(`opensidebar:turn-checkpoint:${wsId}:`),
+    );
+    const checkpoints =
+      (localData["opensidebar:orchestrator:checkpoints"] as
+        | Record<string, unknown>
+        | undefined) ?? {};
+
+    if (checkpoints[wsId] !== undefined) {
+      delete checkpoints[wsId];
+      await chrome.storage.local.set({
+        "opensidebar:orchestrator:checkpoints": checkpoints,
+      });
+    }
+
+    if (removeKeys.length > 0) {
+      await chrome.storage.local.remove(removeKeys);
+    }
+  }, workspaceId);
 }
 
 export async function getUserTabUrls(

@@ -1885,4 +1885,153 @@ describe("Orchestrator integration join tests", () => {
     });
   });
 
+  test("resyncWorkspaceState recovers from backend when local checkpoints are gone", async () => {
+    backendFetchImpl = async (url) => {
+      if (url.includes("/task-runs?")) {
+        return new Response(
+          JSON.stringify({
+            runs: [
+              {
+                id: "run-backend-resync",
+                clientRunId: "task-backend-resync",
+                workspaceId: "ws-1",
+                query: "recover on workspace sync",
+                rootTabId: 101,
+                rootTabUrl: null,
+                turnNumber: 1,
+                status: "running",
+                startedAt: Date.now() - 2_000,
+                finishedAt: null,
+                terminationReason: null,
+                checkpointSummary: {
+                  currentIndex: 0,
+                  nodeCount: 1,
+                  turnNumber: 1,
+                  activeNodeId: "n1",
+                },
+                sessionMetrics: {
+                  totalPromptTokens: 0,
+                  totalCompletionTokens: 0,
+                  totalTokens: 0,
+                  totalCost: 0,
+                  totalCostActual: 0,
+                  totalCostEstimated: 0,
+                  costMode: "none",
+                  totalLlmTimeMs: 0,
+                  totalSessionTimeMs: 2_000,
+                  llmCallCount: 0,
+                  totalCachedTokens: 0,
+                  modelBreakdown: {},
+                },
+                budget: {
+                  maxSessionTimeMs: 10_000,
+                  maxTotalTokens: 100_000,
+                  maxTotalCostUsd: 1,
+                },
+                resumeStateVersion: 1,
+                createdAt: Date.now() - 5_000,
+                updatedAt: Date.now(),
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/task-runs/run-backend-resync/resume")) {
+        return new Response(
+          JSON.stringify({
+            run: {
+              id: "run-backend-resync",
+              clientRunId: "task-backend-resync",
+              workspaceId: "ws-1",
+              query: "recover on workspace sync",
+              rootTabId: 101,
+              rootTabUrl: null,
+              turnNumber: 1,
+              status: "running",
+              startedAt: Date.now() - 2_000,
+              finishedAt: null,
+              terminationReason: null,
+              checkpointSummary: {
+                currentIndex: 0,
+                nodeCount: 1,
+                turnNumber: 1,
+                activeNodeId: "n1",
+              },
+              sessionMetrics: {
+                totalPromptTokens: 0,
+                totalCompletionTokens: 0,
+                totalTokens: 0,
+                totalCost: 0,
+                totalCostActual: 0,
+                totalCostEstimated: 0,
+                costMode: "none",
+                totalLlmTimeMs: 0,
+                totalSessionTimeMs: 2_000,
+                llmCallCount: 0,
+                totalCachedTokens: 0,
+                modelBreakdown: {},
+              },
+              budget: {
+                maxSessionTimeMs: 10_000,
+                maxTotalTokens: 100_000,
+                maxTotalCostUsd: 1,
+              },
+              resumeStateVersion: 1,
+              createdAt: Date.now() - 5_000,
+              updatedAt: Date.now(),
+            },
+            nodes: [
+              {
+                runId: "run-backend-resync",
+                nodeId: "n1",
+                description: "backend sync recovery step",
+                successCriteria: "finish backend sync recovery step",
+                selectedSkillId: null,
+                selectedSkillReason: null,
+                allowedTools: ["read_page", "click_element"],
+                dependencies: [],
+                assumptions: [],
+                verificationGate: null,
+                handoffArtifacts: [],
+                reflexionLog: [],
+                handoffDepth: 0,
+                handoffFromNodeId: null,
+                trajectory: null,
+                status: "running",
+                retries: 0,
+                result: null,
+                error: null,
+                createdAt: Date.now() - 4_000,
+                updatedAt: Date.now(),
+              },
+            ],
+            progress: [],
+            pendingInteraction: null,
+            recentSideEffects: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.resyncWorkspaceState("ws-1");
+
+    await vi.waitFor(() => {
+      expect(createdLoopNodeIds).toContain("n1");
+      const messages = (globalThis as any).__runtimeMessages as Array<{
+        type?: string;
+      }>;
+      expect(messages.some((message) => message.type === "TASK_RECOVERY")).toBe(
+        true,
+      );
+    });
+  });
+
 });
