@@ -19,7 +19,12 @@ export type TTSStylePreset =
 export interface UserSettings {
   openRouterApiKey: string;
   /** Provider mode: how LLM providers are combined across roles */
-  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
+  providerMode?:
+    | "openrouter"
+    | "openrouter-groq"
+    | "openai-groq"
+    | "fireworks"
+    | "moonshot";
   /** @deprecated Use providerMode instead. Kept for migration. */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
@@ -30,6 +35,8 @@ export interface UserSettings {
   geminiApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;
+  /** Moonshot AI API key (required for moonshot mode) */
+  kimiApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */

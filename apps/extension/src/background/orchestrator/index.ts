@@ -1946,10 +1946,16 @@ export class Orchestrator {
     const settings = (await loadSettings()) ?? ({} as UserSettings);
     const mode =
       settings.providerMode ??
-      (settings.openRouterApiKey ? "openrouter" : "fireworks");
+      (settings.openRouterApiKey
+        ? "openrouter"
+        : settings.kimiApiKey
+          ? "moonshot"
+          : "fireworks");
     const activeKey =
       mode === "fireworks"
         ? settings.fireworksApiKey
+        : mode === "moonshot"
+          ? settings.kimiApiKey
         : mode === "openai-groq"
           ? settings.openaiApiKey
           : settings.openRouterApiKey;
@@ -3006,6 +3012,7 @@ export class Orchestrator {
         perceptionMode: input.settings.perceptionMode,
         useVLExecutor: input.settings.useVLExecutor,
         fireworksApiKey: input.settings.fireworksApiKey,
+        kimiApiKey: input.settings.kimiApiKey,
       };
       const planner = this.deps.createPlanner(
         input.openRouterApiKey,
@@ -3663,6 +3670,7 @@ export class Orchestrator {
           openaiApiKey: input.settings.openaiApiKey,
           groqApiKey: input.settings.groqApiKey,
           fireworksApiKey: input.settings.fireworksApiKey,
+          kimiApiKey: input.settings.kimiApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
           useVLExecutor: input.settings.useVLExecutor,
@@ -5615,6 +5623,8 @@ export class Orchestrator {
       const activeKey =
         mode === "fireworks"
           ? settings.fireworksApiKey
+          : mode === "moonshot"
+            ? settings.kimiApiKey
           : mode === "openai-groq"
             ? settings.openaiApiKey
             : settings.openRouterApiKey;
@@ -5623,6 +5633,7 @@ export class Orchestrator {
       const client = new LLMClient(activeKey, {
         providerMode: mode,
         fireworksApiKey: settings.fireworksApiKey,
+        kimiApiKey: settings.kimiApiKey,
       });
       entries = await extractSiteKnowledgeLLM(context, domain, client);
     } catch {

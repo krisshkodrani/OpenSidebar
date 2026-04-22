@@ -48,6 +48,12 @@ export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
 
+/** Moonshot direct API */
+const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
+export const MOONSHOT_MODEL_EXECUTOR = "kimi-k2.6";
+export const MOONSHOT_MODEL_PLANNER = "kimi-k2.6";
+export const MOONSHOT_MODEL_PERCEPTION = "kimi-k2.6";
+
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: OPENAI_BASE_URL,
@@ -74,6 +80,8 @@ export const FIREWORKS_MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-tur
 
 /** Models known to support vision (image_url content) + tool calling simultaneously */
 const VL_CAPABLE_MODELS = new Set([
+  "kimi-k2.6",
+  "kimi-k2.5",
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "openai/gpt-5.4-mini",
   "openai/gpt-5.4-mini:nitro",
@@ -97,6 +105,15 @@ function fireworksProvider(apiKey: string): ProviderConfig {
   };
 }
 
+function moonshotProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: MOONSHOT_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "moonshot",
+  };
+}
+
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
@@ -105,7 +122,12 @@ export interface LLMClientOptions {
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
-  providerMode?: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
+  providerMode?:
+    | "openrouter"
+    | "openrouter-groq"
+    | "openai-groq"
+    | "fireworks"
+    | "moonshot";
   /** @deprecated Use providerMode instead */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
@@ -114,6 +136,8 @@ export interface LLMClientOptions {
   groqApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;
+  /** Moonshot AI API key (required for moonshot mode) */
+  kimiApiKey?: string;
   /** Override default temperature (default: 0.0) */
   temperature?: number;
 }
@@ -134,6 +158,56 @@ function openRouterProvider(apiKey: string): ProviderConfig {
     },
     providerId: "openrouter",
   };
+}
+
+function getProviderDisplayName(providerId: ProviderConfig["providerId"]): string {
+  switch (providerId) {
+    case "fireworks":
+      return "Fireworks AI";
+    case "moonshot":
+      return "Moonshot AI";
+    case "groq":
+      return "Groq";
+    case "openai":
+      return "OpenAI";
+    default:
+      return "OpenRouter";
+  }
+}
+
+function getProviderCreditsUrl(
+  providerId: ProviderConfig["providerId"],
+): string | null {
+  switch (providerId) {
+    case "openrouter":
+      return "https://openrouter.ai/credits";
+    case "fireworks":
+      return "https://fireworks.ai";
+    case "moonshot":
+      return "https://platform.kimi.ai";
+    case "groq":
+      return "https://console.groq.com";
+    case "openai":
+      return "https://platform.openai.com";
+    default:
+      return null;
+  }
+}
+
+function shapePayloadForProvider(
+  providerId: ProviderConfig["providerId"],
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (providerId !== "moonshot") return payload;
+
+  const shaped = { ...payload };
+  if (shaped.max_tokens !== undefined) {
+    shaped.max_completion_tokens = shaped.max_tokens;
+    delete shaped.max_tokens;
+  }
+  delete shaped.temperature;
+  shaped.thinking = { type: "disabled" };
+  return shaped;
 }
 
 /** Extract reasoning content from model output: XML think tags and markdown Think/Observe/Verify sections */
@@ -403,7 +477,12 @@ export class LLMClient {
     this.defaultTemperature = options?.temperature ?? 0.0;
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
-    let mode: "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks" =
+    let mode:
+      | "openrouter"
+      | "openrouter-groq"
+      | "openai-groq"
+      | "fireworks"
+      | "moonshot" =
       options?.providerMode ?? "openrouter";
     if (!options?.providerMode && options?.provider) {
       // Migrate legacy provider field
@@ -415,9 +494,20 @@ export class LLMClient {
     const hasGroq = !!options?.groqApiKey;
     const hasOpenAI = !!options?.openaiApiKey;
     const hasFireworks = !!options?.fireworksApiKey;
+    const hasMoonshot = !!options?.kimiApiKey;
 
     // --- Build executor pool ---
-    if (mode === "fireworks" && hasFireworks) {
+    if (mode === "moonshot" && hasMoonshot) {
+      const kimiKey = options!.kimiApiKey!;
+      const kimiProv = moonshotProvider(kimiKey);
+      const executorModel = options?.executorModel || MOONSHOT_MODEL_EXECUTOR;
+      this.executorPool = new ProviderPool(kimiKey, {
+        openRouterModel: executorModel,
+      });
+      this.executorPool.getSlots()[0].provider = kimiProv;
+      this.executorFallbackModel =
+        options?.executorFallbackModel || executorModel;
+    } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const executorModel = options?.executorModel || FIREWORKS_MODEL_EXECUTOR;
@@ -440,7 +530,15 @@ export class LLMClient {
     }
 
     // --- Build planner pool ---
-    if (mode === "fireworks" && hasFireworks) {
+    if (mode === "moonshot" && hasMoonshot) {
+      const kimiKey = options!.kimiApiKey!;
+      const kimiProv = moonshotProvider(kimiKey);
+      const plannerModel = options?.plannerModel || MOONSHOT_MODEL_PLANNER;
+      this.plannerPool = new ProviderPool(kimiKey, {
+        openRouterModel: plannerModel,
+      });
+      this.plannerPool.getSlots()[0].provider = kimiProv;
+    } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;
@@ -584,6 +682,7 @@ export class LLMClient {
     const body = JSON.parse(init.body as string);
     body.model = slot.model;
     delete body.provider;
+    const shapedBody = shapePayloadForProvider(slot.provider.providerId, body);
     return {
       url: slot.provider.baseUrl,
       init: {
@@ -593,7 +692,7 @@ export class LLMClient {
           Authorization: `Bearer ${slot.provider.apiKey}`,
           ...slot.provider.headers,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(shapedBody),
       },
     };
   }
@@ -726,7 +825,7 @@ export class LLMClient {
     // Fireworks routers require streaming — force it and collect the response
     const forceStream = provider.providerId === "fireworks";
 
-    const payload: Record<string, unknown> = {
+    const payload = shapePayloadForProvider(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
       tools: request.tools,
@@ -736,7 +835,7 @@ export class LLMClient {
       stop: request.stop,
       response_format: request.response_format,
       ...(forceStream ? { stream: true, stream_options: { include_usage: true } } : {}),
-    };
+    });
 
     logger.debug("agent", "LLM Request", {
       model: payload.model,
@@ -756,7 +855,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter";
+      let actualProviderId: ProviderConfig["providerId"];
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -785,10 +884,10 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = {
+          activePayload = shapePayloadForProvider(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
-          };
+          });
           logger.warn(
             "agent",
             "Provider rejected image_url content; retrying with text-only messages",
@@ -818,7 +917,10 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = { ...activePayload, model: activeModel };
+            activePayload = shapePayloadForProvider(provider.providerId, {
+              ...activePayload,
+              model: activeModel,
+            });
             requestInitBase = {
               method: "POST",
               headers: {
@@ -831,16 +933,16 @@ export class LLMClient {
           }
 
           // No viable fallback — throw the credit error
-          const providerName = "OpenRouter";
-          const creditsUrl = "openrouter.ai/credits";
+          const providerName = getProviderDisplayName(provider.providerId);
+          const creditsUrl = getProviderCreditsUrl(provider.providerId);
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
             pool.allDisabled()
               ? `All providers exhausted (credit limits). Add credits to continue.`
               : affordable > 0
-                ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
-                : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
+                ? `Insufficient credits (can afford ~${affordable} tokens).${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`
+                : `Insufficient ${providerName} credits.${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;
@@ -970,7 +1072,7 @@ export class LLMClient {
       );
     }
 
-    const payload: Record<string, unknown> = {
+    const payload = shapePayloadForProvider(provider.providerId, {
       model: request.model || activeModel,
       messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
       tools: request.tools,
@@ -981,7 +1083,7 @@ export class LLMClient {
       stream: true,
       stream_options: { include_usage: true },
       response_format: request.response_format,
-    };
+    });
 
     logger.debug("agent", "LLM Stream Request", {
       model: payload.model,
@@ -1001,7 +1103,7 @@ export class LLMClient {
       };
 
       let response: Response;
-      let actualProviderId: "openrouter";
+      let actualProviderId: ProviderConfig["providerId"];
       let actualModel: string;
       let activePayload = payload;
       let imageFallbackRetried = false;
@@ -1030,10 +1132,10 @@ export class LLMClient {
           isImageUrlUnsupported(response.status, errorText)
         ) {
           imageFallbackRetried = true;
-          activePayload = {
+          activePayload = shapePayloadForProvider(provider.providerId, {
             ...activePayload,
             messages: toTextOnlyMessages(request.messages),
-          };
+          });
           logger.warn(
             "agent",
             "Provider rejected image_url content on stream; retrying with text-only messages",
@@ -1063,7 +1165,10 @@ export class LLMClient {
             );
             provider = fallback.provider;
             activeModel = fallback.model;
-            activePayload = { ...activePayload, model: activeModel };
+            activePayload = shapePayloadForProvider(provider.providerId, {
+              ...activePayload,
+              model: activeModel,
+            });
             requestInitBase = {
               method: "POST",
               headers: {
@@ -1076,16 +1181,16 @@ export class LLMClient {
           }
 
           // No viable fallback — throw the credit error
-          const providerName = "OpenRouter";
-          const creditsUrl = "openrouter.ai/credits";
+          const providerName = getProviderDisplayName(provider.providerId);
+          const creditsUrl = getProviderCreditsUrl(provider.providerId);
           const affordMatch = errorText.match(/can only afford (\d+)/);
           const affordable = affordMatch ? parseInt(affordMatch[1]) : 0;
           const err = new Error(
             pool.allDisabled()
               ? `All providers exhausted (credit limits). Add credits to continue.`
               : affordable > 0
-                ? `Insufficient credits (can afford ~${affordable} tokens). Add credits at ${creditsUrl}.`
-                : `Insufficient ${providerName} credits. Add credits at ${creditsUrl}.`,
+                ? `Insufficient credits (can afford ~${affordable} tokens).${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`
+                : `Insufficient ${providerName} credits.${creditsUrl ? ` Add credits at ${creditsUrl}.` : ""}`,
           );
           (err as any).status = 402;
           (err as any).affordable = affordable;

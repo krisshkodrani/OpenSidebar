@@ -667,13 +667,21 @@ async function handleUserChat(
 
     // Check the primary API key for the active provider
     const activeKey =
-      mode === "fireworks" ? settings.fireworksApiKey :
-      mode === "openai-groq" ? settings.openaiApiKey :
-      openRouterApiKey;
+      mode === "fireworks"
+        ? settings.fireworksApiKey
+        : mode === "moonshot"
+          ? settings.kimiApiKey
+          : mode === "openai-groq"
+            ? settings.openaiApiKey
+            : openRouterApiKey;
     const activeKeyName =
-      mode === "fireworks" ? "Fireworks AI" :
-      mode === "openai-groq" ? "OpenAI" :
-      "OpenRouter";
+      mode === "fireworks"
+        ? "Fireworks AI"
+        : mode === "moonshot"
+          ? "Moonshot AI"
+          : mode === "openai-groq"
+            ? "OpenAI"
+            : "OpenRouter";
 
     if (!activeKey) {
       chrome.runtime.sendMessage({

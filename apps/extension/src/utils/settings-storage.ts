@@ -14,10 +14,11 @@ const LOCAL_OPENAI_KEY = "openaiApiKey_local";
 const LOCAL_GROQ_KEY = "groqApiKey_local";
 const LOCAL_GEMINI_KEY = "geminiApiKey_local";
 const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
+const LOCAL_KIMI_KEY = "kimiApiKey_local";
 
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
- * Both openRouterApiKey and openaiApiKey are credentials — never sync them.
+ * All API keys are credentials — never sync them.
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
   const {
@@ -26,6 +27,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
     groqApiKey,
     geminiApiKey,
     fireworksApiKey,
+    kimiApiKey,
     ...rest
   } = settings;
   await Promise.all([
@@ -35,6 +37,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
       [LOCAL_GROQ_KEY]: groqApiKey ?? "",
       [LOCAL_GEMINI_KEY]: geminiApiKey ?? "",
       [LOCAL_FIREWORKS_KEY]: fireworksApiKey ?? "",
+      [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
     }),
     chrome.storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -54,6 +57,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
       LOCAL_GROQ_KEY,
       LOCAL_GEMINI_KEY,
       LOCAL_FIREWORKS_KEY,
+      LOCAL_KIMI_KEY,
     ]),
     // Check legacy session key for migration
     chrome.storage.session
@@ -72,6 +76,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
     (localResult[LOCAL_GEMINI_KEY] as string | undefined) || "";
   const fireworksApiKey =
     (localResult[LOCAL_FIREWORKS_KEY] as string | undefined) || "";
+  const kimiApiKey = (localResult[LOCAL_KIMI_KEY] as string | undefined) || "";
 
   if (
     !syncSettings &&
@@ -79,7 +84,8 @@ export async function loadSettings(): Promise<UserSettings | null> {
     !openaiApiKey &&
     !groqApiKey &&
     !geminiApiKey &&
-    !fireworksApiKey
+    !fireworksApiKey &&
+    !kimiApiKey
   ) {
     return null;
   }
@@ -123,6 +129,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
   delete raw.groqApiKey;
   delete raw.geminiApiKey;
   delete raw.fireworksApiKey;
+  delete raw.kimiApiKey;
 
   return {
     ...raw,
@@ -131,6 +138,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
     groqApiKey: groqApiKey,
     geminiApiKey: geminiApiKey,
     fireworksApiKey: fireworksApiKey,
+    kimiApiKey: kimiApiKey,
   } as UserSettings;
 }
 

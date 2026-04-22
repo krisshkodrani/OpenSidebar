@@ -3,6 +3,7 @@ import "../setup";
 import {
   FIREWORKS_MODELS,
   GROQ_MODELS,
+  MOONSHOT_MODELS,
   getProviderModelCatalogNote,
   getProviderModelOptions,
 } from "../../src/sidepanel/hooks/useOpenRouterModels";
@@ -50,6 +51,16 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(openRouterModels);
   });
 
+  test("moonshot mode uses curated Moonshot models for executor", () => {
+    expect(
+      getProviderModelOptions({
+        providerMode: "moonshot",
+        role: "executor",
+        openRouterModels,
+      }),
+    ).toEqual(MOONSHOT_MODELS);
+  });
+
   test("catalog note explains missing OpenRouter key for executor browsing", () => {
     expect(
       getProviderModelCatalogNote({
@@ -58,5 +69,15 @@ describe("provider-scoped model catalogs", () => {
         hasOpenRouterKey: false,
       }),
     ).toContain("OpenRouter key");
+  });
+
+  test("moonshot catalog note explains curated pricing", () => {
+    expect(
+      getProviderModelCatalogNote({
+        providerMode: "moonshot",
+        role: "planner",
+        hasOpenRouterKey: false,
+      }),
+    ).toContain("Moonshot");
   });
 });
