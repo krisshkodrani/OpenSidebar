@@ -65,6 +65,14 @@ npm run build
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
+### Optional Backend
+
+The extension can run without the backend. Start the backend only if you want local services such as memory or scheduled task support.
+
+```bash
+npm run backend
+```
+
 ## Development
 
 ```bash
@@ -72,11 +80,22 @@ npm run dev        # Extension + log server + trace viewer
 npm run build      # Production build
 npm test           # Extension unit + integration tests
 npm run test:backend
-npm run test:e2e   # Real-browser E2E tests
+npm run test:e2e:easy
+npm run test:e2e:medium
+npm run test:e2e:hard
 npm run lint       # ESLint
 npm run release:verify
 npm run fmt        # Prettier
 ```
+
+## Testing
+
+- Use staged E2E runs by default:
+  - `npm run test:e2e:easy`
+  - `npm run test:e2e:medium`
+  - `npm run test:e2e:hard`
+- Use `npm run test:e2e` when you want the full real-browser E2E suite in one pass.
+- Generated E2E reports are written locally under `.artifacts/e2e/`.
 
 ## Repo Layout
 
@@ -85,7 +104,11 @@ npm run fmt        # Prettier
 - `packages/shared-types/` - shared runtime and domain types
 - `packages/prompts/` - compiled prompt runtime and generated prompt registry
 - `prompts/` - prompt source templates
+- `skills/` - reusable runtime workflow guidance and tool-discipline policies
 - `scripts/` - repo-level build, observability, and maintenance scripts
+- `docs/` - stable product and developer documentation
+- `evals/` - evaluation assets and golden datasets
+- `traces/` - local trace workspace used by debugging tools and the trace viewer
 
 ## Trace Viewer
 
@@ -104,11 +127,11 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Getting Started](./docs/getting-started.md)
 - [Architecture Overview](./docs/architecture/overview.md)
 - [Developer Guide](./docs/developer-guide.md)
-- [Personal Profile](./docs/personal-profile.md)
-- [Repo Structure](./docs/repo-structure.md)
-- [Release Checklist](./docs/release-checklist.md)
+- [Agent Loop](./docs/architecture/agent-loop.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)
 - [Tools Reference](./docs/features/tools.md)
+- [Personal Profile](./docs/personal-profile.md)
+- [Release Checklist](./docs/release-checklist.md)
 
 ## Security & Privacy
 
