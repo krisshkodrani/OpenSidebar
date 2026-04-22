@@ -22,6 +22,7 @@ Repo policy:
 - Keep stable product docs in `docs/`.
 - Keep runtime artifacts local under `.artifacts/`.
 - RFCs, investigations, and research notes live outside the repo.
+- If Notion is available, send archive-bound notes, reports, RFCs, and research writeups there directly instead of keeping them in git.
 
 ## Default Change Placement
 
