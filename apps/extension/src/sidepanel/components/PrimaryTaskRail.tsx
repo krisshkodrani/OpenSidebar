@@ -64,6 +64,13 @@ interface PrimaryTaskLabelInput {
       }
     | null
     | undefined;
+  durableRunStatus:
+    | {
+        query: string;
+        canResume: boolean;
+      }
+    | null
+    | undefined;
   agentStatus: AgentStatus;
   statusDetail: string;
 }
@@ -77,6 +84,7 @@ export function resolvePrimaryTaskLabel({
   hasPendingClarification,
   isAgentRunning,
   taskCompletion,
+  durableRunStatus,
   agentStatus,
   statusDetail,
 }: PrimaryTaskLabelInput): string {
@@ -97,6 +105,9 @@ export function resolvePrimaryTaskLabel({
     if (taskCompletion.status === "partial") return "Task partially completed";
     return "Task failed";
   }
+  if (!isAgentRunning && durableRunStatus?.canResume) {
+    return "Recoverable durable run";
+  }
   if (latestStepLabel) return latestStepLabel;
   return fallbackPrimaryLabel(agentStatus, statusDetail);
 }
@@ -115,6 +126,7 @@ export function PrimaryTaskRail() {
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
   const pendingClarification = useStore((s) => s.pendingClarification);
+  const durableRunStatus = useStore((s) => s.durableRunStatus);
 
   const isStalled = Boolean(stagnationState);
   const isPaused = agentStatus === AgentStatus.PAUSED;
@@ -133,6 +145,7 @@ export function PrimaryTaskRail() {
       hasPendingClarification: Boolean(pendingClarification),
       isAgentRunning,
       taskCompletion,
+      durableRunStatus,
       agentStatus,
       statusDetail,
     });
@@ -145,6 +158,7 @@ export function PrimaryTaskRail() {
     pendingClarification,
     isAgentRunning,
     taskCompletion,
+    durableRunStatus,
     agentStatus,
     statusDetail,
   ]);
@@ -160,6 +174,9 @@ export function PrimaryTaskRail() {
     if (!isAgentRunning && taskCompletion) {
       return `${taskCompletion.totalTurnsUsed} turns used`;
     }
+    if (!isAgentRunning && durableRunStatus?.canResume) {
+      return durableRunStatus.query;
+    }
     if (agentStatus === AgentStatus.PAUSED) return "Run is paused";
     if (agentStatus === AgentStatus.WAITING_FOR_PAGE_LOAD) {
       return "Waiting for the page to settle before continuing";
@@ -173,6 +190,7 @@ export function PrimaryTaskRail() {
     taskProgress,
     isAgentRunning,
     taskCompletion,
+    durableRunStatus,
     agentStatus,
     statusDetail,
   ]);
@@ -216,7 +234,12 @@ export function PrimaryTaskRail() {
     }
   }, []);
 
-  if (!isAgentRunning && agentStatus === AgentStatus.IDLE && !taskCompletion) {
+  if (
+    !isAgentRunning &&
+    agentStatus === AgentStatus.IDLE &&
+    !taskCompletion &&
+    !durableRunStatus
+  ) {
     return null;
   }
 
@@ -261,6 +284,11 @@ export function PrimaryTaskRail() {
           ) : null}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {durableRunStatus?.stopRequestedAt ? (
+              <span className="rounded-full border border-red-300/70 bg-red-50/80 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                Stop requested
+              </span>
+            ) : null}
             {turnProgress?.provider ? (
               <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
                 {turnProgress.provider}

@@ -12,7 +12,8 @@ import {
 
 export interface VerificationGate {
   trigger: string; // "text 'Code accepted' visible", "URL contains /step3"
-  action: "call_done" | "advance_step";
+  action: "call_done" | "advance_step" | "retry_step";
+  maxRetries?: number;
   pattern?: string; // optional regex for precise matching
 }
 
@@ -130,6 +131,16 @@ export interface OrchestratorTask {
     selectedOption?: EscalationDecisionMessage["payload"];
   };
   pendingInteraction?: PendingUserInteraction;
+  durableMeta?: {
+    lastResumeSource?: "local" | "backend" | null;
+    lastKnownResumeSafe?: boolean | null;
+    lastResumeSafetyCheckedAt?: number | null;
+    lastKnownResumeReason?: string | null;
+    resumeRequestedAt?: number | null;
+    resumeRequestedReason?: string | null;
+    stopRequestedAt?: number | null;
+    stopRequestedReason?: string | null;
+  };
   planClassification?: {
     isSingleNode: boolean;
     difficulty: Difficulty;

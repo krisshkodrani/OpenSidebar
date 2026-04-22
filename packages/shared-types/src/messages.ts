@@ -56,6 +56,7 @@ export type RuntimeMessage =
   | AgentTurnMessage
   | TaskProgressMessage
   | TaskCompletionMessage
+  | DurableRunStatusMessage
   | SkipSubtaskMessage
   | PauseAgentMessage
   | ResumeAgentMessage
@@ -362,6 +363,22 @@ export interface TaskRecoveryMessage extends BaseMessage {
   };
 }
 
+/** Background broadcasts minimal durable-run control state for the current workspace. */
+export interface DurableRunStatusMessage extends BaseMessage {
+  type: "DURABLE_RUN_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    runId: string;
+    query: string;
+    status: "planning" | "running" | "completed" | "failed" | "stopped";
+    canResume: boolean;
+    lastKnownResumeSafe?: boolean | null;
+    lastKnownResumeReason?: string | null;
+    stopRequestedAt?: number | null;
+    resumeRequestedAt?: number | null;
+  } | null;
+}
+
 /** Test-only hook to seed a durable pending interaction without invoking the planner/executor. */
 export interface E2ESeedPendingInteractionMessage extends BaseMessage {
   type: "E2E_SEED_PENDING_INTERACTION";
@@ -450,6 +467,8 @@ export interface SubtaskSummary {
   completedAtUrl?: string;
   /** Workflow skill selected for this subtask */
   selectedSkillId?: string;
+  /** Tool profile applied to this subtask */
+  toolProfile?: string;
 }
 
 /** Background sends structured completion report when a task finishes */

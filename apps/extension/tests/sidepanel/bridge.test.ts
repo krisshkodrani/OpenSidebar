@@ -58,6 +58,7 @@ describe("Bridge Message Routing", () => {
             taskCompletion: null,
             stagnationState: null,
             turnProgress: null,
+            durableRunStatus: null,
             pendingApproval: null,
             pendingEscalation: null,
             pendingPlanConfirmation: null,
@@ -218,6 +219,25 @@ describe("Bridge Message Routing", () => {
         send("AGENT_TURN", { turn: 5, maxTurns: 30 });
 
         expect(useStore.getState().turnProgress).toEqual({ turn: 5, maxTurns: 30 });
+    });
+
+    test("DURABLE_RUN_STATUS updates minimal durable run awareness", () => {
+        setupBridge();
+        send("DURABLE_RUN_STATUS", {
+            runId: "run-1",
+            query: "Resume the procurement task",
+            status: "running",
+            canResume: true,
+            stopRequestedAt: 123,
+        });
+
+        expect(useStore.getState().durableRunStatus).toEqual({
+            runId: "run-1",
+            query: "Resume the procurement task",
+            status: "running",
+            canResume: true,
+            stopRequestedAt: 123,
+        });
     });
 
     test("TASK_PROGRESS sets task progress", () => {

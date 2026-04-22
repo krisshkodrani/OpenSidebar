@@ -38,6 +38,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   taskProgress: null,
   taskCompletion: null,
   taskRecovery: null,
+  durableRunStatus: null,
   pendingApproval: null,
   pendingEscalation: null,
   pendingPlanConfirmation: null,
@@ -184,6 +185,16 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
   clearTaskRecovery: () =>
     set((state) => {
       state.taskRecovery = null;
+    }),
+
+  setDurableRunStatus: (durableRunStatus) =>
+    set((state) => {
+      state.durableRunStatus = durableRunStatus;
+    }),
+
+  clearDurableRunStatus: () =>
+    set((state) => {
+      state.durableRunStatus = null;
     }),
 
   setSessionMetrics: (metrics) =>

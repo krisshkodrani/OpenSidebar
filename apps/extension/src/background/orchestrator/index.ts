@@ -28,10 +28,22 @@ import {
   saveWorkspaceTurnRecord,
 } from "../agent/memory";
 import {
+  appendTaskRunSideEffects,
+  fetchTaskRunResume,
+  listTaskRuns,
+  patchTaskRun,
   postMemory,
   searchMemory,
   searchMemoryByDomain,
   formatBackendMemoriesForPrompt,
+  updateTaskRunCheckpoint,
+  upsertTaskRun,
+  upsertTaskRunNode,
+  upsertTaskRunPendingInteraction,
+  type DurablePendingInteractionRecord,
+  type DurableTaskRun,
+  type DurableTaskRunSummary,
+  type DurableTaskRunResumeResponse,
 } from "../infrastructure/backend-client";
 import {
   extractDomain,
@@ -53,6 +65,7 @@ import { waitForContentScriptReady } from "../tab-ready";
 import { buildFallbackNodes, OrchestratorPlanner } from "./planner";
 import { selectPrimarySkill } from "./skills";
 import { inferToolProfileForStep } from "../agent/planner";
+import type { ToolProfile } from "../tools/metadata";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
@@ -64,6 +77,7 @@ import {
   OrchestratorTask,
   StructuredEvidence,
   TaskNode,
+  type VerificationGate,
   WorkerInstance,
 } from "./types";
 import {
@@ -116,6 +130,7 @@ import {
   isRecord,
   mergeSessionMetrics,
   sanitizeCheckpoint,
+  sanitizeSessionMetrics,
 } from "./sanitizers";
 import {
   clampConfidence,
@@ -212,6 +227,10 @@ function appendRecentSideEffects(
   return `${message}\nRecent side effects: ${sideEffects}`;
 }
 
+function cloneTaskForDurableSync(task: OrchestratorTask): OrchestratorTask {
+  return JSON.parse(JSON.stringify(task)) as OrchestratorTask;
+}
+
 export function buildInitialPlanState(
   task: OrchestratorTask,
   activeNodeId?: string,
@@ -275,14 +294,27 @@ function isTabOccupiedByRunningNode(
   return false;
 }
 
-function synthesizePlanStateFromSingleNode(node: TaskNode) {
+function synthesizePlanStateFromSingleNode(node: TaskNode): {
+  subtasks: Array<{
+    description: string;
+    successCriteria: string;
+    status: "pending" | "running" | "completed" | "failed" | "skipped";
+    turnsUsed: number;
+    turnBudget: number;
+    result?: string;
+    verificationGate?: VerificationGate;
+    toolProfile?: ToolProfile;
+    selectedSkillId?: string;
+  }>;
+  currentIndex: number;
+} | null {
   const stepPattern =
     /(?:^|\n)\s*Step\s+(\d+)\s*:\s*([\s\S]*?)(?=(?:\n\s*Step\s+\d+\s*:)|$)/gi;
   const matches = [...node.description.matchAll(stepPattern)];
   if (matches.length < 2) return null;
 
   const currentIndex = 0;
-  const baseStatus =
+  const baseStatus: "pending" | "completed" | "failed" =
     node.status === "completed" || node.status === "failed"
       ? node.status
       : "pending";
@@ -296,19 +328,20 @@ function synthesizePlanStateFromSingleNode(node: TaskNode) {
           description,
           node.successCriteria,
         );
+        const status: "pending" | "running" | "completed" | "failed" =
+          node.status === "completed"
+            ? "completed"
+            : index < currentIndex
+              ? "completed"
+              : index === currentIndex
+                ? node.status === "running"
+                  ? "running"
+                  : baseStatus
+                : "pending";
         return {
           description,
           successCriteria: node.successCriteria,
-          status:
-            node.status === "completed"
-              ? "completed"
-              : index < currentIndex
-                ? "completed"
-                : index === currentIndex
-                  ? node.status === "running"
-                    ? "running"
-                    : baseStatus
-                  : "pending",
+          status,
           turnsUsed: 0,
           turnBudget: 0,
           ...(index === matches.length - 1 && node.verificationGate
@@ -374,7 +407,12 @@ export class Orchestrator {
     string,
     Record<RuntimeLane, LaneSupervisorState>
   >();
+  private durableControlWatermarks = new Map<
+    string,
+    { resumeRequestedAt?: number; stopRequestedAt?: number }
+  >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
+  private durableRunSyncs = new Map<string, Promise<void>>();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       logger.debug("trace", "Run trace manifest", {
@@ -1156,6 +1194,627 @@ export class Orchestrator {
     }
   }
 
+  private buildDurableCheckpointSummary(task: OrchestratorTask): {
+    currentIndex: number;
+    nodeCount: number;
+    turnNumber: number | null;
+    activeNodeId?: string | null;
+    pendingInteractionKind?: "approval" | "clarification" | null;
+  } {
+    const activeNode =
+      task.nodes.find((node) => node.status === "running") ??
+      task.nodes[task.currentIndex];
+    return {
+      currentIndex: task.currentIndex,
+      nodeCount: task.nodes.length,
+      turnNumber: task.turnNumber ?? null,
+      activeNodeId: activeNode?.id ?? null,
+      pendingInteractionKind: task.pendingInteraction?.kind ?? null,
+    };
+  }
+
+  private isDurableResumeStructurallyValid(
+    resume: DurableTaskRunResumeResponse | null,
+  ): resume is DurableTaskRunResumeResponse {
+    if (!resume) return false;
+    if (!resume.run || !Array.isArray(resume.nodes) || resume.nodes.length === 0) {
+      return false;
+    }
+    const nodeIds = new Set<string>();
+    for (const node of resume.nodes) {
+      if (
+        typeof node.nodeId !== "string" ||
+        node.nodeId.length === 0 ||
+        typeof node.description !== "string" ||
+        node.description.length === 0 ||
+        typeof node.successCriteria !== "string" ||
+        node.successCriteria.length === 0 ||
+        typeof node.status !== "string" ||
+        typeof node.retries !== "number"
+      ) {
+        return false;
+      }
+      nodeIds.add(node.nodeId);
+    }
+    for (const node of resume.nodes) {
+      if (
+        Array.isArray(node.dependencies) &&
+        node.dependencies.some((dependency) => !nodeIds.has(dependency))
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private buildBudgetFromDurableRun(
+    run: DurableTaskRun,
+  ): OrchestratorTask["budget"] {
+    const raw = run.budget;
+    if (isRecord(raw)) {
+      const maxSessionTimeMs = raw.maxSessionTimeMs;
+      const maxTotalTokens = raw.maxTotalTokens;
+      const maxTotalCostUsd = raw.maxTotalCostUsd;
+      if (
+        typeof maxSessionTimeMs === "number" &&
+        typeof maxTotalTokens === "number" &&
+        typeof maxTotalCostUsd === "number"
+      ) {
+        return {
+          maxSessionTimeMs,
+          maxTotalTokens,
+          maxTotalCostUsd,
+        };
+      }
+    }
+    return {
+      maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
+      maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
+      maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
+    };
+  }
+
+  private buildPendingInteractionFromDurableRecord(
+    interaction: DurablePendingInteractionRecord | null,
+    task:
+      | { runId?: string; id?: string; workspaceId?: string }
+      | null
+      | undefined,
+  ): PendingUserInteraction | undefined {
+    if (!interaction || interaction.status !== "active") return undefined;
+    const payload = interaction.payload;
+    const now = Date.now();
+    const timeoutAt = interaction.timeoutAt ?? null;
+    const remainingMs = timeoutAt == null ? 0 : timeoutAt - now;
+    if (remainingMs <= 0) {
+      this.emitTraceEvent(
+        task,
+        "pending_interaction_backend_conflict",
+        {
+          nodeId: interaction.nodeId ?? null,
+          kind: interaction.kind,
+          reason: "timeout_expired_before_restore",
+        },
+        "system",
+      );
+      return undefined;
+    }
+
+    if (interaction.kind === "approval") {
+      const approvalId = payload.approvalId;
+      const toolName = payload.toolName;
+      const args = payload.args;
+      const context = payload.context;
+      if (
+        typeof approvalId !== "string" ||
+        typeof toolName !== "string" ||
+        !isRecord(args) ||
+        typeof context !== "string"
+      ) {
+        return undefined;
+      }
+      return {
+        kind: "approval",
+        nodeId: interaction.nodeId ?? null,
+        requestedAt: now,
+        approvalId,
+        toolName: toolName as ToolName,
+        args,
+        context,
+        timeoutMs: remainingMs,
+      };
+    }
+
+    const clarificationId = payload.clarificationId;
+    const question = payload.question;
+    const suggestions = payload.suggestions;
+    if (
+      typeof clarificationId !== "string" ||
+      typeof question !== "string" ||
+      (suggestions !== undefined &&
+        (!Array.isArray(suggestions) ||
+          suggestions.some((item) => typeof item !== "string")))
+    ) {
+      return undefined;
+    }
+    return {
+      kind: "clarification",
+      nodeId: interaction.nodeId ?? null,
+      requestedAt: now,
+      clarificationId,
+      question,
+      suggestions:
+        Array.isArray(suggestions) ? (suggestions as string[]) : undefined,
+      timeoutMs: remainingMs,
+    };
+  }
+
+  private async buildTaskFromDurableResume(
+    resume: DurableTaskRunResumeResponse,
+    resumeTabId: number,
+  ): Promise<OrchestratorTask | null> {
+    if (!this.isDurableResumeStructurallyValid(resume)) {
+      return null;
+    }
+
+    const metrics =
+      resume.run.sessionMetrics && isRecord(resume.run.sessionMetrics)
+        ? sanitizeSessionMetrics(resume.run.sessionMetrics) ??
+          emptySessionMetrics()
+        : emptySessionMetrics();
+
+    const nodes: TaskNode[] = [];
+    for (const node of resume.nodes) {
+      const allowedTools = node.allowedTools.filter(
+        (tool): tool is ToolName => typeof tool === "string",
+      );
+      if (allowedTools.length === 0) return null;
+      nodes.push({
+        id: node.nodeId,
+        role: "executor",
+        description: node.description,
+        successCriteria: node.successCriteria,
+        selectedSkillId: node.selectedSkillId ?? undefined,
+        selectedSkillReason: node.selectedSkillReason ?? undefined,
+        allowedTools,
+        dependencies: [...(node.dependencies ?? [])],
+        assumptions: [...(node.assumptions ?? [])],
+        handoffArtifacts: [...(node.handoffArtifacts ?? [])] as NodeHandoffArtifact[],
+        reflexionLog: [...(node.reflexionLog ?? [])] as any,
+        handoffDepth: node.handoffDepth ?? 0,
+        handoffFromNodeId: node.handoffFromNodeId ?? undefined,
+        verificationGate: (node.verificationGate as any) ?? undefined,
+        status: node.status as TaskNode["status"],
+        retries: node.retries,
+        result: node.result ?? undefined,
+        error: node.error ?? undefined,
+        trajectory: node.trajectory ?? undefined,
+      });
+    }
+
+    const pendingInteraction = this.buildPendingInteractionFromDurableRecord(
+      resume.pendingInteraction,
+      { runId: resume.run.id, id: resume.run.clientRunId ?? undefined, workspaceId: resume.run.workspaceId },
+    );
+
+    return {
+      runId: resume.run.id,
+      id: resume.run.clientRunId ?? crypto.randomUUID(),
+      workspaceId: resume.run.workspaceId,
+      rootTabId: resumeTabId,
+      query: resume.run.query,
+      turnNumber: resume.run.turnNumber ?? undefined,
+      status: resume.run.status,
+      createdAt: resume.run.createdAt,
+      startedAt: resume.run.startedAt ?? undefined,
+      finishedAt: resume.run.finishedAt ?? undefined,
+      nodes,
+      plannerReflexionLog: [],
+      maxWorkers: Math.max(1, Math.min(8, DEFAULT_MAX_WORKERS)),
+      maxReplans: DEFAULT_MAX_REPLANS,
+      replansUsed: 0,
+      horizonExpansions: 0,
+      currentIndex:
+        resume.run.checkpointSummary?.currentIndex ?? currentIndex(nodes),
+      sessionMetrics: metrics,
+      budget: this.buildBudgetFromDurableRun(resume.run),
+      terminationReason: resume.run.terminationReason ?? undefined,
+      pendingInteraction,
+      durableMeta: {
+        lastResumeSource: resume.run.lastResumeSource,
+        lastKnownResumeSafe: resume.run.lastKnownResumeSafe,
+        lastResumeSafetyCheckedAt: resume.run.lastResumeSafetyCheckedAt,
+        lastKnownResumeReason: resume.run.lastKnownResumeReason,
+        resumeRequestedAt: resume.run.resumeRequestedAt,
+        resumeRequestedReason: resume.run.resumeRequestedReason,
+        stopRequestedAt: resume.run.stopRequestedAt,
+        stopRequestedReason: resume.run.stopRequestedReason,
+      },
+    };
+  }
+
+  private async discoverBackendRunCandidates(): Promise<DurableTaskRun[]> {
+    const workspaces = await this.deps.workspaceManager.getWorkspaces();
+    const discovered: DurableTaskRun[] = [];
+    const seenRunIds = new Set<string>();
+
+    for (const workspace of workspaces) {
+      const localTask = this.tasksByWorkspace.get(workspace.id);
+      if (localTask?.status === "running" || localTask?.status === "planning") {
+        continue;
+      }
+      for (const status of ["running", "planning"] as const) {
+        const runs = await listTaskRuns({
+          workspaceId: workspace.id,
+          status,
+          limit: 5,
+        });
+        for (const run of runs) {
+          if (seenRunIds.has(run.id)) continue;
+          seenRunIds.add(run.id);
+          discovered.push(run);
+        }
+      }
+    }
+
+    return discovered.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  private pickDurableControlAction(
+    run: DurableTaskRunSummary,
+  ): { action: "resume" | "stop"; requestedAt: number } | null {
+    const resumeRequestedAt = run.resumeRequestedAt ?? null;
+    const stopRequestedAt = run.stopRequestedAt ?? null;
+    if (resumeRequestedAt == null && stopRequestedAt == null) return null;
+    if (
+      stopRequestedAt != null &&
+      (resumeRequestedAt == null || stopRequestedAt >= resumeRequestedAt)
+    ) {
+      return { action: "stop", requestedAt: stopRequestedAt };
+    }
+    if (resumeRequestedAt != null) {
+      return { action: "resume", requestedAt: resumeRequestedAt };
+    }
+    return null;
+  }
+
+  private canDurableRunResume(run: DurableTaskRunSummary): boolean {
+    if (run.status === "completed" || run.status === "stopped") return false;
+    if (run.stopRequestedAt) return false;
+    return run.lastKnownResumeSafe !== false;
+  }
+
+  private sendDurableRunStatus(
+    workspaceId: string,
+    run: DurableTaskRunSummary | null,
+  ): void {
+    this.sendMessage({
+      type: "DURABLE_RUN_STATUS",
+      workspaceId,
+      payload: run
+        ? {
+            runId: run.id,
+            query: run.query,
+            status: run.status,
+            canResume: this.canDurableRunResume(run),
+            lastKnownResumeSafe: run.lastKnownResumeSafe,
+            lastKnownResumeReason: run.lastKnownResumeReason,
+            stopRequestedAt: run.stopRequestedAt,
+            resumeRequestedAt: run.resumeRequestedAt,
+          }
+        : null,
+    });
+  }
+
+  private async syncDurableRunStatus(workspaceId: string): Promise<void> {
+    const runs = await listTaskRuns({
+      workspaceId,
+      includeCompleted: true,
+      includeProgressSummary: true,
+      limit: 10,
+    });
+    const candidate =
+      runs.find((run) => run.stopRequestedAt != null) ??
+      runs.find((run) => this.canDurableRunResume(run)) ??
+      null;
+    this.sendDurableRunStatus(workspaceId, candidate);
+  }
+
+  private async applyDurableStopRequest(
+    run: DurableTaskRunSummary,
+    requestedAt: number,
+  ): Promise<void> {
+    const localTask = this.tasksByWorkspace.get(run.workspaceId);
+    this.sendDurableRunStatus(run.workspaceId, run);
+    if (
+      localTask &&
+      localTask.runId === run.id &&
+      (localTask.status === "running" || localTask.status === "planning")
+    ) {
+      this.emitTraceEvent(
+        localTask,
+        "durable_run_stop_requested",
+        {
+          runId: run.id,
+          workspaceId: run.workspaceId,
+          requestedAt,
+        },
+        "system",
+      );
+      localTask.durableMeta = {
+        ...(localTask.durableMeta ?? {}),
+        stopRequestedAt: null,
+        stopRequestedReason: null,
+      };
+      await this.stopWorkspace(run.workspaceId);
+      await patchTaskRun(run.id, {
+        stopRequestedAt: null,
+        stopRequestedReason: null,
+        status: "stopped",
+        finishedAt: Date.now(),
+        terminationReason:
+          run.stopRequestedReason ?? "Stopped from durable control plane",
+      });
+      this.sendDurableRunStatus(run.workspaceId, null);
+      return;
+    }
+
+    await patchTaskRun(run.id, {
+      stopRequestedAt: null,
+      stopRequestedReason: null,
+      status: "stopped",
+      finishedAt: Date.now(),
+      terminationReason:
+        run.stopRequestedReason ?? "Stopped from durable control plane",
+    });
+    this.sendDurableRunStatus(run.workspaceId, null);
+  }
+
+  private async applyDurableResumeRequest(
+    run: DurableTaskRunSummary,
+    requestedAt: number,
+  ): Promise<void> {
+    if (this.tasksByWorkspace.has(run.workspaceId)) {
+      await patchTaskRun(run.id, {
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "Workspace already has an active task.",
+      });
+      this.sendDurableRunStatus(run.workspaceId, run);
+      return;
+    }
+
+    const resume = await fetchTaskRunResume(run.id);
+    if (!this.isDurableResumeStructurallyValid(resume)) {
+      await patchTaskRun(run.id, {
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "Missing or invalid durable resume payload.",
+      });
+      this.sendDurableRunStatus(run.workspaceId, {
+        ...run,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "Missing or invalid durable resume payload.",
+      });
+      return;
+    }
+
+    const resumeTabId = await this.resolveResumeTabId(
+      run.workspaceId,
+      resume.run.rootTabId ?? run.rootTabId ?? 0,
+    );
+    if (!resumeTabId) {
+      await patchTaskRun(run.id, {
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "No live workspace tab available for rebinding.",
+      });
+      this.sendDurableRunStatus(run.workspaceId, {
+        ...run,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "No live workspace tab available for rebinding.",
+      });
+      return;
+    }
+
+    const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
+    const resumeInput = task && (await this.buildResumeInput(task, resumeTabId));
+    if (!task || !resumeInput) {
+      await patchTaskRun(run.id, {
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+        lastKnownResumeSafe: false,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "Unable to rebuild runtime state for resume.",
+      });
+      return;
+    }
+
+    await patchTaskRun(run.id, {
+      resumeRequestedAt: null,
+      resumeRequestedReason: null,
+      lastKnownResumeSafe: true,
+      lastResumeSafetyCheckedAt: Date.now(),
+      lastKnownResumeReason: "Live workspace tab rebound successfully.",
+      lastResumeSource: "backend",
+    });
+    if (task) {
+      task.durableMeta = {
+        ...(task.durableMeta ?? {}),
+        lastResumeSource: "backend",
+        lastKnownResumeSafe: true,
+        lastResumeSafetyCheckedAt: Date.now(),
+        lastKnownResumeReason: "Live workspace tab rebound successfully.",
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+      };
+    }
+    await this.activateRecoveredTask(task, resumeInput, resumeTabId, "backend");
+    this.emitTraceEvent(
+      task,
+      "durable_run_resume_applied",
+      {
+        runId: run.id,
+        workspaceId: run.workspaceId,
+        requestedAt,
+      },
+      "system",
+    );
+    this.sendDurableRunStatus(run.workspaceId, null);
+  }
+
+  public async processDurableRunControlRequests(): Promise<void> {
+    const runs = await listTaskRuns({
+      includeCompleted: true,
+      controlRequested: true,
+      limit: 20,
+    });
+    for (const run of runs) {
+      const control = this.pickDurableControlAction(run);
+      if (!control) continue;
+      const watermark = this.durableControlWatermarks.get(run.id) ?? {};
+      if (
+        (control.action === "resume" &&
+          (watermark.resumeRequestedAt ?? 0) >= control.requestedAt) ||
+        (control.action === "stop" &&
+          (watermark.stopRequestedAt ?? 0) >= control.requestedAt)
+      ) {
+        continue;
+      }
+      this.durableControlWatermarks.set(run.id, {
+        ...watermark,
+        ...(control.action === "resume"
+          ? { resumeRequestedAt: control.requestedAt }
+          : { stopRequestedAt: control.requestedAt }),
+      });
+
+      if (control.action === "stop") {
+        await this.applyDurableStopRequest(run, control.requestedAt);
+      } else {
+        await this.applyDurableResumeRequest(run, control.requestedAt);
+      }
+    }
+  }
+
+  private queueDurableRunSync(runId: string, op: () => Promise<void>): void {
+    const previous = this.durableRunSyncs.get(runId) ?? Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(op)
+      .catch((error) => {
+        logger.debug("orchestrator", "Durable run sync failed", {
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        if (this.durableRunSyncs.get(runId) === next) {
+          this.durableRunSyncs.delete(runId);
+        }
+      });
+    this.durableRunSyncs.set(runId, next);
+  }
+
+  private scheduleDurableTaskSync(task: OrchestratorTask): void {
+    if (!task.runId) return;
+    const taskSnapshot = cloneTaskForDurableSync(task);
+    this.queueDurableRunSync(task.runId, async () => {
+      await upsertTaskRun({
+        id: taskSnapshot.runId!,
+        clientRunId: taskSnapshot.id,
+        workspaceId: taskSnapshot.workspaceId,
+        query: taskSnapshot.query,
+        rootTabId: taskSnapshot.rootTabId ?? null,
+        turnNumber: taskSnapshot.turnNumber ?? null,
+        status: taskSnapshot.status,
+        startedAt: taskSnapshot.startedAt ?? null,
+        finishedAt: taskSnapshot.finishedAt ?? null,
+        terminationReason: taskSnapshot.terminationReason ?? null,
+        checkpointSummary: this.buildDurableCheckpointSummary(taskSnapshot),
+        sessionMetrics:
+          taskSnapshot.sessionMetrics as unknown as Record<string, unknown>,
+        budget: taskSnapshot.budget as Record<string, unknown>,
+        resumeStateVersion: 1,
+        resumeRequestedAt: taskSnapshot.durableMeta?.resumeRequestedAt ?? null,
+        resumeRequestedReason:
+          taskSnapshot.durableMeta?.resumeRequestedReason ?? null,
+        stopRequestedAt: taskSnapshot.durableMeta?.stopRequestedAt ?? null,
+        stopRequestedReason:
+          taskSnapshot.durableMeta?.stopRequestedReason ?? null,
+        lastResumeSource: taskSnapshot.durableMeta?.lastResumeSource ?? null,
+        lastKnownResumeSafe:
+          taskSnapshot.durableMeta?.lastKnownResumeSafe ?? null,
+        lastResumeSafetyCheckedAt:
+          taskSnapshot.durableMeta?.lastResumeSafetyCheckedAt ?? null,
+        lastKnownResumeReason:
+          taskSnapshot.durableMeta?.lastKnownResumeReason ?? null,
+        });
+
+      await updateTaskRunCheckpoint(
+        taskSnapshot.runId!,
+        this.buildDurableCheckpointSummary(taskSnapshot),
+      );
+
+      for (const node of taskSnapshot.nodes) {
+        await upsertTaskRunNode(taskSnapshot.runId!, {
+          nodeId: node.id,
+          description: node.description,
+          successCriteria: node.successCriteria,
+          selectedSkillId: node.selectedSkillId ?? null,
+          selectedSkillReason: node.selectedSkillReason ?? null,
+          allowedTools: [...node.allowedTools],
+          dependencies: [...node.dependencies],
+          assumptions: [...node.assumptions],
+          verificationGate: node.verificationGate
+            ? (node.verificationGate as unknown as Record<string, unknown>)
+            : null,
+          handoffArtifacts: [...node.handoffArtifacts],
+          reflexionLog: [...node.reflexionLog],
+          handoffDepth: node.handoffDepth,
+          handoffFromNodeId: node.handoffFromNodeId ?? null,
+          trajectory: node.trajectory ? [...node.trajectory] : null,
+          status: node.status,
+          retries: node.retries,
+          result: node.result ?? null,
+          error: node.error ?? null,
+        });
+      }
+
+      const pendingInteraction = taskSnapshot.pendingInteraction;
+      await upsertTaskRunPendingInteraction(
+        taskSnapshot.runId!,
+        pendingInteraction
+          ? {
+              nodeId: pendingInteraction.nodeId ?? null,
+              kind: pendingInteraction.kind,
+              payload: pendingInteraction as unknown as Record<string, unknown>,
+              requestedAt: pendingInteraction.requestedAt,
+              timeoutAt:
+                pendingInteraction.timeoutMs != null
+                  ? pendingInteraction.requestedAt + pendingInteraction.timeoutMs
+                  : null,
+              status:
+                pendingInteraction.kind === "approval"
+                  ? pendingInteraction.approved !== undefined
+                    ? "resolved"
+                    : "active"
+                  : pendingInteraction.answer !== undefined
+                    ? "resolved"
+                    : "active",
+            }
+          : null,
+      );
+    });
+  }
+
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await this.loadCheckpoints();
     checkpoints[task.workspaceId] = {
@@ -1167,6 +1826,7 @@ export class Orchestrator {
       },
     };
     await this.saveCheckpoints(checkpoints);
+    this.scheduleDurableTaskSync(task);
   }
 
   private async clearTaskCheckpoint(workspaceId: string): Promise<void> {
@@ -1544,11 +2204,318 @@ export class Orchestrator {
     await this.resumeTaskAfterInteraction(task);
   }
 
+  private async activateRecoveredTask(
+    task: OrchestratorTask,
+    resumeInput: OrchestratorStartInput,
+    resumeTabId: number,
+    source: "checkpoint" | "backend",
+    options?: { loadTurnCheckpoints?: boolean },
+  ): Promise<void> {
+    const loadTurnCheckpoints = options?.loadTurnCheckpoints ?? false;
+    const turnCheckpointsByNodeId = new Map<string, TurnCheckpoint>();
+    if (loadTurnCheckpoints) {
+      for (const node of task.nodes) {
+        if (node.status === "running") {
+          try {
+            const cpKey = turnCheckpointKey(task.workspaceId, node.id);
+            const stored = await chrome.storage.local.get(cpKey);
+            const turnCp = sanitizeTurnCheckpoint(stored[cpKey]);
+            if (turnCp) {
+              turnCheckpointsByNodeId.set(node.id, turnCp);
+              logger.info("orchestrator", "Loaded turn checkpoint for node", {
+                nodeId: node.id,
+                turn: turnCp.turnCount,
+                ledgerEntries: turnCp.stepMutationLedger?.length ?? 0,
+              });
+            }
+          } catch {
+            // Best-effort; backend restores start without loop-local history
+          }
+        }
+      }
+    }
+
+    (task as any)._turnCheckpoints = turnCheckpointsByNodeId;
+
+    const hasPendingInteraction = Boolean(task.pendingInteraction);
+    const pendingInteractionResolved = this.isPendingInteractionResolved(
+      task.pendingInteraction,
+    );
+
+    if (!hasPendingInteraction || pendingInteractionResolved) {
+      task.nodes = task.nodes.map((node) =>
+        node.status === "running" ? { ...node, status: "pending" } : node,
+      );
+    }
+    if (!task.runId) {
+      task.runId = crypto.randomUUID();
+    }
+    task.durableMeta = {
+      ...(task.durableMeta ?? {}),
+      lastResumeSource: source === "backend" ? "backend" : "local",
+      lastKnownResumeSafe: true,
+      lastResumeSafetyCheckedAt: Date.now(),
+      lastKnownResumeReason: "Recovered onto a live workspace tab.",
+      resumeRequestedAt: null,
+      resumeRequestedReason: null,
+    };
+    task.status = "running";
+    task.currentIndex = currentIndex(task.nodes);
+    this.tasksByWorkspace.set(task.workspaceId, task);
+    this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers);
+    await this.persistTaskCheckpoint(task);
+    this.sendDurableRunStatus(task.workspaceId, null);
+    await this.emitTraceManifest({
+      ...this.buildTaskManifest(task, resumeInput),
+      source:
+        source === "backend"
+          ? "background.orchestrator.backend-recovery"
+          : "background.orchestrator.recovery",
+    });
+    this.emitTraceEvent(
+      task,
+      "task_resume_source_selected",
+      {
+        taskId: task.id,
+        workspaceId: task.workspaceId,
+        resumeTabId,
+        source,
+      },
+      "system",
+    );
+    if (source === "checkpoint") {
+      this.emitTraceEvent(
+        task,
+        "task_resumed_from_checkpoint",
+        {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          resumeTabId,
+        },
+        "system",
+      );
+    } else {
+      this.emitTraceEvent(
+        task,
+        "task_resume_backend_accepted",
+        {
+          taskId: task.id,
+          workspaceId: task.workspaceId,
+          resumeTabId,
+        },
+        "system",
+      );
+    }
+
+    const completedSubtasks = task.nodes.filter(
+      (n) => n.status === "completed",
+    ).length;
+    const pendingSubtasks = task.nodes.filter((n) => n.status === "pending").length;
+    this.sendMessage({
+      type: "TASK_RECOVERY",
+      workspaceId: task.workspaceId,
+      payload: {
+        taskId: task.id,
+        totalSubtasks: task.nodes.length,
+        completedSubtasks,
+        pendingSubtasks,
+      },
+    });
+    this.sendStatus(
+      task.workspaceId,
+      hasPendingInteraction && !pendingInteractionResolved
+        ? AgentStatus.PAUSED
+        : AgentStatus.ACTING,
+      hasPendingInteraction && !pendingInteractionResolved
+        ? "Recovered task, awaiting user input..."
+        : "Recovered task, resuming...",
+    );
+    this.sendProgress(task);
+
+    if (hasPendingInteraction && !pendingInteractionResolved) {
+      const interaction = task.pendingInteraction!;
+      this.emitTraceEvent(
+        task,
+        source === "backend"
+          ? "pending_interaction_restored_from_backend"
+          : "pending_interaction_restored",
+        {
+          taskId: task.id,
+          nodeId: interaction.nodeId,
+          kind: interaction.kind,
+          remainingMs: this.getPendingInteractionRemainingMs(interaction),
+          interactionId:
+            interaction.kind === "approval"
+              ? interaction.approvalId
+              : interaction.clarificationId,
+        },
+        "system",
+      );
+      this.emitPendingInteraction(task);
+      this.armPendingInteractionTimeout(task);
+      return;
+    }
+
+    this.runTask(task, resumeInput).catch(async (error) => {
+      logger.error("orchestrator", "Recovered task failed", {
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        error,
+      });
+      task.status = "failed";
+      task.finishedAt = Date.now();
+      this.sendTerminationCompletion(task, "Recovered task failed");
+      await this.clearTaskCheckpoint(task.workspaceId);
+      this.tasksByWorkspace.delete(task.workspaceId);
+      this.cleanupWorkspaceRuntime(task.workspaceId);
+      this.sendStatus(
+        task.workspaceId,
+        AgentStatus.ERROR,
+        "Recovered task failed",
+      );
+    });
+  }
+
   public async restoreFromCheckpoints(): Promise<void> {
     const checkpoints = await this.pruneCheckpoints(
       await this.loadCheckpoints(),
     );
     const entries = Object.values(checkpoints);
+    {
+      const seenWorkspaceIds = new Set<string>(
+        entries.map((cp) => cp.task.workspaceId),
+      );
+
+      if (entries.length > 0) {
+        logger.info("orchestrator", "Found orchestrator checkpoints", {
+          count: entries.length,
+        });
+      }
+
+      for (const cp of entries) {
+        const task = cp.task;
+        if (
+          task.status === "completed" ||
+          task.status === "failed" ||
+          task.status === "stopped"
+        ) {
+          await this.clearTaskCheckpoint(task.workspaceId);
+          continue;
+        }
+
+        const resumeTabId = await this.resolveResumeTabId(
+          task.workspaceId,
+          task.rootTabId,
+        );
+        if (!resumeTabId) {
+          logger.warn(
+            "orchestrator",
+            "Cannot resume checkpoint, no live workspace tab",
+            {
+              workspaceId: task.workspaceId,
+              taskId: task.id,
+            },
+          );
+          await this.clearTaskCheckpoint(task.workspaceId);
+          continue;
+        }
+
+        const backendResume =
+          task.runId != null ? await fetchTaskRunResume(task.runId) : null;
+        const preferBackend =
+          backendResume &&
+          this.isDurableResumeStructurallyValid(backendResume) &&
+          backendResume.run.updatedAt > cp.savedAt &&
+          JSON.stringify(backendResume.pendingInteraction) !==
+            JSON.stringify(task.pendingInteraction);
+
+        if (preferBackend) {
+          const restoredTask = await this.buildTaskFromDurableResume(
+            backendResume!,
+            resumeTabId,
+          );
+          const backendResumeInput =
+            restoredTask &&
+            (await this.buildResumeInput(restoredTask, resumeTabId));
+          if (restoredTask && backendResumeInput) {
+            this.emitTraceEvent(
+              task,
+              "task_resume_local_rejected",
+              {
+                taskId: task.id,
+                workspaceId: task.workspaceId,
+                reason: "backend_newer_conflicting_pending_interaction",
+              },
+              "system",
+            );
+            await this.activateRecoveredTask(
+              restoredTask,
+              backendResumeInput,
+              resumeTabId,
+              "backend",
+            );
+            continue;
+          }
+        }
+
+        const resumeInput = await this.buildResumeInput(task, resumeTabId);
+        if (!resumeInput) {
+          await this.clearTaskCheckpoint(task.workspaceId);
+          continue;
+        }
+
+        await this.activateRecoveredTask(
+          task,
+          resumeInput,
+          resumeTabId,
+          "checkpoint",
+          { loadTurnCheckpoints: true },
+        );
+      }
+
+      const discoveredRuns = await this.discoverBackendRunCandidates();
+      for (const run of discoveredRuns) {
+        if (seenWorkspaceIds.has(run.workspaceId)) continue;
+        const workspace = await this.deps.workspaceManager.getWorkspaceById(
+          run.workspaceId,
+        );
+        const resumeTabId =
+          workspace?.tabIds.find((tabId) => Number.isInteger(tabId)) ?? null;
+        if (resumeTabId == null) continue;
+
+        const resume = await fetchTaskRunResume(run.id);
+        if (!this.isDurableResumeStructurallyValid(resume)) {
+          this.emitTraceEvent(
+            {
+              runId: run.id,
+              id: run.clientRunId ?? undefined,
+              workspaceId: run.workspaceId,
+            },
+            "task_resume_backend_invalid",
+            {
+              workspaceId: run.workspaceId,
+              reason: "missing_or_invalid_resume_payload",
+            },
+            "system",
+          );
+          continue;
+        }
+
+        const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
+        const resumeInput =
+          task && (await this.buildResumeInput(task, resumeTabId));
+        if (!task || !resumeInput) continue;
+
+        await this.activateRecoveredTask(
+          task,
+          resumeInput,
+          resumeTabId,
+          "backend",
+        );
+        seenWorkspaceIds.add(run.workspaceId);
+      }
+      return;
+    }
     if (entries.length === 0) return;
 
     logger.info("orchestrator", "Found orchestrator checkpoints", {
@@ -1583,11 +2550,17 @@ export class Orchestrator {
         continue;
       }
 
-      const resumeInput = await this.buildResumeInput(task, resumeTabId);
+      if (resumeTabId == null) {
+        await this.clearTaskCheckpoint(task.workspaceId);
+        continue;
+      }
+      const safeResumeTabId = resumeTabId!;
+      const resumeInput = await this.buildResumeInput(task, safeResumeTabId);
       if (!resumeInput) {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
+      const safeResumeInput = resumeInput!;
 
       // Load durable turn checkpoints for nodes that were running when SW died.
       const turnCheckpointsByNodeId = new Map<string, TurnCheckpoint>();
@@ -1596,8 +2569,9 @@ export class Orchestrator {
           try {
             const cpKey = turnCheckpointKey(task.workspaceId, node.id);
             const stored = await chrome.storage.local.get(cpKey);
-            const turnCp = sanitizeTurnCheckpoint(stored[cpKey]);
-            if (turnCp) {
+            const sanitizedTurnCp = sanitizeTurnCheckpoint(stored[cpKey]);
+            if (sanitizedTurnCp) {
+              const turnCp = sanitizedTurnCp!;
               turnCheckpointsByNodeId.set(node.id, turnCp);
               logger.info("orchestrator", "Loaded turn checkpoint for node", {
                 nodeId: node.id,
@@ -1634,7 +2608,7 @@ export class Orchestrator {
       this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers);
       await this.persistTaskCheckpoint(task);
       await this.emitTraceManifest({
-        ...this.buildTaskManifest(task, resumeInput),
+        ...this.buildTaskManifest(task, safeResumeInput),
         source: "background.orchestrator.recovery",
       });
       this.emitTraceEvent(
@@ -1643,7 +2617,7 @@ export class Orchestrator {
         {
           taskId: task.id,
           workspaceId: task.workspaceId,
-          resumeTabId,
+          resumeTabId: safeResumeTabId,
         },
         "system",
       );
@@ -1677,6 +2651,19 @@ export class Orchestrator {
 
       if (hasPendingInteraction && !pendingInteractionResolved) {
         const interaction = task.pendingInteraction!;
+        let interactionId: string;
+        if ("approvalId" in interaction) {
+          interactionId = (
+            interaction as Extract<PendingUserInteraction, { kind: "approval" }>
+          ).approvalId;
+        } else {
+          interactionId = (
+            interaction as Extract<
+              PendingUserInteraction,
+              { kind: "clarification" }
+            >
+          ).clarificationId;
+        }
         this.emitTraceEvent(
           task,
           "pending_interaction_restored",
@@ -1685,10 +2672,7 @@ export class Orchestrator {
             nodeId: interaction.nodeId,
             kind: interaction.kind,
             remainingMs: this.getPendingInteractionRemainingMs(interaction),
-            interactionId:
-              interaction.kind === "approval"
-                ? interaction.approvalId
-                : interaction.clarificationId,
+            interactionId,
           },
           "system",
         );
@@ -1698,7 +2682,7 @@ export class Orchestrator {
       }
 
       // Fire-and-forget: each task resumes independently.
-      this.runTask(task, resumeInput).catch(async (error) => {
+      this.runTask(task, safeResumeInput).catch(async (error) => {
         logger.error("orchestrator", "Recovered task failed", {
           workspaceId: task.workspaceId,
           taskId: task.id,
@@ -1821,6 +2805,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
+    this.sendDurableRunStatus(task.workspaceId, null);
     this.sendStatus(
       input.workspaceId,
       AgentStatus.PAUSED,
@@ -1862,8 +2847,11 @@ export class Orchestrator {
         });
       }
       this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
+      void this.syncDurableRunStatus(workspaceId);
       return;
     }
+
+    this.sendDurableRunStatus(workspaceId, null);
 
     if (task.status === "running" || task.status === "planning") {
       // Task is in-flight — re-send current status + progress
@@ -2083,6 +3071,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
+    this.sendDurableRunStatus(task.workspaceId, null);
     await this.emitTraceManifest(this.buildTaskManifest(task, input));
     this.emitTraceEvent(
       task,
@@ -2930,6 +3919,20 @@ export class Orchestrator {
             nodeId: node.id,
           },
         );
+        if (task.runId && result.sideEffectsLog && result.sideEffectsLog.length > 0) {
+          void appendTaskRunSideEffects(
+            task.runId,
+            result.sideEffectsLog.map((entry) => ({
+              id: entry.id,
+              nodeId: node.id,
+              toolName: entry.toolName,
+              args: entry.args,
+              result: entry.result,
+              timestamp: entry.timestamp,
+              snapshotFingerprint: entry.snapshotFingerprint,
+            })),
+          );
+        }
         task.sessionMetrics = mergeSessionMetrics(
           task.sessionMetrics,
           result.metrics,
@@ -4175,7 +5178,7 @@ export class Orchestrator {
         }
         resolve(null);
       }, timeoutMs);
-      timer.unref?.();
+      (timer as unknown as { unref?: () => void }).unref?.();
     });
   }
 
@@ -4302,6 +5305,7 @@ export class Orchestrator {
     if (task.nodes.length > 0) {
       await this.sendTerminationCompletion(task, "Stopped by user");
     }
+    this.sendDurableRunStatus(workspaceId, null);
     void this.closeWorkerTabs(task);
     void this.persistTaskCheckpoint(task);
     const pools = this.workersByWorkspace.get(workspaceId);
@@ -5088,7 +6092,11 @@ export class Orchestrator {
 
   private async requestPlanConfirmation(
     task: OrchestratorTask,
-    nodes: { description: string; successCriteria: string }[],
+    nodes: {
+      description: string;
+      successCriteria: string;
+      selectedSkillId?: string;
+    }[],
     query: string,
     difficulty?: string,
   ): Promise<{ decision: "approve" | "cancel"; feedback?: string }> {

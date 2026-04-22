@@ -76,6 +76,7 @@ export function initializeBridge(
           state.clearPendingPlanConfirmation();
           state.clearPendingClarification();
           state.clearTaskRecovery();
+          state.clearDurableRunStatus();
           state.clearLaneTelemetry();
           state.clearLatestStepLabel();
           state.setIsPlanning(false);
@@ -90,6 +91,7 @@ export function initializeBridge(
           if (message.payload.status === AgentStatus.THINKING) {
             state.clearTaskProgress(); // clears both taskProgress and taskCompletion
             state.clearSessionMetrics();
+            state.clearDurableRunStatus();
             state.setIsPlanning(true);
           }
         }
@@ -108,6 +110,10 @@ export function initializeBridge(
           ...message.payload,
           recoveredAt: Date.now(),
         });
+        break;
+
+      case "DURABLE_RUN_STATUS":
+        state.setDurableRunStatus(message.payload);
         break;
 
       case "ESCALATION_REQUEST":

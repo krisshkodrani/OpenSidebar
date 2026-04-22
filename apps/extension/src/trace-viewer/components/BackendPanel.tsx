@@ -1,13 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
   fetchBackendHealth,
+  fetchDurableRunDetail,
+  fetchDurableRuns,
   fetchMemoryList,
   fetchMemorySearch,
   fetchMemoryDetail,
   fetchScheduledTasks,
   deleteMemory,
   deleteScheduledTask,
+  requestDurableRunResume,
+  requestDurableRunStop,
   type BackendHealth,
+  type BackendDurableRunDetail,
+  type BackendDurableRunSummary,
   type BackendMemoryRecord,
   type BackendMemoryDetail,
   type BackendScheduledTask,
@@ -15,7 +21,7 @@ import {
 import LoadingSpinner from "./LoadingSpinner";
 import ErrorBanner from "./ErrorBanner";
 
-type Tab = "memory" | "tasks";
+type Tab = "memory" | "tasks" | "runs";
 
 export default function BackendPanel() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
@@ -63,7 +69,7 @@ export default function BackendPanel() {
 
       {/* Tab toggle */}
       <div className="flex gap-0.5 px-5 pt-2 bg-trace-panel border-b border-trace-border shrink-0">
-        {(["memory", "tasks"] as Tab[]).map((tab) => (
+        {(["memory", "tasks", "runs"] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -82,8 +88,204 @@ export default function BackendPanel() {
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {activeTab === "memory" ? (
           <MemoryTab />
+        ) : activeTab === "runs" ? (
+          <DurableRunsTab />
         ) : (
           <TasksTab onChanged={loadHealth} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DurableRunsTab() {
+  const [runs, setRuns] = useState<BackendDurableRunSummary[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<BackendDurableRunDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadRuns = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchDurableRuns({ includeProgressSummary: true });
+      setRuns(data);
+      if (!selectedRunId && data[0]?.id) {
+        setSelectedRunId(data[0].id);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedRunId]);
+
+  const loadDetail = useCallback(async (runId: string) => {
+    setLoadingDetail(true);
+    try {
+      const nextDetail = await fetchDurableRunDetail(runId);
+      setDetail(nextDetail);
+    } catch {
+      setDetail(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRuns();
+  }, [loadRuns]);
+
+  useEffect(() => {
+    if (selectedRunId) {
+      loadDetail(selectedRunId);
+    } else {
+      setDetail(null);
+    }
+  }, [loadDetail, selectedRunId]);
+
+  const handleResume = useCallback(async (runId: string) => {
+    await requestDurableRunResume(runId);
+    await loadRuns();
+    if (selectedRunId === runId) await loadDetail(runId);
+  }, [loadDetail, loadRuns, selectedRunId]);
+
+  const handleStop = useCallback(async (runId: string) => {
+    await requestDurableRunStop(runId);
+    await loadRuns();
+    if (selectedRunId === runId) await loadDetail(runId);
+  }, [loadDetail, loadRuns, selectedRunId]);
+
+  if (loading && runs.length === 0) {
+    return <div className="px-5 py-4"><LoadingSpinner message="Loading durable runs..." /></div>;
+  }
+
+  if (error) {
+    return <div className="px-5 py-4"><ErrorBanner message={error} onRetry={loadRuns} /></div>;
+  }
+
+  if (runs.length === 0) {
+    return (
+      <div className="px-5 py-12 text-center text-trace-muted text-xs">
+        No active durable runs. Completed and stopped runs are hidden by default.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[minmax(260px,340px)_1fr] gap-4 px-5 py-4">
+      <div className="space-y-2">
+        {runs.map((run) => {
+          const selected = run.id === selectedRunId;
+          return (
+            <button
+              key={run.id}
+              onClick={() => setSelectedRunId(run.id)}
+              className={`w-full rounded border px-3 py-2 text-left transition-colors ${
+                selected
+                  ? "border-trace-accent bg-trace-accent/10"
+                  : "border-trace-border bg-trace-panel hover:bg-trace-bg/50"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-medium text-trace-text">
+                  {run.query}
+                </span>
+                <TaskStatusBadge status={run.status} />
+              </div>
+              <div className="mt-1 text-[10px] text-trace-muted">
+                {run.workspaceId} · updated {new Date(run.updatedAt).toLocaleTimeString()}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-trace-dim">
+                {run.nodeCounts ? (
+                  <span>{run.nodeCounts.completed}/{Object.values(run.nodeCounts).reduce((sum, value) => sum + value, 0)} nodes</span>
+                ) : null}
+                {run.pendingInteraction?.active ? (
+                  <span>{run.pendingInteraction.kind} pending</span>
+                ) : null}
+                {run.progressSummary?.reviewedItemCount != null ? (
+                  <span>{run.progressSummary.reviewedItemCount} reviewed</span>
+                ) : null}
+                {run.stopRequestedAt ? <span>stop requested</span> : null}
+                {run.resumeRequestedAt ? <span>resume requested</span> : null}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded border border-trace-border bg-trace-panel p-4">
+        {!selectedRunId ? (
+          <div className="text-xs text-trace-muted">Select a durable run.</div>
+        ) : loadingDetail ? (
+          <LoadingSpinner message="Loading durable run detail..." />
+        ) : !detail ? (
+          <div className="text-xs text-trace-muted">Failed to load durable run detail.</div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-trace-text">{detail.run.query}</div>
+                <div className="mt-1 text-[11px] text-trace-muted">
+                  {detail.run.workspaceId} · {detail.run.lastResumeSource ?? "no resume yet"}
+                  {detail.run.lastKnownResumeSafe != null
+                    ? ` · last known resume ${detail.run.lastKnownResumeSafe ? "safe" : "unsafe"}`
+                    : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void handleResume(detail.run.id)}
+                  className="rounded border border-trace-accent/40 px-3 py-1.5 text-xs font-medium text-trace-accent-light hover:bg-trace-accent/10"
+                >
+                  Request resume
+                </button>
+                <button
+                  onClick={() => void handleStop(detail.run.id)}
+                  className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                >
+                  Request stop
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-[11px]">
+              <DetailStat label="Status" value={detail.run.status} />
+              <DetailStat label="Workspace" value={detail.run.workspaceId} />
+              <DetailStat label="Updated" value={new Date(detail.run.updatedAt).toLocaleString()} />
+              <DetailStat
+                label="Pending interaction"
+                value={
+                  detail.pendingInteraction
+                    ? `${detail.pendingInteraction.kind} (${detail.pendingInteraction.status})`
+                    : "none"
+                }
+              />
+            </div>
+
+            <div>
+              <div className="mb-2 text-[10px] uppercase tracking-wider text-trace-muted">Nodes</div>
+              <div className="space-y-2">
+                {detail.nodes.map((node) => (
+                  <div key={node.nodeId} className="rounded border border-trace-border/70 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-trace-text">{node.description}</span>
+                      <TaskStatusBadge status={node.status} />
+                    </div>
+                    <div className="mt-1 text-[11px] text-trace-muted">{node.successCriteria}</div>
+                    {node.result ? (
+                      <div className="mt-1 text-[11px] text-trace-dim">{node.result}</div>
+                    ) : null}
+                    {node.error ? (
+                      <div className="mt-1 text-[11px] text-red-400">{node.error}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -421,16 +623,29 @@ function CategoryBadge({ slug }: { slug: string }) {
 
 function TaskStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
+    planning: "bg-sky-500/10 text-sky-400 border-sky-500/20",
     pending: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
     running: "bg-blue-500/10 text-blue-400 border-blue-500/20",
     completed: "bg-green-500/10 text-green-400 border-green-500/20",
     failed: "bg-red-500/10 text-red-400 border-red-500/20",
+    stopped: "bg-gray-500/10 text-gray-400 border-gray-500/20",
     cancelled: "bg-gray-500/10 text-gray-400 border-gray-500/20",
   };
   return (
     <span className={`text-[9px] px-1.5 py-0.5 rounded border ${colors[status] ?? colors.cancelled}`}>
       {status}
     </span>
+  );
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-trace-border/70 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-trace-muted">
+        {label}
+      </div>
+      <div className="mt-1 text-xs text-trace-text">{value}</div>
+    </div>
   );
 }
 

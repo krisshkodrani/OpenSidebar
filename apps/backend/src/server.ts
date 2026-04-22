@@ -19,6 +19,7 @@ import { handleHealth } from "./routes/health.js";
 import { handleMemoryRoutes } from "./routes/memory.js";
 import { handleProfileRoutes } from "./routes/profile.js";
 import { handleTaskRoutes } from "./routes/tasks.js";
+import { handleTaskRunRoutes } from "./routes/task-runs.js";
 import { startTaskTick, stopTaskTick } from "./services/task-scheduler.js";
 import type { BackendConfig } from "./types.js";
 
@@ -135,6 +136,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Task routes
     if (pathname.startsWith("/tasks")) {
       await handleTaskRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
+      return;
+    }
+
+    // Durable task-run routes
+    if (pathname.startsWith("/task-runs")) {
+      await handleTaskRunRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
       return;
     }
 
