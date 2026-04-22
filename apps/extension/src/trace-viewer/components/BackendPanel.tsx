@@ -434,7 +434,11 @@ function MemoryTab() {
           {displayItems.map((item) => {
             const slug = "slug" in item ? item.slug : "";
             const title = "title" in item ? item.title : slug;
-            const score = "score" in item ? (item as BackendMemoryDetail).score : undefined;
+            const score =
+              "score" in item ? (item as BackendMemoryDetail).score : undefined;
+            const category =
+              detailBySlug[slug]?.category ??
+              ("category" in item ? item.category : "unknown");
             const isExpanded = expanded === slug;
             const detail = detailBySlug[slug];
             const isLoadingDetail = loadingDetailSlug === slug;
@@ -452,7 +456,7 @@ function MemoryTab() {
                       score: {score.toFixed(3)}
                     </span>
                   )}
-                  <CategoryBadge slug={slug} />
+                  <CategoryBadge category={category} />
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(slug); }}
                     className="text-[10px] text-trace-dim hover:text-red-400 transition-colors px-1"
@@ -605,9 +609,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CategoryBadge({ slug }: { slug: string }) {
-  const match = slug.match(/^agent-mem-(.+)-[a-f0-9]{8}$/);
-  const category = match?.[1] ?? "unknown";
+function CategoryBadge({ category }: { category: string }) {
   const colors: Record<string, string> = {
     "execution-result": "bg-blue-500/10 text-blue-400 border-blue-500/20",
     "user-preference": "bg-purple-500/10 text-purple-400 border-purple-500/20",

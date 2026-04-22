@@ -2,7 +2,7 @@
  * Backend Agent Service — shared types
  */
 
-// ── Memory types (GBrain-backed) ──
+// Memory types (SQLite-backed)
 
 export interface MemoryInput {
   category: MemoryCategory;
@@ -21,6 +21,7 @@ export type MemoryCategory =
   | "learned-pattern";
 
 export interface MemoryResult {
+  id: string;
   slug: string;
   title: string;
   category: MemoryCategory;
@@ -30,8 +31,10 @@ export interface MemoryResult {
 }
 
 export interface MemoryListResult {
+  id: string;
   slug: string;
   title: string;
+  category: MemoryCategory;
   type: string;
 }
 
@@ -285,11 +288,9 @@ export interface BackendConfig {
     port: number;
     host: string;
   };
-  gbrain: {
+  memory: {
     enabled: boolean;
-    databasePath: string;
-    mcpCommand: string;
-    mcpArgs: string[];
+    backend: "sqlite";
   };
   tasks: {
     databasePath: string;
@@ -304,6 +305,7 @@ export interface HealthResponse {
   status: "ok" | "degraded";
   uptime: number;
   memoryConnected: boolean;
+  memoryBackend?: "sqlite";
   pendingTasks: number;
   memoryStats?: { pageCount: number };
 }

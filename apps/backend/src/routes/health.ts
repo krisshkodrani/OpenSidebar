@@ -5,7 +5,7 @@
 import type { ServerResponse } from "node:http";
 import type { HealthResponse } from "../types.js";
 import { getDatabase } from "../db.js";
-import { isGBrainConnected, getGBrainStats } from "../gbrain-client.js";
+import { getMemoryStats, isMemoryAvailable } from "../services/memory-service.js";
 
 const startedAt = Date.now();
 
@@ -15,22 +15,14 @@ export async function handleHealth(res: ServerResponse, sendJson: SendJsonFn): P
     .prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'pending'")
     .get() as { count: number };
 
-  const memoryConnected = isGBrainConnected();
-  let memoryStats: { pageCount: number } | undefined;
-
-  if (memoryConnected) {
-    try {
-      const stats = await getGBrainStats();
-      if (stats) memoryStats = { pageCount: stats.page_count ?? 0 };
-    } catch {
-      // stats are optional
-    }
-  }
+  const memoryConnected = isMemoryAvailable();
+  const memoryStats = getMemoryStats();
 
   const response: HealthResponse = {
     status: "ok",
     uptime: Date.now() - startedAt,
     memoryConnected,
+    memoryBackend: "sqlite",
     pendingTasks: pendingRow.count,
     memoryStats,
   };

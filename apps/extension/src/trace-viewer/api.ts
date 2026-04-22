@@ -70,12 +70,15 @@ export async function fetchSessionLogs(
 const BACKEND_URL = "http://127.0.0.1:7590";
 
 export interface BackendMemoryRecord {
+  id: string;
   slug: string;
   title: string;
+  category: string;
   type: string;
 }
 
 export interface BackendMemoryDetail {
+  id: string;
   slug: string;
   title: string;
   category: string;
@@ -103,6 +106,7 @@ export interface BackendHealth {
   status: string;
   uptime: number;
   memoryConnected: boolean;
+  memoryBackend?: "sqlite";
   pendingTasks: number;
   memoryStats?: { pageCount: number };
 }
