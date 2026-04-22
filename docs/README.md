@@ -40,20 +40,13 @@ Path note: the main entry-point docs below are aligned to the current `apps/` an
 - [Agent Strategy Letter](./guides/agent-strategy-letter.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [Model Benchmark Reference](./model-benchmark-reference.md)
-- [Skills Roadmap](./skills-roadmap-2026-04-13.md)
-- [Trace Lab Researcher Workflow](./guides/trace-lab-researcher-workflow.md)
 - [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
-- [Trace Viewer And Lab Roadmap](./trace-viewer-and-lab-roadmap-2026-04-21.md)
-
-## Articles
-
-- [Harness Transformation](./articles/harness-transformation-2026-04-15.md)
-- [When to Stop](./articles/when-to-stop.md)
-
-## Release Reports
-
-- [E2E Report 2026-04-14](./e2e-report-2026-04-14.md)
 
 ## Other
 
 - [Store Listing](./store-listing.md)
+
+## Notes
+
+- E2E reports are generated locally under `.artifacts/e2e/`.
+- RFCs and research notes live outside the repo.

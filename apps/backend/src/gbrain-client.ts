@@ -77,7 +77,7 @@ export function ensureGBrainDatabaseInitialized(
 ): void {
   const initArgs = [
     "run",
-    "lab/agents/gbrain/repo/src/cli.ts",
+    "path/to/gbrain-cli.ts",
     "init",
     "--pglite",
     "--path",
@@ -114,7 +114,7 @@ export async function connectGBrain(
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
-    // Isolate agent brain from lab brain via separate HOME directory.
+    // Isolate backend memory state into a project-local HOME directory.
     // GBrain reads ~/.gbrain/config.json, so different HOME = different database.
     HOME: BACKEND_HOME,
     USERPROFILE: BACKEND_HOME,
@@ -171,7 +171,7 @@ function callToolViaCli(
     resolveCliCommand(connectedConfig.mcpCommand),
     [
       "run",
-      "lab/agents/gbrain/repo/src/cli.ts",
+      "path/to/gbrain-cli.ts",
       "call",
       name,
       JSON.stringify(args),
@@ -301,7 +301,7 @@ function importMemoryWithoutEmbedding(
       resolveCliCommand(connectedConfig.mcpCommand),
       [
         "run",
-        "lab/agents/gbrain/repo/src/cli.ts",
+        "path/to/gbrain-cli.ts",
         "import",
         tempDir,
         "--no-embed",
