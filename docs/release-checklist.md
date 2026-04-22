@@ -37,7 +37,7 @@ If the release changes are concentrated in a different area, run a more relevant
 
 When you run the E2E suite or prepare the summary, write the dated report to:
 
-- `docs/e2e-report-YYYY-MM-DD.md`
+- `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
 
 ## 4. Validate Release Artifacts
 

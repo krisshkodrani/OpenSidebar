@@ -70,7 +70,7 @@ const RUN_TRACE_DIR = path.join(TRACE_DIR, "runs");
 const dirArg = process.argv.find((a) => a.startsWith("--dir="));
 const REPORT_DIR = dirArg
   ? path.resolve(dirArg.split("=")[1])
-  : path.resolve(__dirname, "../docs/e2e-reports/natural-v2");
+  : path.resolve(__dirname, "../.artifacts/e2e-progressive/natural-v2");
 const SUMMARY_FILE = path.join(REPORT_DIR, "_summary.md");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
 const TRACE_INDEX_FILE = path.join(TRACE_DIR, "index.jsonl");
@@ -686,7 +686,7 @@ function updateSummary(
   }
 
   md += `\n## Compared to v1 (pre-fix baseline)\n\n`;
-  md += `Baseline: 30/42 passed (71%) — see \`docs/e2e-report-2026-04-09.md\`\n`;
+  md += `Baseline: 30/42 passed (71%) - see the local E2E reports under \`.artifacts/e2e/\`\n`;
   md += `Current:  ${totalPass}/${totalPass + totalFail} passed (${Math.round((totalPass / (totalPass + totalFail || 1)) * 100)}%)\n`;
 
   fs.writeFileSync(SUMMARY_FILE, md);
@@ -836,3 +836,4 @@ async function main() {
 }
 
 main();
+

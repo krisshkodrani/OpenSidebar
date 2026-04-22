@@ -16,7 +16,12 @@ Key areas:
 - `apps/extension/tests/e2e`: fixture-driven E2E tests for real browser behavior.
 - `scripts/run-e2e-staged.ts`: the staged E2E runner for `easy`, `medium`, and `hard`.
 - `traces/runs`: recorded trace sessions produced by E2E and debugging runs.
-- `lab/`: research and analysis tooling. Use this for investigation support, not product behavior.
+
+Repo policy:
+
+- Keep stable product docs in `docs/`.
+- Keep runtime artifacts local under `.artifacts/`.
+- RFCs, investigations, and research notes live outside the repo.
 
 ## Default Change Placement
 
@@ -28,6 +33,7 @@ Prefer these locations when making changes:
 - Keep the E2E harness thin. It may configure the environment, seed minimal state, collect diagnostics, and assert results, but it should not contain product logic.
 - Use skills when a workflow pattern is stable and reusable across sites or tasks.
 - Use test-only instrumentation only when it is pure observability or minimal state injection needed for determinism.
+- Do not add repo-backed research workflows, vendored agent repos, or note-taking systems to the product tree.
 
 ## Product And E2E Design Rules
 
@@ -64,7 +70,7 @@ When working on runtime behavior, skills, prompts, or E2E-related failures, foll
 - Run `easy` before `medium`, and `medium` before `hard`, unless the task is explicitly scoped to a single failing test.
 - When a staged run fails, debug the first clean, high-signal failure before spending tokens on later suites.
 - Re-run isolated E2E files when iterating on a specific failure.
-- Use dated reports in `docs/` only. Do not create or update an undated `docs/e2e-report.md`.
+- Generated E2E reports belong in `.artifacts/e2e/`, not `docs/`.
 
 Useful commands:
 
@@ -107,11 +113,11 @@ Do not start by patching the fixture or harness unless the failure is clearly ca
 
 ## E2E Report Format
 
-When an agent runs the E2E suite or prepares an E2E summary report, create a dated markdown report in `docs/` using this filename pattern:
+When an agent runs the E2E suite or prepares an E2E summary report, create a dated markdown report under `.artifacts/e2e/` using this filename pattern:
 
-- `docs/e2e-report-YYYY-MM-DD.md`
+- `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
 
-Do not create or update an undated `docs/e2e-report.md` file.
+Do not create or update a tracked `docs/e2e-report.md` or dated report in `docs/`.
 
 The report should use this structure:
 
