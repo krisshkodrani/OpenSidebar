@@ -46,6 +46,8 @@ const OPENAI_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
 const OPENAI_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
+const MOONSHOT_PERCEPTION_MODEL = "kimi-k2.6";
 const FIREWORKS_API_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
 const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
@@ -136,6 +138,16 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
       headers: {},
       model: settings.perceptionModel || FIREWORKS_PERCEPTION_MODEL,
       providerId: "fireworks",
+    });
+  }
+
+  if (mode === "moonshot" && settings.kimiApiKey) {
+    providers.push({
+      baseUrl: MOONSHOT_API_URL,
+      apiKey: settings.kimiApiKey,
+      headers: {},
+      model: settings.perceptionModel || MOONSHOT_PERCEPTION_MODEL,
+      providerId: "moonshot",
     });
   }
 
@@ -891,6 +903,20 @@ export class PerceptionAgent {
             }
           }
 
+          const payload: Record<string, unknown> = {
+            model: provider.model,
+            messages: [{ role: "user", content: contentParts }],
+          };
+          if (provider.providerId === "moonshot") {
+            payload.max_completion_tokens = panoramicScreenshots?.length
+              ? 800
+              : 600;
+            payload.thinking = { type: "disabled" };
+          } else {
+            payload.max_tokens = panoramicScreenshots?.length ? 800 : 600;
+            payload.temperature = 0.1;
+          }
+
           const response = await fetch(provider.baseUrl, {
             method: "POST",
             headers: {
@@ -898,12 +924,7 @@ export class PerceptionAgent {
               Authorization: `Bearer ${provider.apiKey}`,
               ...provider.headers,
             },
-            body: JSON.stringify({
-              model: provider.model,
-              messages: [{ role: "user", content: contentParts }],
-              max_tokens: panoramicScreenshots?.length ? 800 : 600,
-              temperature: 0.1,
-            }),
+            body: JSON.stringify(payload),
             signal: fetchSignal,
           });
 

@@ -152,9 +152,13 @@ async function dispatchScheduledTask(task: {
 
     const mode = settings.providerMode ?? "fireworks";
     const activeKey =
-      mode === "fireworks" ? settings.fireworksApiKey :
-      mode === "openai-groq" ? settings.openaiApiKey :
-      settings.openRouterApiKey;
+      mode === "fireworks"
+        ? settings.fireworksApiKey
+        : mode === "moonshot"
+          ? settings.kimiApiKey
+          : mode === "openai-groq"
+            ? settings.openaiApiKey
+            : settings.openRouterApiKey;
 
     if (!activeKey) {
       await markTaskFailed(task.id, "No API key configured");

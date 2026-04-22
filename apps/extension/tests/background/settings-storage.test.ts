@@ -31,6 +31,7 @@ describe("settings storage", () => {
       groqApiKey_local: "",
       geminiApiKey_local: "",
       fireworksApiKey_local: "fw-test",
+      kimiApiKey_local: "sk-kimi-test",
     })) as any;
     chrome.storage.session.get = vi.fn(async () => ({})) as any;
 
@@ -38,5 +39,6 @@ describe("settings storage", () => {
 
     expect(settings?.perceptionMode).toBe("structured");
     expect("useVLExecutor" in (settings ?? {})).toBe(false);
+    expect(settings?.kimiApiKey).toBe("sk-kimi-test");
   });
 });

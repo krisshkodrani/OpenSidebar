@@ -462,10 +462,27 @@ export default function App() {
       const trimmedText = text.trim();
       if (!trimmedText || store.isAgentRunning) return;
 
-      // Check for API key before sending (read fresh from store, not stale closure)
-      if (!store.settings.openRouterApiKey) {
+      // Check for the active provider's API key before sending.
+      const mode = store.settings.providerMode ?? "fireworks";
+      const activeKey =
+        mode === "fireworks"
+          ? store.settings.fireworksApiKey
+          : mode === "moonshot"
+            ? store.settings.kimiApiKey
+            : mode === "openai-groq"
+              ? store.settings.openaiApiKey
+              : store.settings.openRouterApiKey;
+      const activeKeyName =
+        mode === "fireworks"
+          ? "Fireworks AI"
+          : mode === "moonshot"
+            ? "Moonshot AI"
+            : mode === "openai-groq"
+              ? "OpenAI"
+              : "OpenRouter";
+      if (!activeKey) {
         setError(
-          "Please add your OpenRouter API key in Settings to get started.",
+          `Please add your ${activeKeyName} API key in Settings to get started.`,
           { persistent: true },
         );
         return;
@@ -669,13 +686,18 @@ export default function App() {
                   <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
                     <Sparkles size={24} className="text-primary-500" />
                   </div>
-                  {!(settings.fireworksApiKey || settings.openRouterApiKey) ? (
+                  {!(
+                    settings.fireworksApiKey ||
+                    settings.kimiApiKey ||
+                    settings.openaiApiKey ||
+                    settings.openRouterApiKey
+                  ) ? (
                     <>
                       <h2 className="font-semibold mb-1 text-warm-800 dark:text-warm-100">
                         Welcome to OpenSidebar
                       </h2>
                       <p className="text-xs text-warm-500 dark:text-warm-400 mt-1 mb-4">
-                        Add your Fireworks AI API key to get started.
+                        Add an API key in Settings to get started.
                       </p>
                       <button
                         onClick={() => setIsSettingsOpen(true)}

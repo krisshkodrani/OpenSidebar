@@ -7,6 +7,7 @@ import {
   MODEL_EXECUTOR,
   MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
   MODEL_PLANNER,
+  MOONSHOT_MODEL_EXECUTOR,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
 
@@ -87,7 +88,7 @@ function sseResponse(chunks: string[]): Response {
   });
 }
 
-function makeClient(opts?: { executorModel?: string; plannerModel?: string }) {
+function makeClient(opts?: ConstructorParameters<typeof LLMClient>[1]) {
   return new LLMClient("test-api-key", opts);
 }
 
@@ -389,6 +390,29 @@ describe("complete() payload & response", () => {
     expect(payload.tool_choice).toBeUndefined();
   });
 
+  test("moonshot mode reshapes payload for Kimi compatibility", async () => {
+    const client = makeClient({
+      providerMode: "moonshot",
+      kimiApiKey: "sk-kimi-test",
+    });
+    let url = "";
+    let payload: Record<string, unknown> = {};
+    mockFetch((nextUrl, init) => {
+      url = nextUrl;
+      payload = JSON.parse(init!.body as string);
+      return jsonApiResponse("OK");
+    });
+
+    await client.complete(baseRequest({ max_tokens: 321, tools: sampleTools }));
+    expect(url).toBe("https://api.moonshot.ai/v1/chat/completions");
+    expect(payload.model).toBe(MOONSHOT_MODEL_EXECUTOR);
+    expect(payload.max_tokens).toBeUndefined();
+    expect(payload.max_completion_tokens).toBe(321);
+    expect(payload.temperature).toBeUndefined();
+    expect(payload.thinking).toEqual({ type: "disabled" });
+    expect(payload.tool_choice).toBe("auto");
+  });
+
   test("adds cache_control to system message", async () => {
     const client = makeClient();
     let payload: Record<string, unknown> = {};
@@ -679,6 +703,25 @@ describe("completeStream() specifics", () => {
     await client.completeStream(baseRequest(), () => {});
     expect(payload.stream).toBe(true);
     expect(payload.stream_options).toEqual({ include_usage: true });
+  });
+
+  test("moonshot streaming payload omits temperature and uses max_completion_tokens", async () => {
+    const client = makeClient({
+      providerMode: "moonshot",
+      kimiApiKey: "sk-kimi-test",
+    });
+    let payload: Record<string, unknown> = {};
+    mockFetch((_url, init) => {
+      payload = JSON.parse(init!.body as string);
+      return sseResponse(["Hello"]);
+    });
+
+    await client.completeStream(baseRequest({ max_tokens: 99 }), () => {});
+    expect(payload.max_tokens).toBeUndefined();
+    expect(payload.max_completion_tokens).toBe(99);
+    expect(payload.temperature).toBeUndefined();
+    expect(payload.thinking).toEqual({ type: "disabled" });
+    expect(payload.stream).toBe(true);
   });
 
   test("throws on null response body", async () => {

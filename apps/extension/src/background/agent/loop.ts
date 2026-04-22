@@ -1084,11 +1084,13 @@ export class AgentLoop {
         | "openrouter"
         | "openrouter-groq"
         | "openai-groq"
-        | "fireworks";
+        | "fireworks"
+        | "moonshot";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
       openaiApiKey?: string;
       groqApiKey?: string;
       fireworksApiKey?: string;
+      kimiApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       useVLExecutor?: boolean;
@@ -1140,6 +1142,7 @@ export class AgentLoop {
       openaiApiKey: options?.openaiApiKey,
       groqApiKey: options?.groqApiKey,
       fireworksApiKey: options?.fireworksApiKey,
+      kimiApiKey: options?.kimiApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);

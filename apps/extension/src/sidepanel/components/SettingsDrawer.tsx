@@ -13,6 +13,9 @@ import {
   GROQ_MODEL_PERCEPTION,
   FIREWORKS_MODEL_EXECUTOR,
   FIREWORKS_MODEL_PLANNER,
+  MOONSHOT_MODEL_EXECUTOR,
+  MOONSHOT_MODEL_PLANNER,
+  MOONSHOT_MODEL_PERCEPTION,
 } from "../../background/llm/client";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
 import {
@@ -73,6 +76,7 @@ const GEMINI_TTS_STYLE_PRESETS = [
 
 function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
   if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
+  if (mode === "moonshot") return "Executor + Planner via Moonshot AI";
   if (mode === "openrouter") return "All roles via OpenRouter";
   if (mode === "openrouter-groq")
     return "Executor via OpenRouter, Planner + Perception via Groq";
@@ -86,19 +90,19 @@ function getPerceptionModeDescription(
   providerMode: UserSettings["providerMode"] = "fireworks",
 ): string {
   if (selectedMode === "auto") {
-    return providerMode === "fireworks"
-      ? "Recommended. Fireworks uses unified VL as the primary path."
-      : "Recommended. Non-Fireworks stacks use structured perception by default.";
+    return providerMode === "fireworks" || providerMode === "moonshot"
+      ? "Recommended. This stack uses unified VL as the primary path."
+      : "Recommended. Non-Fireworks/Moonshot stacks use structured perception by default.";
   }
   if (selectedMode === "unified_vl") {
-    return "Primary Fireworks path. Screenshot goes straight to the executor.";
+    return "Primary Kimi path. Screenshot goes straight to the executor.";
   }
   return "Compatibility path. A dedicated perception model produces Page Interpretation.";
 }
 
 /** Which provider modes use which key */
 function getKeyUsage(
-  key: "openRouter" | "fireworks" | "openai" | "groq" | "gemini",
+  key: "openRouter" | "fireworks" | "moonshot" | "openai" | "groq" | "gemini",
   mode: string,
 ): string {
   const uses: string[] = [];
@@ -107,6 +111,9 @@ function getKeyUsage(
   }
   if (key === "fireworks") {
     if (mode === "fireworks") uses.push("agent");
+  }
+  if (key === "moonshot") {
+    if (mode === "moonshot") uses.push("agent");
   }
   if (key === "openai") {
     if (mode === "openai-groq") uses.push("agent");
@@ -215,8 +222,17 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     updateSettings(nextState);
     void saveSettings(nextState);
 
-    // Clear the "add API key" error if the key is now present
-    if (nextState.openRouterApiKey) {
+    // Clear the "add API key" error if the active provider key is now present.
+    const mode = nextState.providerMode ?? "fireworks";
+    const activeKey =
+      mode === "fireworks"
+        ? nextState.fireworksApiKey
+        : mode === "moonshot"
+          ? nextState.kimiApiKey
+          : mode === "openai-groq"
+            ? nextState.openaiApiKey
+            : nextState.openRouterApiKey;
+    if (activeKey) {
       const { error, setError } = useStore.getState();
       if (error?.includes("API key")) setError(null);
     }
@@ -644,6 +660,24 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium dark:text-warm-300">
+                    Moonshot AI
+                  </label>
+                  <input
+                    type="password"
+                    value={formState.kimiApiKey || ""}
+                    onChange={(e) =>
+                      handleChange("kimiApiKey", e.target.value)
+                    }
+                    className={inputCls}
+                    placeholder="sk-kimi-..."
+                  />
+                  <p className={hintCls}>
+                    {getKeyUsage("moonshot", providerMode)}
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">
                     OpenAI
                   </label>
                   <input
@@ -705,6 +739,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       "providerMode",
                       e.target.value as
                         | "fireworks"
+                        | "moonshot"
                         | "openrouter"
                         | "openrouter-groq"
                         | "openai-groq",
@@ -713,6 +748,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   className={inputCls}
                 >
                   <option value="fireworks">Fireworks AI (Kimi K2.5)</option>
+                  <option value="moonshot">Moonshot AI (Kimi 2.6)</option>
                   <option value="openrouter">OpenRouter (GPT-5.4-mini)</option>
                   <option value="openrouter-groq">OpenRouter + Groq</option>
                   <option value="openai-groq">OpenAI-Compatible + Groq</option>
@@ -750,7 +786,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     defaultModel={
                       providerMode === "openai-groq"
                         ? OPENAI_MODEL_EXECUTOR
-                        : providerMode === "fireworks"
+                        : providerMode === "moonshot"
+                          ? MOONSHOT_MODEL_EXECUTOR
+                          : providerMode === "fireworks"
                           ? FIREWORKS_MODEL_EXECUTOR
                           : MODEL_EXECUTOR
                     }
@@ -779,9 +817,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       handleChange("plannerModel", v || undefined)
                     }
                     defaultModel={
-                      providerMode === "fireworks"
-                        ? FIREWORKS_MODEL_PLANNER
-                        : providerMode !== "openrouter"
+                      providerMode === "moonshot"
+                        ? MOONSHOT_MODEL_PLANNER
+                        : providerMode === "fireworks"
+                          ? FIREWORKS_MODEL_PLANNER
+                          : providerMode !== "openrouter"
                           ? GROQ_MODEL_PLANNER
                           : MODEL_PLANNER
                     }
@@ -870,9 +910,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         handleChange("perceptionModel", v || undefined)
                       }
                       defaultModel={
-                        providerMode === "fireworks"
-                          ? FIREWORKS_MODEL_EXECUTOR
-                          : providerMode !== "openrouter"
+                        providerMode === "moonshot"
+                          ? MOONSHOT_MODEL_PERCEPTION
+                          : providerMode === "fireworks"
+                            ? FIREWORKS_MODEL_EXECUTOR
+                            : providerMode !== "openrouter"
                             ? GROQ_MODEL_PERCEPTION
                             : PERCEPTION_MODEL_DEFAULT
                       }

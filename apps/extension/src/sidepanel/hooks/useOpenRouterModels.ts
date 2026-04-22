@@ -6,7 +6,7 @@ export interface ProviderModelOption {
   promptPrice: number;
   completionPrice: number;
   supportsVision: boolean;
-  provider?: "openrouter" | "fireworks" | "groq";
+  provider?: "openrouter" | "fireworks" | "groq" | "moonshot";
   source?: "live" | "curated";
   effectiveDate?: string;
 }
@@ -78,6 +78,29 @@ export const FIREWORKS_MODELS: ProviderModelOption[] = [
   },
 ];
 
+export const MOONSHOT_MODELS: ProviderModelOption[] = [
+  {
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+    promptPrice: 0.95 / 1_000_000,
+    completionPrice: 4.0 / 1_000_000,
+    supportsVision: true,
+    provider: "moonshot",
+    source: "curated",
+    effectiveDate: "2026-04-22",
+  },
+  {
+    id: "kimi-k2.5",
+    name: "Kimi K2.5",
+    promptPrice: 0.6 / 1_000_000,
+    completionPrice: 3.0 / 1_000_000,
+    supportsVision: true,
+    provider: "moonshot",
+    source: "curated",
+    effectiveDate: "2026-04-22",
+  },
+];
+
 export const GROQ_MODELS: ProviderModelOption[] = [
   {
     id: "openai/gpt-oss-120b",
@@ -111,7 +134,12 @@ export const GROQ_MODELS: ProviderModelOption[] = [
   },
 ];
 
-type ProviderMode = "openrouter" | "openrouter-groq" | "openai-groq" | "fireworks";
+type ProviderMode =
+  | "openrouter"
+  | "openrouter-groq"
+  | "openai-groq"
+  | "fireworks"
+  | "moonshot";
 type ModelRole = "executor" | "planner" | "perception";
 
 export function getProviderModelOptions(args: {
@@ -121,6 +149,7 @@ export function getProviderModelOptions(args: {
 }): ProviderModelOption[] {
   const { providerMode, role, openRouterModels } = args;
   if (providerMode === "fireworks") return FIREWORKS_MODELS;
+  if (providerMode === "moonshot") return MOONSHOT_MODELS;
   if (providerMode === "openrouter") return openRouterModels;
   if (providerMode === "openrouter-groq") {
     return role === "executor" ? openRouterModels : GROQ_MODELS;
@@ -136,6 +165,9 @@ export function getProviderModelCatalogNote(args: {
   const { providerMode, role, hasOpenRouterKey } = args;
   if (providerMode === "fireworks") {
     return "Scoped to Fireworks models with curated pricing.";
+  }
+  if (providerMode === "moonshot") {
+    return "Scoped to Moonshot models with curated pricing.";
   }
   if (providerMode === "openrouter") {
     return hasOpenRouterKey

@@ -17,6 +17,8 @@ import { TokenUsage } from "../llm/types";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
+const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
+const MOONSHOT_PERCEPTION_MODEL = "kimi-k2.6";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -353,9 +355,19 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
   return { promptText, mode };
 }
 
-/** Build perception provider list — OpenRouter (Gemini) only. */
+/** Build perception provider list for the legacy stateless path. */
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
+
+  if (settings.providerMode === "moonshot" && settings.kimiApiKey) {
+    providers.push({
+      baseUrl: MOONSHOT_API_URL,
+      apiKey: settings.kimiApiKey,
+      headers: {},
+      model: settings.perceptionModel || MOONSHOT_PERCEPTION_MODEL,
+      providerId: "moonshot",
+    });
+  }
 
   const openRouterKey = settings.openRouterApiKey;
   if (openRouterKey) {
@@ -399,7 +411,10 @@ export async function perceive(
     return {
       interpretation:
         "[No API key — visual perception unavailable. Agent relies on element list only.]",
-      model: OPENROUTER_PERCEPTION_MODEL,
+      model:
+        settings.providerMode === "moonshot"
+          ? MOONSHOT_PERCEPTION_MODEL
+          : OPENROUTER_PERCEPTION_MODEL,
       durationMs: 0,
       cached: false,
       mode: "orientation",
@@ -455,6 +470,25 @@ export async function perceive(
           }
         }
 
+        const payload: Record<string, unknown> = {
+          model: provider.model,
+          messages: [
+            {
+              role: "user",
+              content: contentParts,
+            },
+          ],
+        };
+        if (provider.providerId === "moonshot") {
+          payload.max_completion_tokens = input.panoramicScreenshots?.length
+            ? 800
+            : 600;
+          payload.thinking = { type: "disabled" };
+        } else {
+          payload.max_tokens = input.panoramicScreenshots?.length ? 800 : 600;
+          payload.temperature = 0.1;
+        }
+
         const response = await fetch(provider.baseUrl, {
           method: "POST",
           headers: {
@@ -462,17 +496,7 @@ export async function perceive(
             Authorization: `Bearer ${provider.apiKey}`,
             ...provider.headers,
           },
-          body: JSON.stringify({
-            model: provider.model,
-            messages: [
-              {
-                role: "user",
-                content: contentParts,
-              },
-            ],
-            max_tokens: input.panoramicScreenshots?.length ? 800 : 600,
-            temperature: 0.1,
-          }),
+          body: JSON.stringify(payload),
           signal: fetchSignal,
         });
 

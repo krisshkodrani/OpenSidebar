@@ -24,6 +24,15 @@ describe("LLM pricing table", () => {
     });
   });
 
+  test("includes Moonshot pricing for Kimi K2.6", () => {
+    const pricing = findModelPricing("moonshot", "kimi-k2.6");
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 0.95,
+      outputUsdPerMillion: 4.0,
+      cachedInputUsdPerMillion: 0.16,
+    });
+  });
+
   test("estimates cached prompt tokens at the cached rate", () => {
     const cost = estimateCostUsd("groq", "openai/gpt-oss-120b", {
       prompt_tokens: 1_000_000,
