@@ -2,7 +2,7 @@
  * E2E suite report.
  *
  * Collects per-test results, prints a concise console summary, and writes a
- * dated markdown report to docs/ in the repository-standard format.
+ * dated markdown report to a local untracked artifacts folder.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -560,7 +560,7 @@ class SuiteReport {
   private writeMarkdownReport(
     analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
   ): void {
-    const reportsDir = resolve(PROJECT_ROOT, "docs");
+    const reportsDir = resolve(PROJECT_ROOT, ".artifacts", "e2e");
     if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
 
     const today = new Date().toISOString().split("T")[0];

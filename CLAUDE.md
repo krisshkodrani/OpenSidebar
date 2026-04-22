@@ -26,9 +26,9 @@ npm run prompts:check
 
 When writing an E2E summary, use:
 
-- `docs/e2e-report-YYYY-MM-DD.md`
+- `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
 
-Do not create or update an undated `e2e-report.md`.
+Do not create or update a tracked `docs/e2e-report.md` or dated report in `docs/`.
 
 Use this structure:
 
@@ -40,20 +40,11 @@ Use this structure:
 6. `## Metric Definitions`
 7. `## Stability Notes`
 
-## Lab
+## Repo Scope
 
-Research artifacts live in `lab/` (not `docs/`). See `lab/README.md` for the full charter.
-
-- `lab/rfcs/` -- Requests for Comments (hypotheses, designs)
-- `lab/research/` -- Literature reviews, benchmark studies
-- `lab/reports/` -- Benchmark results, audits
-- `lab/e2e-reports/` -- Per-run E2E test reports
-- `lab/books/` -- Reference books and reading notes
-- `lab/knowledge/` -- Accumulated knowledge base (indexed by GBrain)
-- `lab/experiments/` -- Structured experiment logs
-- `lab/agents/` -- Hermes Agent + GBrain configs
-
-`docs/` is for **repo users**: getting started, manual, architecture, features.
+- Keep stable product and developer docs in `docs/`.
+- Keep generated runtime artifacts in `.artifacts/`.
+- RFCs, investigations, and research notes live outside the repo.
 
 ## Architecture
 

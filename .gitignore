@@ -60,11 +60,10 @@ credentials.json
 # Internal planning docs
 plans/
 
-# Lab: ignore generated data, keep structure and knowledge
-lab/books/*.pdf
-lab/e2e-reports/
-lab/agents/hermes/repo/
-lab/agents/gbrain/repo/
+# Local artifacts
+.artifacts/
+
+# Local data
 data/
 
 # Legacy ad-hoc docs artifacts

@@ -63,7 +63,7 @@ Related surfaces:
 
 - fixtures in `apps/extension/tests/e2e/fixtures/`
 - helper utilities in `apps/extension/tests/e2e/helpers/`
-- dated reports in `docs/e2e-report-YYYY-MM-DD.md`
+- local reports in `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
 
 ### Inspect traces and logs
 
