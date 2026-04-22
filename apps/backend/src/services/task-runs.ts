@@ -12,6 +12,8 @@ import type {
   TaskRunNode,
   TaskRunNodeInput,
   TaskRunProgress,
+  TaskRunProgressFactValue,
+  TaskRunProgressKind,
   TaskRunProgressSummary,
   TaskRunProgressInput,
   TaskRunResumeResponse,
@@ -21,6 +23,12 @@ import type {
 
 const RESUME_SIDE_EFFECT_LIMIT = 50;
 const SIDE_EFFECT_RETENTION_LIMIT = 50;
+const CANONICAL_PROGRESS_KINDS: TaskRunProgressKind[] = [
+  "reviewed-item-list",
+  "extracted-fact-map",
+  "completed-phase-list",
+  "outstanding-question-list",
+];
 
 interface TaskRunRow {
   id: string;
@@ -105,6 +113,13 @@ interface SideEffectRow {
   snapshot_fingerprint: string | null;
 }
 
+export class InvalidTaskRunProgressError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidTaskRunProgressError";
+  }
+}
+
 function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try {
@@ -112,6 +127,29 @@ function parseJson<T>(value: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function normalizeStoredTaskRunProgressRow(row: TaskRunProgressRow): TaskRunProgressInput {
+  const payload = parseJson(row.payload_json, null);
+  if (row.kind === "completed-phase" && typeof payload === "string") {
+    return {
+      key: row.key,
+      kind: "completed-phase-list",
+      payload: [payload],
+    };
+  }
+  if (row.kind === "outstanding-question" && typeof payload === "string") {
+    return {
+      key: row.key,
+      kind: "outstanding-question-list",
+      payload: [payload],
+    };
+  }
+  return normalizeTaskRunProgressInput({
+    key: row.key,
+    kind: row.kind,
+    payload,
+  });
 }
 
 function rowToTaskRun(row: TaskRunRow): TaskRun {
@@ -184,13 +222,27 @@ function rowToTaskRunNode(row: TaskRunNodeRow): TaskRunNode {
 }
 
 function rowToTaskRunProgress(row: TaskRunProgressRow): TaskRunProgress {
-  return {
-    runId: row.run_id,
-    key: row.key,
-    kind: row.kind,
-    payload: parseJson(row.payload_json, null),
-    updatedAt: row.updated_at,
-  };
+  const normalized = normalizeStoredTaskRunProgressRow(row);
+  switch (normalized.kind) {
+    case "reviewed-item-list":
+    case "completed-phase-list":
+    case "outstanding-question-list":
+      return {
+        runId: row.run_id,
+        key: normalized.key,
+        kind: normalized.kind,
+        payload: normalized.payload,
+        updatedAt: row.updated_at,
+      };
+    case "extracted-fact-map":
+      return {
+        runId: row.run_id,
+        key: normalized.key,
+        kind: normalized.kind,
+        payload: normalized.payload,
+        updatedAt: row.updated_at,
+      };
+  }
 }
 
 function rowToPendingInteraction(
@@ -231,31 +283,145 @@ function emptyNodeCounts(): TaskRunNodeCounts {
   };
 }
 
+function isCanonicalTaskRunProgressKind(
+  value: unknown,
+): value is TaskRunProgressKind {
+  return (
+    typeof value === "string" &&
+    CANONICAL_PROGRESS_KINDS.includes(value as TaskRunProgressKind)
+  );
+}
+
+function isPlainObject(
+  value: unknown,
+): value is Record<string, TaskRunProgressFactValue> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      next.push(value);
+    }
+  }
+  return next;
+}
+
+function normalizeTaskRunProgressInput(input: {
+  key: unknown;
+  kind: unknown;
+  payload: unknown;
+}): TaskRunProgressInput {
+  if (typeof input.key !== "string" || input.key.trim().length === 0) {
+    throw new InvalidTaskRunProgressError("Progress key must be a non-empty string");
+  }
+  if (!isCanonicalTaskRunProgressKind(input.kind)) {
+    throw new InvalidTaskRunProgressError(
+      `Progress kind must be one of: ${CANONICAL_PROGRESS_KINDS.join(", ")}`,
+    );
+  }
+
+  const key = input.key.trim();
+
+  switch (input.kind) {
+    case "reviewed-item-list":
+    case "completed-phase-list":
+    case "outstanding-question-list": {
+      if (
+        !Array.isArray(input.payload) ||
+        !input.payload.every((value) => typeof value === "string")
+      ) {
+        throw new InvalidTaskRunProgressError(
+          `Progress payload for ${input.kind} must be a string array`,
+        );
+      }
+      return {
+        key,
+        kind: input.kind,
+        payload: dedupeStrings(input.payload),
+      };
+    }
+    case "extracted-fact-map": {
+      if (!isPlainObject(input.payload)) {
+        throw new InvalidTaskRunProgressError(
+          "Progress payload for extracted-fact-map must be an object",
+        );
+      }
+      return {
+        key,
+        kind: input.kind,
+        payload: input.payload,
+      };
+    }
+  }
+}
+
+function mergeTaskRunProgress(
+  existing: TaskRunProgress | null,
+  next: TaskRunProgressInput,
+): TaskRunProgressInput {
+  if (!existing) return next;
+  if (existing.kind !== next.kind) {
+    throw new InvalidTaskRunProgressError(
+      `Progress key ${next.key} already exists with kind ${existing.kind}`,
+    );
+  }
+
+  switch (next.kind) {
+    case "reviewed-item-list":
+    case "completed-phase-list":
+    case "outstanding-question-list":
+      return {
+        key: next.key,
+        kind: next.kind,
+        payload: dedupeStrings([
+          ...(existing.payload as string[]),
+          ...next.payload,
+        ]),
+      };
+    case "extracted-fact-map":
+      return {
+        key: next.key,
+        kind: next.kind,
+        payload: {
+          ...(existing.payload as Record<string, TaskRunProgressFactValue>),
+          ...next.payload,
+        },
+      };
+  }
+}
+
 function summarizeProgress(progress: TaskRunProgress[]): TaskRunProgressSummary {
   const summary: TaskRunProgressSummary = {
     completedPhases: [],
     outstandingQuestions: [],
   };
   for (const entry of progress) {
-    if (entry.kind === "completed-phase" && typeof entry.payload === "string") {
-      summary.completedPhases.push(entry.payload);
+    if (entry.kind === "completed-phase-list") {
+      summary.completedPhases.push(...entry.payload);
       continue;
     }
-    if (
-      entry.kind === "outstanding-question" &&
-      typeof entry.payload === "string"
-    ) {
-      summary.outstandingQuestions.push(entry.payload);
+    if (entry.kind === "outstanding-question-list") {
+      summary.outstandingQuestions.push(...entry.payload);
       continue;
     }
-    if (entry.kind === "reviewed-item-list" && Array.isArray(entry.payload)) {
-      summary.reviewedItemCount = entry.payload.length;
+    if (entry.kind === "reviewed-item-list") {
+      summary.reviewedItemCount =
+        (summary.reviewedItemCount ?? 0) + entry.payload.length;
       continue;
     }
-    if (entry.kind === "extracted-fact-map" && entry.payload && typeof entry.payload === "object") {
-      summary.extractedFactCount = Object.keys(entry.payload as Record<string, unknown>).length;
-    }
+    summary.extractedFactCount =
+      (summary.extractedFactCount ?? 0) + Object.keys(entry.payload).length;
   }
+  summary.completedPhases = dedupeStrings(summary.completedPhases);
+  summary.outstandingQuestions = dedupeStrings(summary.outstandingQuestions);
   return summary;
 }
 
@@ -619,10 +785,19 @@ export function getTaskRunNodes(runId: string): TaskRunNode[] {
 
 export function upsertTaskRunProgress(
   runId: string,
-  input: TaskRunProgressInput,
+  input: {
+    key: unknown;
+    kind: unknown;
+    payload: unknown;
+  },
 ): TaskRunProgress {
   const db = getDatabase();
   const now = Date.now();
+  const normalized = normalizeTaskRunProgressInput(input);
+  const existing = getTaskRunProgress(runId).find(
+    (entry) => entry.key === normalized.key,
+  ) ?? null;
+  const merged = mergeTaskRunProgress(existing, normalized);
   db.prepare(`
     INSERT INTO task_run_progress (run_id, key, kind, payload_json, updated_at)
     VALUES (?, ?, ?, ?, ?)
@@ -630,9 +805,9 @@ export function upsertTaskRunProgress(
       kind = excluded.kind,
       payload_json = excluded.payload_json,
       updated_at = excluded.updated_at
-  `).run(runId, input.key, input.kind, JSON.stringify(input.payload), now);
+  `).run(runId, merged.key, merged.kind, JSON.stringify(merged.payload), now);
 
-  return getTaskRunProgress(runId).find((entry) => entry.key === input.key)!;
+  return getTaskRunProgress(runId).find((entry) => entry.key === merged.key)!;
 }
 
 export function getTaskRunProgress(runId: string): TaskRunProgress[] {

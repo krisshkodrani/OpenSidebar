@@ -14,6 +14,7 @@ import {
   getTaskRunDetail,
   getTaskRun,
   getTaskRunResume,
+  InvalidTaskRunProgressError,
   listTaskRuns,
   patchTaskRun,
   requestTaskRunResume,
@@ -219,7 +220,16 @@ export async function handleTaskRunRoutes(
       sendError(res, "Missing required fields: key, kind, payload");
       return;
     }
-    const progress = upsertTaskRunProgress(runId, body as TaskRunProgressInput);
+    let progress;
+    try {
+      progress = upsertTaskRunProgress(runId, body as TaskRunProgressInput);
+    } catch (error) {
+      if (error instanceof InvalidTaskRunProgressError) {
+        sendError(res, error.message, 400);
+        return;
+      }
+      throw error;
+    }
     sendJson(res, progress);
     return;
   }

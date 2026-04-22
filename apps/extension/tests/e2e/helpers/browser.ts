@@ -27,6 +27,7 @@ export interface ExtensionContext {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
 const HELPER_PATH = "/e2e-helper.html";
+const TRACE_VIEWER_PATH = "/src/trace-viewer/index.html";
 
 async function createBrowserPage(browser: Browser): Promise<Page> {
   try {
@@ -181,6 +182,21 @@ export async function openHelperPage(ctx: ExtensionContext): Promise<Page> {
     throw new Error(`e2e-helper.html did not load correctly (url=${url}, title=${title})`);
   }
   return helperPage;
+}
+
+/**
+ * Open the extension trace viewer page.
+ */
+export async function openTraceViewerPage(
+  ctx: ExtensionContext,
+  hash: string = "#view=backend",
+): Promise<Page> {
+  const page = await createBrowserPage(ctx.browser);
+  await page.goto(
+    `chrome-extension://${ctx.extensionId}${TRACE_VIEWER_PATH}${hash}`,
+    { waitUntil: "domcontentloaded" },
+  );
+  return page;
 }
 
 /**

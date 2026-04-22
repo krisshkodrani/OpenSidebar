@@ -29,6 +29,7 @@ import {
 } from "../agent/memory";
 import {
   appendTaskRunSideEffects,
+  deleteTaskRunProgress,
   fetchTaskRunResume,
   listTaskRuns,
   patchTaskRun,
@@ -40,7 +41,9 @@ import {
   upsertTaskRun,
   upsertTaskRunNode,
   upsertTaskRunPendingInteraction,
+  upsertTaskRunProgress,
   type DurablePendingInteractionRecord,
+  type DurableTaskRunProgress,
   type DurableTaskRun,
   type DurableTaskRunSummary,
   type DurableTaskRunResumeResponse,
@@ -146,6 +149,7 @@ import {
   turnCheckpointKey,
   sanitizeTurnCheckpoint,
 } from "../agent/checkpoint-types";
+import type { TaskRunProgressInput } from "@shared-types/progress";
 import type {
   SideEffectEntry,
   TurnCheckpoint,
@@ -228,7 +232,9 @@ function appendRecentSideEffects(
 }
 
 function cloneTaskForDurableSync(task: OrchestratorTask): OrchestratorTask {
-  return JSON.parse(JSON.stringify(task)) as OrchestratorTask;
+  const cloned = JSON.parse(JSON.stringify(task)) as OrchestratorTask;
+  cloned.structuredProgress = cloneStructuredProgress(task.structuredProgress);
+  return cloned;
 }
 
 export function buildInitialPlanState(
@@ -371,6 +377,20 @@ const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_PERSISTED_MESSAGES = 200;
 const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
+const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
+const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+
+function cloneStructuredProgress(
+  progress: Record<string, TaskRunProgressInput> | undefined,
+): Record<string, TaskRunProgressInput> | undefined {
+  if (!progress) return undefined;
+  const entries = Object.entries(progress).map(([key, value]) => [
+    key,
+    JSON.parse(JSON.stringify(value)) as TaskRunProgressInput,
+  ]);
+  return Object.fromEntries(entries);
+}
 
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
@@ -1213,6 +1233,130 @@ export class Orchestrator {
     };
   }
 
+  private buildStructuredProgressFromDurableEntries(
+    progress: DurableTaskRunProgress[],
+  ): Record<string, TaskRunProgressInput> | undefined {
+    const entries: Array<[string, TaskRunProgressInput]> = [];
+    for (const entry of progress) {
+      if (
+        entry.kind === "reviewed-item-list" ||
+        entry.kind === "completed-phase-list" ||
+        entry.kind === "outstanding-question-list"
+      ) {
+        if (
+          Array.isArray(entry.payload) &&
+          entry.payload.every((value) => typeof value === "string")
+        ) {
+          entries.push([
+            entry.key,
+            {
+              key: entry.key,
+              kind: entry.kind,
+              payload: entry.payload,
+            },
+          ]);
+        }
+        continue;
+      }
+      if (
+        entry.kind === "extracted-fact-map" &&
+        entry.payload &&
+        typeof entry.payload === "object" &&
+        !Array.isArray(entry.payload)
+      ) {
+        entries.push([
+          entry.key,
+          {
+            key: entry.key,
+            kind: entry.kind,
+            payload: entry.payload,
+          },
+        ]);
+      }
+    }
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }
+
+  private setStructuredProgressEntry(
+    task: OrchestratorTask,
+    entry: TaskRunProgressInput,
+  ): void {
+    const current = cloneStructuredProgress(task.structuredProgress) ?? {};
+    current[entry.key] = JSON.parse(JSON.stringify(entry)) as TaskRunProgressInput;
+    task.structuredProgress = current;
+    if (!task.runId) return;
+    this.queueDurableRunSync(task.runId, async () => {
+      await upsertTaskRunProgress(task.runId!, entry);
+    });
+  }
+
+  private deleteStructuredProgressEntry(
+    task: OrchestratorTask,
+    key: string,
+  ): void {
+    if (task.structuredProgress?.[key]) {
+      const next = cloneStructuredProgress(task.structuredProgress) ?? {};
+      delete next[key];
+      task.structuredProgress =
+        Object.keys(next).length > 0 ? next : undefined;
+    }
+    if (!task.runId) return;
+    this.queueDurableRunSync(task.runId, async () => {
+      await deleteTaskRunProgress(task.runId!, key);
+    });
+  }
+
+  private recordCompletedPhase(task: OrchestratorTask, phase: string): void {
+    this.setStructuredProgressEntry(task, {
+      key: "completed-phases",
+      kind: "completed-phase-list",
+      payload: [phase],
+    });
+  }
+
+  private recordOutstandingQuestion(
+    task: OrchestratorTask,
+    question: string,
+  ): void {
+    this.setStructuredProgressEntry(task, {
+      key: "outstanding-questions",
+      kind: "outstanding-question-list",
+      payload: [question],
+    });
+  }
+
+  private clearOutstandingQuestions(task: OrchestratorTask): void {
+    this.deleteStructuredProgressEntry(task, "outstanding-questions");
+  }
+
+  private maybeRecordReviewedItem(task: OrchestratorTask, node: TaskNode): void {
+    if (node.selectedSkillId !== LIST_DETAIL_REVIEW_SKILL_ID) return;
+    this.setStructuredProgressEntry(task, {
+      key: "reviewed-items",
+      kind: "reviewed-item-list",
+      payload: [node.description],
+    });
+  }
+
+  private maybeRecordExtractedFacts(
+    task: OrchestratorTask,
+    node: TaskNode,
+    compactResultSummary: string,
+  ): void {
+    const shouldCapture =
+      node.selectedSkillId === LIST_DETAIL_REVIEW_SKILL_ID ||
+      node.selectedSkillId === NAVIGATE_READ_RETURN_SKILL_ID ||
+      node.selectedSkillId === MULTI_TAB_PROCUREMENT_SKILL_ID;
+    if (!shouldCapture || compactResultSummary.length === 0) return;
+    this.setStructuredProgressEntry(task, {
+      key: "extracted-facts",
+      kind: "extracted-fact-map",
+      payload: {
+        [node.id]: compactResultSummary,
+      },
+    });
+  }
+
   private isDurableResumeStructurallyValid(
     resume: DurableTaskRunResumeResponse | null,
   ): resume is DurableTaskRunResumeResponse {
@@ -1420,6 +1564,9 @@ export class Orchestrator {
       budget: this.buildBudgetFromDurableRun(resume.run),
       terminationReason: resume.run.terminationReason ?? undefined,
       pendingInteraction,
+      structuredProgress: this.buildStructuredProgressFromDurableEntries(
+        resume.progress,
+      ),
       durableMeta: {
         lastResumeSource: resume.run.lastResumeSource,
         lastKnownResumeSafe: resume.run.lastKnownResumeSafe,
@@ -1879,6 +2026,10 @@ export class Orchestrator {
             }
           : null,
       );
+
+      for (const progress of Object.values(taskSnapshot.structuredProgress ?? {})) {
+        await upsertTaskRunProgress(taskSnapshot.runId!, progress);
+      }
     });
   }
 
@@ -2010,6 +2161,10 @@ export class Orchestrator {
     const remainingMs = this.getPendingInteractionRemainingMs(interaction);
     if (remainingMs <= 0) return;
 
+    if (interaction.kind === "clarification") {
+      this.recordOutstandingQuestion(task, interaction.question);
+    }
+
     if (interaction.kind === "approval") {
       this.sendMessage({
         type: "APPROVAL_REQUEST",
@@ -2071,6 +2226,7 @@ export class Orchestrator {
         : "completed";
 
     task.pendingInteraction = undefined;
+    this.clearOutstandingQuestions(task);
     task.finishedAt = Date.now();
     task.status = terminalStatus;
     task.sessionMetrics.totalSessionTimeMs =
@@ -2234,6 +2390,10 @@ export class Orchestrator {
       return;
     }
 
+    if (interaction.kind === "clarification") {
+      this.recordOutstandingQuestion(task, interaction.question);
+    }
+
     const resolvedInteraction: PendingUserInteraction =
       interaction.kind === "approval"
         ? { ...interaction, approved: false }
@@ -2268,6 +2428,7 @@ export class Orchestrator {
   ): Promise<void> {
     task.pendingInteraction = interaction;
     this.clearPendingInteractionTimer(task.workspaceId);
+    this.clearOutstandingQuestions(task);
     if (interaction.nodeId) {
       const targetNode = task.nodes.find(
         (node) => node.id === interaction.nodeId,
@@ -3498,11 +3659,14 @@ export class Orchestrator {
         node.id,
         "executor",
         node,
+        task.structuredProgress,
       );
       const verifierTaskStateBrief = buildTaskStateBrief(
         task.nodes,
         node.id,
         "verifier",
+        undefined,
+        task.structuredProgress,
       );
       const executorContract = buildRoleExecutionContract(
         "executor",
@@ -3870,6 +4034,12 @@ export class Orchestrator {
           result.outcome === "awaiting_clarification"
         ) {
           task.pendingInteraction = result.pendingInteraction;
+          if (result.pendingInteraction?.kind === "clarification") {
+            this.recordOutstandingQuestion(
+              task,
+              result.pendingInteraction.question,
+            );
+          }
           this.armPendingInteractionTimeout(task);
           this.sendStatus(
             task.workspaceId,
@@ -4067,6 +4237,13 @@ export class Orchestrator {
               });
               node.status = "completed";
               node.result = compactResultSummary;
+              this.recordCompletedPhase(task, node.description);
+              this.maybeRecordReviewedItem(task, node);
+              this.maybeRecordExtractedFacts(
+                task,
+                node,
+                compactResultSummary,
+              );
             } else if (
               verification.decision === "reroute" &&
               verification.rerouteObjective &&

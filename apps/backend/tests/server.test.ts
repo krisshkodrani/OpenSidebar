@@ -520,15 +520,92 @@ describe("task run durability routes", () => {
     expect(interactionStatus).toBe(200);
     expect(interactionData.interaction.kind).toBe("approval");
 
-    const { status: progressStatus } = await api(`/task-runs/${runId}/progress`, {
+    const { status: progressStatus, data: initialReviewedProgress } = await api(
+      `/task-runs/${runId}/progress`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "reviewed-items",
+          kind: "reviewed-item-list",
+          payload: ["job-1", "job-2"],
+        }),
+      },
+    );
+    expect(progressStatus).toBe(200);
+    expect(initialReviewedProgress.payload).toEqual(["job-1", "job-2"]);
+
+    const { status: reviewedMergeStatus, data: mergedReviewedProgress } =
+      await api(`/task-runs/${runId}/progress`, {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "reviewed-items",
+          kind: "reviewed-item-list",
+          payload: ["job-2", "job-3"],
+        }),
+      });
+    expect(reviewedMergeStatus).toBe(200);
+    expect(mergedReviewedProgress.payload).toEqual(["job-1", "job-2", "job-3"]);
+
+    const { status: extractedFactsStatus, data: extractedFacts } = await api(
+      `/task-runs/${runId}/progress`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "facts",
+          kind: "extracted-fact-map",
+          payload: {
+            company: "Acme",
+            location: "Berlin",
+          },
+        }),
+      },
+    );
+    expect(extractedFactsStatus).toBe(200);
+    expect(extractedFacts.payload).toEqual({
+      company: "Acme",
+      location: "Berlin",
+    });
+
+    const { status: mergedFactsStatus, data: mergedFacts } = await api(
+      `/task-runs/${runId}/progress`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "facts",
+          kind: "extracted-fact-map",
+          payload: {
+            location: "Remote",
+            salary: "100k",
+          },
+        }),
+      },
+    );
+    expect(mergedFactsStatus).toBe(200);
+    expect(mergedFacts.payload).toEqual({
+      company: "Acme",
+      location: "Remote",
+      salary: "100k",
+    });
+
+    const { status: phasesStatus } = await api(`/task-runs/${runId}/progress`, {
       method: "PUT",
       body: JSON.stringify({
-        key: "reviewed-items",
-        kind: "reviewed-item-list",
-        payload: ["job-1", "job-2"],
+        key: "completed-phases",
+        kind: "completed-phase-list",
+        payload: ["gathered-listings", "compared-shortlist"],
       }),
     });
-    expect(progressStatus).toBe(200);
+    expect(phasesStatus).toBe(200);
+
+    const { status: questionsStatus } = await api(`/task-runs/${runId}/progress`, {
+      method: "PUT",
+      body: JSON.stringify({
+        key: "outstanding-questions",
+        kind: "outstanding-question-list",
+        payload: ["Need salary confirmation"],
+      }),
+    });
+    expect(questionsStatus).toBe(200);
 
     const { status: sideEffectStatus } = await api(
       `/task-runs/${runId}/side-effects`,
@@ -594,7 +671,15 @@ describe("task run durability routes", () => {
     expect(listed).toBeDefined();
     expect(listed.nodeCounts.running).toBe(1);
     expect(listed.pendingInteraction.kind).toBe("approval");
-    expect(listed.progressSummary.reviewedItemCount).toBe(2);
+    expect(listed.progressSummary.reviewedItemCount).toBe(3);
+    expect(listed.progressSummary.extractedFactCount).toBe(3);
+    expect(listed.progressSummary.completedPhases).toEqual([
+      "gathered-listings",
+      "compared-shortlist",
+    ]);
+    expect(listed.progressSummary.outstandingQuestions).toEqual([
+      "Need salary confirmation",
+    ]);
 
     const { status: detailStatus, data: detailData } = await api(
       `/task-runs/${runId}`,
@@ -602,9 +687,14 @@ describe("task run durability routes", () => {
     expect(detailStatus).toBe(200);
     expect(detailData.run.id).toBe(runId);
     expect(detailData.nodes).toHaveLength(1);
-    expect(detailData.progress).toHaveLength(1);
+    expect(detailData.progress).toHaveLength(4);
     expect(detailData.pendingInteraction.kind).toBe("approval");
     expect(detailData.recentSideEffects).toHaveLength(1);
+
+    const reviewedItems = detailData.progress.find(
+      (entry: any) => entry.key === "reviewed-items",
+    );
+    expect(reviewedItems.payload).toEqual(["job-1", "job-2", "job-3"]);
 
     const { status: resumeStatus, data: resumeData } = await api(
       `/task-runs/${runId}/resume`,
@@ -628,6 +718,58 @@ describe("task run durability routes", () => {
       },
     );
     expect(deleteProgressStatus).toBe(204);
+  });
+
+  test("rejects invalid structured progress payloads and kind changes", async () => {
+    const runId = `run-progress-${Date.now()}`;
+
+    await api("/task-runs", {
+      method: "POST",
+      body: JSON.stringify({
+        id: runId,
+        workspaceId: "ws-progress",
+        query: "Track progress",
+        status: "running",
+      }),
+    });
+
+    const { status: badPayloadStatus, data: badPayloadData } = await api(
+      `/task-runs/${runId}/progress`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "reviewed-items",
+          kind: "reviewed-item-list",
+          payload: { not: "a list" },
+        }),
+      },
+    );
+    expect(badPayloadStatus).toBe(400);
+    expect(badPayloadData.error).toContain("string array");
+
+    const { status: validStatus } = await api(`/task-runs/${runId}/progress`, {
+      method: "PUT",
+      body: JSON.stringify({
+        key: "reviewed-items",
+        kind: "reviewed-item-list",
+        payload: ["job-1"],
+      }),
+    });
+    expect(validStatus).toBe(200);
+
+    const { status: kindConflictStatus, data: kindConflictData } = await api(
+      `/task-runs/${runId}/progress`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "reviewed-items",
+          kind: "completed-phase-list",
+          payload: ["done"],
+        }),
+      },
+    );
+    expect(kindConflictStatus).toBe(400);
+    expect(kindConflictData.error).toContain("already exists with kind");
   });
 
   test("excludes completed and stopped runs from list responses by default", async () => {

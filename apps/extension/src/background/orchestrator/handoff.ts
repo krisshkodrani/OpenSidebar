@@ -5,6 +5,7 @@ import {
   StructuredEvidence,
   TaskNode,
 } from "./types";
+import { TaskRunProgressInput } from "@shared-types/progress";
 import {
   getLoadedSkillContract,
   selectPrimarySkill,
@@ -23,6 +24,8 @@ const CROSS_TAB_COMPARE_SKILL_ID = "cross-tab-compare";
 const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
 const MAX_RESULT_LEN = 500;
 const MAX_COMPACT_LIST_DETAIL_RESULT_LEN = 220;
+const MAX_PROGRESS_LIST_ITEMS = 4;
+const MAX_PROGRESS_FACTS = 4;
 const VERIFICATION_TURN_QUERY_PATTERN =
   /\b(did it work|verify|confirm|check if|check whether|does it show|what('s| is) the (status|result|current)|is it there)\b/i;
 
@@ -180,6 +183,70 @@ function formatSkillExecutionContract(node: TaskNode): string[] {
   return [...sections, ""];
 }
 
+function buildStructuredProgressSection(
+  structuredProgress?: Record<string, TaskRunProgressInput>,
+): string[] {
+  if (!structuredProgress || Object.keys(structuredProgress).length === 0) {
+    return [];
+  }
+
+  const sections: string[] = ["Structured task progress:"];
+
+  const completedPhases = structuredProgress["completed-phases"];
+  if (
+    completedPhases?.kind === "completed-phase-list" &&
+    completedPhases.payload.length > 0
+  ) {
+    sections.push(
+      "Completed phases:",
+      ...completedPhases.payload
+        .slice(-MAX_PROGRESS_LIST_ITEMS)
+        .map((item) => `- ${normalizeNote(item)}`),
+    );
+  }
+
+  const reviewedItems = structuredProgress["reviewed-items"];
+  if (
+    reviewedItems?.kind === "reviewed-item-list" &&
+    reviewedItems.payload.length > 0
+  ) {
+    sections.push(
+      "Reviewed items:",
+      ...reviewedItems.payload
+        .slice(-MAX_PROGRESS_LIST_ITEMS)
+        .map((item) => `- ${normalizeNote(item)}`),
+    );
+  }
+
+  const extractedFacts = structuredProgress["extracted-facts"];
+  if (
+    extractedFacts?.kind === "extracted-fact-map" &&
+    Object.keys(extractedFacts.payload).length > 0
+  ) {
+    sections.push(
+      "Extracted facts:",
+      ...Object.entries(extractedFacts.payload)
+        .slice(0, MAX_PROGRESS_FACTS)
+        .map(([key, value]) => `- ${normalizeNote(key)}: ${normalizeNote(String(value))}`),
+    );
+  }
+
+  const outstandingQuestions = structuredProgress["outstanding-questions"];
+  if (
+    outstandingQuestions?.kind === "outstanding-question-list" &&
+    outstandingQuestions.payload.length > 0
+  ) {
+    sections.push(
+      "Outstanding questions:",
+      ...outstandingQuestions.payload
+        .slice(-MAX_PROGRESS_LIST_ITEMS)
+        .map((item) => `- ${normalizeNote(item)}`),
+    );
+  }
+
+  return sections.length > 1 ? [...sections, ""] : [];
+}
+
 function buildExecutorSkillSection(node: TaskNode): string[] {
   const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
   if (!loadedSkill) return [];
@@ -296,11 +363,21 @@ export function buildTaskStateBrief(
   currentNodeId?: string,
   mode: "executor" | "verifier" = "executor",
   currentNode?: Pick<TaskNode, "selectedSkillId">,
+  structuredProgress?: Record<string, TaskRunProgressInput>,
 ): string {
-  if (nodes.length === 0) return "No task-level context available.";
+  const structuredSections = buildStructuredProgressSection(structuredProgress);
+  if (nodes.length === 0) {
+    return structuredSections.length > 0
+      ? structuredSections.join("\n")
+      : "No task-level context available.";
+  }
 
   const relevant = nodes.filter((node) => node.id !== currentNodeId);
-  if (relevant.length === 0) return "No sibling node context yet.";
+  if (relevant.length === 0) {
+    return structuredSections.length > 0
+      ? structuredSections.join("\n")
+      : "No sibling node context yet.";
+  }
 
   if (mode === "executor") {
     const completed = relevant.filter(
@@ -310,6 +387,10 @@ export function buildTaskStateBrief(
         node.status === "skipped",
     );
     const sections: string[] = [];
+
+    if (structuredSections.length > 0) {
+      sections.push(...structuredSections);
+    }
 
     if (
       currentNode?.selectedSkillId === CROSS_TAB_COMPARE_SKILL_ID &&
@@ -345,9 +426,14 @@ export function buildTaskStateBrief(
   }
 
   const verifierRelevant = relevant.slice(-MAX_TASK_CONTEXT_NODES);
+  const sections: string[] = [];
 
-  return verifierRelevant
-    .map((node) => {
+  if (structuredSections.length > 0) {
+    sections.push(...structuredSections);
+  }
+
+  sections.push(
+    ...verifierRelevant.map((node) => {
       const status =
         node.status === "completed"
           ? "completed"
@@ -359,8 +445,10 @@ export function buildTaskStateBrief(
                 ? "skipped"
                 : "pending";
       return `- [${status}] ${normalizeNote(node.description)} :: ${normalizeNodeResult(node)}`;
-    })
-    .join("\n");
+    }),
+  );
+
+  return sections.join("\n");
 }
 
 export function isVerificationTurnQuery(query?: string): boolean {

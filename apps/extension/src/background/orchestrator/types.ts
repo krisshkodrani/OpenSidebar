@@ -1,6 +1,7 @@
 import { AgentLoop } from "../agent";
 import type { Difficulty } from "../agent/constants";
 import type { PendingUserInteraction } from "../agent/loop-types";
+import type { TaskRunProgressInput } from "@shared-types/progress";
 import {
   AgentRole,
   EscalationDecisionMessage,
@@ -157,6 +158,7 @@ export interface OrchestratorTask {
   createdWorkerTabIds?: number[];
   /** Site-specific knowledge injected into executor instructions */
   siteKnowledgeBrief?: string;
+  structuredProgress?: Record<string, TaskRunProgressInput>;
 }
 
 export interface OrchestratorCheckpoint {

@@ -1729,6 +1729,122 @@ describe("Orchestrator integration join tests", () => {
     });
   });
 
+  test("persists structured progress for completed long-task nodes", async () => {
+    const node = makeNode("n1", "Review the Senior Engineer listing");
+    node.selectedSkillId = "list-detail-review-loop";
+    plannerBuildNodesImpl = async () => [node];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary:
+        "Senior Engineer role is remote with salary $120k and React/TypeScript stack.",
+      metrics: undefined,
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("review a job listing"));
+
+    const backendCalls = (globalThis as any).__backendCalls as Array<{
+      url: string;
+      method: string;
+      body: any;
+    }>;
+
+    await vi.waitFor(() => {
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "PUT" &&
+            call.url.includes("/progress") &&
+            call.body?.key === "completed-phases" &&
+            call.body?.kind === "completed-phase-list" &&
+            Array.isArray(call.body?.payload) &&
+            call.body.payload.includes("Review the Senior Engineer listing"),
+        ),
+      ).toBe(true);
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "PUT" &&
+            call.url.includes("/progress") &&
+            call.body?.key === "reviewed-items" &&
+            call.body?.kind === "reviewed-item-list" &&
+            Array.isArray(call.body?.payload) &&
+            call.body.payload.includes("Review the Senior Engineer listing"),
+        ),
+      ).toBe(true);
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "PUT" &&
+            call.url.includes("/progress") &&
+            call.body?.key === "extracted-facts" &&
+            call.body?.kind === "extracted-fact-map" &&
+            typeof call.body?.payload?.n1 === "string",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  test("writes and clears outstanding structured questions for clarifications", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "Need user clarification")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => ({
+      outcome: "awaiting_clarification",
+      summary: "Need a preference from the user.",
+      pendingInteraction: {
+        kind: "clarification",
+        nodeId: "n1",
+        requestedAt: Date.now(),
+        clarificationId: "clar-1",
+        question: "Which shipping speed should I use?",
+        timeoutMs: 60_000,
+      },
+      metrics: undefined,
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("clarify a choice"));
+
+    const backendCalls = (globalThis as any).__backendCalls as Array<{
+      url: string;
+      method: string;
+      body: any;
+    }>;
+
+    await vi.waitFor(() => {
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "PUT" &&
+            call.url.includes("/progress") &&
+            call.body?.key === "outstanding-questions" &&
+            call.body?.kind === "outstanding-question-list" &&
+            Array.isArray(call.body?.payload) &&
+            call.body.payload.includes("Which shipping speed should I use?"),
+        ),
+      ).toBe(true);
+    });
+
+    const resolved = orchestrator.resolveClarificationResponse({
+      clarificationId: "clar-1",
+      answer: "Use express shipping.",
+    });
+    expect(resolved).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(
+        backendCalls.some(
+          (call) =>
+            call.method === "DELETE" &&
+            call.url.includes("/progress/outstanding-questions"),
+        ),
+      ).toBe(true);
+    });
+  });
+
   test("restores a running task from backend resume when local checkpoints are missing", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "unused local planner")];
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
@@ -1858,7 +1974,34 @@ describe("Orchestrator integration join tests", () => {
                 updatedAt: Date.now(),
               },
             ],
-            progress: [],
+            progress: [
+              {
+                runId: "run-backend-1",
+                key: "completed-phases",
+                kind: "completed-phase-list",
+                payload: ["Open the vendor portal", "Filter available inventory"],
+                createdAt: Date.now() - 3_000,
+                updatedAt: Date.now(),
+              },
+              {
+                runId: "run-backend-1",
+                key: "extracted-facts",
+                kind: "extracted-fact-map",
+                payload: {
+                  shortlist: "Pegasus 41 and Nimbus 27 are in stock",
+                },
+                createdAt: Date.now() - 3_000,
+                updatedAt: Date.now(),
+              },
+              {
+                runId: "run-backend-1",
+                key: "outstanding-questions",
+                kind: "outstanding-question-list",
+                payload: ["Which color should be ordered if both are available?"],
+                createdAt: Date.now() - 3_000,
+                updatedAt: Date.now(),
+              },
+            ],
             pendingInteraction: null,
             recentSideEffects: [],
           }),
@@ -1880,6 +2023,28 @@ describe("Orchestrator integration join tests", () => {
       expect(
         capturedInstructions.some((entry) =>
           entry.instruction.includes("Objective: backend recovered step"),
+        ),
+      ).toBe(true);
+      expect(
+        capturedInstructions.some((entry) =>
+          entry.instruction.includes("Structured task progress:"),
+        ),
+      ).toBe(true);
+      expect(
+        capturedInstructions.some((entry) =>
+          entry.instruction.includes("Filter available inventory"),
+        ),
+      ).toBe(true);
+      expect(
+        capturedInstructions.some((entry) =>
+          entry.instruction.includes("shortlist: Pegasus 41 and Nimbus 27 are in stock"),
+        ),
+      ).toBe(true);
+      expect(
+        capturedInstructions.some((entry) =>
+          entry.instruction.includes(
+            "Which color should be ordered if both are available?",
+          ),
         ),
       ).toBe(true);
     });

@@ -52,6 +52,8 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "sequential-tasks.test.ts",
     "site-knowledge-memory.test.ts",
     "stop-drain-recovery.test.ts",
+    "structured-progress-resume.test.ts",
+    "trace-viewer-memory-api.test.ts",
   ],
 };
 

@@ -4,7 +4,11 @@
  * All calls are fire-and-forget with 2s timeout and silent catch when
  * the backend is not running. Same pattern as trace.ts and storage-logger.ts.
  */
-
+import type {
+  TaskRunProgressInput,
+  TaskRunProgressKind,
+  TaskRunProgressPayload,
+} from "@shared-types/progress";
 import { logger } from "../../utils";
 
 const BACKEND_URL = "http://127.0.0.1:7590";
@@ -154,8 +158,8 @@ export interface DurableTaskRunNode extends DurableTaskRunNodeInput {
 export interface DurableTaskRunProgress {
   runId: string;
   key: string;
-  kind: string;
-  payload: unknown;
+  kind: TaskRunProgressKind;
+  payload: TaskRunProgressPayload;
   updatedAt: number;
 }
 
@@ -372,6 +376,36 @@ export async function upsertTaskRunPendingInteraction(
     );
   } catch {
     logger.debug("system", "Task run pending interaction sync failed");
+  }
+}
+
+export async function upsertTaskRunProgress(
+  runId: string,
+  progress: TaskRunProgressInput,
+): Promise<void> {
+  try {
+    await backendFetch(`/task-runs/${encodeURIComponent(runId)}/progress`, {
+      method: "PUT",
+      body: JSON.stringify(progress),
+    });
+  } catch {
+    logger.debug("system", "Task run progress sync failed");
+  }
+}
+
+export async function deleteTaskRunProgress(
+  runId: string,
+  key: string,
+): Promise<void> {
+  try {
+    await backendFetch(
+      `/task-runs/${encodeURIComponent(runId)}/progress/${encodeURIComponent(key)}`,
+      {
+        method: "DELETE",
+      },
+    );
+  } catch {
+    logger.debug("system", "Task run progress delete failed");
   }
 }
 
