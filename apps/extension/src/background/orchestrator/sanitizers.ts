@@ -19,6 +19,10 @@ import {
   TaskNode,
 } from "./types";
 import type {
+  TaskRunProgressInput,
+  TaskRunProgressKind,
+} from "@shared-types/progress";
+import type {
   PendingApprovalInteraction,
   PendingUserInteraction,
 } from "../agent/loop-types";
@@ -33,6 +37,80 @@ export const CHECKPOINT_VERSION = 1;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isTaskRunProgressKind(value: unknown): value is TaskRunProgressKind {
+  return (
+    value === "reviewed-item-list" ||
+    value === "extracted-fact-map" ||
+    value === "completed-phase-list" ||
+    value === "outstanding-question-list"
+  );
+}
+
+function isTaskRunProgressFactValue(
+  value: unknown,
+): value is import("@shared-types/progress").TaskRunProgressFactValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(
+      (item) =>
+        typeof item === "string" ||
+        typeof item === "number" ||
+        typeof item === "boolean",
+    );
+  }
+  if (isRecord(value)) {
+    return Object.values(value).every((item) => typeof item !== "function");
+  }
+  return false;
+}
+
+function sanitizeStructuredProgressEntry(
+  key: string,
+  raw: unknown,
+): TaskRunProgressInput | null {
+  if (!isRecord(raw) || !isTaskRunProgressKind(raw.kind)) return null;
+  const normalizedKey =
+    typeof raw.key === "string" && raw.key.length > 0 ? raw.key : key;
+  if (normalizedKey.length === 0) return null;
+
+  if (
+    raw.kind === "reviewed-item-list" ||
+    raw.kind === "completed-phase-list" ||
+    raw.kind === "outstanding-question-list"
+  ) {
+    if (
+      !Array.isArray(raw.payload) ||
+      raw.payload.some((item) => typeof item !== "string")
+    ) {
+      return null;
+    }
+    return {
+      key: normalizedKey,
+      kind: raw.kind,
+      payload: raw.payload,
+    };
+  }
+
+  if (
+    !isRecord(raw.payload) ||
+    !Object.values(raw.payload).every(isTaskRunProgressFactValue)
+  ) {
+    return null;
+  }
+  return {
+    key: normalizedKey,
+    kind: raw.kind,
+    payload: raw.payload as Record<string, import("@shared-types/progress").TaskRunProgressFactValue>,
+  };
 }
 
 export function isNonNegativeInteger(value: unknown): value is number {
@@ -377,6 +455,18 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     const pendingInteraction = sanitizePendingInteraction(raw.pendingInteraction);
     if (!pendingInteraction) return null;
     task.pendingInteraction = pendingInteraction;
+  }
+  if (raw.structuredProgress !== undefined) {
+    if (!isRecord(raw.structuredProgress)) return null;
+    const structuredProgress: Record<string, TaskRunProgressInput> = {};
+    for (const [key, value] of Object.entries(raw.structuredProgress)) {
+      const entry = sanitizeStructuredProgressEntry(key, value);
+      if (!entry) return null;
+      structuredProgress[key] = entry;
+    }
+    if (Object.keys(structuredProgress).length > 0) {
+      task.structuredProgress = structuredProgress;
+    }
   }
 
   if (raw.startedAt !== undefined) {

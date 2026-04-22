@@ -23,6 +23,18 @@ import ErrorBanner from "./ErrorBanner";
 
 type Tab = "memory" | "tasks" | "runs";
 
+function formatProgressPayload(payload: unknown): string {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => String(item)).join(" | ");
+  }
+  if (payload && typeof payload === "object") {
+    return Object.entries(payload as Record<string, unknown>)
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" | ");
+  }
+  return String(payload ?? "");
+}
+
 export default function BackendPanel() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [offline, setOffline] = useState(false);
@@ -284,6 +296,60 @@ function DurableRunsTab() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-[10px] uppercase tracking-wider text-trace-muted">
+                Structured Progress
+              </div>
+              {detail.progress.length === 0 ? (
+                <div className="text-[11px] text-trace-muted">No structured progress recorded.</div>
+              ) : (
+                <div className="space-y-2">
+                  {detail.progress.map((entry) => (
+                    <div
+                      key={`${entry.key}:${entry.updatedAt}`}
+                      className="rounded border border-trace-border/70 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-trace-text">{entry.key}</span>
+                        <span className="text-[10px] uppercase tracking-wide text-trace-muted">
+                          {entry.kind}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-trace-dim">
+                        {formatProgressPayload(entry.payload)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="mb-2 text-[10px] uppercase tracking-wider text-trace-muted">
+                Recent Side Effects
+              </div>
+              {detail.recentSideEffects.length === 0 ? (
+                <div className="text-[11px] text-trace-muted">No recent side effects.</div>
+              ) : (
+                <div className="space-y-2">
+                  {detail.recentSideEffects.map((effect) => (
+                    <div
+                      key={effect.id}
+                      className="rounded border border-trace-border/70 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-trace-text">{effect.toolName}</span>
+                        <span className="text-[10px] text-trace-muted">
+                          {new Date(effect.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-trace-dim">{effect.result}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

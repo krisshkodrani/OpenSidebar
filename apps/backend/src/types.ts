@@ -226,16 +226,48 @@ export interface TaskRunNode extends TaskRunNodeInput {
   updatedAt: number;
 }
 
-export interface TaskRunProgressInput {
-  key: string;
-  kind: string;
-  payload: Record<string, unknown> | string[] | string | number | boolean | null;
-}
+export type TaskRunProgressKind =
+  | "reviewed-item-list"
+  | "extracted-fact-map"
+  | "completed-phase-list"
+  | "outstanding-question-list";
 
-export interface TaskRunProgress extends TaskRunProgressInput {
+export type TaskRunProgressFactValue =
+  | string
+  | number
+  | boolean
+  | null
+  | string[]
+  | number[]
+  | boolean[]
+  | Record<string, unknown>;
+
+export type TaskRunProgressInput =
+  | {
+      key: string;
+      kind: "reviewed-item-list";
+      payload: string[];
+    }
+  | {
+      key: string;
+      kind: "extracted-fact-map";
+      payload: Record<string, TaskRunProgressFactValue>;
+    }
+  | {
+      key: string;
+      kind: "completed-phase-list";
+      payload: string[];
+    }
+  | {
+      key: string;
+      kind: "outstanding-question-list";
+      payload: string[];
+    };
+
+export type TaskRunProgress = TaskRunProgressInput & {
   runId: string;
   updatedAt: number;
-}
+};
 
 export type PendingInteractionStatus =
   | "active"

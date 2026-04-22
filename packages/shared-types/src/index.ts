@@ -11,3 +11,4 @@ export * from "./settings";
 export * from "./traces";
 export * from "./agent";
 export * from "./messages";
+export * from "./progress";
