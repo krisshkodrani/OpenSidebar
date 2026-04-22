@@ -23,6 +23,7 @@ Repo policy:
 - Keep runtime artifacts local under `.artifacts/`.
 - RFCs, investigations, and research notes live outside the repo.
 - If Notion is available, send archive-bound notes, reports, RFCs, and research writeups there directly instead of keeping them in git.
+- If a real product bug, follow-up task, or cleanup need is identified during work and is not being fixed immediately, create a GitHub issue for it when GitHub tools are available.
 
 ## Default Change Placement
 
