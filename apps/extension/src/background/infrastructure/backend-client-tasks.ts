@@ -21,7 +21,7 @@ export async function markTaskRunning(id: string): Promise<void> {
       body: JSON.stringify({ status: "running" }),
     });
   } catch {
-    logger.debug("backend-client", "Task status update failed");
+    logger.debug("system", "Task status update failed");
   }
 }
 
@@ -35,7 +35,7 @@ export async function markTaskCompleted(
       body: JSON.stringify({ status: "completed", result }),
     });
   } catch {
-    logger.debug("backend-client", "Task completion update failed");
+    logger.debug("system", "Task completion update failed");
   }
 }
 
@@ -49,6 +49,6 @@ export async function markTaskFailed(
       body: JSON.stringify({ status: "failed", result }),
     });
   } catch {
-    logger.debug("backend-client", "Task failure update failed");
+    logger.debug("system", "Task failure update failed");
   }
 }

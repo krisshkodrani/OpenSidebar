@@ -154,9 +154,6 @@ function decodeBase64(base64: string): Uint8Array {
     }
     return bytes;
   }
-  if (typeof Buffer !== "undefined") {
-    return new Uint8Array(Buffer.from(base64, "base64"));
-  }
   throw new Error("No base64 decoder available for Gemini TTS audio.");
 }
 
@@ -211,7 +208,9 @@ function extractGeminiAudioBlob(data: GeminiGenerateContentResponse): Blob {
   const pcmBytes = decodeBase64(base64);
   const sampleRate = extractGeminiSampleRate(audioPart.inlineData?.mimeType);
   const wavHeader = createWavHeader(pcmBytes.byteLength, sampleRate);
-  return new Blob([wavHeader, pcmBytes], { type: "audio/wav" });
+  const pcmBuffer = new ArrayBuffer(pcmBytes.byteLength);
+  new Uint8Array(pcmBuffer).set(pcmBytes);
+  return new Blob([wavHeader, pcmBuffer], { type: "audio/wav" });
 }
 
 function delay(ms: number): Promise<void> {

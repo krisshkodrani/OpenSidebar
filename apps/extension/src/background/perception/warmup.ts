@@ -22,10 +22,13 @@ const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
 async function captureVisibleTabWithRetry(
   windowId: number,
-  options: chrome.tabs.ImageDetails,
+  options: { format?: "jpeg" | "png"; quality?: number },
 ): Promise<string> {
   try {
-    return await chrome.tabs.captureVisibleTab(windowId, options);
+    return (await chrome.tabs.captureVisibleTab(
+      windowId,
+      options as chrome.tabs.CaptureVisibleTabOptions,
+    )) as unknown as string;
   } catch (error: any) {
     const message = String(error?.message || "");
     const isQuotaError =
@@ -36,7 +39,10 @@ async function captureVisibleTabWithRetry(
     await new Promise((resolve) =>
       setTimeout(resolve, CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS),
     );
-    return await chrome.tabs.captureVisibleTab(windowId, options);
+    return (await chrome.tabs.captureVisibleTab(
+      windowId,
+      options as chrome.tabs.CaptureVisibleTabOptions,
+    )) as unknown as string;
   }
 }
 

@@ -280,7 +280,7 @@ export class ContextManager {
   public setPlanStatus(
     subtasks: {
       description: string;
-      status: string;
+      status: "pending" | "running" | "completed" | "failed" | "skipped";
       completedAtUrl?: string;
       result?: string;
       verificationGate?: PlanStatusGate;

@@ -31,14 +31,15 @@ export interface LastActionOutcome {
 
 export interface PlanStatusGate {
   trigger: string;
-  action: "call_done" | "advance_step";
+  action: "call_done" | "advance_step" | "retry_step";
+  maxRetries?: number;
   pattern?: string;
 }
 
 export interface PlanStatus {
   subtasks: {
     description: string;
-    status: string;
+    status: "pending" | "running" | "completed" | "failed" | "skipped";
     completedAtUrl?: string;
     result?: string;
     verificationGate?: PlanStatusGate;

@@ -577,7 +577,7 @@ export class TaskPlanner {
           const rawSteps = (parsed.steps as any[]).filter(
             (s: any) => typeof s?.objective === "string" && s.objective.trim(),
           );
-          const simpleSteps = rawSteps.map((s: any) => ({
+          const simpleSteps: PlanStep[] = rawSteps.map((s: any) => ({
             objective: String(s.objective).trim(),
             successCriteria:
               typeof s.successCriteria === "string" && s.successCriteria.trim()

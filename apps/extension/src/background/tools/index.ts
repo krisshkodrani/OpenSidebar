@@ -109,7 +109,7 @@ export function registerTools() {
     // world and may not trigger framework event handlers (React onClick, Vue
     // @click, etc.) that are attached in the main world. Dispatch a follow-up
     // click via chrome.scripting in the MAIN world using the data-os-tag bridge.
-    if (result.success && typeof args.id === "number") {
+    if (!String(result).startsWith("Error:") && typeof args.id === "number") {
       try {
         await chrome.scripting.executeScript({
           target: { tabId },

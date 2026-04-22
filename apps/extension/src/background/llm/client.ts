@@ -367,8 +367,8 @@ function sanitizeToolCallMessages(messages: LLMMessage[], providerId: string): L
     return {
       ...msg,
       tool_calls: msg.tool_calls.map((tc) => ({
-        type: "function" as const,
         ...tc,
+        type: "function" as const,
       })),
     };
   });
