@@ -108,7 +108,13 @@ export interface OrchestratorTask {
   query: string;
   turnNumber?: number;
   priorTurnMemoryBrief?: string;
-  status: "planning" | "running" | "completed" | "failed" | "stopped";
+  status:
+    | "planning"
+    | "running"
+    | "stopping"
+    | "completed"
+    | "failed"
+    | "stopped";
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
