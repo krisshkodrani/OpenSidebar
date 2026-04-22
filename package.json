@@ -5,12 +5,12 @@
   "description": "AI-powered browser agent that can see, click, and navigate the web",
   "repository": {
     "type": "git",
-    "url": "https://github.com/OpenSidebar/OpenSidebar.git"
+    "url": "https://github.com/krisshkodrani/OpenSidebar.git"
   },
   "license": "MIT",
-  "homepage": "https://github.com/OpenSidebar/OpenSidebar#readme",
+  "homepage": "https://github.com/krisshkodrani/OpenSidebar#readme",
   "bugs": {
-    "url": "https://github.com/OpenSidebar/OpenSidebar/issues"
+    "url": "https://github.com/krisshkodrani/OpenSidebar/issues"
   },
   "keywords": [
     "chrome-extension",
