@@ -16,6 +16,25 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const E2E_DIR = path.resolve(PROJECT_ROOT, "apps/extension/tests/e2e");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
 
+const OPTIONAL_E2E_GATES = [
+  {
+    envVar: "E2E_BACKEND_DURABLE",
+    files: [
+      "backend-durable-resume.test.ts",
+      "structured-progress-resume.test.ts",
+    ],
+    description: "backend durable-run E2Es",
+  },
+  {
+    envVar: "E2E_BACKEND_SITE_MEMORY",
+    files: [
+      "site-knowledge-memory.test.ts",
+      "trace-viewer-memory-api.test.ts",
+    ],
+    description: "backend memory E2Es",
+  },
+] as const;
+
 function listTestFiles(): string[] {
   return fs
     .readdirSync(E2E_DIR)
@@ -94,10 +113,34 @@ function printPlan(suites: E2ESuiteName[]): void {
   }
 }
 
+function printOptionalGateStatus(suites: E2ESuiteName[]): void {
+  const plannedFiles = new Set(
+    suites.flatMap((suite) => E2E_SUITES[suite]),
+  );
+
+  for (const gate of OPTIONAL_E2E_GATES) {
+    const gatedFiles = gate.files.filter((file) => plannedFiles.has(file));
+    if (gatedFiles.length === 0) continue;
+
+    const enabled = process.env[gate.envVar] === "true";
+    const state = enabled ? "enabled" : "disabled";
+    console.log(
+      `\n[e2e:staged] Optional gate ${gate.envVar}=${enabled ? "true" : "false"} -> ${gate.description} ${state}.`,
+    );
+
+    if (!enabled) {
+      for (const file of gatedFiles) {
+        console.log(`[e2e:staged]   - ${file} will skip`);
+      }
+    }
+  }
+}
+
 async function main(): Promise<void> {
   validateSuites();
   const { suites, listOnly, build } = parseArgs();
   printPlan(suites);
+  printOptionalGateStatus(suites);
 
   if (listOnly) {
     console.log("\n[e2e:staged] List only; exiting without running tests.");
@@ -139,4 +182,3 @@ main().catch((error) => {
   console.error("[e2e:staged] Fatal error:", error);
   process.exit(1);
 });
-
