@@ -1,12 +1,12 @@
 /**
- * Memory routes — REST endpoints backed by GBrain.
+ * Memory routes — REST endpoints backed by native SQLite memory.
  *
- * POST   /memory            — Create memory
- * GET    /memory/search      — Semantic search
- * GET    /memory/list        — List memories (optional category filter)
- * GET    /memory/domain      — Domain-scoped lookup (tag-based)
- * GET    /memory/:slug       — Get single memory
- * DELETE /memory/:slug       — Delete memory
+ * POST   /memory        — Create memory
+ * GET    /memory/search — Full-text search
+ * GET    /memory/list   — List memories (optional category filter)
+ * GET    /memory/domain — Domain-scoped lookup
+ * GET    /memory/:id    — Get single memory
+ * DELETE /memory/:id    — Delete memory
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -96,9 +96,9 @@ export async function handleMemoryRoutes(
   }
 
   // GET /memory/:slug
-  const slugMatch = pathname.match(/^\/memory\/([a-z0-9_-]+)$/);
-  if (slugMatch && method === "GET") {
-    const result = await fetchMemory(slugMatch[1]);
+  const idMatch = pathname.match(/^\/memory\/([a-z0-9_-]+)$/);
+  if (idMatch && method === "GET") {
+    const result = await fetchMemory(idMatch[1]);
     if (!result) {
       sendError(res, "Memory not found", 404);
       return;
@@ -108,8 +108,8 @@ export async function handleMemoryRoutes(
   }
 
   // DELETE /memory/:slug
-  if (slugMatch && method === "DELETE") {
-    await removeMemory(slugMatch[1]);
+  if (idMatch && method === "DELETE") {
+    await removeMemory(idMatch[1]);
     sendEmpty(res);
     return;
   }

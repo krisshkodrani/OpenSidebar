@@ -21,6 +21,7 @@ export interface MemoryInput {
 }
 
 export interface MemoryResult {
+  id?: string;
   slug: string;
   title: string;
   category: string;
