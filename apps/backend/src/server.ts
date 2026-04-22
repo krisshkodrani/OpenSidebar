@@ -16,7 +16,6 @@ import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { connectGBrain, disconnectGBrain } from "./gbrain-client.js";
 import { handleHealth } from "./routes/health.js";
-import { handleLabTraceRoutes } from "./routes/lab-traces.js";
 import { handleMemoryRoutes } from "./routes/memory.js";
 import { handleProfileRoutes } from "./routes/profile.js";
 import { handleTaskRoutes } from "./routes/tasks.js";
@@ -37,10 +36,10 @@ function loadConfig(): BackendConfig {
       host: yaml.server?.host || "127.0.0.1",
     },
     gbrain: {
-      enabled: yaml.gbrain?.enabled ?? true,
+      enabled: yaml.gbrain?.enabled ?? false,
       databasePath: resolve(__dirname, yaml.gbrain?.database_path || "../data/agent-brain.pglite"),
       mcpCommand: yaml.gbrain?.mcp_command || "bun",
-      mcpArgs: yaml.gbrain?.mcp_args || ["run", "lab/agents/gbrain/repo/src/cli.ts", "serve"],
+      mcpArgs: yaml.gbrain?.mcp_args || ["run", "path/to/gbrain-cli.ts", "serve"],
     },
     tasks: {
       databasePath: resolve(__dirname, yaml.tasks?.database_path || "../data/backend-tasks.sqlite"),
@@ -127,16 +126,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    // Lab trace routes
-    if (
-      pathname.startsWith("/lab/traces") ||
-      pathname === "/lab/research-seed" ||
-      pathname === "/lab/bug-brief"
-    ) {
-      await handleLabTraceRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
-      return;
-    }
-
     // Profile routes
     if (pathname.startsWith("/profile")) {
       await handleProfileRoutes(req, res, { pathname, searchParams, method, parseJsonBody, sendJson, sendEmpty, sendError });
@@ -166,12 +155,12 @@ async function main(): Promise<void> {
   console.log("[backend] Initializing task database...");
   initDatabase(config.tasks.databasePath);
 
-  // 2. Connect GBrain (memory)
+  // 2. Connect optional memory service
   if (config.gbrain.enabled) {
-    console.log("[backend] Connecting to GBrain...");
+    console.log("[backend] Connecting memory service...");
     try {
       await connectGBrain(config.gbrain, PROJECT_ROOT);
-      console.log("[backend] GBrain connected.");
+      console.log("[backend] Memory service connected.");
     } catch (err) {
       console.warn("[backend] GBrain connection failed — running without memory:", err);
     }

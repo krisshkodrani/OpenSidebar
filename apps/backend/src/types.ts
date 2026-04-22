@@ -121,7 +121,7 @@ export interface BackendConfig {
 export interface HealthResponse {
   status: "ok" | "degraded";
   uptime: number;
-  gbrainConnected: boolean;
+  memoryConnected: boolean;
   pendingTasks: number;
   memoryStats?: { pageCount: number };
 }

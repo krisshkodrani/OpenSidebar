@@ -53,9 +53,9 @@ export default function BackendPanel() {
       {/* Health bar */}
       {health && (
         <div className="shrink-0 flex items-center gap-4 px-5 py-2.5 border-b border-trace-border bg-trace-panel">
-          <StatusDot connected={health.gbrainConnected} />
+          <StatusDot connected={health.memoryConnected} />
           <Stat label="Status" value={health.status} />
-          <Stat label="Memory Pages" value={String(health.memoryStats?.pageCount ?? 0)} />
+          <Stat label="Stored Pages" value={String(health.memoryStats?.pageCount ?? 0)} />
           <Stat label="Pending Tasks" value={String(health.pendingTasks)} />
           <Stat label="Uptime" value={formatUptime(health.uptime)} />
         </div>
@@ -388,7 +388,7 @@ function StatusDot({ connected }: { connected: boolean }) {
         className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-yellow-400"}`}
       />
       <span className="text-[10px] text-trace-muted">
-        GBrain {connected ? "connected" : "degraded"}
+        Memory service {connected ? "available" : "offline"}
       </span>
     </div>
   );

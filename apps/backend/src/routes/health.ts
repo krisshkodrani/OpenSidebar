@@ -15,10 +15,10 @@ export async function handleHealth(res: ServerResponse, sendJson: SendJsonFn): P
     .prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'pending'")
     .get() as { count: number };
 
-  const gbrainConnected = isGBrainConnected();
+  const memoryConnected = isGBrainConnected();
   let memoryStats: { pageCount: number } | undefined;
 
-  if (gbrainConnected) {
+  if (memoryConnected) {
     try {
       const stats = await getGBrainStats();
       if (stats) memoryStats = { pageCount: stats.page_count ?? 0 };
@@ -28,9 +28,9 @@ export async function handleHealth(res: ServerResponse, sendJson: SendJsonFn): P
   }
 
   const response: HealthResponse = {
-    status: gbrainConnected ? "ok" : "degraded",
+    status: "ok",
     uptime: Date.now() - startedAt,
-    gbrainConnected,
+    memoryConnected,
     pendingTasks: pendingRow.count,
     memoryStats,
   };

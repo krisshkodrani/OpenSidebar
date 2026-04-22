@@ -12,7 +12,6 @@ import RunsTableView from "./components/traces/RunsTableView";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
 import SessionCompareView from "./components/traces/SessionCompareView";
-import DiagnosisPanel from "./components/traces/DiagnosisPanel";
 import TraceDetailHeader from "./components/traces/TraceDetailHeader";
 import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
@@ -242,7 +241,6 @@ function ViewerBody() {
         </div>
 
         <TraceDetailHeader session={currentSession as any} />
-        <DiagnosisPanel session={currentSession as any} />
         <TraceSubviewToggle />
 
         {activeSubview === "turns" ? (
