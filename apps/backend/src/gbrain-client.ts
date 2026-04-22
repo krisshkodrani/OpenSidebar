@@ -25,6 +25,7 @@ import type {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BACKEND_HOME = resolve(__dirname, "..", "data", "backend-home");
+const MCP_CALL_TIMEOUT_MS = 15_000;
 
 let client: Client | null = null;
 let transport: StdioClientTransport | null = null;
@@ -201,9 +202,11 @@ function callToolViaCli(
 
 async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   if (!connected) throw new Error("GBrain not connected");
-  return callToolViaCli(name, args);
+  if (!client) {
+    return callToolViaCli(name, args);
+  }
 
-  let result: Awaited<ReturnType<typeof client.callTool>>;
+  let result: Awaited<ReturnType<Client["callTool"]>>;
   try {
     result = await Promise.race([
       client.callTool({ name, arguments: args }),
@@ -216,12 +219,25 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
   }
 
   // MCP tool results have content array — extract text
-  if (result.content && Array.isArray(result.content)) {
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    "content" in result &&
+    Array.isArray(result.content)
+  ) {
     const textParts = result.content
-      .filter((c: { type: string }) => c.type === "text")
-      .map((c: { text: string }) => c.text);
+      .filter(
+        (c): c is { type: string; text: string } =>
+          typeof c === "object" &&
+          c !== null &&
+          "type" in c &&
+          c.type === "text" &&
+          "text" in c &&
+          typeof c.text === "string",
+      )
+      .map((c) => c.text);
     const text = textParts.join("");
-    if ((result as { isError?: boolean }).isError) {
+    if ("isError" in result && result.isError) {
       try {
         const parsed = JSON.parse(text) as {
           message?: string;

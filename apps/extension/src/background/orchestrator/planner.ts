@@ -1,6 +1,7 @@
 import { TaskPlanner } from "../agent/planner";
 import type { LLMClientOptions } from "../llm";
 import type { Difficulty } from "../agent/constants";
+import type { ToolProfile } from "../tools/metadata";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import {
@@ -117,10 +118,11 @@ interface DecompositionStep {
   assumptions?: string[];
   verifyAfter?: {
     trigger: string;
-    action: "call_done" | "advance_step";
+    action: "call_done" | "advance_step" | "retry_step";
+    maxRetries?: number;
     pattern?: string;
   };
-  toolProfile?: string;
+  toolProfile?: ToolProfile;
 }
 
 const PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";

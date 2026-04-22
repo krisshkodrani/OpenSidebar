@@ -1,3 +1,5 @@
+import type { ToolProfile } from "../tools/metadata";
+
 export interface TaskContract {
   requiresRoundTrip: boolean;
   requiredEntities: string[];
@@ -340,7 +342,7 @@ function buildExhaustiveSynthesisStep(contract: TaskContract): {
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
-  toolProfile?: string;
+  toolProfile?: ToolProfile;
 } | null {
   if (!contract.exhaustiveScopeLabel || !contract.requiresAggregateReport) {
     return null;
@@ -435,10 +437,11 @@ export function repairPlanCoverage(params: {
     assumptions: string[];
     verifyAfter?: {
       trigger: string;
-      action: "call_done" | "advance_step";
+      action: "call_done" | "advance_step" | "retry_step";
+      maxRetries?: number;
       pattern?: string;
     };
-    toolProfile?: string;
+    toolProfile?: ToolProfile;
   }>;
 }): typeof params.steps {
   const { query } = params;
@@ -520,7 +523,7 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
-  toolProfile?: string;
+  toolProfile?: ToolProfile;
 }> | null {
   const contract = buildTaskContract(query);
   const reportTargets = unique(
@@ -542,7 +545,7 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
     successCriteria: string;
     dependencies: number[];
     assumptions: string[];
-    toolProfile?: string;
+    toolProfile?: ToolProfile;
   }> = [];
 
   const returnTarget = contract.returnTargets[0] || null;
@@ -591,7 +594,7 @@ export function synthesizeBatchedExhaustivePlan(query: string): Array<{
   successCriteria: string;
   dependencies: number[];
   assumptions: string[];
-  toolProfile?: string;
+  toolProfile?: ToolProfile;
 }> | null {
   const contract = buildTaskContract(query);
   const count = contract.exhaustiveScopeCount;
@@ -617,7 +620,7 @@ export function synthesizeBatchedExhaustivePlan(query: string): Array<{
     successCriteria: string;
     dependencies: number[];
     assumptions: string[];
-    toolProfile?: string;
+    toolProfile?: ToolProfile;
   }> = [];
 
   for (let start = 1; start <= count; start += batchSize) {

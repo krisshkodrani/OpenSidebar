@@ -265,7 +265,18 @@ export function computeFleetAnalytics(
         }
         return null;
       })
-      .filter(Boolean)
+      .filter(
+        (
+          item,
+        ): item is {
+          skillId: string;
+          sessions: number;
+          preferredRate: number;
+          discouragedRate: number;
+          severity: "critical" | "warn";
+          reason: string;
+        } => item !== null,
+      )
       .sort((a, b) => {
         if (a.severity !== b.severity) {
           return a.severity === "critical" ? -1 : 1;
@@ -483,8 +494,8 @@ export function computeSkillPolicyRegressionSummary(
         previousDiscouragedRate,
         trend,
       };
-    })
-    .filter(Boolean)
+      })
+      .filter((item): item is SkillPolicyRegressionItem => item !== null)
     .sort((a, b) => {
       if (a.trend !== b.trend) {
         if (a.trend === "worse") return -1;

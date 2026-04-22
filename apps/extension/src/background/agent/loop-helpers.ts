@@ -797,8 +797,8 @@ export function djb2(str: string): number {
  */
 export function getSnapshotFingerprint(
   snapshot: {
-    url: string;
-    elements: { length: number };
+    url?: string;
+    elements?: { length: number };
     visibleContent?: string;
     pageContent?: string;
   } | null,
@@ -809,7 +809,7 @@ export function getSnapshotFingerprint(
     snapshot.visibleContent ??
     ""
   ).slice(0, 300);
-  return `${snapshot.url}|${snapshot.elements.length}|${djb2(textSample)}`;
+  return `${snapshot.url ?? "unknown"}|${snapshot.elements?.length ?? 0}|${djb2(textSample)}`;
 }
 
 /**
