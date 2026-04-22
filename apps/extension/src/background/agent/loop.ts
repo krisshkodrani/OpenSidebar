@@ -628,7 +628,7 @@ export class AgentLoop {
       });
       this.traceRecorder?.recordEvent("skill_tool_ranking_applied", {
         turn: this.turnCount,
-        skillId: this.selectedSkillId,
+        skillId: this.selectedSkillId ?? "unknown",
         preferredTools: policy.preferredTools,
         discouragedTools: policy.discouragedTools,
         originalOrder: tools.map((tool) => tool.function.name),
@@ -668,6 +668,7 @@ export class AgentLoop {
   private baseContextTokens: number; // Original context window size for de-escalation restore
   private isRunning = false;
   private abortController: AbortController | null = null;
+  private gracefulStopRequested = false;
   private statusHandler: (status: AgentStatus, detail: string) => void;
   private messageHandler: (text: string, toolCalls: ToolCall[]) => void;
   private stepHandler: (step: AgentStep, update: boolean) => void;
@@ -695,7 +696,8 @@ export class AgentLoop {
       completedAtUrl?: string;
       verificationGate?: {
         trigger: string;
-        action: "call_done" | "advance_step";
+        action: "call_done" | "advance_step" | "retry_step";
+        maxRetries?: number;
         pattern?: string;
       };
       toolProfile?: ToolProfile;
@@ -1060,12 +1062,13 @@ export class AgentLoop {
           turnsUsed?: number;
           turnBudget?: number;
           result?: string;
-          completedAtUrl?: string;
-          verificationGate?: {
-            trigger: string;
-            action: "call_done" | "advance_step";
-            pattern?: string;
-          };
+      completedAtUrl?: string;
+      verificationGate?: {
+        trigger: string;
+        action: "call_done" | "advance_step" | "retry_step";
+        maxRetries?: number;
+        pattern?: string;
+      };
           toolProfile?: ToolProfile;
         }>;
         currentIndex: number;
@@ -1460,6 +1463,7 @@ export class AgentLoop {
       | "structural_step_advance"
       | "passive_step_advance"
       | "text_admission_criteria_advance"
+      | "multi_return_step_advanced"
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
@@ -1913,6 +1917,7 @@ export class AgentLoop {
     }
 
     this.isRunning = true;
+    this.gracefulStopRequested = false;
     this.abortController = new AbortController();
     this.turnCount = 0;
     this.originalQuery = initialUserText;
@@ -2614,6 +2619,17 @@ export class AgentLoop {
     this.isRunning = false;
   }
 
+  public requestStop() {
+    this.gracefulStopRequested = true;
+    if (this.pauseGate) {
+      this.pauseGate.resolve();
+      this.pauseGate = null;
+    }
+    if (this.isRunning) {
+      this.statusHandler(AgentStatus.ACTING, "Stopping at next safe point...");
+    }
+  }
+
   /** Queue a user hint to be picked up on the next turn */
   public injectFeedback(text: string): void {
     this.pendingFeedback = text;
@@ -2658,6 +2674,11 @@ export class AgentLoop {
   /** Whether the loop is currently paused */
   public isPaused(): boolean {
     return this.pauseGate !== null;
+  }
+
+  private throwIfGracefulStopRequested(): void {
+    if (!this.gracefulStopRequested) return;
+    throw new DOMException("Stop requested", "AbortError");
   }
 
   /**
@@ -3191,10 +3212,13 @@ export class AgentLoop {
 
   private async captureVisibleTabWithRetry(
     windowId: number,
-    options: chrome.tabs.ImageDetails,
+    options: { format?: "jpeg" | "png"; quality?: number },
   ): Promise<string> {
     try {
-      return await chrome.tabs.captureVisibleTab(windowId, options);
+      return (await chrome.tabs.captureVisibleTab(
+        windowId,
+        options as chrome.tabs.CaptureVisibleTabOptions,
+      )) as unknown as string;
     } catch (error: any) {
       const message = String(error?.message || "");
       const isQuotaError =
@@ -3209,7 +3233,10 @@ export class AgentLoop {
       await new Promise((resolve) =>
         setTimeout(resolve, CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS),
       );
-      return await chrome.tabs.captureVisibleTab(windowId, options);
+      return (await chrome.tabs.captureVisibleTab(
+        windowId,
+        options as chrome.tabs.CaptureVisibleTabOptions,
+      )) as unknown as string;
     }
   }
 
@@ -4385,12 +4412,16 @@ export class AgentLoop {
   ): ToolProfile | undefined {
     const subtask = this.planSubtasks[stepIndex];
     if (!subtask) return undefined;
-    return (
-      subtask.toolProfile ??
-      inferToolProfileForStep(
-        subtask.description,
-        this.planSteps[stepIndex]?.successCriteria || "",
-      )
+    const explicitProfile = subtask.toolProfile;
+    if (
+      explicitProfile &&
+      resolveToolProfile(explicitProfile as ToolProfile)
+    ) {
+      return explicitProfile as ToolProfile;
+    }
+    return inferToolProfileForStep(
+      subtask.description,
+      this.planSteps[stepIndex]?.successCriteria || "",
     );
   }
 
@@ -4630,9 +4661,10 @@ export class AgentLoop {
     // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
 
-    while (this.isRunning && this.turnCount < this.maxTurns) {
+while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
+      this.throwIfGracefulStopRequested();
       if (!this.isRunning) {
         // Finalize the stream so the side panel exits isStreaming state
         this.broadcast({
@@ -5353,6 +5385,7 @@ export class AgentLoop {
       if (response.tool_calls && response.tool_calls.length > 0) {
         // ACTION REQUIRED
         consecutiveTextOnly = 0;
+        this.throwIfGracefulStopRequested();
 
         // Blind Tool Call Guard — nudge when tool calls arrive with no reasoning.
         // Skip for text-recovered tool calls: the model DID produce text, it was just JSON.
@@ -5500,6 +5533,7 @@ export class AgentLoop {
           response.tool_calls.length > 1;
 
         if (canParallelize) {
+          this.throwIfGracefulStopRequested();
           // PARALLEL EXECUTION
           const results = await Promise.all(
             response.tool_calls.map(async (toolCall) => {
@@ -6066,6 +6100,7 @@ export class AgentLoop {
           // SEQUENTIAL EXECUTION (has sequential tools or single tool)
           for (const toolCall of response.tool_calls) {
             if (!this.isRunning) break;
+            this.throwIfGracefulStopRequested();
 
             // Parse args for risk classification and done detection
             const toolName = toolCall.function.name as ToolName;
@@ -6677,6 +6712,8 @@ export class AgentLoop {
               // orchestrator catches multi-return requirements after all
               // nodes complete.
               if (!this.nodeId) {
+                let shouldReject = false;
+                let rejectReason = "";
                 const multiReturnContract = buildTaskContract(
                   this.originalQuery,
                 );
@@ -6692,6 +6729,17 @@ export class AgentLoop {
                     shouldReject = true;
                     rejectReason = `Query requires ${multiReturnContract.multiReturnCount} results (detected "both"/"all") but summary only covers ${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. Missing: ${multiCoverage.missingEntities.join(", ")}`;
                   }
+                }
+                if (shouldReject) {
+                  this.doneRejections++;
+                  this.context.addMessage({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content:
+                      `done() REJECTED: ${rejectReason}\n\n` +
+                      "Return all requested results before calling done().",
+                  });
+                  continue;
                 }
               }
 
@@ -6895,7 +6943,13 @@ export class AgentLoop {
                         hasReadPage: this.hasReadPage,
                         originalQuery: this.originalQuery,
                         activeStepDescription: currentSubtask?.description,
-                        activeStepToolProfile: currentSubtask?.toolProfile,
+                        activeStepToolProfile:
+                          currentSubtask?.toolProfile &&
+                          resolveToolProfile(
+                            currentSubtask.toolProfile as ToolProfile,
+                          )
+                            ? (currentSubtask.toolProfile as ToolProfile)
+                            : undefined,
                       })
                         ? undefined
                         : (interpretation ?? undefined);
@@ -6912,7 +6966,7 @@ export class AgentLoop {
                       this.abortController!.signal,
                       validationPerception,
                       this.planSteps[effectiveCurrentIdx]?.successCriteria,
-                      stateEvidence,
+                      stateEvidence ?? undefined,
                     );
 
                     if (!validation.approved) {
@@ -10050,6 +10104,7 @@ export class AgentLoop {
     }
 
     this.isRunning = true;
+    this.gracefulStopRequested = false;
     this.abortController = new AbortController();
 
     // Restore context from saved state

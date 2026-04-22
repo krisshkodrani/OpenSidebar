@@ -29,6 +29,7 @@ const createdLoopNodeIds: string[] = [];
 const createdLoopConfigs: MockLoopConfig[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
 const stoppedLoopNodeIds: string[] = [];
+const gracefulStopLoopNodeIds: string[] = [];
 
 let plannerBuildNodesImpl: (...args: unknown[]) => Promise<TaskNode[]>;
 let plannerExpandNodeImpl: (...args: unknown[]) => Promise<TaskNode[] | null>;
@@ -52,6 +53,7 @@ let loopStartImpl: (
     | "completed"
     | "failed"
     | "error"
+    | "stopped"
     | "awaiting_approval"
     | "awaiting_clarification";
   summary: string;
@@ -212,6 +214,7 @@ describe("Orchestrator integration join tests", () => {
     createdLoopConfigs.length = 0;
     capturedInstructions.length = 0;
     stoppedLoopNodeIds.length = 0;
+    gracefulStopLoopNodeIds.length = 0;
 
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
@@ -413,6 +416,9 @@ describe("Orchestrator integration join tests", () => {
           },
           stop() {
             if (cfg.nodeId) stoppedLoopNodeIds.push(cfg.nodeId);
+          },
+          requestStop() {
+            if (cfg.nodeId) gracefulStopLoopNodeIds.push(cfg.nodeId);
           },
           pause() {},
           resume() {},
@@ -1335,6 +1341,60 @@ describe("Orchestrator integration join tests", () => {
 
     await orchestrator.stopTask("ws-1");
     await runPromise;
+  });
+
+  test("drains active executor workers before finalizing a stop request", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "graceful stop node")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    let releaseWorker: (() => void) | null = null;
+    loopStartImpl = async (nodeId) =>
+      await new Promise((resolve) => {
+        const poll = () => {
+          if (nodeId && gracefulStopLoopNodeIds.includes(nodeId)) {
+            resolve({
+              outcome: "stopped",
+              summary: "Stopped by user",
+              metrics: undefined,
+            });
+            return;
+          }
+          releaseWorker = poll;
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const runPromise = orchestrator.startTask(makeInput("graceful stop"));
+
+    await vi.waitFor(() => {
+      expect(createdLoopNodeIds).toContain("n1");
+    });
+
+    await orchestrator.stopTask("ws-1");
+
+    expect(gracefulStopLoopNodeIds).toContain("n1");
+    expect(stoppedLoopNodeIds).not.toContain("n1");
+
+    const tasksByWorkspace = (orchestrator as any).tasksByWorkspace as Map<
+      string,
+      { status: string }
+    >;
+    expect(tasksByWorkspace.get("ws-1")?.status).toBe("stopping");
+
+    releaseWorker?.();
+    await runPromise;
+
+    expect(tasksByWorkspace.has("ws-1")).toBe(false);
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.summary).toContain("Stopped by user");
   });
 
   test("isolates verifier lane and stops cross-node contamination", async () => {

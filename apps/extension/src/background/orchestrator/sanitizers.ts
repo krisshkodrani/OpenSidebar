@@ -55,6 +55,7 @@ export function isTaskStatus(
   return (
     value === "planning" ||
     value === "running" ||
+    value === "stopping" ||
     value === "completed" ||
     value === "failed" ||
     value === "stopped"

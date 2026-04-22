@@ -1547,15 +1547,6 @@ export class Orchestrator {
         stopRequestedReason: null,
       };
       await this.stopWorkspace(run.workspaceId);
-      await patchTaskRun(run.id, {
-        stopRequestedAt: null,
-        stopRequestedReason: null,
-        status: "stopped",
-        finishedAt: Date.now(),
-        terminationReason:
-          run.stopRequestedReason ?? "Stopped from durable control plane",
-      });
-      this.sendDurableRunStatus(run.workspaceId, null);
       return;
     }
 
@@ -1734,7 +1725,8 @@ export class Orchestrator {
         query: taskSnapshot.query,
         rootTabId: taskSnapshot.rootTabId ?? null,
         turnNumber: taskSnapshot.turnNumber ?? null,
-        status: taskSnapshot.status,
+        status:
+          taskSnapshot.status === "stopping" ? "running" : taskSnapshot.status,
         startedAt: taskSnapshot.startedAt ?? null,
         finishedAt: taskSnapshot.finishedAt ?? null,
         terminationReason: taskSnapshot.terminationReason ?? null,
@@ -2381,152 +2373,22 @@ export class Orchestrator {
       await this.loadCheckpoints(),
     );
     const entries = Object.values(checkpoints);
-    {
-      const seenWorkspaceIds = new Set<string>(
-        entries.map((cp) => cp.task.workspaceId),
-      );
+    const seenWorkspaceIds = new Set<string>(
+      entries.map((cp) => cp.task.workspaceId),
+    );
 
-      if (entries.length > 0) {
-        logger.info("orchestrator", "Found orchestrator checkpoints", {
-          count: entries.length,
-        });
-      }
-
-      for (const cp of entries) {
-        const task = cp.task;
-        if (
-          task.status === "completed" ||
-          task.status === "failed" ||
-          task.status === "stopped"
-        ) {
-          await this.clearTaskCheckpoint(task.workspaceId);
-          continue;
-        }
-
-        const resumeTabId = await this.resolveResumeTabId(
-          task.workspaceId,
-          task.rootTabId,
-        );
-        if (!resumeTabId) {
-          logger.warn(
-            "orchestrator",
-            "Cannot resume checkpoint, no live workspace tab",
-            {
-              workspaceId: task.workspaceId,
-              taskId: task.id,
-            },
-          );
-          await this.clearTaskCheckpoint(task.workspaceId);
-          continue;
-        }
-
-        const backendResume =
-          task.runId != null ? await fetchTaskRunResume(task.runId) : null;
-        const preferBackend =
-          backendResume &&
-          this.isDurableResumeStructurallyValid(backendResume) &&
-          backendResume.run.updatedAt > cp.savedAt &&
-          JSON.stringify(backendResume.pendingInteraction) !==
-            JSON.stringify(task.pendingInteraction);
-
-        if (preferBackend) {
-          const restoredTask = await this.buildTaskFromDurableResume(
-            backendResume!,
-            resumeTabId,
-          );
-          const backendResumeInput =
-            restoredTask &&
-            (await this.buildResumeInput(restoredTask, resumeTabId));
-          if (restoredTask && backendResumeInput) {
-            this.emitTraceEvent(
-              task,
-              "task_resume_local_rejected",
-              {
-                taskId: task.id,
-                workspaceId: task.workspaceId,
-                reason: "backend_newer_conflicting_pending_interaction",
-              },
-              "system",
-            );
-            await this.activateRecoveredTask(
-              restoredTask,
-              backendResumeInput,
-              resumeTabId,
-              "backend",
-            );
-            continue;
-          }
-        }
-
-        const resumeInput = await this.buildResumeInput(task, resumeTabId);
-        if (!resumeInput) {
-          await this.clearTaskCheckpoint(task.workspaceId);
-          continue;
-        }
-
-        await this.activateRecoveredTask(
-          task,
-          resumeInput,
-          resumeTabId,
-          "checkpoint",
-          { loadTurnCheckpoints: true },
-        );
-      }
-
-      const discoveredRuns = await this.discoverBackendRunCandidates();
-      for (const run of discoveredRuns) {
-        if (seenWorkspaceIds.has(run.workspaceId)) continue;
-        const workspace = await this.deps.workspaceManager.getWorkspaceById(
-          run.workspaceId,
-        );
-        const resumeTabId =
-          workspace?.tabIds.find((tabId) => Number.isInteger(tabId)) ?? null;
-        if (resumeTabId == null) continue;
-
-        const resume = await fetchTaskRunResume(run.id);
-        if (!this.isDurableResumeStructurallyValid(resume)) {
-          this.emitTraceEvent(
-            {
-              runId: run.id,
-              id: run.clientRunId ?? undefined,
-              workspaceId: run.workspaceId,
-            },
-            "task_resume_backend_invalid",
-            {
-              workspaceId: run.workspaceId,
-              reason: "missing_or_invalid_resume_payload",
-            },
-            "system",
-          );
-          continue;
-        }
-
-        const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
-        const resumeInput =
-          task && (await this.buildResumeInput(task, resumeTabId));
-        if (!task || !resumeInput) continue;
-
-        await this.activateRecoveredTask(
-          task,
-          resumeInput,
-          resumeTabId,
-          "backend",
-        );
-        seenWorkspaceIds.add(run.workspaceId);
-      }
-      return;
+    if (entries.length > 0) {
+      logger.info("orchestrator", "Found orchestrator checkpoints", {
+        count: entries.length,
+      });
     }
-    if (entries.length === 0) return;
-
-    logger.info("orchestrator", "Found orchestrator checkpoints", {
-      count: entries.length,
-    });
 
     for (const cp of entries) {
       const task = cp.task;
       if (
         task.status === "completed" ||
         task.status === "failed" ||
+        task.status === "stopping" ||
         task.status === "stopped"
       ) {
         await this.clearTaskCheckpoint(task.workspaceId);
@@ -2550,156 +2412,99 @@ export class Orchestrator {
         continue;
       }
 
-      if (resumeTabId == null) {
-        await this.clearTaskCheckpoint(task.workspaceId);
-        continue;
+      const backendResume =
+        task.runId != null ? await fetchTaskRunResume(task.runId) : null;
+      const preferBackend =
+        backendResume &&
+        this.isDurableResumeStructurallyValid(backendResume) &&
+        backendResume.run.updatedAt > cp.savedAt &&
+        JSON.stringify(backendResume.pendingInteraction) !==
+          JSON.stringify(task.pendingInteraction);
+
+      if (preferBackend) {
+        const restoredTask = await this.buildTaskFromDurableResume(
+          backendResume!,
+          resumeTabId,
+        );
+        const backendResumeInput =
+          restoredTask &&
+          (await this.buildResumeInput(restoredTask, resumeTabId));
+        if (restoredTask && backendResumeInput) {
+          this.emitTraceEvent(
+            task,
+            "task_resume_local_rejected",
+            {
+              taskId: task.id,
+              workspaceId: task.workspaceId,
+              reason: "backend_newer_conflicting_pending_interaction",
+            },
+            "system",
+          );
+          await this.activateRecoveredTask(
+            restoredTask,
+            backendResumeInput,
+            resumeTabId,
+            "backend",
+          );
+          continue;
+        }
       }
-      const safeResumeTabId = resumeTabId!;
-      const resumeInput = await this.buildResumeInput(task, safeResumeTabId);
+
+      const resumeInput = await this.buildResumeInput(task, resumeTabId);
       if (!resumeInput) {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
-      const safeResumeInput = resumeInput!;
 
-      // Load durable turn checkpoints for nodes that were running when SW died.
-      const turnCheckpointsByNodeId = new Map<string, TurnCheckpoint>();
-      for (const node of task.nodes) {
-        if (node.status === "running") {
-          try {
-            const cpKey = turnCheckpointKey(task.workspaceId, node.id);
-            const stored = await chrome.storage.local.get(cpKey);
-            const sanitizedTurnCp = sanitizeTurnCheckpoint(stored[cpKey]);
-            if (sanitizedTurnCp) {
-              const turnCp = sanitizedTurnCp!;
-              turnCheckpointsByNodeId.set(node.id, turnCp);
-              logger.info("orchestrator", "Loaded turn checkpoint for node", {
-                nodeId: node.id,
-                turn: turnCp.turnCount,
-                ledgerEntries: turnCp.stepMutationLedger?.length ?? 0,
-              });
-            }
-          } catch {
-            // Best-effort — node will start fresh
-          }
-        }
-      }
-
-      // Stash the map on the task for the executor to consume
-      (task as any)._turnCheckpoints = turnCheckpointsByNodeId;
-
-      const hasPendingInteraction = Boolean(task.pendingInteraction);
-      const pendingInteractionResolved = this.isPendingInteractionResolved(
-        task.pendingInteraction,
-      );
-
-      // "running" is transient; restart these nodes as pending and continue.
-      if (!hasPendingInteraction || pendingInteractionResolved) {
-        task.nodes = task.nodes.map((node) =>
-          node.status === "running" ? { ...node, status: "pending" } : node,
-        );
-      }
-      if (!task.runId) {
-        task.runId = crypto.randomUUID();
-      }
-      task.status = "running";
-      task.currentIndex = currentIndex(task.nodes);
-      this.tasksByWorkspace.set(task.workspaceId, task);
-      this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers);
-      await this.persistTaskCheckpoint(task);
-      await this.emitTraceManifest({
-        ...this.buildTaskManifest(task, safeResumeInput),
-        source: "background.orchestrator.recovery",
-      });
-      this.emitTraceEvent(
+      await this.activateRecoveredTask(
         task,
-        "task_resumed_from_checkpoint",
-        {
-          taskId: task.id,
-          workspaceId: task.workspaceId,
-          resumeTabId: safeResumeTabId,
-        },
-        "system",
+        resumeInput,
+        resumeTabId,
+        "checkpoint",
+        { loadTurnCheckpoints: true },
       );
+    }
 
-      const completedSubtasks = task.nodes.filter(
-        (n) => n.status === "completed",
-      ).length;
-      const pendingSubtasks = task.nodes.filter(
-        (n) => n.status === "pending",
-      ).length;
-      this.sendMessage({
-        type: "TASK_RECOVERY",
-        workspaceId: task.workspaceId,
-        payload: {
-          taskId: task.id,
-          totalSubtasks: task.nodes.length,
-          completedSubtasks,
-          pendingSubtasks,
-        },
-      });
-      this.sendStatus(
-        task.workspaceId,
-        hasPendingInteraction && !pendingInteractionResolved
-          ? AgentStatus.PAUSED
-          : AgentStatus.ACTING,
-        hasPendingInteraction && !pendingInteractionResolved
-          ? "Recovered task, awaiting user input..."
-          : "Recovered task, resuming...",
+    const discoveredRuns = await this.discoverBackendRunCandidates();
+    for (const run of discoveredRuns) {
+      if (seenWorkspaceIds.has(run.workspaceId)) continue;
+      const workspace = await this.deps.workspaceManager.getWorkspaceById(
+        run.workspaceId,
       );
-      this.sendProgress(task);
+      const resumeTabId =
+        workspace?.tabIds.find((tabId) => Number.isInteger(tabId)) ?? null;
+      if (resumeTabId == null) continue;
 
-      if (hasPendingInteraction && !pendingInteractionResolved) {
-        const interaction = task.pendingInteraction!;
-        let interactionId: string;
-        if ("approvalId" in interaction) {
-          interactionId = (
-            interaction as Extract<PendingUserInteraction, { kind: "approval" }>
-          ).approvalId;
-        } else {
-          interactionId = (
-            interaction as Extract<
-              PendingUserInteraction,
-              { kind: "clarification" }
-            >
-          ).clarificationId;
-        }
+      const resume = await fetchTaskRunResume(run.id);
+      if (!this.isDurableResumeStructurallyValid(resume)) {
         this.emitTraceEvent(
-          task,
-          "pending_interaction_restored",
           {
-            taskId: task.id,
-            nodeId: interaction.nodeId,
-            kind: interaction.kind,
-            remainingMs: this.getPendingInteractionRemainingMs(interaction),
-            interactionId,
+            runId: run.id,
+            id: run.clientRunId ?? undefined,
+            workspaceId: run.workspaceId,
+          },
+          "task_resume_backend_invalid",
+          {
+            workspaceId: run.workspaceId,
+            reason: "missing_or_invalid_resume_payload",
           },
           "system",
         );
-        this.emitPendingInteraction(task);
-        this.armPendingInteractionTimeout(task);
         continue;
       }
 
-      // Fire-and-forget: each task resumes independently.
-      this.runTask(task, safeResumeInput).catch(async (error) => {
-        logger.error("orchestrator", "Recovered task failed", {
-          workspaceId: task.workspaceId,
-          taskId: task.id,
-          error,
-        });
-        task.status = "failed";
-        task.finishedAt = Date.now();
-        this.sendTerminationCompletion(task, "Recovered task failed");
-        await this.clearTaskCheckpoint(task.workspaceId);
-        this.tasksByWorkspace.delete(task.workspaceId);
-        this.cleanupWorkspaceRuntime(task.workspaceId);
-        this.sendStatus(
-          task.workspaceId,
-          AgentStatus.ERROR,
-          "Recovered task failed",
-        );
-      });
+      const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
+      const resumeInput =
+        task && (await this.buildResumeInput(task, resumeTabId));
+      if (!task || !resumeInput) continue;
+
+      await this.activateRecoveredTask(
+        task,
+        resumeInput,
+        resumeTabId,
+        "backend",
+      );
+      seenWorkspaceIds.add(run.workspaceId);
     }
   }
 
@@ -3962,6 +3767,14 @@ export class Orchestrator {
         if (node.status !== "running") {
           return;
         }
+        if ((task.status as string) === "stopping") {
+          node.status = "failed";
+          node.error = appendRecentSideEffects(
+            "Stopped by user",
+            result.sideEffectsLog,
+          );
+          return;
+        }
         if (
           result.outcome === "awaiting_approval" ||
           result.outcome === "awaiting_clarification"
@@ -4617,7 +4430,14 @@ export class Orchestrator {
       }
     };
 
-    while (task.status === "running") {
+    while (task.status === "running" || task.status === "stopping") {
+      if (task.status === "stopping") {
+        if (running.size > 0) {
+          await Promise.race(running);
+          continue;
+        }
+        break;
+      }
       if (
         task.pendingInteraction &&
         !this.isPendingInteractionResolved(task.pendingInteraction)
@@ -4953,21 +4773,12 @@ export class Orchestrator {
       break;
     }
 
-    if (task.status === "stopped") {
-      task.finishedAt = Date.now();
-      this.sendTerminationCompletion(task, "Stopped by user during execution");
-      await this.closeWorkerTabs(task);
-      this.tasksByWorkspace.delete(task.workspaceId);
-      this.cleanupWorkspaceRuntime(task.workspaceId);
-      await this.clearTaskCheckpoint(task.workspaceId);
-      this.emitTraceEvent(
+    if (task.status === "stopped" || task.status === "stopping") {
+      await this.finalizeStoppedTask(
         task,
-        "task_stopped",
-        { taskId: task.id, phase: "execution" },
-        "system",
+        "Stopped by user during execution",
+        "execution",
       );
-      this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
-      resetTabGroupAppearance(task.workspaceId);
       return;
     }
 
@@ -5134,7 +4945,9 @@ export class Orchestrator {
     workspaceId: string,
   ): "completed" | "failed" | "stopped" | null {
     const task = this.tasksByWorkspace.get(workspaceId);
-    if (task?.status === "stopped") return "stopped";
+    if (task?.status === "stopped" || task?.status === "stopping") {
+      return "stopped";
+    }
     const recent = this.recentCompletion.get(workspaceId);
     if (!recent) return null;
     // "partial" maps to "completed" — partial success is still success at the overlay level
@@ -5276,6 +5089,49 @@ export class Orchestrator {
     return true;
   }
 
+  private async finalizeStoppedTask(
+    task: OrchestratorTask,
+    detail: string,
+    phase: "planning" | "execution" | "system" = "system",
+  ): Promise<void> {
+    task.status = "stopped";
+    task.finishedAt = Date.now();
+    this.clearPendingInteractionTimer(task.workspaceId);
+    task.pendingInteraction = undefined;
+    const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
+    if (pendingEscalationId) {
+      this.pendingEscalationResolvers.delete(pendingEscalationId);
+      task.pendingEscalation = undefined;
+    }
+    if (task.nodes.length > 0) {
+      await this.sendTerminationCompletion(task, detail);
+    }
+    if (task.runId) {
+      await patchTaskRun(task.runId, {
+        status: "stopped",
+        finishedAt: task.finishedAt,
+        terminationReason: detail,
+        stopRequestedAt: null,
+        stopRequestedReason: null,
+        resumeRequestedAt: null,
+        resumeRequestedReason: null,
+      });
+    }
+    this.sendDurableRunStatus(task.workspaceId, null);
+    await this.closeWorkerTabs(task);
+    this.tasksByWorkspace.delete(task.workspaceId);
+    this.cleanupWorkspaceRuntime(task.workspaceId);
+    await this.clearTaskCheckpoint(task.workspaceId);
+    this.emitTraceEvent(
+      task,
+      "task_stopped",
+      { taskId: task.id, phase },
+      "system",
+    );
+    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+    resetTabGroupAppearance(task.workspaceId);
+  }
+
   private async stopWorkspace(workspaceId: string): Promise<void> {
     const task = this.tasksByWorkspace.get(workspaceId);
     if (!task) return;
@@ -5288,8 +5144,11 @@ export class Orchestrator {
       },
       "system",
     );
-    task.status = "stopped";
-    task.finishedAt = Date.now();
+    const workers = this.workersByWorkspace.get(workspaceId)?.executor;
+    const activeWorkerCount = workers?.size ?? 0;
+    const shouldDrainActiveWorkers =
+      task.status === "running" && activeWorkerCount > 0;
+
     this.clearPendingInteractionTimer(workspaceId);
     task.pendingInteraction = undefined;
     const pendingEscalationId = task.pendingEscalation?.packet.escalationId;
@@ -5302,24 +5161,27 @@ export class Orchestrator {
       resolver({ decision: "cancel" });
       this.pendingPlanConfirmationResolvers.delete(id);
     }
-    if (task.nodes.length > 0) {
-      await this.sendTerminationCompletion(task, "Stopped by user");
+    if (shouldDrainActiveWorkers) {
+      task.status = "stopping";
+      void this.persistTaskCheckpoint(task);
+      const pools = this.workersByWorkspace.get(workspaceId);
+      for (const worker of workers?.values() || []) {
+        worker.loop.requestStop();
+      }
+      pools?.planner.clear();
+      pools?.verifier.clear();
+      this.sendStatus(workspaceId, AgentStatus.ACTING, "Stopping at next safe point...");
+      return;
     }
-    this.sendDurableRunStatus(workspaceId, null);
-    void this.closeWorkerTabs(task);
-    void this.persistTaskCheckpoint(task);
+
     const pools = this.workersByWorkspace.get(workspaceId);
-    const workers = pools?.executor;
     for (const worker of workers?.values() || []) {
       worker.loop.stop();
     }
     workers?.clear();
     pools?.planner.clear();
     pools?.verifier.clear();
-    // Immediately notify side panel so the indicator clears without waiting
-    // for runTask's scheduling loop to detect the stopped status.
-    this.sendStatus(workspaceId, AgentStatus.IDLE, "Stopped");
-    resetTabGroupAppearance(workspaceId);
+    await this.finalizeStoppedTask(task, "Stopped by user", "system");
   }
 
   private pauseWorkspace(workspaceId: string): void {
