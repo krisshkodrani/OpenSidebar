@@ -1460,6 +1460,81 @@ export class Orchestrator {
     return discovered.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
+  private async recoverWorkspaceFromDurableState(
+    workspaceId: string,
+  ): Promise<boolean> {
+    if (this.tasksByWorkspace.has(workspaceId)) return true;
+
+    const candidates = (
+      await Promise.all(
+        (["running", "planning"] as const).map((status) =>
+          listTaskRuns({
+            workspaceId,
+            status,
+            limit: 5,
+          }),
+        ),
+      )
+    )
+      .flat()
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    for (const run of candidates) {
+      const resume = await fetchTaskRunResume(run.id);
+      if (!this.isDurableResumeStructurallyValid(resume)) {
+        this.emitTraceEvent(
+          {
+            runId: run.id,
+            id: run.clientRunId ?? undefined,
+            workspaceId,
+          },
+          "task_resume_backend_invalid",
+          {
+            workspaceId,
+            reason: "missing_or_invalid_resume_payload",
+          },
+          "system",
+        );
+        continue;
+      }
+
+      const resumeTabId = await this.resolveResumeTabId(
+        workspaceId,
+        resume.run.rootTabId ?? run.rootTabId ?? 0,
+      );
+      if (!resumeTabId) {
+        await patchTaskRun(run.id, {
+          lastKnownResumeSafe: false,
+          lastResumeSafetyCheckedAt: Date.now(),
+          lastKnownResumeReason: "No live workspace tab available for rebinding.",
+        });
+        continue;
+      }
+
+      const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
+      const resumeInput =
+        task && (await this.buildResumeInput(task, resumeTabId));
+      if (!task || !resumeInput) {
+        await patchTaskRun(run.id, {
+          lastKnownResumeSafe: false,
+          lastResumeSafetyCheckedAt: Date.now(),
+          lastKnownResumeReason: "Unable to rebuild runtime state for resume.",
+        });
+        continue;
+      }
+
+      await this.activateRecoveredTask(
+        task,
+        resumeInput,
+        resumeTabId,
+        "backend",
+      );
+      return true;
+    }
+
+    return false;
+  }
+
   private pickDurableControlAction(
     run: DurableTaskRunSummary,
   ): { action: "resume" | "stop"; requestedAt: number } | null {
@@ -2034,6 +2109,10 @@ export class Orchestrator {
     };
 
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
+    await this.persistTaskCheckpoint(task);
+    if (task.runId) {
+      await (this.durableRunSyncs.get(task.runId) ?? Promise.resolve());
+    }
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
@@ -2638,10 +2717,13 @@ export class Orchestrator {
    * Re-broadcast the current state for a workspace so the side panel can
    * recover transient UI state after a workspace switch.
    */
-  resyncWorkspaceState(workspaceId: string): void {
+  async resyncWorkspaceState(workspaceId: string): Promise<void> {
     const task = this.tasksByWorkspace.get(workspaceId);
 
     if (!task) {
+      const recovered = await this.recoverWorkspaceFromDurableState(workspaceId);
+      if (recovered) return;
+
       // Check for a recent completion that the panel may have missed
       const cached = this.recentCompletion.get(workspaceId);
       if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
@@ -2809,7 +2891,7 @@ export class Orchestrator {
     const priorTurnMemoryBrief =
       formatWorkspaceTurnMemoryForPrompt(priorTurnMemory);
 
-    // Long-term memory from backend/GBrain (non-blocking, falls back to empty)
+    // Long-term memory from the backend store (non-blocking, falls back to empty)
     const longTermMemories = await searchMemory(input.query, 5).catch(() => []);
     const longTermBrief = formatBackendMemoriesForPrompt(longTermMemories);
 
@@ -5485,7 +5567,7 @@ export class Orchestrator {
         }),
       );
 
-      // Long-term memory via backend/GBrain (fire-and-forget)
+      // Long-term memory via the backend store (fire-and-forget)
       postMemory({
         category: "execution-result",
         title: `${payload.status}: ${task.query.slice(0, 80)}`,

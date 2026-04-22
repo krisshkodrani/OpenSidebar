@@ -37,6 +37,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   ],
   hard: [
     "approval-recovery.test.ts",
+    "backend-durable-resume.test.ts",
     "clarification-recovery.test.ts",
     "continuation-abandon-restart.test.ts",
     "continuation-act-check-act.test.ts",
@@ -50,6 +51,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "online-shop-boundaries.test.ts",
     "sequential-tasks.test.ts",
     "site-knowledge-memory.test.ts",
+    "stop-drain-recovery.test.ts",
   ],
 };
 
@@ -58,4 +60,3 @@ export const E2E_SUITE_ORDER: readonly E2ESuiteName[] = [
   "medium",
   "hard",
 ];
-

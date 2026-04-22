@@ -10,6 +10,19 @@ export interface BackendMemoryResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface BackendTaskRunSummary {
+  id: string;
+  workspaceId: string;
+  clientRunId?: string | null;
+  status: string;
+  query: string;
+  updatedAt: number;
+  createdAt: number;
+  lastResumeSource?: "local" | "backend" | null;
+  stopRequestedAt?: number | null;
+  resumeRequestedAt?: number | null;
+}
+
 export async function isBackendHealthy(): Promise<boolean> {
   try {
     const res = await fetch(`${BACKEND_URL}/health`, {
@@ -101,6 +114,56 @@ export async function waitForDomainMemory(
   while (Date.now() < deadline) {
     const memories = await searchDomainMemories(domain).catch(() => []);
     const match = memories.find(predicate);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return null;
+}
+
+export async function listTaskRuns(params: {
+  workspaceId?: string;
+  status?: string;
+  includeCompleted?: boolean;
+  includeProgressSummary?: boolean;
+  controlRequested?: boolean;
+  limit?: number;
+} = {}): Promise<BackendTaskRunSummary[]> {
+  const search = new URLSearchParams();
+  if (params.workspaceId) search.set("workspace_id", params.workspaceId);
+  if (params.status) search.set("status", params.status);
+  if (params.includeCompleted) search.set("include_completed", "true");
+  if (params.includeProgressSummary) {
+    search.set("include_progress_summary", "true");
+  }
+  if (params.controlRequested) search.set("control_requested", "true");
+  if (params.limit) search.set("limit", String(params.limit));
+
+  const res = await fetch(`${BACKEND_URL}/task-runs?${search.toString()}`, {
+    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to list durable task runs: ${res.status}`);
+  }
+
+  const data = (await res.json()) as { runs?: BackendTaskRunSummary[] };
+  return data.runs ?? [];
+}
+
+export async function waitForTaskRun(
+  workspaceId: string,
+  predicate: (run: BackendTaskRunSummary) => boolean,
+  timeoutMs = 8_000,
+): Promise<BackendTaskRunSummary | null> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const runs = await listTaskRuns({
+      workspaceId,
+      includeCompleted: true,
+      limit: 10,
+    }).catch(() => []);
+    const match = runs.find(predicate);
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
