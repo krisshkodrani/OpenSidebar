@@ -28,6 +28,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
 const HELPER_PATH = "/e2e-helper.html";
 const TRACE_VIEWER_PATH = "/src/trace-viewer/index.html";
+const HEADLESS_VIEWPORT = { width: 1365, height: 900 } as const;
+
+function shouldRunHeadless(): boolean {
+  const value = process.env.E2E_HEADLESS?.toLowerCase();
+  return value === "true" || value === "1" || value === "yes";
+}
 
 async function createBrowserPage(browser: Browser): Promise<Page> {
   try {
@@ -92,15 +98,18 @@ async function waitForLiveServiceWorker(
  * Discovers the extension ID dynamically from the service worker URL.
  */
 export async function launchWithExtension(): Promise<ExtensionContext> {
+  const headless = shouldRunHeadless();
   const browser = await puppeteer.launch({
-    headless: false, // Extensions require headed mode
-    defaultViewport: null,
+    headless,
+    defaultViewport: headless ? HEADLESS_VIEWPORT : null,
     args: [
       `--disable-extensions-except=${DIST_PATH}`,
       `--load-extension=${DIST_PATH}`,
       "--no-first-run",
       "--disable-search-engine-choice-screen",
-      "--start-maximized",
+      headless
+        ? `--window-size=${HEADLESS_VIEWPORT.width},${HEADLESS_VIEWPORT.height}`
+        : "--start-maximized",
     ],
     pipe: true,
   });

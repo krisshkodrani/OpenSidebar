@@ -5,7 +5,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import {
+  E2E_CANONICAL_SUITE_ORDER,
   E2E_SUITES,
+  E2E_FOCUS_SUITE_ORDER,
   E2E_SUITE_ORDER,
   type E2ESuiteName,
 } from "../apps/extension/tests/e2e/suites";
@@ -46,7 +48,7 @@ function validateSuites(): void {
   const allFiles = new Set(listTestFiles());
   const assigned = new Map<string, E2ESuiteName>();
 
-  for (const suiteName of E2E_SUITE_ORDER) {
+  for (const suiteName of E2E_CANONICAL_SUITE_ORDER) {
     for (const file of E2E_SUITES[suiteName]) {
       if (!allFiles.has(file)) {
         throw new Error(`Suite "${suiteName}" references missing test file: ${file}`);
@@ -58,6 +60,14 @@ function validateSuites(): void {
         );
       }
       assigned.set(file, suiteName);
+    }
+  }
+
+  for (const suiteName of E2E_FOCUS_SUITE_ORDER) {
+    for (const file of E2E_SUITES[suiteName]) {
+      if (!allFiles.has(file)) {
+        throw new Error(`Suite "${suiteName}" references missing test file: ${file}`);
+      }
     }
   }
 
@@ -75,8 +85,12 @@ function parseArgs(): {
   build: boolean;
 } {
   const args = process.argv.slice(2);
+  const suiteNames = [
+    ...E2E_SUITE_ORDER,
+    ...E2E_FOCUS_SUITE_ORDER,
+  ] as readonly string[];
   const suiteArg = args.find((arg) =>
-    (E2E_SUITE_ORDER as readonly string[]).includes(arg),
+    suiteNames.includes(arg),
   ) as E2ESuiteName | undefined;
   return {
     suites: suiteArg ? [suiteArg] : [...E2E_SUITE_ORDER],
