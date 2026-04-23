@@ -1,4 +1,6 @@
-export type E2ESuiteName = "easy" | "medium" | "hard";
+export type E2EStageSuiteName = "easy" | "medium" | "hard";
+export type E2EFocusSuiteName = "smoke" | "regression" | "nightly";
+export type E2ESuiteName = E2EStageSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   easy: [
@@ -55,10 +57,72 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "structured-progress-resume.test.ts",
     "trace-viewer-memory-api.test.ts",
   ],
+  smoke: [
+    "summarize.test.ts",
+    "login.test.ts",
+    "structural-loading.test.ts",
+    "support-ticket.test.ts",
+    "multi-step-form.test.ts",
+    "job-board.test.ts",
+    "procurement-list.test.ts",
+    "tab-management.test.ts",
+    "approval-recovery.test.ts",
+    "clarification-recovery.test.ts",
+    "mutation-dedupe-recovery.test.ts",
+    "online-shop-boundaries.test.ts",
+  ],
+  regression: [
+    "data-table.test.ts",
+    "web-components.test.ts",
+    "article-research.test.ts",
+    "edge-cases.test.ts",
+    "email-compose.test.ts",
+    "go-back-navigation.test.ts",
+    "messaging-thread.test.ts",
+    "modal-overlays.test.ts",
+    "online-shop.test.ts",
+    "profile-checkout.test.ts",
+    "backend-durable-resume.test.ts",
+    "continuation-abandon-restart.test.ts",
+    "continuation-cross-page-compose.test.ts",
+    "continuation-verify.test.ts",
+    "sequential-tasks.test.ts",
+    "site-knowledge-memory.test.ts",
+    "stop-drain-recovery.test.ts",
+    "structured-progress-resume.test.ts",
+    "trace-viewer-memory-api.test.ts",
+  ],
+  nightly: [
+    "autocomplete.test.ts",
+    "context-menu.test.ts",
+    "date-picker.test.ts",
+    "delayed-content.test.ts",
+    "execute-js.test.ts",
+    "faq-accordion.test.ts",
+    "hover-menus.test.ts",
+    "infinite-scroll.test.ts",
+    "kanban.test.ts",
+    "keyboard-nav.test.ts",
+    "navigation-challenge.test.ts",
+    "team-chat.test.ts",
+    "continuation-act-check-act.test.ts",
+    "continuation-cross-tab.test.ts",
+    "continuation-paginated-memory.test.ts",
+    "continuation.test.ts",
+  ],
 };
 
-export const E2E_SUITE_ORDER: readonly E2ESuiteName[] = [
+export const E2E_SUITE_ORDER: readonly E2EStageSuiteName[] = [
   "easy",
   "medium",
   "hard",
 ];
+
+export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
+  "smoke",
+  "regression",
+  "nightly",
+];
+
+export const E2E_CANONICAL_SUITE_ORDER: readonly E2EStageSuiteName[] =
+  E2E_SUITE_ORDER;
