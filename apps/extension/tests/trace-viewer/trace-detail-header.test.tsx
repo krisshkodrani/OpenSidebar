@@ -1,6 +1,6 @@
 import React from "react";
 import { act } from "react";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import TraceDetailHeader from "../../src/trace-viewer/components/traces/TraceDetailHeader";
@@ -19,6 +19,13 @@ describe("TraceDetailHeader", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   test("renders per-session skill policy metrics when present", async () => {
@@ -64,5 +71,102 @@ describe("TraceDetailHeader", () => {
     expect(container.textContent).toContain("40%");
     expect(container.textContent).toContain("Discouraged");
     expect(container.textContent).toContain("middle-path picks");
+  });
+
+  test("renders coordination state and workflow redirects", async () => {
+    useStore.setState({
+      currentEntries: [
+        {
+          sessionId: "session-1",
+          turnNumber: 1,
+          timestamp: 100,
+          snapshot: {
+            url: "https://example.com/list",
+            title: "List",
+            elementCount: 3,
+            visibleContentLength: 10,
+            scrollY: 0,
+          },
+          elements: [],
+          llmRequest: {
+            model: "test-model",
+            messageCount: 1,
+            toolCount: 1,
+            compressionLevel: "none",
+          },
+          llmResponse: {
+            content: null,
+            toolCalls: [],
+            finishReason: "stop",
+            usage: null,
+            durationMs: 10,
+          },
+          toolExecutions: [],
+          events: [
+            {
+              type: "workflow_tab_redirect",
+              timestamp: 110,
+              data: {
+                controllerId: "cross-tab-compare",
+                toolName: "create_tab",
+              },
+            },
+          ],
+          progressState: { stagnantTurns: 0, signal: null },
+        },
+      ],
+      currentRunEvents: [
+        {
+          runId: "run-1",
+          ts: "2026-04-23T10:00:00.000Z",
+          type: "tab_coordination_state",
+          data: {
+            action: "node_bound",
+            primaryTabId: 10,
+            lastReboundTabId: 10,
+            ownedTabCount: 2,
+            nodeBindingCount: 1,
+            ownedTabs: [
+              { tabId: 10, role: "primary", createdByTask: false },
+              { tabId: 11, role: "comparison", createdByTask: true },
+            ],
+          },
+        },
+        {
+          runId: "run-1",
+          ts: "2026-04-23T10:01:00.000Z",
+          type: "task_resume_rebinding_rejected",
+          data: { reason: "Multiple live workspace tabs match." },
+        },
+      ],
+    } as any);
+
+    await act(async () => {
+      root.render(
+        <TraceDetailHeader
+          session={
+            {
+              sessionId: "session-1",
+              runId: "run-1",
+              query: "Objective: compare pages",
+              startUrl: "https://example.com",
+              outcome: "completed",
+              startTime: 100,
+              endTime: 300,
+              turnCount: 1,
+              summary: "done",
+              metrics: null,
+            } as any
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Coordination");
+    expect(container.textContent).toContain("1 state events");
+    expect(container.textContent).toContain("1 redirects");
+    expect(container.textContent).toContain("1 unsafe rebinds");
+    expect(container.textContent).toContain("cross-tab-compare: 1");
+    expect(container.textContent).toContain("Multiple live workspace tabs match.");
   });
 });

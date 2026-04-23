@@ -121,6 +121,7 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   filters: { ...DEFAULT_FILTERS },
   currentSessionId: null,
   currentEntries: [],
+  currentRunEvents: [],
   sessionLogs: [],
   sessionLogsLoading: false,
   logsWarning: null,
@@ -178,6 +179,10 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   setCurrentEntries: (entries) =>
     set((s) => {
       s.currentEntries = entries;
+    }),
+  setCurrentRunEvents: (events) =>
+    set((s) => {
+      s.currentRunEvents = events;
     }),
   setSessionLogs: (logs) =>
     set((s) => {

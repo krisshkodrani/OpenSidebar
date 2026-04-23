@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
-import type { TraceSession } from "../../../types/traces";
+import type { TraceEntry, TraceEvent, TraceSession } from "../../../types/traces";
+import type { RunTraceEvent } from "../../../utils/run-trace";
 import { useStore } from "../../store";
 import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
@@ -29,6 +30,7 @@ function percentile(sorted: number[], p: number): number {
 
 export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   const currentEntries = useStore((s) => s.currentEntries);
+  const currentRunEvents = useStore((s) => s.currentRunEvents);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const outcome = session.outcome;
@@ -242,6 +244,10 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
       </div>
 
       <SkillPolicySection session={session} />
+      <CoordinationSection
+        entries={currentEntries}
+        runEvents={currentRunEvents}
+      />
       <PlanSection session={session} />
     </div>
   );
@@ -333,6 +339,143 @@ function MetricCard({
       </div>
       <div className="mt-1 text-sm font-semibold text-trace-text">{value}</div>
       <div className="mt-1 text-[10px] text-trace-muted">{hint}</div>
+    </div>
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function tabRoleCounts(ownedTabs: unknown): string {
+  if (!Array.isArray(ownedTabs)) return "0 tabs";
+  const counts = new Map<string, number>();
+  for (const tab of ownedTabs) {
+    const role = stringValue(asRecord(tab)?.role) ?? "unknown";
+    counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+  const parts = Array.from(counts.entries()).map(
+    ([role, count]) => `${count} ${role}`,
+  );
+  return parts.length > 0 ? parts.join(", ") : "0 tabs";
+}
+
+function collectAgentEvents(entries: TraceEntry[], type: string): TraceEvent[] {
+  return entries.flatMap((entry) =>
+    (entry.events ?? []).filter((event) => event.type === type),
+  );
+}
+
+function CoordinationSection({
+  entries,
+  runEvents,
+}: {
+  entries: TraceEntry[];
+  runEvents: RunTraceEvent[];
+}) {
+  const redirectEvents = collectAgentEvents(entries, "workflow_tab_redirect");
+  const stateEvents = runEvents.filter(
+    (event) => event.type === "tab_coordination_state",
+  );
+  const rejectedRebinds = runEvents.filter(
+    (event) => event.type === "task_resume_rebinding_rejected",
+  );
+
+  if (
+    redirectEvents.length === 0 &&
+    stateEvents.length === 0 &&
+    rejectedRebinds.length === 0
+  ) {
+    return null;
+  }
+
+  const latestState = asRecord(stateEvents[stateEvents.length - 1]?.data);
+  const latestAction = stringValue(latestState?.action);
+  const primaryTabId = numberValue(latestState?.primaryTabId);
+  const lastReboundTabId = numberValue(latestState?.lastReboundTabId);
+  const ownedTabCount = numberValue(latestState?.ownedTabCount);
+  const nodeBindingCount = numberValue(latestState?.nodeBindingCount);
+  const latestReason = stringValue(latestState?.reason);
+  const controllerCounts = new Map<string, number>();
+  for (const event of redirectEvents) {
+    const controllerId =
+      stringValue(asRecord(event.data)?.controllerId) ?? "unknown";
+    controllerCounts.set(controllerId, (controllerCounts.get(controllerId) ?? 0) + 1);
+  }
+
+  return (
+    <div className="border-t border-trace-border mt-2.5 pt-2.5">
+      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
+          Coordination
+        </span>
+        {stateEvents.length > 0 && (
+          <Badge variant="type">{stateEvents.length} state events</Badge>
+        )}
+        {redirectEvents.length > 0 && (
+          <Badge variant="event-workflow_tab_redirect">
+            {redirectEvents.length} redirects
+          </Badge>
+        )}
+        {rejectedRebinds.length > 0 && (
+          <Badge variant="event-stuck_signal">
+            {rejectedRebinds.length} unsafe rebinds
+          </Badge>
+        )}
+      </div>
+      {latestState && (
+        <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] gap-2 text-[11px] mb-2">
+          <MetricCard
+            label="Primary"
+            value={primaryTabId == null ? "-" : String(primaryTabId)}
+            hint={latestAction ?? "latest state"}
+          />
+          <MetricCard
+            label="Owned Tabs"
+            value={ownedTabCount == null ? "0" : String(ownedTabCount)}
+            hint={tabRoleCounts(latestState.ownedTabs)}
+          />
+          <MetricCard
+            label="Bindings"
+            value={nodeBindingCount == null ? "0" : String(nodeBindingCount)}
+            hint="node-tab bindings"
+          />
+          <MetricCard
+            label="Rebound"
+            value={lastReboundTabId == null ? "-" : String(lastReboundTabId)}
+            hint={latestReason ?? "last rebound tab"}
+          />
+        </div>
+      )}
+      {controllerCounts.size > 0 && (
+        <div className="flex gap-1.5 flex-wrap text-[11px] text-trace-muted">
+          {Array.from(controllerCounts.entries()).map(([controllerId, count]) => (
+            <span
+              key={controllerId}
+              className="px-1.5 py-0.5 rounded bg-black/10 border border-trace-border/70"
+            >
+              {controllerId}: {count}
+            </span>
+          ))}
+        </div>
+      )}
+      {rejectedRebinds.length > 0 && (
+        <div className="mt-1.5 text-[11px] text-trace-muted">
+          Last unsafe rebind:{" "}
+          {stringValue(asRecord(rejectedRebinds[rejectedRebinds.length - 1].data)?.reason) ??
+            "reason unavailable"}
+        </div>
+      )}
     </div>
   );
 }

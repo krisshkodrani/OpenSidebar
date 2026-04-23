@@ -115,6 +115,7 @@ import {
   getSkillToolPolicy,
   type SkillToolPolicy,
 } from "../orchestrator/skills";
+import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
   buildFailureBrief,
@@ -2101,7 +2102,7 @@ export class AgentLoop {
         try {
           this.startingOrigin = new URL(snapshot.url).origin;
         } catch {
-          /* */
+          /* ignore invalid starting URL */
         }
         // Record initial page as citation
         this.recordCitation(
@@ -2574,8 +2575,14 @@ export class AgentLoop {
       // on stop/error, freeze the page exactly where it is)
       if (initialScrollY !== null && result.outcome === "completed") {
         try {
-          await this.scrollContentScript(tabId, initialScrollY);
-        } catch {
+          await this.scrollContentScript(tabId, initialScrollY, 1500);
+        } catch (error) {
+          this.traceRecorder?.recordEvent("terminal_cleanup_timeout", {
+            phase: "restore_scroll",
+            tabId,
+            targetScrollY: initialScrollY,
+            error: error instanceof Error ? error.message : String(error),
+          });
           // Tab may have been closed or navigated — safe to ignore
         }
       }
@@ -2717,35 +2724,6 @@ export class AgentLoop {
     return true;
   }
 
-  private isProcurementLoopActive(): boolean {
-    return this.selectedSkillId === "multi-tab-procurement-loop";
-  }
-
-  private getProcurementTabRole(
-    url: string | null | undefined,
-  ): "checklist" | "store" | null {
-    if (!url) return null;
-    try {
-      const parsed = new URL(url);
-      if (parsed.pathname !== "/procurement") return null;
-      return parsed.searchParams.has("store") ? "store" : "checklist";
-    } catch {
-      return null;
-    }
-  }
-
-  private getProcurementStoreKey(url: string | null | undefined): string | null {
-    if (!url) return null;
-    try {
-      const parsed = new URL(url);
-      if (parsed.pathname !== "/procurement") return null;
-      const store = parsed.searchParams.get("store");
-      return store ? store.trim().toLowerCase() : null;
-    } catch {
-      return null;
-    }
-  }
-
   private async getWorkspaceTabs(): Promise<chrome.tabs.Tab[]> {
     const wsTabIds = await this.getWorkspaceTabIds();
     if (!wsTabIds) {
@@ -2762,42 +2740,11 @@ export class AgentLoop {
     return tabs;
   }
 
-  private async getProcurementLoopTabHints(currentTabId: number): Promise<{
-    checklistTabId: number | null;
-    currentRole: "checklist" | "store" | null;
-    currentStoreKey: string | null;
-  }> {
-    const currentUrl = this.context.getCurrentUrl();
-    const currentRole = this.getProcurementTabRole(currentUrl);
-    const currentStoreKey = this.getProcurementStoreKey(currentUrl);
-    const tabs = await this.getWorkspaceTabs();
-    let checklistTabId: number | null = null;
-
-    for (const tab of tabs) {
-      if (
-        typeof tab.id === "number" &&
-        tab.id !== currentTabId &&
-        this.getProcurementTabRole(tab.url) === "checklist"
-      ) {
-        checklistTabId = tab.id;
-        break;
-      }
-    }
-
-    return {
-      checklistTabId,
-      currentRole,
-      currentStoreKey,
-    };
-  }
-
-  private async getProcurementLoopToolRedirect(params: {
+  private async getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
     currentTabId: number;
   }): Promise<string | null> {
-    if (!this.isProcurementLoopActive()) return null;
-
     const { toolName, args, currentTabId } = params;
     const snapshot = this.context.getSnapshot();
     const targetId =
@@ -2807,7 +2754,9 @@ export class AgentLoop {
           ? parseInt(args.id, 10)
           : null;
     const target =
-      toolName === ToolName.CLICK_ELEMENT && targetId
+      (toolName === ToolName.CLICK_ELEMENT ||
+        toolName === ToolName.RIGHT_CLICK) &&
+      targetId
         ? snapshot?.elements?.find((element) => element.tag === targetId)
         : null;
     const targetHref =
@@ -2815,10 +2764,10 @@ export class AgentLoop {
         ? target.attributes.href
         : toolName === ToolName.CREATE_TAB && typeof args.url === "string"
           ? (args.url as string)
-          : null;
+        : null;
     if (!targetHref) return null;
 
-    let resolvedHref: string;
+    let resolvedHref: string | null = null;
     try {
       resolvedHref = new URL(
         targetHref,
@@ -2827,56 +2776,26 @@ export class AgentLoop {
     } catch {
       return null;
     }
-
-    const targetRole = this.getProcurementTabRole(resolvedHref);
-    if (!targetRole) return null;
-
-    const { checklistTabId, currentRole, currentStoreKey } =
-      await this.getProcurementLoopTabHints(currentTabId);
-
-    if (
-      targetRole === "checklist" &&
-      currentRole === "store" &&
-      checklistTabId &&
-      checklistTabId !== currentTabId
-    ) {
-      return (
-        `The original procurement checklist is already open as tab ${checklistTabId}. ` +
-        `Use switch_tab({"tabId": ${checklistTabId}}) to return there instead of clicking an in-page Procurement link.`
-      );
-    }
-
-    const targetStoreKey = this.getProcurementStoreKey(resolvedHref);
-    if (!targetStoreKey) return null;
-
     const tabs = await this.getWorkspaceTabs();
-    const existingStoreTab = tabs.find(
-      (tab) =>
-        typeof tab.id === "number" &&
-        tab.id !== currentTabId &&
-        this.getProcurementStoreKey(tab.url) === targetStoreKey,
-    );
-
-    if (existingStoreTab?.id) {
-      return (
-        `The ${targetStoreKey} store is already open as tab ${existingStoreTab.id}. ` +
-        `Use switch_tab({"tabId": ${existingStoreTab.id}}) instead of reopening the same store page.`
-      );
-    }
-
-    if (
-      currentRole === "store" &&
-      currentStoreKey &&
-      targetStoreKey === currentStoreKey &&
-      toolName === ToolName.CLICK_ELEMENT
-    ) {
-      return (
-        `You are already on the ${currentStoreKey} store page. ` +
-        `Do not reopen the same store from inside this procurement loop; either finish the purchase or switch back to the checklist tab.`
-      );
-    }
-
-    return null;
+    const decision = evaluateWorkflowTabRedirect({
+      skillId: this.selectedSkillId,
+      toolName,
+      currentTabId,
+      currentUrl: this.context.getCurrentUrl(),
+      targetUrl: resolvedHref,
+      workspaceTabs: tabs,
+    });
+    if (!decision) return null;
+    this.traceRecorder?.recordEvent(decision.traceEvent, {
+      turn: this.turnCount,
+      toolName,
+      controllerId: decision.controllerId,
+      currentTabId,
+      currentUrl: this.context.getCurrentUrl(),
+      targetUrl: resolvedHref,
+      message: decision.message,
+    });
+    return decision.message;
   }
 
   /** De-escalate back to executor mode when progress resumes after escalation. */
@@ -3144,13 +3063,25 @@ export class AgentLoop {
    * Send a scroll-to-position message to the content script and return
    * the actual scroll Y after the browser settles.
    */
-  private async scrollContentScript(tabId: number, y: number): Promise<number> {
-    const response = await chrome.tabs.sendMessage(tabId, {
-      type: "SCROLL_TO_POSITION",
-      requestId: crypto.randomUUID(),
-      source: MessageSource.BACKGROUND,
-      payload: { y },
-    });
+  private async scrollContentScript(
+    tabId: number,
+    y: number,
+    timeoutMs = 15_000,
+  ): Promise<number> {
+    const response = await Promise.race([
+      chrome.tabs.sendMessage(tabId, {
+        type: "SCROLL_TO_POSITION",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        payload: { y },
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Scroll restore timed out (${timeoutMs}ms)`)),
+          timeoutMs,
+        ),
+      ),
+    ]);
     return response?.payload?.actualY ?? y;
   }
 
@@ -4097,6 +4028,26 @@ export class AgentLoop {
       expectedTokens: expectation.expectedTokens,
     });
     return this.context.getSnapshot();
+  }
+
+  private hasRecentToolEvidenceForTokens(expectedTokens: string[]): boolean {
+    if (expectedTokens.length === 0) return false;
+    const messages = this.context.getMessages();
+    const threshold =
+      expectedTokens.length >= 4 ? 2 : Math.min(1, expectedTokens.length);
+
+    for (let i = messages.length - 1, seen = 0; i >= 0 && seen < 12; i--) {
+      const message = messages[i];
+      if (message.role !== "tool" || typeof message.content !== "string") {
+        continue;
+      }
+      seen++;
+      const text = message.content.toLowerCase();
+      const matched = expectedTokens.filter((token) => text.includes(token));
+      if (matched.length >= threshold) return true;
+    }
+
+    return false;
   }
 
   /** Execute a tool call via the tool registry. */
@@ -5807,32 +5758,29 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
               if (
                 toolName === ToolName.CLICK_ELEMENT ||
-                toolName === ToolName.CREATE_TAB
+                toolName === ToolName.CREATE_TAB ||
+                toolName === ToolName.RIGHT_CLICK
               ) {
-                const procurementRedirect =
-                  await this.getProcurementLoopToolRedirect({
+                const workflowRedirect =
+                  await this.getWorkflowTabToolRedirect({
                     toolName,
                     args,
                     currentTabId: tabId,
                   });
-                if (procurementRedirect) {
+                if (workflowRedirect) {
                   this.log.info(
                     "agent",
-                    "Procurement loop redirected to existing workspace tab",
+                    "Workflow tab controller redirected tool call",
                     {
                       turn: this.turnCount,
                       tool: toolName,
                       mode: "parallel",
+                      skillId: this.selectedSkillId,
                     },
                   );
-                  this.traceRecorder?.recordEvent("procurement_tab_redirect", {
-                    turn: this.turnCount,
-                    toolName,
-                    mode: "parallel",
-                  });
                   return {
                     toolCall,
-                    result: procurementRedirect,
+                    result: workflowRedirect,
                     error: null,
                   };
                 }
@@ -6442,34 +6390,31 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
             if (
               toolName === ToolName.CLICK_ELEMENT ||
-              toolName === ToolName.CREATE_TAB
+              toolName === ToolName.CREATE_TAB ||
+              toolName === ToolName.RIGHT_CLICK
             ) {
-              const procurementRedirect =
-                await this.getProcurementLoopToolRedirect({
+              const workflowRedirect =
+                await this.getWorkflowTabToolRedirect({
                   toolName,
                   args,
                   currentTabId: tabId,
                 });
-              if (procurementRedirect) {
+              if (workflowRedirect) {
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: procurementRedirect,
+                  content: workflowRedirect,
                 });
                 this.log.info(
                   "agent",
-                  "Procurement loop redirected to existing workspace tab",
+                  "Workflow tab controller redirected tool call",
                   {
                     turn: this.turnCount,
                     tool: toolName,
                     mode: "sequential",
+                    skillId: this.selectedSkillId,
                   },
                 );
-                this.traceRecorder?.recordEvent("procurement_tab_redirect", {
-                  turn: this.turnCount,
-                  toolName,
-                  mode: "sequential",
-                });
                 continue;
               }
             }
@@ -6909,7 +6854,10 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                     expectedTokens: activeAsyncExpectation.expectedTokens,
                     baselineLoadingKeywords:
                       activeAsyncExpectation.baselineLoadingKeywords,
-                  })
+                  }) &&
+                  !this.hasRecentToolEvidenceForTokens(
+                    activeAsyncExpectation.expectedTokens,
+                  )
                 ) {
                   shouldReject = true;
                   rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
@@ -9277,16 +9225,20 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                         matchedTokens,
                         advancedTo: newIdx,
                       });
+                      const completedAllSteps =
+                        newIdx >= this.planSubtasks.length;
                       const nextStepDesc =
                         this.planSubtasks[newIdx]?.description ||
                         "Finish the remaining plan";
-                      this.context.addMessage({
+                      if (!completedAllSteps) {
+                        this.context.addMessage({
                         role: "user",
                         content:
                           `STEP COMPLETED: ${reason}. ` +
                           `Continue with the next step: ${nextStepDesc}. ` +
-                          `Do NOT call done() — keep acting.`,
-                      });
+                          `Do NOT call done() - keep acting.`,
+                        });
+                      }
                       this.broadcast({
                         type: "TASK_PROGRESS",
                         payload: {
@@ -9296,6 +9248,17 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                           totalTurnsUsed: this.turnCount,
                         },
                       });
+                      if (completedAllSteps) {
+                        const finalSummary = `Completed final planned step: ${reason}.`;
+                        doneSummary = finalSummary;
+                        doneSignaled = true;
+                        this.completedResult = {
+                          outcome: "completed",
+                          summary: finalSummary,
+                        };
+                        this.statusHandler(AgentStatus.IDLE, "Done");
+                        this.messageHandler(finalSummary, []);
+                      }
                       this.log.info("agent", `${traceEvent} triggered`, {
                         turn: this.turnCount,
                         fromStep,
@@ -9307,7 +9270,13 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                         toStep: newIdx,
                         matchedTokens,
                         reason,
+                        completedAllSteps,
                       });
+                      if (completedAllSteps) {
+                        this.saveTurnCheckpoint().catch(() => {});
+                        await this.traceRecorder?.endTurn();
+                        break;
+                      }
                     }
                   }
                 }
@@ -10031,7 +10000,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
       await this.traceRecorder?.endTurn();
     }
 
-    if (this.turnCount >= this.maxTurns) {
+    if (this.turnCount >= this.maxTurns && !this.completedResult) {
       this.log.warn("agent", "Loop ended: max turns reached", {
         turns: this.turnCount,
         maxTurns: this.maxTurns,

@@ -1230,6 +1230,7 @@ describe("AgentLoop", () => {
       },
     );
 
+    const originalGetWorkspaceById = workspaceManager.getWorkspaceById;
     workspaceManager.getWorkspaceById = (async () => ({
       id: "ws-1",
       name: "Test",
@@ -1280,7 +1281,7 @@ describe("AgentLoop", () => {
       () => "http://127.0.0.1:65055/procurement?store=techdirect",
     );
 
-    const redirect = await (agent as any).getProcurementLoopToolRedirect({
+    const redirect = await (agent as any).getWorkflowTabToolRedirect({
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 17 },
       currentTabId: 123,
@@ -1290,6 +1291,7 @@ describe("AgentLoop", () => {
     expect(redirect).toContain("checklist");
 
     (chrome.tabs as any).get = originalGet;
+    workspaceManager.getWorkspaceById = originalGetWorkspaceById;
   });
 
   test("redirects procurement store reopen to the existing store tab", async () => {
@@ -1306,6 +1308,7 @@ describe("AgentLoop", () => {
       },
     );
 
+    const originalGetWorkspaceById = workspaceManager.getWorkspaceById;
     workspaceManager.getWorkspaceById = (async () => ({
       id: "ws-1",
       name: "Test",
@@ -1356,7 +1359,7 @@ describe("AgentLoop", () => {
       () => "http://127.0.0.1:65055/procurement",
     );
 
-    const redirect = await (agent as any).getProcurementLoopToolRedirect({
+    const redirect = await (agent as any).getWorkflowTabToolRedirect({
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 38 },
       currentTabId: 123,
@@ -1366,6 +1369,85 @@ describe("AgentLoop", () => {
     expect(redirect).toContain("already open");
 
     (chrome.tabs as any).get = originalGet;
+    workspaceManager.getWorkspaceById = originalGetWorkspaceById;
+  });
+
+  test("redirects cross-tab compare to an already open matching tab", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        workspaceId: "ws-1",
+        selectedSkillId: "cross-tab-compare",
+      },
+    );
+
+    const originalGetWorkspaceById = workspaceManager.getWorkspaceById;
+    workspaceManager.getWorkspaceById = (async () => ({
+      id: "ws-1",
+      name: "Test",
+      color: "blue",
+      tabGroupId: 1,
+      tabIds: [123, 789],
+    })) as any;
+
+    const originalGet = chrome.tabs.get;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => {
+      if (id === 123) {
+        return {
+          id,
+          title: "Overview",
+          url: "http://127.0.0.1:65055/compare",
+          active: true,
+        };
+      }
+      return {
+        id,
+        title: "Quarterly Report",
+        url: "http://127.0.0.1:65055/reports/q1",
+        active: false,
+      };
+    });
+
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Overview",
+      url: "http://127.0.0.1:65055/compare",
+      elements: [
+        {
+          tag: 44,
+          tagName: "a",
+          role: "link",
+          text: "Q1 report",
+          attributes: { href: "/reports/q1" },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      pageContent: "Compare quarterly reports.",
+      visibleContent: "Compare quarterly reports.",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+    (agent as any).context.getCurrentUrl = vi.fn(
+      () => "http://127.0.0.1:65055/compare",
+    );
+
+    const redirect = await (agent as any).getWorkflowTabToolRedirect({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 44 },
+      currentTabId: 123,
+    });
+
+    expect(redirect).toContain('switch_tab({"tabId": 789})');
+    expect(redirect).toContain("comparison page is already open");
+
+    (chrome.tabs as any).get = originalGet;
+    workspaceManager.getWorkspaceById = originalGetWorkspaceById;
   });
 
   test("rejects done while an inline spreadsheet edit field is still active", () => {
@@ -1576,12 +1658,9 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav", "navigate", { url: "https://example.com" }),
     ]);
 
-    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
-      if (msg?.type === "APPROVAL_REQUEST") {
-        AgentLoop.resolveApproval(msg.payload.approvalId, true);
-      }
-      return { success: true };
-    });
+    (chrome.runtime as any).sendMessage = vi.fn(async () => ({
+      success: true,
+    }));
 
     const onStep = vi.fn();
     const agent = new AgentLoop(
@@ -1594,16 +1673,22 @@ describe("High-risk approval policy", () => {
       { bypassApprovals: false },
     );
 
-    await agent.start("Go to example.com", 123);
+    const result = await agent.start("Go to example.com", 123);
 
     const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
       (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
     );
     expect(approvalRequests.length).toBeGreaterThan(0);
+    expect(result.outcome).toBe("awaiting_approval");
+    expect(result.pendingInteraction).toMatchObject({
+      kind: "approval",
+      toolName: ToolName.NAVIGATE,
+      args: { url: "https://example.com" },
+    });
     const approvalStep = onStep.mock.calls.find(
       (call: any[]) =>
         call[0]?.type === "info" &&
-        String(call[0]?.label || "").includes("Approval granted"),
+        String(call[0]?.label || "").includes("Approval requested"),
     );
     expect(approvalStep).toBeDefined();
   });
@@ -1613,14 +1698,11 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav_reject", "navigate", { url: "https://example.com" }),
     ]);
 
-    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
-      if (msg?.type === "APPROVAL_REQUEST") {
-        AgentLoop.resolveApproval(msg.payload.approvalId, false);
-      }
-      return { success: true };
-    });
+    (chrome.runtime as any).sendMessage = vi.fn(async () => ({
+      success: true,
+    }));
 
-    const agent = new AgentLoop(
+    const initialAgent = new AgentLoop(
       "test-key",
       {
         onStatusUpdate: vi.fn(),
@@ -1629,7 +1711,29 @@ describe("High-risk approval policy", () => {
       { bypassApprovals: false },
     );
 
-    await agent.start("Navigate to example.com", 123);
+    const initialResult = await initialAgent.start("Navigate to example.com", 123);
+    expect(initialResult.outcome).toBe("awaiting_approval");
+    expect(initialResult.pendingInteraction?.kind).toBe("approval");
+
+    setupLLMSequence([
+      makeToolCall("tc_nav_reject", "navigate", { url: "https://example.com" }),
+    ]);
+    const resumedAgent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+      },
+      {
+        bypassApprovals: false,
+        resumeInteraction: {
+          ...initialResult.pendingInteraction!,
+          approved: false,
+        },
+      },
+    );
+
+    await resumedAgent.start("Navigate to example.com", 123);
 
     const toolResult = findToolResultInCalls("tc_nav_reject");
     expect(toolResult).toContain("Action denied by user approval policy");
@@ -1640,7 +1744,6 @@ describe("High-risk approval policy", () => {
       makeToolCall("tc_nav_timeout", "navigate", { url: "https://example.com" }),
     ]);
 
-    // No resolveApproval call -> should timeout and deny.
     (chrome.runtime as any).sendMessage = vi.fn(async (_msg: any) => ({
       success: true,
     }));
@@ -1654,15 +1757,20 @@ describe("High-risk approval policy", () => {
       { bypassApprovals: false, approvalTimeoutMs: 5 },
     );
 
-    await agent.start("Navigate to example.com", 123);
+    const result = await agent.start("Navigate to example.com", 123);
 
-    const toolResult = findToolResultInCalls("tc_nav_timeout");
-    expect(toolResult).toContain("Action denied by user approval policy");
+    expect(result.outcome).toBe("awaiting_approval");
+    expect(result.pendingInteraction).toMatchObject({
+      kind: "approval",
+      toolName: ToolName.NAVIGATE,
+      args: { url: "https://example.com" },
+      timeoutMs: 5,
+    });
   });
 
   test("skips approval requests when bypass is enabled", async () => {
     setupLLMSequence([
-      makeToolCall("tc_nav_bypass", "navigate", { url: "https://example.com" }),
+      makeToolCall("tc_close_bypass", "close_tab", { tabId: 123 }),
     ]);
 
     (chrome.runtime as any).sendMessage = vi.fn(async (_msg: any) => ({
@@ -1680,7 +1788,7 @@ describe("High-risk approval policy", () => {
       { bypassApprovals: true },
     );
 
-    await agent.start("Navigate quickly", 123);
+    await agent.start("Close current tab quickly", 123);
 
     const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
       (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
@@ -1719,7 +1827,10 @@ describe("Workspace-scoped tab operations", () => {
     });
   }
 
-  function createAgent(workspaceId: string | null = null) {
+  function createAgent(
+    workspaceId: string | null = null,
+    options?: { bypassApprovals?: boolean },
+  ) {
     return new AgentLoop(
       "test-key",
       {
@@ -1727,7 +1838,7 @@ describe("Workspace-scoped tab operations", () => {
         onMessage: vi.fn(),
         onStep: vi.fn(),
       },
-      { workspaceId },
+      { workspaceId, bypassApprovals: options?.bypassApprovals },
     );
   }
 
@@ -1759,10 +1870,7 @@ describe("Workspace-scoped tab operations", () => {
     // Spy on the singleton methods directly
     workspaceManager.getWorkspaceById = origGetWorkspaceById;
     workspaceManager.addTabToWorkspace = origAddTabToWorkspace;
-    (chrome.runtime as any).sendMessage = vi.fn(async (msg: any) => {
-      if (msg?.type === "APPROVAL_REQUEST") {
-        AgentLoop.resolveApproval(msg.payload.approvalId, true);
-      }
+    (chrome.runtime as any).sendMessage = vi.fn(async () => {
       return { success: true };
     });
   });
@@ -1836,7 +1944,7 @@ describe("Workspace-scoped tab operations", () => {
 
     setupLLMSequence([makeToolCall("tc_close", "close_tab", { tabId: 456 })]);
 
-    const agent = createAgent("ws-1");
+    const agent = createAgent("ws-1", { bypassApprovals: true });
     await agent.start("Close tab 456", 123);
 
     const msgs = mockCompleteStream.mock.calls[1][0].messages;
@@ -1852,7 +1960,7 @@ describe("Workspace-scoped tab operations", () => {
 
     setupLLMSequence([makeToolCall("tc_close", "close_tab", { tabId: 123 })]);
 
-    const agent = createAgent("ws-1");
+    const agent = createAgent("ws-1", { bypassApprovals: true });
     await agent.start("Close current tab", 123);
 
     const msgs = mockCompleteStream.mock.calls[1][0].messages;

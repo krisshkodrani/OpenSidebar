@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import {
   deleteAllTraces,
+  fetchRunTraceEvents,
   fetchSessionLogs,
   fetchTraceSessions,
   screenshotUrl,
@@ -51,6 +52,14 @@ describe("trace-viewer api", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as any).mock.calls[0];
     expect(url).toBe("/api/logs/session-1?level=ERROR");
+  });
+
+  test("fetchRunTraceEvents reads run trace endpoint", async () => {
+    await fetchRunTraceEvents("run-123");
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toBe("/api/run-traces/run-123");
   });
 
   test("deleteAllTraces sends DELETE request", async () => {

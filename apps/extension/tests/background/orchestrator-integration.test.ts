@@ -458,6 +458,35 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[1].instruction).toContain("Objective: summarize data");
   });
 
+  test("emits tab coordination state into run traces", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "collect data")];
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("collect data"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: any;
+    }>;
+    const coordinationEvents = runTraceEvents.filter(
+      (entry) =>
+        entry.url.endsWith("/run-traces") &&
+        entry.body?.type === "tab_coordination_state",
+    );
+
+    expect(coordinationEvents.length).toBeGreaterThan(0);
+    expect(coordinationEvents[0].body.data).toMatchObject({
+      action: "initialized",
+      primaryTabId: 101,
+      ownedTabCount: 1,
+    });
+    expect(
+      coordinationEvents.some((entry) => entry.body.data?.action === "node_bound"),
+    ).toBe(true);
+  });
+
   test("does not skip remaining nodes when local success matches but root task contract is incomplete", async () => {
     const first = makeNode("n1", "Navigate to Warehouse Beta");
     first.successCriteria = "Page shows Warehouse Beta and page 2 of 3";
@@ -861,6 +890,101 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.metrics?.totalTokens).toBe(1100000);
   });
 
+  test("expands token budget for large exhaustive review graphs", async () => {
+    plannerBuildNodesImpl = async () =>
+      Array.from({ length: 8 }, (_, i) => ({
+        ...makeNode(
+          `r${i + 1}`,
+          `review listing ${i + 1}`,
+          i > 0 ? [`r${i}`] : [],
+        ),
+        selectedSkillId: "list-detail-review-loop" as const,
+      }));
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed",
+      summary: `completed ${nodeId || "unknown"}`,
+      metrics: {
+        totalPromptTokens: nodeId === "r1" ? 1_090_000 : 1_000,
+        totalCompletionTokens: nodeId === "r1" ? 10_000 : 100,
+        totalTokens: nodeId === "r1" ? 1_100_000 : 1_100,
+        totalCost: nodeId === "r1" ? 0.4 : 0.001,
+        totalLlmTimeMs: 1000,
+        totalSessionTimeMs: 3000,
+        llmCallCount: 1,
+        totalCachedTokens: 0,
+        modelBreakdown: {},
+      },
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("review all job listings"));
+
+    expect(createdLoopNodeIds).toContain("r2");
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.terminationReason || "").not.toContain(
+      "Global token budget exceeded",
+    );
+  });
+
+  test("does not globally skip a final node that already failed once", async () => {
+    const setup = makeNode("n1", "Collect checkout details");
+    const final = makeNode("n2", "Verify final confirmation", ["n1"]);
+    final.successCriteria = "Order confirmation and thank you message visible";
+    plannerBuildNodesImpl = async () => [setup, final];
+
+    const attempts: Record<string, number> = {};
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: attempts.n2 ? "Order Confirmed" : "Checkout",
+          url: "https://example.com/shop",
+          visibleContent: attempts.n2
+            ? "Order confirmation. Thank you for your purchase."
+            : "Checkout form",
+          pageContent: attempts.n2
+            ? "Order confirmation. Thank you for your purchase."
+            : "Checkout form",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    loopStartImpl = async (nodeId) => {
+      const key = nodeId || "unknown";
+      attempts[key] = (attempts[key] || 0) + 1;
+      if (nodeId === "n2" && attempts[key] === 1) {
+        return {
+          outcome: "failed",
+          summary: "Reached turn limit before confirming completion.",
+          metrics: undefined,
+        };
+      }
+      return {
+        outcome: "completed",
+        summary:
+          nodeId === "n2"
+            ? "Confirmed order confirmation and thank you message."
+            : "Collected checkout details.",
+        metrics: undefined,
+      };
+    };
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("verify final confirmation"));
+
+    expect(attempts.n2).toBe(2);
+  });
+
   test("preflight warns on excess nodes without failing them upfront", async () => {
     plannerBuildNodesImpl = async () =>
       Array.from({ length: 10 }, (_, i) => makeNode(`p${i + 1}`, `plan step ${i + 1}`));
@@ -948,11 +1072,9 @@ describe("Orchestrator integration join tests", () => {
     await orchestrator.startTask(makeInput(query));
 
     expect(capturedInstructions).toHaveLength(1);
-    expect(capturedInstructions[0].instruction).toMatch(
-      /gather the requested result for Warehouse Beta/i,
-    );
-    expect(capturedInstructions[0].instruction).not.toContain(
-      `Objective: ${query}`,
+    expect(capturedInstructions[0].instruction).toContain(`Objective: ${query}`);
+    expect(capturedInstructions[0].instruction).toContain(
+      "Success criteria: Page or tool output shows Warehouse Beta",
     );
   });
 

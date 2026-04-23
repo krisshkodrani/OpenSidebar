@@ -1,4 +1,5 @@
 import type { TraceSession, TraceEntry } from "../types/traces";
+import type { RunTraceEvent } from "../utils/run-trace";
 import type {
   TraceFilters,
   DayBucket,
@@ -43,6 +44,12 @@ export async function fetchTraceEntries(
   sessionId: string,
 ): Promise<TraceEntry[]> {
   return fetchJson(`/api/traces/${encodeURIComponent(sessionId)}`);
+}
+
+export async function fetchRunTraceEvents(
+  runId: string,
+): Promise<RunTraceEvent[]> {
+  return fetchJson(`/api/run-traces/${encodeURIComponent(runId)}`);
 }
 
 export function screenshotUrl(sessionId: string, turn: number): string {

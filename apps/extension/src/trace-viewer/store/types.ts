@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 import type { TraceSession, TraceEntry } from "../../types/traces";
+import type { RunTraceEvent } from "../../utils/run-trace";
 
 // ── Viewer-only types ──────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export interface TracesSlice {
   filters: TraceFilters;
   currentSessionId: string | null;
   currentEntries: TraceEntry[];
+  currentRunEvents: RunTraceEvent[];
   sessionLogs: SessionLogEntry[];
   sessionLogsLoading: boolean;
   logsWarning: string | null;
@@ -84,6 +86,7 @@ export interface TracesSlice {
   resetFilters: () => void;
   setCurrentSessionId: (id: string | null) => void;
   setCurrentEntries: (entries: TraceEntry[]) => void;
+  setCurrentRunEvents: (events: RunTraceEvent[]) => void;
   setSessionLogs: (logs: SessionLogEntry[]) => void;
   setSessionLogsLoading: (loading: boolean) => void;
   setLogsWarning: (warning: string | null) => void;

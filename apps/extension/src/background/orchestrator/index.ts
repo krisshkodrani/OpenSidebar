@@ -84,6 +84,18 @@ import {
   WorkerInstance,
 } from "./types";
 import {
+  bindNodeToTaskTab,
+  claimTaskTab,
+  countOpenOwnedAuxiliaryTabs,
+  createTaskTabCoordination,
+  ensureTaskTabCoordination,
+  getNodeBoundTabId,
+  getOwnedCreatedTabIds,
+  releaseTaskTab,
+  selectResumeOwnedTab,
+  touchTaskTab,
+} from "./tab-coordination";
+import {
   NodeVerificationResult,
   OrchestratorVerifier,
   programmaticVerify,
@@ -203,6 +215,10 @@ function isActionOrMutationNode(node: TaskNode): boolean {
     "replace ",
     "checkout",
     "purchase",
+    "place order",
+    "complete order",
+    "confirm order",
+    "finalize",
     "delete ",
     "save ",
     "send ",
@@ -380,6 +396,8 @@ const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
 const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
 const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP = 8;
+const EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS = 1_600_000;
 
 function cloneStructuredProgress(
   progress: Record<string, TaskRunProgressInput> | undefined,
@@ -390,6 +408,13 @@ function cloneStructuredProgress(
     JSON.parse(JSON.stringify(value)) as TaskRunProgressInput,
   ]);
   return Object.fromEntries(entries);
+}
+
+function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
+  const reviewNodeCount = nodes.filter(
+    (node) => node.selectedSkillId === LIST_DETAIL_REVIEW_SKILL_ID,
+  ).length;
+  return reviewNodeCount >= EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP;
 }
 
 export class Orchestrator {
@@ -539,6 +564,47 @@ export class Orchestrator {
         reason,
         ...(detail ?? {}),
       },
+      "system",
+    );
+  }
+
+  private buildTabCoordinationTraceData(
+    task: OrchestratorTask,
+    detail: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    const coordination = task.tabCoordination;
+    const ownedTabs = coordination?.ownedTabs ?? [];
+    const activeOwnedTabs = ownedTabs.filter((entry) => entry.releasedAt == null);
+    return {
+      taskId: task.id,
+      workspaceId: task.workspaceId,
+      rootTabId: task.rootTabId,
+      rootTabUrl: task.rootTabUrl ?? null,
+      primaryTabId: coordination?.primaryTabId ?? task.rootTabId,
+      lastReboundTabId: coordination?.lastReboundTabId ?? null,
+      ownedTabCount: activeOwnedTabs.length,
+      nodeBindingCount: coordination
+        ? Object.keys(coordination.nodeBindings).length
+        : 0,
+      ownedTabs: activeOwnedTabs.map((entry) => ({
+        tabId: entry.tabId,
+        role: entry.role,
+        createdByTask: entry.createdByTask,
+        lastKnownUrl: entry.lastKnownUrl ?? null,
+      })),
+      ...detail,
+    };
+  }
+
+  private emitTabCoordinationState(
+    task: OrchestratorTask,
+    action: string,
+    detail: Record<string, unknown> = {},
+  ): void {
+    this.emitTraceEvent(
+      task,
+      "tab_coordination_state",
+      this.buildTabCoordinationTraceData(task, { action, ...detail }),
       "system",
     );
   }
@@ -1546,6 +1612,7 @@ export class Orchestrator {
       id: resume.run.clientRunId ?? crypto.randomUUID(),
       workspaceId: resume.run.workspaceId,
       rootTabId: resumeTabId,
+      rootTabUrl: resume.run.rootTabUrl ?? undefined,
       query: resume.run.query,
       turnNumber: resume.run.turnNumber ?? undefined,
       status: resume.run.status,
@@ -1567,6 +1634,10 @@ export class Orchestrator {
       structuredProgress: this.buildStructuredProgressFromDurableEntries(
         resume.progress,
       ),
+      tabCoordination: createTaskTabCoordination(resumeTabId, {
+        primaryTabUrl: resume.run.rootTabUrl ?? null,
+        lastReboundTabId: resumeTabId,
+      }),
       durableMeta: {
         lastResumeSource: resume.run.lastResumeSource,
         lastKnownResumeSafe: resume.run.lastKnownResumeSafe,
@@ -1645,18 +1716,24 @@ export class Orchestrator {
         continue;
       }
 
-      const resumeTabId = await this.resolveResumeTabId(
-        workspaceId,
+      const resumeSelection = await this.resolveResumeTabId(
+        {
+          workspaceId,
+          rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
+          rootTabUrl: resume.run.rootTabUrl ?? null,
+          tabCoordination: undefined,
+        },
         resume.run.rootTabId ?? run.rootTabId ?? 0,
       );
-      if (!resumeTabId) {
+      if (resumeSelection.status !== "safe") {
         await patchTaskRun(run.id, {
           lastKnownResumeSafe: false,
           lastResumeSafetyCheckedAt: Date.now(),
-          lastKnownResumeReason: "No live workspace tab available for rebinding.",
+          lastKnownResumeReason: resumeSelection.reason,
         });
         continue;
       }
+      const resumeTabId = resumeSelection.tabId;
 
       const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
       const resumeInput =
@@ -1817,26 +1894,32 @@ export class Orchestrator {
       return;
     }
 
-    const resumeTabId = await this.resolveResumeTabId(
-      run.workspaceId,
+    const resumeSelection = await this.resolveResumeTabId(
+      {
+        workspaceId: run.workspaceId,
+        rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
+        rootTabUrl: resume.run.rootTabUrl ?? null,
+        tabCoordination: undefined,
+      },
       resume.run.rootTabId ?? run.rootTabId ?? 0,
     );
-    if (!resumeTabId) {
+    if (resumeSelection.status !== "safe") {
       await patchTaskRun(run.id, {
         resumeRequestedAt: null,
         resumeRequestedReason: null,
         lastKnownResumeSafe: false,
         lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "No live workspace tab available for rebinding.",
+        lastKnownResumeReason: resumeSelection.reason,
       });
       this.sendDurableRunStatus(run.workspaceId, {
         ...run,
         lastKnownResumeSafe: false,
         lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "No live workspace tab available for rebinding.",
+        lastKnownResumeReason: resumeSelection.reason,
       });
       return;
     }
+    const resumeTabId = resumeSelection.tabId;
 
     const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
     const resumeInput = task && (await this.buildResumeInput(task, resumeTabId));
@@ -1946,6 +2029,7 @@ export class Orchestrator {
         workspaceId: taskSnapshot.workspaceId,
         query: taskSnapshot.query,
         rootTabId: taskSnapshot.rootTabId ?? null,
+        rootTabUrl: taskSnapshot.rootTabUrl ?? null,
         turnNumber: taskSnapshot.turnNumber ?? null,
         status:
           taskSnapshot.status === "stopping" ? "running" : taskSnapshot.status,
@@ -2064,30 +2148,31 @@ export class Orchestrator {
     await this.saveCheckpoints(checkpoints);
   }
 
-  private async resolveResumeTabId(
+  private async getLiveWorkspaceTabs(
     workspaceId: string,
-    preferredTabId: number,
-  ): Promise<number | null> {
-    // Prefer the originally bound tab if it still exists.
-    try {
-      const tab = await chrome.tabs.get(preferredTabId);
-      if (tab?.id) return tab.id;
-    } catch {
-      // fall through
-    }
-
-    // Otherwise pick any live tab from the workspace.
+  ): Promise<chrome.tabs.Tab[]> {
     const ws = await this.deps.workspaceManager.getWorkspaceById(workspaceId);
+    const liveTabs: chrome.tabs.Tab[] = [];
     for (const tabId of ws?.tabIds ?? []) {
       try {
         const tab = await chrome.tabs.get(tabId);
-        if (tab?.id) return tab.id;
+        if (tab?.id) liveTabs.push(tab);
       } catch {
         // skip stale tab IDs
       }
     }
+    return liveTabs;
+  }
 
-    return null;
+  private async resolveResumeTabId(
+    taskLike: Pick<
+      OrchestratorTask,
+      "workspaceId" | "rootTabId" | "rootTabUrl" | "tabCoordination"
+    >,
+    preferredTabId: number,
+  ): Promise<ReturnType<typeof selectResumeOwnedTab>> {
+    const liveTabs = await this.getLiveWorkspaceTabs(taskLike.workspaceId);
+    return selectResumeOwnedTab(taskLike, liveTabs, preferredTabId);
   }
 
   private async buildResumeInput(
@@ -2299,28 +2384,30 @@ export class Orchestrator {
       return;
     }
 
-    const resumeTabId = await this.resolveResumeTabId(
-      task.workspaceId,
+    const resumeSelection = await this.resolveResumeTabId(
+      task,
       task.rootTabId,
     );
-    if (!resumeTabId) {
+    if (resumeSelection.status !== "safe") {
       logger.warn(
         "orchestrator",
-        "Cannot resume after pending interaction, no live workspace tab",
+        "Cannot resume after pending interaction, rebinding unsafe",
         {
           workspaceId: task.workspaceId,
           taskId: task.id,
+          reason: resumeSelection.reason,
         },
       );
       task.status = "failed";
       task.finishedAt = Date.now();
-      task.terminationReason = "Could not resume after user interaction.";
+      task.terminationReason = `Could not resume after user interaction. ${resumeSelection.reason}`;
       await this.sendTerminationCompletion(task, task.terminationReason);
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
       return;
     }
+    const resumeTabId = resumeSelection.tabId;
 
     const resumeInput = await this.buildResumeInput(task, resumeTabId);
     if (!resumeInput) {
@@ -2488,6 +2575,26 @@ export class Orchestrator {
     if (!task.runId) {
       task.runId = crypto.randomUUID();
     }
+    ensureTaskTabCoordination(task, {
+      primaryTabId: resumeTabId,
+      primaryTabUrl: task.rootTabUrl ?? null,
+    });
+    try {
+      const reboundTab = await chrome.tabs.get(resumeTabId);
+      claimTaskTab(task, {
+        tabId: resumeTabId,
+        role: "primary",
+        createdByTask: false,
+        url: reboundTab.url ?? null,
+      });
+    } catch {
+      claimTaskTab(task, {
+        tabId: resumeTabId,
+        role: "primary",
+        createdByTask: false,
+        url: task.rootTabUrl ?? null,
+      });
+    }
     task.durableMeta = {
       ...(task.durableMeta ?? {}),
       lastResumeSource: source === "backend" ? "backend" : "local",
@@ -2509,6 +2616,11 @@ export class Orchestrator {
         source === "backend"
           ? "background.orchestrator.backend-recovery"
           : "background.orchestrator.recovery",
+    });
+    this.emitTabCoordinationState(task, "rebound", {
+      resumeSource: source === "backend" ? "backend" : "local",
+      reboundTabId: resumeTabId,
+      reason: task.durableMeta.lastKnownResumeReason ?? null,
     });
     this.emitTraceEvent(
       task,
@@ -2641,22 +2753,34 @@ export class Orchestrator {
         continue;
       }
 
-      const resumeTabId = await this.resolveResumeTabId(
-        task.workspaceId,
+      const resumeSelection = await this.resolveResumeTabId(
+        task,
         task.rootTabId,
       );
-      if (!resumeTabId) {
+      if (resumeSelection.status !== "safe") {
         logger.warn(
           "orchestrator",
-          "Cannot resume checkpoint, no live workspace tab",
+          "Cannot resume checkpoint, rebinding unsafe",
           {
             workspaceId: task.workspaceId,
             taskId: task.id,
+            reason: resumeSelection.reason,
           },
+        );
+        this.emitTraceEvent(
+          task,
+          "task_resume_rebinding_rejected",
+          {
+            taskId: task.id,
+            workspaceId: task.workspaceId,
+            reason: resumeSelection.reason,
+          },
+          "system",
         );
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
+      const resumeTabId = resumeSelection.tabId;
 
       const backendResume =
         task.runId != null ? await fetchTaskRunResume(task.runId) : null;
@@ -2714,13 +2838,6 @@ export class Orchestrator {
     const discoveredRuns = await this.discoverBackendRunCandidates();
     for (const run of discoveredRuns) {
       if (seenWorkspaceIds.has(run.workspaceId)) continue;
-      const workspace = await this.deps.workspaceManager.getWorkspaceById(
-        run.workspaceId,
-      );
-      const resumeTabId =
-        workspace?.tabIds.find((tabId) => Number.isInteger(tabId)) ?? null;
-      if (resumeTabId == null) continue;
-
       const resume = await fetchTaskRunResume(run.id);
       if (!this.isDurableResumeStructurallyValid(resume)) {
         this.emitTraceEvent(
@@ -2738,6 +2855,24 @@ export class Orchestrator {
         );
         continue;
       }
+      const resumeSelection = await this.resolveResumeTabId(
+        {
+          workspaceId: run.workspaceId,
+          rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
+          rootTabUrl: resume.run.rootTabUrl ?? null,
+          tabCoordination: undefined,
+        },
+        resume.run.rootTabId ?? run.rootTabId ?? 0,
+      );
+      if (resumeSelection.status !== "safe") {
+        await patchTaskRun(run.id, {
+          lastKnownResumeSafe: false,
+          lastResumeSafetyCheckedAt: Date.now(),
+          lastKnownResumeReason: resumeSelection.reason,
+        });
+        continue;
+      }
+      const resumeTabId = resumeSelection.tabId;
 
       const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
       const resumeInput =
@@ -2809,6 +2944,7 @@ export class Orchestrator {
       id: taskId,
       workspaceId: input.workspaceId,
       rootTabId: input.tabId,
+      rootTabUrl: null,
       query: `${E2E_SYNTHETIC_QUERY_PREFIX}${pendingInteraction.kind}`,
       status: "running",
       createdAt: now,
@@ -2850,6 +2986,7 @@ export class Orchestrator {
         maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
       },
+      tabCoordination: createTaskTabCoordination(input.tabId),
       pendingInteraction,
     };
 
@@ -3102,6 +3239,7 @@ export class Orchestrator {
       id: taskId,
       workspaceId: input.workspaceId,
       rootTabId: input.tabId,
+      rootTabUrl: null,
       query: input.query,
       turnNumber,
       priorTurnMemoryBrief: priorTurnMemoryBrief || undefined,
@@ -3121,7 +3259,18 @@ export class Orchestrator {
         maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
       },
+      tabCoordination: createTaskTabCoordination(input.tabId),
     };
+    try {
+      const rootTab = await chrome.tabs.get(input.tabId);
+      task.rootTabUrl = rootTab.url ?? null;
+      ensureTaskTabCoordination(task, {
+        primaryTabId: input.tabId,
+        primaryTabUrl: rootTab.url ?? null,
+      });
+    } catch {
+      task.rootTabUrl = null;
+    }
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
@@ -3137,6 +3286,7 @@ export class Orchestrator {
       },
       "system",
     );
+    this.emitTabCoordinationState(task, "initialized");
 
     this.sendStatus(
       input.workspaceId,
@@ -3303,6 +3453,31 @@ export class Orchestrator {
     }
 
     task.nodes = nodes;
+    if (
+      isLargeExhaustiveReviewGraph(nodes) &&
+      task.budget.maxTotalTokens < EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS
+    ) {
+      const previousMaxTotalTokens = task.budget.maxTotalTokens;
+      task.budget.maxTotalTokens = EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS;
+      logger.info("orchestrator", "Expanded exhaustive review token budget", {
+        taskId: task.id,
+        nodeCount: nodes.length,
+        previousMaxTotalTokens,
+        maxTotalTokens: task.budget.maxTotalTokens,
+      });
+      this.emitTraceEvent(
+        task,
+        "budget_limit_adjusted",
+        {
+          taskId: task.id,
+          reason: "large_exhaustive_review_graph",
+          nodeCount: nodes.length,
+          previousMaxTotalTokens,
+          maxTotalTokens: task.budget.maxTotalTokens,
+        },
+        "system",
+      );
+    }
 
     // --- Plan Confirmation Gate ---
     // For multi-node plans, pause and ask the user to confirm before execution
@@ -3531,7 +3706,12 @@ export class Orchestrator {
 
       const workerId = crypto.randomUUID();
       let tabId: number;
-      const previousTabId = nodeTabMap.get(node.id);
+      ensureTaskTabCoordination(task, {
+        primaryTabId: task.rootTabId,
+        primaryTabUrl: task.rootTabUrl ?? null,
+      });
+      const previousTabId =
+        getNodeBoundTabId(task, node.id) ?? nodeTabMap.get(node.id);
       if (previousTabId != null) {
         // 1. Retry: reuse tab from previous attempt (validate it still exists)
         try {
@@ -3562,11 +3742,13 @@ export class Orchestrator {
           isTabOccupiedByRunningNode(input.tabId, nodeTabMap, task.nodes)
         ) {
           // 4. User's tab is occupied by a running node — create if under cap
-          const createdCount = task.createdWorkerTabIds?.length ?? 0;
+          const createdCount = countOpenOwnedAuxiliaryTabs(task);
           if (createdCount < task.maxWorkers - 1) {
-            tabId = await this.createWorkerTab(initialTabUrl, task.workspaceId);
+            tabId = await this.createWorkerTab(task, initialTabUrl);
             if (!task.createdWorkerTabIds) task.createdWorkerTabIds = [];
-            task.createdWorkerTabIds.push(tabId);
+            if (!task.createdWorkerTabIds.includes(tabId)) {
+              task.createdWorkerTabIds.push(tabId);
+            }
           } else {
             // Over cap: fallback to user's tab
             tabId = input.tabId;
@@ -3577,6 +3759,27 @@ export class Orchestrator {
         }
       }
       nodeTabMap.set(node.id, tabId);
+      try {
+        const assignedTab = await chrome.tabs.get(tabId);
+        bindNodeToTaskTab(task, node.id, {
+          tabId,
+          role: tabId === task.rootTabId ? "primary" : "auxiliary",
+          createdByTask: tabId !== task.rootTabId,
+          url: assignedTab.url ?? null,
+        });
+        touchTaskTab(task, tabId, assignedTab.url ?? null);
+      } catch {
+        bindNodeToTaskTab(task, node.id, {
+          tabId,
+          role: tabId === task.rootTabId ? "primary" : "auxiliary",
+          createdByTask: tabId !== task.rootTabId,
+        });
+      }
+      this.emitTabCoordinationState(task, "node_bound", {
+        nodeId: node.id,
+        tabId,
+        role: tabId === task.rootTabId ? "primary" : "auxiliary",
+      });
 
       const snapshot = await this.getSnapshot(tabId);
       const recoveredTurnCheckpoints = (task as any)._turnCheckpoints as
@@ -4021,7 +4224,10 @@ export class Orchestrator {
         if (node.status !== "running") {
           return;
         }
-        if ((task.status as string) === "stopping") {
+        if (
+          (task.status as string) === "stopping" &&
+          result.outcome !== "completed"
+        ) {
           node.status = "failed";
           node.error = appendRecentSideEffects(
             "Stopped by user",
@@ -4740,9 +4946,23 @@ export class Orchestrator {
       // success criteria are already satisfied on the page, skip remaining nodes.
       const completedNodes = task.nodes.filter((n) => n.status === "completed");
       const remainingPending = task.nodes.filter((n) => n.status === "pending");
+      const hasUnresolvedAttemptedPendingNode = remainingPending.some(
+        (node) =>
+          node.retries > 0 ||
+          Boolean(node.error) ||
+          node.handoffArtifacts.some(
+            (artifact) =>
+              artifact.phase === "executor_finished" &&
+              artifact.evidence?.some((entry) => entry.confidence < 1),
+          ),
+      );
       // Only allow skipping when at most 1 node remains pending.
       // Prevents premature skipping after early steps when most work is still ahead.
-      if (remainingPending.length === 1 && completedNodes.length > 0) {
+      if (
+        remainingPending.length === 1 &&
+        completedNodes.length > 0 &&
+        !hasUnresolvedAttemptedPendingNode
+      ) {
         const finalNode = task.nodes[task.nodes.length - 1];
         if (finalNode.status === "pending" && finalNode.successCriteria) {
           try {
@@ -5468,23 +5688,35 @@ export class Orchestrator {
   }
 
   private async createWorkerTab(
+    task: OrchestratorTask,
     url: string,
-    workspaceId: string,
   ): Promise<number> {
     const tab = await chrome.tabs.create({ url, active: false });
     if (!tab.id) throw new Error("Failed to create worker tab");
-    await this.deps.workspaceManager.addTabToWorkspace(tab.id, workspaceId);
+    await this.deps.workspaceManager.addTabToWorkspace(tab.id, task.workspaceId);
+    claimTaskTab(task, {
+      tabId: tab.id,
+      role: "auxiliary",
+      createdByTask: true,
+      url: tab.url ?? url,
+    });
+    this.emitTabCoordinationState(task, "worker_created", {
+      tabId: tab.id,
+      url: tab.url ?? url,
+    });
     return tab.id;
   }
 
   private async closeWorkerTabs(task: OrchestratorTask): Promise<void> {
-    for (const tabId of task.createdWorkerTabIds ?? []) {
+    for (const tabId of getOwnedCreatedTabIds(task)) {
       if (tabId === task.rootTabId) continue;
       try {
         await chrome.tabs.remove(tabId);
       } catch {
         /* tab already closed */
       }
+      releaseTaskTab(task, tabId);
+      this.emitTabCoordinationState(task, "worker_released", { tabId });
     }
   }
 
