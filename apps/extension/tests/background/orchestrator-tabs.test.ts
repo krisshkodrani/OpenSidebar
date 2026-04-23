@@ -269,6 +269,44 @@ describe("Tab lifecycle policy — createdWorkerTabIds sanitization", () => {
     expect(task).not.toBeNull();
     expect(task!.createdWorkerTabIds).toBeUndefined();
   });
+
+  test("sanitizeTask preserves explicit tab coordination state", () => {
+    const now = Date.now();
+    const raw = makeMinimalTaskRaw({
+      tabCoordination: {
+        primaryTabId: 100,
+        ownedTabs: [
+          {
+            tabId: 100,
+            role: "primary",
+            createdByTask: false,
+            lastKnownUrl: "https://example.com",
+            claimedAt: now,
+            lastUsedAt: now,
+            releasedAt: null,
+          },
+          {
+            tabId: 201,
+            role: "auxiliary",
+            createdByTask: true,
+            lastKnownUrl: "https://example.com/detail",
+            claimedAt: now,
+            lastUsedAt: now,
+            releasedAt: null,
+          },
+        ],
+        nodeBindings: {
+          "node-1": 100,
+        },
+        lastReboundTabId: 100,
+      },
+    });
+    const task = sanitizeTask(raw);
+    expect(task).not.toBeNull();
+    expect(task!.tabCoordination?.primaryTabId).toBe(100);
+    expect(task!.tabCoordination?.ownedTabs).toHaveLength(2);
+    expect(task!.tabCoordination?.nodeBindings["node-1"]).toBe(100);
+  });
 });
 
 describe("Tab lifecycle policy — cleanup safety", () => {

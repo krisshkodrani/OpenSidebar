@@ -569,6 +569,37 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // GET /api/traces/:sessionId — get all turns for a session
+  const runTraceMatch = url.pathname.match(/^\/api\/run-traces\/([a-zA-Z0-9_-]+)$/);
+  if (runTraceMatch && req.method === "GET") {
+    try {
+      const runId = runTraceMatch[1];
+      const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+      if (!existsSync(traceFile)) {
+        sendJson(res, []);
+        return;
+      }
+      const raw = await readFile(traceFile, "utf-8");
+      const events = raw
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          try { return JSON.parse(line); } catch { return null; }
+        })
+        .map((event) => (event ? normalizeRunEventRecord(event) : null))
+        .filter(Boolean)
+        .sort((a, b) =>
+          String((a as any).ts ?? (a as any).recordedAt ?? "").localeCompare(
+            String((b as any).ts ?? (b as any).recordedAt ?? ""),
+          ),
+        );
+      sendJson(res, events);
+    } catch (err) {
+      sendText(res, `Error reading run trace: ${err}`, 500);
+    }
+    return;
+  }
+
   const traceMatch = url.pathname.match(/^\/api\/traces\/([a-zA-Z0-9_-]+)$/);
   if (traceMatch && req.method === "GET") {
     try {

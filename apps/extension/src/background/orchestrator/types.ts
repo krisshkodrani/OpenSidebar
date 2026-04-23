@@ -101,11 +101,31 @@ export interface BuildNodesResult {
   difficulty: Difficulty;
 }
 
+export type TaskTabRole = "primary" | "auxiliary" | "comparison";
+
+export interface TaskOwnedTab {
+  tabId: number;
+  role: TaskTabRole;
+  createdByTask: boolean;
+  lastKnownUrl?: string | null;
+  claimedAt: number;
+  lastUsedAt: number;
+  releasedAt?: number | null;
+}
+
+export interface TaskTabCoordination {
+  primaryTabId: number;
+  ownedTabs: TaskOwnedTab[];
+  nodeBindings: Record<string, number>;
+  lastReboundTabId?: number | null;
+}
+
 export interface OrchestratorTask {
   runId?: string;
   id: string;
   workspaceId: string;
   rootTabId: number;
+  rootTabUrl?: string | null;
   query: string;
   turnNumber?: number;
   priorTurnMemoryBrief?: string;
@@ -156,6 +176,8 @@ export interface OrchestratorTask {
   _streamHasContent?: boolean;
   /** Tab IDs created by the orchestrator for worker nodes (cleaned up on task end) */
   createdWorkerTabIds?: number[];
+  /** Explicit task-owned tab roles, bindings, and rebound metadata */
+  tabCoordination?: TaskTabCoordination;
   /** Site-specific knowledge injected into executor instructions */
   siteKnowledgeBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;

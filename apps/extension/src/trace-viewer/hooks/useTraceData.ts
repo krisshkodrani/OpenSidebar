@@ -10,6 +10,7 @@ export function useTraceData() {
   const setAvailableDays = useStore((s) => s.setAvailableDays);
   const setAvailableModels = useStore((s) => s.setAvailableModels);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
+  const setCurrentRunEvents = useStore((s) => s.setCurrentRunEvents);
   const setSessionLogs = useStore((s) => s.setSessionLogs);
   const setLogsWarning = useStore((s) => s.setLogsWarning);
   const setTracesLoading = useStore((s) => s.setTracesLoading);
@@ -36,6 +37,7 @@ export function useTraceData() {
         if (!stillExists) {
           useStore.getState().setCurrentSessionId(null);
           setCurrentEntries([]);
+          setCurrentRunEvents([]);
           setSessionLogs([]);
         }
       }
@@ -50,6 +52,7 @@ export function useTraceData() {
     setAvailableDays,
     setAvailableModels,
     setCurrentEntries,
+    setCurrentRunEvents,
     setSessionLogs,
     setSessions,
     setTracesError,
@@ -66,15 +69,24 @@ export function useTraceData() {
     entriesLoading.current = true;
 
     setLogsWarning(null);
+    const currentSession = sessions.find(
+      (session) => session.sessionId === currentSessionId,
+    );
+    const runId =
+      typeof currentSession?.runId === "string" && currentSession.runId.length > 0
+        ? currentSession.runId
+        : null;
     Promise.all([
       api.fetchTraceEntries(currentSessionId),
+      runId ? api.fetchRunTraceEvents(runId).catch(() => []) : Promise.resolve([]),
       api.fetchSessionLogs(currentSessionId).catch((err) => {
         setLogsWarning(`Failed to load logs: ${err}`);
         return [] as never[];
       }),
     ])
-      .then(([entries, logs]) => {
+      .then(([entries, runEvents, logs]) => {
         setCurrentEntries(entries || []);
+        setCurrentRunEvents(runEvents || []);
         setSessionLogs(logs || []);
       })
       .catch((err) => {
@@ -85,7 +97,9 @@ export function useTraceData() {
       });
   }, [
     currentSessionId,
+    sessions,
     setCurrentEntries,
+    setCurrentRunEvents,
     setLogsWarning,
     setSessionLogs,
     setTracesError,

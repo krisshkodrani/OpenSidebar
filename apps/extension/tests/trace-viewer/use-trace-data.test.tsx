@@ -14,6 +14,7 @@ vi.mock("../../src/trace-viewer/api", async () => {
     fetchTraceDays: vi.fn(),
     fetchTraceModels: vi.fn(),
     fetchTraceEntries: vi.fn(),
+    fetchRunTraceEvents: vi.fn(),
     fetchSessionLogs: vi.fn(),
   };
 });
@@ -64,6 +65,7 @@ describe("useTraceData", () => {
     vi.mocked(api.fetchTraceDays).mockResolvedValue([]);
     vi.mocked(api.fetchTraceModels).mockResolvedValue([]);
     vi.mocked(api.fetchTraceEntries).mockResolvedValue([]);
+    vi.mocked(api.fetchRunTraceEvents).mockResolvedValue([]);
     vi.mocked(api.fetchSessionLogs).mockResolvedValue([]);
   });
 
@@ -114,6 +116,7 @@ describe("useTraceData", () => {
     useStore.setState({
       currentSessionId: "missing-session",
       currentEntries: [{ turnNumber: 1 }],
+      currentRunEvents: [{ runId: "run-old", type: "old" }],
       sessionLogs: [{ ts: "2026-04-15T10:00:00.000Z", lvl: "INFO", src: "background", cat: "trace", msg: "old" }],
     } as any);
     vi.mocked(api.fetchTraceSessions).mockResolvedValue([
@@ -136,6 +139,7 @@ describe("useTraceData", () => {
     await waitFor(() => {
       expect(useStore.getState().currentSessionId).toBeNull();
       expect(useStore.getState().currentEntries).toEqual([]);
+      expect(useStore.getState().currentRunEvents).toEqual([]);
       expect(useStore.getState().sessionLogs).toEqual([]);
     });
   });
@@ -186,6 +190,14 @@ describe("useTraceData", () => {
         progressState: { stagnantTurns: 0, signal: null },
       },
     ] as any);
+    vi.mocked(api.fetchRunTraceEvents).mockResolvedValue([
+      {
+        runId: "run-1",
+        ts: "2026-04-15T10:00:00.000Z",
+        type: "tab_coordination_state",
+        data: { action: "initialized", primaryTabId: 10 },
+      },
+    ] as any);
     vi.mocked(api.fetchSessionLogs).mockRejectedValue(new Error("HTTP 500"));
 
     await act(async () => {
@@ -193,9 +205,45 @@ describe("useTraceData", () => {
     });
     await waitFor(() => {
       expect(useStore.getState().currentEntries).toHaveLength(1);
+      expect(useStore.getState().currentRunEvents).toEqual([]);
       expect(useStore.getState().sessionLogs).toEqual([]);
       expect(useStore.getState().logsWarning).toContain("Failed to load logs");
       expect(useStore.getState().logsWarning).toContain("HTTP 500");
+    });
+  });
+
+  test("loads run events for the selected session run id", async () => {
+    useStore.setState({ currentSessionId: "session-1" });
+    vi.mocked(api.fetchTraceSessions).mockResolvedValue([
+      {
+        sessionId: "session-1",
+        runId: "run-1",
+        startTime: 100,
+        endTime: 200,
+        query: "Objective: test",
+        startUrl: "https://example.com",
+        outcome: "completed",
+        turnCount: 2,
+        summary: "done",
+        metrics: null,
+      },
+    ] as any);
+    vi.mocked(api.fetchTraceEntries).mockResolvedValue([]);
+    vi.mocked(api.fetchRunTraceEvents).mockResolvedValue([
+      {
+        runId: "run-1",
+        ts: "2026-04-15T10:00:00.000Z",
+        type: "tab_coordination_state",
+        data: { action: "initialized", primaryTabId: 10 },
+      },
+    ] as any);
+
+    await act(async () => {
+      root.render(<HookHarness />);
+    });
+    await waitFor(() => {
+      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith("run-1");
+      expect(useStore.getState().currentRunEvents).toHaveLength(1);
     });
   });
 });

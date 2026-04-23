@@ -17,6 +17,9 @@ import {
   PlannerReflexionEntry,
   ReflexionEntry,
   TaskNode,
+  TaskOwnedTab,
+  TaskTabCoordination,
+  TaskTabRole,
 } from "./types";
 import type {
   TaskRunProgressInput,
@@ -125,6 +128,73 @@ export function isTaskNodeStatus(value: unknown): value is TaskNode["status"] {
     value === "failed" ||
     value === "skipped"
   );
+}
+
+function isTaskTabRole(value: unknown): value is TaskTabRole {
+  return value === "primary" || value === "auxiliary" || value === "comparison";
+}
+
+function sanitizeOwnedTaskTab(raw: unknown): TaskOwnedTab | null {
+  if (!isRecord(raw)) return null;
+  if (!isNonNegativeInteger(raw.tabId) || !isTaskTabRole(raw.role)) return null;
+  if (typeof raw.createdByTask !== "boolean") return null;
+  if (!isNonNegativeInteger(raw.claimedAt) || !isNonNegativeInteger(raw.lastUsedAt)) {
+    return null;
+  }
+  if (
+    raw.lastKnownUrl !== undefined &&
+    raw.lastKnownUrl !== null &&
+    typeof raw.lastKnownUrl !== "string"
+  ) {
+    return null;
+  }
+  if (
+    raw.releasedAt !== undefined &&
+    raw.releasedAt !== null &&
+    !isNonNegativeInteger(raw.releasedAt)
+  ) {
+    return null;
+  }
+  return {
+    tabId: raw.tabId,
+    role: raw.role,
+    createdByTask: raw.createdByTask,
+    lastKnownUrl:
+      typeof raw.lastKnownUrl === "string" ? raw.lastKnownUrl : raw.lastKnownUrl ?? null,
+    claimedAt: raw.claimedAt,
+    lastUsedAt: raw.lastUsedAt,
+    releasedAt:
+      raw.releasedAt === undefined ? undefined : (raw.releasedAt ?? null),
+  };
+}
+
+function sanitizeTaskTabCoordination(
+  raw: unknown,
+): TaskTabCoordination | null {
+  if (!isRecord(raw) || !isNonNegativeInteger(raw.primaryTabId)) return null;
+  if (!Array.isArray(raw.ownedTabs)) return null;
+  const ownedTabs = raw.ownedTabs.map(sanitizeOwnedTaskTab);
+  if (ownedTabs.some((entry) => entry === null)) return null;
+  if (!isRecord(raw.nodeBindings)) return null;
+  const nodeBindings: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw.nodeBindings)) {
+    if (!isNonNegativeInteger(value)) return null;
+    nodeBindings[key] = value;
+  }
+  if (
+    raw.lastReboundTabId !== undefined &&
+    raw.lastReboundTabId !== null &&
+    !isNonNegativeInteger(raw.lastReboundTabId)
+  ) {
+    return null;
+  }
+  return {
+    primaryTabId: raw.primaryTabId,
+    ownedTabs: ownedTabs as TaskOwnedTab[],
+    nodeBindings,
+    lastReboundTabId:
+      raw.lastReboundTabId === undefined ? undefined : (raw.lastReboundTabId ?? null),
+  };
 }
 
 export function isTaskStatus(
@@ -407,6 +477,12 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
     id: raw.id,
     workspaceId: raw.workspaceId,
     rootTabId: raw.rootTabId,
+    rootTabUrl:
+      typeof raw.rootTabUrl === "string"
+        ? raw.rootTabUrl
+        : raw.rootTabUrl === null
+          ? null
+          : undefined,
     query: raw.query,
     status: raw.status,
     createdAt: raw.createdAt,
@@ -486,6 +562,12 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
       isNonNegativeInteger(id),
     );
     if (tabIds.length > 0) task.createdWorkerTabIds = tabIds;
+  }
+
+  if (raw.tabCoordination !== undefined) {
+    const coordination = sanitizeTaskTabCoordination(raw.tabCoordination);
+    if (!coordination) return null;
+    task.tabCoordination = coordination;
   }
 
   return task;
