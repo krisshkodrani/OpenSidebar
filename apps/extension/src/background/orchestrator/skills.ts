@@ -345,6 +345,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     tags: ["workflow", "list", "detail", "review", "round-trip"],
     triggers: [
       "review all listings",
+      "review the job listings and recommend matches",
       "open each item and come back",
       "read each detail page then return to the list",
       "review job listings one by one",
@@ -364,6 +365,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "When a tagged list action is already visible, click it directly instead of inspecting its attributes.",
       "Use one detail-page read to extract the facts, then return to the list immediately.",
       "Prefer the page's own back or return control over browser history when the detail view appears in-place.",
+      "For recommendation or best-match tasks, treat the visible listings as the review set unless the user narrows the scope.",
     ],
   },
 ];
@@ -846,16 +848,17 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "1. Start on the visible list page and identify the next requested item in sequence.",
       "2. If the list already shows a tagged action such as View Details or Open, click it directly instead of reading button attributes or re-finding it.",
       "3. Once the detail view is open, use one read_page call to capture the requested facts from the detail page.",
-      "4. Store only the essential facts in notes before returning.",
+      "4. Store only the essential facts in notes before returning. For fit or recommendation tasks, include the item name plus the facts that affect the ranking.",
       "5. Return to the list with the page's own back, return, or listings control, then verify the list is visible again.",
       "6. Continue immediately with the next requested list item instead of re-reading the whole list page when the next tagged action is already visible.",
-      "7. Call done only after every requested item in the loop has been reviewed and the list has been restored for the final time.",
+      "7. Call done only after every requested item in the loop has been reviewed, the list has been restored for the final time, and any requested recommendation is grounded in the captured notes.",
     ].join("\n"),
     requiredEvidence: [
       "The requested list items were opened from the list view",
       "Facts extracted from each detail page",
       "Evidence that notes were updated before leaving a detail view",
       "The list view restored after each return",
+      "For recommendation tasks, a final ranking or shortlist tied to the captured item facts",
     ],
     commonFailures: [
       {
@@ -874,6 +877,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     executionContract: {
       sequencing: [
         "Open the next list item, read the detail page once, store the required fact, return to the list, then continue to the next item.",
+        "For recommendation tasks, repeat the loop across the visible candidate set before synthesizing the final answer.",
       ],
       toolDiscipline: [
         "Prefer click_element over read_element for visible list-entry actions.",
@@ -883,6 +887,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       completionChecks: [
         "Each requested item in the current loop segment has been opened and reviewed.",
         "The list page is visible again before the step is considered complete.",
+        "Recommendations are based on reviewed item facts rather than list-page guesses.",
       ],
       failureRecovery: [
         "If the list is not visible after returning, re-ground and restore the list before continuing.",
@@ -920,8 +925,14 @@ const listDetailReviewPattern =
   /\b(review|read|open|check)\b[\s\S]{0,120}\b(each|every|all)\b[\s\S]{0,120}\b(listing|listings|jobs|job listing|postings|items|results)\b/i;
 const listReturnPattern =
   /\b(return|come back|go back|back to (?:the )?(?:list|listings)|one by one)\b/i;
+const listReviewSurfacePattern =
+  /\b(job board|job listings?|job postings?|jobs\b|listings?|results page|search results|candidate list)\b/i;
+const listRecommendationIntentPattern =
+  /\b(review|evaluate|compare|recommend|rank|shortlist|best matches?|best fit|which (?:ones|jobs|listings)|matches? (?:for|to)|fit (?:my|the|this) profile|why)\b/i;
 const procurementLoopPattern =
   /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
+const naturalProcurementChecklistPattern =
+  /\b(?:buy|purchase|procure)\b[\s\S]{0,120}\b(?:first\s+\w+|first\s+\d+|\d+)\s+items?\b[\s\S]{0,120}\bprocurement\s+list\b[\s\S]{0,120}\b(?:mark|check)\s+(?:them|items?|rows?)\s+(?:complete|done|off)\b/i;
 const overlayRecoveryPattern =
   /\b(close .* (?:banner|popup|modal|overlay|dialog)|dismiss .* (?:popup|modal|overlay|banner)|cookie (?:banner|consent|popup)|newsletter (?:popup|modal)|can'?t see the page|blocking (?:modal|overlay|popup)|popups? (?:blocking|covering|obscuring)|clear (?:the )?(?:popup|modal|overlay)s?)\b/i;
 
@@ -1191,14 +1202,8 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (comparePattern.test(corpus)) {
-    return {
-      id: "cross-tab-compare",
-      reason: "Comparison-oriented task spans multiple tabs or pages.",
-    };
-  }
-
   if (
+    naturalProcurementChecklistPattern.test(corpus) ||
     procurementLoopPattern.test(corpus) ||
     (/\b(procurement list|store)\b/i.test(corpus) &&
       /\b(new tab|another tab)\b/i.test(corpus) &&
@@ -1212,15 +1217,30 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (
+  const explicitListDetailLoop =
     listDetailReviewPattern.test(corpus) &&
     listReturnPattern.test(corpus) &&
-    /\b(detail|details|view details|open)\b/i.test(corpus)
-  ) {
+    /\b(detail|details|view details|open)\b/i.test(corpus);
+  const naturalListDetailRecommendation =
+    listReviewSurfacePattern.test(corpus) &&
+    listRecommendationIntentPattern.test(corpus) &&
+    /\b(review|evaluate|compare|recommend|rank|best matches?|best fit|which (?:ones|jobs|listings))\b/i.test(
+      corpus,
+    );
+  if (explicitListDetailLoop || naturalListDetailRecommendation) {
     return {
       id: "list-detail-review-loop",
       reason:
-        "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence.",
+        explicitListDetailLoop
+          ? "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence."
+          : "Task requires reviewing visible list items and grounding a recommendation in item-level detail facts.",
+    };
+  }
+
+  if (comparePattern.test(corpus)) {
+    return {
+      id: "cross-tab-compare",
+      reason: "Comparison-oriented task spans multiple tabs or pages.",
     };
   }
 

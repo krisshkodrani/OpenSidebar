@@ -1465,6 +1465,84 @@ describe("Orchestrator integration join tests", () => {
     await runPromise;
   });
 
+  test("reopens the durable root URL when a retry tab degrades to about:blank", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "recover after blank tab")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    let rootTabBlank = false;
+    let loopAttempts = 0;
+    (chrome.tabs as any).get = vi.fn(async (tabId: number) => {
+      if (tabId === 101) {
+        return {
+          id: 101,
+          url: rootTabBlank ? "about:blank" : "https://example.com/catalog",
+          title: rootTabBlank ? "Blank Page" : "Catalog Page",
+          groupId: 1,
+        } as chrome.tabs.Tab;
+      }
+      if (tabId === 202) {
+        return {
+          id: 202,
+          url: "https://example.com/catalog",
+          title: "Catalog Page",
+          groupId: 1,
+        } as chrome.tabs.Tab;
+      }
+      throw new Error(`Unknown tab ${tabId}`);
+    });
+    (chrome.tabs as any).create = vi.fn(async ({ url }: { url: string }) => ({
+      id: 202,
+      url,
+      title: "Catalog Page",
+      groupId: 1,
+    }));
+
+    loopStartImpl = async () => {
+      loopAttempts += 1;
+      if (loopAttempts === 1) {
+        rootTabBlank = true;
+        return await new Promise<{
+          outcome: "completed" | "failed";
+          summary: string;
+        }>(() => {
+          // Intentionally never resolve to force an executor timeout.
+        });
+      }
+      return {
+        outcome: "completed",
+        summary: "completed after re-grounding on durable root URL",
+        metrics: undefined,
+      };
+    };
+    orchestratorDeps.lanePolicies = {
+      executor: {
+        maxCallMs: 30,
+        maxFailuresBeforeIsolation: 99,
+        isolationCooldownMs: 60_000,
+      },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("recover retry after blank tab"));
+
+    expect(loopAttempts).toBe(2);
+    expect((chrome.tabs as any).create).toHaveBeenCalledWith({
+      url: "https://example.com/catalog",
+      active: false,
+    });
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.findLast((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(String(completion?.payload?.summary || "")).toContain(
+      "completed after re-grounding",
+    );
+  });
+
   test("drains active executor workers before finalizing a stop request", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "graceful stop node")];
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });

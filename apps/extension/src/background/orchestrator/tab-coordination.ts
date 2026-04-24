@@ -28,6 +28,14 @@ export type ResumeTabSelection =
 
 function normalizeTabUrl(url?: string | null): string | null {
   if (!url) return null;
+  if (
+    url === "about:blank" ||
+    url === "about:newtab" ||
+    url.startsWith("chrome://") ||
+    url.startsWith("chrome-extension://")
+  ) {
+    return null;
+  }
   try {
     const parsed = new URL(url);
     parsed.hash = "";
@@ -35,6 +43,14 @@ function normalizeTabUrl(url?: string | null): string | null {
   } catch {
     return url;
   }
+}
+
+function preferDurableTabUrl(
+  existing: string | null | undefined,
+  next: string | null | undefined,
+): string | null | undefined {
+  if (next === undefined) return existing;
+  return normalizeTabUrl(next) ? next : existing;
 }
 
 function upsertOwnedTab(
@@ -48,8 +64,7 @@ function upsertOwnedTab(
     ...existing,
     ...next,
     createdByTask: existing.createdByTask || next.createdByTask,
-    lastKnownUrl:
-      next.lastKnownUrl !== undefined ? next.lastKnownUrl : existing.lastKnownUrl,
+    lastKnownUrl: preferDurableTabUrl(existing.lastKnownUrl, next.lastKnownUrl),
     releasedAt:
       next.releasedAt === undefined ? existing.releasedAt : next.releasedAt,
   };
@@ -139,7 +154,7 @@ export function claimTaskTab(
     coordination.lastReboundTabId = params.tabId;
     task.rootTabId = params.tabId;
     if (params.url !== undefined) {
-      task.rootTabUrl = params.url;
+      task.rootTabUrl = preferDurableTabUrl(task.rootTabUrl, params.url) ?? null;
     }
   }
   coordination.ownedTabs = upsertOwnedTab(coordination.ownedTabs, {
@@ -168,14 +183,14 @@ export function touchTaskTab(
     entry.tabId === tabId
       ? {
           ...entry,
-          lastKnownUrl: url !== undefined ? url : entry.lastKnownUrl,
+          lastKnownUrl: preferDurableTabUrl(entry.lastKnownUrl, url),
           lastUsedAt: Date.now(),
           releasedAt: null,
         }
       : entry,
   );
   if (coordination.primaryTabId === tabId && url !== undefined) {
-    task.rootTabUrl = url;
+    task.rootTabUrl = preferDurableTabUrl(task.rootTabUrl, url) ?? null;
   }
 }
 
@@ -248,9 +263,13 @@ export function selectResumeOwnedTab(
   preferredTabId: number,
 ): ResumeTabSelection {
   const liveById = new Map<number, TabLike>();
+  const usableLiveIds = new Set<number>();
   for (const tab of liveTabs) {
     if (typeof tab.id === "number") {
       liveById.set(tab.id, tab);
+      if (normalizeTabUrl(tab.url ?? null)) {
+        usableLiveIds.add(tab.id);
+      }
     }
   }
   const liveIds = new Set(liveById.keys());
@@ -258,6 +277,12 @@ export function selectResumeOwnedTab(
     return {
       status: "unsafe",
       reason: "No live workspace tab available for rebinding.",
+    };
+  }
+  if (usableLiveIds.size === 0) {
+    return {
+      status: "unsafe",
+      reason: "No usable live workspace tab available for rebinding.",
     };
   }
   const targetUrl = normalizeTabUrl(task.rootTabUrl ?? null);
@@ -269,14 +294,14 @@ export function selectResumeOwnedTab(
       return b.lastUsedAt - a.lastUsedAt;
     });
 
-  const ownedLiveCandidates = ownedTabs.filter((entry) => liveIds.has(entry.tabId));
-  const preferredLive = liveIds.has(preferredTabId) ? preferredTabId : null;
+  const ownedLiveCandidates = ownedTabs.filter((entry) => usableLiveIds.has(entry.tabId));
+  const preferredLive = usableLiveIds.has(preferredTabId) ? preferredTabId : null;
   const reboundLive =
     task.tabCoordination?.lastReboundTabId != null &&
-    liveIds.has(task.tabCoordination.lastReboundTabId)
+    usableLiveIds.has(task.tabCoordination.lastReboundTabId)
       ? task.tabCoordination.lastReboundTabId
       : null;
-  const primaryLive = liveIds.has(task.rootTabId) ? task.rootTabId : null;
+  const primaryLive = usableLiveIds.has(task.rootTabId) ? task.rootTabId : null;
 
   const exactUrlMatches = (tabIds: number[]): number[] =>
     targetUrl == null
@@ -303,7 +328,7 @@ export function selectResumeOwnedTab(
       };
     }
 
-    const workspaceExact = exactUrlMatches([...liveIds]);
+    const workspaceExact = exactUrlMatches([...usableLiveIds]);
     if (workspaceExact.length === 1) {
       return {
         status: "safe",

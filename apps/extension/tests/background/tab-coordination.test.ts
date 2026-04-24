@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import type { OrchestratorTask } from "../../src/background/orchestrator/types";
 import {
   bindNodeToTaskTab,
+  claimTaskTab,
   countOpenOwnedAuxiliaryTabs,
   createTaskTabCoordination,
   releaseTaskTab,
   selectResumeOwnedTab,
+  touchTaskTab,
 } from "../../src/background/orchestrator/tab-coordination";
 
 function makeTask(overrides: Partial<OrchestratorTask> = {}): OrchestratorTask {
@@ -78,6 +80,33 @@ describe("tab coordination", () => {
 
     expect(countOpenOwnedAuxiliaryTabs(task)).toBe(0);
     expect(task.tabCoordination?.nodeBindings["node-1"]).toBeUndefined();
+  });
+
+  test("touchTaskTab preserves the durable root URL when the primary tab goes blank", () => {
+    const task = makeTask();
+
+    touchTaskTab(task, 100, "about:blank");
+
+    expect(task.rootTabUrl).toBe("https://example.com/list");
+    expect(task.tabCoordination?.ownedTabs.find((entry) => entry.tabId === 100)?.lastKnownUrl).toBe(
+      "https://example.com/list",
+    );
+  });
+
+  test("claimTaskTab preserves the durable root URL when a primary rebound sees chrome internal state", () => {
+    const task = makeTask();
+
+    claimTaskTab(task, {
+      tabId: 100,
+      role: "primary",
+      createdByTask: false,
+      url: "chrome://newtab",
+    });
+
+    expect(task.rootTabUrl).toBe("https://example.com/list");
+    expect(task.tabCoordination?.ownedTabs.find((entry) => entry.tabId === 100)?.lastKnownUrl).toBe(
+      "https://example.com/list",
+    );
   });
 
   test("selectResumeOwnedTab prefers exact root URL matches over arbitrary live tabs", () => {
@@ -182,6 +211,21 @@ describe("tab coordination", () => {
     expect(selected).toEqual({
       status: "unsafe",
       reason: "No safe owned tab available for rebinding.",
+    });
+  });
+
+  test("selectResumeOwnedTab rejects unusable live tabs even when owned", () => {
+    const task = makeTask();
+
+    const selected = selectResumeOwnedTab(
+      task,
+      [{ id: 100, url: "about:blank" }],
+      100,
+    );
+
+    expect(selected).toEqual({
+      status: "unsafe",
+      reason: "No usable live workspace tab available for rebinding.",
     });
   });
 });

@@ -132,7 +132,9 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Selected workflow skill:");
     expect(instruction).toContain("list-detail-review-loop");
     expect(instruction).toContain("Skill operating brief:");
+    expect(instruction).toContain("visible listings as the candidate set");
     expect(instruction).toContain("Capture only fit-critical facts");
+    expect(instruction).toContain("final recommendation can be synthesized from evidence");
     expect(instruction).not.toContain("Skill procedure:");
     expect(instruction).not.toContain("Skill evidence requirements:");
   });

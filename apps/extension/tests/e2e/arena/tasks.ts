@@ -19,6 +19,8 @@ export interface ArenaTask {
   validator: string;
   validatorKind: ArenaValidatorKind;
   description: string;
+  timeoutMs: number;
+  allowNavigation?: boolean;
   notes?: string;
 }
 
@@ -33,6 +35,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Set ticket TICKET-4271 to In Progress and add an internal note summarizing the issue and next steps.",
     maxTurns: 20,
+    timeoutMs: 240_000,
     tags: ["record-update", "form", "workarena-like", "support"],
     validator: "supportTicketTriaged",
     validatorKind: "fixture-state",
@@ -49,6 +52,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Submit an enterprise request for Jane Smith at jane@example.com, phone 555-0123, company Acme Corp, premium budget, with Priority support needed as the special requirement.",
     maxTurns: 30,
+    timeoutMs: 300_000,
     tags: ["form", "wizard", "conditional-fields", "workarena-like"],
     validator: "enterpriseFormSubmitted",
     validatorKind: "fixture-state",
@@ -64,6 +68,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     startRoute: "/data-table",
     prompt: "Search for Diana in the employee directory and tell me her salary.",
     maxTurns: 30,
+    timeoutMs: 240_000,
     tags: ["table", "pagination", "lookup", "workarena-like"],
     validator: "dianaSalaryFound",
     validatorKind: "fixture-state",
@@ -80,6 +85,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Find the source referenced by the footnote in the article and tell me what source it cites.",
     maxTurns: 12,
+    timeoutMs: 120_000,
     tags: ["research", "evidence", "scrolling", "final-answer"],
     validator: "articleFootnoteSourceAnswered",
     validatorKind: "final-answer",
@@ -96,6 +102,8 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Get the Open Tickets number from the support dashboard and the Active Campaigns number from the marketing dashboard, then tell me both numbers.",
     maxTurns: 25,
+    timeoutMs: 240_000,
+    allowNavigation: true,
     tags: ["multi-tab", "dashboard", "lookup", "planning"],
     validator: "dashboardMetricsAnswered",
     validatorKind: "final-answer",
@@ -114,6 +122,8 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Buy the first two items from the procurement list and mark them complete.",
     maxTurns: 40,
+    timeoutMs: 480_000,
+    allowNavigation: true,
     tags: ["workflow", "multi-tab", "planning", "workarena-like"],
     validator: "firstTwoProcurementItemsComplete",
     validatorKind: "fixture-state",
@@ -132,6 +142,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript. I also have strong experience with Node.js and GraphQL. I'm looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
     maxTurns: 45,
+    timeoutMs: 660_000,
     tags: ["long-horizon", "research", "planning", "recommendation"],
     validator: "jobRecommendationsGrounded",
     validatorKind: "fixture-state",
@@ -150,6 +161,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt:
       "Order the Novablast 4 in size 10, apply coupon SAVE10, choose standard shipping, and check out as alex@example.com.",
     maxTurns: 30,
+    timeoutMs: 300_000,
     tags: ["checkout", "planning", "node-isolation", "workflow"],
     validator: "singleOrderPlaced",
     validatorKind: "fixture-state",

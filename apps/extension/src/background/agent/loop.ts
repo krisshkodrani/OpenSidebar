@@ -161,8 +161,8 @@ import {
 } from "./loop-prompts";
 
 const SKILL_TURN_CAPS: Record<string, number> = {
-  "multi-tab-procurement-loop": 20,
-  "list-detail-review-loop": 20,
+  "multi-tab-procurement-loop": 45,
+  "list-detail-review-loop": 45,
 };
 
 function applySkillTurnCap(
@@ -523,6 +523,284 @@ function shouldTrackRepeatAction(toolName: ToolName): boolean {
   return !REPEAT_ACTION_EXEMPT_TOOLS.has(toolName);
 }
 
+function actionMemoryKey(
+  toolName: ToolName,
+  args: Record<string, unknown>,
+  rawArgsKey: string,
+  snapshot: DomSnapshot | null | undefined,
+): string {
+  const hasElementId =
+    Object.prototype.hasOwnProperty.call(args, "id") ||
+    Object.prototype.hasOwnProperty.call(args, "sourceId") ||
+    Object.prototype.hasOwnProperty.call(args, "targetId");
+  if (!hasElementId) return rawArgsKey;
+  if (
+    toolName !== ToolName.CLICK_ELEMENT &&
+    toolName !== ToolName.READ_ELEMENT &&
+    toolName !== ToolName.HOVER_ELEMENT &&
+    toolName !== ToolName.RIGHT_CLICK &&
+    toolName !== ToolName.SELECT_OPTION &&
+    toolName !== ToolName.DRAG_AND_DROP
+  ) {
+    return rawArgsKey;
+  }
+  return `${rawArgsKey}@${getSnapshotFingerprint(snapshot ?? null)}`;
+}
+
+export function isListDetailReturnControlRepeatExempt(params: {
+  selectedSkillId?: string | null;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  snapshot?: DomSnapshot | null;
+}): boolean {
+  if (params.selectedSkillId !== "list-detail-review-loop") return false;
+  if (params.toolName !== ToolName.CLICK_ELEMENT) return false;
+
+  const id =
+    typeof params.args.id === "number" ? params.args.id : Number(params.args.id);
+  if (!Number.isFinite(id)) return false;
+
+  const element = params.snapshot?.elements.find((candidate) => candidate.tag === id);
+  if (!element) return false;
+
+  const attributes = Object.values(element.attributes || {})
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+  const label = `${element.text || ""} ${attributes}`.toLowerCase();
+
+  return /\b(?:back|return)\s+to\s+(?:the\s+)?(?:listings?|results?|list)\b/.test(
+    label,
+  );
+}
+
+function listDetailElementLabel(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): string {
+  if (!element) return "";
+  const preferred =
+    element.text ||
+    element.attributes?.["aria-label"] ||
+    element.attributes?.title;
+  return normalizeGuardText(
+    typeof preferred === "string" ? preferred : "",
+  );
+}
+
+function isListDetailActionElement(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): boolean {
+  if (!element || element.isDisabled || element.isVisible === false) return false;
+  const label = listDetailElementLabel(element);
+  if (!label) return false;
+  if (/\b(?:back|return)\s+to\s+(?:the\s+)?(?:listings?|results?|list)\b/.test(label)) {
+    return false;
+  }
+  return /\b(?:view|open|read|show)\s+(?:full\s+)?(?:details?|profile|listing|item|result)s?\b/.test(
+    label,
+  );
+}
+
+function listDetailActionTargetLabel(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): string | null {
+  if (!isListDetailActionElement(element)) return null;
+  const label = listDetailElementLabel(element);
+  const match = label.match(
+    /\b(?:view|open|read|show)\s+(?:full\s+)?(?:details?|profile|listing|item|result)s?(?:\s+for)?\s+(.+)$/,
+  );
+  return (match?.[1] || label).trim();
+}
+
+function hasListDetailReturnControl(
+  snapshot: DomSnapshot | null | undefined,
+): boolean {
+  return !!getListDetailReturnControl(snapshot);
+}
+
+function getListDetailReturnControl(
+  snapshot: DomSnapshot | null | undefined,
+): DomSnapshot["elements"][number] | null {
+  if (!snapshot?.elements?.length) return null;
+  return (
+    snapshot.elements.find((element) =>
+      /\b(?:back|return)\s+to\s+(?:the\s+)?(?:listings?|results?|list)\b/.test(
+        listDetailElementLabel(element),
+      ),
+    ) ?? null
+  );
+}
+
+export type ListDetailNextAction = {
+  id: number;
+  label: string;
+};
+
+export function getNextUnreviewedListDetailAction(
+  snapshot: DomSnapshot | null | undefined,
+  reviewedTargets: Iterable<string>,
+): ListDetailNextAction | null {
+  if (!snapshot?.elements?.length) return null;
+
+  const reviewed = new Set(
+    Array.from(reviewedTargets)
+      .map((target) => normalizeGuardText(target))
+      .filter(Boolean),
+  );
+  const seen = new Set<string>();
+
+  for (const element of snapshot.elements) {
+    const label = listDetailActionTargetLabel(element);
+    if (!label) continue;
+
+    const key = normalizeGuardText(label);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    if (!reviewed.has(key)) {
+      return { id: element.tag, label };
+    }
+  }
+
+  return null;
+}
+
+export function countVisibleListDetailActions(
+  snapshot: DomSnapshot | null | undefined,
+): number {
+  if (!snapshot?.elements?.length) return 0;
+  const targets = new Set<string>();
+  for (const element of snapshot.elements) {
+    const label = listDetailActionTargetLabel(element);
+    if (label) targets.add(label);
+  }
+  return targets.size;
+}
+
+export function requiresBroadListDetailReview(query: string): boolean {
+  const text = normalizeGuardText(query);
+  if (!text) return false;
+  const hasListSurface =
+    /\b(job listings?|job postings?|jobs?|listings?|results?|items?|profiles?|candidates?)\b/.test(
+      text,
+    );
+  if (!hasListSurface) return false;
+
+  return (
+    /\b(?:each|every|all)\b/.test(text) ||
+    /\b(?:review|evaluate|compare|recommend|rank|shortlist)\b/.test(text) ||
+    /\b(?:best matches?|best fits?|which (?:ones|jobs|listings|items))\b/.test(
+      text,
+    )
+  );
+}
+
+export function getListDetailDoneRejection(params: {
+  selectedSkillId?: string | null;
+  query: string;
+  reviewedDetailCount: number;
+  visibleDetailActionCount: number;
+}): string | null {
+  if (params.selectedSkillId !== "list-detail-review-loop") return null;
+  if (!requiresBroadListDetailReview(params.query)) return null;
+  if (params.visibleDetailActionCount < 3) return null;
+  if (params.reviewedDetailCount >= params.visibleDetailActionCount) return null;
+  return (
+    `This list-detail review is incomplete: reviewed ${params.reviewedDetailCount}/${params.visibleDetailActionCount} visible detail pages. ` +
+    "Continue from the list page, open the next unreviewed detail action, read the detail page, store the fit-critical facts, return to the list, and only call done() after the visible candidate set has been reviewed."
+  );
+}
+
+export function getListDetailWorkflowBlock(params: {
+  selectedSkillId?: string | null;
+  query: string;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null | undefined;
+  reviewedTargets: Iterable<string>;
+  openedTargets?: Iterable<string>;
+  visibleDetailActionCount: number;
+}): string | null {
+  if (params.selectedSkillId !== "list-detail-review-loop") return null;
+  if (!requiresBroadListDetailReview(params.query)) return null;
+
+  const currentVisibleCount = countVisibleListDetailActions(params.snapshot);
+  const visibleCount = Math.max(
+    currentVisibleCount,
+    params.visibleDetailActionCount,
+  );
+  if (visibleCount < 3) return null;
+
+  const next = getNextUnreviewedListDetailAction(
+    params.snapshot,
+    params.reviewedTargets,
+  );
+  if (!next) return null;
+
+  const reviewed = new Set(
+    Array.from(params.reviewedTargets)
+      .map((target) => normalizeGuardText(target))
+      .filter(Boolean),
+  );
+  const opened = new Set(
+    Array.from(params.openedTargets ?? [])
+      .map((target) => normalizeGuardText(target))
+      .filter(Boolean),
+  );
+  const reviewedCount = reviewed.size;
+  if (reviewedCount >= visibleCount) return null;
+
+  const instruction =
+    `List-detail review is incomplete: reviewed ${reviewedCount}/${visibleCount} visible detail pages. ` +
+    `Click the next unreviewed visible detail action [${next.id}] "${next.label}", read the detail page, update notes with fit-critical facts, return to the list, and continue.`;
+
+  if (
+    params.toolName === ToolName.UPDATE_NOTES ||
+    params.toolName === ToolName.ESCALATE ||
+    params.toolName === ToolName.DONE
+  ) {
+    return null;
+  }
+
+  if (params.toolName === ToolName.CLICK_ELEMENT) {
+    const id =
+      typeof params.args.id === "number"
+        ? params.args.id
+        : Number(params.args.id);
+    if (!Number.isFinite(id)) {
+      return `BLOCKED: click_element needs a valid element id. ${instruction}`;
+    }
+
+    const target = params.snapshot?.elements.find(
+      (element) => element.tag === id,
+    );
+    if (
+      isListDetailReturnControlRepeatExempt({
+        selectedSkillId: params.selectedSkillId,
+        toolName: params.toolName,
+        args: params.args,
+        snapshot: params.snapshot,
+      })
+    ) {
+      return null;
+    }
+
+    const targetLabel = listDetailActionTargetLabel(target);
+    if (targetLabel && !reviewed.has(normalizeGuardText(targetLabel))) {
+      return null;
+    }
+
+    if (targetLabel) {
+      const targetKey = normalizeGuardText(targetLabel);
+      const targetState = opened.has(targetKey) ? "opened but not reviewed" : "reviewed";
+      return `BLOCKED: "${targetLabel}" has already been ${targetState} for this list-detail review. ${instruction}`;
+    }
+
+    return `BLOCKED: This click does not open an unreviewed list detail. ${instruction}`;
+  }
+
+  return `BLOCKED: ${params.toolName} is off workflow while unreviewed list details are visible. ${instruction}`;
+}
+
 class PendingInteractionYield extends Error {
   constructor(readonly pendingInteraction: PendingUserInteraction) {
     super(
@@ -773,6 +1051,16 @@ export class AgentLoop {
   private escalationsOnCurrentStep = 0;
   /** Consecutive done()-based auto-advances without a DOM-modifying action in between */
   private consecutiveAutoAdvances = 0;
+  /** Detail targets opened while executing a list/detail review skill. */
+  private listDetailOpenedTargets = new Set<string>();
+  /** Detail targets that have evidence from a detail read or saved note. */
+  private listDetailReviewedTargets = new Set<string>();
+  /** Current detail target opened from the list and awaiting evidence capture. */
+  private listDetailCurrentTarget: string | null = null;
+  /** Whether the current detail target has had a detail-page read. */
+  private listDetailCurrentTargetRead = false;
+  /** Largest visible detail-action set observed for the active list/detail review. */
+  private listDetailVisibleActionCount = 0;
 
   /** Task planning state */
   private taskId: string | null = null;
@@ -1389,6 +1677,17 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
   ): boolean {
+    if (
+      isListDetailReturnControlRepeatExempt({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        args,
+        snapshot: this.context.getSnapshot(),
+      })
+    ) {
+      return false;
+    }
+
     const replay = this.lookupMutationReplay(toolName, args);
     if (!replay) return false;
 
@@ -2720,6 +3019,7 @@ export class AgentLoop {
 
   private shouldBlockTabManagementTools(): boolean {
     if (userExplicitlyRequestedTabManagement(this.originalQuery)) return false;
+    if (this.selectedSkillId === "multi-tab-procurement-loop") return false;
     if (this.planRequiresTabManagement) return false;
     return true;
   }
@@ -3572,6 +3872,17 @@ export class AgentLoop {
     });
   }
 
+  private isSkillOwnedListDetailReview(): boolean {
+    return (
+      this.selectedSkillId === "list-detail-review-loop" &&
+      requiresBroadListDetailReview(this.originalQuery)
+    );
+  }
+
+  private isSkillOwnedProcurementLoop(): boolean {
+    return this.selectedSkillId === "multi-tab-procurement-loop";
+  }
+
   /**
    * Run plan monitor: compare current perception against expected state for the active step.
    * Only runs when a plan is active, perception is available, and enough turns have passed.
@@ -3579,6 +3890,9 @@ export class AgentLoop {
   private async runPlanMonitor(
     signal?: AbortSignal,
   ): Promise<PlanMonitorResult | null> {
+    if (this.isSkillOwnedListDetailReview() || this.isSkillOwnedProcurementLoop()) {
+      return null;
+    }
     if (this.planSteps.length === 0 || !this.perception.getInterpretation())
       return null;
 
@@ -3626,6 +3940,15 @@ export class AgentLoop {
     tabId: number,
     signal?: AbortSignal,
   ): Promise<void> {
+    if (this.isSkillOwnedListDetailReview() || this.isSkillOwnedProcurementLoop()) {
+      this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId,
+        reason: "plan_monitor_deviation",
+      });
+      return;
+    }
+
     if (this.replanCount >= 3) {
       this.log.warn("agent", "Plan deviation detected but replan cap reached", {
         replanCount: this.replanCount,
@@ -3773,6 +4096,18 @@ export class AgentLoop {
     subgoalAttempts: SubgoalAttempt[],
     signal?: AbortSignal,
   ): Promise<boolean> {
+    if (this.isSkillOwnedListDetailReview() || this.isSkillOwnedProcurementLoop()) {
+      this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId,
+        reason: "escalation_or_stagnation",
+      });
+      this.log.info("agent", "Skipping replan for skill-owned list-detail loop", {
+        turn: this.turnCount,
+      });
+      return false;
+    }
+
     // Guard: replan cap
     if (this.replanCount >= 3) {
       this.log.info("agent", "replanOnEscalation: cap reached", {
@@ -4048,6 +4383,226 @@ export class AgentLoop {
     }
 
     return false;
+  }
+
+  private trackListDetailToolSuccess(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    preActionSnapshot: DomSnapshot | null,
+  ): void {
+    if (this.selectedSkillId !== "list-detail-review-loop") return;
+    const visibleCount = countVisibleListDetailActions(preActionSnapshot);
+    if (visibleCount > this.listDetailVisibleActionCount) {
+      this.listDetailVisibleActionCount = visibleCount;
+    }
+
+    if (toolName === ToolName.CLICK_ELEMENT) {
+      const id = typeof args.id === "number" ? args.id : Number(args.id);
+      if (!Number.isFinite(id)) return;
+      const target = preActionSnapshot?.elements.find(
+        (element) => element.tag === id,
+      );
+      const label = listDetailActionTargetLabel(target);
+      if (!label) return;
+
+      this.listDetailOpenedTargets.add(label);
+      this.listDetailCurrentTarget = label;
+      this.listDetailCurrentTargetRead = false;
+      this.traceRecorder?.recordEvent("list_detail_item_opened", {
+        turn: this.turnCount,
+        openedCount: this.listDetailOpenedTargets.size,
+        reviewedCount: this.listDetailReviewedTargets.size,
+        visibleActionCount: this.listDetailVisibleActionCount,
+        target: label.slice(0, 160),
+      });
+      return;
+    }
+
+    if (
+      toolName === ToolName.READ_PAGE ||
+      toolName === ToolName.XRAY_PAGE ||
+      toolName === ToolName.UPDATE_NOTES
+    ) {
+      const appearsToBeListPage =
+        countVisibleListDetailActions(preActionSnapshot) >= 3;
+      if (appearsToBeListPage && toolName !== ToolName.UPDATE_NOTES) {
+        return;
+      }
+      if (
+        appearsToBeListPage &&
+        toolName === ToolName.UPDATE_NOTES &&
+        !this.listDetailCurrentTargetRead
+      ) {
+        return;
+      }
+      this.markCurrentListDetailReviewed(
+        toolName === ToolName.UPDATE_NOTES ? "note" : "read",
+      );
+    }
+  }
+
+  private markCurrentListDetailReviewed(source: "read" | "note"): void {
+    if (this.selectedSkillId !== "list-detail-review-loop") return;
+    if (!this.listDetailCurrentTarget) return;
+    if (source === "read") {
+      this.listDetailCurrentTargetRead = true;
+    }
+
+    const target = this.listDetailCurrentTarget;
+    this.listDetailReviewedTargets.add(target);
+    this.traceRecorder?.recordEvent("list_detail_item_reviewed", {
+      turn: this.turnCount,
+      source,
+      openedCount: this.listDetailOpenedTargets.size,
+      reviewedCount: this.listDetailReviewedTargets.size,
+      visibleActionCount: this.listDetailVisibleActionCount,
+      target: target.slice(0, 160),
+    });
+  }
+
+  private rewriteListDetailWorkflowToolCall(
+    toolCall: ToolCall,
+    mode: "parallel" | "sequential",
+  ): boolean {
+    if (!this.isSkillOwnedListDetailReview()) return false;
+
+    const toolName = toolCall.function.name as ToolName;
+    let args: Record<string, unknown> = {};
+    try {
+      args = JSON.parse(toolCall.function.arguments || "{}");
+    } catch {
+      args = {};
+    }
+
+    const currentSnapshot = this.context.getSnapshot();
+    const visibleDetailActionCount =
+      countVisibleListDetailActions(currentSnapshot);
+    if (visibleDetailActionCount > this.listDetailVisibleActionCount) {
+      this.listDetailVisibleActionCount = visibleDetailActionCount;
+    }
+
+    const currentTargetKey = normalizeGuardText(
+      this.listDetailCurrentTarget || "",
+    );
+    const currentTargetNeedsRead =
+      !!currentTargetKey && !this.listDetailReviewedTargets.has(currentTargetKey);
+    const isOpenDetailSurface =
+      currentTargetNeedsRead &&
+      visibleDetailActionCount < 3 &&
+      hasListDetailReturnControl(currentSnapshot);
+    if (
+      isOpenDetailSurface &&
+      toolName !== ToolName.READ_PAGE &&
+      toolName !== ToolName.XRAY_PAGE &&
+      toolName !== ToolName.UPDATE_NOTES &&
+      toolName !== ToolName.ESCALATE &&
+      toolName !== ToolName.DONE
+    ) {
+      toolCall.function.name = ToolName.READ_PAGE;
+      toolCall.function.arguments = "{}";
+      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
+        turn: this.turnCount,
+        mode,
+        fromTool: toolName,
+        toTool: ToolName.READ_PAGE,
+        target: this.listDetailCurrentTarget?.slice(0, 160),
+        openedDetailCount: this.listDetailOpenedTargets.size,
+        reviewedDetailCount: this.listDetailReviewedTargets.size,
+        visibleDetailActionCount: this.listDetailVisibleActionCount,
+        reason: "current_detail_needs_read",
+      });
+      this.log.info("agent", "List-detail workflow tool redirected", {
+        turn: this.turnCount,
+        mode,
+        fromTool: toolName,
+        toTool: ToolName.READ_PAGE,
+        reason: "current_detail_needs_read",
+      });
+      return true;
+    }
+
+    const returnControl = getListDetailReturnControl(currentSnapshot);
+    const clickId =
+      typeof args.id === "number" ? args.id : Number(args.id);
+    const isReturnControlClick =
+      toolName === ToolName.CLICK_ELEMENT &&
+      Number.isFinite(clickId) &&
+      returnControl?.tag === clickId;
+    const isDetailReadTool =
+      toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE;
+    const allowDetailReadTool = currentTargetNeedsRead && isDetailReadTool;
+    if (
+      returnControl &&
+      visibleDetailActionCount < 3 &&
+      !isReturnControlClick &&
+      !allowDetailReadTool &&
+      toolName !== ToolName.ESCALATE &&
+      toolName !== ToolName.DONE &&
+      toolName !== ToolName.UPDATE_NOTES
+    ) {
+      toolCall.function.name = ToolName.CLICK_ELEMENT;
+      toolCall.function.arguments = JSON.stringify({ id: returnControl.tag });
+      this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
+        turn: this.turnCount,
+        mode,
+        fromTool: toolName,
+        toTool: ToolName.CLICK_ELEMENT,
+        targetId: returnControl.tag,
+        target: listDetailElementLabel(returnControl).slice(0, 160),
+        openedDetailCount: this.listDetailOpenedTargets.size,
+        reviewedDetailCount: this.listDetailReviewedTargets.size,
+        visibleDetailActionCount: this.listDetailVisibleActionCount,
+        reason: "return_to_list_required",
+      });
+      this.log.info("agent", "List-detail workflow tool redirected", {
+        turn: this.turnCount,
+        mode,
+        fromTool: toolName,
+        toTool: ToolName.CLICK_ELEMENT,
+        targetId: returnControl.tag,
+        reason: "return_to_list_required",
+      });
+      return true;
+    }
+
+    const block = getListDetailWorkflowBlock({
+      selectedSkillId: this.selectedSkillId,
+      query: this.originalQuery,
+      toolName,
+      args,
+      snapshot: currentSnapshot,
+      reviewedTargets: this.listDetailReviewedTargets,
+      openedTargets: this.listDetailOpenedTargets,
+      visibleDetailActionCount: this.listDetailVisibleActionCount,
+    });
+    if (!block) return false;
+
+    const next = getNextUnreviewedListDetailAction(
+      currentSnapshot,
+      this.listDetailReviewedTargets,
+    );
+    if (!next) return false;
+
+    toolCall.function.name = ToolName.CLICK_ELEMENT;
+    toolCall.function.arguments = JSON.stringify({ id: next.id });
+    this.traceRecorder?.recordEvent("list_detail_workflow_tool_redirected", {
+      turn: this.turnCount,
+      mode,
+      fromTool: toolName,
+      toTool: ToolName.CLICK_ELEMENT,
+      targetId: next.id,
+      target: next.label.slice(0, 160),
+      openedDetailCount: this.listDetailOpenedTargets.size,
+      reviewedDetailCount: this.listDetailReviewedTargets.size,
+      visibleDetailActionCount: this.listDetailVisibleActionCount,
+    });
+    this.log.info("agent", "List-detail workflow tool redirected", {
+      turn: this.turnCount,
+      mode,
+      fromTool: toolName,
+      targetId: next.id,
+    });
+    return true;
   }
 
   /** Execute a tool call via the tool registry. */
@@ -5422,6 +5977,48 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
         response.tool_calls = allowedToolCalls;
 
+        // Use the model's original allowed batch shape for workflow redirect telemetry.
+        // After a redirect, collapse the allowed batch to the single corrected
+        // navigation action so follow-on calls cannot run against the wrong page.
+        const originalHasSequentialTool = response.tool_calls.some((tc) =>
+          SEQUENTIAL_TOOLS.has(tc.function.name as ToolName),
+        );
+        const originalHasHighRiskTool = response.tool_calls.some((tc) => {
+          try {
+            const parsed = JSON.parse(tc.function.arguments || "{}");
+            return (
+              classifyRisk(tc.function.name as ToolName, parsed) ===
+              RiskLevel.HIGH
+            );
+          } catch {
+            return (
+              classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH
+            );
+          }
+        });
+        const originalHasDomModifyingTool = response.tool_calls.some((tc) =>
+          DOM_MODIFYING_TOOLS.has(tc.function.name as ToolName),
+        );
+        const originalCanParallelize =
+          !originalHasSequentialTool &&
+          !originalHasHighRiskTool &&
+          !originalHasDomModifyingTool &&
+          response.tool_calls.length > 1;
+        const workflowRedirectMode = originalCanParallelize
+          ? "parallel"
+          : "sequential";
+        for (const toolCall of response.tool_calls) {
+          if (
+            this.rewriteListDetailWorkflowToolCall(
+              toolCall,
+              workflowRedirectMode,
+            )
+          ) {
+            response.tool_calls = [toolCall];
+            break;
+          }
+        }
+
         // Deferred assistant message: only includes tool_calls that will have
         // corresponding results (blocked calls + allowed). Prevents 422
         // errors from orphaned tool_call IDs.
@@ -5492,16 +6089,31 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
           const results = await Promise.all(
             response.tool_calls.map(async (toolCall) => {
               const toolName = toolCall.function.name as ToolName;
-              const argsKey = toolCall.function.arguments.slice(0, 100);
+              const rawArgsKey = toolCall.function.arguments.slice(0, 100);
               let args: Record<string, unknown> = {};
               try {
                 args = JSON.parse(toolCall.function.arguments);
               } catch {
                 // Registry will handle parse error on execute
               }
+              const argsKey = actionMemoryKey(
+                toolName,
+                args,
+                rawArgsKey,
+                this.context.getSnapshot(),
+              );
               this.recordSkillToolSelection(toolName, "parallel");
 
-              if (shouldTrackRepeatAction(toolName)) {
+              const repeatActionExempt =
+                isListDetailReturnControlRepeatExempt({
+                  selectedSkillId: this.selectedSkillId,
+                  toolName,
+                  args,
+                  snapshot: this.context.getSnapshot(),
+                }) ||
+                (this.selectedSkillId === "multi-tab-procurement-loop" &&
+                  toolName === ToolName.SWITCH_TAB);
+              if (shouldTrackRepeatAction(toolName) && !repeatActionExempt) {
                 const priorRepeatCount = recentToolCalls.filter(
                   (entry) =>
                     entry.tool === toolName && entry.argsKey === argsKey,
@@ -5683,6 +6295,49 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 return { toolCall, result: null, error: preflight.error };
               }
 
+              const currentSnapshot = this.context.getSnapshot();
+              const visibleDetailActionCount =
+                countVisibleListDetailActions(currentSnapshot);
+              if (
+                visibleDetailActionCount > this.listDetailVisibleActionCount
+              ) {
+                this.listDetailVisibleActionCount = visibleDetailActionCount;
+              }
+              const listDetailWorkflowBlock = getListDetailWorkflowBlock({
+                selectedSkillId: this.selectedSkillId,
+                query: this.originalQuery,
+                toolName,
+                args,
+                snapshot: currentSnapshot,
+                reviewedTargets: this.listDetailReviewedTargets,
+                openedTargets: this.listDetailOpenedTargets,
+                visibleDetailActionCount: this.listDetailVisibleActionCount,
+              });
+              if (listDetailWorkflowBlock) {
+                this.log.warn("agent", "List-detail workflow tool blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent(
+                  "list_detail_workflow_tool_blocked",
+                  {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    mode: "parallel",
+                    openedDetailCount: this.listDetailOpenedTargets.size,
+                    reviewedDetailCount: this.listDetailReviewedTargets.size,
+                    visibleDetailActionCount:
+                      this.listDetailVisibleActionCount,
+                  },
+                );
+                return {
+                  toolCall,
+                  result: listDetailWorkflowBlock,
+                  error: null,
+                };
+              }
+
               if (
                 toolName === ToolName.TYPE_TEXT &&
                 typeof args.id === "number" &&
@@ -5849,10 +6504,16 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
               }
 
               try {
+                const preActionSnapshot = this.context.getSnapshot();
                 let result = await this.executeToolCall(toolCall, tabId);
                 if (autocompleteRewriteReason) {
                   result = `${result}\n${autocompleteRewriteReason}`;
                 }
+                this.trackListDetailToolSuccess(
+                  toolName,
+                  args,
+                  preActionSnapshot,
+                );
                 const toolMs = Date.now() - toolStep.timestamp;
                 // Track tag IDs discovered by find_element
                 for (const id of extractDiscoveredTagIds(toolName, result)) {
@@ -6055,16 +6716,31 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
             // Parse args for risk classification and done detection
             const toolName = toolCall.function.name as ToolName;
-            const argsKey = toolCall.function.arguments.slice(0, 100);
+            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
             let args: Record<string, unknown> = {};
             try {
               args = JSON.parse(toolCall.function.arguments);
             } catch {
               // Registry will handle parse error on execute
             }
+            const argsKey = actionMemoryKey(
+              toolName,
+              args,
+              rawArgsKey,
+              this.context.getSnapshot(),
+            );
             this.recordSkillToolSelection(toolName, "sequential");
 
-            if (shouldTrackRepeatAction(toolName)) {
+            const repeatActionExempt =
+              isListDetailReturnControlRepeatExempt({
+                selectedSkillId: this.selectedSkillId,
+                toolName,
+                args,
+                snapshot: this.context.getSnapshot(),
+              }) ||
+              (this.selectedSkillId === "multi-tab-procurement-loop" &&
+                toolName === ToolName.SWITCH_TAB);
+            if (shouldTrackRepeatAction(toolName) && !repeatActionExempt) {
               const priorRepeatCount = recentToolCalls.filter(
                 (entry) => entry.tool === toolName && entry.argsKey === argsKey,
               ).length;
@@ -6282,6 +6958,47 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 role: "user",
                 content: preflight.warning,
               });
+            }
+
+            const currentSnapshot = this.context.getSnapshot();
+            const visibleDetailActionCount =
+              countVisibleListDetailActions(currentSnapshot);
+            if (visibleDetailActionCount > this.listDetailVisibleActionCount) {
+              this.listDetailVisibleActionCount = visibleDetailActionCount;
+            }
+            const listDetailWorkflowBlock = getListDetailWorkflowBlock({
+              selectedSkillId: this.selectedSkillId,
+              query: this.originalQuery,
+              toolName,
+              args,
+              snapshot: currentSnapshot,
+              reviewedTargets: this.listDetailReviewedTargets,
+              openedTargets: this.listDetailOpenedTargets,
+              visibleDetailActionCount: this.listDetailVisibleActionCount,
+            });
+            if (listDetailWorkflowBlock) {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: listDetailWorkflowBlock,
+              });
+              this.log.warn("agent", "List-detail workflow tool blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent(
+                "list_detail_workflow_tool_blocked",
+                {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  mode: "sequential",
+                  openedDetailCount: this.listDetailOpenedTargets.size,
+                  reviewedDetailCount: this.listDetailReviewedTargets.size,
+                  visibleDetailActionCount: this.listDetailVisibleActionCount,
+                },
+              );
+              continue;
             }
 
             const planStatus = this.context.getPlanStatusRaw();
@@ -6775,6 +7492,56 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                   });
                   continue;
                 }
+              }
+
+              const latestListDetailActionCount = countVisibleListDetailActions(
+                this.context.getSnapshot(),
+              );
+              const listDetailDoneRejection = getListDetailDoneRejection({
+                selectedSkillId: this.selectedSkillId,
+                query: this.originalQuery,
+                reviewedDetailCount: this.listDetailReviewedTargets.size,
+                visibleDetailActionCount: Math.max(
+                  this.listDetailVisibleActionCount,
+                  latestListDetailActionCount,
+                ),
+              });
+              if (listDetailDoneRejection) {
+                this.doneRejections++;
+                this.log.warn(
+                  "agent",
+                  "DONE rejected: list-detail review incomplete",
+                  {
+                    turn: this.turnCount,
+                    rejections: this.doneRejections,
+                    openedDetailCount: this.listDetailOpenedTargets.size,
+                    reviewedDetailCount: this.listDetailReviewedTargets.size,
+                    visibleDetailActionCount: Math.max(
+                      this.listDetailVisibleActionCount,
+                      latestListDetailActionCount,
+                    ),
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "done_rejected_list_detail_incomplete",
+                  {
+                    rejections: this.doneRejections,
+                    openedDetailCount: this.listDetailOpenedTargets.size,
+                    reviewedDetailCount: this.listDetailReviewedTargets.size,
+                    visibleDetailActionCount: Math.max(
+                      this.listDetailVisibleActionCount,
+                      latestListDetailActionCount,
+                    ),
+                  },
+                );
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    `done() REJECTED: ${listDetailDoneRejection}\n\n` +
+                    "Do NOT synthesize the recommendation from list-card snippets alone.",
+                });
+                continue;
               }
 
               // Planner validation: only when a plan exists
@@ -7348,6 +8115,11 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
             if (toolName === ToolName.UPDATE_NOTES) {
               const note = (args.note as string) || "";
               this.context.appendWorkingNote(note);
+              this.trackListDetailToolSuccess(
+                toolName,
+                args,
+                this.context.getSnapshot(),
+              );
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
@@ -7912,10 +8684,16 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
             let result: string;
             try {
+              const preActionSnapshot = this.context.getSnapshot();
               result = await this.executeToolCall(toolCall, tabId);
               if (autocompleteRewriteReason) {
                 result = `${result}\n${autocompleteRewriteReason}`;
               }
+              this.trackListDetailToolSuccess(
+                toolName,
+                args,
+                preActionSnapshot,
+              );
               const toolMs = Date.now() - toolStep.timestamp;
               // Track tag IDs discovered by find_element
               for (const id of extractDiscoveredTagIds(toolName, result)) {
@@ -8272,8 +9050,20 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
           // B. Same-tool repeat failure tracking
           for (const toolCall of response.tool_calls!) {
-            const toolName = toolCall.function.name;
-            const argsKey = toolCall.function.arguments.slice(0, 100);
+            const toolName = toolCall.function.name as ToolName;
+            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
+            let parsedArgs: Record<string, unknown> = {};
+            try {
+              parsedArgs = JSON.parse(toolCall.function.arguments);
+            } catch {
+              parsedArgs = {};
+            }
+            const argsKey = actionMemoryKey(
+              toolName,
+              parsedArgs,
+              rawArgsKey,
+              this.context.getSnapshot(),
+            );
             const failKey = `${toolName}:${argsKey}`;
 
             // Find the corresponding tool result
@@ -8373,8 +9163,20 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
           // C. Redundant successful action detection
           for (const toolCall of response.tool_calls!) {
-            const toolName = toolCall.function.name;
-            const argsKey = toolCall.function.arguments.slice(0, 100);
+            const toolName = toolCall.function.name as ToolName;
+            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
+            let parsedArgs: Record<string, unknown> = {};
+            try {
+              parsedArgs = JSON.parse(toolCall.function.arguments);
+            } catch {
+              parsedArgs = {};
+            }
+            const argsKey = actionMemoryKey(
+              toolName,
+              parsedArgs,
+              rawArgsKey,
+              this.context.getSnapshot(),
+            );
 
             // Find the corresponding tool result
             const toolResult = recentMessages.find(
