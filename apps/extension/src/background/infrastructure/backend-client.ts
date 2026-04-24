@@ -215,8 +215,7 @@ export interface DurableTaskRunSummary extends DurableTaskRun {
   };
 }
 
-export interface DurableTaskRunDetailResponse
-  extends DurableTaskRunResumeResponse {}
+export type DurableTaskRunDetailResponse = DurableTaskRunResumeResponse;
 
 // ── Helpers ──
 

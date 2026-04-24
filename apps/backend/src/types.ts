@@ -311,7 +311,7 @@ export interface TaskRunResumeResponse {
   recentSideEffects: SideEffectRecord[];
 }
 
-export interface TaskRunDetailResponse extends TaskRunResumeResponse {}
+export type TaskRunDetailResponse = TaskRunResumeResponse;
 
 // ── Config ──
 

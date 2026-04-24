@@ -88,7 +88,7 @@ export default function BackendPanel() {
             className={`px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors capitalize ${
               activeTab === tab
                 ? "text-trace-accent-light border-trace-accent"
-                : "text-trace-muted border-transparent hover:text-[#4C3D80]"
+                : "text-trace-muted border-transparent hover:text-trace-subtle"
             }`}
           >
             {tab}
@@ -678,7 +678,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function CategoryBadge({ category }: { category: string }) {
   const colors: Record<string, string> = {
     "execution-result": "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    "user-preference": "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    "user-preference": "bg-brand-live/10 text-brand-live border-brand-live/20",
     "site-knowledge": "bg-green-500/10 text-green-400 border-green-500/20",
     "learned-pattern": "bg-amber-500/10 text-amber-400 border-amber-500/20",
   };

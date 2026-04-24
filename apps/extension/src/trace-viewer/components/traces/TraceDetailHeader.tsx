@@ -296,7 +296,7 @@ function SkillPolicySection({ session }: { session: TraceSession }) {
         <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
           Skill Policy
         </span>
-        <span className="px-1.5 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-medium">
+        <span className="px-1.5 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-medium">
           {metrics.skillId}
         </span>
         <Badge variant="type">{metrics.rankingApplications} rankings</Badge>
@@ -513,7 +513,7 @@ function PlanSection({ session }: { session: TraceSession }) {
         {usedSkills.map((skillId) => (
           <span
             key={skillId}
-            className="px-1.5 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-medium"
+            className="px-1.5 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-medium"
           >
             {skillId}
           </span>
@@ -539,7 +539,7 @@ function PlanSection({ session }: { session: TraceSession }) {
                 <div className="text-trace-subtle font-medium">
                   {i + 1}. {step.objective ?? "(no objective)"}
                   {step.selectedSkillId && (
-                    <span className="ml-1.5 px-1 py-0.5 text-[9px] rounded bg-[rgba(139,92,246,0.15)] text-[#a78bfa] font-normal">
+                    <span className="ml-1.5 px-1 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-normal">
                       {step.selectedSkillId}
                     </span>
                   )}

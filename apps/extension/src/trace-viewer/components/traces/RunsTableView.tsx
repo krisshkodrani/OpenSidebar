@@ -66,7 +66,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
           <div key={group.runId} className="border-b border-trace-border/50">
             <button
               onClick={() => toggleRunGroup(group.runId)}
-              className="w-full text-left px-5 py-3 hover:bg-[rgba(124,58,237,0.05)] transition-colors"
+              className="w-full text-left px-5 py-3 hover:bg-trace-accent/[0.05] transition-colors"
             >
               <div className="flex items-center gap-3">
                 <span className="text-trace-muted text-xs">
@@ -149,7 +149,7 @@ function RunSessionRow({
           onSelect();
         }
       }}
-      className="w-full text-left ml-11 mr-5 px-4 py-2 rounded border border-transparent hover:border-trace-accent/20 hover:bg-[rgba(124,58,237,0.05)] transition-colors"
+      className="w-full text-left ml-11 mr-5 px-4 py-2 rounded border border-transparent hover:border-trace-accent/20 hover:bg-trace-accent/[0.05] transition-colors"
     >
       <div className="flex items-center gap-3">
         <span className="text-[11px] text-trace-dim shrink-0">

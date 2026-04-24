@@ -198,7 +198,7 @@ function TableRow({
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-[rgba(124,58,237,0.06)] text-[12px]"
+      className="flex items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
     >
       <span className="w-[90px] text-trace-muted text-[11px] shrink-0">
         {formatTime(session.startTime)}

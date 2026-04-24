@@ -29,12 +29,12 @@ function StyledContent({ text }: { text: string }) {
         p.type === "think" ? (
           <div
             key={i}
-            className="border-l-2 border-purple-500/60 bg-purple-500/10 pl-2.5 py-1.5 my-1 rounded-r"
+            className="border-l-2 border-brand-live/60 bg-brand-live/10 pl-2.5 py-1.5 my-1 rounded-r"
           >
-            <span className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">
+            <span className="text-[10px] font-semibold text-brand-live uppercase tracking-wider">
               Thinking
             </span>
-            <div className="mt-0.5 text-purple-300/80 italic">{p.content}</div>
+            <div className="mt-0.5 text-brand-live/80 italic">{p.content}</div>
           </div>
         ) : (
           <span key={i}>{p.content}</span>
@@ -66,7 +66,7 @@ export default function TurnLLMOutputSection({
   const body = (
     <div className="mt-1.5">
       {hasContent && (
-        <div className="p-2.5 bg-[rgba(124,58,237,0.06)] rounded text-xs leading-relaxed text-[#4C3D80] whitespace-pre-wrap break-words font-mono max-h-[400px] overflow-y-auto scrollbar-thin">
+        <div className="p-2.5 bg-trace-accent/[0.06] rounded text-xs leading-relaxed text-trace-subtle whitespace-pre-wrap break-words font-mono max-h-[400px] overflow-y-auto scrollbar-thin">
           <StyledContent text={content!} />
         </div>
       )}
@@ -123,7 +123,7 @@ function ToolCallRequest({ tc }: { tc: ToolCall }) {
   const hasArgs = argsStr && argsStr !== "{}";
 
   return (
-    <div className="bg-[rgba(124,58,237,0.04)] border border-[rgba(124,58,237,0.12)] rounded p-2 mb-1.5">
+    <div className="bg-trace-accent/[0.04] border border-trace-accent/[0.12] rounded p-2 mb-1.5">
       <div className="flex items-center gap-2">
         <Badge variant="tool">{name}</Badge>
         {hasArgs && (
@@ -136,7 +136,7 @@ function ToolCallRequest({ tc }: { tc: ToolCall }) {
         )}
       </div>
       {hasArgs && expanded && (
-        <div className="text-[11px] font-mono text-trace-subtle bg-[rgba(124,58,237,0.05)] p-1.5 rounded mt-1.5 whitespace-pre-wrap break-all leading-normal max-h-[200px] overflow-y-auto scrollbar-thin">
+        <div className="text-[11px] font-mono text-trace-subtle bg-trace-accent/[0.05] p-1.5 rounded mt-1.5 whitespace-pre-wrap break-all leading-normal max-h-[200px] overflow-y-auto scrollbar-thin">
           {argsStr}
         </div>
       )}

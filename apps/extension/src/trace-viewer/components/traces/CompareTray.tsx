@@ -15,7 +15,7 @@ export default function CompareTray() {
     .filter(Boolean);
 
   return (
-    <div className="px-5 py-3 border-b border-trace-border bg-[rgba(124,58,237,0.06)] shrink-0">
+    <div className="px-5 py-3 border-b border-trace-border bg-trace-accent/[0.06] shrink-0">
       <div className="flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-[0.22em] text-trace-accent-light/80">
           Compare Queue

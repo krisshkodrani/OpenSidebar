@@ -53,6 +53,7 @@ function isDismissCandidate(el: TaggedElement | undefined): boolean {
  *
  * Expected format from perception:
  *   NUISANCE [12] "cookie consent banner" -> click [15]
+ *   NUISANCE [12] "cookie consent banner" \u2192 click [15]
  *   RELEVANT [20] "login modal" -> user must authenticate
  *
  * Returns only NUISANCE entries that have a `click [N]` dismiss target.
@@ -73,7 +74,7 @@ export function parseNuisanceBlockers(
   // Allow either ASCII arrow or the Unicode right arrow frequently used
   // in model outputs.
   const linePattern =
-    /NUISANCE\s+\[(\d+)\]\s+"([^"]+)"\s*(?:->|\u2192|Ã¢â€ â€™)\s*click\s+\[(\d+)\]/gi;
+    /NUISANCE\s+\[(\d+)\]\s+"([^"]+)"\s*(?:->|\u2192)\s*click\s+\[(\d+)\]/gi;
 
   let match: RegExpExecArray | null;
   while ((match = linePattern.exec(blockersText)) !== null) {

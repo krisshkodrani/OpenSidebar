@@ -18,20 +18,20 @@ export default function TurnToolCallItem({
   durationMs,
 }: TurnToolCallItemProps) {
   return (
-    <div className="bg-[rgba(124,58,237,0.04)] border border-[rgba(124,58,237,0.12)] rounded p-2 mb-1.5">
+    <div className="bg-trace-accent/[0.04] border border-trace-accent/[0.12] rounded p-2 mb-1.5">
       <div className="flex items-center gap-2 flex-wrap">
         {success != null && (
           <span className="flex items-center gap-1 shrink-0">
             <span
               className={`w-2 h-2 rounded-full ${
                 success
-                  ? "bg-[#2ecc71] shadow-[0_0_4px_rgba(46,204,113,0.4)]"
-                  : "bg-[#e74c3c] shadow-[0_0_4px_rgba(231,76,60,0.4)]"
+                  ? "bg-state-success shadow-[0_0_4px_rgba(21,128,61,0.35)]"
+                  : "bg-state-error shadow-[0_0_4px_rgba(220,38,38,0.35)]"
               }`}
               aria-hidden="true"
             />
             <span
-              className={`text-[9px] font-bold ${success ? "text-[#2ecc71]" : "text-[#e74c3c]"}`}
+              className={`text-[9px] font-bold ${success ? "text-state-success" : "text-state-error"}`}
             >
               {success ? "OK" : "ERR"}
             </span>
@@ -45,12 +45,12 @@ export default function TurnToolCallItem({
         )}
       </div>
       {result && (
-        <div className="text-[11px] text-[#6D5F9A] mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
+        <div className="text-[11px] text-trace-muted mt-1.5 leading-snug whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto scrollbar-thin">
           {result}
         </div>
       )}
       {error && (
-        <div className="text-[11px] text-[#e74c3c] mt-1 font-mono">
+        <div className="text-[11px] text-state-error mt-1 font-mono">
           Error: {error}
         </div>
       )}

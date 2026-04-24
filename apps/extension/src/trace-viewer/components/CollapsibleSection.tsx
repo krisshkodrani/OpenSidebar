@@ -23,7 +23,7 @@ export default function CollapsibleSection({
     <div className={className}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 cursor-pointer px-2 py-1.5 rounded bg-[rgba(124,58,237,0.05)] border-none text-trace-subtle text-xs w-full text-left transition-colors hover:bg-[rgba(124,58,237,0.06)]"
+        className="flex items-center gap-1.5 cursor-pointer px-2 py-1.5 rounded bg-trace-accent/[0.05] border-none text-trace-subtle text-xs w-full text-left transition-colors hover:bg-trace-accent/[0.07]"
       >
         <span
           className={`text-[10px] shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
@@ -33,7 +33,7 @@ export default function CollapsibleSection({
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {label}
           {preview && !open && (
-            <span className="text-[#6D5F9A] ml-1">{preview}</span>
+            <span className="text-trace-muted ml-1">{preview}</span>
           )}
         </span>
       </button>

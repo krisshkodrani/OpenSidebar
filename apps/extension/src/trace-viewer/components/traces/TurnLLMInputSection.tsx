@@ -23,10 +23,10 @@ export default function TurnLLMInputSection({
   const utilPct = cm ? Math.round((cm.utilization || 0) * 100) : 0;
   const utilColor =
     utilPct < 60
-      ? "bg-[#2ecc71]"
+      ? "bg-state-success"
       : utilPct < 85
-        ? "bg-[#f1c40f]"
-        : "bg-[#e74c3c]";
+        ? "bg-state-warning"
+        : "bg-state-error";
 
   const label = (
     <>
@@ -40,7 +40,7 @@ export default function TurnLLMInputSection({
   return (
     <CollapsibleSection label={label} className="mb-2.5">
       {cm && (
-        <div className="flex flex-wrap gap-2 items-center p-2 mt-1.5 bg-[rgba(124,58,237,0.06)] rounded text-[11px] font-mono text-trace-subtle">
+        <div className="flex flex-wrap gap-2 items-center p-2 mt-1.5 bg-trace-accent/[0.06] rounded text-[11px] font-mono text-trace-subtle">
           <span>
             <span className="text-trace-muted">System:</span>{" "}
             {formatTokens(cm.systemTokens)}
@@ -54,7 +54,7 @@ export default function TurnLLMInputSection({
             {formatTokens(cm.totalTokens)}/{formatTokens(cm.maxTokens)}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-20 h-1.5 bg-[rgba(49,38,112,0.3)] rounded-[3px] overflow-hidden">
+            <span className="w-20 h-1.5 bg-slate-300/70 rounded-[3px] overflow-hidden">
               <span
                 className={`block h-full rounded-[3px] transition-all ${utilColor}`}
                 style={{ width: `${Math.min(utilPct, 100)}%` }}
@@ -63,7 +63,7 @@ export default function TurnLLMInputSection({
             {utilPct}%
           </span>
           {(cm.droppedMessageCount || 0) > 0 && (
-            <span className="text-[#e67e22]">
+            <span className="text-state-warning">
               Dropped: {cm.droppedMessageCount}
             </span>
           )}
