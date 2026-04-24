@@ -119,7 +119,6 @@ if (!HTMLElement.prototype.scrollIntoView) {
 
 // Mock getBoundingClientRect to ensure visibility checks pass in tests
 // In Happy-DOM, elements have 0 size by default.
-const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 Element.prototype.getBoundingClientRect = function () {
     return {
         width: 100,

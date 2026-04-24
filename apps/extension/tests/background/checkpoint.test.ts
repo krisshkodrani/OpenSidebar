@@ -2,7 +2,7 @@
  * Durable turn checkpoint + step mutation ledger tests (Ship 1)
  */
 
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 
 import {
@@ -13,13 +13,9 @@ import {
 } from "../../src/background/agent/checkpoint-types";
 import type {
   TurnCheckpoint,
-  MutationLedgerEntry,
   CompressedHistory,
 } from "../../src/background/agent/checkpoint-types";
-import {
-  MUTATION_SENSITIVE_TOOLS,
-  DOM_MODIFYING_TOOLS,
-} from "../../src/background/tools/metadata";
+import { MUTATION_SENSITIVE_TOOLS } from "../../src/background/tools/metadata";
 import { ToolName } from "../../src/types";
 import { ContextManager } from "../../src/background/agent/context";
 

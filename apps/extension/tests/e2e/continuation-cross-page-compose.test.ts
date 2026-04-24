@@ -104,7 +104,6 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Page Compose", () => {
     // TRANSITION: Navigate to email-compose page
     // =================================================================
     await settleWorkspaceBetweenTurns(h.ctx.serviceWorker, workspaceId);
-    const tracesAfterTurn1 = new Set([...h.tracesBefore, ...turn1Traces]);
 
     console.log("\n[cross-page-compose] === Navigating to email-compose ===");
     await navigateAndWait(h.page, getFixtureUrl("email-compose"));

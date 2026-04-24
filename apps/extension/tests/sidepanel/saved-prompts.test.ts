@@ -49,7 +49,6 @@ describe("Saved Prompts CRUD", () => {
   test("loadSavedPrompts does not re-seed after first load", async () => {
     // First load seeds
     await loadSavedPrompts();
-    const seededCount = (stored[STORAGE_KEY] as any[]).length;
 
     // Clear prompts but keep seeded flag
     stored[STORAGE_KEY] = [];

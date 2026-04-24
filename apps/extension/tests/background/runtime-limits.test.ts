@@ -168,7 +168,7 @@ describe("reassessRuntimeLimits", () => {
 describe("DIFFICULTY_PROFILES", () => {
   test("all profiles have valid keys", () => {
     const validKeys = new Set(Object.keys(DEFAULT_RUNTIME_LIMITS));
-    for (const [difficulty, profile] of Object.entries(DIFFICULTY_PROFILES)) {
+    for (const [_difficulty, profile] of Object.entries(DIFFICULTY_PROFILES)) {
       for (const key of Object.keys(profile)) {
         expect(validKeys.has(key)).toBe(true);
       }

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import type { PlanStep, PlanAlignment, PlanMonitorResult, ReplanResult, PlanDecomposition } from "../../src/background/agent/planner";
+import type { PlanStep, PlanAlignment, PlanMonitorResult, ReplanResult } from "../../src/background/agent/planner";
 
 // --- Type tests ---
 

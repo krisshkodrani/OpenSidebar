@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { StagnationMonitor, ActionEffect } from "../../src/background/agent/stagnation";
+import { StagnationMonitor } from "../../src/background/agent/stagnation";
 import { DomSnapshot, TaggedElement } from "../../src/types";
 
 function makeElement(overrides?: Partial<TaggedElement>): TaggedElement {
