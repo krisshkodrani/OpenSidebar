@@ -18,24 +18,26 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 | --- | --- |
 | `npm run dev` | Extension dev stack + logs + trace viewer |
 | `npm run build` | Production build |
-| `npm test` | Vitest suite |
-| `npm run lint` | ESLint for `src/` |
-| `npm run fmt` | Prettier for `src/` |
+| `npm test` | Extension unit and integration suite |
+| `npm run test:backend` | Backend Vitest suite |
+| `npm run lint` | ESLint for extension, backend, packages, and scripts |
+| `npm run fmt` | Prettier for extension source and packages |
 | `npm run logs` | Start log server + trace viewer |
 | `npm run logs:tail` | Tail recent structured logs |
 | `npm run logs:errors` | Show error-level logs |
 | `npm run traces` | Trace query CLI |
 | `npm run fixtures` | Serve local E2E/demo fixtures |
 | `npm run test:e2e` | Build + real-browser E2E tests |
+| `npm run release:verify` | CI-equivalent lint, tests, and build |
 
 ## Testing
 
 Use this as the normal validation loop:
 
 ```bash
-npm run lint
-npm test
-npm run build
+npm run ci:lint
+npm run ci:test
+npm run ci:build
 ```
 
 Run E2E only when you need browser-level validation:
@@ -65,10 +67,13 @@ npm run traces -- list
 
 The active product surface is:
 
-- `src/background/`: agent loop, orchestrator, model routing, tool dispatch
-- `src/content/`: DOM tagging, snapshots, page actions
-- `src/sidepanel/`: React UI, chat, settings, approvals, progress
-- `src/trace-viewer/`: trace inspection UI
+- `apps/extension/src/background/`: agent loop, orchestrator, model routing, tool dispatch
+- `apps/extension/src/content/`: DOM tagging, snapshots, page actions
+- `apps/extension/src/sidepanel/`: React UI, chat, settings, approvals, progress
+- `apps/extension/src/trace-viewer/`: trace inspection UI
+- `apps/backend/src/`: local backend service for memory and scheduled tasks
+- `packages/shared-types/`: shared runtime and domain contracts
+- `packages/prompts/`: prompt runtime and generated prompt assets
 
 ## Contribution Notes
 

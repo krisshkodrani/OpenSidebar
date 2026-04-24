@@ -30,6 +30,8 @@ const createdLoopConfigs: MockLoopConfig[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
 const stoppedLoopNodeIds: string[] = [];
 const gracefulStopLoopNodeIds: string[] = [];
+const plannerOverrideCalls: Array<Record<string, unknown> | undefined> = [];
+const verifierOverrideCalls: Array<Record<string, unknown> | undefined> = [];
 
 let plannerBuildNodesImpl: (...args: unknown[]) => Promise<TaskNode[]>;
 let plannerExpandNodeImpl: (...args: unknown[]) => Promise<TaskNode[] | null>;
@@ -215,6 +217,8 @@ describe("Orchestrator integration join tests", () => {
     capturedInstructions.length = 0;
     stoppedLoopNodeIds.length = 0;
     gracefulStopLoopNodeIds.length = 0;
+    plannerOverrideCalls.length = 0;
+    verifierOverrideCalls.length = 0;
 
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
@@ -379,16 +383,22 @@ describe("Orchestrator integration join tests", () => {
     (chrome.runtime as any).getManifest = () => ({ content_scripts: [] });
 
     orchestratorDeps = {
-      createPlanner: () => ({
-        buildNodes: async (...args: unknown[]) => {
-          const nodes = await plannerBuildNodesImpl(...args);
-          return { nodes, isSingleNode: false, difficulty: "moderate" as const };
-        },
-        expandNode: async (...args: unknown[]) => plannerExpandNodeImpl(...args),
-      }),
-      createVerifier: () => ({
-        verifyNode: async (...args: unknown[]) => verifierDecisionImpl(...args),
-      }),
+      createPlanner: (_apiKey, modelOverrides) => {
+        plannerOverrideCalls.push(modelOverrides);
+        return {
+          buildNodes: async (...args: unknown[]) => {
+            const nodes = await plannerBuildNodesImpl(...args);
+            return { nodes, isSingleNode: false, difficulty: "moderate" as const };
+          },
+          expandNode: async (...args: unknown[]) => plannerExpandNodeImpl(...args),
+        };
+      },
+      createVerifier: (_apiKey, modelOverrides) => {
+        verifierOverrideCalls.push(modelOverrides);
+        return {
+          verifyNode: async (...args: unknown[]) => verifierDecisionImpl(...args),
+        };
+      },
       createAgentLoop: (input) => {
         const cfg = (input.options as MockLoopConfig) || {};
         const callbacks = input.callbacks as
@@ -456,6 +466,35 @@ describe("Orchestrator integration join tests", () => {
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
     expect(capturedInstructions[0].instruction).toContain("Objective: collect data");
     expect(capturedInstructions[1].instruction).toContain("Objective: summarize data");
+  });
+
+  test("passes Fireworks provider settings to verifier and replanner", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "collect data")];
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask({
+      ...makeInput("collect data"),
+      openRouterApiKey: "fw-test-key",
+      settings: {
+        ...baseSettings,
+        providerMode: "fireworks",
+        fireworksApiKey: "fw-test-key",
+        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+      },
+    });
+
+    expect(plannerOverrideCalls.length).toBeGreaterThanOrEqual(2);
+    expect(verifierOverrideCalls).toHaveLength(1);
+    for (const overrides of [...plannerOverrideCalls, ...verifierOverrideCalls]) {
+      expect(overrides).toMatchObject({
+        providerMode: "fireworks",
+        fireworksApiKey: "fw-test-key",
+        executorModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+        plannerModel: "accounts/fireworks/routers/kimi-k2p5-turbo",
+      });
+    }
   });
 
   test("emits tab coordination state into run traces", async () => {

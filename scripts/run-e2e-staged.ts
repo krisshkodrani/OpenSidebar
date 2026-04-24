@@ -6,6 +6,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import {
   E2E_CANONICAL_SUITE_ORDER,
+  E2E_RETIRED_TESTS,
   E2E_SUITES,
   E2E_FOCUS_SUITE_ORDER,
   E2E_SUITE_ORDER,
@@ -47,6 +48,7 @@ function listTestFiles(): string[] {
 function validateSuites(): void {
   const allFiles = new Set(listTestFiles());
   const assigned = new Map<string, E2ESuiteName>();
+  const retired = new Set(E2E_RETIRED_TESTS);
 
   for (const suiteName of E2E_CANONICAL_SUITE_ORDER) {
     for (const file of E2E_SUITES[suiteName]) {
@@ -71,7 +73,18 @@ function validateSuites(): void {
     }
   }
 
-  const unassigned = [...allFiles].filter((file) => !assigned.has(file));
+  for (const file of retired) {
+    if (!allFiles.has(file)) {
+      throw new Error(`Retired E2E test file is missing: ${file}`);
+    }
+    if (assigned.has(file)) {
+      throw new Error(`Retired E2E test file is still assigned: ${file}`);
+    }
+  }
+
+  const unassigned = [...allFiles].filter(
+    (file) => !assigned.has(file) && !retired.has(file),
+  );
   if (unassigned.length > 0) {
     throw new Error(
       `Unassigned E2E test files detected: ${unassigned.join(", ")}`,
@@ -125,6 +138,14 @@ function printPlan(suites: E2ESuiteName[]): void {
       console.log(`[e2e:staged]   - ${file}`);
     }
   }
+  if (E2E_RETIRED_TESTS.length > 0) {
+    console.log(
+      `\n[e2e:staged] Retired from staged/focus runs (${E2E_RETIRED_TESTS.length} files):`,
+    );
+    for (const file of E2E_RETIRED_TESTS) {
+      console.log(`[e2e:staged]   - ${file}`);
+    }
+  }
 }
 
 function printOptionalGateStatus(suites: E2ESuiteName[]): void {
@@ -164,6 +185,12 @@ async function main(): Promise<void> {
   if (build) {
     console.log("\n[e2e:staged] Building extension before staged run...");
     execSync("cmd /c npm run build", {
+      cwd: PROJECT_ROOT,
+      stdio: "inherit",
+      windowsHide: true,
+    });
+    console.log("\n[e2e:staged] Building E2E fixtures before staged run...");
+    execSync("cmd /c npm run fixtures:build", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,

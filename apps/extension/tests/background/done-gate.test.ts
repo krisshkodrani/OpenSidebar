@@ -8,6 +8,7 @@
  */
 import { describe, test, expect } from "vitest";
 import "../setup";
+import { isDoneSummaryAskingClarification } from "../../src/background/agent/loop";
 import {
   buildFirstTurnTextOnlyNudge,
   evaluateDoneTaskContractGuard,
@@ -74,6 +75,24 @@ describe("tokenizeStepText", () => {
 });
 
 // ── snapshotSearchText ───────────────────────────────────────────────
+
+describe("isDoneSummaryAskingClarification", () => {
+  test("allows completion reports that quote thread questions as evidence", () => {
+    expect(
+      isDoneSummaryAskingClarification(
+        "Successfully read the #project-updates channel and identified Sarah's timing question: when exactly are we targeting the release?",
+      ),
+    ).toBe(false);
+  });
+
+  test("rejects direct clarification questions passed through done", () => {
+    expect(
+      isDoneSummaryAskingClarification(
+        "Which account should I use for this request?",
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("snapshotSearchText", () => {
   test("combines title, url, content, and element attributes", () => {

@@ -80,9 +80,9 @@ npm run dev        # Extension + log server + trace viewer
 npm run build      # Production build
 npm test           # Extension unit + integration tests
 npm run test:backend
-npm run test:e2e:easy
-npm run test:e2e:medium
-npm run test:e2e:hard
+npm run test:e2e:smoke
+npm run test:e2e:interactions
+npm run test:e2e:runtime
 npm run lint       # ESLint
 npm run release:verify
 npm run fmt        # Prettier
@@ -91,10 +91,13 @@ npm run fmt        # Prettier
 ## Testing
 
 - Use staged E2E runs by default:
-  - `npm run test:e2e:easy`
-  - `npm run test:e2e:medium`
-  - `npm run test:e2e:hard`
-- Use `npm run test:e2e` when you want the full real-browser E2E suite in one pass.
+  - `npm run test:e2e:smoke` for cheap confidence on core browser-agent behavior
+  - `npm run test:e2e:interactions` for page interaction and navigation regressions
+  - `npm run test:e2e:runtime` for orchestration, continuation, recovery, and memory regressions
+- Use `npm run test:e2e` or `npm run test:e2e:staged` for the normal budgeted sequence: smoke, interactions, then runtime.
+- Use `npm run test:e2e:workarena` for the local WorkArena-gap task pack, and `npm run test:e2e:workarena:variance` only when you intentionally want repeated expensive runs.
+- Use `npm run test:e2e:nightly` for low-priority legacy primitives that are kept out of routine staged runs.
+- Use `npm run test:e2e:all` only when you intentionally want every raw browser E2E file in one pass, including retired legacy files.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
 ## Repo Layout

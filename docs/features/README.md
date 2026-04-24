@@ -38,7 +38,7 @@ Security & Privacy (protection throughout)
 
 ## Getting Started
 
-1. **Install extension** and configure your OpenRouter API key
+1. **Install extension** and configure a supported provider API key
 2. **Click extension icon** on any tab to create workspace
 3. **Type natural language commands** to interact with web pages
 4. **Watch real-time streaming** as AI executes actions

@@ -1,4 +1,14 @@
 import { ToolName } from "../../types";
+import type { ToolProfile } from "../tools/metadata";
+
+export type SkillCapability =
+  | "read_context"
+  | "compose_response"
+  | "submit_response"
+  | "verify_posted"
+  | "update_record"
+  | "add_note"
+  | "verify_saved";
 
 export interface SkillDescriptor {
   id: string;
@@ -9,6 +19,7 @@ export interface SkillDescriptor {
   maturity: "draft" | "candidate" | "active";
   preferredTools?: string[];
   discouragedTools?: string[];
+  capabilityNeeds?: SkillCapability[];
   memoryScope?: "turn" | "workspace";
   verifierMode: "deterministic" | "hybrid" | "llm";
   notes?: string[];
@@ -151,6 +162,113 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     memoryScope: "turn",
     verifierMode: "hybrid",
     notes: ["Read cart state before and after mutation."],
+  },
+  {
+    id: "email-reply-careful",
+    name: "Email Reply Careful",
+    description:
+      "Read an email, extract the reply requirements, preserve language and tone context, then draft or send only after verifying the recipient and content.",
+    tags: ["workflow", "email", "communication", "composition", "safety"],
+    triggers: [
+      "reply to email",
+      "respond to mail",
+      "draft an email reply",
+      "send a contextual email response",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "update_notes",
+      "type_text",
+      "click_element",
+    ],
+    discouragedTools: ["done", "click_coordinates", "press_key"],
+    capabilityNeeds: [
+      "read_context",
+      "compose_response",
+      "submit_response",
+      "verify_posted",
+    ],
+    memoryScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Match the source email's language and register unless the user asks otherwise.",
+      "Do not invent facts, commitments, dates, names, or recipients.",
+      "Verify the draft and recipient before any send action.",
+    ],
+  },
+  {
+    id: "thread-message-careful",
+    name: "Thread Message Careful",
+    description:
+      "Read a chat, channel, comment, or message thread, preserve audience, language, and tone context, then post a grounded reply to the correct thread.",
+    tags: ["workflow", "messaging", "thread", "communication", "context"],
+    triggers: [
+      "reply in the thread",
+      "post to the channel",
+      "respond in chat",
+      "send a message in the team thread",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "update_notes",
+      "type_text",
+      "click_element",
+    ],
+    discouragedTools: ["done", "click_coordinates", "press_key"],
+    capabilityNeeds: [
+      "read_context",
+      "compose_response",
+      "submit_response",
+      "verify_posted",
+    ],
+    memoryScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Identify the exact thread, speaker, audience, language, and tone before composing.",
+      "Preserve owners, deadlines, deliverables, blockers, and unresolved questions.",
+      "Do not post if the target thread or audience is uncertain.",
+    ],
+  },
+  {
+    id: "crm-ticket-update",
+    name: "CRM Ticket Update",
+    description:
+      "Update a CRM or support ticket record by reading the case context, applying requested field changes, and adding a grounded internal note.",
+    tags: ["workflow", "crm", "ticket", "record-update", "support"],
+    triggers: [
+      "update support ticket",
+      "set ticket status",
+      "add internal note",
+      "escalate CRM case",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "update_notes",
+      "select_option",
+      "type_text",
+      "set_checkbox",
+      "click_element",
+    ],
+    discouragedTools: ["done", "click_coordinates"],
+    capabilityNeeds: [
+      "read_context",
+      "update_record",
+      "add_note",
+      "verify_saved",
+    ],
+    memoryScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Read the customer issue and ticket properties before changing fields.",
+      "Update only fields supported by the request or visible ticket context.",
+      "Internal notes should include issue, impact, account context, and next step when available.",
+    ],
   },
   {
     id: "structured-form-fill",
@@ -523,6 +641,161 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       ],
       failureRecovery: [
         "If the cart shows both old and new items, repair the cart before any checkout action.",
+      ],
+    },
+  },
+  "email-reply-careful": {
+    procedureMarkdown: [
+      "1. Read the full visible email context before drafting: sender, recipient, subject, body, and any visible prior thread.",
+      "2. Determine whether the user asked to draft only or to send the reply.",
+      "3. Extract a reply checklist: requested answer, date or time, owners, deliverables, agenda items, constraints, language, and tone.",
+      "4. Draft in the same language and a matching register unless the user explicitly requests a different style.",
+      "5. Include only facts grounded in the email, the user's request, or visible page context.",
+      "6. Re-read or inspect the draft before sending; verify recipient, subject or thread, and all checklist items.",
+      "7. Send only if the user requested sending or the task clearly requires it. Otherwise leave the composed draft visible.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Source email context was read before composing",
+      "Recipient and subject or thread were identified",
+      "Reply checklist covering language, tone, facts, and requested commitments",
+      "Draft content verified before send or completion",
+      "Final state matches draft-only versus send intent",
+    ],
+    commonFailures: [
+      {
+        signal: "reply is composed before reading the source email",
+        recovery: "read the email and rebuild the reply checklist before editing the draft",
+      },
+      {
+        signal: "reply changes language, tone, dates, owners, or commitments without support",
+        recovery: "revise the draft against the source email and remove unsupported claims",
+      },
+      {
+        signal: "send action is attempted when the task only asked for a draft",
+        recovery: "leave the reply as a draft and do not click send",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Read the email, extract the reply checklist, draft, verify the draft and recipient, then send only when requested.",
+      ],
+      toolDiscipline: [
+        "Use update_notes for compact reply requirements before typing when the email contains multiple constraints.",
+        "Use read_page or read_element after drafting to verify the composed text before any send action.",
+        "Avoid press_key shortcuts for sending communication.",
+      ],
+      completionChecks: [
+        "The reply is addressed to the correct recipient or thread.",
+        "The language and tone fit the source email and user's instruction.",
+        "The reply covers requested dates, owners, deliverables, agenda items, or constraints.",
+        "No unsupported facts or commitments were introduced.",
+        "The final state is sent only when sending was requested; otherwise the draft remains visible.",
+      ],
+      failureRecovery: [
+        "If recipient or send permission is uncertain, do not send; clarify or leave a draft.",
+        "If context is missing, re-read the email or visible thread before composing further.",
+      ],
+    },
+  },
+  "thread-message-careful": {
+    procedureMarkdown: [
+      "1. Read the visible thread or conversation before composing, including participants, recent messages, and the active channel or thread label.",
+      "2. Identify the intended audience and whether the reply belongs in a thread, channel, direct message, or comment box.",
+      "3. Extract a message checklist: question to answer, owners, deadlines, deliverables, blockers, decisions, language, and tone.",
+      "4. Compose a concise reply that fits the conversation's language, tone, and level of formality unless the user requests otherwise.",
+      "5. Preserve responsibilities and constraints exactly; do not assign owners, deadlines, or next steps that are not grounded.",
+      "6. Re-read the composer content and visible target before posting.",
+      "7. Post only when the target thread and audience are verified.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Thread or conversation context was read before composing",
+      "Target channel, thread, or recipient was identified",
+      "Checklist of question, owners, deadlines, deliverables, blockers, language, and tone",
+      "Composed message verified before posting",
+      "Visible evidence that the message was posted to the intended target, or left as draft if not posting",
+    ],
+    commonFailures: [
+      {
+        signal: "message answers the user request but not the thread's actual question",
+        recovery: "re-read the latest relevant messages and revise around the unresolved question",
+      },
+      {
+        signal: "message is posted to the wrong channel, thread, or recipient",
+        recovery: "stop further posting, re-ground on the intended thread, and report uncertainty if it cannot be repaired",
+      },
+      {
+        signal: "reply changes language or formality in a way that clashes with the thread",
+        recovery: "revise to match the observed thread language and tone unless the user requested a different style",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Read the thread, identify the target and audience, extract the message checklist, draft, verify, then post.",
+      ],
+      toolDiscipline: [
+        "Use update_notes for compact thread facts when several messages must be synthesized.",
+        "Use read_page or read_element after composing to verify the active target and message text.",
+        "Avoid coordinate clicks and send shortcuts when posting communication.",
+      ],
+      completionChecks: [
+        "The reply is in the correct thread, channel, or recipient context.",
+        "The reply matches the conversation's language, tone, and audience.",
+        "The reply preserves owners, deadlines, deliverables, blockers, and open questions.",
+        "No unsupported promises or decisions were introduced.",
+      ],
+      failureRecovery: [
+        "If the target thread is uncertain, do not post; re-ground or clarify.",
+        "If the conversation is too noisy, summarize observed facts in notes before drafting.",
+      ],
+    },
+  },
+  "crm-ticket-update": {
+    procedureMarkdown: [
+      "1. Read the ticket or case context before changing anything: requester, issue, customer impact, account context, current status, priority, and existing activity.",
+      "2. Extract the requested record changes, such as status, priority, assignee, category, tags, escalation, and internal note content.",
+      "3. Update only fields that are requested or directly supported by visible ticket context.",
+      "4. Add an internal note grounded in the issue, impact, account context, and next step when those details are available.",
+      "5. Save or submit changes using the page's normal controls.",
+      "6. Re-read the ticket state after saving and verify field values and note visibility.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Ticket context and current properties were read before mutation",
+      "Requested field changes were identified",
+      "Internal note content is grounded in visible ticket facts",
+      "Post-save ticket state verifies the requested field values",
+      "Activity or note area confirms the note was added internally when requested",
+    ],
+    commonFailures: [
+      {
+        signal: "status or priority is changed without reading the ticket issue",
+        recovery: "re-read ticket context and correct fields before saving further changes",
+      },
+      {
+        signal: "internal note is generic or omits available impact/account/next-step context",
+        recovery: "revise the note using visible ticket facts before posting",
+      },
+      {
+        signal: "unrequested ticket fields are modified",
+        recovery: "restore unrelated fields when possible and limit changes to the requested scope",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Read ticket context, extract requested changes, update fields, add grounded note, save, then verify.",
+      ],
+      toolDiscipline: [
+        "Use read_page or read_element before and after field mutations.",
+        "Use update_notes for the intended field and note checklist when multiple fields are involved.",
+        "Avoid done until both field state and note state have been checked after save.",
+      ],
+      completionChecks: [
+        "Requested status, priority, assignee, category, tag, or escalation state is visible.",
+        "Internal note content reflects the issue, impact, account context, and next step when available.",
+        "No unrelated ticket fields were changed.",
+      ],
+      failureRecovery: [
+        "If save status is unclear, re-read activity and field panels before taking another action.",
+        "If a note might have been posted as a public reply instead of internal note, stop and report uncertainty rather than posting again.",
       ],
     },
   },
@@ -907,12 +1180,20 @@ const continuationPattern =
   /\b(change|revise|rewrite|edit|one more change|previous draft|draft reply|continue previous task|make (?:it|the tone)|reply|casual)\b/i;
 const continuationArtifactPattern =
   /\b(draft|reply|tone|email|message|copy|text|wording|paragraph|sentence)\b/i;
+const continuationRevisionPattern =
+  /\b(change|revise|rewrite|edit|one more change|previous draft|current draft|make (?:it|the tone)|keep the rest|preserve)\b/i;
 const gridEditPattern =
   /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
 const inlineEditPattern =
   /\b(rename|inline edit|inline rename|change .* value|update .* value|replace .* value|edit .* cell|rename .* to|filename|file name|document name|table cell|grid cell)\b/i;
 const cartPattern =
   /\b(cart|checkout|coupon|promo|discount|swap|replace|remove|add to cart)\b/i;
+const emailReplyPattern =
+  /\b(?:reply|respond|draft|compose)\b[\s\S]{0,100}\b(?:email|e-mail|mail|inbox|subject|sender|recipient)\b|\b(?:email|e-mail|mail|inbox)\b[\s\S]{0,100}\b(?:reply|response|draft)\b|\bsend\b[\s\S]{0,80}\b(?:email|e-mail|mail)\b[\s\S]{0,80}\b(?:reply|response|to|confirm|acknowledge)\b/i;
+const threadMessagePattern =
+  /\b(?:reply|respond|post|send|compose)\b[\s\S]{0,120}\b(?:thread|chat|channel|conversation|team thread|team chat|message thread|direct message|dm|comment)\b|\b(?:thread|chat|channel|conversation|messaging|message thread|team thread|project-updates)\b[\s\S]{0,120}\b(?:reply|respond|post|send|compose)\b/i;
+const crmTicketPattern =
+  /\b(?:crm|support\s+ticket|ticket|case|incident)\b[\s\S]{0,140}\b(?:status|priority|assignee|category|tag|triage|escalat\w*|internal note|comment|customer impact|account context|next step|update)\b|\b(?:set|update|triage|escalat\w*|add)\b[\s\S]{0,140}\b(?:support\s+ticket|ticket|case|incident|internal note)\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
 const profileFieldPattern =
@@ -985,6 +1266,69 @@ export function getSkillToolPolicy(
     preferredTools: normalizeSkillTools(descriptor.preferredTools),
     discouragedTools: normalizeSkillTools(descriptor.discouragedTools),
   };
+}
+
+function hasCapability(
+  descriptor: SkillDescriptor,
+  capability: SkillCapability,
+): boolean {
+  return descriptor.capabilityNeeds?.includes(capability) ?? false;
+}
+
+function hasCommunicationWriteIntent(text: string): boolean {
+  return (
+    /\b(reply|respond|post|send|compose|write back)\b/i.test(text) ||
+    /\bdraft\b[^.\n]{0,80}\b(reply|email|e-mail|message|comment|response)\b/i.test(
+      text,
+    ) ||
+    /\b(reply|email|e-mail|message|comment|response)\b[^.\n]{0,80}\bdraft\b/i.test(
+      text,
+    ) ||
+    /\bwrite\b[^.\n]{0,60}\b(message|comment|reply|response)\b/i.test(
+      text,
+    )
+  );
+}
+
+function hasRecordMutationIntent(text: string): boolean {
+  return (
+    /\b(update|set|change|assign|reassign|escalate|save|submit|mark|close|reopen)\b[^.\n]{0,100}\b(ticket|case|record|status|priority|assignee|owner|category|tag|field|escalation)\b/i.test(
+      text,
+    ) ||
+    /\b(add|write|post)\b[^.\n]{0,80}\b(internal note|note|comment)\b/i.test(
+      text,
+    )
+  );
+}
+
+export function resolveSkillToolProfile(
+  id: string | null | undefined,
+  objective: string,
+  successCriteria: string,
+  currentProfile?: ToolProfile,
+): ToolProfile | undefined {
+  const descriptor = getSkillDescriptor(id || "");
+  if (!descriptor) return currentProfile;
+
+  const text = `${objective}\n${successCriteria}`;
+
+  if (
+    (hasCapability(descriptor, "compose_response") ||
+      hasCapability(descriptor, "submit_response")) &&
+    hasCommunicationWriteIntent(text)
+  ) {
+    return "submit_form";
+  }
+
+  if (
+    (hasCapability(descriptor, "update_record") ||
+      hasCapability(descriptor, "add_note")) &&
+    hasRecordMutationIntent(text)
+  ) {
+    return "form_fill";
+  }
+
+  return currentProfile;
 }
 
 const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
@@ -1142,6 +1486,11 @@ export function selectPrimarySkill(input: {
   const currentStepLooksLikeInlineEdit =
     (gridEditPattern.test(stepCorpus) || inlineEditPattern.test(stepCorpus)) &&
     /\b(change|edit|update|set|replace|rename|enter|type)\b/i.test(stepCorpus);
+  const currentStepLooksLikeContinuationRevision =
+    continuationPattern.test(corpus) &&
+    continuationArtifactPattern.test(corpus) &&
+    continuationRevisionPattern.test(corpus) &&
+    !gridEditPattern.test(stepCorpus);
   const currentStepLooksLikeFormFill =
     formPattern.test(stepCorpus) &&
     /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
@@ -1188,6 +1537,37 @@ export function selectPrimarySkill(input: {
       id: "inline-edit-surface",
       reason:
         "Current step edits a value directly inside an inline editor, grid cell, table row, or rename surface.",
+    };
+  }
+
+  if (currentStepLooksLikeContinuationRevision) {
+    return {
+      id: "continuation-edit",
+      reason: "Task requests revising prior work while preserving earlier intent.",
+    };
+  }
+
+  if (emailReplyPattern.test(corpus)) {
+    return {
+      id: "email-reply-careful",
+      reason:
+        "Task requires drafting or sending an email reply with recipient, source context, language, and tone checks.",
+    };
+  }
+
+  if (threadMessagePattern.test(corpus)) {
+    return {
+      id: "thread-message-careful",
+      reason:
+        "Task requires posting a grounded reply in a message or thread while preserving audience, language, and tone context.",
+    };
+  }
+
+  if (crmTicketPattern.test(corpus)) {
+    return {
+      id: "crm-ticket-update",
+      reason:
+        "Task requires updating a CRM or support ticket record after reading case context and verifying field or note changes.",
     };
   }
 

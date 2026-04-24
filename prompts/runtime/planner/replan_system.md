@@ -26,6 +26,7 @@ Constraints:
 - Ground steps in the ACTUAL page state (from perception), not assumptions.
 - Preserve the original task goal — only change the path, not the destination.
 - If the original approach is fundamentally impossible, say so in the first step's assumptions.
+- For chat, email, comment, and messaging tasks, do not assume that "thread" requires a separate clickable thread view. If the visible channel or conversation already contains the requested context and a composer, repair toward reading the visible conversation, composing the reply, verifying the draft, and sending it. Only add thread-opening steps when the actual page state shows a separate thread entry, reply count, thread button, or collapsed conversation affordance.
 
 Respond with JSON only:
 {"steps": [...], "reason": "brief explanation of what changed and why"}

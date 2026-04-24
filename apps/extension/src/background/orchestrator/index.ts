@@ -3530,6 +3530,13 @@ export class Orchestrator {
               executorModel: input.settings.executorModel,
               plannerModel: input.settings.plannerModel,
               useNitro: input.settings.useNitro,
+              providerMode: input.settings.providerMode,
+              provider: input.settings.provider,
+              openaiApiKey: input.settings.openaiApiKey,
+              groqApiKey: input.settings.groqApiKey,
+              temperature: input.settings.temperature,
+              fireworksApiKey: input.settings.fireworksApiKey,
+              kimiApiKey: input.settings.kimiApiKey,
             },
           );
           const replanResult = await replanPlanner.buildNodes(
@@ -3612,6 +3619,13 @@ export class Orchestrator {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
       useNitro: input.settings.useNitro,
+      providerMode: input.settings.providerMode,
+      provider: input.settings.provider,
+      openaiApiKey: input.settings.openaiApiKey,
+      groqApiKey: input.settings.groqApiKey,
+      temperature: input.settings.temperature,
+      fireworksApiKey: input.settings.fireworksApiKey,
+      kimiApiKey: input.settings.kimiApiKey,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,

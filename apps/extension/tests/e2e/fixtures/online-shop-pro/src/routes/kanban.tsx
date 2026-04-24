@@ -40,29 +40,36 @@ export default function Kanban() {
   const [columns, setColumns] = useState<Column[]>(INITIAL_COLUMNS);
   const [moves, setMoves] = useState<Array<{ card: string; from: string; to: string }>>([]);
   const draggingRef = useRef<{ taskId: string; fromCol: string } | null>(null);
+  const columnsRef = useRef<Column[]>(INITIAL_COLUMNS);
+  const moveKeysRef = useRef<Set<string>>(new Set());
 
   const moveTask = useCallback(
     (taskId: string, fromColId: string, toColId: string) => {
       if (fromColId === toColId) return;
 
-      setColumns((prev) => {
-        const fromCol = prev.find((c) => c.id === fromColId);
-        const toCol = prev.find((c) => c.id === toColId);
-        if (!fromCol || !toCol) return prev;
+      const moveKey = `${taskId}:${fromColId}->${toColId}`;
+      if (moveKeysRef.current.has(moveKey)) return;
 
-        const task = fromCol.tasks.find((t) => t.id === taskId);
-        if (!task) return prev;
+      const fromCol = columnsRef.current.find((c) => c.id === fromColId);
+      const toCol = columnsRef.current.find((c) => c.id === toColId);
+      if (!fromCol || !toCol) return;
 
-        return prev.map((col) => {
-          if (col.id === fromColId) {
-            return { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) };
-          }
-          if (col.id === toColId) {
-            return { ...col, tasks: [...col.tasks, task] };
-          }
-          return col;
-        });
+      const task = fromCol.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+
+      moveKeysRef.current.add(moveKey);
+
+      const nextColumns = columnsRef.current.map((col) => {
+        if (col.id === fromColId) {
+          return { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) };
+        }
+        if (col.id === toColId) {
+          return { ...col, tasks: [...col.tasks, task] };
+        }
+        return col;
       });
+      columnsRef.current = nextColumns;
+      setColumns(nextColumns);
 
       const taskTitle =
         INITIAL_COLUMNS.flatMap((c) => c.tasks).find((t) => t.id === taskId)

@@ -1,6 +1,6 @@
 # Documentation
 
-Path note: the main entry-point docs below are aligned to the current `apps/` and `packages/` layout. Some older deep-dive architecture and bug-analysis pages still use legacy root-relative `src/` and `tests/` shorthand for file paths.
+This index lists stable repo documentation. Research reports, RFC drafts, benchmark notes, and temporary investigations belong in Notion.
 
 ## Getting Started
 
@@ -37,16 +37,17 @@ Path note: the main entry-point docs below are aligned to the current `apps/` an
 - [Personal Profile](./personal-profile.md)
 - [Repo Structure](./repo-structure.md)
 - [Release Checklist](./release-checklist.md)
-- [Agent Strategy Letter](./guides/agent-strategy-letter.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
-- [Model Benchmark Reference](./model-benchmark-reference.md)
 - [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
 
 ## Other
 
+- [Documentation Policy](./docs-policy.md)
+- [Design System](./design-system.md)
 - [Store Listing](./store-listing.md)
 
 ## Notes
 
 - E2E reports are generated locally under `.artifacts/e2e/`.
 - RFCs and research notes live outside the repo.
+- Promote only stable conclusions from Notion into this directory.

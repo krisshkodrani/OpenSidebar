@@ -113,6 +113,7 @@ import type {
 } from "./loop-types";
 import {
   getSkillToolPolicy,
+  resolveSkillToolProfile,
   type SkillToolPolicy,
 } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
@@ -172,6 +173,43 @@ function applySkillTurnCap(
   if (!selectedSkillId) return maxTurns;
   const cap = SKILL_TURN_CAPS[selectedSkillId];
   return typeof cap === "number" ? Math.min(maxTurns, cap) : maxTurns;
+}
+
+export function isDoneSummaryAskingClarification(summary: string): boolean {
+  const text = summary.trim();
+  if (!text.includes("?")) return false;
+
+  const lower = text.toLowerCase();
+  const hasCompletionFrame =
+    /\b(completed|successfully|identified|found|located|confirmed|verified|posted|sent|drafted|updated|read|analysis complete|summary)\b/.test(
+      lower,
+    );
+  if (hasCompletionFrame) return false;
+
+  if (
+    /^(can|could|should|do|does|did|is|are|which|what|when|where|who|why|how|would|please)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+
+  return /\?$/.test(text);
+}
+
+function isToolProfileName(value: string | undefined): value is ToolProfile {
+  return (
+    value === "full" ||
+    value === "read_only" ||
+    value === "form_fill" ||
+    value === "edit_surface" ||
+    value === "navigate" ||
+    value === "enter_code" ||
+    value === "submit_form" ||
+    value === "inspect_hidden_state" ||
+    value === "recover_from_stuck" ||
+    value === "navigation_only"
+  );
 }
 
 /**
@@ -3275,7 +3313,9 @@ export class AgentLoop {
     // If planner assigned an explicit profile, use it. Otherwise infer one
     // from the active step so inline-edit tasks do not fall back to an overly
     // broad DOM-aware tool set.
-    const explicitProfile = currentSubtask?.toolProfile;
+    const explicitProfile = isToolProfileName(currentSubtask?.toolProfile)
+      ? currentSubtask.toolProfile
+      : undefined;
     const inferredProfile =
       !explicitProfile && currentSubtask
         ? inferToolProfileForStep(
@@ -3283,7 +3323,12 @@ export class AgentLoop {
             this.planSteps[currentSubtaskIndex]?.successCriteria || "",
           )
         : undefined;
-    const activeProfile = explicitProfile ?? inferredProfile;
+    const activeProfile = resolveSkillToolProfile(
+      this.selectedSkillId,
+      currentSubtask?.description ?? this.originalQuery,
+      this.planSteps[currentSubtaskIndex]?.successCriteria || "",
+      explicitProfile ?? inferredProfile,
+    );
     if (activeProfile) {
       if (this.turnsOnCurrentStep >= this.limits.stepWarnTurns) {
         this.log.info("agent", "Tool profile widened due to step stagnation", {
@@ -7248,7 +7293,10 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
               // Guard: reject done() on early turns when the summary looks like a question
               // (model is asking for clarification instead of using the clarify tool)
-              if (this.turnCount <= 2 && summary.includes("?")) {
+              if (
+                this.turnCount <= 2 &&
+                isDoneSummaryAskingClarification(summary)
+              ) {
                 this.log.warn(
                   "agent",
                   "DONE rejected: summary is a question on T1, redirecting to clarify",

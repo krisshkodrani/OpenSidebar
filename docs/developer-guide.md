@@ -52,11 +52,11 @@ Validate real browser behavior with the built extension and live agent loop.
 
 Prerequisites:
 
-- `OPENROUTER_API_KEY`
+- `FIREWORKS_API_KEY` by default, unless `E2E_PROVIDER` points at another configured provider
 - successful build assets
 
 ```bash
-npm run test:e2e
+npm run test:e2e:staged
 ```
 
 Related surfaces:
@@ -64,6 +64,17 @@ Related surfaces:
 - fixtures in `apps/extension/tests/e2e/fixtures/`
 - helper utilities in `apps/extension/tests/e2e/helpers/`
 - local reports in `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
+
+Routine E2E is divided by purpose rather than difficulty:
+
+| Suite              | Command                                  | Purpose                                                                                          |
+| ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Smoke              | `npm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
+| Interactions       | `npm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
+| Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, durable state, and memory regressions                          |
+| WorkArena gap      | `npm run test:e2e:workarena`             | Local CRM, ticket, document, chat, email, and workflow tasks modeled after WorkArena categories  |
+| WorkArena variance | `npm run test:e2e:workarena:variance`    | Repeated WorkArena-gap run for pass-rate variance; expensive by design                           |
+| Nightly legacy     | `npm run test:e2e:nightly`               | Saturated legacy primitives kept out of routine staged runs                                      |
 
 ### Inspect traces and logs
 
@@ -203,13 +214,17 @@ Structured perception uses the unified v6 contract:
 
 ### Tests
 
-| Command                  | Use this when                             | Notes                                          |
-| ------------------------ | ----------------------------------------- | ---------------------------------------------- |
-| `npm test`               | you want the normal fast extension suite  | excludes backend and browser E2E runs          |
-| `npm run test:backend`   | you changed backend routes or persistence | backend-only Vitest run                        |
-| `npm run test:e2e`       | you need real-browser validation          | requires `OPENROUTER_API_KEY`                  |
-| `npm run release:verify` | you want the release gate                 | lint + extension tests + backend tests + build |
-| `npx vitest run <file>`  | you want one focused test file            | useful during iteration                        |
+| Command                      | Use this when                             | Notes                                          |
+| ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
+| `npm test`                   | you want the normal fast extension suite  | excludes backend and browser E2E runs          |
+| `npm run test:backend`       | you changed backend routes or persistence | backend-only Vitest run                        |
+| `npm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
+| `npm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
+| `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
+| `npm run test:e2e:workarena` | you need WorkArena-gap workflow coverage  | expensive; run deliberately                    |
+| `npm run test:e2e:all`       | you need every raw browser E2E file       | includes retired legacy files                  |
+| `npm run release:verify`     | you want the release gate                 | lint + extension tests + backend tests + build |
+| `npx vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 ### Observability
 

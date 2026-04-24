@@ -484,10 +484,10 @@ interface TraceEntry {
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
 ### Executor Tier (observe→act cycles)
-- **OpenRouter** (`google/gemini-3-flash-preview`)
+- **Fireworks** (`accounts/fireworks/routers/kimi-k2p5-turbo`)
 
 ### Planner Tier (reasoning/escalation)
-- **OpenRouter** (`minimax/minimax-m2.5`) — Single provider
+- **Fireworks** (`accounts/fireworks/routers/kimi-k2p5-turbo`)
 
 Both pools use `ProviderPool` with `PoolConfig` for generic configuration. The `TaskPlanner` also uses the planner pool.
 

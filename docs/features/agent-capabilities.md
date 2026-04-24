@@ -6,9 +6,9 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 
 | Role | Model | Provider | Purpose |
 | --- | --- | --- | --- |
-| Executor | `google/gemini-3-flash-preview` | OpenRouter | Default action loop |
-| Executor fallback | `google/gemini-3.1-flash-lite-preview` | OpenRouter | Runtime fallback for empty-response issues |
-| Planner | `minimax/minimax-m2.5` | OpenRouter | Planning, rerouting, verification |
+| Executor | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Default action loop |
+| Executor fallback | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Runtime fallback for empty-response issues |
+| Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Planning, rerouting, verification |
 | Perception | `x-ai/grok-4.1-fast` | OpenRouter | Visual grounding |
 
 ## Runtime Capabilities

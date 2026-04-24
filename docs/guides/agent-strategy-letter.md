@@ -10,12 +10,12 @@ OpenSidebar is a Chrome extension that runs an autonomous browser agent. Given a
 
 The core design principle is **generic over task-specific**. There are no site-specific heuristics anywhere in the system. The agent adapts through prompting and demonstrations, never through code. The guiding question behind every architectural decision: *"Would this work on a site I've never seen?"*
 
-The entire LLM pipeline runs through a single provider, **OpenRouter**, with two model tiers:
+The current default runtime uses Fireworks-hosted Kimi for executor and planner turns, with provider/model overrides available in Settings.
 
 | Tier | Model | Role |
 |------|-------|------|
-| Executor | `google/gemini-3-flash-preview` | Default for all turns — fast, cheap, good enough for most DOM interactions |
-| Planner | `minimax/minimax-m2.5` | Activated on escalation for complex reasoning (puzzles, multi-step logic, recovery from stuck states) |
+| Executor | `accounts/fireworks/routers/kimi-k2p5-turbo` | Default action loop |
+| Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` | Planning, decomposition, rerouting, and verification support |
 
 Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.
 
