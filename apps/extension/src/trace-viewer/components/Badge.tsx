@@ -26,66 +26,66 @@ type BadgeVariant =
   | "tier-planner";
 
 const VARIANT_CLASSES: Record<string, string> = {
-  completed: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
-  success: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
-  stopped: "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30",
-  error: "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
-  failure: "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
-  max_turns: "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
+  completed: "bg-state-success/10 text-state-success border border-state-success/25",
+  success: "bg-state-success/10 text-state-success border border-state-success/25",
+  stopped: "bg-state-warning/10 text-state-warning border border-state-warning/25",
+  error: "bg-state-error/10 text-state-error border border-state-error/25",
+  failure: "bg-state-error/10 text-state-error border border-state-error/25",
+  max_turns: "bg-state-warning/10 text-state-warning border border-state-warning/25",
   model:
-    "bg-violet-500/[0.12] text-trace-accent-light border border-violet-500/25 font-mono text-[9px] normal-case font-medium",
+    "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25 font-mono text-[9px] normal-case font-medium",
   manual:
-    "bg-indigo-500/15 text-[#a78bfa] border border-indigo-500/30 font-mono text-[9px] normal-case font-medium",
+    "bg-brand-live/10 text-brand-live border border-brand-live/25 font-mono text-[9px] normal-case font-medium",
   recording:
-    "bg-red-500/15 text-red-400 border border-red-500/30 font-mono text-[9px] normal-case font-medium",
-  tool: "bg-purple-500/15 text-[#bb8fce] border border-purple-500/30 font-mono normal-case font-medium text-[11px]",
-  enabled: "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
-  disabled: "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
-  pinned: "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30",
-  type: "bg-violet-500/[0.12] text-trace-accent-light border border-violet-500/25 normal-case",
+    "bg-state-error/10 text-state-error border border-state-error/25 font-mono text-[9px] normal-case font-medium",
+  tool: "bg-brand-live/10 text-brand-live border border-brand-live/25 font-mono normal-case font-medium text-[11px]",
+  enabled: "bg-state-success/10 text-state-success border border-state-success/25",
+  disabled: "bg-state-error/10 text-state-error border border-state-error/25",
+  pinned: "bg-state-warning/10 text-state-warning border border-state-warning/25",
+  type: "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25 normal-case",
   category:
-    "bg-purple-500/[0.12] text-[#bb8fce] border border-purple-500/25 normal-case",
+    "bg-brand-live/10 text-brand-live border border-brand-live/25 normal-case",
   cached:
-    "bg-green-500/10 text-[#2ecc71] border border-green-500/20 text-[9px]",
+    "bg-state-success/10 text-state-success border border-state-success/20 text-[9px]",
   dynamic:
-    "bg-orange-500/10 text-[#e67e22] border border-orange-500/20 text-[9px]",
+    "bg-state-warning/10 text-state-warning border border-state-warning/20 text-[9px]",
   "original-query":
-    "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30 text-[9px]",
+    "bg-state-warning/10 text-state-warning border border-state-warning/25 text-[9px]",
   // tier badges
   "tier-executor":
-    "bg-cyan-500/15 text-[#22d3ee] border border-cyan-500/30 text-[9px] font-mono",
+    "bg-brand-live/10 text-brand-live border border-brand-live/25 text-[9px] font-mono",
   "tier-planner":
-    "bg-amber-500/15 text-[#fbbf24] border border-amber-500/30 text-[9px] font-mono",
+    "bg-state-warning/10 text-state-warning border border-state-warning/25 text-[9px] font-mono",
   // difficulty badges
   "difficulty-simple":
-    "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
+    "bg-state-success/10 text-state-success border border-state-success/25",
   "difficulty-moderate":
-    "bg-yellow-500/15 text-[#f1c40f] border border-yellow-500/30",
+    "bg-state-warning/10 text-state-warning border border-state-warning/25",
   "difficulty-complex":
-    "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
-  "difficulty-extreme": "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
+    "bg-state-warning/10 text-state-warning border border-state-warning/25",
+  "difficulty-extreme": "bg-state-error/10 text-state-error border border-state-error/25",
   // role badges
-  "role-system": "bg-purple-500/15 text-[#bb8fce] border border-purple-500/30",
+  "role-system": "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25",
   "role-user":
-    "bg-violet-500/15 text-trace-accent-light border border-violet-500/30",
-  "role-assistant": "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
-  "role-tool": "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
+    "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25",
+  "role-assistant": "bg-state-success/10 text-state-success border border-state-success/25",
+  "role-tool": "bg-brand-live/10 text-brand-live border border-brand-live/25",
   // event badges
   "event-escalation":
-    "bg-orange-500/15 text-[#e67e22] border border-orange-500/30",
-  "event-stuck": "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
-  "event-stuck_signal": "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
+    "bg-state-warning/10 text-state-warning border border-state-warning/25",
+  "event-stuck": "bg-state-error/10 text-state-error border border-state-error/25",
+  "event-stuck_signal": "bg-state-error/10 text-state-error border border-state-error/25",
   "event-circuit_breaker":
-    "bg-red-500/15 text-[#e74c3c] border border-red-500/30",
-  "event-hint": "bg-violet-500/15 text-[#C084FC] border border-violet-500/30",
+    "bg-state-error/10 text-state-error border border-state-error/25",
+  "event-hint": "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25",
   "event-screenshot":
-    "bg-green-500/15 text-[#2ecc71] border border-green-500/30",
+    "bg-state-success/10 text-state-success border border-state-success/25",
   "event-plan_update":
-    "bg-purple-500/15 text-[#bb8fce] border border-purple-500/30",
+    "bg-brand-live/10 text-brand-live border border-brand-live/25",
 };
 
 const DEFAULT_EVENT_CLASS =
-  "bg-gray-500/15 text-[#95a5a6] border border-gray-500/30";
+  "bg-slate-500/10 text-slate-500 border border-slate-500/25";
 
 interface BadgeProps {
   variant: BadgeVariant;

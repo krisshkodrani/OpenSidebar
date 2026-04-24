@@ -7,21 +7,21 @@ import LoadingSpinner from "../LoadingSpinner";
 const LEVEL_COLORS: Record<string, string> = {
   DEBUG: "text-trace-dim",
   INFO: "text-trace-accent-light",
-  WARN: "text-[#f1c40f]",
-  ERROR: "text-[#e74c3c]",
+  WARN: "text-state-warning",
+  ERROR: "text-state-error",
 };
 
 const LEVEL_BG: Record<string, string> = {
   DEBUG: "",
   INFO: "",
-  WARN: "bg-yellow-500/5",
-  ERROR: "bg-red-500/5",
+  WARN: "bg-state-warning/5",
+  ERROR: "bg-state-error/5",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
   background: "text-[#0ea5e9]",
   content: "text-[#22c55e]",
-  sidepanel: "text-[#a855f7]",
+  sidepanel: "text-trace-accent-light",
   offscreen: "text-[#f59e0b]",
 };
 

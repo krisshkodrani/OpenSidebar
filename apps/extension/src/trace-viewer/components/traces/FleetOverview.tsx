@@ -42,7 +42,7 @@ export default function FleetOverview({ onFiltersChanged }: FleetOverviewProps) 
   };
 
   return (
-    <div className="px-5 py-4 border-b border-trace-border bg-[linear-gradient(180deg,rgba(124,58,237,0.07),rgba(12,16,22,0))] shrink-0">
+    <div className="px-5 py-4 border-b border-trace-border bg-[linear-gradient(180deg,rgba(37,99,235,0.07),rgba(248,250,252,0))] shrink-0">
       <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] gap-3">
         <OverviewCard
           label="Success Rate"

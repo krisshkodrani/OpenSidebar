@@ -111,7 +111,7 @@ function TopLevelToggle() {
           className={`px-4 py-2 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
             topLevelView === tab.key
               ? "text-trace-accent-light border-trace-accent"
-              : "text-trace-muted border-transparent hover:text-[#4C3D80]"
+              : "text-trace-muted border-transparent hover:text-trace-subtle"
           }`}
         >
           {tab.label}

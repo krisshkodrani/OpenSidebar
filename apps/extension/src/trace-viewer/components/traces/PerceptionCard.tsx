@@ -40,9 +40,9 @@ export default function PerceptionCard({
         .join("\n");
 
   return (
-    <div className="bg-trace-panel border border-[rgba(124,58,237,0.15)] rounded-lg mb-4 overflow-hidden">
+    <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-4 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[rgba(124,58,237,0.12)] border-b border-[rgba(124,58,237,0.12)]">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-trace-accent/[0.08] border-b border-trace-accent/[0.12]">
         <a
           className="text-[13px] font-bold text-trace-accent-light hover:underline cursor-pointer"
           onClick={() => navigateToTurn(turnNum)}
@@ -61,17 +61,17 @@ export default function PerceptionCard({
       {/* Body */}
       <div className="flex min-h-[200px]">
         {/* Left: screenshot + elements */}
-        <div className="flex-1 border-r border-[rgba(124,58,237,0.12)] p-3 flex flex-col gap-2.5 min-w-0">
+        <div className="flex-1 border-r border-trace-accent/[0.12] p-3 flex flex-col gap-2.5 min-w-0">
           {!imgError ? (
             <img
-              className="max-w-full rounded border border-[rgba(124,58,237,0.15)] cursor-pointer transition-opacity hover:opacity-85"
+              className="max-w-full rounded border border-trace-accent/[0.15] cursor-pointer transition-opacity hover:opacity-85"
               src={screenshotSrc}
               alt={`Turn ${turnNum} screenshot`}
               loading="lazy"
               onError={() => setImgError(true)}
             />
           ) : (
-            <div className="bg-[rgba(124,58,237,0.12)] border border-dashed border-[rgba(124,58,237,0.15)] rounded p-8 text-center text-trace-dim text-xs">
+            <div className="bg-trace-accent/[0.08] border border-dashed border-trace-accent/[0.15] rounded p-8 text-center text-trace-dim text-xs">
               Screenshot not available
             </div>
           )}
@@ -87,10 +87,10 @@ export default function PerceptionCard({
 
         {/* Right: interpretation + metadata */}
         <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
-          <div className="text-xs text-[#4C3D80] leading-relaxed whitespace-pre-wrap break-words">
+          <div className="text-xs text-trace-subtle leading-relaxed whitespace-pre-wrap break-words">
             {p.interpretation}
           </div>
-          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-[rgba(124,58,237,0.12)]">
+          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-trace-accent/[0.12]">
             <span>Model: {p.model || "?"}</span>
             {p.providerId && <span>Provider: {p.providerId}</span>}
             <span>

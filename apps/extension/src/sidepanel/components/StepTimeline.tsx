@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -181,7 +181,6 @@ export const StepTimeline = React.memo(function StepTimeline({
   defaultCollapsed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  if (steps.length === 0) return null;
 
   const hasRunning = steps.some((s) => s.status === "running");
   const collapseThreshold = hasRunning ? ACTIVE_VISIBLE_TAIL : COLLAPSE_THRESHOLD;
@@ -190,12 +189,9 @@ export const StepTimeline = React.memo(function StepTimeline({
   const visibleSteps = shouldCollapse ? steps.slice(-visibleTail) : steps;
   const hiddenCount = steps.length - visibleSteps.length;
   const showMedia = expanded || (!shouldCollapse && steps.length <= 2);
-  const helperLabel = useMemo(() => {
-    if (hasRunning) {
-      return `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
-    }
-    return `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
-  }, [hasRunning, hiddenCount]);
+  const helperLabel = `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
+
+  if (steps.length === 0) return null;
 
   return (
     <div className="max-w-[92%] mb-1">

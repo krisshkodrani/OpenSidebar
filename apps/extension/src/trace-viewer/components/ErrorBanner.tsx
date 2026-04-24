@@ -12,7 +12,7 @@ export default function ErrorBanner({
   onRetry,
 }: ErrorBannerProps) {
   return (
-    <div className="p-3 mx-5 my-4 bg-red-500/10 border border-red-500/30 rounded text-[#e74c3c] text-[13px]">
+    <div className="p-3 mx-5 my-4 bg-state-error/10 border border-state-error/30 rounded text-state-error text-[13px]">
       {message}
       {hint && (
         <div className="mt-2">
@@ -23,7 +23,7 @@ export default function ErrorBanner({
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-2 px-3 py-1 text-xs font-medium rounded border border-red-500/30 text-[#e74c3c] hover:bg-red-500/20 transition-colors cursor-pointer"
+          className="mt-2 px-3 py-1 text-xs font-medium rounded border border-state-error/30 text-state-error hover:bg-state-error/20 transition-colors cursor-pointer"
         >
           Retry
         </button>

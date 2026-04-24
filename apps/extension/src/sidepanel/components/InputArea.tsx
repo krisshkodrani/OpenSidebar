@@ -218,7 +218,7 @@ export function InputArea({
                 Add guidance, a correction, or a new constraint while the current run continues.
               </div>
             </div>
-            <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
+            <div className="input-glow relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-all">
               <textarea
                 ref={textareaRef}
                 value={inputText}
@@ -248,7 +248,7 @@ export function InputArea({
           </div>
         ) : (
           <>
-            <div className="relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 focus-within:ring-warm-300 dark:focus-within:ring-warm-600 transition-all">
+            <div className="input-glow relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-all">
               <textarea
                 ref={textareaRef}
                 value={inputText}

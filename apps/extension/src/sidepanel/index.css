@@ -15,11 +15,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: #F5F3FF;
+  background-color: #F8FAFC;
 }
 
 .dark body {
-  background-color: #150F35;
+  background-color: #0F172A;
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -74,13 +74,13 @@ body,
 }
 
 .prose-chat a {
-  color: #7c5cfc;
+  color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .prose-chat a:hover {
-  color: #6d4ee6;
+  color: #1d4ed8;
 }
 
 .prose-chat blockquote {
@@ -144,11 +144,11 @@ body,
 }
 
 .dark .prose-chat a {
-  color: #a78bfa;
+  color: #60a5fa;
 }
 
 .dark .prose-chat a:hover {
-  color: #c4b5fd;
+  color: #93c5fd;
 }
 
 .dark .prose-chat blockquote {
@@ -258,26 +258,34 @@ body,
 
 /* --- Input focus glow --- */
 .input-glow:focus-within {
-  box-shadow: 0 0 0 4px rgba(124, 92, 252, 0.08);
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 5px rgba(37, 99, 235, 0.22);
 }
 
-/* --- Warm background gradient --- */
+.dark .input-glow:focus-within {
+  box-shadow:
+    0 0 0 2px #0f172a,
+    0 0 0 5px rgba(96, 165, 250, 0.28);
+}
+
+/* --- Azure background gradient --- */
 .bg-warm-gradient {
-  background: linear-gradient(to bottom, #F5F3FF, rgba(237, 233, 254, 0.2));
+  background: linear-gradient(to bottom, #F8FAFC, rgba(219, 234, 254, 0.28));
 }
 .dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, #150F35, #0D0A1F);
+  background: linear-gradient(to bottom, #0F172A, #020617);
 }
 
 /* --- Glass surface --- */
 .glass-surface {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  background-color: rgba(245, 243, 255, 0.85);
+  background-color: rgba(248, 250, 252, 0.85);
 }
 
 .dark .glass-surface {
-  background-color: rgba(21, 15, 53, 0.85);
+  background-color: rgba(15, 23, 42, 0.85);
 }
 
 /* --- Button tactile feedback --- */
