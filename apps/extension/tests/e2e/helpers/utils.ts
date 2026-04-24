@@ -46,6 +46,14 @@ function hasIdleAfterTerminalCompletion(events: any[]): boolean {
   );
 }
 
+function isTransientPageEvaluationError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  return /\b(?:execution context was destroyed|cannot find context|context destroyed|frame was detached|navigating|navigation)\b/i.test(
+    message,
+  );
+}
+
 /**
  * Set up event monitoring in the service worker context.
  * Wraps `chrome.runtime.sendMessage` to capture key background runtime events
@@ -920,7 +928,15 @@ export async function waitForOutcome<T>(
   let successfulResult: T | null = null;
 
   while (Date.now() - start < timeoutMs) {
-    const result = await checkFn();
+    let result: T | null | undefined = null;
+    try {
+      result = await checkFn();
+    } catch (error) {
+      if (!isTransientPageEvaluationError(error)) {
+        throw error;
+      }
+      result = null;
+    }
     if (result) {
       successfulResult = result;
     }

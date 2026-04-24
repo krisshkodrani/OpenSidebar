@@ -86,7 +86,13 @@ vi.mock("../../src/background/llm", () => ({
 
 import {
   AgentLoop,
+  countVisibleListDetailActions,
+  getListDetailDoneRejection,
+  getListDetailWorkflowBlock,
+  getNextUnreviewedListDetailAction,
+  isListDetailReturnControlRepeatExempt,
   isPerceptionFailurePlaceholder,
+  requiresBroadListDetailReview,
   rewriteAutocompleteTextEntry,
   shouldOmitPerceptionForDoneValidation,
   validateTextEntryTarget,
@@ -772,7 +778,7 @@ describe("AgentLoop", () => {
     expect(ranked).toEqual(tools);
   });
 
-  test("caps max turns for list-detail review loop skill", () => {
+  test("preserves a broad turn budget for list-detail review loop skill", () => {
     const agent = new AgentLoop(
       "test-key",
       {
@@ -786,7 +792,1018 @@ describe("AgentLoop", () => {
       },
     );
 
-    expect((agent as any).maxTurns).toBe(20);
+    expect((agent as any).maxTurns).toBe(45);
+  });
+
+  test("preserves a broad turn budget for multi-item procurement loop skill", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "multi-tab-procurement-loop",
+        maxTurns: 60,
+      },
+    );
+
+    expect((agent as any).maxTurns).toBe(45);
+  });
+
+  test("exempts list-detail return controls from same-argument repeat blocking", () => {
+    const exempt = isListDetailReturnControlRepeatExempt({
+      selectedSkillId: "list-detail-review-loop",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 45 },
+      snapshot: {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 45,
+            tagName: "button",
+            role: "button",
+            text: "Back to Listings",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(exempt).toBe(true);
+  });
+
+  test("does not exempt arbitrary repeated list-detail clicks", () => {
+    const exempt = isListDetailReturnControlRepeatExempt({
+      selectedSkillId: "list-detail-review-loop",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 35 },
+      snapshot: {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(exempt).toBe(false);
+  });
+
+  test("does not replay cached list-detail return control clicks", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Frontend Developer",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    (agent as any).recordMutationSensitiveAction(
+      ToolName.CLICK_ELEMENT,
+      { id: 45 },
+      'Clicked [45] button "Back to Listings"',
+    );
+
+    expect(
+      (agent as any).replayMutationSensitiveAction(
+        "call-1",
+        ToolName.CLICK_ELEMENT,
+        { id: 45 },
+      ),
+    ).toBe(false);
+  });
+
+  test("counts visible list-detail actions for broad review guards", () => {
+    const count = countVisibleListDetailActions({
+      url: "https://example.com/jobs",
+      title: "Jobs",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 35,
+          tagName: "button",
+          role: "button",
+          text: "View details for Senior Frontend Engineer at Nextera Tech",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 36,
+          tagName: "button",
+          role: "button",
+          text: "View details for Full Stack Engineer at DataPulse",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    expect(count).toBe(2);
+  });
+
+  test("finds the next unreviewed visible list-detail action", () => {
+    const next = getNextUnreviewedListDetailAction(
+      {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer at Nextera Tech",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 36,
+            tagName: "button",
+            role: "button",
+            text: "View details for Full Stack Engineer at DataPulse",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+      ["senior frontend engineer at nextera tech"],
+    );
+
+    expect(next).toEqual({
+      id: 36,
+      label: "full stack engineer at datapulse",
+    });
+  });
+
+  test("ignores cosmetic attributes when deriving list-detail labels", () => {
+    const next = getNextUnreviewedListDetailAction(
+      {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer at Nextera Tech",
+            attributes: {
+              "aria-label":
+                "View details for Senior Frontend Engineer at Nextera Tech",
+              style: "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
+            },
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 36,
+            tagName: "button",
+            role: "button",
+            text: "View details for Full Stack Engineer at DataPulse",
+            attributes: {
+              style: "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
+            },
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+      ["senior frontend engineer at nextera tech"],
+    );
+
+    expect(next).toEqual({
+      id: 36,
+      label: "full stack engineer at datapulse",
+    });
+  });
+
+  test("blocks off-workflow tools when visible list details remain", () => {
+    const block = getListDetailWorkflowBlock({
+      selectedSkillId: "list-detail-review-loop",
+      query:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      toolName: ToolName.RIGHT_CLICK,
+      args: { id: 12 },
+      visibleDetailActionCount: 3,
+      reviewedTargets: ["senior frontend engineer at nextera tech"],
+      snapshot: {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer at Nextera Tech",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 36,
+            tagName: "button",
+            role: "button",
+            text: "View details for Full Stack Engineer at DataPulse",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 37,
+            tagName: "button",
+            role: "button",
+            text: "View details for QA Engineer at ClearWorks",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(block).toContain("off workflow");
+    expect(block).toContain('[36] "full stack engineer at datapulse"');
+  });
+
+  test("allows clicking an unreviewed list-detail action", () => {
+    const block = getListDetailWorkflowBlock({
+      selectedSkillId: "list-detail-review-loop",
+      query:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 36 },
+      visibleDetailActionCount: 3,
+      reviewedTargets: ["senior frontend engineer at nextera tech"],
+      snapshot: {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer at Nextera Tech",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 36,
+            tagName: "button",
+            role: "button",
+            text: "View details for Full Stack Engineer at DataPulse",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(block).toBeNull();
+  });
+
+  test("blocks clicking an already reviewed list-detail action", () => {
+    const block = getListDetailWorkflowBlock({
+      selectedSkillId: "list-detail-review-loop",
+      query:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 35 },
+      visibleDetailActionCount: 3,
+      reviewedTargets: ["senior frontend engineer at nextera tech"],
+      snapshot: {
+        url: "https://example.com/jobs",
+        title: "Jobs",
+        timestamp: Date.now(),
+        elements: [
+          {
+            tag: 35,
+            tagName: "button",
+            role: "button",
+            text: "View details for Senior Frontend Engineer at Nextera Tech",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 36,
+            tagName: "button",
+            role: "button",
+            text: "View details for Full Stack Engineer at DataPulse",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+          {
+            tag: 37,
+            tagName: "button",
+            role: "button",
+            text: "View details for QA Engineer at ClearWorks",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 1, height: 1 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(block).toContain("already been reviewed");
+    expect(block).toContain("[36]");
+  });
+
+  test("tracks list-detail opened and reviewed state separately", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).turnCount = 4;
+
+    const listSnapshot = {
+      url: "https://example.com/jobs",
+      title: "Jobs",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 35,
+          tagName: "button",
+          role: "button",
+          text: "View details for Senior Frontend Engineer at Nextera Tech",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 36,
+          tagName: "button",
+          role: "button",
+          text: "View details for Full Stack Engineer at DataPulse",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 37,
+          tagName: "button",
+          role: "button",
+          text: "View details for QA Engineer at ClearWorks",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any;
+    const detailSnapshot = {
+      ...listSnapshot,
+      url: "https://example.com/jobs/senior-frontend",
+      title: "Senior Frontend Engineer",
+      elements: [],
+    };
+
+    (agent as any).trackListDetailToolSuccess(
+      ToolName.CLICK_ELEMENT,
+      { id: 35 },
+      listSnapshot,
+    );
+
+    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
+
+    (agent as any).trackListDetailToolSuccess(
+      ToolName.READ_PAGE,
+      {},
+      detailSnapshot,
+    );
+
+    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailReviewedTargets.size).toBe(1);
+    expect(recordEvent).toHaveBeenCalledWith(
+      "list_detail_item_reviewed",
+      expect.objectContaining({
+        source: "read",
+        openedCount: 1,
+        reviewedCount: 1,
+      }),
+    );
+  });
+
+  test("does not count a list-page read as reviewing an opened detail", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+
+    const listSnapshot = {
+      url: "https://example.com/jobs",
+      title: "Jobs",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 35,
+          tagName: "button",
+          role: "button",
+          text: "View details for Senior Frontend Engineer at Nextera Tech",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 36,
+          tagName: "button",
+          role: "button",
+          text: "View details for Full Stack Engineer at DataPulse",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 37,
+          tagName: "button",
+          role: "button",
+          text: "View details for QA Engineer at ClearWorks",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any;
+
+    (agent as any).trackListDetailToolSuccess(
+      ToolName.CLICK_ELEMENT,
+      { id: 35 },
+      listSnapshot,
+    );
+    (agent as any).trackListDetailToolSuccess(
+      ToolName.READ_PAGE,
+      {},
+      listSnapshot,
+    );
+
+    expect((agent as any).listDetailOpenedTargets.size).toBe(1);
+    expect((agent as any).listDetailReviewedTargets.size).toBe(0);
+  });
+
+  test("redirects off-workflow list-detail tool calls to the next review action", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).listDetailVisibleActionCount = 3;
+    (agent as any).listDetailReviewedTargets = new Set([
+      "senior frontend engineer at nextera tech",
+    ]);
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Jobs",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 35,
+          tagName: "button",
+          role: "button",
+          text: "View details for Senior Frontend Engineer at Nextera Tech",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 36,
+          tagName: "button",
+          role: "button",
+          text: "View details for Full Stack Engineer at DataPulse",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 37,
+          tagName: "button",
+          role: "button",
+          text: "View details for QA Engineer at ClearWorks",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+    const toolCall = {
+      id: "call-1",
+      type: "function",
+      function: {
+        name: ToolName.READ_PAGE,
+        arguments: "{}",
+      },
+    } as any;
+
+    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+      toolCall,
+      "sequential",
+    );
+
+    expect(redirected).toBe(true);
+    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
+    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 36 });
+    expect(recordEvent).toHaveBeenCalledWith(
+      "list_detail_workflow_tool_redirected",
+      expect.objectContaining({
+        fromTool: ToolName.READ_PAGE,
+        toTool: ToolName.CLICK_ELEMENT,
+        targetId: 36,
+      }),
+    );
+  });
+
+  test("redirects off-workflow detail-page actions to reading the open detail", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).listDetailVisibleActionCount = 10;
+    (agent as any).listDetailCurrentTarget =
+      "full stack engineer at datapulse";
+    (agent as any).listDetailOpenedTargets = new Set([
+      "full stack engineer at datapulse",
+    ]);
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Full Stack Engineer",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+    const toolCall = {
+      id: "call-1",
+      type: "function",
+      function: {
+        name: ToolName.CLICK_ELEMENT,
+        arguments: JSON.stringify({ id: 37 }),
+      },
+    } as any;
+
+    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+      toolCall,
+      "sequential",
+    );
+
+    expect(redirected).toBe(true);
+    expect(toolCall.function.name).toBe(ToolName.READ_PAGE);
+    expect(toolCall.function.arguments).toBe("{}");
+    expect(recordEvent).toHaveBeenCalledWith(
+      "list_detail_workflow_tool_redirected",
+      expect.objectContaining({
+        fromTool: ToolName.CLICK_ELEMENT,
+        toTool: ToolName.READ_PAGE,
+        reason: "current_detail_needs_read",
+      }),
+    );
+  });
+
+  test("allows reading an unread detail page instead of returning to the list", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).listDetailVisibleActionCount = 10;
+    (agent as any).listDetailCurrentTarget =
+      "frontend developer at startupgrid";
+    (agent as any).listDetailOpenedTargets = new Set([
+      "frontend developer at startupgrid",
+    ]);
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Frontend Developer",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+    const toolCall = {
+      id: "call-1",
+      type: "function",
+      function: {
+        name: ToolName.READ_PAGE,
+        arguments: "{}",
+      },
+    } as any;
+
+    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+      toolCall,
+      "sequential",
+    );
+
+    expect(redirected).toBe(false);
+    expect(toolCall.function.name).toBe(ToolName.READ_PAGE);
+  });
+
+  test("redirects repeated reads on a reviewed detail page back to the listings", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).listDetailVisibleActionCount = 10;
+    (agent as any).listDetailCurrentTarget =
+      "frontend developer at startupgrid";
+    (agent as any).listDetailReviewedTargets = new Set([
+      "frontend developer at startupgrid",
+    ]);
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Frontend Developer",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+    const toolCall = {
+      id: "call-1",
+      type: "function",
+      function: {
+        name: ToolName.READ_PAGE,
+        arguments: "{}",
+      },
+    } as any;
+
+    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+      toolCall,
+      "sequential",
+    );
+
+    expect(redirected).toBe(true);
+    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
+    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 45 });
+    expect(recordEvent).toHaveBeenCalledWith(
+      "list_detail_workflow_tool_redirected",
+      expect.objectContaining({
+        fromTool: ToolName.READ_PAGE,
+        toTool: ToolName.CLICK_ELEMENT,
+        reason: "return_to_list_required",
+      }),
+    );
+  });
+
+  test("redirects detail-page drift back to the listings page after reading", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).listDetailVisibleActionCount = 10;
+    (agent as any).listDetailCurrentTarget =
+      "full stack engineer at datapulse";
+    (agent as any).listDetailReviewedTargets = new Set([
+      "full stack engineer at datapulse",
+    ]);
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/jobs",
+      title: "Full Stack Engineer",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 12,
+          tagName: "a",
+          role: "link",
+          text: "GoBack",
+          attributes: { href: "/go-back-chain" },
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 45,
+          tagName: "button",
+          role: "button",
+          text: "Back to Listings",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+    const toolCall = {
+      id: "call-1",
+      type: "function",
+      function: {
+        name: ToolName.CLICK_ELEMENT,
+        arguments: JSON.stringify({ id: 12 }),
+      },
+    } as any;
+
+    const redirected = (agent as any).rewriteListDetailWorkflowToolCall(
+      toolCall,
+      "sequential",
+    );
+
+    expect(redirected).toBe(true);
+    expect(toolCall.function.name).toBe(ToolName.CLICK_ELEMENT);
+    expect(JSON.parse(toolCall.function.arguments)).toEqual({ id: 45 });
+    expect(recordEvent).toHaveBeenCalledWith(
+      "list_detail_workflow_tool_redirected",
+      expect.objectContaining({
+        fromTool: ToolName.CLICK_ELEMENT,
+        toTool: ToolName.CLICK_ELEMENT,
+        targetId: 45,
+        reason: "return_to_list_required",
+      }),
+    );
+  });
+
+  test("skips replanning for skill-owned broad list-detail reviews", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    const replanFrom = vi.fn();
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).planner = { replanFrom };
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).planSubtasks = [
+      {
+        description: "Review job listings",
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        id: "step-1",
+        objective: "Review job listings",
+        successCriteria: "All listings reviewed",
+        type: "read",
+      },
+    ];
+
+    const replanned = await (agent as any).replanOnEscalation(123, []);
+
+    expect(replanned).toBe(false);
+    expect(replanFrom).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "plan_replan_skipped_skill_owned_loop",
+      expect.objectContaining({
+        skillId: "list-detail-review-loop",
+      }),
+    );
+  });
+
+  test("skips replanning for skill-owned procurement loops", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "multi-tab-procurement-loop",
+      },
+    );
+    const replanFrom = vi.fn();
+    const recordEvent = vi.fn();
+    (agent as any).originalQuery =
+      "Buy the first two items from the procurement list and mark them complete.";
+    (agent as any).planner = { replanFrom };
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).planSubtasks = [
+      {
+        description: "Complete procurement checklist workflow",
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        id: "step-1",
+        objective: "Complete procurement checklist workflow",
+        successCriteria:
+          "The requested procurement list items are purchased and marked complete.",
+        type: "act",
+      },
+    ];
+
+    const replanned = await (agent as any).replanOnEscalation(123, []);
+
+    expect(replanned).toBe(false);
+    expect(replanFrom).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "plan_replan_skipped_skill_owned_loop",
+      expect.objectContaining({
+        skillId: "multi-tab-procurement-loop",
+      }),
+    );
+  });
+
+  test("rejects done for incomplete broad list-detail recommendation reviews", () => {
+    expect(
+      requiresBroadListDetailReview(
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      ),
+    ).toBe(true);
+
+    const rejection = getListDetailDoneRejection({
+      selectedSkillId: "list-detail-review-loop",
+      query:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      reviewedDetailCount: 2,
+      visibleDetailActionCount: 10,
+    });
+
+    expect(rejection).toContain("reviewed 2/10 visible detail pages");
+  });
+
+  test("allows done once the visible list-detail candidate set is reviewed", () => {
+    const rejection = getListDetailDoneRejection({
+      selectedSkillId: "list-detail-review-loop",
+      query:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      reviewedDetailCount: 10,
+      visibleDetailActionCount: 10,
+    });
+
+    expect(rejection).toBeNull();
   });
 
   test("recordSkillToolSelection traces the chosen tool preference for the active skill", () => {
@@ -1181,6 +2198,24 @@ describe("AgentLoop", () => {
     });
 
     expect(result).toBe(true);
+  });
+
+  test("allows tab management tools for skill-owned procurement loops", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "multi-tab-procurement-loop",
+      },
+    );
+    (agent as any).originalQuery =
+      "Buy the first two items from the procurement list and mark them complete.";
+
+    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
   });
 
   test("bypasses stale plan rejection when the page already shows final submission confirmation", () => {

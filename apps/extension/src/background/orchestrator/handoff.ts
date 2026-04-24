@@ -277,11 +277,13 @@ function buildExecutorSkillSection(node: TaskNode): string[] {
         ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
         : []),
       "Skill operating brief:",
-      "- Open the next visible listing detail directly from the listings page.",
+      "- For recommendation or best-match tasks, treat the visible listings as the candidate set unless the user narrowed the scope.",
+      "- Open each next visible listing detail directly from the listings page; keep the loop moving in list order.",
       "- Capture only fit-critical facts: role, company, location, salary, seniority, and core stack.",
+      "- Keep compact notes per reviewed listing so the final recommendation can be synthesized from evidence instead of memory.",
       "- After each review, use the page's visible listings/back-to-results control before continuing.",
       "- Avoid exploratory recovery tools while visible list actions or return controls exist.",
-      "- Call done() only after the current listing is reviewed and the listings page is visible again.",
+      "- Call done() only after the requested listing set is reviewed, the listings page is visible again, and any recommendation is grounded in the captured facts.",
       "",
     ];
   }

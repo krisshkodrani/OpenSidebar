@@ -163,7 +163,87 @@ function isProcurementReturnNode(node: TaskNode): boolean {
   );
 }
 
-function collapseProcurementLoopNodes(nodes: TaskNode[]): TaskNode[] {
+function isSkillOwnedProcurementLoopRequest(
+  query: string,
+  nodes: TaskNode[],
+): boolean {
+  if (nodes.length < 2) return false;
+  if (!nodes.every((node) => node.selectedSkillId === PROCUREMENT_SKILL_ID)) {
+    return false;
+  }
+
+  const corpus = compactText(
+    [
+      query,
+      ...nodes.flatMap((node) => [node.description, node.successCriteria]),
+    ].join(" "),
+  );
+  const hasProcurementSurface =
+    /\bprocurement\s+list\b/i.test(corpus) ||
+    /\b(?:store|stores|store\s+page|store\s+link)\b/i.test(corpus);
+  const hasPurchaseIntent = /\b(?:buy|purchase|procure|order)\b/i.test(corpus);
+  const hasMultipleItems =
+    /\bfirst\s+(?:\w+|\d+)\s+items?\b/i.test(corpus) ||
+    /\b\d+\s+items?\b/i.test(corpus) ||
+    /\b(?:both|each)\b/i.test(corpus);
+  const hasReturnOrMarkIntent =
+    /\b(?:mark|check)\b[\s\S]{0,80}\b(?:complete|done|off)\b/i.test(corpus) ||
+    /\bcheckbox\b/i.test(corpus) ||
+    /\breturn\b[\s\S]{0,80}\b(?:mark|check)\b/i.test(corpus);
+
+  return (
+    hasProcurementSurface &&
+    hasPurchaseIntent &&
+    hasMultipleItems &&
+    hasReturnOrMarkIntent
+  );
+}
+
+function collapseAllProcurementLoopNodes(
+  query: string,
+  nodes: TaskNode[],
+): TaskNode[] {
+  const firstNode = nodes[0];
+  return [
+    {
+      ...firstNode,
+      description: compactText(
+        [
+          `Complete the procurement checklist workflow for the original request: ${query}`,
+          ...nodes.map((node) => node.description),
+        ].join(" "),
+      ),
+      successCriteria: compactText(
+        [
+          "The requested procurement list items are purchased in their required quantities and marked complete on the procurement list.",
+          ...nodes.map((node) => node.successCriteria),
+        ].join(" "),
+      ),
+      allowedTools: unionTools(nodes),
+      dependencies: [],
+      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      verificationGate:
+        nodes
+          .slice()
+          .reverse()
+          .find((node) => node.verificationGate)?.verificationGate,
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    },
+  ];
+}
+
+function collapseProcurementLoopNodes(
+  nodes: TaskNode[],
+  query: string,
+): TaskNode[] {
+  if (isSkillOwnedProcurementLoopRequest(query, nodes)) {
+    return collapseAllProcurementLoopNodes(query, nodes);
+  }
+
   if (nodes.length < 3 || nodes.length % 3 !== 0) return nodes;
 
   for (let index = 0; index < nodes.length; index += 3) {
@@ -312,6 +392,8 @@ function stepsToNodes(
   query: string,
   steps: DecompositionStep[],
   phase: "planned" | "planner_replan" = "planned",
+  pageTitle?: string,
+  pageUrl?: string,
 ): TaskNode[] {
   const nodeIds = steps.map(() => crypto.randomUUID());
   const rawAssignments: PlannerAssignment[] = steps.map((step, index) => ({
@@ -353,6 +435,8 @@ function stepsToNodes(
         query,
         objective: assignment.objective,
         successCriteria: assignment.successCriteria,
+        pageTitle,
+        pageUrl,
       });
       return selection
         ? {
@@ -392,12 +476,14 @@ function stepsToNodes(
 export function buildFallbackNodes(
   query: string,
   phase: "planned" | "planner_replan" = "planned",
+  pageTitle?: string,
+  pageUrl?: string,
 ): TaskNode[] {
   const fallbackSteps =
     synthesizeBatchedExhaustivePlan(query) ||
     synthesizePlanFromTaskContract(query) ||
     [buildSingleFallbackStep(query)];
-  return stepsToNodes(query, fallbackSteps, phase);
+  return stepsToNodes(query, fallbackSteps, phase, pageTitle, pageUrl);
 }
 
 export class OrchestratorPlanner {
@@ -431,14 +517,20 @@ export class OrchestratorPlanner {
         ((decomposition.subtasks?.length ?? 0) <= 1 &&
           !(decomposition.steps?.length ?? 0)));
     if (shouldUseBatchedFallback) {
-      nodes = stepsToNodes(query, batchedExhaustiveFallback);
+      nodes = stepsToNodes(
+        query,
+        batchedExhaustiveFallback,
+        "planned",
+        pageTitle,
+        pageUrl,
+      );
       logger.info(
         "orchestrator",
         "Planner fallback replaced with compact exhaustive review graph",
         { count: nodes.length },
       );
     } else if (decomposition?.steps?.length) {
-      nodes = stepsToNodes(query, decomposition.steps);
+      nodes = stepsToNodes(query, decomposition.steps, "planned", pageTitle, pageUrl);
       logger.info(
         "orchestrator",
         "Planner produced structured graph assignments",
@@ -456,12 +548,12 @@ export class OrchestratorPlanner {
         dependencies: i > 0 ? [i - 1] : [],
         assumptions: [],
       }));
-      nodes = stepsToNodes(query, fallbackSteps);
+      nodes = stepsToNodes(query, fallbackSteps, "planned", pageTitle, pageUrl);
     } else {
-      nodes = buildFallbackNodes(query);
+      nodes = buildFallbackNodes(query, "planned", pageTitle, pageUrl);
     }
 
-    const collapsedProcurementNodes = collapseProcurementLoopNodes(nodes);
+    const collapsedProcurementNodes = collapseProcurementLoopNodes(nodes, query);
     if (collapsedProcurementNodes !== nodes) {
       nodes = collapsedProcurementNodes;
       logger.info(
@@ -604,7 +696,13 @@ export class OrchestratorPlanner {
 
     if (steps.length === 0) return null;
 
-    const nodes = stepsToNodes(query, steps as DecompositionStep[], "planned");
+    const nodes = stepsToNodes(
+      query,
+      steps as DecompositionStep[],
+      "planned",
+      pageTitle,
+      pageUrl,
+    );
 
     logger.info("orchestrator", "Planner produced horizon expansion nodes", {
       count: nodes.length,

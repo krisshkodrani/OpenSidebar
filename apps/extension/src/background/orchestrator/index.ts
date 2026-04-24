@@ -60,13 +60,13 @@ import {
 } from "./site-knowledge";
 import { LLMClient } from "../llm/client";
 import { workspaceManager } from "../workspaces/manager";
+import { isUsableTab } from "../infrastructure/tab-resolution";
 import {
   updateTabGroupAppearance,
   resetTabGroupAppearance,
 } from "../workspaces/tab-group-appearance";
 import { waitForContentScriptReady } from "../tab-ready";
 import { buildFallbackNodes, OrchestratorPlanner } from "./planner";
-import { selectPrimarySkill } from "./skills";
 import { inferToolProfileForStep } from "../agent/planner";
 import type { ToolProfile } from "../tools/metadata";
 import {
@@ -3629,6 +3629,62 @@ export class Orchestrator {
       // If the tab disappears between restore/start and execution, worker tabs still boot safely.
     }
 
+    const getDurableRecoveryUrl = (): string | null => {
+      for (const candidate of [task.rootTabUrl, initialTabUrl]) {
+        if (
+          candidate &&
+          candidate !== "about:blank" &&
+          candidate !== "about:newtab" &&
+          !candidate.startsWith("chrome://") &&
+          !candidate.startsWith("chrome-extension://")
+        ) {
+          return candidate;
+        }
+      }
+      return null;
+    };
+
+    const resolveRunnableTabId = async (
+      preferredTabId: number | null | undefined,
+    ): Promise<number | null> => {
+      if (
+        typeof preferredTabId === "number" &&
+        (await isUsableTab(preferredTabId))
+      ) {
+        return preferredTabId;
+      }
+
+      const rebound = await this.resolveResumeTabId(
+        task,
+        typeof preferredTabId === "number" ? preferredTabId : input.tabId,
+      );
+      if (rebound.status === "safe" && (await isUsableTab(rebound.tabId))) {
+        return rebound.tabId;
+      }
+
+      const recoveryUrl = getDurableRecoveryUrl();
+      if (recoveryUrl && input.settings.allowNavigation !== false) {
+        const recoveredTabId = await this.createWorkerTab(task, recoveryUrl);
+        claimTaskTab(task, {
+          tabId: recoveredTabId,
+          role: "primary",
+          createdByTask: true,
+          url: recoveryUrl,
+        });
+        this.emitTabCoordinationState(task, "rebound", {
+          tabId: recoveredTabId,
+          reason:
+            rebound.status === "unsafe"
+              ? rebound.reason
+              : "Recovered onto a fresh task tab at the durable root URL.",
+          recoveryUrl,
+        });
+        return recoveredTabId;
+      }
+
+      return null;
+    };
+
     const getBudgetExhaustionReason = (): string | null => {
       const elapsedMs = Date.now() - (task.startedAt || task.createdAt);
       if (elapsedMs > task.budget.maxSessionTimeMs) {
@@ -3713,31 +3769,23 @@ export class Orchestrator {
       const previousTabId =
         getNodeBoundTabId(task, node.id) ?? nodeTabMap.get(node.id);
       if (previousTabId != null) {
-        // 1. Retry: reuse tab from previous attempt (validate it still exists)
-        try {
-          await chrome.tabs.get(previousTabId);
-          tabId = previousTabId;
-        } catch {
-          tabId = input.tabId; // Fallback to user's tab
-        }
+        // 1. Retry: reuse the previous tab only if it still has a usable page.
+        tabId = (await resolveRunnableTabId(previousTabId)) ?? input.tabId;
       } else if (nodeTabMap.size === 0) {
         // 2. First node: use the user's original tab
-        tabId = input.tabId;
+        tabId = (await resolveRunnableTabId(input.tabId)) ?? input.tabId;
       } else {
         // 3. Sequential dependency: reuse the predecessor's tab
         const depTabId = node.dependencies
           .map((depId) => nodeTabMap.get(depId))
           .find((id) => id != null);
         if (depTabId != null) {
-          try {
-            await chrome.tabs.get(depTabId);
-            tabId = depTabId;
-          } catch {
-            tabId = input.tabId; // Fallback to user's tab
-          }
+          tabId =
+            (await resolveRunnableTabId(depTabId)) ??
+            ((await resolveRunnableTabId(input.tabId)) ?? input.tabId);
         } else if (input.settings.allowNavigation === false) {
           // allowNavigation disabled: never create new tabs
-          tabId = input.tabId;
+          tabId = (await resolveRunnableTabId(input.tabId)) ?? input.tabId;
         } else if (
           isTabOccupiedByRunningNode(input.tabId, nodeTabMap, task.nodes)
         ) {
@@ -3751,11 +3799,11 @@ export class Orchestrator {
             }
           } else {
             // Over cap: fallback to user's tab
-            tabId = input.tabId;
+            tabId = (await resolveRunnableTabId(input.tabId)) ?? input.tabId;
           }
         } else {
           // 5. User's tab is free: reuse it
-          tabId = input.tabId;
+          tabId = (await resolveRunnableTabId(input.tabId)) ?? input.tabId;
         }
       }
       nodeTabMap.set(node.id, tabId);

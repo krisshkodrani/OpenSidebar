@@ -1304,6 +1304,26 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillReason).toContain("detail view");
     });
 
+    test("selects list-detail-review-loop for natural listing recommendation workflows", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "complex"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "I'm a senior frontend engineer looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
+            "TechJobs Board",
+            "https://example.com/job-board",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("list-detail-review-loop");
+        expect(result.nodes[0].selectedSkillReason).toContain("item-level detail facts");
+    });
+
     test("selects multi-tab-procurement-loop for repeated tabbed procurement workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1325,6 +1345,27 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toMatch(/open the first store in a new tab/i);
         expect(result.nodes[0].description).toMatch(/purchase the first item/i);
         expect(result.nodes[0].description).toMatch(/return and check it off/i);
+    });
+
+    test("selects multi-tab-procurement-loop for natural procurement checklist requests", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Buy the first procurement item", "Buy the second procurement item", "Mark both complete"]}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Buy the first two items from the procurement list and mark them complete.",
+            "Procurement List",
+            "https://example.com/procurement",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-procurement-loop");
+        expect(result.nodes[0].description).toMatch(/Buy the first two items/i);
+        expect(result.nodes[0].successCriteria).toMatch(/marked complete/i);
     });
 
     test("selects budget-aware-execution when the task explicitly mentions turn budget pressure", async () => {
@@ -1369,6 +1410,20 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 });
 
 describe("selectPrimarySkill", () => {
+    test("prefers list-detail review over generic compare for listing recommendations", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "I'm a senior frontend engineer looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
+                objective:
+                    "Read all job listings on the TechJobs Board page, analyze each against the user's profile, and report the best matches with reasoning",
+                successCriteria: "Best job recommendations are grounded in reviewed listing details",
+                pageTitle: "TechJobs Board",
+                pageUrl: "https://example.com/job-board",
+            })?.id,
+        ).toBe("list-detail-review-loop");
+    });
+
     test("matches cross-tab compare workflows", () => {
         expect(
             selectPrimarySkill({
@@ -1480,6 +1535,16 @@ describe("selectPrimarySkill", () => {
                 query: "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.",
                 objective: "Open the matching store in a new tab and complete the purchase loop",
                 successCriteria: "The purchased row is checked off on the procurement list",
+            })?.id,
+        ).toBe("multi-tab-procurement-loop");
+    });
+
+    test("matches natural procurement checklist workflows without tab wording", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Buy the first two items from the procurement list and mark them complete.",
+                objective: "Complete the requested procurement list items",
+                successCriteria: "The first two rows are marked complete on the procurement list",
             })?.id,
         ).toBe("multi-tab-procurement-loop");
     });

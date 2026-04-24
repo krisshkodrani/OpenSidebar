@@ -55,6 +55,7 @@
     "e2e:arena:list": "tsx scripts/e2e-arena.ts",
     "e2e:arena:check": "tsx scripts/e2e-arena.ts",
     "e2e:arena:report": "tsx scripts/e2e-arena.ts --report",
+    "e2e:arena:run": "tsx scripts/run-e2e-arena.ts",
     "prompts:build": "tsx scripts/build-prompts.ts",
     "prompts:check": "tsx scripts/check-inline-prompts.ts"
   },
