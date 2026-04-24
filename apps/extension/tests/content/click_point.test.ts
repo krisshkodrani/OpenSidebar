@@ -92,7 +92,7 @@ describe("Content Actions - Click Robustness", () => {
 
         // Mock document.elementFromPoint to always return overlay
         const originalElementFromPoint = document.elementFromPoint;
-        document.elementFromPoint = (x, y) => overlay;
+        document.elementFromPoint = (_x, _y) => overlay;
 
         tagElements();
         const tagMap = getTagMap();

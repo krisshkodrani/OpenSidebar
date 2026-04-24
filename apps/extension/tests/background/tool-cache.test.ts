@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach } from "vitest";
 import "../setup";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
-import type { CacheType } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
 
 describe("ToolResultCache", () => {

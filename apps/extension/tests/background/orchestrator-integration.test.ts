@@ -2093,7 +2093,7 @@ describe("Orchestrator integration join tests", () => {
       metrics: undefined,
     });
 
-    backendFetchImpl = async (url, init) => {
+    backendFetchImpl = async (url, _init) => {
       if (url.includes("/task-runs?")) {
         return new Response(
           JSON.stringify({

@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { formatActionEffect } from "../../src/background/agent/loop";
 import { ActionEffect } from "../../src/background/agent/stagnation";
-import { DomSnapshot, TaggedElement, ToolName } from "../../src/types";
 
 /** Helper to build an ActionEffect with overrides */
 function makeEffect(overrides?: Partial<ActionEffect>): ActionEffect {

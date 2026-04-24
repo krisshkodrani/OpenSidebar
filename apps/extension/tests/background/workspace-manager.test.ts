@@ -40,7 +40,7 @@ describe("WorkspaceManager.init()", () => {
       set: async () => {},
     };
 
-    const manager = new WorkspaceManager({
+    new WorkspaceManager({
       isContentScript: () => true,
       storageLocal,
     });
@@ -125,7 +125,7 @@ describe("WorkspaceManager.init()", () => {
       set: async () => {},
     };
 
-    const manager = new WorkspaceManager({
+    new WorkspaceManager({
       isContentScript: () => false,
       storageLocal,
     });

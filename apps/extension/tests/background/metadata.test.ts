@@ -6,7 +6,6 @@ import {
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
   resolveToolProfile,
-  TOOL_PROFILES,
 } from "../../src/background/tools/metadata";
 import { ToolName, RiskLevel } from "../../src/types";
 import { classifyRisk } from "../../src/background/security";

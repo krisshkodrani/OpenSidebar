@@ -12,7 +12,6 @@ import { appendFile, readFile, writeFile } from "fs/promises";
 import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
 import {
-  extractDomain,
   getSessionModels,
   localDayKey,
   matchesTraceFilters,

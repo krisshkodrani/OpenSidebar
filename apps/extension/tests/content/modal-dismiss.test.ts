@@ -113,7 +113,7 @@ describe("detectViewportCoveringOverlays", () => {
     });
 
     test("sorts by coverage descending", () => {
-        const el1 = createFixedOverlay({ coverage: "full" });
+        createFixedOverlay({ coverage: "full" });
         const el2 = document.createElement("div");
         el2.style.position = "fixed";
         document.body.appendChild(el2);

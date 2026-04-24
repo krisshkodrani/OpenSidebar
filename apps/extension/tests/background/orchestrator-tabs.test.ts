@@ -138,7 +138,6 @@ describe("Tab lifecycle policy — tab assignment decision tree", () => {
   test("single-node task always uses user's tab", () => {
     // First node (nodeTabMap.size === 0) → user's tab
     const nodeTabMap = new Map<string, number>();
-    const nodes = [makeNode("a", "pending")];
     // Decision: nodeTabMap.size === 0 → tabId = input.tabId
     expect(nodeTabMap.size).toBe(0);
     // Would use input.tabId (100)

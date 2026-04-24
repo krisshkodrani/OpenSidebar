@@ -253,9 +253,7 @@ describe("stable element IDs", () => {
     document.body.appendChild(btn1);
     document.body.appendChild(btn2);
 
-    const tagged1 = tagElements();
-    const cancelId = tagged1.find(t => t.text === "Cancel")!.tag;
-
+    tagElements();
     // Remove Cancel button
     btn2.remove();
 

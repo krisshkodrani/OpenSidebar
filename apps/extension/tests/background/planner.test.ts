@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import "../setup";
-import { AgentStatus, ToolName } from "../../src/types";
+import { ToolName } from "../../src/types";
 
 /**
  * Planner + Done Guard tests.
@@ -69,7 +69,6 @@ import {
     OrchestratorPlanner,
 } from "../../src/background/orchestrator/planner";
 import { selectPrimarySkill } from "../../src/background/orchestrator/skills";
-import { AgentLoop } from "../../src/background/agent/loop";
 
 // ═══════════════════════════════════════════════════════════
 // TaskPlanner unit tests

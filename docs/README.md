@@ -40,6 +40,10 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
 
+## Evaluations
+
+- [WorkArena Setup](./evals/workarena.md)
+
 ## Other
 
 - [Documentation Policy](./docs-policy.md)
