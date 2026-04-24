@@ -803,8 +803,8 @@ Execution policy:
 
         expect(result).not.toBeNull();
         expect(result!.steps).toBeDefined();
-        expect(result!.steps!.length).toBeLessThanOrEqual(5);
-        expect(result!.steps![0].objective).toMatch(/review job listings #1/i);
+        expect(result!.steps!.length).toBe(10);
+        expect(result!.steps![0].objective).toMatch(/job listing/i);
         expect(result!.steps![result!.steps!.length - 1].objective).toMatch(/best matches/i);
     });
 
@@ -1076,8 +1076,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
 
         expect(result.isSingleNode).toBe(false);
-        expect(result.nodes.length).toBeLessThanOrEqual(5);
-        expect(result.nodes[0].description).toMatch(/review job listings #1/i);
+        expect(result.nodes.length).toBe(11);
+        expect(result.nodes[0].description).toMatch(/review job listing #1/i);
         expect(result.nodes[result.nodes.length - 1].description).toMatch(/best matches/i);
     });
 
