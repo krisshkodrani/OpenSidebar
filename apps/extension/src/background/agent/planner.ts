@@ -302,11 +302,31 @@ export function inferToolProfileForStep(
   }
 
   if (
-    /(submit|confirm|send|finish the form|proceed to step|click submit|submit code)/.test(
+    /(reply|respond|post|send|compose|write back|finish the form|submit|confirm|proceed to step|click submit|submit code)/.test(
+      primaryText,
+    ) ||
+    /\bdraft\b[^.\n]{0,80}\b(reply|email|e-mail|message|comment|response)\b/.test(
+      primaryText,
+    ) ||
+    /\b(reply|email|e-mail|message|comment|response)\b[^.\n]{0,80}\bdraft\b/.test(
+      primaryText,
+    ) ||
+    /\bwrite\b[^.\n]{0,60}\b(message|comment|reply|response)\b/.test(
       primaryText,
     )
   ) {
     return "submit_form";
+  }
+
+  if (
+    /\b(update|set|change|assign|reassign|escalate|save|submit|mark|close|reopen)\b[^.\n]{0,100}\b(ticket|case|record|status|priority|assignee|owner|category|tag|field|escalation)\b/.test(
+      primaryText,
+    ) ||
+    /\b(add|write|post)\b[^.\n]{0,80}\b(internal note|note|comment)\b/.test(
+      primaryText,
+    )
+  ) {
+    return "form_fill";
   }
 
   if (

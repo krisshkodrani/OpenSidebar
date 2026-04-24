@@ -27,13 +27,22 @@ This runs:
 
 Run at least one real-browser E2E validation against the release candidate after the build is green.
 
-Recommended smoke case:
+Recommended smoke gate:
 
 ```bash
-npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts
+npm run test:e2e:smoke
 ```
 
-If the release changes are concentrated in a different area, run a more relevant E2E in addition to the summarize smoke.
+If the release changes are concentrated in a different area, run the relevant purpose suite in addition to smoke:
+
+| Change area | Recommended command |
+| ----------- | ------------------- |
+| Page actions, navigation, overlays, forms, shopping | `npm run test:e2e:interactions` |
+| Planner, continuation, recovery, memory, backend durability | `npm run test:e2e:runtime` |
+| Workflow-benchmark behavior or WorkArena-gap changes | `npm run test:e2e:workarena` |
+| Release confidence on long workflow stability | `npm run test:e2e:workarena:variance` |
+
+`npm run test:e2e:nightly` covers low-priority legacy primitives and is not required for every release candidate.
 
 When you run the E2E suite or prepare the summary, write the dated report to:
 

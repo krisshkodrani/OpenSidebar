@@ -634,12 +634,12 @@ Tools are classified by risk level:
 
 ## Model Tiers
 
-OpenSidebar uses two LLM tiers via OpenRouter:
+OpenSidebar uses separate runtime tiers for execution, planning, and visual perception:
 
 | Model Tier | Model ID                           | Provider    | Use Case                           |
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
-| **Executor** | `google/gemini-3-flash-preview`              | OpenRouter  | Executor, everyday tasks (default) |
-| **Planner**  | `minimax/minimax-m2.5`             | OpenRouter  | Complex reasoning, escalated tasks |
+| **Executor** | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Executor, everyday tasks (default) |
+| **Planner**  | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Complex reasoning, escalated tasks |
 | **Perception** | `x-ai/grok-4.1-fast`            | OpenRouter  | Vision-based page understanding    |
 
 The `escalate` tool switches execution onto the planner tier when needed.

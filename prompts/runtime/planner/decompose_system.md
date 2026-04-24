@@ -112,6 +112,9 @@ When a task requires actions across different views (e.g., adding multiple items
 - Example: After "Add item A to cart" (which opens the cart drawer), add a step "Close the cart drawer or navigate back to the product catalog" before "Add item B to cart."
 - Give navigation steps a "navigate" toolProfile and a successCriteria that confirms the target view is visible.
 
+MESSAGING AND THREADS:
+For chat, email, comment, and messaging tasks, do not assume that the word "thread" means there is a separate clickable thread view. If the visible channel or conversation already contains the requested context and a composer, plan to read the visible conversation, compose the reply, verify the draft, and send it. Only add a step to open or click a thread when the current page state explicitly shows a separate thread entry, reply count, thread button, or collapsed conversation affordance.
+
 ROUND-TRIP NAVIGATION:
 When a task requires going somewhere AND coming back (e.g., "visit pages 1-3 then return to page 1"):
 - Create explicit steps for BOTH directions — forward AND backward.

@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import {
   ARENA_TASKS,
   getArenaTask,
+  getArenaTasksByTag,
   getArenaTasksByTier,
   type ArenaTask,
   type ArenaTier,
@@ -33,6 +34,8 @@ const REPORTS_DIR = resolve(PROJECT_ROOT, ".artifacts", "e2e");
 
 type ArenaRunRecord = {
   task: ArenaTask;
+  attempt: number;
+  totalAttempts: number;
   success: boolean;
   reason: string;
   durationMs: number;
@@ -47,13 +50,17 @@ type ArenaRunRecord = {
 function parseArgs(): {
   taskIds: string[];
   tiers: ArenaTier[];
+  tags: string[];
+  repeat: number;
   runAll: boolean;
   build: boolean;
   listOnly: boolean;
 } {
   const args = process.argv.slice(2);
   const tiers: ArenaTier[] = [];
+  const tags: string[] = [];
   const taskIds: string[] = [];
+  let repeat = 1;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -65,6 +72,22 @@ function parseArgs(): {
       }
       continue;
     }
+    if (arg === "--tag") {
+      const value = args[index + 1];
+      if (value && !value.startsWith("--")) {
+        tags.push(value);
+        index++;
+      }
+      continue;
+    }
+    if (arg === "--repeat") {
+      const value = Number.parseInt(args[index + 1] ?? "", 10);
+      if (Number.isFinite(value) && value > 0) {
+        repeat = value;
+        index++;
+      }
+      continue;
+    }
     if (arg.startsWith("--")) continue;
     taskIds.push(arg);
   }
@@ -72,6 +95,8 @@ function parseArgs(): {
   return {
     taskIds,
     tiers,
+    tags,
+    repeat,
     runAll: args.includes("--all"),
     build: !args.includes("--no-build"),
     listOnly: args.includes("--list"),
@@ -81,27 +106,44 @@ function parseArgs(): {
 function resolveTasks(
   taskIds: string[],
   tiers: ArenaTier[],
+  tags: string[],
   runAll: boolean,
 ): ArenaTask[] {
-  if (runAll) return [...ARENA_TASKS];
+  const selected = new Map<string, ArenaTask>();
+  const addTask = (task: ArenaTask) => selected.set(task.id, task);
+
+  if (runAll) {
+    for (const task of ARENA_TASKS) addTask(task);
+  }
   if (taskIds.length > 0) {
-    return taskIds.map((taskId) => {
+    for (const taskId of taskIds) {
       const task = getArenaTask(taskId);
       if (!task) {
         throw new Error(`Unknown arena task id: ${taskId}`);
       }
-      return task;
-    });
+      addTask(task);
+    }
   }
   if (tiers.length > 0) {
-    return tiers.flatMap((tier) => getArenaTasksByTier(tier));
+    for (const tier of tiers) {
+      for (const task of getArenaTasksByTier(tier)) addTask(task);
+    }
   }
-  return [];
+  if (tags.length > 0) {
+    for (const tag of tags) {
+      const taggedTasks = getArenaTasksByTag(tag);
+      if (taggedTasks.length === 0) {
+        throw new Error(`Unknown arena tag or no tasks for tag: ${tag}`);
+      }
+      for (const task of taggedTasks) addTask(task);
+    }
+  }
+  return [...selected.values()];
 }
 
-function printList(): void {
+function printList(tasks: readonly ArenaTask[] = ARENA_TASKS): void {
   console.log("\n[e2e:arena:run] Available tasks:");
-  for (const task of ARENA_TASKS) {
+  for (const task of tasks) {
     console.log(
       `[e2e:arena:run]   - ${task.id} (${task.tier}) -> ${task.validator}`,
     );
@@ -151,27 +193,100 @@ function compactPrompt(prompt: string, maxLength = 120): string {
   return `${compact.slice(0, maxLength - 3)}...`;
 }
 
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function average(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function formatNumber(value: number): string {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(1);
+}
+
+function summarizeByTask(records: readonly ArenaRunRecord[]): Array<{
+  task: ArenaTask;
+  attempts: number;
+  passed: number;
+  passRate: number;
+  passVariance: number;
+  avgTurns: number;
+  minTurns: number;
+  maxTurns: number;
+  avgDurationMs: number;
+  reasons: string;
+}> {
+  const groups = new Map<string, ArenaRunRecord[]>();
+  for (const record of records) {
+    groups.set(record.task.id, [...(groups.get(record.task.id) ?? []), record]);
+  }
+
+  return [...groups.values()].map((group) => {
+    const passed = group.filter((record) => record.success).length;
+    const passRate = passed / group.length;
+    const turns = group.map((record) => record.turns);
+    const reasons = [...new Set(group.map((record) => record.reason))].join(", ");
+    return {
+      task: group[0].task,
+      attempts: group.length,
+      passed,
+      passRate,
+      passVariance: passRate * (1 - passRate),
+      avgTurns: average(turns),
+      minTurns: Math.min(...turns),
+      maxTurns: Math.max(...turns),
+      avgDurationMs: average(group.map((record) => record.durationMs)),
+      reasons,
+    };
+  });
+}
+
 function buildReport(records: ArenaRunRecord[], now = new Date()): string {
   const date = now.toISOString().split("T")[0];
   const passed = records.filter((record) => record.success).length;
+  const taskCount = new Set(records.map((record) => record.task.id)).size;
+  const summaries = summarizeByTask(records);
   const lines: string[] = [];
 
   lines.push("# OpenSidebar Arena Score");
   lines.push("");
   lines.push(`Date: ${date}`);
-  lines.push(`Scope: ${records.length} arena task(s)`);
-  lines.push(`Overall result: ${passed}/${records.length} passed`);
+  lines.push(
+    `Scope: ${taskCount} arena task(s), ${records.length} total attempt(s)`,
+  );
+  lines.push(`Overall result: ${passed}/${records.length} attempts passed`);
+  lines.push("");
+  lines.push("## Pass-Rate Summary");
   lines.push("");
   lines.push(
-    "| Task | Success | Tier | Turns | Perceptions | Traces | Duration | Validator | Reason | Prompt |",
+    "| Task | Attempts | Pass Rate | Pass Variance | Avg Turns | Turn Range | Avg Duration | Reasons |",
   );
   lines.push(
-    "| --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    "| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |",
+  );
+
+  for (const summary of summaries) {
+    lines.push(
+      `| \`${summary.task.id}\` | ${summary.attempts} | ${summary.passed}/${summary.attempts} (${formatPercent(summary.passRate)}) | ${summary.passVariance.toFixed(2)} | ${formatNumber(summary.avgTurns)} | ${summary.minTurns}-${summary.maxTurns} | ${formatDuration(summary.avgDurationMs)} | ${summary.reasons} |`,
+    );
+  }
+
+  lines.push("");
+  lines.push("## Attempts");
+  lines.push("");
+  lines.push(
+    "| Task | Attempt | Success | Tier | Turns | Perceptions | Traces | Duration | Validator | Reason | Prompt |",
+  );
+  lines.push(
+    "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
   );
 
   for (const record of records) {
     lines.push(
-      `| \`${record.task.id}\` | ${record.success ? "Yes" : "No"} | ${record.task.tier} | ${record.turns} | ${record.perceptions} | ${record.traces} | ${formatDuration(record.durationMs)} | \`${record.validator}\` | ${record.reason} | ${compactPrompt(record.prompt)} |`,
+      `| \`${record.task.id}\` | ${record.attempt}/${record.totalAttempts} | ${record.success ? "Yes" : "No"} | ${record.task.tier} | ${record.turns} | ${record.perceptions} | ${record.traces} | ${formatDuration(record.durationMs)} | \`${record.validator}\` | ${record.reason} | ${compactPrompt(record.prompt)} |`,
     );
   }
 
@@ -204,7 +319,11 @@ function writeReport(records: ArenaRunRecord[]): string {
   return reportPath;
 }
 
-async function runTask(task: ArenaTask): Promise<ArenaRunRecord> {
+async function runTask(
+  task: ArenaTask,
+  attempt: number,
+  totalAttempts: number,
+): Promise<ArenaRunRecord> {
   const harness = createE2EHarness({
     maxTurns: task.maxTurns,
     testLabel: `arena-${task.id}`,
@@ -219,7 +338,7 @@ async function runTask(task: ArenaTask): Promise<ArenaRunRecord> {
     await harness.beforeEachHook();
 
     if (!harness.apiKey) {
-      throw new Error("OPENROUTER_API_KEY is missing");
+      throw new Error(`API key for E2E provider '${harness.providerMode}' is missing`);
     }
 
     if (task.allowNavigation) {
@@ -251,6 +370,8 @@ async function runTask(task: ArenaTask): Promise<ArenaRunRecord> {
 
     return {
       task,
+      attempt,
+      totalAttempts,
       success: validatorResult.ok,
       reason: validatorResult.reason,
       durationMs: Date.now() - start,
@@ -266,6 +387,8 @@ async function runTask(task: ArenaTask): Promise<ArenaRunRecord> {
       error instanceof Error ? `runner_error:${error.message}` : "runner_error";
     return {
       task,
+      attempt,
+      totalAttempts,
       success: false,
       reason,
       durationMs: Date.now() - start,
@@ -287,18 +410,18 @@ async function runTask(task: ArenaTask): Promise<ArenaRunRecord> {
 }
 
 async function main(): Promise<void> {
-  const { taskIds, tiers, runAll, build, listOnly } = parseArgs();
+  const { taskIds, tiers, tags, repeat, runAll, build, listOnly } = parseArgs();
+  const tasks = resolveTasks(taskIds, tiers, tags, runAll);
 
   if (listOnly) {
-    printList();
+    printList(tasks.length > 0 ? tasks : ARENA_TASKS);
     return;
   }
 
-  const tasks = resolveTasks(taskIds, tiers, runAll);
   if (tasks.length === 0) {
     printList();
     console.log(
-      "\n[e2e:arena:run] Pass one or more task ids, `--tier <tier>`, or `--all`.",
+      "\n[e2e:arena:run] Pass one or more task ids, `--tier <tier>`, `--tag <tag>`, or `--all`.",
     );
     return;
   }
@@ -310,16 +433,26 @@ async function main(): Promise<void> {
       stdio: "inherit",
       windowsHide: true,
     });
+    console.log("\n[e2e:arena:run] Building E2E fixtures before arena run...");
+    execSync("cmd /c npm run fixtures:build", {
+      cwd: PROJECT_ROOT,
+      stdio: "inherit",
+      windowsHide: true,
+    });
   }
 
   const records: ArenaRunRecord[] = [];
-  for (const task of tasks) {
-    console.log(`\n[e2e:arena:run] Running ${task.id}...`);
-    const record = await runTask(task);
-    records.push(record);
-    console.log(
-      `[e2e:arena:run] ${task.id}: ${record.success ? "PASS" : "FAIL"} (${record.reason})`,
-    );
+  for (let attempt = 1; attempt <= repeat; attempt++) {
+    for (const task of tasks) {
+      console.log(
+        `\n[e2e:arena:run] Running ${task.id} (${attempt}/${repeat})...`,
+      );
+      const record = await runTask(task, attempt, repeat);
+      records.push(record);
+      console.log(
+        `[e2e:arena:run] ${task.id} (${attempt}/${repeat}): ${record.success ? "PASS" : "FAIL"} (${record.reason})`,
+      );
+    }
   }
 
   const reportPath = writeReport(records);

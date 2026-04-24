@@ -470,6 +470,30 @@ describe("TaskPlanner.decompose", () => {
                 "The document list shows the new file name",
             ),
         ).toBe("edit_surface");
+        expect(
+            inferToolProfileForStep(
+                "Reply in the project-updates channel with the release timing and blocker",
+                "The message is posted in the channel",
+            ),
+        ).toBe("submit_form");
+        expect(
+            inferToolProfileForStep(
+                "Read the customer message thread and summarize the blocker",
+                "The blocker is identified",
+            ),
+        ).toBe("read_only");
+        expect(
+            inferToolProfileForStep(
+                "Read the project-updates channel to identify who should draft the changelog",
+                "The changelog drafter is identified",
+            ),
+        ).toBe("read_only");
+        expect(
+            inferToolProfileForStep(
+                "Update the support ticket status to escalated and add an internal note",
+                "The ticket status and internal note are visible after save",
+            ),
+        ).toBe("form_fill");
     });
 
     test("prefers direct-action profile over recovery wording in stitched handoff objectives", () => {
@@ -852,6 +876,9 @@ Execution policy:
             );
             expect(system).toContain(
                 'GOOD: "Navigate to Warehouse Gamma and read its inventory count."',
+            );
+            expect(system).toContain(
+                'do not assume that the word "thread" means there is a separate clickable thread view',
             );
             return Promise.resolve({
                 role: "assistant",
@@ -1452,6 +1479,59 @@ describe("selectPrimarySkill", () => {
                 successCriteria: "No blind retries near turn limit",
             })?.id,
         ).toBe("budget-aware-execution");
+    });
+
+    test("matches careful email reply workflows before generic continuation editing", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Reply to David's email confirming Friday at 10 AM for the Q3 strategy review, and briefly acknowledge the main agenda items from his email.",
+                objective:
+                    "Read David's email, draft a contextual reply, verify the recipient and content, then send it",
+                successCriteria:
+                    "Email reply is sent to David with the requested time and agenda context, without unsupported claims",
+                pageTitle: "Inbox - Q3 Strategy Review",
+            })?.id,
+        ).toBe("email-reply-careful");
+    });
+
+    test("does not treat contact form email fields as email reply workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Fill out the contact form with email test@example.com and message 'Hello, this is a test message for the contact form' and send it.",
+                objective: "Fill the contact form fields and submit the form",
+                successCriteria: "Contact form submission is accepted",
+            })?.id,
+        ).toBe("structured-form-fill");
+    });
+
+    test("matches careful thread message workflows with language and tone context", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Reply to Lisa in the Cloud-Migration Team thread. Confirm that the Friday update should include a progress summary, a revised cost plan, and Markus owning the technical part.",
+                objective:
+                    "Read the message thread and post a reply that preserves the thread's language, tone, owner, deadline, and deliverables",
+                successCriteria:
+                    "Reply appears in the Cloud-Migration Team thread and reflects the requested owners and deliverables",
+                pageTitle: "Messaging Thread",
+            })?.id,
+        ).toBe("thread-message-careful");
+    });
+
+    test("matches CRM ticket update workflows before generic status checks", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Review TICKET-4271. If it needs escalation, update the ticket accordingly and leave an internal note with the customer impact, account context, and next step.",
+                objective:
+                    "Read the support ticket, update the appropriate ticket fields, and add a grounded internal note",
+                successCriteria:
+                    "Ticket escalation state and internal note are visible after save",
+                pageTitle: "Support Ticket TICKET-4271",
+            })?.id,
+        ).toBe("crm-ticket-update");
     });
 
     test("returns null for generic simple navigation", () => {

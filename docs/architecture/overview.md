@@ -16,9 +16,10 @@ Side Panel <-> Service Worker <-> Content Script
 
 | Role | Current Default |
 | --- | --- |
-| Executor | `openai/gpt-5.4-mini` |
-| Executor fallback | `openai/gpt-5.4-mini` (non-nitro) |
-| Planner | `openai/gpt-5.4-mini` |
+| Provider mode | `fireworks` |
+| Executor | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Executor fallback | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` |
 | Perception | `x-ai/grok-4.1-fast` |
 
 Models are configurable in Settings.

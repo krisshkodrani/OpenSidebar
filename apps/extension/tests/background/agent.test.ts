@@ -691,6 +691,256 @@ describe("AgentLoop", () => {
     expect(event).toBeDefined();
   });
 
+  test("upgrades careful messaging reply steps to submit-capable tools", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "thread-message-careful",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Reply in the project-updates channel with the release timing, changelog owner, and blocker",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.TYPE_TEXT);
+    expect(names).toContain(ToolName.CLICK_ELEMENT);
+    expect(names).not.toContain(ToolName.EXECUTE_JS);
+  });
+
+  test("keeps careful messaging read steps read-only", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "thread-message-careful",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Read the project-updates thread and identify Sarah's questions",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.READ_PAGE);
+    expect(names).not.toContain(ToolName.TYPE_TEXT);
+    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+  });
+
+  test("keeps careful messaging read steps with message wording read-only", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "thread-message-careful",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Read the customer message thread and summarize the blocker",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.READ_PAGE);
+    expect(names).not.toContain(ToolName.TYPE_TEXT);
+    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+  });
+
+  test("keeps careful messaging read steps with unrelated draft wording read-only", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "thread-message-careful",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Read the project-updates channel to identify who should draft the changelog",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.READ_PAGE);
+    expect(names).not.toContain(ToolName.TYPE_TEXT);
+    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+  });
+
+  test("upgrades CRM mutation steps to record-update tools", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "crm-ticket-update",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Update the ticket status to escalated, assign the owner, and add an internal note",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.SELECT_OPTION } },
+      { function: { name: ToolName.SET_CHECKBOX } },
+      { function: { name: ToolName.EXECUTE_JS } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.SELECT_OPTION);
+    expect(names).toContain(ToolName.SET_CHECKBOX);
+    expect(names).toContain(ToolName.TYPE_TEXT);
+    expect(names).toContain(ToolName.CLICK_ELEMENT);
+    expect(names).not.toContain(ToolName.EXECUTE_JS);
+  });
+
+  test("keeps CRM ticket review steps read-only", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "crm-ticket-update",
+        taskId: "task-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description:
+                "Read the ticket details including current status, priority, assignee, and customer impact",
+              status: "running",
+              toolProfile: "read_only",
+            },
+          ],
+        },
+      },
+    );
+
+    const tools = [
+      { function: { name: ToolName.READ_PAGE } },
+      { function: { name: ToolName.TYPE_TEXT } },
+      { function: { name: ToolName.CLICK_ELEMENT } },
+      { function: { name: ToolName.SELECT_OPTION } },
+      { function: { name: ToolName.SET_CHECKBOX } },
+      { function: { name: ToolName.DONE } },
+    ] as any;
+
+    const filtered = (agent as any).applyToolProfile(tools);
+    const names = filtered.map((t: any) => t.function.name);
+
+    expect(names).toContain(ToolName.READ_PAGE);
+    expect(names).not.toContain(ToolName.TYPE_TEXT);
+    expect(names).not.toContain(ToolName.CLICK_ELEMENT);
+    expect(names).not.toContain(ToolName.SELECT_OPTION);
+    expect(names).not.toContain(ToolName.SET_CHECKBOX);
+  });
+
   test("applySkillToolRanking prefers skill tools and demotes discouraged ones", () => {
     const agent = new AgentLoop(
       "test-key",

@@ -81,6 +81,14 @@ function buildResult(
   };
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function includesAny(text: string, values: readonly string[]): boolean {
+  return values.some((value) => text.includes(value));
+}
+
 async function supportTicketTriaged(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -146,6 +154,91 @@ async function supportTicketTriaged(
       status: result.currentStatus,
       commentsAdded: result.commentsAdded,
       lastCommentInternal: result.lastCommentInternal,
+    },
+  );
+}
+
+async function ticketEscalatedWithAccountContext(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).ticketResult ?? null,
+      );
+      if (!result) return null;
+      if (!result.statusChanged || !result.priorityChanged) return null;
+      if (result.commentsAdded < 1) return null;
+      return result;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Ticket escalation task did not reach a successful final state."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const comment = normalizeText(result.lastComment);
+  const hasIssue = includesAny(comment, ["csv", "export", "timeout", "report"]);
+  const hasAccountContext = includesAny(comment, [
+    "enterprise",
+    "clientcorp",
+    "clt-9402",
+    "org id",
+  ]);
+  const hasNextStep = includesAny(comment, [
+    "next",
+    "investigate",
+    "engineering",
+    "reproduce",
+    "escalat",
+  ]);
+  const ok =
+    result.currentStatus === "In Progress" &&
+    result.currentPriority === "Urgent" &&
+    result.lastCommentInternal === true &&
+    hasIssue &&
+    hasAccountContext &&
+    hasNextStep;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "ticket_escalation_incomplete",
+    [
+      `status=${String(result.currentStatus ?? "")}`,
+      `priority=${String(result.currentPriority ?? "")}`,
+      `internal=${String(result.lastCommentInternal)}`,
+      `hasIssue=${String(hasIssue)}`,
+      `hasAccountContext=${String(hasAccountContext)}`,
+      `hasNextStep=${String(hasNextStep)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      status: result.currentStatus,
+      priority: result.currentPriority,
+      hasIssue,
+      hasAccountContext,
+      hasNextStep,
     },
   );
 }
@@ -259,6 +352,307 @@ async function dianaSalaryFound(
   );
 }
 
+async function emailMeetingReplySent(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).emailResult ?? null,
+      );
+      if (result?.sent === true) return result;
+      return null;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Email reply task did not send a reply."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const message = normalizeText(result.message);
+  const hasSchedule =
+    message.includes("friday") &&
+    (message.includes("10 am") || message.includes("10:00"));
+  const hasDuration = message.includes("90");
+  const hasAgenda =
+    includesAny(message, ["roadmap", "ai integration"]) &&
+    message.includes("budget") &&
+    includesAny(message, ["hiring", "candidate"]);
+  const ok =
+    result.to === "david.park@company.com" &&
+    result.sent === true &&
+    hasSchedule &&
+    hasDuration &&
+    hasAgenda;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "email_reply_incomplete",
+    [
+      `to=${String(result.to ?? "")}`,
+      `hasSchedule=${String(hasSchedule)}`,
+      `hasDuration=${String(hasDuration)}`,
+      `hasAgenda=${String(hasAgenda)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      to: result.to,
+      hasSchedule,
+      hasDuration,
+      hasAgenda,
+    },
+  );
+}
+
+async function releaseCoordinationReplySent(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).chatResult ?? null,
+      );
+      if (result?.sent === true) return result;
+      return null;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Release coordination task did not send a chat reply."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const message = normalizeText(result.message);
+  const hasTiming = includesAny(message, [
+    "wednesday",
+    "wed",
+    "after onboarding",
+    "not set",
+    "not confirmed",
+    "green light",
+  ]);
+  const hasChangelogOwner =
+    message.includes("release owner") || message.includes("alice");
+  const hasBlocker = includesAny(message, [
+    "onboarding",
+    "progress indicator",
+    "edge case",
+    "green light",
+  ]);
+  const ok = result.sent === true && hasTiming && hasChangelogOwner && hasBlocker;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "release_coordination_reply_incomplete",
+    [
+      `hasTiming=${String(hasTiming)}`,
+      `hasChangelogOwner=${String(hasChangelogOwner)}`,
+      `hasBlocker=${String(hasBlocker)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      hasTiming,
+      hasChangelogOwner,
+      hasBlocker,
+    },
+  );
+}
+
+async function migrationPlanReplySent(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).messagingResult ?? null,
+      );
+      if (result?.sent === true) return result;
+      return null;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Migration plan task did not send a message reply."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const message = normalizeText(result.message);
+  const hasDeadline = message.includes("friday");
+  const hasProgressSummary = includesAny(message, [
+    "progress summary",
+    "progress report",
+    "summary",
+    "fortschritt",
+  ]);
+  const hasCostPlan = includesAny(message, [
+    "cost plan",
+    "kostenplan",
+    "reserved instances",
+    "budget",
+  ]);
+  const hasOwner = message.includes("markus") && includesAny(message, ["technical", "technisch"]);
+  const ok =
+    result.sent === true &&
+    hasDeadline &&
+    hasProgressSummary &&
+    hasCostPlan &&
+    hasOwner;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "migration_plan_reply_incomplete",
+    [
+      `hasDeadline=${String(hasDeadline)}`,
+      `hasProgressSummary=${String(hasProgressSummary)}`,
+      `hasCostPlan=${String(hasCostPlan)}`,
+      `hasOwner=${String(hasOwner)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      hasDeadline,
+      hasProgressSummary,
+      hasCostPlan,
+      hasOwner,
+    },
+  );
+}
+
+async function releaseBoardPrioritiesMoved(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).kanbanResult ?? null,
+      );
+      const moves = Array.isArray(result?.moves) ? result.moves : [];
+      const hasApiDocs = moves.some(
+        (move: any) =>
+          move.card === "Write API Docs" && move.to === "in-progress",
+      );
+      const hasCiPipeline = moves.some(
+        (move: any) =>
+          move.card === "Setup CI Pipeline" && move.to === "in-progress",
+      );
+      if (hasApiDocs && hasCiPipeline) return result;
+      return null;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Kanban priority task did not move both requested cards."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const moves = Array.isArray(result?.moves) ? result.moves : [];
+  const requestedMoves = moves.filter(
+    (move: any) =>
+      (move.card === "Write API Docs" || move.card === "Setup CI Pipeline") &&
+      move.from === "todo" &&
+      move.to === "in-progress",
+  );
+  const movedCards = requestedMoves.map((move: any) => `${move.card}->${move.to}`);
+  const uniqueMovedCards = new Set(movedCards);
+  const ok = requestedMoves.length === 2 && uniqueMovedCards.size === 2;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "kanban_duplicate_or_missing_moves",
+    [
+      `moves=${movedCards.join(",")}`,
+      `requestedMoveCount=${requestedMoves.length}`,
+      `uniqueRequestedMoveCount=${uniqueMovedCards.size}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      moves: movedCards,
+      requestedMoveCount: requestedMoves.length,
+      uniqueRequestedMoveCount: uniqueMovedCards.size,
+    },
+  );
+}
+
 async function articleFootnoteSourceAnswered(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -322,6 +716,75 @@ async function articleFootnoteSourceAnswered(
     traceFiles,
     traceTurns,
     summary,
+  );
+}
+
+async function documentFootnoteBriefAnswered(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForTaskCompletion(
+    harness.ctx,
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Document brief task did not complete successfully."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  const normalized = normalizeText(summary);
+  const footnoteText = await harness.page.evaluate(() => {
+    const blocks = Array.from(document.querySelectorAll(".card div"));
+    const footnote = blocks.find((element) =>
+      element.textContent?.includes("Footnote 2:"),
+    );
+    return footnote?.textContent?.trim() ?? "";
+  });
+  const normalizedFootnote = normalizeText(footnoteText);
+  const sourceVisible =
+    normalizedFootnote.includes("buffer") &&
+    normalizedFootnote.includes("report");
+  const citesSource =
+    normalized.includes("buffer") && normalized.includes("report");
+  const includesPractice = includesAny(normalized, [
+    "documentation",
+    "documenting",
+    "written down",
+    "asynchronous",
+    "async",
+  ]);
+  const ok = sourceVisible && citesSource && includesPractice;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "document_brief_incomplete",
+    [
+      `citesSource=${String(citesSource)}`,
+      `includesPractice=${String(includesPractice)}`,
+      `footnote=${footnoteText.slice(0, 140) || "-"}`,
+    ],
+    traceFiles,
+    traceTurns,
+    summary,
+    {
+      citesSource,
+      includesPractice,
+    },
   );
 }
 
@@ -549,7 +1012,7 @@ async function singleOrderPlaced(
   let nodeIsolationOk = true;
   try {
     assertNodeIsolation(wsEvents, traceFiles);
-  } catch (error) {
+  } catch {
     nodeIsolationOk = false;
   }
 
@@ -590,9 +1053,15 @@ async function singleOrderPlaced(
 
 export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   supportTicketTriaged,
+  ticketEscalatedWithAccountContext,
   enterpriseFormSubmitted,
   dianaSalaryFound,
+  emailMeetingReplySent,
+  releaseCoordinationReplySent,
+  migrationPlanReplySent,
+  releaseBoardPrioritiesMoved,
   articleFootnoteSourceAnswered,
+  documentFootnoteBriefAnswered,
   dashboardMetricsAnswered,
   firstTwoProcurementItemsComplete,
   jobRecommendationsGrounded,

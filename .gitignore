@@ -69,6 +69,7 @@ data/
 # Legacy ad-hoc docs artifacts
 docs/shopping-trace-*
 docs/test-prompt.md
+docs/deep-research-report.md
 
 # Test results
 test-results/

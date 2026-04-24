@@ -170,6 +170,108 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     notes:
       "Task success should remain the completed order; trace diagnostics are secondary planning metrics.",
   },
+  {
+    id: "workarena-gap.crm-ticket-escalation",
+    title: "Escalate Ticket With Account Context",
+    tier: "hard",
+    sourceFile: "support-ticket.test.ts",
+    sourceCase: "reads ticket, changes status, and adds internal comment",
+    startRoute: "/support-ticket",
+    prompt:
+      "Review TICKET-4271. If it needs escalation, update the ticket accordingly and leave an internal note with the customer impact, account context, and next step.",
+    maxTurns: 30,
+    timeoutMs: 360_000,
+    tags: ["workarena-gap", "crm", "ticket", "record-update", "document"],
+    validator: "ticketEscalatedWithAccountContext",
+    validatorKind: "fixture-state",
+    description:
+      "Combines record review, priority/status update, and grounded internal documentation.",
+  },
+  {
+    id: "workarena-gap.email-meeting-reply",
+    title: "Reply To Meeting Request",
+    tier: "hard",
+    sourceFile: "email-compose.test.ts",
+    sourceCase: "agent reads email, composes contextual reply, and sends it",
+    startRoute: "/email-compose",
+    prompt:
+      "Reply to David confirming Friday at 10 AM for the Q3 strategy review, and briefly acknowledge the main agenda items from his email.",
+    maxTurns: 30,
+    timeoutMs: 360_000,
+    tags: ["workarena-gap", "email", "document", "crm", "communication"],
+    validator: "emailMeetingReplySent",
+    validatorKind: "fixture-state",
+    description:
+      "Reads a business email and sends a grounded reply with scheduling and agenda details.",
+  },
+  {
+    id: "workarena-gap.chat-release-coordination",
+    title: "Answer Release Coordination Thread",
+    tier: "hard",
+    sourceFile: "team-chat.test.ts",
+    sourceCase: "agent reads thread context and posts a grounded reply",
+    startRoute: "/team-chat",
+    prompt:
+      "Reply in the project-updates channel with a concise release coordination update: answer Sarah's timing question from the conversation, say who should draft the changelog, and mention the remaining blocker.",
+    maxTurns: 35,
+    timeoutMs: 420_000,
+    tags: ["workarena-gap", "chat", "workflow", "document", "coordination"],
+    validator: "releaseCoordinationReplySent",
+    validatorKind: "fixture-state",
+    description:
+      "Synthesizes a noisy team thread into an actionable coordination reply.",
+  },
+  {
+    id: "workarena-gap.messaging-cost-plan-reply",
+    title: "Reply With Migration Report Plan",
+    tier: "hard",
+    sourceFile: "messaging-thread.test.ts",
+    sourceCase: "agent reads message thread and sends a contextual reply",
+    startRoute: "/messaging-thread",
+    prompt:
+      "Reply to Lisa in the Cloud-Migration Team thread. Confirm that the Friday update should include a progress summary, a revised cost plan, and Markus owning the technical part.",
+    maxTurns: 35,
+    timeoutMs: 420_000,
+    tags: ["workarena-gap", "messaging", "crm", "document", "coordination"],
+    validator: "migrationPlanReplySent",
+    validatorKind: "fixture-state",
+    description:
+      "Reads a business message thread and sends a reply that preserves owners, deadline, and deliverables.",
+  },
+  {
+    id: "workarena-gap.kanban-docs-ci-priority",
+    title: "Prioritize Release Board Cards",
+    tier: "hard",
+    sourceFile: "kanban.test.ts",
+    sourceCase: "agent moves cards on a kanban board",
+    startRoute: "/kanban",
+    prompt:
+      "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",
+    maxTurns: 35,
+    timeoutMs: 420_000,
+    tags: ["workarena-gap", "workflow", "kanban", "planning", "record-update"],
+    validator: "releaseBoardPrioritiesMoved",
+    validatorKind: "fixture-state",
+    description:
+      "Updates a work board from a natural priority request without prescribing drag mechanics.",
+  },
+  {
+    id: "workarena-gap.document-footnote-brief",
+    title: "Prepare Document Research Brief",
+    tier: "hard",
+    sourceFile: "article-research.test.ts",
+    sourceCase: "agent scrolls to find a footnote source and reports it",
+    startRoute: "/article",
+    prompt:
+      "Prepare a short note for the team: identify the source cited in Footnote 2 and include one documentation practice from the article that relates to remote-team work.",
+    maxTurns: 20,
+    timeoutMs: 240_000,
+    tags: ["workarena-gap", "document", "research", "evidence", "final-answer"],
+    validator: "documentFootnoteBriefAnswered",
+    validatorKind: "final-answer",
+    description:
+      "Combines document research, evidence grounding, and concise written synthesis.",
+  },
 ];
 
 export function getArenaTask(id: string): ArenaTask | undefined {
@@ -178,6 +280,10 @@ export function getArenaTask(id: string): ArenaTask | undefined {
 
 export function getArenaTasksByTier(tier: ArenaTier): ArenaTask[] {
   return ARENA_TASKS.filter((task) => task.tier === tier);
+}
+
+export function getArenaTasksByTag(tag: string): ArenaTask[] {
+  return ARENA_TASKS.filter((task) => task.tags.includes(tag));
 }
 
 export function getArenaTags(): string[] {

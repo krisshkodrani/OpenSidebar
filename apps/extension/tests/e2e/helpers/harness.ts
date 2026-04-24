@@ -55,6 +55,7 @@ function isDiagnosticModeEnabled(): boolean {
 
 export interface E2EHarness {
   apiKey: string | undefined;
+  providerMode: ProviderMode;
   readonly ctx: ExtensionContext;
   readonly page: Page;
   tracesBefore: Set<string>;
@@ -85,6 +86,14 @@ function loadGroqApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function loadOpenAiApiKey(): string | undefined {
+  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+  if (!existsSync(REPO_ENV_PATH)) return undefined;
+  const content = readFileSync(REPO_ENV_PATH, "utf-8");
+  const match = content.match(/OPENAI_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 function loadFireworksApiKey(): string | undefined {
   if (process.env.FIREWORKS_API_KEY) return process.env.FIREWORKS_API_KEY;
   if (!existsSync(REPO_ENV_PATH)) return undefined;
@@ -109,6 +118,13 @@ function detectProviderMode(): ProviderMode {
   if (prov === "openai-groq") return "openai-groq";
   if (prov === "openrouter") return "openrouter";
   return "fireworks";
+}
+
+function loadActiveProviderApiKey(providerMode: ProviderMode): string | undefined {
+  if (providerMode === "fireworks") return loadFireworksApiKey();
+  if (providerMode === "moonshot") return loadKimiApiKey();
+  if (providerMode === "openai-groq") return loadOpenAiApiKey();
+  return loadApiKey();
 }
 
 function deriveLane(providerMode: ProviderMode): E2ELane {
@@ -139,7 +155,8 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const maxTurns = options.maxTurns ?? 20;
   const testLabel = options.testLabel ?? "e2e";
 
-  const apiKey = loadApiKey();
+  const providerMode = detectProviderMode();
+  const apiKey = loadActiveProviderApiKey(providerMode);
 
   let ctx: ExtensionContext;
   let page: Page;
@@ -149,6 +166,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
 
   const harness: E2EHarness = {
     apiKey,
+    providerMode,
 
     get ctx() {
       return ctx;
@@ -178,11 +196,15 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         (await ctx.browser.newPage());
 
       const helper = await openHelperPage(ctx);
-      const providerMode = detectProviderMode();
       const lane = deriveLane(providerMode);
       const groqKey =
-        providerMode !== "openrouter" && providerMode !== "moonshot"
+        providerMode === "openrouter-groq" || providerMode === "openai-groq"
           ? loadGroqApiKey()
+          : undefined;
+      const openAiKey = providerMode === "openai-groq" ? loadOpenAiApiKey() : undefined;
+      const openRouterKey =
+        providerMode === "openrouter" || providerMode === "openrouter-groq"
+          ? loadApiKey()
           : undefined;
       const fireworksKey = providerMode === "fireworks" ? loadFireworksApiKey() : undefined;
       const kimiKey = providerMode === "moonshot" ? loadKimiApiKey() : undefined;
@@ -196,9 +218,11 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         diagnosticMode,
       });
       await helper.evaluate(
-        async (key: string, turns: number, mode: string, gKey: string | null, fwKey: string | null, kimiKey: string | null, execModel: string | null, temp: number | null, vlExec: boolean | null) => {
-          const localData: Record<string, string> = { openRouterApiKey_local: key };
+        async (openRouterKey: string | null, turns: number, mode: string, gKey: string | null, openAiKey: string | null, fwKey: string | null, kimiKey: string | null, execModel: string | null, temp: number | null, vlExec: boolean | null) => {
+          const localData: Record<string, string> = {};
+          if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
           if (gKey) localData.groqApiKey_local = gKey;
+          if (openAiKey) localData.openaiApiKey_local = openAiKey;
           if (fwKey) localData.fireworksApiKey_local = fwKey;
           if (kimiKey) localData.kimiApiKey_local = kimiKey;
           await chrome.storage.local.set(localData);
@@ -215,10 +239,11 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (vlExec) settings.useVLExecutor = true;
           await chrome.storage.sync.set({ userSettings: settings });
         },
-        apiKey ?? "",
+        openRouterKey ?? null,
         maxTurns,
         providerMode,
         groqKey ?? null,
+        openAiKey ?? null,
         fireworksKey ?? null,
         kimiKey ?? null,
         executorModel ?? null,

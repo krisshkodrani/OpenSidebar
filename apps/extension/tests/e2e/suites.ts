@@ -1,46 +1,50 @@
-export type E2EStageSuiteName = "easy" | "medium" | "hard";
-export type E2EFocusSuiteName = "smoke" | "regression" | "nightly";
-export type E2ESuiteName = E2EStageSuiteName | E2EFocusSuiteName;
+export type E2EDefaultSuiteName =
+  | "smoke"
+  | "interaction-regression"
+  | "runtime-regression";
+export type E2EFocusSuiteName = "nightly-legacy";
+export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
+
+export const E2E_RETIRED_TESTS: readonly string[] = [
+  "article-research.test.ts",
+  "data-table.test.ts",
+  "email-compose.test.ts",
+  "job-board.test.ts",
+  "kanban.test.ts",
+  "messaging-thread.test.ts",
+  "multi-step-form.test.ts",
+  "online-shop-boundaries.test.ts",
+  "procurement-list.test.ts",
+  "support-ticket.test.ts",
+  "tab-management.test.ts",
+  "team-chat.test.ts",
+];
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
-  easy: [
-    "autocomplete.test.ts",
-    "context-menu.test.ts",
-    "data-table.test.ts",
-    "date-picker.test.ts",
-    "delayed-content.test.ts",
-    "faq-accordion.test.ts",
-    "infinite-scroll.test.ts",
-    "kanban.test.ts",
-    "keyboard-nav.test.ts",
+  smoke: [
+    "summarize.test.ts",
     "login.test.ts",
     "structural-loading.test.ts",
-    "summarize.test.ts",
-    "support-ticket.test.ts",
-    "web-components.test.ts",
+    "delayed-content.test.ts",
+    "clarification-recovery.test.ts",
+    "mutation-dedupe-recovery.test.ts",
   ],
-  medium: [
-    "article-research.test.ts",
+  "interaction-regression": [
+    "autocomplete.test.ts",
     "edge-cases.test.ts",
-    "email-compose.test.ts",
     "execute-js.test.ts",
     "go-back-navigation.test.ts",
     "hover-menus.test.ts",
-    "job-board.test.ts",
-    "messaging-thread.test.ts",
+    "infinite-scroll.test.ts",
+    "keyboard-nav.test.ts",
     "modal-overlays.test.ts",
-    "multi-step-form.test.ts",
     "navigation-challenge.test.ts",
     "online-shop.test.ts",
-    "procurement-list.test.ts",
-    "profile-checkout.test.ts",
-    "tab-management.test.ts",
-    "team-chat.test.ts",
+    "web-components.test.ts",
   ],
-  hard: [
+  "runtime-regression": [
     "approval-recovery.test.ts",
     "backend-durable-resume.test.ts",
-    "clarification-recovery.test.ts",
     "continuation-abandon-restart.test.ts",
     "continuation-act-check-act.test.ts",
     "continuation-cart-swap.test.ts",
@@ -49,80 +53,31 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation-paginated-memory.test.ts",
     "continuation-verify.test.ts",
     "continuation.test.ts",
-    "mutation-dedupe-recovery.test.ts",
-    "online-shop-boundaries.test.ts",
-    "sequential-tasks.test.ts",
-    "site-knowledge-memory.test.ts",
-    "stop-drain-recovery.test.ts",
-    "structured-progress-resume.test.ts",
-    "trace-viewer-memory-api.test.ts",
-  ],
-  smoke: [
-    "summarize.test.ts",
-    "login.test.ts",
-    "structural-loading.test.ts",
-    "support-ticket.test.ts",
-    "multi-step-form.test.ts",
-    "job-board.test.ts",
-    "procurement-list.test.ts",
-    "tab-management.test.ts",
-    "approval-recovery.test.ts",
-    "clarification-recovery.test.ts",
-    "mutation-dedupe-recovery.test.ts",
-    "online-shop-boundaries.test.ts",
-  ],
-  regression: [
-    "data-table.test.ts",
-    "web-components.test.ts",
-    "article-research.test.ts",
-    "edge-cases.test.ts",
-    "email-compose.test.ts",
-    "go-back-navigation.test.ts",
-    "messaging-thread.test.ts",
-    "modal-overlays.test.ts",
-    "online-shop.test.ts",
     "profile-checkout.test.ts",
-    "backend-durable-resume.test.ts",
-    "continuation-abandon-restart.test.ts",
-    "continuation-cross-page-compose.test.ts",
-    "continuation-verify.test.ts",
     "sequential-tasks.test.ts",
     "site-knowledge-memory.test.ts",
     "stop-drain-recovery.test.ts",
     "structured-progress-resume.test.ts",
     "trace-viewer-memory-api.test.ts",
   ],
-  nightly: [
-    "autocomplete.test.ts",
+  "nightly-legacy": [
     "context-menu.test.ts",
     "date-picker.test.ts",
-    "delayed-content.test.ts",
-    "execute-js.test.ts",
     "faq-accordion.test.ts",
-    "hover-menus.test.ts",
-    "infinite-scroll.test.ts",
-    "kanban.test.ts",
-    "keyboard-nav.test.ts",
-    "navigation-challenge.test.ts",
-    "team-chat.test.ts",
-    "continuation-act-check-act.test.ts",
-    "continuation-cross-tab.test.ts",
-    "continuation-paginated-memory.test.ts",
-    "continuation.test.ts",
   ],
 };
 
-export const E2E_SUITE_ORDER: readonly E2EStageSuiteName[] = [
-  "easy",
-  "medium",
-  "hard",
+export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
+  "smoke",
+  "interaction-regression",
+  "runtime-regression",
 ];
 
 export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
-  "smoke",
-  "regression",
-  "nightly",
+  "nightly-legacy",
 ];
 
-export const E2E_CANONICAL_SUITE_ORDER: readonly E2EStageSuiteName[] =
-  E2E_SUITE_ORDER;
+export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [
+  ...E2E_SUITE_ORDER,
+  ...E2E_FOCUS_SUITE_ORDER,
+];
