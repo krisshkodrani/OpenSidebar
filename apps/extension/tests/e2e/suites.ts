@@ -25,6 +25,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "summarize.test.ts",
     "login.test.ts",
     "structural-loading.test.ts",
+    "session-state-import.test.ts",
     "delayed-content.test.ts",
     "clarification-recovery.test.ts",
     "mutation-dedupe-recovery.test.ts",

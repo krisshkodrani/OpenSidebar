@@ -48,12 +48,16 @@ function markdownEscape(value: string): string {
   return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
-function runStep(name: string, command: string): CopySuiteStep {
+function runStep(
+  name: string,
+  command: string,
+  cwd: string = PROJECT_ROOT,
+): CopySuiteStep {
   const start = Date.now();
   console.log(`\n[workarena:copy] ${name}`);
   console.log(`[workarena:copy] ${command}`);
   const result = spawnSync(command, {
-    cwd: PROJECT_ROOT,
+    cwd,
     shell: true,
     stdio: "inherit",
     windowsHide: true,
@@ -129,6 +133,7 @@ function buildReport(steps: readonly CopySuiteStep[], tasks: readonly ArenaTask[
   lines.push("## Notes");
   lines.push("");
   lines.push("- Contract steps do not start OpenSidebar, ServiceNow, or an LLM provider.");
+  lines.push("- The session import step launches the extension browser but does not call an LLM provider.");
   lines.push("- The optional agent step runs the local WorkArena-gap E2E suite with OpenSidebar.");
   lines.push("- Real WorkArena remains gated behind Hugging Face and explicit reset flags.");
   return `${lines.join("\n").trimEnd()}\n`;
@@ -155,6 +160,26 @@ function main(): void {
   }
 
   const steps: CopySuiteStep[] = [];
+  if (args.noBuild) {
+    steps.push(
+      skippedStep(
+        "extension build",
+        "cmd /c npm run build",
+        "--no-build supplied",
+      ),
+    );
+    steps.push(
+      skippedStep(
+        "fixture build",
+        "cmd /c npm run fixtures:build",
+        "--no-build supplied",
+      ),
+    );
+  } else {
+    steps.push(runStep("extension build", "cmd /c npm run build"));
+    steps.push(runStep("fixture build", "cmd /c npm run fixtures:build"));
+  }
+
   steps.push(runStep("arena registry validation", "cmd /c npm run e2e:arena:check"));
 
   for (const task of tasks) {
@@ -176,6 +201,13 @@ function main(): void {
     runStep(
       "held-session protocol",
       "cmd /c npm run benchmark:workarena:held-session -- --task workarena.servicenow.all-menu",
+    ),
+  );
+  steps.push(
+    runStep(
+      "session state import E2E",
+      "cmd /c npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/session-state-import.test.ts",
+      resolve(PROJECT_ROOT, "apps/extension"),
     ),
   );
   steps.push(
