@@ -37,6 +37,61 @@ Prefer these locations when making changes:
 - Use test-only instrumentation only when it is pure observability or minimal state injection needed for determinism.
 - Do not add repo-backed research workflows, vendored agent repos, or note-taking systems to the product tree.
 
+## Development Discipline
+
+These rules bias toward small, verifiable, product-quality changes. Use judgment for trivial tasks, but do not trade correctness for speed.
+
+### Think Before Coding
+
+Before implementing, identify the user-visible goal and any assumptions that affect behavior.
+
+- State important assumptions when they affect the solution.
+- If multiple interpretations are plausible and the wrong choice would be costly, ask before editing.
+- If a reasonable low-risk assumption exists, proceed and mention it.
+- Surface tradeoffs when choosing between a narrow fix, a broader runtime fix, or a test-only change.
+- Push back on approaches that add complexity, fixture-specific behavior, or brittle shortcuts.
+
+### Simplicity First
+
+Implement the minimum product change that satisfies the request.
+
+- Do not add features, configuration, abstraction, or generalized frameworks unless the request or existing design clearly calls for them.
+- Prefer existing helpers, patterns, and boundaries over new mechanisms.
+- Avoid defensive code for states that cannot occur unless there is evidence they do occur.
+- If the implementation grows large, pause and look for a smaller design before continuing.
+
+### Surgical Changes
+
+Keep diffs tightly tied to the task.
+
+- Touch only files needed for the requested behavior.
+- Do not reformat, rename, reorganize, or clean up adjacent code unless required by the change.
+- Match existing style even when it is not your preferred style.
+- Remove imports, variables, functions, tests, or comments made obsolete by your own change.
+- Do not remove pre-existing dead code or unrelated behavior unless explicitly asked.
+- If you notice unrelated cleanup or a real product bug, mention it or create a GitHub issue when appropriate.
+
+Every changed line should have a clear reason connected to the user request or necessary verification.
+
+### Goal-Driven Execution
+
+Turn work into verifiable outcomes.
+
+- For bug fixes, prefer a focused reproduction or regression test before or alongside the fix.
+- For behavior changes, verify the observable behavior, not just internal planner artifacts.
+- For refactors, preserve behavior and run the narrowest relevant tests.
+- For E2E/runtime failures, follow the repository triage order: identify the general runtime cause, confirm it, fix product behavior, add or update the narrowest regression test, then rerun the isolated case.
+
+For multi-step work, use a short plan with verification points when it improves clarity:
+
+```md
+1. Identify failing behavior -> verify with trace, focused test, or reproduction.
+2. Make the smallest runtime/product fix -> verify the targeted case.
+3. Run the narrowest relevant test suite -> broaden only if needed.
+```
+
+Strong success criteria should let the agent continue independently. Weak or ambiguous criteria should be clarified before large edits.
+
 ## Product And E2E Design Rules
 
 When working on runtime behavior, skills, prompts, or E2E-related failures, follow these rules:
