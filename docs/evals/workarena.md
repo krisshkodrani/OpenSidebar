@@ -344,6 +344,7 @@ The default copy suite is no-token and no-ServiceNow. It runs:
 - one local `agent-execution` contract report for each `workarena-gap` task
 - browser attach strategy probe
 - held-session protocol probe
+- session state import E2E for cookies and origin storage in the extension browser
 - WorkArena report schema validation
 
 To include the actual local OpenSidebar WorkArena-gap E2E suite, pass `--agent`:
