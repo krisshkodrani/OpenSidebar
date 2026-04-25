@@ -1,6 +1,3 @@
-export const AGENT_ACTION_IDLE_MS = 2200;
-export const AGENT_STEP_SETTLE_MS = 1400;
-
 export type AgentCueStepStatus = "running" | "done" | "error";
 export type AgentCueBorderState = "active" | "settle" | null;
 
@@ -21,14 +18,14 @@ export function deriveAgentCueTransition(input: {
   if (input.stepStatus === "running") {
     return {
       showCue: true,
-      hideAfterMs: AGENT_ACTION_IDLE_MS,
+      hideAfterMs: null,
       borderState: "active",
     };
   }
 
   return {
     showCue: true,
-    hideAfterMs: AGENT_STEP_SETTLE_MS,
+    hideAfterMs: null,
     borderState: "settle",
   };
 }

@@ -1,10 +1,6 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
-import {
-  AGENT_ACTION_IDLE_MS,
-  AGENT_STEP_SETTLE_MS,
-  deriveAgentCueTransition,
-} from "../../src/content/agent-cue";
+import { deriveAgentCueTransition } from "../../src/content/agent-cue";
 
 describe("agent cue transitions", () => {
   test("does not show the cue when the session is not active", () => {
@@ -20,7 +16,7 @@ describe("agent cue transitions", () => {
     });
   });
 
-  test("shows a short-lived cue for running steps", () => {
+  test("keeps the cue visible for running steps while the session is active", () => {
     expect(
       deriveAgentCueTransition({
         sessionActive: true,
@@ -28,12 +24,12 @@ describe("agent cue transitions", () => {
       }),
     ).toEqual({
       showCue: true,
-      hideAfterMs: AGENT_ACTION_IDLE_MS,
+      hideAfterMs: null,
       borderState: "active",
     });
   });
 
-  test("keeps the cue briefly for done and error states", () => {
+  test("keeps the cue visible for done and error states while the session is active", () => {
     expect(
       deriveAgentCueTransition({
         sessionActive: true,
@@ -41,7 +37,7 @@ describe("agent cue transitions", () => {
       }),
     ).toEqual({
       showCue: true,
-      hideAfterMs: AGENT_STEP_SETTLE_MS,
+      hideAfterMs: null,
       borderState: "settle",
     });
 
@@ -52,7 +48,7 @@ describe("agent cue transitions", () => {
       }),
     ).toEqual({
       showCue: true,
-      hideAfterMs: AGENT_STEP_SETTLE_MS,
+      hideAfterMs: null,
       borderState: "settle",
     });
   });
