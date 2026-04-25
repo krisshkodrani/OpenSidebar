@@ -95,6 +95,8 @@ If you want setup-only readiness while Hugging Face access is still pending, all
 npm run benchmark:workarena:doctor -- --allow-pending-hf
 ```
 
+With pending gated access, the doctor reports `Status: local setup ready; gated access pending`. That means local dependencies and browser setup are usable, but real ServiceNow resets remain blocked until dataset access is granted.
+
 ## Task Discovery
 
 List task metadata without launching a browser or spending LLM tokens:

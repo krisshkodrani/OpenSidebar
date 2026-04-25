@@ -5,7 +5,7 @@ import { AgentStatus } from "../../src/types";
 // Mock modules before importing AgentLoop
 vi.mock("../../src/background/llm", () => ({
   LLMClient: class {
-    private model = "google/gemini-2.5-flash-lite";
+    private model = "accounts/fireworks/routers/kimi-k2p5-turbo";
     _isPlannerTier = false;
     complete = vi.fn(() =>
       Promise.resolve({
@@ -25,23 +25,23 @@ vi.mock("../../src/background/llm", () => ({
       });
     });
     switchToPlanner = vi.fn(() => {
-      this.model = "minimax/minimax-m2.5"; this._isPlannerTier = true;
+      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = true;
     });
     switchToExecutor = vi.fn(() => {
-      this.model = "google/gemini-2.5-flash-lite"; this._isPlannerTier = false;
+      this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = false;
     });
     isPlannerTier = () => this._isPlannerTier;
     getCurrentModel = () => this.model;
-    getCurrentProvider = () => "openrouter";
+    getCurrentProvider = () => "fireworks";
     setFailoverCallback = vi.fn(() => {});
     resetExecutorFallback = vi.fn();
     getActiveProviderInfo = () => ({
-      providerId: "openrouter",
+      providerId: "fireworks",
       model: this.model,
     });
   },
-  MODEL_EXECUTOR: "google/gemini-2.5-flash-lite",
-  MODEL_PLANNER: "minimax/minimax-m2.5",
+  MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
+  MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",
   stripThinkTags: (text: string) =>
     text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
   extractThinkContent: (text: string) => {
@@ -274,7 +274,7 @@ describe("AgentLoop Public API", () => {
         .map((m: any) => m.payload?.delta)
         .filter(Boolean);
       const combined = textChunks.join("");
-      expect(combined).toContain("openrouter.ai/credits");
+      expect(combined).toContain("fireworks.ai");
     });
   });
 });

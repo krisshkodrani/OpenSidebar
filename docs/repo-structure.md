@@ -39,7 +39,8 @@ From the repo root:
 - `npm test`: extension unit and integration tests
 - `npm run test:backend`: backend tests
 - `npm run test:e2e`: browser E2E validation
-- `npm run release:verify`: lint, tests, and build
+- `npm run ci:local`: local mirror of GitHub CI
+- `npm run release:verify`: release alias for `npm run ci:local`
 
 ## Compatibility Notes
 

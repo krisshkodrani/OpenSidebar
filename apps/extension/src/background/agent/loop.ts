@@ -263,6 +263,42 @@ function setCachedScreenshot(tabId: number, dataUrl: string): void {
   screenshotCache.set(tabId, { dataUrl, capturedAt: Date.now() });
 }
 
+function formatProviderName(providerId: string): string {
+  switch (providerId) {
+    case "fireworks":
+      return "Fireworks";
+    case "moonshot":
+      return "Moonshot";
+    case "groq":
+      return "Groq";
+    case "openai":
+      return "OpenAI";
+    case "openrouter":
+    case "openrouter-groq":
+      return "OpenRouter";
+    default:
+      return providerId || "LLM provider";
+  }
+}
+
+function getProviderCreditsUrl(providerId: string): string | null {
+  switch (providerId) {
+    case "openrouter":
+    case "openrouter-groq":
+      return "https://openrouter.ai/credits";
+    case "fireworks":
+      return "https://fireworks.ai";
+    case "moonshot":
+      return "https://platform.kimi.ai";
+    case "groq":
+      return "https://console.groq.com";
+    case "openai":
+      return "https://platform.openai.com";
+    default:
+      return null;
+  }
+}
+
 export function isPerceptionFailurePlaceholder(
   interpretation: string | null | undefined,
 ): boolean {
@@ -5655,9 +5691,12 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
 
           // Non-retryable: insufficient credits
           if (errorClass === "credits_exhausted") {
+            const providerId = this.llm.getActiveProviderInfo().providerId;
+            const providerName = formatProviderName(providerId);
+            const creditsUrl = getProviderCreditsUrl(providerId);
             const msg =
-              "Your OpenRouter account has insufficient credits. " +
-              "Please add credits at openrouter.ai/credits and try again.";
+              `Your ${providerName} account has insufficient credits.` +
+              (creditsUrl ? ` Please add credits at ${creditsUrl} and try again.` : "");
             this.broadcast({
               type: "STREAM_CHUNK",
               payload: { delta: msg, done: false },
@@ -5670,11 +5709,11 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
             return {
               outcome: "error" as const,
               turnCount: this.turnCount,
-              summary: "Insufficient OpenRouter credits",
+              summary: `Insufficient ${providerName} credits`,
               failure: {
                 category: "provider" as const,
                 code: "credits_exhausted",
-                detail: "HTTP 402 from OpenRouter",
+                detail: `HTTP 402 from ${providerName}`,
               },
               metrics: this.getMetrics(),
             };

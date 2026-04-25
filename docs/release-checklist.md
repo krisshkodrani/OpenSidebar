@@ -19,9 +19,11 @@ npm run release:verify
 This runs:
 
 - lint across maintained app source, shared packages, active tests, and TypeScript tooling scripts
+- TypeScript project references typecheck
 - extension tests
 - backend tests
 - production build
+- dist artifact verification
 
 ## 3. Run Final E2E Validation
 
