@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   showSessionMetrics: true,
   showMessageDetailsByDefault: false,
   showDebugScreenshots: false,
+  enableBrowserNotifications: false,
   siteAccessMode: "allow_all",
   siteAccessBlocklist: [],
   requireApprovals: true,

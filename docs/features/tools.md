@@ -593,19 +593,6 @@ Transcribe speech from an `<audio>` or `<video>` element.
 
 ---
 
-## Utility Tools
-
-### send_notification
-
-Show a desktop notification to the user.
-
-| Parameter | Type   | Required | Description        |
-| --------- | ------ | -------- | ------------------ |
-| title     | string | Yes      | Notification title |
-| message   | string | Yes      | Notification body  |
-
----
-
 ## Tool Categories Summary
 
 | Category               | Tools                                                                                                                                                                                                                                  |
@@ -616,7 +603,7 @@ Show a desktop notification to the user.
 | **Page Analysis**      | inspect_hidden, xray_page, fast_forward, read_pdf                                                                                                                                                                                      |
 | **Control Flow**       | escalate                                                                                                                                                                                                                               |
 | **Audio/Video**        | transcribe_audio                                                                                                                                                                                                                       |
-| **Utilities**          | send_notification                                                                                                                                                                                                                      |
+| **Utilities**          |                                                                                                                                                                                                                                        |
 
 ---
 
@@ -628,7 +615,7 @@ Tools are classified by risk level:
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
 | **LOW**    | Read-only operations            | read_page, scroll_page, list_tabs, get_cookies, search_history, get_bookmarks |
 | **MEDIUM** | Mutates state but reversible    | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard      |
-| **HIGH**   | Navigation, tabs, external data | navigate, close_tab, create_tab, escalate, download_file, send_notification                  |
+| **HIGH**   | Navigation, tabs, external data | navigate, close_tab, create_tab, escalate, download_file                                     |
 
 ---
 

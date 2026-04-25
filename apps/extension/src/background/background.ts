@@ -24,6 +24,7 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
+import { agentNotifications } from "./notifications";
 import {
   clearAllWorkspaceTurnMemory,
   clearWorkspaceTurnMemory,
@@ -65,6 +66,7 @@ setNavigationCallbacks(
 
 // 3. Initialize Keepalive Alarm
 registerAlarmListener();
+agentNotifications.registerHandlers();
 
 // 3b. Invalidate perception warmup cache on navigation and tab close
 chrome.webNavigation?.onCommitted.addListener((details) => {

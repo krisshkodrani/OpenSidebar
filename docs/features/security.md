@@ -26,7 +26,7 @@ All AI actions are classified by risk level:
 - **Reading pages** - `read_page`, `read_element`, `read_pdf`
 - **Scrolling** - `scroll_page`
 - **Inspection** - `hover_element`, `find_element`, `inspect_hidden`, `list_tabs`, `get_cookies`, `search_history`, `get_bookmarks`
-- **Utility** - `wait`, `escalate`, `transcribe_audio`, `copy_to_clipboard`, `send_notification`
+- **Utility** - `wait`, `escalate`, `transcribe_audio`, `copy_to_clipboard`
 
 ### MEDIUM RISK (State Changes)
 

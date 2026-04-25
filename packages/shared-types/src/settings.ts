@@ -45,6 +45,8 @@ export interface UserSettings {
   showMessageDetailsByDefault?: boolean;
   /** Show debug screenshot toasts in the sidepanel when captures are emitted */
   showDebugScreenshots?: boolean;
+  /** Show Chrome browser notifications for important agent events */
+  enableBrowserNotifications?: boolean;
   /** Site access policy for agent execution */
   siteAccessMode?: "allow_all" | "blocklist";
   /** Blocked domains when `siteAccessMode` is `blocklist` */

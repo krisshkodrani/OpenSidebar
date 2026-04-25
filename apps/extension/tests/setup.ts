@@ -30,11 +30,13 @@ global.chrome = {
             removeListener: () => { },
         },
         sendMessage: async () => { },
+        getURL: (path: string) => `chrome-extension://test/${path}`,
     },
     storage: {
         session: {
             get: async () => ({}),
             set: async () => { },
+            remove: async () => { },
         },
         local: {
             get: async () => ({}),
@@ -47,7 +49,9 @@ global.chrome = {
         }
     },
     sidePanel: {
-        setPanelBehavior: () => { }
+        setPanelBehavior: () => { },
+        setOptions: async () => { },
+        open: async () => { },
     },
     tabs: {
         update: async () => ({}),
@@ -97,10 +101,19 @@ global.chrome = {
         search: async () => [],
     },
     notifications: {
-        create: async (_id: string, _opts: any, cb?: () => void) => { if (cb) cb(); return "notif-id"; },
+        create: async (_id: string, _opts: any, cb?: (id: string) => void) => { if (cb) cb(_id); return _id; },
+        clear: async () => true,
+        getPermissionLevel: async () => "granted",
+        onClicked: { addListener: () => { }, removeListener: () => { } },
+        onClosed: { addListener: () => { }, removeListener: () => { } },
+    },
+    permissions: {
+        contains: async () => true,
+        request: async () => true,
     },
     windows: {
         create: async () => ({ id: 1 }),
+        update: async () => ({}),
     },
 } as any;
 

@@ -17,6 +17,7 @@
     "cookies",
     "history"
   ],
+  "optional_permissions": ["notifications"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "src/background/background.ts",
