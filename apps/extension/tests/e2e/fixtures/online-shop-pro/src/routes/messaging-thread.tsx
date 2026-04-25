@@ -65,6 +65,7 @@ export default function MessagingThread() {
 
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState(false);
+  const [sentMessage, setSentMessage] = useState("");
 
   useEffect(() => {
     if (draft.trim().length > 0) {
@@ -79,9 +80,15 @@ export default function MessagingThread() {
   }, [draft, sent]);
 
   const handleSend = () => {
-    const text = draft.trim();
+    const editorText =
+      (
+        document.getElementById("reply-editor") as HTMLTextAreaElement | null
+      )?.value ?? "";
+    const text = draft.trim() || editorText.trim();
     if (!text) return;
     setSent(true);
+    setSentMessage(text);
+    setDraft("");
     (window as any).messagingResult = {
       composed: true,
       sent: true,
@@ -97,6 +104,7 @@ export default function MessagingThread() {
     <MessagingThreadNormal
       draft={draft}
       sent={sent}
+      sentMessage={sentMessage}
       setDraft={setDraft}
       handleSend={handleSend}
     />
@@ -105,11 +113,13 @@ export default function MessagingThread() {
 
 function MessagingThreadNormal({
   draft,
+  sentMessage,
   setDraft,
   handleSend,
 }: {
   draft: string;
   sent: boolean;
+  sentMessage: string;
   setDraft: (value: string) => void;
   handleSend: () => void;
 }) {
@@ -126,7 +136,7 @@ function MessagingThreadNormal({
       <Sidebar />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <ThreadHeader />
-        <ThreadMessages />
+        <ThreadMessages sentMessage={sentMessage} />
         <ReplyBox
           draft={draft}
           setDraft={setDraft}
@@ -287,7 +297,7 @@ function ThreadHeader() {
   );
 }
 
-function ThreadMessages() {
+function ThreadMessages({ sentMessage }: { sentMessage: string }) {
   return (
     <div
       id="thread-messages"
@@ -358,6 +368,55 @@ function ThreadMessages() {
           </div>
         </div>
       ))}
+      {sentMessage && (
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              flexShrink: 0,
+              background: "#475569",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#fff",
+            }}
+          >
+            Du
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                marginBottom: 2,
+              }}
+            >
+              <span
+                style={{ fontWeight: 600, fontSize: 14, color: "#191919" }}
+              >
+                Du
+              </span>
+              <span style={{ fontSize: 12, color: "#666" }}>gerade eben</span>
+            </div>
+            <p
+              id="sent-reply-message"
+              style={{
+                margin: 0,
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: "#333",
+              }}
+            >
+              {sentMessage}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

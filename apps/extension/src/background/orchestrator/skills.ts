@@ -231,6 +231,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Identify the exact thread, speaker, audience, language, and tone before composing.",
       "Preserve owners, deadlines, deliverables, blockers, and unresolved questions.",
       "Do not post if the target thread or audience is uncertain.",
+      "If the user explicitly asks to reply, send, or post, treat a visible verified draft plus a visible Send/Post button as ready to submit; do not keep re-reading the same draft.",
     ],
   },
   {
@@ -736,6 +737,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "Use update_notes for compact thread facts when several messages must be synthesized.",
         "Use read_page or read_element after composing to verify the active target and message text.",
         "Avoid coordinate clicks and send shortcuts when posting communication.",
+        "When sending was requested and the draft has been verified, use the visible Send/Post button directly instead of Enter or coordinate clicks.",
       ],
       completionChecks: [
         "The reply is in the correct thread, channel, or recipient context.",
