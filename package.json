@@ -63,6 +63,7 @@
     "benchmark:workarena:local": "tsx scripts/workarena-local-execution.ts",
     "benchmark:workarena:browser-strategy": "tsx scripts/workarena-browser-strategy.ts",
     "benchmark:workarena:held-session": "tsx scripts/workarena-held-session.ts",
+    "benchmark:workarena:handoff": "tsx scripts/workarena-handoff.ts",
     "benchmark:workarena:validate-reports": "tsx scripts/workarena-validate-reports.ts",
     "test:e2e:staged": "tsx scripts/run-e2e-staged.ts",
     "test:e2e:easy": "npm run test:e2e:smoke",

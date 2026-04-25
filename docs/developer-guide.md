@@ -224,6 +224,7 @@ Structured perception uses the unified v6 contract:
 | `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
 | `npm run test:e2e:workarena` | you need WorkArena-gap workflow coverage  | expensive; run deliberately                    |
 | `npm run test:e2e:workarena:copy` | you need local WorkArena rehearsal before real WorkArena | no-token by default; includes session import check; add `-- --agent` for local agent E2E |
+| `npm run benchmark:workarena:handoff` | you need a manual real WorkArena handoff run | requires `-- --allow-servicenow-reset`; token-spending |
 | `npm run test:e2e:all`       | you need every raw browser E2E file       | includes retired legacy files                  |
 | `npm run ci:local`           | you want the GitHub CI gate locally       | lint + typecheck + tests + build + dist check  |
 | `npm run release:verify`     | you want the release gate                 | aliases `npm run ci:local`                     |
