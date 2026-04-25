@@ -400,9 +400,41 @@ def build_dry_result(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def build_browser_strategy_result(args: argparse.Namespace) -> dict[str, Any]:
+    import inspect
+
+    import browsergym.core.env as browser_env
+
+    init_signature = str(inspect.signature(browser_env.BrowserEnv.__init__))
+    reset_source = inspect.getsource(browser_env.BrowserEnv.reset)
+    return {
+        "benchmark": "workarena",
+        "mode": "browser-strategy-probe",
+        "browsergym": {
+            "envFile": inspect.getfile(browser_env.BrowserEnv),
+            "browserEnvInitSignature": init_signature,
+            "usesChromiumLaunch": "pw.chromium.launch(" in reset_source,
+            "usesNewContext": "self.browser.new_context(" in reset_source,
+            "usesLaunchPersistentContext": "launch_persistent_context(" in reset_source,
+            "supportsPwChromiumKwargs": "pw_chromium_kwargs" in init_signature,
+            "supportsPwContextKwargs": "pw_context_kwargs" in init_signature,
+        },
+        "notes": [
+            "Probe is metadata-only.",
+            "No BrowserGym environment was reset.",
+            "No ServiceNow state was contacted or mutated.",
+        ],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", nargs="?", choices=["doctor", "list", "dry"], default="doctor")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["doctor", "list", "dry", "browser-strategy"],
+        default="doctor",
+    )
     parser.add_argument("--allow-pending-hf", action="store_true")
     parser.add_argument("--suite", choices=["all", "atomic", "l1", "l2", "l3"], default="all")
     parser.add_argument("--category")
@@ -417,6 +449,8 @@ def main() -> int:
         if not args.task:
             parser.error("--task is required for dry")
         result = build_dry_result(args)
+    elif args.command == "browser-strategy":
+        result = build_browser_strategy_result(args)
     else:
         result = build_result(args)
     print(json.dumps(result, indent=2))

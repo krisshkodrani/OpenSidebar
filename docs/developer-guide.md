@@ -74,6 +74,7 @@ Routine E2E is divided by purpose rather than difficulty:
 | Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, durable state, and memory regressions                          |
 | WorkArena gap      | `npm run test:e2e:workarena`             | Local CRM, ticket, document, chat, email, and workflow tasks modeled after WorkArena categories  |
 | WorkArena variance | `npm run test:e2e:workarena:variance`    | Repeated WorkArena-gap run for pass-rate variance; expensive by design                           |
+| WorkArena copy     | `npm run test:e2e:workarena:copy`        | No-token local rehearsal for WorkArena adapter reports, held-session protocol, and optional agent E2E |
 | Nightly legacy     | `npm run test:e2e:nightly`               | Saturated legacy primitives kept out of routine staged runs                                      |
 
 ### Inspect traces and logs
@@ -222,6 +223,7 @@ Structured perception uses the unified v6 contract:
 | `npm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
 | `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
 | `npm run test:e2e:workarena` | you need WorkArena-gap workflow coverage  | expensive; run deliberately                    |
+| `npm run test:e2e:workarena:copy` | you need local WorkArena rehearsal before real WorkArena | no-token by default; add `-- --agent` for local agent E2E |
 | `npm run test:e2e:all`       | you need every raw browser E2E file       | includes retired legacy files                  |
 | `npm run ci:local`           | you want the GitHub CI gate locally       | lint + typecheck + tests + build + dist check  |
 | `npm run release:verify`     | you want the release gate                 | aliases `npm run ci:local`                     |
