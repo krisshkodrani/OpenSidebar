@@ -6,7 +6,7 @@ import { SubtaskSummary } from "../../src/types";
 // Mock LLM Client
 vi.mock("../../src/background/llm", () => ({
     LLMClient: class {
-        private model = "google/gemini-2.5-flash-lite";
+        private model = "accounts/fireworks/routers/kimi-k2p5-turbo";
         _isPlannerTier = false;
         complete = vi.fn(() => Promise.resolve({
             role: "assistant",
@@ -23,16 +23,16 @@ vi.mock("../../src/background/llm", () => ({
                 finish_reason: "stop",
             });
         });
-        switchToPlanner = vi.fn(() => { this.model = "minimax/minimax-m2.5"; this._isPlannerTier = true; });
-        switchToExecutor = vi.fn(() => { this.model = "google/gemini-2.5-flash-lite"; this._isPlannerTier = false; });
+        switchToPlanner = vi.fn(() => { this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = true; });
+        switchToExecutor = vi.fn(() => { this.model = "accounts/fireworks/routers/kimi-k2p5-turbo"; this._isPlannerTier = false; });
         isPlannerTier = () => this._isPlannerTier;
         getCurrentModel = () => this.model;
-        getCurrentProvider = () => "openrouter";
-        getActiveProviderInfo = () => ({ providerId: "openrouter", model: this.model });
+        getCurrentProvider = () => "fireworks";
+        getActiveProviderInfo = () => ({ providerId: "fireworks", model: this.model });
         setFailoverCallback = vi.fn(() => {});
     },
-    MODEL_EXECUTOR: "google/gemini-2.5-flash-lite",
-    MODEL_PLANNER: "minimax/minimax-m2.5",
+    MODEL_EXECUTOR: "accounts/fireworks/routers/kimi-k2p5-turbo",
+    MODEL_PLANNER: "accounts/fireworks/routers/kimi-k2p5-turbo",
     stripThinkTags: (text: string) => text.replace(/<think>[\s\S]*?<\/think>/g, "").trim(),
     extractThinkContent: () => null,
 }));

@@ -39,8 +39,11 @@ npm install
 npm run dev
 npm run build
 npm run ci:lint
+npm run typecheck
 npm run ci:test
 npm run ci:build
+npm run ci:dist
+npm run ci:local
 npm run test:backend
 npm run release:verify
 ```

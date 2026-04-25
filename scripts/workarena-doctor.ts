@@ -13,9 +13,12 @@ type DoctorCheck = {
   detail: string;
 };
 
+type ReadinessStatus = "ready" | "local_ready_hf_pending" | "blocked";
+
 type DoctorResult = {
   benchmark: "workarena";
   ready: boolean;
+  readiness?: ReadinessStatus;
   dataset: string;
   pythonExecutable: string;
   platform: string;
@@ -97,9 +100,38 @@ function formatStatus(status: CheckStatus): string {
   return status.toUpperCase().padEnd(7, " ");
 }
 
+function classifyReadiness(result: DoctorResult): ReadinessStatus {
+  const hf = result.checks.find((check) => check.name === "huggingface_access");
+  const hardBlock = result.checks.some(
+    (check) =>
+      check.status === "missing" ||
+      check.status === "blocked" ||
+      (check.status === "pending" && check.name !== "huggingface_access"),
+  );
+
+  if (!hardBlock && hf?.status === "pending") return "local_ready_hf_pending";
+  if (result.ready) return "ready";
+  return "blocked";
+}
+
+function readinessLabel(status: ReadinessStatus): string {
+  if (status === "ready") return "ready";
+  if (status === "local_ready_hf_pending") return "local setup ready; gated access pending";
+  return "blocked";
+}
+
+function withReadiness(result: DoctorResult): DoctorResult {
+  return {
+    ...result,
+    readiness: classifyReadiness(result),
+  };
+}
+
 function printHuman(result: DoctorResult): void {
+  const readiness = result.readiness ?? classifyReadiness(result);
   console.log("\n[workarena:doctor] WorkArena setup status");
   console.log(`[workarena:doctor] Ready: ${result.ready ? "yes" : "no"}`);
+  console.log(`[workarena:doctor] Status: ${readinessLabel(readiness)}`);
   console.log(`[workarena:doctor] Python: ${result.pythonExecutable}`);
   console.log(`[workarena:doctor] Dataset: ${result.dataset}`);
   if (result.reportPath) {
@@ -117,6 +149,9 @@ function printHuman(result: DoctorResult): void {
   if (hf?.status === "pending") {
     console.log(
       "\n[workarena:doctor] Hugging Face token is present; gated WorkArena access still appears pending.",
+    );
+    console.log(
+      "[workarena:doctor] Continue local setup with `--allow-pending-hf`; real ServiceNow resets remain blocked until access is granted.",
     );
   }
 }
@@ -181,17 +216,18 @@ function runDoctor(): DoctorResult {
 function main(): void {
   const args = parseArgs();
   const result = runDoctor();
+  const classified = withReadiness(result);
   if (!args.noReport) {
-    result.reportPath = writeReport(result);
+    classified.reportPath = writeReport(classified);
   }
 
   if (args.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(classified, null, 2));
   } else {
-    printHuman(result);
+    printHuman(classified);
   }
 
-  if (!result.ready) {
+  if (!classified.ready) {
     process.exitCode = 1;
   }
 }

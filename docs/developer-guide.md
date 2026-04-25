@@ -223,7 +223,8 @@ Structured perception uses the unified v6 contract:
 | `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
 | `npm run test:e2e:workarena` | you need WorkArena-gap workflow coverage  | expensive; run deliberately                    |
 | `npm run test:e2e:all`       | you need every raw browser E2E file       | includes retired legacy files                  |
-| `npm run release:verify`     | you want the release gate                 | lint + extension tests + backend tests + build |
+| `npm run ci:local`           | you want the GitHub CI gate locally       | lint + typecheck + tests + build + dist check  |
+| `npm run release:verify`     | you want the release gate                 | aliases `npm run ci:local`                     |
 | `npx vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 ### Observability
