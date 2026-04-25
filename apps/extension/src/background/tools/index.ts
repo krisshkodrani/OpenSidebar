@@ -100,6 +100,176 @@ async function tryInPageHistoryBack(tabId: number): Promise<void> {
   });
 }
 
+async function mirrorTextInputInMainWorld(
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const id = args.id;
+  const text = args.text;
+  if (
+    (typeof id !== "number" && typeof id !== "string") ||
+    typeof text !== "string"
+  ) {
+    return;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN" as any,
+      func: (tagId: string, value: string) => {
+        const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+        const el = document.querySelector(selector);
+        if (!el) return;
+
+        if (
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement
+        ) {
+          const dispatchInput = (
+            data: string | null,
+            inputType: string,
+            previousValue: string,
+          ) => {
+            const tracker = (el as any)._valueTracker;
+            if (tracker && typeof tracker.setValue === "function") {
+              tracker.setValue(previousValue);
+            }
+            el.dispatchEvent(
+              new InputEvent("input", {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                data,
+                inputType,
+              }),
+            );
+          };
+          const proto =
+            el instanceof HTMLTextAreaElement
+              ? HTMLTextAreaElement.prototype
+              : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+          const setValue = (nextValue: string) => {
+            if (setter) {
+              setter.call(el, nextValue);
+            } else {
+              el.value = nextValue;
+            }
+          };
+          const setAndNotify = (
+            nextValue: string,
+            inputType: string,
+            data: string | null,
+          ) => {
+            const previousValue = el.value;
+            setValue(nextValue);
+            dispatchInput(data, inputType, previousValue);
+          };
+
+          // React's value tracker may already match the visible DOM value after
+          // the isolated-world action. Force a real MAIN-world value transition
+          // so framework onChange handlers update state before submit clicks.
+          el.focus();
+          setAndNotify("", "deleteContentBackward", null);
+          setAndNotify(value, "insertText", value);
+          el.dispatchEvent(
+            new Event("change", { bubbles: true, composed: true }),
+          );
+          return;
+        }
+
+        if ((el as HTMLElement).isContentEditable) {
+          (el as HTMLElement).textContent = value;
+          el.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              data: value,
+              inputType: "insertText",
+            }),
+          );
+          el.dispatchEvent(
+            new Event("change", { bubbles: true, composed: true }),
+          );
+        }
+      },
+      args: [String(id), text],
+    });
+  } catch {
+    // Best-effort: the content-script action already updated the visible DOM.
+  }
+}
+
+async function clickElementInMainWorld(
+  tabId: number,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const id = args.id;
+  if (typeof id !== "number" && typeof id !== "string") return;
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN" as any,
+      func: async (tagId: string) => {
+        const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+        const el = document.querySelector(selector);
+        if (!(el instanceof HTMLElement)) return;
+
+        el.scrollIntoView({ behavior: "instant", block: "center" });
+        const rect = el.getBoundingClientRect();
+        const clientX = rect.left + rect.width / 2;
+        const clientY = rect.top + rect.height / 2;
+        const mouseInit: MouseEventInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          clientX,
+          clientY,
+          button: 0,
+        };
+        const pointerInit: PointerEventInit = {
+          ...mouseInit,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+        };
+
+        try {
+          el.dispatchEvent(
+            new PointerEvent("pointerdown", {
+              ...pointerInit,
+              buttons: 1,
+            }),
+          );
+        } catch {
+          // PointerEvent may be unavailable in older page contexts.
+        }
+        el.dispatchEvent(
+          new MouseEvent("mousedown", { ...mouseInit, buttons: 1 }),
+        );
+        el.focus({ preventScroll: true });
+        try {
+          el.dispatchEvent(
+            new PointerEvent("pointerup", { ...pointerInit, buttons: 0 }),
+          );
+        } catch {
+          // PointerEvent may be unavailable in older page contexts.
+        }
+        el.dispatchEvent(new MouseEvent("mouseup", mouseInit));
+        el.click();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      },
+      args: [String(id)],
+    });
+  } catch {
+    // Best-effort: the content-script click already ran.
+  }
+}
+
 // --- Registration ---
 
 export function registerTools() {
@@ -109,26 +279,22 @@ export function registerTools() {
     // world and may not trigger framework event handlers (React onClick, Vue
     // @click, etc.) that are attached in the main world. Dispatch a follow-up
     // click via chrome.scripting in the MAIN world using the data-os-tag bridge.
-    if (!String(result).startsWith("Error:") && typeof args.id === "number") {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          world: "MAIN" as any,
-          func: (tagId: number) => {
-            const el = document.querySelector(`[data-os-tag="${tagId}"]`);
-            if (el instanceof HTMLElement) el.click();
-          },
-          args: [args.id],
-        });
-      } catch {
-        // Best-effort — content script click already succeeded
-      }
+    if (!String(result).startsWith("Error:")) {
+      await clickElementInMainWorld(tabId, args);
     }
     return result;
   });
-  toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, (args, tabId) =>
-    executeContentTool(ToolName.TYPE_TEXT, args, tabId),
-  );
+  toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId) => {
+    const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId);
+    // Main-world text bridge: controlled inputs in frameworks such as React can
+    // ignore input events created in the extension's isolated world. Mirror the
+    // final value and input/change events in MAIN so framework state matches the
+    // visible DOM before later clicks submit the value.
+    if (!String(result).startsWith("Error:")) {
+      await mirrorTextInputInMainWorld(tabId, args);
+    }
+    return result;
+  });
   toolRegistry.register(ToolName.SCROLL_PAGE, SCROLL_PAGE_DEF, (args, tabId) =>
     executeContentTool(ToolName.SCROLL_PAGE, args, tabId),
   );

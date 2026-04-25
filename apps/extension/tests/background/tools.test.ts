@@ -292,6 +292,52 @@ describe("Tool Registration", () => {
         expect(def!.function.description).toContain("local personal profile");
     });
 
+    test("type_text mirrors input in the main world after content execution", async () => {
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-type-main",
+                type: "function",
+                function: {
+                    name: ToolName.TYPE_TEXT,
+                    arguments: JSON.stringify({ id: 7, text: "hello" }),
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toBe("ok");
+        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+            expect.objectContaining({
+                target: { tabId: 123 },
+                world: "MAIN",
+                args: ["7", "hello"],
+            }),
+        );
+    });
+
+    test("click_element mirrors activation in the main world after content execution", async () => {
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-click-main",
+                type: "function",
+                function: {
+                    name: ToolName.CLICK_ELEMENT,
+                    arguments: JSON.stringify({ id: 9 }),
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toBe("ok");
+        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+            expect.objectContaining({
+                target: { tabId: 123 },
+                world: "MAIN",
+                args: ["9"],
+            }),
+        );
+    });
+
     test("go_back reports the destination URL after history navigation changes the page", async () => {
         let currentUrl = "https://example.com/step-3";
         (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({

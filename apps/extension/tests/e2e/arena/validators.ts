@@ -692,12 +692,15 @@ async function migrationPlanReplySent(
 
   const result = outcome.result as any;
   const message = normalizeText(result.message);
-  const hasDeadline = message.includes("friday");
+  const hasDeadline = includesAny(message, ["friday", "freitag"]);
   const hasProgressSummary = includesAny(message, [
     "progress summary",
     "progress report",
     "summary",
     "fortschritt",
+    "fortschrittsbericht",
+    "zusammenfassung",
+    "ergebnisse",
   ]);
   const hasCostPlan = includesAny(message, [
     "cost plan",
