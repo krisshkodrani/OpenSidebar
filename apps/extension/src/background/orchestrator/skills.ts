@@ -196,6 +196,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Match the source email's language and register unless the user asks otherwise.",
       "Do not invent facts, commitments, dates, names, or recipients.",
       "Verify the draft and recipient before any send action.",
+      "If the user asks to reply, respond, confirm, accept, or decline to a sender and does not say draft-only, the task requires sending the reply.",
     ],
   },
   {
@@ -648,12 +649,12 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
   "email-reply-careful": {
     procedureMarkdown: [
       "1. Read the full visible email context before drafting: sender, recipient, subject, body, and any visible prior thread.",
-      "2. Determine whether the user asked to draft only or to send the reply.",
+      "2. Determine send intent: draft-only/no-send instructions mean leave a draft; otherwise reply/respond/confirm/accept/decline to a sender means send the reply.",
       "3. Extract a reply checklist: requested answer, date or time, owners, deliverables, agenda items, constraints, language, and tone.",
       "4. Draft in the same language and a matching register unless the user explicitly requests a different style.",
       "5. Include only facts grounded in the email, the user's request, or visible page context.",
       "6. Re-read or inspect the draft before sending; verify recipient, subject or thread, and all checklist items.",
-      "7. Send only if the user requested sending or the task clearly requires it. Otherwise leave the composed draft visible.",
+      "7. Send when the user requested sending or asked to reply/respond/confirm/accept/decline to the sender. Otherwise leave the composed draft visible.",
     ].join("\n"),
     requiredEvidence: [
       "Source email context was read before composing",
@@ -675,22 +676,27 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         signal: "send action is attempted when the task only asked for a draft",
         recovery: "leave the reply as a draft and do not click send",
       },
+      {
+        signal: "task asks to reply/respond/confirm to a sender but completion happens with only a draft",
+        recovery: "verify the recipient and draft, then click the visible Send button",
+      },
     ],
     executionContract: {
       sequencing: [
-        "Read the email, extract the reply checklist, draft, verify the draft and recipient, then send only when requested.",
+        "Read the email, extract the reply checklist, draft, verify the draft and recipient, then send when the user asked to reply/respond/confirm/accept/decline.",
       ],
       toolDiscipline: [
         "Use update_notes for compact reply requirements before typing when the email contains multiple constraints.",
         "Use read_page or read_element after drafting to verify the composed text before any send action.",
         "Avoid press_key shortcuts for sending communication.",
+        "When sending was requested and the draft has been verified, use the visible Send button directly.",
       ],
       completionChecks: [
         "The reply is addressed to the correct recipient or thread.",
         "The language and tone fit the source email and user's instruction.",
         "The reply covers requested dates, owners, deliverables, agenda items, or constraints.",
         "No unsupported facts or commitments were introduced.",
-        "The final state is sent only when sending was requested; otherwise the draft remains visible.",
+        "The final state is sent when reply/respond/confirm/send was requested; otherwise the draft remains visible.",
       ],
       failureRecovery: [
         "If recipient or send permission is uncertain, do not send; clarify or leave a draft.",
