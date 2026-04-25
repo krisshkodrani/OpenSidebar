@@ -205,20 +205,20 @@ async function mirrorTextInputInMainWorld(
 async function clickElementInMainWorld(
   tabId: number,
   args: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   const id = args.id;
-  if (typeof id !== "number" && typeof id !== "string") return;
+  if (typeof id !== "number" && typeof id !== "string") return false;
 
   try {
-    await chrome.scripting.executeScript({
+    const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN" as any,
       func: async (tagId: string) => {
         const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
         const el = document.querySelector(selector);
-        if (!(el instanceof HTMLElement)) return;
+        if (!(el instanceof HTMLElement)) return false;
 
-        el.scrollIntoView({ behavior: "instant", block: "center" });
+        el.scrollIntoView({ block: "center", inline: "center" });
         const rect = el.getBoundingClientRect();
         const clientX = rect.left + rect.width / 2;
         const clientY = rect.top + rect.height / 2;
@@ -262,11 +262,14 @@ async function clickElementInMainWorld(
         el.dispatchEvent(new MouseEvent("mouseup", mouseInit));
         el.click();
         await new Promise((resolve) => requestAnimationFrame(resolve));
+        return true;
       },
       args: [String(id)],
     });
+    return result?.result === true;
   } catch {
     // Best-effort: the content-script click already ran.
+    return false;
   }
 }
 
@@ -279,8 +282,12 @@ export function registerTools() {
     // world and may not trigger framework event handlers (React onClick, Vue
     // @click, etc.) that are attached in the main world. Dispatch a follow-up
     // click via chrome.scripting in the MAIN world using the data-os-tag bridge.
-    if (!String(result).startsWith("Error:")) {
-      await clickElementInMainWorld(tabId, args);
+    const resultText = String(result);
+    if (!resultText.startsWith("Error:")) {
+      const bridged = await clickElementInMainWorld(tabId, args);
+      if (bridged && resultText.startsWith("Click intercepted!")) {
+        return `Clicked [${String(args.id)}] via main-world event bridge after content-script interception.`;
+      }
     }
     return result;
   });

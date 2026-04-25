@@ -338,6 +338,39 @@ describe("Tool Registration", () => {
         );
     });
 
+    test("click_element recovers intercepted clicks through the main-world bridge", async () => {
+        (chrome.tabs.sendMessage as any) = vi.fn(async () => ({
+            payload: {
+                result: "Click intercepted! Element [3] is covered by [56] <span>.",
+                success: false,
+            },
+        }));
+        (chrome.scripting.executeScript as any) = vi.fn(async () => [
+            { result: true },
+        ]);
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-click-intercepted-main",
+                type: "function",
+                function: {
+                    name: ToolName.CLICK_ELEMENT,
+                    arguments: JSON.stringify({ id: 3 }),
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toContain("main-world event bridge");
+        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+            expect.objectContaining({
+                target: { tabId: 123 },
+                world: "MAIN",
+                args: ["3"],
+            }),
+        );
+    });
+
     test("go_back reports the destination URL after history navigation changes the page", async () => {
         let currentUrl = "https://example.com/step-3";
         (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
