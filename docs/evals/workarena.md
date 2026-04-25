@@ -367,4 +367,18 @@ Copy-suite reports are written to:
 
 ## Next Integration Step
 
-After doctor, list, adapter plan, guarded reset, and dry run are green, add a manual single-task runner that launches WorkArena, hands the goal to OpenSidebar, and invokes the WorkArena evaluator after the agent stops. Real agent execution should remain manual at first because it is token-expensive and depends on remote instance availability.
+After doctor, list, adapter plan, guarded reset, dry run, held-session, and session import are green, use the manual handoff runner for the first real WorkArena execution:
+
+```bash
+npm run benchmark:workarena:handoff -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
+```
+
+The handoff runner is manual-only. It refuses to reset WorkArena unless `--allow-servicenow-reset` or `--reset` is present, checks doctor readiness first, starts the held BrowserGym session, exports cookies/storage and the active URL, imports that state into the OpenSidebar extension browser, runs the agent with the real WorkArena goal, validates through the still-held BrowserGym environment, tears down, and writes a JSON execution report under `.artifacts/e2e/`.
+
+Use `--no-build` only when the extension is already built:
+
+```bash
+npm run benchmark:workarena:handoff -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build
+```
+
+Without the reset flag, the command only writes a blocked/pending report and does not contact ServiceNow.
