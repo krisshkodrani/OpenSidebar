@@ -26,6 +26,10 @@ import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
+  isE2ESeedPendingInteractionMessage,
+  isE2ETestApiEnabled,
+} from "./e2e-test-api";
+import {
   clearAllWorkspaceTurnMemory,
   clearWorkspaceTurnMemory,
 } from "./agent/memory";
@@ -375,10 +379,17 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, _sender, sendResponse) => {
-    if ((message as any).type === "E2E_SEED_PENDING_INTERACTION") {
-      const payload = (message as any).payload;
+    if (isE2ESeedPendingInteractionMessage(message)) {
+      const payload = message.payload;
       (async () => {
         try {
+          if (!(await isE2ETestApiEnabled())) {
+            sendResponse({
+              ok: false,
+              detail: "E2E test API is disabled",
+            });
+            return;
+          }
           const result = await orchestrator.seedE2EPendingInteraction(payload);
           sendResponse({ ok: true, ...result });
         } catch (error: any) {

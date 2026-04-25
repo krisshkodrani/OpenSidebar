@@ -8,6 +8,10 @@
 import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
 import { openHelperPage, reloadExtension } from "./browser";
+import {
+  E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE,
+  E2E_TEST_API_ENABLED_STORAGE_KEY,
+} from "../../../src/background/e2e-test-api";
 
 type TaskCompletionState = "completed" | "partial" | "failed" | "none";
 
@@ -403,6 +407,10 @@ export async function seedPendingInteraction(
   const helperPage = await openHelperPage(ctx);
   const response = await helperPage.evaluate(
     async (
+      config: {
+        messageType: string;
+        testApiEnabledKey: string;
+      },
       payload: {
         tabId: number;
         workspaceId: string;
@@ -420,12 +428,17 @@ export async function seedPendingInteraction(
             };
       },
     ) => {
+      await chrome.storage.local.set({ [config.testApiEnabledKey]: true });
       return await chrome.runtime.sendMessage({
-        type: "E2E_SEED_PENDING_INTERACTION",
+        type: config.messageType,
         requestId: crypto.randomUUID(),
         source: "e2e",
         payload,
       });
+    },
+    {
+      messageType: E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE,
+      testApiEnabledKey: E2E_TEST_API_ENABLED_STORAGE_KEY,
     },
     {
       tabId: input.tabId,
