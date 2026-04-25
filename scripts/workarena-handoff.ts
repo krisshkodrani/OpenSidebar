@@ -9,7 +9,10 @@ import {
   readTrace,
 } from "../apps/extension/tests/e2e/helpers/diagnostics";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness";
-import { importPlaywrightStorageState } from "../apps/extension/tests/e2e/helpers/session-state";
+import {
+  importPlaywrightStorageState,
+  type StorageStateImportResult,
+} from "../apps/extension/tests/e2e/helpers/session-state";
 import {
   getActiveTabId,
   getMonitoredEvents,
@@ -75,6 +78,16 @@ type TraceMetrics = {
   };
   costUsd: number;
 };
+
+function statusSummary(record: JsonRecord | null): JsonRecord | null {
+  if (!record) return null;
+  return {
+    ok: typeof record.ok === "boolean" ? record.ok : null,
+    status: typeof record.status === "string" ? record.status : null,
+    durationMs: typeof record.durationMs === "number" ? record.durationMs : null,
+    error: typeof record.error === "string" ? record.error : null,
+  };
+}
 
 function parseArgs(): HandoffArgs {
   const args = process.argv.slice(2);
@@ -431,6 +444,29 @@ function readTraceMetrics(traceFiles: string[]): TraceMetrics {
   };
 }
 
+function summarizeAgentTerminal(terminal: AgentTerminal): JsonRecord {
+  const lastStatus = [...terminal.events]
+    .reverse()
+    .find((event) => event.type === "AGENT_STATUS") ?? null;
+  const lastCompletion = [...terminal.events]
+    .reverse()
+    .find((event) => event.type === "TASK_COMPLETION") ?? null;
+  const eventCounts: Record<string, number> = {};
+  for (const event of terminal.events) {
+    const type = typeof event.type === "string" ? event.type : "unknown";
+    eventCounts[type] = (eventCounts[type] ?? 0) + 1;
+  }
+
+  return {
+    ok: terminal.ok,
+    reason: terminal.reason,
+    eventCount: terminal.events.length,
+    eventCounts,
+    lastStatus,
+    lastCompletion,
+  };
+}
+
 async function waitForAgentTerminal(
   worker: Parameters<typeof getMonitoredEvents>[0],
   timeoutMs: number,
@@ -518,6 +554,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
   runBuildIfNeeded(args);
 
   const bridge = new WorkArenaSessionBridgeClient();
+  let bridgeDescription: JsonRecord | null = null;
   let reset: JsonRecord | null = null;
   let exportSession: JsonRecord | null = null;
   let validation: JsonRecord | null = null;
@@ -528,7 +565,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
   });
 
   try {
-    await bridge.description();
+    bridgeDescription = await bridge.description();
     reset = await bridge.request({
       command: "reset",
       taskId: args.taskId,
@@ -587,9 +624,11 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     }
 
     await updateUserSettings(harness.ctx, { allowNavigation: true });
-    await importPlaywrightStorageState(harness.page, exportSession.storageState);
+    const storageImport: StorageStateImportResult =
+      await importPlaywrightStorageState(harness.page, exportSession.storageState);
     await navigateAndWait(harness.page, targetUrl);
     await harness.page.bringToFront();
+    const importedPageUrl = harness.page.url();
 
     const tabId = await getActiveTabId(harness.ctx.serviceWorker);
     if (tabId <= 0) {
@@ -610,6 +649,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       workspaceId,
     );
     const agentMs = Date.now() - agentStart;
+    const finalOpenSidebarUrl = harness.page.url();
 
     const traceSummary = await harness.printTraceSummary(workspaceId);
     const traceFiles = filterTraceFilesByWorkspace(
@@ -661,6 +701,16 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
           ...validationResult.details,
           agentTerminalReason: terminal.reason,
           agentEventCount: terminal.events.length,
+          agentTerminal: summarizeAgentTerminal(terminal),
+          bridgeStatuses: {
+            description: statusSummary(bridgeDescription),
+            reset: statusSummary(reset),
+            exportSession: statusSummary(exportSession),
+            validation: statusSummary(validation),
+          },
+          storageImport,
+          importedPageUrl,
+          finalOpenSidebarUrl,
         },
       },
       timings: {

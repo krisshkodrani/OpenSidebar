@@ -57,6 +57,8 @@
     "benchmark:workarena:setup": "tsx scripts/workarena-setup.ts",
     "benchmark:workarena:doctor": "tsx scripts/workarena-doctor.ts",
     "benchmark:workarena:list": "tsx scripts/workarena-list.ts",
+    "benchmark:workarena:first-task": "tsx scripts/workarena-first-task.ts",
+    "benchmark:workarena:category-coverage": "tsx scripts/workarena-category-coverage.ts",
     "benchmark:workarena:adapter": "tsx scripts/workarena-adapter.ts",
     "benchmark:workarena:dry": "tsx scripts/workarena-dry.ts",
     "benchmark:workarena:run": "tsx scripts/workarena-run.ts",

@@ -36,7 +36,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Set ticket TICKET-4271 to In Progress and add an internal note summarizing the issue and next steps.",
     maxTurns: 20,
     timeoutMs: 240_000,
-    tags: ["record-update", "form", "workarena-like", "support"],
+    tags: ["record-update", "form", "workarena-like", "support", "workarena-category:form"],
     validator: "supportTicketTriaged",
     validatorKind: "fixture-state",
     description:
@@ -53,7 +53,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Submit an enterprise request for Jane Smith at jane@example.com, phone 555-0123, company Acme Corp, premium budget, with Priority support needed as the special requirement.",
     maxTurns: 30,
     timeoutMs: 300_000,
-    tags: ["form", "wizard", "conditional-fields", "workarena-like"],
+    tags: ["form", "wizard", "conditional-fields", "workarena-like", "workarena-category:form"],
     validator: "enterpriseFormSubmitted",
     validatorKind: "fixture-state",
     description:
@@ -69,7 +69,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     prompt: "Search for Diana in the employee directory and tell me her salary.",
     maxTurns: 30,
     timeoutMs: 240_000,
-    tags: ["table", "pagination", "lookup", "workarena-like"],
+    tags: ["table", "pagination", "lookup", "workarena-like", "workarena-category:list-filter"],
     validator: "dianaSalaryFound",
     validatorKind: "fixture-state",
     description:
@@ -86,7 +86,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Find the source referenced by the footnote in the article and tell me what source it cites.",
     maxTurns: 12,
     timeoutMs: 120_000,
-    tags: ["research", "evidence", "scrolling", "final-answer"],
+    tags: ["research", "evidence", "scrolling", "final-answer", "workarena-category:information_retrieval"],
     validator: "articleFootnoteSourceAnswered",
     validatorKind: "final-answer",
     description:
@@ -104,7 +104,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     maxTurns: 25,
     timeoutMs: 240_000,
     allowNavigation: true,
-    tags: ["multi-tab", "dashboard", "lookup", "planning"],
+    tags: ["multi-tab", "dashboard", "lookup", "planning", "workarena-category:dashboard"],
     validator: "dashboardMetricsAnswered",
     validatorKind: "final-answer",
     description:
@@ -124,7 +124,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     maxTurns: 40,
     timeoutMs: 480_000,
     allowNavigation: true,
-    tags: ["workflow", "multi-tab", "planning", "workarena-like"],
+    tags: ["workflow", "multi-tab", "planning", "workarena-like", "workarena-category:service catalog"],
     validator: "firstTwoProcurementItemsComplete",
     validatorKind: "fixture-state",
     description:
@@ -143,7 +143,14 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "I'm a senior frontend engineer with 5 years of experience specializing in React and TypeScript. I also have strong experience with Node.js and GraphQL. I'm looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
     maxTurns: 45,
     timeoutMs: 660_000,
-    tags: ["long-horizon", "research", "planning", "recommendation"],
+    tags: [
+      "long-horizon",
+      "research",
+      "planning",
+      "recommendation",
+      "workarena-category:planning_and_problem_solving",
+      "workarena-category:sophisticated_memory",
+    ],
     validator: "jobRecommendationsGrounded",
     validatorKind: "fixture-state",
     description:
@@ -266,11 +273,82 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
       "Prepare a short note for the team: identify the source cited in Footnote 2 and include one documentation practice from the article that relates to remote-team work.",
     maxTurns: 20,
     timeoutMs: 240_000,
-    tags: ["workarena-gap", "document", "research", "evidence", "final-answer"],
+    tags: [
+      "workarena-gap",
+      "document",
+      "research",
+      "evidence",
+      "final-answer",
+      "workarena-category:knowledge",
+    ],
     validator: "documentFootnoteBriefAnswered",
     validatorKind: "final-answer",
     description:
       "Combines document research, evidence grounding, and concise written synthesis.",
+  },
+  {
+    id: "workarena-category.menu-product-lookup",
+    title: "Use Product Menu And SKU Lookup",
+    tier: "medium",
+    sourceFile: "hover-menus.test.ts",
+    sourceCase: "agent hovers to reveal menu, selects category, reads tooltip SKU, and searches",
+    startRoute: "/hover-menus",
+    prompt:
+      "Open the product menu, choose Electronics, find the SKU for Widget X, and search for that SKU.",
+    maxTurns: 25,
+    timeoutMs: 240_000,
+    tags: ["workarena-category", "menu", "lookup", "workarena-category:menu"],
+    validator: "hoverMenuProductLookup",
+    validatorKind: "fixture-state",
+    description:
+      "Covers menu navigation plus a small lookup/search action without relying on hidden selectors.",
+  },
+  {
+    id: "workarena-category.highest-salary-analysis",
+    title: "Analyze Employee Salary Records",
+    tier: "hard",
+    sourceFile: "data-table.test.ts",
+    sourceCase: "agent navigates paginated table and compares records",
+    startRoute: "/data-table",
+    prompt:
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.",
+    maxTurns: 40,
+    timeoutMs: 480_000,
+    tags: [
+      "workarena-category",
+      "table",
+      "reasoning",
+      "records",
+      "workarena-category:data_driven_decision_making_and_reasoning",
+      "workarena-category:list-sort",
+    ],
+    validator: "highestSalaryAnswered",
+    validatorKind: "final-answer",
+    description:
+      "Covers data-driven reasoning over a paginated record set and a sort-like comparison objective.",
+  },
+  {
+    id: "workarena-category.infeasible-workspace-choice",
+    title: "Recognize Missing Workspace Context",
+    tier: "medium",
+    sourceFile: "clarification-recovery.test.ts",
+    sourceCase: "agent should not choose when required context is absent",
+    startRoute: "/workspace-choice",
+    prompt:
+      "Open the workspace I should use for this project.",
+    maxTurns: 15,
+    timeoutMs: 180_000,
+    tags: [
+      "workarena-category",
+      "clarification",
+      "infeasible",
+      "workarena-category:contextual_understanding_infeasible_tasks",
+      "workarena-category:uncategorized",
+    ],
+    validator: "workspaceChoiceDeferred",
+    validatorKind: "fixture-state",
+    description:
+      "Covers contextual infeasibility: the correct action is to avoid guessing and ask for missing context.",
   },
 ];
 

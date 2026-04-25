@@ -181,6 +181,12 @@ function main(): void {
   }
 
   steps.push(runStep("arena registry validation", "cmd /c npm run e2e:arena:check"));
+  steps.push(
+    runStep(
+      "WorkArena category coverage",
+      "cmd /c npm run benchmark:workarena:category-coverage",
+    ),
+  );
 
   for (const task of tasks) {
     steps.push(

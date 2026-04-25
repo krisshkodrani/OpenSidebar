@@ -59,6 +59,11 @@ function resolveTask(taskId: string | null, tag: string): ArenaTask {
 }
 
 function tagsToCategory(task: ArenaTask): string | null {
+  const exactCategory = task.tags
+    .find((tag) => tag.startsWith("workarena-category:"))
+    ?.slice("workarena-category:".length);
+  if (exactCategory) return exactCategory;
+
   const preferred = ["crm", "ticket", "email", "chat", "messaging", "workflow", "document"];
   return preferred.find((tag) => task.tags.includes(tag)) ?? null;
 }

@@ -369,11 +369,27 @@ Copy-suite reports are written to:
 
 After doctor, list, adapter plan, guarded reset, dry run, held-session, and session import are green, use the manual handoff runner for the first real WorkArena execution:
 
+Before access is granted, prepare the first-run candidate:
+
+```bash
+npm run benchmark:workarena:first-task
+```
+
+This is metadata-only. It does not reset ServiceNow, start OpenSidebar, or call an LLM provider. It ranks local WorkArena task metadata and prints the exact guarded handoff command to use after doctor reports `ready=true`.
+
+Check local category coverage before the first real reset:
+
+```bash
+npm run benchmark:workarena:category-coverage
+```
+
+This command compares the local arena task registry against the WorkArena category list and writes a markdown report under `.artifacts/e2e/`. The current local category pack covers every WorkArena category with at least one tagged local analog, including infeasible-context, data-driven reasoning, sophisticated-memory, service catalog, menu, list-filter, and list-sort coverage.
+
 ```bash
 npm run benchmark:workarena:handoff -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
 
-The handoff runner is manual-only. It refuses to reset WorkArena unless `--allow-servicenow-reset` or `--reset` is present, checks doctor readiness first, starts the held BrowserGym session, exports cookies/storage and the active URL, imports that state into the OpenSidebar extension browser, runs the agent with the real WorkArena goal, validates through the still-held BrowserGym environment, tears down, and writes a JSON execution report under `.artifacts/e2e/`.
+The handoff runner is manual-only. It refuses to reset WorkArena unless `--allow-servicenow-reset` or `--reset` is present, checks doctor readiness first, starts the held BrowserGym session, exports cookies/storage and the active URL, imports that state into the OpenSidebar extension browser, runs the agent with the real WorkArena goal, validates through the still-held BrowserGym environment, tears down, and writes a JSON execution report under `.artifacts/e2e/`. The report includes bridge status summaries, storage import counts, the final OpenSidebar URL, and the terminal agent event summary.
 
 Use `--no-build` only when the extension is already built:
 
