@@ -60,6 +60,7 @@ import {
 } from "./site-knowledge";
 import { LLMClient } from "../llm/client";
 import { workspaceManager } from "../workspaces/manager";
+import { agentNotifications } from "../notifications";
 import { isUsableTab } from "../infrastructure/tab-resolution";
 import {
   updateTabGroupAppearance,
@@ -2263,6 +2264,14 @@ export class Orchestrator {
           timeoutMs: remainingMs,
         },
       });
+      void agentNotifications.notifyAttention({
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        eventId: interaction.approvalId,
+        tabId: task.rootTabId,
+        reason: "Approval required",
+        detail: interaction.context,
+      });
       return;
     }
 
@@ -2275,6 +2284,14 @@ export class Orchestrator {
         suggestions: interaction.suggestions,
         timeoutMs: remainingMs,
       },
+    });
+    void agentNotifications.notifyAttention({
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      eventId: interaction.clarificationId,
+      tabId: task.rootTabId,
+      reason: "Clarification required",
+      detail: interaction.question,
     });
   }
 
@@ -2365,6 +2382,7 @@ export class Orchestrator {
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
+    this.notifyTaskCompletion(task, completionPayload);
     this.sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
@@ -5458,6 +5476,7 @@ export class Orchestrator {
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
+    this.notifyTaskCompletion(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     this.emitTraceEvent(
@@ -5678,6 +5697,12 @@ export class Orchestrator {
       "system",
     );
     this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+    void agentNotifications.notifyStopped({
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      tabId: task.rootTabId,
+      detail,
+    });
     resetTabGroupAppearance(task.workspaceId);
   }
 
@@ -6022,6 +6047,18 @@ export class Orchestrator {
     }
   }
 
+  private notifyTaskCompletion(
+    task: OrchestratorTask,
+    payload: TaskCompletionMessage["payload"],
+  ): void {
+    if (task.status === "stopped") return;
+    void agentNotifications.notifyTaskCompletion({
+      workspaceId: task.workspaceId,
+      tabId: task.rootTabId,
+      payload,
+    });
+  }
+
   private async persistWorkspaceTurnMemory(
     task: OrchestratorTask,
     payload: TaskCompletionMessage["payload"],
@@ -6185,6 +6222,7 @@ export class Orchestrator {
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
+    this.notifyTaskCompletion(task, completionPayload);
   }
 
   private emitVerifierStep(
@@ -6363,6 +6401,14 @@ export class Orchestrator {
       type: "ESCALATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: packet,
+    });
+    void agentNotifications.notifyAttention({
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      eventId: packet.escalationId,
+      tabId: task.rootTabId,
+      reason: "Escalation required",
+      detail: packet.reason,
     });
     this.sendMessage({
       type: "AGENT_STEP",
@@ -6546,6 +6592,14 @@ export class Orchestrator {
         difficulty,
         query,
       },
+    });
+    void agentNotifications.notifyAttention({
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      eventId: confirmationId,
+      tabId: task.rootTabId,
+      reason: "Plan confirmation required",
+      detail: query,
     });
 
     logger.info("orchestrator", "Plan confirmation requested", {

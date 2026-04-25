@@ -143,6 +143,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const [dataControlStatus, setDataControlStatus] = useState<string | null>(
     null,
   );
+  const [notificationPermissionError, setNotificationPermissionError] =
+    useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -157,6 +159,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     setIsDirty(false);
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
     setDataControlStatus(null);
+    setNotificationPermissionError(null);
   }, [settings, isOpen]);
 
   useEffect(() => {
@@ -207,6 +210,53 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     a.download = "opensidebar-logs.jsonl";
     a.click();
     URL.revokeObjectURL(blobUrl);
+  };
+
+  const requestBrowserNotificationPermission = async (): Promise<boolean> => {
+    const permissions = chrome.permissions as
+      | {
+          request?: (
+            permissions: { permissions: string[] },
+            callback?: (granted: boolean) => void,
+          ) => Promise<boolean> | void;
+        }
+      | undefined;
+    if (!permissions?.request) return false;
+    const requestPermission = permissions.request;
+
+    return await new Promise<boolean>((resolve) => {
+      try {
+        const result = requestPermission(
+          { permissions: ["notifications"] },
+          (granted) => resolve(Boolean(granted)),
+        );
+        if (result && typeof result.then === "function") {
+          result.then((granted) => resolve(Boolean(granted))).catch(() => {
+            resolve(false);
+          });
+        }
+      } catch {
+        resolve(false);
+      }
+    });
+  };
+
+  const handleBrowserNotificationToggle = async (checked: boolean) => {
+    setNotificationPermissionError(null);
+    if (!checked) {
+      handleChange("enableBrowserNotifications", false);
+      return;
+    }
+
+    const granted = await requestBrowserNotificationPermission();
+    if (granted) {
+      handleChange("enableBrowserNotifications", true);
+    } else {
+      handleChange("enableBrowserNotifications", false);
+      setNotificationPermissionError(
+        "Browser notification permission was not granted.",
+      );
+    }
   };
 
   const handleSave = () => {
@@ -544,6 +594,30 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         "showMessageDetailsByDefault",
                         e.target.checked,
                       )
+                    }
+                    className="w-4 h-4 text-primary-600 rounded"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Browser notifications
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Notify when an agent needs attention or finishes while you are away from the workspace.
+                    </p>
+                    {notificationPermissionError && (
+                      <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                        {notificationPermissionError}
+                      </p>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formState.enableBrowserNotifications)}
+                    onChange={(e) =>
+                      void handleBrowserNotificationToggle(e.target.checked)
                     }
                     className="w-4 h-4 text-primary-600 rounded"
                   />
