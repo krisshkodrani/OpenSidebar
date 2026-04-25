@@ -352,6 +352,162 @@ async function dianaSalaryFound(
   );
 }
 
+async function hoverMenuProductLookup(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForOutcome(
+    harness.page,
+    harness.ctx.serviceWorker,
+    async () => {
+      const result = await harness.page.evaluate(
+        () => (window as any).hoverResult ?? null,
+      );
+      if (result?.searchCompleted === true) return result;
+      return null;
+    },
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Menu lookup task did not complete the SKU search."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const result = outcome.result as any;
+  const searchQuery = normalizeText(result.searchQuery);
+  const ok =
+    result.categorySelected === "Electronics" &&
+    result.searchCompleted === true &&
+    searchQuery.includes("sku-4829");
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "menu_lookup_incomplete",
+    [
+      `category=${String(result.categorySelected ?? "")}`,
+      `searchQuery=${String(result.searchQuery ?? "")}`,
+    ],
+    traceFiles,
+    traceTurns,
+    doneSummary,
+    {
+      categorySelected: result.categorySelected,
+      searchQuery: result.searchQuery,
+    },
+  );
+}
+
+async function highestSalaryAnswered(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForTaskCompletion(
+    harness.ctx,
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  const normalized = normalizeText(summary);
+  const namesHighestEmployee =
+    normalized.includes("isla wright") ||
+    (normalized.includes("isla") && normalized.includes("wright"));
+  const namesSalary =
+    normalized.includes("113,854") ||
+    normalized.includes("113854") ||
+    normalized.includes("$113");
+
+  const ok = outcome.ok && namesHighestEmployee && namesSalary;
+  return buildResult(
+    ok,
+    ok ? "validated" : outcome.ok ? "highest_salary_answer_incomplete" : outcome.reason,
+    [
+      `namesHighestEmployee=${String(namesHighestEmployee)}`,
+      `namesSalary=${String(namesSalary)}`,
+      `summary=${summary.slice(0, 160) || "-"}`,
+    ],
+    traceFiles,
+    traceTurns,
+    summary,
+    {
+      expectedEmployee: "Isla Wright",
+      expectedSalary: "$113,854",
+      namesHighestEmployee,
+      namesSalary,
+    },
+  );
+}
+
+async function workspaceChoiceDeferred(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForTaskCompletion(
+    harness.ctx,
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+  const selected = await harness.page.evaluate(
+    () => (window as any).__workspaceSelection ?? null,
+  );
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  const normalized = normalizeText(summary);
+  const asksForContext = includesAny(normalized, [
+    "which workspace",
+    "which one",
+    "need",
+    "clarify",
+    "clarification",
+    "alpha or beta",
+    "not specified",
+  ]);
+  const ok = selected === null && asksForContext;
+
+  return buildResult(
+    ok,
+    ok ? "validated" : "workspace_choice_not_deferred",
+    [
+      `selected=${selected === null ? "none" : JSON.stringify(selected)}`,
+      `asksForContext=${String(asksForContext)}`,
+      `completionReason=${outcome.reason}`,
+      `summary=${summary.slice(0, 160) || "-"}`,
+    ],
+    traceFiles,
+    traceTurns,
+    summary,
+    {
+      selected,
+      asksForContext,
+      completionReason: outcome.reason,
+    },
+  );
+}
+
 async function emailMeetingReplySent(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -1056,6 +1212,9 @@ export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   ticketEscalatedWithAccountContext,
   enterpriseFormSubmitted,
   dianaSalaryFound,
+  hoverMenuProductLookup,
+  highestSalaryAnswered,
+  workspaceChoiceDeferred,
   emailMeetingReplySent,
   releaseCoordinationReplySent,
   migrationPlanReplySent,

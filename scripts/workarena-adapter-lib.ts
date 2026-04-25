@@ -41,6 +41,33 @@ export type ListResult = {
   tasks: TaskInfo[];
 };
 
+export type WorkArenaFirstTaskCandidate = {
+  rank: number;
+  task: TaskInfo;
+  score: number;
+  rationale: string[];
+  handoffCommand: string;
+};
+
+export type WorkArenaFirstTaskReport = {
+  benchmark: "workarena";
+  mode: "first-task";
+  ready: boolean;
+  readiness: ReadinessStatus;
+  suite: WorkArenaSuite;
+  seed: number;
+  candidateCount: number;
+  selected: WorkArenaFirstTaskCandidate | null;
+  candidates: WorkArenaFirstTaskCandidate[];
+  doctor: {
+    ready: boolean;
+    readiness: ReadinessStatus;
+    checks: DoctorCheck[];
+  };
+  notes: string[];
+  reportPath?: string;
+};
+
 export type DryResult = {
   benchmark: "workarena";
   mode: "dry";

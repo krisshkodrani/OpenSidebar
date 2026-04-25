@@ -609,6 +609,44 @@ function validateHeldSession(value: JsonRecord, path: string, errors: Validation
   requireStringArray(value, "safety", path, errors);
 }
 
+function validateFirstTaskCandidate(
+  value: unknown,
+  path: string,
+  errors: ValidationError[],
+): void {
+  const candidate = requireRecord(value, path, errors);
+  if (!candidate) return;
+  requireNumber(candidate, "rank", path, errors);
+  validateTaskInfo(candidate.task, `${path}.task`, errors);
+  requireNumber(candidate, "score", path, errors);
+  requireStringArray(candidate, "rationale", path, errors);
+  requireString(candidate, "handoffCommand", path, errors);
+}
+
+function validateFirstTask(value: JsonRecord, path: string, errors: ValidationError[]): void {
+  requireOneOf(value, "benchmark", ["workarena"], path, errors);
+  requireOneOf(value, "mode", ["first-task"], path, errors);
+  requireBoolean(value, "ready", path, errors);
+  requireOneOf(value, "readiness", READINESS_STATUSES, path, errors);
+  requireOneOf(value, "suite", SUITES, path, errors);
+  requireNumber(value, "seed", path, errors);
+  requireNumber(value, "candidateCount", path, errors);
+  if (value.selected !== null) {
+    validateFirstTaskCandidate(value.selected, `${path}.selected`, errors);
+  }
+  const candidates = requireArray(value.candidates, `${path}.candidates`, errors);
+  candidates?.forEach((candidate, index) => {
+    validateFirstTaskCandidate(candidate, `${path}.candidates[${index}]`, errors);
+  });
+  const doctor = requireRecord(value.doctor, `${path}.doctor`, errors);
+  if (doctor) {
+    requireBoolean(doctor, "ready", `${path}.doctor`, errors);
+    requireOneOf(doctor, "readiness", READINESS_STATUSES, `${path}.doctor`, errors);
+    validateChecks(doctor.checks, `${path}.doctor.checks`, errors);
+  }
+  requireStringArray(value, "notes", path, errors);
+}
+
 export function validateWorkArenaReport(value: unknown): ValidationError[] {
   const errors: ValidationError[] = [];
   const root = requireRecord(value, "$", errors);
@@ -631,6 +669,8 @@ export function validateWorkArenaReport(value: unknown): ValidationError[] {
     validateBrowserStrategy(root, "$", errors);
   } else if (root.mode === "held-session") {
     validateHeldSession(root, "$", errors);
+  } else if (root.mode === "first-task") {
+    validateFirstTask(root, "$", errors);
   } else if (root.mode === undefined && Array.isArray(root.checks)) {
     validateDoctor(root, "$", errors);
   } else if (root.mode === undefined && Array.isArray(root.tasks)) {
@@ -639,7 +679,7 @@ export function validateWorkArenaReport(value: unknown): ValidationError[] {
     push(
       errors,
       "$.mode",
-      "expected dry, adapter-plan, guarded-reset, agent-execution, browser-strategy, held-session, doctor, or list report",
+      "expected dry, adapter-plan, guarded-reset, agent-execution, browser-strategy, held-session, first-task, doctor, or list report",
     );
   }
 
