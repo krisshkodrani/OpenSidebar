@@ -563,7 +563,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         agentSessionActive = message.payload.active;
         clearAgentCueTimer();
         if (message.payload.active) {
-          ensureAgentBorderVisible("active");
+          setAgentBorder(true, undefined, "active");
         } else {
           setAgentBorder(false, message.payload.outcome);
         }
@@ -819,6 +819,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
 const BORDER_ID = "opensidebar-agent-border";
 const BORDER_STYLE_ID = "opensidebar-agent-border-style";
+const HUD_STYLE_ID = "opensidebar-agent-hud-style";
 const STOP_BTN_ID = "opensidebar-stop-btn";
 const STEP_LABEL_ID = "opensidebar-step-label";
 const FLOATING_WRAP_ID = "opensidebar-floating-wrap";
@@ -829,27 +830,27 @@ let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
 type AgentBorderVisualState = "active" | "settle";
 
 const AGENT_BORDER_ACTIVE_SHADOW = [
-  "inset 0 0 0 2px rgba(90,102,214,0.84)",
-  "inset 0 0 0 6px rgba(90,102,214,0.40)",
-  "inset 0 0 0 12px rgba(90,102,214,0.22)",
-  "inset 0 0 0 20px rgba(90,102,214,0.12)",
-  "inset 0 0 40px rgba(90,102,214,0.16)",
-  "inset 0 0 84px rgba(90,102,214,0.08)",
+  "inset 0 0 0 2px rgba(37,99,235,0.78)",
+  "inset 0 0 0 6px rgba(37,99,235,0.32)",
+  "inset 0 0 0 12px rgba(37,99,235,0.18)",
+  "inset 0 0 0 20px rgba(37,99,235,0.10)",
+  "inset 0 0 40px rgba(37,99,235,0.14)",
+  "inset 0 0 84px rgba(37,99,235,0.07)",
 ].join(", ");
 const AGENT_BORDER_PULSE_SHADOW = [
-  "inset 0 0 0 2px rgba(90,102,214,0.98)",
-  "inset 0 0 0 7px rgba(90,102,214,0.54)",
-  "inset 0 0 0 15px rgba(90,102,214,0.30)",
-  "inset 0 0 0 24px rgba(90,102,214,0.16)",
-  "inset 0 0 56px rgba(90,102,214,0.24)",
-  "inset 0 0 120px rgba(90,102,214,0.12)",
+  "inset 0 0 0 2px rgba(37,99,235,0.92)",
+  "inset 0 0 0 7px rgba(37,99,235,0.44)",
+  "inset 0 0 0 15px rgba(37,99,235,0.24)",
+  "inset 0 0 0 24px rgba(37,99,235,0.14)",
+  "inset 0 0 56px rgba(37,99,235,0.20)",
+  "inset 0 0 120px rgba(37,99,235,0.10)",
 ].join(", ");
 const AGENT_BORDER_SETTLE_SHADOW = [
-  "inset 0 0 0 2px rgba(90,102,214,0.64)",
-  "inset 0 0 0 5px rgba(90,102,214,0.24)",
-  "inset 0 0 0 10px rgba(90,102,214,0.13)",
-  "inset 0 0 28px rgba(90,102,214,0.10)",
-  "inset 0 0 72px rgba(90,102,214,0.05)",
+  "inset 0 0 0 2px rgba(37,99,235,0.58)",
+  "inset 0 0 0 5px rgba(37,99,235,0.20)",
+  "inset 0 0 0 10px rgba(37,99,235,0.11)",
+  "inset 0 0 28px rgba(37,99,235,0.08)",
+  "inset 0 0 72px rgba(37,99,235,0.04)",
 ].join(", ");
 
 function clearAgentCueTimer() {
@@ -903,6 +904,209 @@ function ensureAgentBorderStyles() {
   document.documentElement.appendChild(style);
 }
 
+function ensureAgentHudStyles() {
+  if (document.getElementById(HUD_STYLE_ID)) return;
+
+  const style = document.createElement("style");
+  style.id = HUD_STYLE_ID;
+  style.textContent = `
+    @keyframes opensidebar-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.42; }
+    }
+
+    #${FLOATING_WRAP_ID} {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      z-index: 2147483647;
+      width: 320px;
+      max-width: calc(100vw - 32px);
+      min-height: 40px;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      color-scheme: light dark;
+      background: rgba(248, 250, 252, 0.92);
+      color: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(37, 99, 235, 0.28);
+      border-radius: 8px;
+      box-shadow:
+        0 14px 32px rgba(15, 23, 42, 0.16),
+        0 0 0 1px rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(14px) saturate(1.12);
+      -webkit-backdrop-filter: blur(14px) saturate(1.12);
+      opacity: 0;
+      transform: translateX(-50%) translateY(8px);
+      transition: opacity 180ms ease-out, transform 180ms ease-out;
+    }
+
+    #${FLOATING_WRAP_ID}[data-visible="true"] {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    #${STEP_LABEL_ID} {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 0 9px 14px;
+    }
+
+    #${STEP_LABEL_ID} > span:first-child {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(37, 99, 235, 0.95);
+      flex-shrink: 0;
+      animation: opensidebar-pulse 1.5s ease-in-out infinite;
+      transition: background 160ms ease-out;
+    }
+
+    #${STEP_LABEL_ID} [data-label] {
+      min-width: 0;
+      color: currentColor;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 500;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: 0;
+      transition: color 160ms ease-out;
+    }
+
+    #${STEP_LABEL_ID}[data-status="completed"] > span:first-child {
+      background: #22c55e;
+      animation: none;
+    }
+
+    #${STEP_LABEL_ID}[data-status="failed"] > span:first-child {
+      background: #ef4444;
+      animation: none;
+    }
+
+    #${STEP_LABEL_ID}[data-status="stopped"] > span:first-child {
+      background: #f59e0b;
+      animation: none;
+    }
+
+    #${STEP_LABEL_ID}[data-status="completed"] [data-label] {
+      color: rgba(21, 128, 61, 0.95);
+    }
+
+    #${STEP_LABEL_ID}[data-status="failed"] [data-label] {
+      color: rgba(185, 28, 28, 0.95);
+    }
+
+    #${STEP_LABEL_ID}[data-status="stopped"] [data-label] {
+      color: rgba(180, 83, 9, 0.95);
+    }
+
+    #${DIVIDER_ID} {
+      width: 1px;
+      height: 18px;
+      margin: auto 0;
+      background: rgba(100, 116, 139, 0.24);
+      flex-shrink: 0;
+      transition: opacity 160ms ease-out;
+    }
+
+    #${STOP_BTN_ID} {
+      pointer-events: auto;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 9px 16px 9px 12px;
+      background: transparent;
+      color: currentColor;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      border: 0;
+      border-radius: 0;
+      cursor: pointer;
+      flex-shrink: 0;
+      letter-spacing: 0;
+      transition: background 140ms ease-out, color 140ms ease-out, opacity 160ms ease-out;
+    }
+
+    #${STOP_BTN_ID}:hover {
+      background: rgba(37, 99, 235, 0.12);
+      color: rgba(30, 64, 175, 1);
+    }
+
+    #${STOP_BTN_ID}:focus-visible {
+      outline: 2px solid rgba(37, 99, 235, 0.82);
+      outline-offset: -3px;
+      background: rgba(37, 99, 235, 0.12);
+    }
+
+    #${STOP_BTN_ID} svg {
+      flex-shrink: 0;
+    }
+
+    #${STOP_BTN_ID} rect {
+      fill: currentColor;
+      opacity: 0.76;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      #${FLOATING_WRAP_ID} {
+        background: rgba(15, 23, 42, 0.92);
+        color: rgba(226, 232, 240, 0.95);
+        border-color: rgba(96, 165, 250, 0.34);
+        box-shadow:
+          0 14px 32px rgba(15, 23, 42, 0.28),
+          0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      #${STEP_LABEL_ID} > span:first-child {
+        background: rgba(96, 165, 250, 0.95);
+      }
+
+      #${DIVIDER_ID} {
+        background: rgba(148, 163, 184, 0.26);
+      }
+
+      #${STEP_LABEL_ID}[data-status="completed"] [data-label] {
+        color: rgba(134, 239, 172, 0.95);
+      }
+
+      #${STEP_LABEL_ID}[data-status="failed"] [data-label] {
+        color: rgba(252, 165, 165, 0.95);
+      }
+
+      #${STEP_LABEL_ID}[data-status="stopped"] [data-label] {
+        color: rgba(253, 224, 71, 0.95);
+      }
+
+      #${STOP_BTN_ID}:hover,
+      #${STOP_BTN_ID}:focus-visible {
+        background: rgba(37, 99, 235, 0.22);
+        color: rgba(255, 255, 255, 0.98);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #${BORDER_ID},
+      #${FLOATING_WRAP_ID},
+      #${STEP_LABEL_ID} > span:first-child,
+      #${STEP_LABEL_ID} [data-label],
+      #${DIVIDER_ID},
+      #${STOP_BTN_ID} {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+  `;
+  document.documentElement.appendChild(style);
+}
+
 function setAgentBorderVisualState(state: AgentBorderVisualState) {
   const existing = document.getElementById(BORDER_ID);
   if (!existing) return;
@@ -944,11 +1148,10 @@ function ensureAgentBorderVisible(state: AgentBorderVisualState = "active") {
 function hideFloatingCue() {
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
   if (!existingBtn) return;
-  existingBtn.style.opacity = "0";
-  existingBtn.style.transform = "translateX(-50%) translateY(8px)";
+  existingBtn.setAttribute("data-visible", "false");
   setTimeout(() => {
     if (existingBtn.isConnected) existingBtn.remove();
-  }, 400);
+  }, 220);
 }
 
 /** Update the step label text above the floating stop button */
@@ -957,16 +1160,22 @@ function updateFloatingStepLabel(label: string, status: "running" | "done" | "er
   if (!el) return;
   const dot = el.querySelector("span") as HTMLSpanElement | null;
   const text = el.querySelector("[data-label]") as HTMLSpanElement | null;
-  if (text) text.textContent = label;
+  if (text) {
+    text.textContent = label;
+    text.style.color = "";
+  }
   if (dot) {
     if (status === "error") {
+      el.setAttribute("data-status", "failed");
       dot.style.background = "#ef4444";
       dot.style.animation = "none";
     } else if (status === "done") {
+      el.setAttribute("data-status", "completed");
       dot.style.background = "#22c55e";
       dot.style.animation = "none";
     } else {
-      dot.style.background = "rgba(90,102,214,0.9)";
+      el.removeAttribute("data-status");
+      dot.style.background = "rgba(37,99,235,0.95)";
       dot.style.animation = "opensidebar-pulse 1.5s ease-in-out infinite";
     }
   }
@@ -981,88 +1190,28 @@ function setAgentBorder(
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
 
   if (active) {
-    // --- Static vignette overlay ---
-    // Cool indigo glow at the viewport edge, fading smoothly inward.
-    // Layered inset box-shadows with decreasing opacity simulate the gradient.
     // No animation — just a persistent "agent is active" indicator.
     ensureAgentBorderVisible(visualState);
 
     // --- Floating HUD bar: [ ● Step label…  ⏹ Stop ] ---
     if (!existingBtn) {
-      // Inject keyframe for pulsing dot
-      if (!document.getElementById("opensidebar-pulse-style")) {
-        const style = document.createElement("style");
-        style.id = "opensidebar-pulse-style";
-        style.textContent =
-          "@keyframes opensidebar-pulse{0%,100%{opacity:1}50%{opacity:0.4}}";
-        document.documentElement.appendChild(style);
-      }
-
-      const FONT =
-        '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+      ensureAgentHudStyles();
 
       // Single-row bar — fixed width so label changes don't shift layout
       const bar = document.createElement("div");
       bar.id = FLOATING_WRAP_ID;
-      Object.assign(bar.style, {
-        position: "fixed",
-        bottom: "24px",
-        left: "50%",
-        transform: "translateX(-50%) translateY(8px)",
-        zIndex: "2147483647",
-        width: "320px",
-        display: "flex",
-        alignItems: "center",
-        background: "rgba(20,19,40,0.42)",
-        backdropFilter: "blur(12px) saturate(1.2)",
-        WebkitBackdropFilter: "blur(12px) saturate(1.2)",
-        border: "1px solid rgba(90,102,214,0.14)",
-        borderRadius: "20px",
-        boxShadow: [
-          "0 8px 18px rgba(0,0,0,0.14)",
-          "0 0 0 1px rgba(90,102,214,0.04)",
-        ].join(", "),
-        opacity: "0",
-        transition: "opacity 0.4s ease-out, transform 0.4s ease-out",
-      });
+      bar.setAttribute("data-visible", "false");
 
       // Left section: dot + label (takes remaining space)
       const labelSection = document.createElement("div");
       labelSection.id = STEP_LABEL_ID;
-      Object.assign(labelSection.style, {
-        flex: "1",
-        minWidth: "0",
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "9px 0 9px 14px",
-      });
 
       const dot = document.createElement("span");
-      Object.assign(dot.style, {
-        width: "6px",
-        height: "6px",
-        borderRadius: "50%",
-        background: "rgba(90,102,214,0.9)",
-        flexShrink: "0",
-        animation: "opensidebar-pulse 1.5s ease-in-out infinite",
-        transition: "background 0.3s",
-      });
+      dot.setAttribute("aria-hidden", "true");
 
       const labelText = document.createElement("span");
       labelText.setAttribute("data-label", "");
       labelText.textContent = "Starting\u2026";
-      Object.assign(labelText.style, {
-        color: "rgba(210,214,251,0.75)",
-        fontSize: "11px",
-        fontWeight: "400",
-        fontFamily: FONT,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        letterSpacing: "0.02em",
-        transition: "color 0.3s",
-      });
 
       labelSection.appendChild(dot);
       labelSection.appendChild(labelText);
@@ -1071,46 +1220,19 @@ function setAgentBorder(
       // Divider
       const divider = document.createElement("div");
       divider.id = DIVIDER_ID;
-      Object.assign(divider.style, {
-        width: "1px",
-        height: "16px",
-        background: "rgba(90,102,214,0.14)",
-        flexShrink: "0",
-        transition: "opacity 0.3s",
-      });
+      divider.setAttribute("aria-hidden", "true");
       bar.appendChild(divider);
 
       // Right section: stop button
       const btn = document.createElement("button");
       btn.id = STOP_BTN_ID;
+      btn.type = "button";
+      btn.title = "Stop agent";
+      btn.setAttribute("aria-label", "Stop agent");
       btn.innerHTML =
         '<svg width="9" height="9" viewBox="0 0 10 10" style="flex-shrink:0">' +
-        '<rect width="10" height="10" rx="2" fill="rgba(210,214,251,0.6)"/></svg>' +
-        '<span style="margin-left:6px;letter-spacing:0.04em">Stop</span>';
-      Object.assign(btn.style, {
-        pointerEvents: "auto",
-        display: "flex",
-        alignItems: "center",
-        padding: "9px 16px 9px 12px",
-        background: "transparent",
-        color: "rgba(210,214,251,0.75)",
-        fontSize: "11px",
-        fontWeight: "500",
-        fontFamily: FONT,
-        border: "none",
-        borderRadius: "0 20px 20px 0",
-        cursor: "pointer",
-        flexShrink: "0",
-        transition: "background 0.2s, color 0.2s, opacity 0.3s",
-      });
-      btn.addEventListener("mouseenter", () => {
-        btn.style.background = "rgba(90,102,214,0.10)";
-        btn.style.color = "rgba(210,214,251,0.95)";
-      });
-      btn.addEventListener("mouseleave", () => {
-        btn.style.background = "transparent";
-        btn.style.color = "rgba(210,214,251,0.75)";
-      });
+        '<rect width="10" height="10" rx="2"/></svg>' +
+        '<span style="margin-left:6px;letter-spacing:0">Stop</span>';
       btn.addEventListener("click", () => {
         chrome.runtime
           .sendMessage({
@@ -1126,8 +1248,7 @@ function setAgentBorder(
 
       // Slide up + fade in
       requestAnimationFrame(() => {
-        bar.style.opacity = "1";
-        bar.style.transform = "translateX(-50%) translateY(0)";
+        bar.setAttribute("data-visible", "true");
       });
     }
   } else {
@@ -1149,6 +1270,7 @@ function setAgentBorder(
       if (labelEl) {
         const dot = labelEl.querySelector("span") as HTMLSpanElement | null;
         const text = labelEl.querySelector("[data-label]") as HTMLSpanElement | null;
+        labelEl.setAttribute("data-status", outcome.status);
         if (dot) {
           dot.style.animation = "none";
           dot.style.background =
@@ -1166,12 +1288,7 @@ function setAgentBorder(
               : outcome.status === "failed"
                 ? "Failed"
                 : "Stopped");
-          text.style.color =
-            outcome.status === "completed"
-              ? "rgba(134,239,172,0.9)"
-              : outcome.status === "failed"
-                ? "rgba(252,165,165,0.9)"
-                : "rgba(253,224,71,0.9)";
+          text.style.color = "";
         }
       }
     }
