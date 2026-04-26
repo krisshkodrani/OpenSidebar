@@ -42,6 +42,7 @@ describe("SidePanel Store", () => {
             laneTelemetry: null,
             settings: {
                 openRouterApiKey: "",
+                providerMode: "fireworks",
                 maxTurns: 30,
                 theme: "system",
                 showSessionMetrics: false,
@@ -196,6 +197,11 @@ describe("SidePanel Store", () => {
     test("DEFAULT_SETTINGS includes requireApprovals", () => {
         const settings = useStore.getState().settings;
         expect(settings.requireApprovals).toBe(true);
+    });
+
+    test("DEFAULT_SETTINGS includes explicit providerMode", () => {
+        const settings = useStore.getState().settings;
+        expect(settings.providerMode).toBe("fireworks");
     });
 
     test("addStep pushes step to last assistant message", () => {

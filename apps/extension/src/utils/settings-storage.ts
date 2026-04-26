@@ -21,6 +21,10 @@ const LOCAL_KIMI_KEY = "kimiApiKey_local";
  * All API keys are credentials — never sync them.
  */
 export async function saveSettings(settings: UserSettings): Promise<void> {
+  const normalized: UserSettings = {
+    ...settings,
+    providerMode: settings.providerMode ?? "fireworks",
+  };
   const {
     openRouterApiKey,
     openaiApiKey,
@@ -29,7 +33,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
     fireworksApiKey,
     kimiApiKey,
     ...rest
-  } = settings;
+  } = normalized;
   await Promise.all([
     chrome.storage.local.set({
       [LOCAL_KEY]: openRouterApiKey,
@@ -116,6 +120,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
     else raw.providerMode = "openrouter";
     delete raw.provider;
   }
+  if (!raw.providerMode) raw.providerMode = "fireworks";
 
   // Migrate legacy unified-vision toggle to explicit perception mode.
   if (!("perceptionMode" in raw) && "useVLExecutor" in raw) {
