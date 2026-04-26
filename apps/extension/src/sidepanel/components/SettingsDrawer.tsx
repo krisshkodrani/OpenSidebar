@@ -3,7 +3,7 @@ import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
 import { PerceptionRuntimeMode, UserSettings } from "../../types";
 import { resolvePerceptionRuntimeMode } from "../../utils/perception-mode";
-import { saveSettings } from "../../utils/settings-storage";
+import { loadSettings, saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
 import {
   MODEL_EXECUTOR,
@@ -143,6 +143,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const [dataControlStatus, setDataControlStatus] = useState<string | null>(
     null,
   );
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [notificationPermissionError, setNotificationPermissionError] =
     useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
@@ -159,6 +161,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     setIsDirty(false);
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
     setDataControlStatus(null);
+    setSaveStatus(null);
+    setIsSaving(false);
     setNotificationPermissionError(null);
   }, [settings, isOpen]);
 
@@ -168,7 +172,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !isSaving) {
         onClose();
         return;
       }
@@ -193,7 +197,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, isSaving, onClose]);
 
   const handleChange = (key: keyof UserSettings, value: any) => {
     setFormState((prev) => {
@@ -259,35 +263,49 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    setSaveStatus(null);
+
     const blocklist = siteBlocklistText
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
     const nextState: UserSettings = {
       ...formState,
+      providerMode: formState.providerMode ?? "fireworks",
       siteAccessBlocklist: blocklist,
     };
 
-    updateSettings(nextState);
-    void saveSettings(nextState);
+    try {
+      await saveSettings(nextState);
+      const persisted = await loadSettings();
+      updateSettings(persisted ?? nextState);
+      setIsDirty(false);
 
-    // Clear the "add API key" error if the active provider key is now present.
-    const mode = nextState.providerMode ?? "fireworks";
-    const activeKey =
-      mode === "fireworks"
-        ? nextState.fireworksApiKey
-        : mode === "moonshot"
-          ? nextState.kimiApiKey
-          : mode === "openai-groq"
-            ? nextState.openaiApiKey
-            : nextState.openRouterApiKey;
-    if (activeKey) {
-      const { error, setError } = useStore.getState();
-      if (error?.includes("API key")) setError(null);
+      // Clear the "add API key" error if the active provider key is now present.
+      const savedState = persisted ?? nextState;
+      const mode = savedState.providerMode ?? "fireworks";
+      const activeKey =
+        mode === "fireworks"
+          ? savedState.fireworksApiKey
+          : mode === "moonshot"
+            ? savedState.kimiApiKey
+            : mode === "openai-groq"
+              ? savedState.openaiApiKey
+              : savedState.openRouterApiKey;
+      if (activeKey) {
+        const { error, setError } = useStore.getState();
+        if (error?.includes("API key")) setError(null);
+      }
+
+      onClose();
+    } catch (error: any) {
+      setSaveStatus(`Failed to save settings: ${error?.message ?? String(error)}`);
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   const handleDataControl = async (
@@ -398,7 +416,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     >
       <div
         className="absolute inset-0 bg-black/20 backdrop-blur-sm backdrop-enter"
-        onClick={onClose}
+        onClick={() => {
+          if (!isSaving) onClose();
+        }}
       />
 
       <div
@@ -410,7 +430,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            className="p-2 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full"
+            disabled={isSaving}
+            className="p-2 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <X size={20} className="text-warm-500" />
           </button>
@@ -1218,13 +1239,18 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
         </div>
 
         <div className="p-4 border-t border-warm-200 dark:border-warm-800 bg-warm-100/50 dark:bg-warm-900/50">
+          {saveStatus && (
+            <p className="mb-2 text-xs text-red-600 dark:text-red-400">
+              {saveStatus}
+            </p>
+          )}
           <button
-            onClick={handleSave}
-            disabled={!isDirty}
+            onClick={() => void handleSave()}
+            disabled={!isDirty || isSaving}
             className="w-full flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 px-4 rounded-lg font-medium transition-colors shadow-sm"
           >
             <Save size={18} />
-            Save Changes
+            {isSaving ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>

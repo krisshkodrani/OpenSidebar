@@ -5,6 +5,7 @@ import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
+  providerMode: "fireworks",
   maxTurns: 100,
   theme: "system",
   showSessionMetrics: true,
