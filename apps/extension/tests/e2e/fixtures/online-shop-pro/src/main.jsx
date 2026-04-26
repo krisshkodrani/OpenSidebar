@@ -35,6 +35,7 @@ import MessagingThread from "./routes/messaging-thread";
 import EmailCompose from "./routes/email-compose";
 import SupportTicket from "./routes/support-ticket";
 import JobBoard from "./routes/job-board";
+import JobApplication from "./routes/job-application";
 import WorkspaceChoice from "./routes/workspace-choice";
 import SessionStateProbe from "./routes/session-state";
 
@@ -72,6 +73,7 @@ const routes = [
   { path: "/email-compose", label: "Email", title: "Q3 Strategy Meeting — Scheduling", component: EmailCompose },
   { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
   { path: "/job-board", label: "Jobs", title: "TechJobs Board", component: JobBoard },
+  { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication },
   { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
   { path: "/session-state", label: "Session", title: "Session State Probe", component: SessionStateProbe },
 ];

@@ -185,7 +185,9 @@ export interface UploadFileArgs {
   /** The numeric tag ID of the <input type="file"> element */
   id: number;
   /** URL of the file to upload (fetched by the service worker) */
-  url: string;
+  url?: string;
+  /** Named file from the local personal profile, e.g. "cv" */
+  profileFile?: string;
 }
 
 /** Arguments for go_back */

@@ -2,7 +2,10 @@ import { toolRegistry } from "./registry";
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
-import { resolveProfileFields } from "../infrastructure/backend-client";
+import {
+  resolveProfileFields,
+  resolveProfileFile,
+} from "../infrastructure/backend-client";
 import { workspaceManager } from "../workspaces/manager";
 import {
   clearTabReady,
@@ -550,7 +553,28 @@ export function registerTools() {
     ToolName.UPLOAD_FILE,
     UPLOAD_FILE_DEF,
     async (args, tabId) => {
-      const url = args.url as string;
+      const profileFile =
+        typeof args.profileFile === "string" ? args.profileFile.trim() : "";
+      if (profileFile) {
+        const result = await resolveProfileFile(profileFile);
+        if (!result) {
+          return `Error: Could not read profile file "${profileFile}". Ensure the backend is running and the file is configured in the local profile.`;
+        }
+
+        return executeContentTool(
+          ToolName.UPLOAD_FILE,
+          {
+            id: args.id,
+            data: result.data,
+            filename: result.filename,
+            mimeType: result.mimeType,
+          },
+          tabId,
+        );
+      }
+
+      const url = typeof args.url === "string" ? args.url : "";
+      if (!url) return "Error: provide either url or profileFile.";
       const urlResult = sanitizeUrl(url);
       if (!urlResult.ok) return `Error: ${urlResult.error}`;
 

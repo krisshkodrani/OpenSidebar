@@ -494,7 +494,7 @@ export const UPLOAD_FILE_DEF: ToolDefinition = {
   function: {
     name: ToolName.UPLOAD_FILE,
     description:
-      'Upload a file to an <input type="file"> element. Downloads the file from the URL (max 10MB), then injects it into the file input.',
+      'Upload a file to an <input type="file"> element. Provide either url for a remote file or profileFile:"cv" for the user\'s saved CV/resume (max 10MB).',
     parameters: {
       type: "object",
       properties: {
@@ -506,8 +506,14 @@ export const UPLOAD_FILE_DEF: ToolDefinition = {
           type: "string",
           description: "URL of the file to upload.",
         },
+        profileFile: {
+          type: "string",
+          description:
+            'Named local profile file to upload. Use "cv" when the user asks to upload their saved CV/resume.',
+          enum: ["cv"],
+        },
       },
-      required: ["id", "url"],
+      required: ["id"],
     },
   },
 };

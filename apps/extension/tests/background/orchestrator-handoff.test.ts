@@ -119,6 +119,24 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Failure recovery rules:");
   });
 
+  test("CRM ticket skill maps escalation to urgent priority when needed", () => {
+    const node = makeNode([]);
+    node.description =
+      "Review TICKET-4271, escalate it if needed, and add an internal note";
+    node.successCriteria =
+      "Ticket escalation state and internal note are visible after save";
+    node.selectedSkillId = "crm-ticket-update";
+    node.selectedSkillReason =
+      "Task requires reviewing customer impact and updating ticket fields.";
+
+    const instruction = buildExecutorInstruction(node);
+
+    expect(instruction).toContain("Selected workflow skill:");
+    expect(instruction).toContain("crm-ticket-update");
+    expect(instruction).toContain("set it to Urgent");
+    expect(instruction).toContain("escalation-equivalent field");
+  });
+
   test("uses compact skill guidance for list-detail review loops", () => {
     const node = makeNode([]);
     node.description = "Review job listing #1";
@@ -220,7 +238,28 @@ describe("Orchestrator handoff briefing", () => {
 
     expect(instruction).toContain("PROFILE DATA POLICY:");
     expect(instruction).toContain("get_profile_fields");
+    expect(instruction).toContain('profileFile: "cv"');
     expect(instruction).toContain("Do not leave the current checkout or form page");
+  });
+
+  test("injects safe personal context separately from exact profile fields", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      "Review this job application",
+      "Apply to this frontend job using my saved profile.",
+      undefined,
+      false,
+      undefined,
+      "PERSONAL CONTEXT:\n- professional_summary: Senior frontend engineer\n- job_preferences.remote: true",
+    );
+
+    expect(instruction).toContain("PERSONAL CONTEXT:");
+    expect(instruction).toContain("professional_summary");
+    expect(instruction).toContain("For exact form values, call get_profile_fields");
+    expect(instruction).toContain("JOB APPLICATION POLICY:");
   });
 
   test("uses active plan objective override when provided", () => {

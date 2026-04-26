@@ -185,7 +185,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     sourceCase: "reads ticket, changes status, and adds internal comment",
     startRoute: "/support-ticket",
     prompt:
-      "Review TICKET-4271. If it needs escalation, update the ticket accordingly and leave an internal note with the customer impact, account context, and next step.",
+      "Review TICKET-4271. If it needs escalation, set the ticket status to In Progress, raise the priority to Urgent, and leave an internal note with the customer impact, account context, and next step.",
     maxTurns: 30,
     timeoutMs: 360_000,
     tags: ["workarena-gap", "crm", "ticket", "record-update", "document"],

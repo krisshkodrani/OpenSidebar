@@ -22,7 +22,7 @@ These tools operate in the page context and manipulate the DOM directly.
 | `hide_element`      | Hide an element by ID             | `{ id: number }`                                                             |
 | `read_element`      | Read specific attribute or text   | `{ id: number, attribute?: string }`                                         |
 | `execute_js`        | Run JavaScript in page context    | `{ code: string }`                                                           |
-| `upload_file`       | Upload a file to a file input     | `{ id: number, url: string }`                                                |
+| `upload_file`       | Upload a file to a file input     | `{ id: number, url?: string, profileFile?: "cv" }`                           |
 | `right_click`       | Right-click on an element         | `{ id: number }`                                                             |
 | `set_checkbox`      | Set checkbox/radio state          | `{ id: number, checked: boolean }`                                           |
 | `click_coordinates` | Click at viewport X/Y coordinates | `{ x: number, y: number, description?: string }`                             |

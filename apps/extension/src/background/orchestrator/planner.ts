@@ -6,6 +6,7 @@ import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import {
   buildTaskContract,
+  repairPlanCoverage,
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "../agent/task-contract";
@@ -388,6 +389,30 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
   };
 }
 
+function withDefaultSuccessCriteria(
+  steps: DecompositionStep[],
+): Array<
+  DecompositionStep & {
+    successCriteria: string;
+    dependencies: number[];
+    assumptions: string[];
+  }
+> {
+  return steps.map((step, index) => ({
+    ...step,
+    successCriteria:
+      step.successCriteria ||
+      `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
+    assumptions: step.assumptions || [],
+    dependencies:
+      step.dependencies && step.dependencies.length > 0
+        ? step.dependencies
+        : index > 0
+          ? [index - 1]
+          : [],
+  }));
+}
+
 function stepsToNodes(
   query: string,
   steps: DecompositionStep[],
@@ -519,7 +544,10 @@ export class OrchestratorPlanner {
     if (shouldUseBatchedFallback) {
       nodes = stepsToNodes(
         query,
-        batchedExhaustiveFallback,
+        repairPlanCoverage({
+          query,
+          steps: withDefaultSuccessCriteria(batchedExhaustiveFallback),
+        }),
         "planned",
         pageTitle,
         pageUrl,
@@ -530,7 +558,16 @@ export class OrchestratorPlanner {
         { count: nodes.length },
       );
     } else if (decomposition?.steps?.length) {
-      nodes = stepsToNodes(query, decomposition.steps, "planned", pageTitle, pageUrl);
+      nodes = stepsToNodes(
+        query,
+        repairPlanCoverage({
+          query,
+          steps: withDefaultSuccessCriteria(decomposition.steps),
+        }),
+        "planned",
+        pageTitle,
+        pageUrl,
+      );
       logger.info(
         "orchestrator",
         "Planner produced structured graph assignments",
@@ -548,7 +585,16 @@ export class OrchestratorPlanner {
         dependencies: i > 0 ? [i - 1] : [],
         assumptions: [],
       }));
-      nodes = stepsToNodes(query, fallbackSteps, "planned", pageTitle, pageUrl);
+      nodes = stepsToNodes(
+        query,
+        repairPlanCoverage({
+          query,
+          steps: withDefaultSuccessCriteria(fallbackSteps),
+        }),
+        "planned",
+        pageTitle,
+        pageUrl,
+      );
     } else {
       nodes = buildFallbackNodes(query, "planned", pageTitle, pageUrl);
     }

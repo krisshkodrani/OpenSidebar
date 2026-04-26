@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 /**
  * Gmail-like email client fixture.
@@ -61,6 +61,7 @@ const folders = [
 export default function EmailCompose() {
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState(false);
+  const [sentMessage, setSentMessage] = useState("");
   const [showReplyBox, setShowReplyBox] = useState(true);
 
   useEffect(() => {
@@ -80,7 +81,10 @@ export default function EmailCompose() {
   const handleSend = () => {
     const text = draft.trim();
     if (!text) return;
+    setSentMessage(text);
     setSent(true);
+    setShowReplyBox(false);
+    setDraft("");
     (window as any).emailResult = {
       composed: true,
       sent: true,
@@ -100,30 +104,39 @@ export default function EmailCompose() {
           + Compose
         </button>
         {folders.map((f) => (
+          (() => {
+            const isSentFolder = f.name === "Sent";
+            const isDraftsFolder = f.name === "Drafts";
+            const isActive = sent ? isSentFolder : f.active;
+            const count = sent && isSentFolder ? 1 : sent && isDraftsFolder ? 0 : f.count;
+            return (
           <div
             key={f.name}
             style={{
               padding: "8px 24px",
               fontSize: 14,
-              fontWeight: f.active ? 700 : 400,
-              background: f.active ? "#d3e3fd" : "transparent",
+              fontWeight: isActive ? 700 : 400,
+              background: isActive ? "#d3e3fd" : "transparent",
               borderRadius: "0 16px 16px 0",
               marginRight: 12,
               cursor: "pointer",
               display: "flex",
               justifyContent: "space-between",
-              color: f.active ? "#001d35" : "#444746",
+              color: isActive ? "#001d35" : "#444746",
             }}
           >
             <span>{f.name}</span>
-            {f.count > 0 && <span style={{ fontWeight: 700 }}>{f.count}</span>}
+            {count > 0 && <span style={{ fontWeight: 700 }}>{count}</span>}
           </div>
+            );
+          })()
         ))}
       </div>
 
       {/* Main content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Email header */}
+        {!sent && (
         <div style={{ padding: "20px 24px 12px", borderBottom: "1px solid #e0e0e0", flexShrink: 0 }}>
           <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 400, color: "#1f1f1f" }}>{openEmail.subject}</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -141,9 +154,54 @@ export default function EmailCompose() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Email body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+          {sent ? (
+            <div id="sent-mail-view" style={{ maxWidth: 760 }}>
+              <div
+                id="send-confirmation"
+                role="status"
+                style={{
+                  marginBottom: 16,
+                  padding: "10px 14px",
+                  background: "#e6f4ea",
+                  border: "1px solid #b7dfc1",
+                  borderRadius: 6,
+                  color: "#137333",
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                Message sent to {openEmail.from} &lt;{openEmail.fromEmail}&gt;
+              </div>
+              <h2 style={{ margin: "0 0 12px", fontSize: 22, fontWeight: 400, color: "#1f1f1f" }}>Sent</h2>
+              <div
+                id="sent-message"
+                style={{
+                  border: "1px solid #dadce0",
+                  borderRadius: 8,
+                  background: "#fff",
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 14, color: "#202124", fontWeight: 600 }}>{openEmail.subject}</div>
+                    <div style={{ fontSize: 12, color: "#5f6368", marginTop: 4 }}>
+                      To: {openEmail.from} &lt;{openEmail.fromEmail}&gt;
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#5f6368", whiteSpace: "nowrap" }}>Sent just now</div>
+                </div>
+                <div style={{ padding: "14px 16px", fontSize: 14, lineHeight: 1.7, color: "#222", whiteSpace: "pre-wrap" }}>
+                  {sentMessage}
+                </div>
+              </div>
+            </div>
+          ) : (
+          <>
           <div id="email-body" style={{ fontSize: 14, lineHeight: 1.7, color: "#222", whiteSpace: "pre-wrap", maxWidth: 680 }}>
             {openEmail.body}
           </div>
@@ -199,6 +257,8 @@ export default function EmailCompose() {
                 </div>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
