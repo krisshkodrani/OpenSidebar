@@ -269,6 +269,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Read the customer issue and ticket properties before changing fields.",
       "Update only fields supported by the request or visible ticket context.",
+      "If escalation is requested and no explicit escalation field is visible, use the ticket's priority field as the escalation-equivalent control and set it to Urgent when the impact supports escalation.",
       "Internal notes should include issue, impact, account context, and next step when available.",
     ],
   },
@@ -761,10 +762,11 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     procedureMarkdown: [
       "1. Read the ticket or case context before changing anything: requester, issue, customer impact, account context, current status, priority, and existing activity.",
       "2. Extract the requested record changes, such as status, priority, assignee, category, tags, escalation, and internal note content.",
-      "3. Update only fields that are requested or directly supported by visible ticket context.",
-      "4. Add an internal note grounded in the issue, impact, account context, and next step when those details are available.",
-      "5. Save or submit changes using the page's normal controls.",
-      "6. Re-read the ticket state after saving and verify field values and note visibility.",
+      "3. If escalation is requested, use a visible escalation field when present; otherwise treat priority as the escalation-equivalent field and set it to Urgent when the impact supports escalation.",
+      "4. Update only fields that are requested or directly supported by visible ticket context.",
+      "5. Add an internal note grounded in the issue, impact, account context, and next step when those details are available.",
+      "6. Save or submit changes using the page's normal controls.",
+      "7. Re-read the ticket state after saving and verify field values and note visibility.",
     ].join("\n"),
     requiredEvidence: [
       "Ticket context and current properties were read before mutation",
@@ -783,13 +785,17 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "revise the note using visible ticket facts before posting",
       },
       {
+        signal: "escalation was requested but only status was changed",
+        recovery: "look for escalation, priority, severity, or SLA fields; if priority is the available control, set it to Urgent when justified by customer impact",
+      },
+      {
         signal: "unrequested ticket fields are modified",
         recovery: "restore unrelated fields when possible and limit changes to the requested scope",
       },
     ],
     executionContract: {
       sequencing: [
-        "Read ticket context, extract requested changes, update fields, add grounded note, save, then verify.",
+        "Read ticket context, decide whether escalation is justified, update escalation-equivalent fields, add grounded note, save, then verify.",
       ],
       toolDiscipline: [
         "Use read_page or read_element before and after field mutations.",
@@ -797,7 +803,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "Avoid done until both field state and note state have been checked after save.",
       ],
       completionChecks: [
-        "Requested status, priority, assignee, category, tag, or escalation state is visible.",
+        "Requested status, priority, assignee, category, tag, or escalation state is visible; escalation requests require a visible escalation-equivalent field change.",
         "Internal note content reflects the issue, impact, account context, and next step when available.",
         "No unrelated ticket fields were changed.",
       ],

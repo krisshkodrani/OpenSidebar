@@ -24,6 +24,7 @@ const PROJECT_ROOT = resolve(__dirname, "../../../../..");
 const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
+const TSX_CLI = join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const LOG_SERVER_PORT = 7589;
 
 let logServerProcess: ChildProcess | null = null;
@@ -46,10 +47,15 @@ export async function startLogServer(): Promise<void> {
     // Not running — start it
   }
 
-  const command = process.platform === "win32" ? "npx.cmd" : "npx";
-  logServerProcess = spawn(command, ["tsx", LOG_SERVER_SCRIPT], {
+  const command = process.platform === "win32" ? process.execPath : "npx";
+  const args =
+    process.platform === "win32"
+      ? [TSX_CLI, LOG_SERVER_SCRIPT]
+      : ["tsx", LOG_SERVER_SCRIPT];
+  logServerProcess = spawn(command, args, {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 
   // Wait for the server to be ready

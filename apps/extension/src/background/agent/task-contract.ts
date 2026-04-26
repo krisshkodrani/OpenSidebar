@@ -4,6 +4,8 @@ export interface TaskContract {
   requiresRoundTrip: boolean;
   requiredEntities: string[];
   requiredNumbers: string[];
+  requiredActionTargets: string[];
+  actionTargetDestination?: string;
   returnTargets: string[];
   reportTargets: string[];
   multiReturnCount?: number;
@@ -218,6 +220,41 @@ function singularizePhrase(label: string): string {
   return normalized;
 }
 
+function cleanupActionTarget(value: string): string {
+  return normalize(value)
+    .replace(/^(?:the|a|an)\s+/, "")
+    .replace(/\b(?:card|cards|task|tasks|item|items)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractMultiActionTargets(text: string): {
+  targets: string[];
+  destination?: string;
+} {
+  const targetSets: string[][] = [];
+  let destination: string | undefined;
+  const movePattern =
+    /\b(?:move|drag|put|place)\s+(.+?)\s+(?:into|onto|to|under)\s+([A-Z][A-Za-z0-9\s-]{2,60}|[a-z][a-z0-9\s-]{2,60})(?=[.!?]|$)/gi;
+
+  for (const match of text.matchAll(movePattern)) {
+    const rawTargets = match[1] || "";
+    const pieces = rawTargets
+      .split(/\s*,\s*|\s+\band\b\s+/i)
+      .map(cleanupActionTarget)
+      .filter((value) => value.length >= 3);
+    if (pieces.length >= 2) {
+      targetSets.push(pieces);
+      destination = cleanupActionTarget(match[2] || "");
+    }
+  }
+
+  return {
+    targets: unique(targetSets.flat()),
+    ...(destination ? { destination } : {}),
+  };
+}
+
 function extractExhaustiveScope(text: string): {
   label?: string;
   count?: number;
@@ -299,11 +336,13 @@ export function buildTaskContract(query: string): TaskContract {
   const namedEntities = extractNamedEntities(query);
   const multiReturn = extractMultiReturnMarkers(query);
   const exhaustiveScope = extractExhaustiveScope(query);
+  const multiAction = extractMultiActionTargets(query);
   const requiredEntities = unique([
     ...extractQuotedPhrases(query),
     ...extractReportTargets(query),
     ...extractReturnTargets(query),
     ...multiReturn.entities,
+    ...multiAction.targets,
   ]);
 
   const broadEntities =
@@ -325,6 +364,8 @@ export function buildTaskContract(query: string): TaskContract {
       ),
     requiredEntities: unique([...requiredEntities, ...broadEntities]),
     requiredNumbers: extractLargeNumbers(query),
+    requiredActionTargets: multiAction.targets,
+    actionTargetDestination: multiAction.destination,
     returnTargets: extractReturnTargets(query),
     reportTargets: extractReportTargets(query),
     multiReturnCount: multiReturn.count || undefined,
@@ -492,11 +533,29 @@ export function repairPlanCoverage(params: {
     });
   }
 
+  const missingActionTargets = contract.requiredActionTargets.filter(
+    (target) => !refreshedCorpus.includes(target),
+  );
+  for (const target of missingActionTargets) {
+    const destination = contract.actionTargetDestination;
+    steps.push({
+      objective: destination
+        ? `Move ${target} to ${destination} according to the original request.`
+        : `Update ${target} according to the original request.`,
+      successCriteria: destination
+        ? `Page or tool output confirms ${target} is in ${destination}.`
+        : `Page or tool output confirms ${target} was updated as requested.`,
+      dependencies: steps.length > 0 ? [steps.length - 1] : [],
+      assumptions: [],
+      toolProfile: "full",
+    });
+  }
+
   const exhaustiveSynthesisStep = buildExhaustiveSynthesisStep(contract);
   if (exhaustiveSynthesisStep) {
     const hasAggregateStep = steps.some((step) => {
       const objective = normalize(step.objective);
-      const criteria = normalize(step.successCriteria);
+      const criteria = normalize(step.successCriteria ?? "");
       const aggregateObjective =
         /^(compare|report|recommend|rank|summari[sz]e)\b/.test(objective) ||
         /\b(report|recommend|rank|summari[sz]e)\b/.test(objective);
@@ -535,6 +594,7 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
   if (
     !contract.requiresRoundTrip &&
     reportTargets.length < 2 &&
+    contract.requiredActionTargets.length < 2 &&
     contract.requiredNumbers.length === 0
   ) {
     return null;
@@ -584,6 +644,26 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
       assumptions: [],
       toolProfile: "read_only",
     });
+  }
+
+  if (
+    steps.length === 0 &&
+    contract.requiredActionTargets.length >= 2
+  ) {
+    for (const target of contract.requiredActionTargets) {
+      const destination = contract.actionTargetDestination;
+      steps.push({
+        objective: destination
+          ? `Move ${target} to ${destination} according to the original request.`
+          : `Update ${target} according to the original request.`,
+        successCriteria: destination
+          ? `Page or tool output confirms ${target} is in ${destination}.`
+          : `Page or tool output confirms ${target} was updated as requested.`,
+        dependencies: steps.length > 0 ? [steps.length - 1] : [],
+        assumptions: [],
+        toolProfile: "full",
+      });
+    }
   }
 
   return steps.length >= 2 ? steps : null;

@@ -177,12 +177,14 @@ describe("Tool Registration", () => {
         expect(def!.function.parameters.required).toContain("code");
     });
 
-    test("upload_file requires id and url parameters", () => {
+    test("upload_file requires id and accepts url or profileFile", () => {
         const defs = toolRegistry.getDefinitions();
         const def = defs.find(d => d.function.name === ToolName.UPLOAD_FILE);
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toContain("id");
-        expect(def!.function.parameters.required).toContain("url");
+        expect(def!.function.parameters.required).not.toContain("url");
+        expect(def!.function.parameters.properties.url).toBeDefined();
+        expect(def!.function.parameters.properties.profileFile).toBeDefined();
     });
 
     test("go_back has no required parameters", () => {

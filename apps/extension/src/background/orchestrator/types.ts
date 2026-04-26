@@ -180,6 +180,8 @@ export interface OrchestratorTask {
   tabCoordination?: TaskTabCoordination;
   /** Site-specific knowledge injected into executor instructions */
   siteKnowledgeBrief?: string;
+  /** Task-relevant, user-authored non-secret profile context */
+  personalContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;
 }
 

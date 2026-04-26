@@ -18,6 +18,25 @@ profile:
     company: Example GmbH
     title: Product Engineer
 
+  files:
+    cv:
+      path: cv.pdf
+      mime_type: application/pdf
+
+  context:
+    safe:
+      professional_summary: Senior frontend engineer focused on React, TypeScript, and browser automation.
+      job_preferences:
+        roles:
+          - Frontend Engineer
+          - Product Engineer
+        remote: true
+        locations:
+          - Berlin
+          - Remote
+        salary_range: 120K-160K
+      work_authorization: Authorized to work in Germany.
+
   preferences:
     default_country: Germany
     preferred_language: en

@@ -1049,8 +1049,18 @@ Do NOT call done() until every planned step is complete.
       if (items.length === 0) continue;
 
       const formatted = items.map((el) => {
-        const rawText =
+        const isTruncated =
+          textLimit !== Infinity && el.text.length > textLimit;
+        let rawText =
           textLimit === Infinity ? el.text : el.text.slice(0, textLimit);
+        if (
+          isTruncated &&
+          (el.tagName === "textarea" || el.role === "textbox")
+        ) {
+          rawText += " [preview truncated; use read_element for exact value]";
+        } else if (isTruncated) {
+          rawText += " [truncated]";
+        }
         return this.formatElementCompactLocal(
           el,
           sanitizeForPrompt(rawText),

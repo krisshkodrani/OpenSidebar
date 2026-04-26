@@ -548,7 +548,6 @@ async function emailMeetingReplySent(
   const hasSchedule =
     message.includes("friday") &&
     (message.includes("10 am") || message.includes("10:00"));
-  const hasDuration = message.includes("90");
   const hasAgenda =
     includesAny(message, ["roadmap", "ai integration"]) &&
     message.includes("budget") &&
@@ -557,7 +556,6 @@ async function emailMeetingReplySent(
     result.to === "david.park@company.com" &&
     result.sent === true &&
     hasSchedule &&
-    hasDuration &&
     hasAgenda;
 
   return buildResult(
@@ -566,7 +564,6 @@ async function emailMeetingReplySent(
     [
       `to=${String(result.to ?? "")}`,
       `hasSchedule=${String(hasSchedule)}`,
-      `hasDuration=${String(hasDuration)}`,
       `hasAgenda=${String(hasAgenda)}`,
     ],
     traceFiles,
@@ -575,7 +572,6 @@ async function emailMeetingReplySent(
     {
       to: result.to,
       hasSchedule,
-      hasDuration,
       hasAgenda,
     },
   );

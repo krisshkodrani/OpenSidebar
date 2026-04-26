@@ -61,6 +61,34 @@ export interface ProfileResolveResult {
   sensitiveFields: string[];
 }
 
+export interface ProfileSafeContextInput {
+  query: string;
+}
+
+export interface ProfileSafeContextEntry {
+  path: string;
+  value: ProfileValue;
+}
+
+export interface ProfileSafeContextResult {
+  profilePath: string;
+  entries: ProfileSafeContextEntry[];
+  rendered: string;
+}
+
+export interface ProfileFileResolveInput {
+  alias: string;
+}
+
+export interface ProfileFileResolveResult {
+  profilePath: string;
+  alias: string;
+  filename: string;
+  mimeType: string;
+  byteLength: number;
+  data: string;
+}
+
 // ── Task types (SQLite-backed) ──
 
 export interface TaskInput {

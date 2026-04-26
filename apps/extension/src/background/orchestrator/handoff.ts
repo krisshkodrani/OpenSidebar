@@ -474,6 +474,7 @@ export function buildExecutorInstruction(
   priorTurnMemoryBrief?: string,
   verificationTurnMode = false,
   siteKnowledgeBrief?: string,
+  personalContextBrief?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -519,6 +520,14 @@ export function buildExecutorInstruction(
     sections.push("", siteKnowledgeBrief);
   }
 
+  if (personalContextBrief) {
+    sections.push(
+      "",
+      personalContextBrief,
+      "Use personal context for fit, preferences, and wording. For exact form values, call get_profile_fields instead of copying from context.",
+    );
+  }
+
   if (taskStateBrief && taskStateBrief !== "No sibling node context yet.") {
     sections.push("", "Step-scoped task context:", taskStateBrief);
   }
@@ -540,8 +549,18 @@ export function buildExecutorInstruction(
       "PROFILE DATA POLICY:",
       "- The user's saved profile is available through get_profile_fields.",
       "- If the current step needs name, email, or other saved profile values, call get_profile_fields for the exact fields before typing or navigating away.",
+      '- If the current step needs the saved CV/resume file, upload it with upload_file using profileFile: "cv".',
       "- Treat returned profile values as the source of truth; do not invent replacements when the profile is expected to provide them.",
       "- Do not leave the current checkout or form page to search for a login/profile page unless the page explicitly shows authentication is required.",
+    );
+  }
+
+  if (/\b(job|application|apply|cv|resume)\b/i.test(`${activeObjective}\n${originalQuery || ""}`)) {
+    sections.push(
+      "",
+      "JOB APPLICATION POLICY:",
+      '- Use profileFile: "cv" for saved CV/resume uploads.',
+      "- Fill the application and verify required fields, but do not click the final submit/apply control until explicit approval is granted.",
     );
   }
 

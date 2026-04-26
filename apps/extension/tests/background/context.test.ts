@@ -891,6 +891,29 @@ describe("Form batch hint", () => {
       "Do not click Next or Submit unless the user or the current plan step explicitly asks for it.",
     );
   });
+
+  test("marks compressed textarea values as previews requiring read_element", () => {
+    const ctx = new ContextManager(700);
+    ctx.setSnapshot({
+      title: "Email",
+      url: "https://example.com/email",
+      elements: [
+        {
+          ...makeInputElement(1, "textarea", "textbox"),
+          text:
+            "Hi David, Friday at 10 AM works for me. I reviewed the product roadmap, budget, and hiring agenda items.",
+          attributes: { id: "reply-editor" },
+        },
+      ],
+      visibleContent: "Reply composer",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("[preview truncated; use read_element for exact value]");
+    expect(systemContent).toContain("Long input and textarea values in Visible Elements may be previews");
+  });
 });
 
 // --- Attribute Pruning Tests ---

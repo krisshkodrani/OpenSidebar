@@ -232,13 +232,15 @@ Upload a file to an `<input type="file">` element.
 
 | Parameter | Type    | Required | Description               |
 | --------- | ------- | -------- | ------------------------- |
-| id        | integer | Yes      | File input tag ID         |
-| url       | string  | Yes      | URL of the file to upload |
+| id          | integer | Yes      | File input tag ID         |
+| url         | string  | No       | URL of the file to upload |
+| profileFile | string | No       | Named local profile file, currently `cv` |
 
 **Notes:**
 
 - Downloads the file from the URL (max 10MB)
 - Then injects it into the file input
+- Provide either `url` or `profileFile`
 
 ---
 

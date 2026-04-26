@@ -196,6 +196,57 @@ describe("task contract helpers", () => {
     expect(synthesized![synthesized!.length - 1].objective).toMatch(/report/i);
   });
 
+  test("extracts multi-target board update obligations", () => {
+    const contract = buildTaskContract(
+      "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",
+    );
+
+    expect(contract.requiredActionTargets).toEqual([
+      "api docs",
+      "ci pipeline",
+    ]);
+    expect(contract.requiredEntities).toContain("api docs");
+    expect(contract.requiredEntities).toContain("ci pipeline");
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: "Moved Write API Docs from todo to in-progress.",
+    });
+
+    expect(coverage.satisfied).toBe(false);
+    expect(coverage.missingEntities).toContain("ci pipeline");
+  });
+
+  test("repairs planner output that covers only one multi-target update", () => {
+    const repaired = repairPlanCoverage({
+      query:
+        "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",
+      steps: [
+        {
+          objective: "Move the API docs card from its current column to the In Progress column.",
+          successCriteria: "Page confirms API docs is in In Progress.",
+          dependencies: [],
+          assumptions: [],
+        },
+      ],
+    });
+
+    expect(repaired.length).toBe(2);
+    expect(repaired[1].objective).toMatch(/ci pipeline/i);
+    expect(repaired[1].successCriteria).toMatch(/in progress/i);
+  });
+
+  test("synthesizes per-target steps for multi-target update requests", () => {
+    const synthesized = synthesizePlanFromTaskContract(
+      "Move the API docs card and the CI pipeline card into In Progress.",
+    );
+
+    expect(synthesized).not.toBeNull();
+    expect(synthesized).toHaveLength(2);
+    expect(synthesized![0].objective).toMatch(/api docs/i);
+    expect(synthesized![1].objective).toMatch(/ci pipeline/i);
+  });
+
   test("detects exhaustive scope obligations from all-count queries", () => {
     const contract = buildTaskContract(
       "Review all 10 job listings on this page, then tell me the best matches.",

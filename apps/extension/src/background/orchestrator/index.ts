@@ -34,6 +34,7 @@ import {
   listTaskRuns,
   patchTaskRun,
   postMemory,
+  resolveProfileContext,
   searchMemory,
   searchMemoryByDomain,
   formatBackendMemoriesForPrompt,
@@ -3216,6 +3217,10 @@ export class Orchestrator {
     // Long-term memory from the backend store (non-blocking, falls back to empty)
     const longTermMemories = await searchMemory(input.query, 5).catch(() => []);
     const longTermBrief = formatBackendMemoriesForPrompt(longTermMemories);
+    const personalContext = await resolveProfileContext(input.query).catch(
+      () => null,
+    );
+    const personalContextBrief = personalContext?.rendered || "";
 
     // Site-specific knowledge by domain (non-blocking)
     let siteKnowledgeBrief = "";
@@ -3239,6 +3244,7 @@ export class Orchestrator {
     }
 
     const combinedMemoryBrief = [
+      personalContextBrief,
       priorTurnMemoryBrief,
       longTermBrief,
       siteKnowledgeBrief,
@@ -3261,6 +3267,7 @@ export class Orchestrator {
       query: input.query,
       turnNumber,
       priorTurnMemoryBrief: priorTurnMemoryBrief || undefined,
+      personalContextBrief: personalContextBrief || undefined,
       siteKnowledgeBrief: siteKnowledgeBrief || undefined,
       status: "planning",
       createdAt: Date.now(),
@@ -4157,6 +4164,7 @@ export class Orchestrator {
           task.priorTurnMemoryBrief,
           verificationTurnMode,
           task.siteKnowledgeBrief,
+          task.personalContextBrief,
         );
 
         // Inject predecessor trajectory for same-tab sequential nodes.

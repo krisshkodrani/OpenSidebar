@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -7,6 +7,8 @@ import {
   normalizeRequestedFields,
   parseProfileDocument,
   resolveProfileFields,
+  resolveProfileFile,
+  resolveSafeProfileContext,
 } from "../src/services/profile-service";
 
 describe("parseProfileDocument", () => {
@@ -84,6 +86,104 @@ describe("resolveProfileFields", () => {
       });
       expect(result.missing).toEqual(["identity.email"]);
       expect(result.sensitiveFields).toEqual(["sensitive.date_of_birth"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveSafeProfileContext", () => {
+  test("returns task-relevant safe context without identity or sensitive fields", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-profile-"));
+    const profilePath = join(dir, "default.yaml");
+
+    try {
+      writeFileSync(
+        profilePath,
+        [
+          "profile:",
+          "  identity:",
+          "    email: kai@example.com",
+          "  sensitive:",
+          '    date_of_birth: "1990-01-01"',
+          "  context:",
+          "    safe:",
+          "      professional_summary: Senior frontend engineer focused on React.",
+          "      job_preferences:",
+          "        roles:",
+          "          - Frontend Engineer",
+          "        remote: true",
+          "      hobby: Chess",
+          "",
+        ].join("\n"),
+      );
+
+      const result = resolveSafeProfileContext(
+        "Apply to a remote frontend job using my profile.",
+        profilePath,
+      );
+
+      expect(result.rendered).toContain("professional_summary");
+      expect(result.rendered).toContain("job_preferences.roles");
+      expect(result.rendered).not.toContain("kai@example.com");
+      expect(result.rendered).not.toContain("date_of_birth");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveProfileFile", () => {
+  test("resolves cv relative to the profile directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-profile-"));
+    const profilePath = join(dir, "default.yaml");
+    const cvPath = join(dir, "cv.pdf");
+
+    try {
+      writeFileSync(cvPath, "%PDF-1.4 test");
+      writeFileSync(
+        profilePath,
+        [
+          "profile:",
+          "  files:",
+          "    cv:",
+          "      path: cv.pdf",
+          "      mime_type: application/pdf",
+          "",
+        ].join("\n"),
+      );
+
+      const result = resolveProfileFile("cv", profilePath);
+
+      expect(result.filename).toBe("cv.pdf");
+      expect(result.mimeType).toBe("application/pdf");
+      expect(result.data).toBe(Buffer.from("%PDF-1.4 test").toString("base64"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects traversal outside the profile directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-profile-"));
+    const subdir = join(dir, "profile");
+    mkdirSync(subdir);
+    const profilePath = join(subdir, "default.yaml");
+
+    try {
+      writeFileSync(
+        profilePath,
+        [
+          "profile:",
+          "  files:",
+          "    cv:",
+          "      path: ../cv.pdf",
+          "",
+        ].join("\n"),
+      );
+
+      expect(() => resolveProfileFile("cv", profilePath)).toThrow(
+        "must stay within the profile directory",
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

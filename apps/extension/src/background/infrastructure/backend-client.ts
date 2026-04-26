@@ -49,6 +49,21 @@ export interface ProfileResolveResult {
   sensitiveFields: string[];
 }
 
+export interface ProfileSafeContextResult {
+  profilePath: string;
+  entries: Array<{ path: string; value: unknown }>;
+  rendered: string;
+}
+
+export interface ProfileFileResolveResult {
+  profilePath: string;
+  alias: string;
+  filename: string;
+  mimeType: string;
+  byteLength: number;
+  data: string;
+}
+
 export type DurableTaskRunStatus =
   | "planning"
   | "running"
@@ -285,6 +300,36 @@ export async function resolveProfileFields(
     });
     if (!res.ok) return null;
     return (await res.json()) as ProfileResolveResult;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveProfileContext(
+  query: string,
+): Promise<ProfileSafeContextResult | null> {
+  try {
+    const res = await backendFetch("/profile/context", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ProfileSafeContextResult;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveProfileFile(
+  alias: string,
+): Promise<ProfileFileResolveResult | null> {
+  try {
+    const res = await backendFetch("/profile/file", {
+      method: "POST",
+      body: JSON.stringify({ alias }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as ProfileFileResolveResult;
   } catch {
     return null;
   }

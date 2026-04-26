@@ -53,7 +53,7 @@ import { PerceptionAgent } from "../perception/perception-agent";
 import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
 import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
-import { CompletionResponse, TokenUsage } from "../llm/types";
+import { CompletionResponse, LLMMessage, TokenUsage } from "../llm/types";
 import { estimateCostUsd } from "../llm/pricing";
 import {
   formatStepLabel,
@@ -645,6 +645,56 @@ export function isListDetailReturnControlRepeatExempt(params: {
   return /\b(?:back|return)\s+to\s+(?:the\s+)?(?:listings?|results?|list)\b/.test(
     label,
   );
+}
+
+function hasRecentExactTextFieldRead(messages: LLMMessage[]): boolean {
+  const recent = messages.slice(-10);
+  return recent.some((message) => {
+    if (message.role !== "tool" || typeof message.content !== "string") {
+      return false;
+    }
+    return (
+      /<textarea|<input/i.test(message.content) &&
+      message.content.replace(/\s+/g, " ").trim().length > 80
+    );
+  });
+}
+
+function isFinalCommunicationClick(
+  params: {
+    selectedSkillId?: string | null;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    snapshot?: DomSnapshot | null;
+    originalQuery: string;
+  },
+): boolean {
+  if (params.toolName !== ToolName.CLICK_ELEMENT) return false;
+  if (
+    params.selectedSkillId !== "email-reply-careful" &&
+    params.selectedSkillId !== "thread-message-careful"
+  ) {
+    return false;
+  }
+  if (!/\b(reply|respond|confirm|send|post)\b/i.test(params.originalQuery)) {
+    return false;
+  }
+  const id =
+    typeof params.args.id === "number" ? params.args.id : Number(params.args.id);
+  if (!Number.isFinite(id)) return false;
+  const element = params.snapshot?.elements.find((candidate) => candidate.tag === id);
+  if (!element) return false;
+  const label = normalizeGuardText(
+    [
+      element.text,
+      element.attributes?.["aria-label"],
+      element.attributes?.title,
+      element.attributes?.id,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return /\b(send|post|reply)\b/.test(label);
 }
 
 function listDetailElementLabel(
@@ -2230,9 +2280,10 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
     riskLevel: RiskLevel,
+    forceApproval = false,
   ): Promise<boolean> {
-    if (riskLevel !== RiskLevel.HIGH) return true;
-    if (this.bypassApprovals) {
+    if (riskLevel !== RiskLevel.HIGH && !forceApproval) return true;
+    if (this.bypassApprovals && !forceApproval) {
       const bypassContext = formatStepLabel(
         toolName,
         args,
@@ -2272,6 +2323,18 @@ export class AgentLoop {
       });
     }
     return approved;
+  }
+
+  private requiresJobApplicationSubmitApproval(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): boolean {
+    if (toolName !== ToolName.CLICK_ELEMENT) return false;
+    if (args.id == null) return false;
+    const taskText = `${this.originalQuery}\n${this.planSubtasks[this.lastPlanIndex]?.description ?? ""}`.toLowerCase();
+    if (!/\b(job|application|apply|cv|resume)\b/.test(taskText)) return false;
+    const label = formatStepLabel(toolName, args, this.elementResolver).toLowerCase();
+    return /\b(submit|send|finish|complete)\b/.test(label) || /\bapply\b.*\b(application|form)\b/.test(label);
   }
 
   /**
@@ -5226,6 +5289,7 @@ export class AgentLoop {
 
     // Track all recent tool calls so exact looping can be blocked even when calls "succeed"
     const recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
+    const verifiedFinalClickBypassKeys = new Set<string>();
 
     // Tag IDs discovered by find_element (not yet in snapshot but valid for next tool call)
     const discoveredTagIds = new Set<number>();
@@ -6203,6 +6267,36 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                     entry.tool === toolName && entry.argsKey === argsKey,
                 ).length;
                 if (priorRepeatCount >= 2) {
+                  const finalClickBypass =
+                    !verifiedFinalClickBypassKeys.has(argsKey) &&
+                    hasRecentExactTextFieldRead(this.context.getMessages()) &&
+                    isFinalCommunicationClick({
+                      selectedSkillId: this.selectedSkillId,
+                      toolName,
+                      args,
+                      snapshot: this.context.getSnapshot(),
+                      originalQuery: this.originalQuery,
+                    });
+                  if (finalClickBypass) {
+                    verifiedFinalClickBypassKeys.add(argsKey);
+                    this.log.info(
+                      "agent",
+                      "Repeat final communication click allowed after exact draft read",
+                      {
+                        turn: this.turnCount,
+                        tool: toolName,
+                        mode: "parallel",
+                      },
+                    );
+                    this.traceRecorder?.recordEvent(
+                      "repeat_final_click_allowed",
+                      {
+                        turn: this.turnCount,
+                        tool: toolName,
+                        mode: "parallel",
+                      },
+                    );
+                  } else {
                   const repeatCount = priorRepeatCount + 1;
                   const blockMsg =
                     `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
@@ -6220,6 +6314,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                     mode: "parallel",
                   });
                   return { toolCall, result: blockMsg, error: null };
+                  }
                 }
                 recentToolCalls.push({ tool: toolName, argsKey });
                 if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
@@ -6829,6 +6924,36 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 (entry) => entry.tool === toolName && entry.argsKey === argsKey,
               ).length;
               if (priorRepeatCount >= 2) {
+                const finalClickBypass =
+                  !verifiedFinalClickBypassKeys.has(argsKey) &&
+                  hasRecentExactTextFieldRead(this.context.getMessages()) &&
+                  isFinalCommunicationClick({
+                    selectedSkillId: this.selectedSkillId,
+                    toolName,
+                    args,
+                    snapshot: this.context.getSnapshot(),
+                    originalQuery: this.originalQuery,
+                  });
+                if (finalClickBypass) {
+                  verifiedFinalClickBypassKeys.add(argsKey);
+                  this.log.info(
+                    "agent",
+                    "Repeat final communication click allowed after exact draft read",
+                    {
+                      turn: this.turnCount,
+                      tool: toolName,
+                      mode: "sequential",
+                    },
+                  );
+                  this.traceRecorder?.recordEvent(
+                    "repeat_final_click_allowed",
+                    {
+                      turn: this.turnCount,
+                      tool: toolName,
+                      mode: "sequential",
+                    },
+                  );
+                } else {
                 const repeatCount = priorRepeatCount + 1;
                 const blockMsg =
                   `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
@@ -6851,6 +6976,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                   mode: "sequential",
                 });
                 continue;
+                }
               }
               recentToolCalls.push({ tool: toolName, argsKey });
               if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
@@ -7272,11 +7398,14 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 false,
               );
             }
-            if (preDecision.requiresApproval) {
+            const forceJobSubmitApproval =
+              this.requiresJobApplicationSubmitApproval(toolName, args);
+            if (preDecision.requiresApproval || forceJobSubmitApproval) {
               const approved = await this.ensureToolApproval(
                 toolName,
                 args,
                 preDecision.riskLevel,
+                forceJobSubmitApproval,
               );
               if (!approved) {
                 this.context.addMessage({
