@@ -6652,7 +6652,7 @@ export class Orchestrator {
     this.sendMessage({
       type: "AGENT_STATUS",
       workspaceId,
-      payload: { status, detail },
+      payload: { status, detail, completionStatus },
     });
     updateTabGroupAppearance(workspaceId, { status, completionStatus });
   }

@@ -197,6 +197,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Do not invent facts, commitments, dates, names, or recipients.",
       "Verify the draft and recipient before any send action.",
       "If the user asks to reply, respond, confirm, accept, or decline to a sender and does not say draft-only, the task requires sending the reply.",
+      "After sending, verify real feedback such as sent-mail navigation, the message in the thread, a toast, or a changed email list state instead of re-reading the old draft.",
     ],
   },
   {
@@ -233,6 +234,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Preserve owners, deadlines, deliverables, blockers, and unresolved questions.",
       "Do not post if the target thread or audience is uncertain.",
       "If the user explicitly asks to reply, send, or post, treat a visible verified draft plus a visible Send/Post button as ready to submit; do not keep re-reading the same draft.",
+      "After posting, verify real feedback such as the new message in the thread, a list update, a toast, or composer clearing instead of re-reading the old draft.",
     ],
   },
   {
@@ -244,6 +246,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     triggers: [
       "update support ticket",
       "set ticket status",
+      "set ticket priority",
+      "change ticket dropdown",
       "add internal note",
       "escalate CRM case",
     ],
@@ -269,6 +273,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Read the customer issue and ticket properties before changing fields.",
       "Update only fields supported by the request or visible ticket context.",
+      "Use select_option for native status, priority, assignee, or category controls; use click_element only for custom dropdowns after the options are visible.",
       "If escalation is requested and no explicit escalation field is visible, use the ticket's priority field as the escalation-equivalent control and set it to Urgent when the impact supports escalation.",
       "Internal notes should include issue, impact, account context, and next step when available.",
     ],
@@ -283,6 +288,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "fill form",
       "multi-field data entry",
       "choose values then submit",
+      "configure product options",
     ],
     maturity: "candidate",
     preferredTools: [
@@ -295,7 +301,10 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     discouragedTools: ["press_key"],
     memoryScope: "turn",
     verifierMode: "deterministic",
-    notes: ["Map values to fields before typing."],
+    notes: [
+      "Map values to fields before typing.",
+      "For configurators, verify any derived total, price, or summary after changing options before finishing.",
+    ],
   },
   {
     id: "inline-edit-surface",
@@ -348,10 +357,12 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     id: "cross-tab-compare",
     name: "Cross Tab Compare",
     description:
-      "Collect facts from multiple tabs or pages, normalize them, then compare after evidence is gathered.",
+      "Collect facts from explicitly separate tabs or pages, normalize them, then compare or report the requested multi-source values after evidence is gathered.",
     tags: ["workflow", "comparison", "tabs", "memory"],
     triggers: [
       "compare tabs",
+      "read both tabs",
+      "collect values from two pages",
       "compare page 1 and page N",
       "compare overview and reports",
     ],
@@ -366,7 +377,10 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     memoryScope: "workspace",
     verifierMode: "deterministic",
-    notes: ["Gather all required facts before synthesizing."],
+    notes: [
+      "Gather all required facts before synthesizing.",
+      "Do not use for single-page configurators, ordinary report-tab navigation, inline edits, or list-review recommendations.",
+    ],
   },
   {
     id: "modal-overlay-recovery",
@@ -480,6 +494,10 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     discouragedTools: [
       "find_element",
       "read_element",
+      "type_text",
+      "press_key",
+      "select_option",
+      "set_checkbox",
       "scroll_page",
       "inspect_hidden",
       "xray_page",
@@ -494,7 +512,47 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "A visible page is only a sample unless the pagination range proves it is the whole dataset.",
       "Track seen ranges and the current best candidate in notes after each page.",
-      "Use the visible Next control for forward coverage. Do not inspect or click page-number buttons when Next can continue the scan.",
+      "Use the visible Next control or the next sequential page-number button for forward coverage; if one does not advance the visible range, switch to the other.",
+    ],
+  },
+  {
+    id: "paginated-record-lookup",
+    name: "Paginated Record Lookup",
+    description:
+      "Find one or a small number of named records in a paginated, searchable, or list-like data surface before extracting the requested field.",
+    tags: ["workflow", "pagination", "table", "lookup", "search"],
+    triggers: [
+      "find a specific record in a table",
+      "search for a named employee or ticket",
+      "look up a row in a directory",
+      "find post number in a feed",
+      "locate an item across paginated results",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "find_element",
+      "type_text",
+      "click_element",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "read_element",
+      "scroll_page",
+      "inspect_hidden",
+      "xray_page",
+      "execute_js",
+      "click_coordinates",
+      "create_tab",
+      "list_tabs",
+      "done",
+    ],
+    memoryScope: "workspace",
+    verifierMode: "hybrid",
+    notes: [
+      "Use visible search or filter controls before manual pagination when the target is specific.",
+      "When no search/filter exists, advance sequentially with Next while tracking searched pages or ranges in notes.",
+      "Do not answer from a near match; verify the target row identity before extracting the requested field.",
     ],
   },
   {
@@ -522,6 +580,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     memoryScope: "turn",
     verifierMode: "hybrid",
     notes: [
+      "Enumerate the requested visible review set once before opening detail pages.",
+      "Track reviewed item names in notes so an item is not reopened or skipped.",
       "When a tagged list action is already visible, click it directly instead of inspecting its attributes.",
       "Use one detail-page read to extract the facts, then return to the list immediately.",
       "Prefer the page's own back or return control over browser history when the detail view appears in-place.",
@@ -695,6 +755,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "5. Include only facts grounded in the email, the user's request, or visible page context.",
       "6. Re-read or inspect the draft before sending; verify recipient, subject or thread, and all checklist items.",
       "7. Send when the user requested sending or asked to reply/respond/confirm/accept/decline to the sender. Otherwise leave the composed draft visible.",
+      "8. After sending, re-ground on the resulting page and verify application feedback such as sent-mail navigation, the reply appearing in a message list/thread, a toast, or the composer clearing.",
     ].join("\n"),
     requiredEvidence: [
       "Source email context was read before composing",
@@ -702,6 +763,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "Reply checklist covering language, tone, facts, and requested commitments",
       "Draft content verified before send or completion",
       "Final state matches draft-only versus send intent",
+      "Post-send feedback was checked when the reply was sent",
     ],
     commonFailures: [
       {
@@ -720,6 +782,10 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         signal: "task asks to reply/respond/confirm to a sender but completion happens with only a draft",
         recovery: "verify the recipient and draft, then click the visible Send button",
       },
+      {
+        signal: "send was clicked but no sent/list/thread/toast feedback was checked",
+        recovery: "read the resulting page and verify concrete send feedback before calling done",
+      },
     ],
     executionContract: {
       sequencing: [
@@ -730,6 +796,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "Use read_page or read_element after drafting to verify the composed text before any send action.",
         "Avoid press_key shortcuts for sending communication.",
         "When sending was requested and the draft has been verified, use the visible Send button directly.",
+        "After the send click, prefer read_page over repeated draft inspection to verify the new state.",
       ],
       completionChecks: [
         "The reply is addressed to the correct recipient or thread.",
@@ -737,6 +804,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "The reply covers requested dates, owners, deliverables, agenda items, or constraints.",
         "No unsupported facts or commitments were introduced.",
         "The final state is sent when reply/respond/confirm/send was requested; otherwise the draft remains visible.",
+        "A sent/list/thread/toast/composer-cleared feedback state is visible after send.",
       ],
       failureRecovery: [
         "If recipient or send permission is uncertain, do not send; clarify or leave a draft.",
@@ -753,6 +821,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "5. Preserve responsibilities and constraints exactly; do not assign owners, deadlines, or next steps that are not grounded.",
       "6. Re-read the composer content and visible target before posting.",
       "7. Post only when the target thread and audience are verified.",
+      "8. After posting, re-ground and verify feedback such as the new message in the thread, composer clearing, list update, or a visible toast.",
     ].join("\n"),
     requiredEvidence: [
       "Thread or conversation context was read before composing",
@@ -774,6 +843,10 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         signal: "reply changes language or formality in a way that clashes with the thread",
         recovery: "revise to match the observed thread language and tone unless the user requested a different style",
       },
+      {
+        signal: "post was clicked but no new-message, list, toast, or composer-cleared feedback was checked",
+        recovery: "read the resulting thread state and verify the post landed before calling done",
+      },
     ],
     executionContract: {
       sequencing: [
@@ -784,12 +857,14 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "Use read_page or read_element after composing to verify the active target and message text.",
         "Avoid coordinate clicks and send shortcuts when posting communication.",
         "When sending was requested and the draft has been verified, use the visible Send/Post button directly instead of Enter or coordinate clicks.",
+        "After posting, prefer read_page over repeated composer inspection to verify the new state.",
       ],
       completionChecks: [
         "The reply is in the correct thread, channel, or recipient context.",
         "The reply matches the conversation's language, tone, and audience.",
         "The reply preserves owners, deadlines, deliverables, blockers, and open questions.",
         "No unsupported promises or decisions were introduced.",
+        "A new-message, list-update, toast, or composer-cleared feedback state is visible after posting.",
       ],
       failureRecovery: [
         "If the target thread is uncertain, do not post; re-ground or clarify.",
@@ -802,10 +877,11 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "1. Read the ticket or case context before changing anything: requester, issue, customer impact, account context, current status, priority, and existing activity.",
       "2. Extract the requested record changes, such as status, priority, assignee, category, tags, escalation, and internal note content.",
       "3. If escalation is requested, use a visible escalation field when present; otherwise treat priority as the escalation-equivalent field and set it to Urgent when the impact supports escalation.",
-      "4. Update only fields that are requested or directly supported by visible ticket context.",
-      "5. Add an internal note grounded in the issue, impact, account context, and next step when those details are available.",
-      "6. Save or submit changes using the page's normal controls.",
-      "7. Re-read the ticket state after saving and verify field values and note visibility.",
+      "4. For native selects, use select_option directly. For custom dropdowns, click to reveal options, click the exact option, then re-read the field label/value before moving on.",
+      "5. Update only fields that are requested or directly supported by visible ticket context.",
+      "6. Add an internal note grounded in the issue, impact, account context, and next step when those details are available.",
+      "7. Save or submit changes using the page's normal controls.",
+      "8. Re-read the ticket state after saving and verify field values and note visibility.",
     ].join("\n"),
     requiredEvidence: [
       "Ticket context and current properties were read before mutation",
@@ -828,6 +904,10 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         recovery: "look for escalation, priority, severity, or SLA fields; if priority is the available control, set it to Urgent when justified by customer impact",
       },
       {
+        signal: "status or priority dropdown was opened but the selected value was not verified",
+        recovery: "re-read the field label/value after choosing the option and before saving",
+      },
+      {
         signal: "unrequested ticket fields are modified",
         recovery: "restore unrelated fields when possible and limit changes to the requested scope",
       },
@@ -838,6 +918,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       ],
       toolDiscipline: [
         "Use read_page or read_element before and after field mutations.",
+        "Prefer select_option for native selects; use click_element for custom dropdowns only after the option list is visible.",
         "Use update_notes for the intended field and note checklist when multiple fields are involved.",
         "Avoid done until both field state and note state have been checked after save.",
       ],
@@ -861,12 +942,14 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "5. Stay on the current form unless the page itself shows that login or authentication is required.",
       "6. Fill fields one by one without submitting early.",
       "7. Re-check required fields and validation messages before submission.",
-      "8. Submit only when all requested values are present and no obvious validation blocker remains.",
+      "8. For product configurators or option forms, re-read the derived total, price, or summary after option changes before submission or completion.",
+      "9. Submit only when all requested values are present and no obvious validation blocker remains.",
     ].join("\n"),
     requiredEvidence: [
       "Field mapping for requested values",
       "Visible form state before submission",
       "Post-submit success or validation state",
+      "Derived price, total, or summary state for configurator-style forms",
     ],
     commonFailures: [
       {
@@ -887,9 +970,11 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       toolDiscipline: [
         "Use get_profile_fields for exact saved-profile values when the task calls for them.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
+        "For configurators, use read_page after option changes to verify the derived total or summary.",
       ],
       completionChecks: [
         "All requested values are visibly present in the intended fields.",
+        "Any derived total, price, or summary reflects the selected options when relevant.",
         "No obvious validation blocker remains before submit.",
         "After submit, either a success state or a concrete validation state is visible.",
       ],
@@ -1174,9 +1259,9 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "1. Read the visible table or list page and identify the pagination state: visible row range, total rows, current page, page count, and next/previous controls when present.",
       "2. Extract the aggregate-relevant value from every visible row on the current page and record the current best candidate with the row identity and value.",
       "3. Update notes with compact scan state: seen row ranges or page numbers, total rows or pages when known, current best candidate, and the next missing range or page.",
-      "4. Move sequentially with the page's visible Next control to cover missing rows. Use Previous only when you intentionally need to recover a missed earlier page.",
+      "4. Move sequentially with the page's visible Next control or the next visible page-number button to cover missing rows. Use Previous only when you intentionally need to recover a missed earlier page.",
       "5. After each page change, re-read the page once, merge the visible rows into the scan state, and update notes before moving again.",
-      "6. Do not inspect pagination buttons with read_element, and do not click page-number buttons such as 1 or 10 when Next can continue the current scan; page numbers can collide with table cells or jump past unscanned rows.",
+      "6. Do not inspect pagination buttons with read_element, and do not jump to non-sequential page-number buttons such as 1 or 10 during normal scans; use only the next missing page number when Next is absent or fails to advance.",
       "7. Do not call done until the notes prove exhaustive coverage of the requested data scope and the final answer is tied to the strongest observed row evidence.",
     ].join("\n"),
     requiredEvidence: [
@@ -1192,7 +1277,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       },
       {
         signal: "using find_element to search for a page number or value in a paginated table",
-        recovery: "use the visible Next control and sequential coverage instead",
+        recovery: "use the visible Next control or the next sequential page-number button and update notes with the covered range",
       },
       {
         signal: "losing the current best candidate after a replan or page change",
@@ -1207,8 +1292,8 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       ],
       toolDiscipline: [
         "Prefer read_page for each page of rows.",
-        "Prefer click_element on the visible Next control for forward scans.",
-        "Avoid read_element, find_element, scroll_page, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and page-number jumps during normal table scans.",
+        "Prefer click_element on the visible Next control or next sequential page-number button for forward scans.",
+        "Avoid read_element, find_element, scroll_page, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and non-sequential page-number jumps during normal table scans.",
       ],
       completionChecks: [
         "Seen ranges or pages cover the table total when the total is visible.",
@@ -1216,20 +1301,72 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "The final answer includes the winning row identity and aggregate value.",
       ],
       failureRecovery: [
-        "If a page change does not advance the visible range, re-read once and then use the next forward pagination control instead of reversing or jumping.",
+        "If a page change does not advance the visible range, re-read once and then switch between Next and the next sequential page-number button instead of reversing or jumping.",
         "If pagination state is uncertain, update notes with the uncertainty and re-ground instead of answering.",
+      ],
+    },
+  },
+  "paginated-record-lookup": {
+    procedureMarkdown: [
+      "1. Read the current data surface and identify the target record identity plus the requested field or fact.",
+      "2. Prefer a visible search, filter, or table search input for named records, IDs, post numbers, tickets, or employee names.",
+      "3. If search/filter is available, enter the exact target text and re-read the results before opening or extracting anything.",
+      "4. If no search/filter exists, paginate sequentially with the visible Next control and update notes with searched page numbers, ranges, or result counts.",
+      "5. Stop only when the exact target row/item is visible, then extract the requested field from that same row or its detail view.",
+      "6. If the target is not found after all visible pages/ranges are covered, report that directly instead of using a near match.",
+      "7. Do not switch to aggregate scanning unless the user asks for highest, lowest, largest, smallest, or another all-row aggregate.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Target record identity and requested field or fact",
+      "Search/filter attempt or searched pagination ranges",
+      "Exact target row or item identity before extraction",
+      "Extracted field tied to the verified target record",
+    ],
+    commonFailures: [
+      {
+        signal: "answering from a similar row without verifying the exact target identity",
+        recovery: "re-read the visible row labels and continue searching until the exact target is visible",
+      },
+      {
+        signal: "clicking page numbers or pagination controls repeatedly without tracking coverage",
+        recovery: "use the visible Next control sequentially and update notes with searched ranges",
+      },
+      {
+        signal: "manual pagination begins while a search/filter box is visible",
+        recovery: "use the search/filter control first for the exact target text",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Identify the target, search/filter if available, otherwise paginate sequentially, then extract from the verified row.",
+        "Track searched pages or ranges in notes before moving past them.",
+      ],
+      toolDiscipline: [
+        "Prefer read_page for result state and find_element/type_text for visible search controls.",
+        "Prefer click_element on the visible Next control when manual pagination is required.",
+        "Avoid read_element, scroll_page, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and early done during normal lookup.",
+      ],
+      completionChecks: [
+        "The target identity is visible and exact before the answer is produced.",
+        "The requested field or fact is read from the target record, not from a neighboring row.",
+        "If not found, searched ranges or result state explain why.",
+      ],
+      failureRecovery: [
+        "If pagination does not advance, re-read once, then use the next available forward control or report uncertainty after coverage is exhausted.",
+        "If search results are empty, clear or adjust only the target text once before falling back to sequential pagination.",
       ],
     },
   },
   "list-detail-review-loop": {
     procedureMarkdown: [
-      "1. Start on the visible list page and identify the next requested item in sequence.",
-      "2. If the list already shows a tagged action such as View Details or Open, click it directly instead of reading button attributes or re-finding it.",
-      "3. Once the detail view is open, use one read_page call to capture the requested facts from the detail page.",
-      "4. Store only the essential facts in notes before returning. For fit or recommendation tasks, include the item name plus the facts that affect the ranking.",
-      "5. Return to the list with the page's own back, return, or listings control, then verify the list is visible again.",
-      "6. Continue immediately with the next requested list item instead of re-reading the whole list page when the next tagged action is already visible.",
-      "7. Call done only after every requested item in the loop has been reviewed, the list has been restored for the final time, and any requested recommendation is grounded in the captured notes.",
+      "1. Start on the visible list page and enumerate the requested review set once: item names, order, and the action that opens each detail view.",
+      "2. Store the compact review checklist in notes before opening details, including which items are pending and which are reviewed.",
+      "3. Open the next pending item directly. If the list already shows a tagged action such as View Details or Open, click it instead of reading button attributes or re-finding it.",
+      "4. Once the detail view is open, use one read_page call to capture the requested facts from the detail page.",
+      "5. Store only the essential facts in notes before returning. For fit or recommendation tasks, include the item name plus the facts that affect the ranking.",
+      "6. Return to the list with the page's own back, return, or listings control, then verify the list is visible again.",
+      "7. Continue with the next pending item from the checklist; do not reopen items already marked reviewed.",
+      "8. Call done only after every requested item in the loop has been reviewed, the list has been restored for the final time, and any requested recommendation is grounded in the captured notes.",
     ].join("\n"),
     requiredEvidence: [
       "The requested list items were opened from the list view",
@@ -1251,20 +1388,27 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         signal: "re-reading the full list page between every item without using the visible next action",
         recovery: "continue directly to the next tagged list action when the list is already visible",
       },
+      {
+        signal: "the same list item is opened more than once without new user intent",
+        recovery: "restore the checklist from notes and move to the next pending item",
+      },
     ],
     executionContract: {
       sequencing: [
         "Open the next list item, read the detail page once, store the required fact, return to the list, then continue to the next item.",
         "For recommendation tasks, repeat the loop across the visible candidate set before synthesizing the final answer.",
+        "Maintain reviewed and pending item names in notes so coverage is explicit.",
       ],
       toolDiscipline: [
         "Prefer click_element over read_element for visible list-entry actions.",
         "Prefer the list's own back or return control over browser-history go_back when returning from a detail view.",
         "Use update_notes only for compact extracted facts, not for rephrasing the whole page.",
+        "Avoid re-reading already reviewed details unless the prior evidence is missing or contradictory.",
       ],
       completionChecks: [
         "Each requested item in the current loop segment has been opened and reviewed.",
         "The list page is visible again before the step is considered complete.",
+        "The notes identify which items were reviewed and which item-level facts support the answer.",
         "Recommendations are based on reviewed item facts rather than list-page guesses.",
       ],
       failureRecovery: [
@@ -1276,9 +1420,9 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
 };
 
 const comparePattern =
-  /\b(compare|based on both|across both|which (?:is|looks) strongest|highest on page|last page|both tabs?|overview|reports?)\b/i;
+  /\b(compare|based on both|across both|both tabs?|two tabs?|multiple tabs?|two pages?|multiple pages?|support dashboard.*marketing dashboard|marketing dashboard.*support dashboard)\b/i;
 const hoverRevealPattern =
-  /\b(hover|hover over|tooltip|flyout|dropdown|drop-down|reveal menu|products menu|under the .* menu)\b/i;
+  /\b(hover|hover over|tooltip|flyout|reveal menu|products menu|under the .* menu)\b/i;
 const budgetPattern =
   /\b(turn budget|remaining turns|max turns|max_turns|turn limit|budget exhaustion|conservation mode)\b/i;
 const continuationPattern =
@@ -1301,6 +1445,8 @@ const crmTicketPattern =
   /\b(?:crm|support\s+ticket|ticket|case|incident)\b[\s\S]{0,140}\b(?:status|priority|assignee|category|tag|triage|escalat\w*|internal note|comment|customer impact|account context|next step|update)\b|\b(?:set|update|triage|escalat\w*|add)\b[\s\S]{0,140}\b(?:support\s+ticket|ticket|case|incident|internal note)\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
+const configuratorPattern =
+  /\b(configure|configurator|pick|choose|select|enable|disable)\b[\s\S]{0,120}\b(size|option|engraving|color|variant|total price|total|price|summary)\b/i;
 const profileFieldPattern =
   /\b(saved profile|profile field|profile data|identity\.(?:first_name|last_name|email)|full name|email address)\b/i;
 const transactionPattern =
@@ -1316,9 +1462,11 @@ const listReviewSurfacePattern =
 const listRecommendationIntentPattern =
   /\b(review|evaluate|compare|recommend|rank|shortlist|best matches?|best fit|which (?:ones|jobs|listings)|matches? (?:for|to)|fit (?:my|the|this) profile|why)\b/i;
 const paginatedDataSurfacePattern =
-  /\b(paginated|pagination|page\s+\d+\s+of\s+\d+|showing\s+\d+\s*(?:-|to|\u2012|\u2013|\u2014)\s*\d+\s+of\s+\d+|per\s+page|next\s+page|previous\s+page|table|directory|records?|rows?|employees?|items?|results?|data-table)\b/i;
+  /\b(paginated|pagination|page\s+\d+\s+of\s+\d+|showing\s+\d+\s*(?:-|to|\u2012|\u2013|\u2014)\s*\d+\s+of\s+\d+|per\s+page|next\s+page|previous\s+page|table|directory|records?|rows?|employees?|items?|results?|data-table|feed)\b/i;
 const tableAggregateIntentPattern =
   /\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b[\s\S]{0,120}\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b|\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b[\s\S]{0,120}\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b/i;
+const paginatedRecordLookupIntentPattern =
+  /\b(find|search for|look up|locate|open|review)\b[\s\S]{0,120}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|post\s+#?\d+|record|row|ticket|employee|item)\b|\b(?:salary|status|priority|code|amount|email|owner|count)\b[\s\S]{0,120}\b(?:for|of)\b[\s\S]{0,80}\b(?:#[0-9]+|[A-Z]+-\d+|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i;
 const procurementLoopPattern =
   /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
 const naturalProcurementChecklistPattern =
@@ -1521,6 +1669,31 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.GO_BACK,
       ToolName.READ_ELEMENT,
       ToolName.FIND_ELEMENT,
+      ToolName.TYPE_TEXT,
+      ToolName.PRESS_KEY,
+      ToolName.SELECT_OPTION,
+      ToolName.SET_CHECKBOX,
+      ToolName.SCROLL_PAGE,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.EXECUTE_JS,
+      ToolName.CLICK_COORDINATES,
+      ToolName.CREATE_TAB,
+      ToolName.LIST_TABS,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "paginated-record-lookup": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.GO_BACK,
+      ToolName.READ_ELEMENT,
       ToolName.SCROLL_PAGE,
       ToolName.INSPECT_HIDDEN,
       ToolName.XRAY_PAGE,
@@ -1621,20 +1794,25 @@ export function selectPrimarySkill(input: {
     continuationPattern.test(corpus) &&
     continuationArtifactPattern.test(corpus) &&
     continuationRevisionPattern.test(corpus) &&
-    !gridEditPattern.test(stepCorpus);
+    !gridEditPattern.test(stepCorpus) &&
+    !crmTicketPattern.test(corpus);
   const currentStepLooksLikeFormFill =
-    formPattern.test(stepCorpus) &&
-    /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
-      stepCorpus,
-    );
+    (formPattern.test(stepCorpus) &&
+      /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
+        stepCorpus,
+      )) ||
+    configuratorPattern.test(stepCorpus);
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
 
-  if (budgetPattern.test(corpus)) {
+  if (
+    paginatedDataSurfacePattern.test(corpus) &&
+    tableAggregateIntentPattern.test(corpus)
+  ) {
     return {
-      id: "budget-aware-execution",
+      id: "paginated-table-scan",
       reason:
-        "Task context explicitly calls for conserving remaining turns and avoiding blind retries.",
+        "Task asks for an aggregate value from a table, directory, or paginated data surface and needs exhaustive row coverage before answering.",
     };
   }
 
@@ -1705,7 +1883,8 @@ export function selectPrimarySkill(input: {
   if (
     continuationPattern.test(corpus) &&
     continuationArtifactPattern.test(corpus) &&
-    !gridEditPattern.test(stepCorpus)
+    !gridEditPattern.test(stepCorpus) &&
+    !crmTicketPattern.test(corpus)
   ) {
     return {
       id: "continuation-edit",
@@ -1728,14 +1907,11 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (
-    paginatedDataSurfacePattern.test(corpus) &&
-    tableAggregateIntentPattern.test(corpus)
-  ) {
+  if (budgetPattern.test(corpus)) {
     return {
-      id: "paginated-table-scan",
+      id: "budget-aware-execution",
       reason:
-        "Task asks for an aggregate value from a table, directory, or paginated data surface and needs exhaustive row coverage before answering.",
+        "Task context explicitly calls for conserving remaining turns and avoiding blind retries.",
     };
   }
 
@@ -1759,6 +1935,17 @@ export function selectPrimarySkill(input: {
     };
   }
 
+  if (
+    paginatedDataSurfacePattern.test(corpus) &&
+    paginatedRecordLookupIntentPattern.test(corpus)
+  ) {
+    return {
+      id: "paginated-record-lookup",
+      reason:
+        "Task asks for a specific record or item from a paginated, searchable, or list-like data surface and should verify the exact target before extracting the requested field.",
+    };
+  }
+
   if (comparePattern.test(corpus)) {
     return {
       id: "cross-tab-compare",
@@ -1774,6 +1961,14 @@ export function selectPrimarySkill(input: {
       id: "navigate-read-return",
       reason:
         "Task requires navigating to a target page, extracting information, and returning.",
+    };
+  }
+
+  if (configuratorPattern.test(stepCorpus)) {
+    return {
+      id: "structured-form-fill",
+      reason:
+        "Current step configures product options and must verify the derived total or summary before completion.",
     };
   }
 

@@ -133,6 +133,28 @@ describe("programmaticVerify", () => {
     expect(result!.failureType).toBe("transient");
   });
 
+  test("does not retry completed read-only summaries just because page content mentions errors", () => {
+    const result = programmaticVerify({
+      output:
+        "TICKET-4271 has been read and analyzed. The issue is that CSV export fails with a Request Timeout error after 30 seconds. Status is Open and priority is High.",
+      objective: "Read and analyze TICKET-4271 to determine if escalation is needed",
+      successCriteria:
+        "Ticket details visible including title CSV Export Timeout, description, current status, and priority level",
+      evidence: [
+        {
+          claim:
+            "TICKET-4271 details were read: CSV Export Timeout, status Open, priority High.",
+          basis: "tool_output",
+          confidence: 1,
+        },
+      ],
+      previousUrl: "https://example.com/support-ticket",
+      currentUrl: "https://example.com/support-ticket",
+      executorOutcome: "completed",
+    });
+    expect(result?.decision).not.toBe("retry");
+  });
+
   test("returns accept for success + URL change", () => {
     const result = programmaticVerify({
       output: "Successfully completed the checkout process",

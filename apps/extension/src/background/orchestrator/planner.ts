@@ -127,6 +127,7 @@ interface DecompositionStep {
 }
 
 const PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 
 function unionTools(groups: TaskNode[]): ToolName[] {
   const tools: ToolName[] = [];
@@ -237,6 +238,76 @@ function collapseAllProcurementLoopNodes(
   ];
 }
 
+function isSkillOwnedPaginatedAggregateScan(
+  query: string,
+  nodes: TaskNode[],
+): boolean {
+  if (nodes.length < 2) return false;
+  if (
+    !nodes.every(
+      (node) => node.selectedSkillId === PAGINATED_TABLE_SCAN_SKILL_ID,
+    )
+  ) {
+    return false;
+  }
+
+  const corpus = compactText(
+    [
+      query,
+      ...nodes.flatMap((node) => [node.description, node.successCriteria]),
+    ].join(" "),
+  );
+  const hasAggregateIntent =
+    /\b(?:highest|lowest|largest|smallest|max(?:imum)?|min(?:imum)?|most|least|top|best)\b/i.test(
+      corpus,
+    );
+  const hasPaginatedDataSurface =
+    /\b(?:paginated|pagination|page\s+\d+|all\s+pages?|next\s+page|previous\s+page|table|directory|data\s+table|rows?)\b/i.test(
+      corpus,
+    );
+  const hasValueExtraction =
+    /\b(?:salary|price|amount|value|count|score|total|metric|number)\b/i.test(
+      corpus,
+    );
+
+  return hasAggregateIntent && hasPaginatedDataSurface && hasValueExtraction;
+}
+
+function collapsePaginatedAggregateScanNodes(
+  query: string,
+  nodes: TaskNode[],
+): TaskNode[] {
+  const firstNode = nodes[0];
+  return [
+    {
+      ...firstNode,
+      description: compactText(
+        `Scan the full paginated data surface for the original request and answer it: ${query}`,
+      ),
+      successCriteria: compactText(
+        [
+          "All pages or visible row ranges in scope are covered before answering.",
+          "The final answer identifies the requested aggregate row or record with the relevant value.",
+          ...nodes.map((node) => node.successCriteria),
+        ].join(" "),
+      ),
+      allowedTools: unionTools(nodes),
+      dependencies: [...firstNode.dependencies],
+      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      verificationGate:
+        nodes
+          .slice()
+          .reverse()
+          .find((node) => node.verificationGate)?.verificationGate,
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    },
+  ];
+}
+
 function collapseProcurementLoopNodes(
   nodes: TaskNode[],
   query: string,
@@ -309,6 +380,15 @@ function collapseProcurementLoopNodes(
   }
 
   return collapsed;
+}
+
+function collapsePaginatedTableScanNodes(
+  nodes: TaskNode[],
+  query: string,
+): TaskNode[] {
+  return isSkillOwnedPaginatedAggregateScan(query, nodes)
+    ? collapsePaginatedAggregateScanNodes(query, nodes)
+    : nodes;
 }
 
 function compactText(value: string): string {
@@ -609,6 +689,16 @@ export class OrchestratorPlanner {
       );
     }
 
+    const collapsedPaginatedNodes = collapsePaginatedTableScanNodes(nodes, query);
+    if (collapsedPaginatedNodes !== nodes) {
+      nodes = collapsedPaginatedNodes;
+      logger.info(
+        "orchestrator",
+        "Collapsed paginated aggregate steps into skill-owned scan node",
+        { count: nodes.length },
+      );
+    }
+
     logger.info("orchestrator", "Planner generated nodes", {
       count: nodes.length,
     });
@@ -655,6 +745,21 @@ export class OrchestratorPlanner {
         pageTitle,
         pageUrl,
       });
+      const explicitDependencies = (step.dependencies || [])
+        .filter(
+          (depIndex) =>
+            Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
+        )
+        .map((depIndex) => nodeIds[depIndex]);
+      const dependencies =
+        explicitDependencies.length > 0
+          ? [
+              ...(index === 0 ? node.dependencies : []),
+              ...explicitDependencies,
+            ]
+          : index === 0
+            ? [...node.dependencies]
+            : [nodeIds[index - 1]];
       return {
         ...(selection
           ? {
@@ -669,15 +774,7 @@ export class OrchestratorPlanner {
         step.successCriteria ||
         `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
       allowedTools: [...node.allowedTools],
-      dependencies: [
-        ...(index === 0 ? node.dependencies : []),
-        ...(step.dependencies || [])
-          .filter(
-            (depIndex) =>
-              Number.isInteger(depIndex) && depIndex >= 0 && depIndex < index,
-          )
-          .map((depIndex) => nodeIds[depIndex]),
-      ],
+      dependencies,
       assumptions: step.assumptions || [],
       handoffArtifacts: [
         {

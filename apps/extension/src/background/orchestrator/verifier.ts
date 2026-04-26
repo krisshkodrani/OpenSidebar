@@ -252,8 +252,15 @@ export function programmaticVerify(
       (e) => e.basis === "tool_output" && e.confidence >= 0.8,
     );
 
-  // Error keywords + no evidence of DOM change → retry
-  if (hasErrorMarker && !domChanged && !hasSuccessMarker) {
+  // Error keywords + no evidence of DOM change → retry. When the executor
+  // explicitly completed, the "error" text may be quoted page content from a
+  // read-only task, so leave that case to success/evidence checks or the LLM.
+  if (
+    input.executorOutcome !== "completed" &&
+    hasErrorMarker &&
+    !domChanged &&
+    !hasSuccessMarker
+  ) {
     return {
       decision: "retry",
       reason: "Output indicates errors with no evidence of DOM change.",

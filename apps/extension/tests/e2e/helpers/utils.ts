@@ -109,6 +109,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           g.__agentEvents.push({
             type: t,
             status: message?.payload?.status,
+            completionStatus: message?.payload?.completionStatus,
             detail: message?.payload?.detail,
             stepLabel: message?.payload?.step?.label,
             stepDetail: message?.payload?.step?.detail,
@@ -890,6 +891,19 @@ export async function waitForTaskCompletion(
       .reverse()
       .find((event: any) => event.type === "AGENT_STATUS");
     if (lastStatus?.status === "IDLE") {
+      if (lastStatus.completionStatus === "completed") {
+        return { ok: true, reason: "completed", events };
+      }
+      if (lastStatus.completionStatus === "partial") {
+        return { ok: false, reason: "task_partial", events };
+      }
+      if (lastStatus.completionStatus === "failed") {
+        return {
+          ok: false,
+          reason: `task_failed:${lastStatus.detail || "unknown"}`,
+          events,
+        };
+      }
       if (getLatestTaskCompletionState(events) === "partial") {
         return { ok: false, reason: "task_partial", events };
       }

@@ -50,6 +50,8 @@ export function collapseNearIdentical(elements: Element[]): {
 
   /** Strip trailing digits/numbers to normalize text for grouping */
   function normalizeText(text: string): string {
+    const trimmed = text.trim();
+    if (/^\d+$/.test(trimmed)) return trimmed;
     return text
       .replace(/\s*\d+\s*$/, "")
       .trim()
