@@ -459,6 +459,45 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
+    id: "paginated-table-scan",
+    name: "Paginated Table Scan",
+    description:
+      "Scan a paginated table or data list exhaustively before answering aggregate questions such as highest, lowest, largest, or smallest value.",
+    tags: ["workflow", "pagination", "table", "aggregate", "scan"],
+    triggers: [
+      "highest value in a paginated table",
+      "lowest amount across all pages",
+      "scan all table rows before answering",
+      "showing rows X-Y of Z",
+      "page through a directory or records table",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "click_element",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "find_element",
+      "read_element",
+      "scroll_page",
+      "inspect_hidden",
+      "xray_page",
+      "execute_js",
+      "click_coordinates",
+      "create_tab",
+      "list_tabs",
+      "done",
+    ],
+    memoryScope: "workspace",
+    verifierMode: "hybrid",
+    notes: [
+      "A visible page is only a sample unless the pagination range proves it is the whole dataset.",
+      "Track seen ranges and the current best candidate in notes after each page.",
+      "Use the visible Next control for forward coverage. Do not inspect or click page-number buttons when Next can continue the scan.",
+    ],
+  },
+  {
     id: "list-detail-review-loop",
     name: "List Detail Review Loop",
     description:
@@ -1130,6 +1169,58 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       ],
     },
   },
+  "paginated-table-scan": {
+    procedureMarkdown: [
+      "1. Read the visible table or list page and identify the pagination state: visible row range, total rows, current page, page count, and next/previous controls when present.",
+      "2. Extract the aggregate-relevant value from every visible row on the current page and record the current best candidate with the row identity and value.",
+      "3. Update notes with compact scan state: seen row ranges or page numbers, total rows or pages when known, current best candidate, and the next missing range or page.",
+      "4. Move sequentially with the page's visible Next control to cover missing rows. Use Previous only when you intentionally need to recover a missed earlier page.",
+      "5. After each page change, re-read the page once, merge the visible rows into the scan state, and update notes before moving again.",
+      "6. Do not inspect pagination buttons with read_element, and do not click page-number buttons such as 1 or 10 when Next can continue the current scan; page numbers can collide with table cells or jump past unscanned rows.",
+      "7. Do not call done until the notes prove exhaustive coverage of the requested data scope and the final answer is tied to the strongest observed row evidence.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Pagination range or page-count evidence for the table or list",
+      "Rows or pages already scanned",
+      "Current aggregate candidate with row identity and value",
+      "Evidence that all rows or pages in scope were covered before the final answer",
+    ],
+    commonFailures: [
+      {
+        signal: "answering from the first visible page when pagination shows more rows exist",
+        recovery: "reject the answer, update notes with the visible range, and continue to the next unscanned page",
+      },
+      {
+        signal: "using find_element to search for a page number or value in a paginated table",
+        recovery: "use the visible Next control and sequential coverage instead",
+      },
+      {
+        signal: "losing the current best candidate after a replan or page change",
+        recovery: "restore the candidate and seen ranges from notes before continuing the scan",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Read page, extract visible row values, update notes, then paginate to the next missing range.",
+        "Keep a single compact aggregate record in notes across every page transition.",
+        "Synthesize the final answer only after coverage is exhaustive.",
+      ],
+      toolDiscipline: [
+        "Prefer read_page for each page of rows.",
+        "Prefer click_element on the visible Next control for forward scans.",
+        "Avoid read_element, find_element, scroll_page, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and page-number jumps during normal table scans.",
+      ],
+      completionChecks: [
+        "Seen ranges or pages cover the table total when the total is visible.",
+        "If the total is not visible, both start and end boundaries are verified by disabled or absent previous/next controls.",
+        "The final answer includes the winning row identity and aggregate value.",
+      ],
+      failureRecovery: [
+        "If a page change does not advance the visible range, re-read once and then use the next forward pagination control instead of reversing or jumping.",
+        "If pagination state is uncertain, update notes with the uncertainty and re-ground instead of answering.",
+      ],
+    },
+  },
   "list-detail-review-loop": {
     procedureMarkdown: [
       "1. Start on the visible list page and identify the next requested item in sequence.",
@@ -1224,6 +1315,10 @@ const listReviewSurfacePattern =
   /\b(job board|job listings?|job postings?|jobs\b|listings?|results page|search results|candidate list)\b/i;
 const listRecommendationIntentPattern =
   /\b(review|evaluate|compare|recommend|rank|shortlist|best matches?|best fit|which (?:ones|jobs|listings)|matches? (?:for|to)|fit (?:my|the|this) profile|why)\b/i;
+const paginatedDataSurfacePattern =
+  /\b(paginated|pagination|page\s+\d+\s+of\s+\d+|showing\s+\d+\s*(?:-|to|\u2012|\u2013|\u2014)\s*\d+\s+of\s+\d+|per\s+page|next\s+page|previous\s+page|table|directory|records?|rows?|employees?|items?|results?|data-table)\b/i;
+const tableAggregateIntentPattern =
+  /\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b[\s\S]{0,120}\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b|\b(salar(?:y|ies)|pay|compensation|price|cost|amount|revenue|budget|value|total|score)\b[\s\S]{0,120}\b(highest|max(?:imum)?|largest|most|lowest|min(?:imum)?|smallest|least)\b/i;
 const procurementLoopPattern =
   /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
 const naturalProcurementChecklistPattern =
@@ -1411,6 +1506,28 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.INSPECT_HIDDEN,
       ToolName.XRAY_PAGE,
       ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.SCHEDULE_TASK,
+    ],
+  },
+  "paginated-table-scan": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.GO_BACK,
+      ToolName.READ_ELEMENT,
+      ToolName.FIND_ELEMENT,
+      ToolName.SCROLL_PAGE,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.EXECUTE_JS,
+      ToolName.CLICK_COORDINATES,
+      ToolName.CREATE_TAB,
+      ToolName.LIST_TABS,
     ],
     exemptTools: [
       ToolName.DONE,
@@ -1608,6 +1725,17 @@ export function selectPrimarySkill(input: {
       id: "multi-tab-procurement-loop",
       reason:
         "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.",
+    };
+  }
+
+  if (
+    paginatedDataSurfacePattern.test(corpus) &&
+    tableAggregateIntentPattern.test(corpus)
+  ) {
+    return {
+      id: "paginated-table-scan",
+      reason:
+        "Task asks for an aggregate value from a table, directory, or paginated data surface and needs exhaustive row coverage before answering.",
     };
   }
 

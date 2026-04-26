@@ -68,7 +68,11 @@ import {
     buildFallbackNodes,
     OrchestratorPlanner,
 } from "../../src/background/orchestrator/planner";
-import { selectPrimarySkill } from "../../src/background/orchestrator/skills";
+import {
+    getSkillToolPolicy,
+    getSkillToolSuppressionPolicy,
+    selectPrimarySkill,
+} from "../../src/background/orchestrator/skills";
 
 // ═══════════════════════════════════════════════════════════
 // TaskPlanner unit tests
@@ -1444,6 +1448,49 @@ describe("selectPrimarySkill", () => {
                 objective:
                     "Read all job listings on the TechJobs Board page, analyze each against the user's profile, and report the best matches with reasoning",
                 successCriteria: "Best job recommendations are grounded in reviewed listing details",
+                pageTitle: "TechJobs Board",
+                pageUrl: "https://example.com/job-board",
+            })?.id,
+        ).toBe("list-detail-review-loop");
+    });
+
+    test("matches paginated aggregate table scans", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Review the employee directory and tell me which employee has the highest salary and what that salary is.",
+                objective:
+                    "Read the employee directory table and identify the employee with the highest salary",
+                successCriteria:
+                    "Final answer names the employee with the highest salary after covering all rows in the table",
+                pageTitle: "Employee Directory",
+                pageUrl: "https://example.com/data-table",
+            })?.id,
+        ).toBe("paginated-table-scan");
+    });
+
+    test("keeps paginated aggregate scans on read and forward-click tools", () => {
+        const policy = getSkillToolPolicy("paginated-table-scan");
+        const suppression = getSkillToolSuppressionPolicy("paginated-table-scan");
+
+        expect(policy?.preferredTools).toContain(ToolName.READ_PAGE);
+        expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(policy?.discouragedTools).toContain(ToolName.READ_ELEMENT);
+        expect(policy?.discouragedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.READ_ELEMENT);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
+    });
+
+    test("keeps recommendation list reviews out of paginated aggregate scans", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "I'm a senior frontend engineer looking for a fully remote position in the $120K-$160K salary range. Review the job listings and tell me which ones are the best matches for my profile and why.",
+                objective:
+                    "Read all job listings on the TechJobs Board page, analyze each against the user's profile, and report the best matches with reasoning",
+                successCriteria:
+                    "Best job recommendations are grounded in reviewed listing details",
                 pageTitle: "TechJobs Board",
                 pageUrl: "https://example.com/job-board",
             })?.id,

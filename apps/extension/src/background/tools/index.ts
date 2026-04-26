@@ -213,62 +213,70 @@ async function clickElementInMainWorld(
   if (typeof id !== "number" && typeof id !== "string") return false;
 
   try {
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN" as any,
-      func: async (tagId: string) => {
-        const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
-        const el = document.querySelector(selector);
-        if (!(el instanceof HTMLElement)) return false;
+    const [result] = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN" as any,
+        func: async (tagId: string) => {
+          const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+          const el = document.querySelector(selector);
+          if (!(el instanceof HTMLElement)) return false;
 
-        el.scrollIntoView({ block: "center", inline: "center" });
-        const rect = el.getBoundingClientRect();
-        const clientX = rect.left + rect.width / 2;
-        const clientY = rect.top + rect.height / 2;
-        const mouseInit: MouseEventInit = {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          view: window,
-          clientX,
-          clientY,
-          button: 0,
-        };
-        const pointerInit: PointerEventInit = {
-          ...mouseInit,
-          pointerId: 1,
-          pointerType: "mouse",
-          isPrimary: true,
-        };
+          el.scrollIntoView({ block: "center", inline: "center" });
+          const rect = el.getBoundingClientRect();
+          const clientX = rect.left + rect.width / 2;
+          const clientY = rect.top + rect.height / 2;
+          const mouseInit: MouseEventInit = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            view: window,
+            clientX,
+            clientY,
+            button: 0,
+          };
+          const pointerInit: PointerEventInit = {
+            ...mouseInit,
+            pointerId: 1,
+            pointerType: "mouse",
+            isPrimary: true,
+          };
 
-        try {
+          try {
+            el.dispatchEvent(
+              new PointerEvent("pointerdown", {
+                ...pointerInit,
+                buttons: 1,
+              }),
+            );
+          } catch {
+            // PointerEvent may be unavailable in older page contexts.
+          }
           el.dispatchEvent(
-            new PointerEvent("pointerdown", {
-              ...pointerInit,
-              buttons: 1,
-            }),
+            new MouseEvent("mousedown", { ...mouseInit, buttons: 1 }),
           );
-        } catch {
-          // PointerEvent may be unavailable in older page contexts.
-        }
-        el.dispatchEvent(
-          new MouseEvent("mousedown", { ...mouseInit, buttons: 1 }),
-        );
-        el.focus({ preventScroll: true });
-        try {
-          el.dispatchEvent(
-            new PointerEvent("pointerup", { ...pointerInit, buttons: 0 }),
-          );
-        } catch {
-          // PointerEvent may be unavailable in older page contexts.
-        }
-        el.dispatchEvent(new MouseEvent("mouseup", mouseInit));
-        el.click();
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        return true;
-      },
-      args: [String(id)],
-    });
+          el.focus({ preventScroll: true });
+          try {
+            el.dispatchEvent(
+              new PointerEvent("pointerup", { ...pointerInit, buttons: 0 }),
+            );
+          } catch {
+            // PointerEvent may be unavailable in older page contexts.
+          }
+          el.dispatchEvent(new MouseEvent("mouseup", mouseInit));
+          el.click();
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          return true;
+        },
+        args: [String(id)],
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Main-world click bridge timed out")),
+          2_000,
+        ),
+      ),
+    ]);
     return result?.result === true;
   } catch {
     // Best-effort: the content-script click already ran.
@@ -281,14 +289,13 @@ async function clickElementInMainWorld(
 export function registerTools() {
   toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId) => {
     const result = await executeContentTool(ToolName.CLICK_ELEMENT, args, tabId);
-    // Main-world click bridge: content script el.click() runs in the isolated
-    // world and may not trigger framework event handlers (React onClick, Vue
-    // @click, etc.) that are attached in the main world. Dispatch a follow-up
-    // click via chrome.scripting in the MAIN world using the data-os-tag bridge.
+    // Main-world click bridge is a fallback only. A successful content-script
+    // click already activates React/Vue handlers on normal pages; mirroring it
+    // here would double-submit buttons and double-advance pagination.
     const resultText = String(result);
-    if (!resultText.startsWith("Error:")) {
+    if (resultText.startsWith("Click intercepted!")) {
       const bridged = await clickElementInMainWorld(tabId, args);
-      if (bridged && resultText.startsWith("Click intercepted!")) {
+      if (bridged) {
         return `Clicked [${String(args.id)}] via main-world event bridge after content-script interception.`;
       }
     }

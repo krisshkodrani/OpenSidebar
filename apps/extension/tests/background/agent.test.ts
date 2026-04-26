@@ -1161,6 +1161,287 @@ describe("AgentLoop", () => {
     ).toBe(false);
   });
 
+  test("does not replay repeated mutations after the page snapshot changes", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Table",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "Next",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 50,
+          tagName: "td",
+          role: "cell",
+          text: "Page 1",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    (agent as any).recordMutationSensitiveAction(
+      ToolName.CLICK_ELEMENT,
+      { id: 41 },
+      'Clicked [41] button "Next"',
+    );
+
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Table",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "Next",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 50,
+          tagName: "td",
+          role: "cell",
+          text: "Page 2",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    expect(
+      (agent as any).replayMutationSensitiveAction(
+        "call-1",
+        ToolName.CLICK_ELEMENT,
+        { id: 41 },
+      ),
+    ).toBe(false);
+  });
+
+  test("does not use the after-done cache for repeated mutations after the page snapshot changes", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Table",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "Next",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 50,
+          tagName: "td",
+          role: "cell",
+          text: "Page 1",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    (agent as any).recordMutationSensitiveAction(
+      ToolName.CLICK_ELEMENT,
+      { id: 41 },
+      'Clicked [41] button "Next"',
+    );
+    (agent as any).guardAfterDoneRejection = true;
+
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Table",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "Next",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 50,
+          tagName: "td",
+          role: "cell",
+          text: "Page 2",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    expect(
+      (agent as any).replayMutationSensitiveAction(
+        "call-1",
+        ToolName.CLICK_ELEMENT,
+        { id: 41 },
+      ),
+    ).toBe(false);
+  });
+
+  test("replays repeated mutations when the page snapshot is unchanged", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Table",
+      timestamp: Date.now(),
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "Next",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any);
+
+    (agent as any).recordMutationSensitiveAction(
+      ToolName.CLICK_ELEMENT,
+      { id: 41 },
+      'Clicked [41] button "Next"',
+    );
+
+    expect(
+      (agent as any).replayMutationSensitiveAction(
+        "call-1",
+        ToolName.CLICK_ELEMENT,
+        { id: 41 },
+      ),
+    ).toBe(true);
+  });
+
+  test("preserves highest salary aggregate memory across paginated read_page results", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+
+    const firstNote = (agent as any).updateMoneyTableAggregate(`Page: Employee Directory
+
+Page content:
+#
+Name
+Email
+Department
+Salary
+1
+Alice Smith
+alice.smith@company.com
+Engineering
+$55,000
+2
+Bob Johnson
+bob.johnson@company.com
+Sales
+$56,731
+Showing 1-5 of 50`);
+
+    expect(firstNote).toContain("Bob Johnson");
+    expect(firstNote).toContain("$56,731");
+    expect(firstNote).toContain("not exhaustive");
+    expect(firstNote).toContain("Next action: click Next");
+
+    const laterNote = (agent as any).updateMoneyTableAggregate(`Page: Employee Directory
+
+Page content:
+#
+Name
+Email
+Department
+Salary
+35
+Isla Wright
+isla.wright@company.com
+Marketing
+$113,854
+Showing 31\u201335 of 50`);
+
+    expect(laterNote).toContain("Isla Wright");
+    expect(laterNote).toContain("$113,854");
+    expect(laterNote).toContain("rows read 10/50");
+    expect((agent as any).context.getWorkingNotes()).toContain("Isla Wright");
+  });
+
+  test("updates highest salary aggregate memory from the current snapshot", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+    (agent as any).context.setSnapshot({
+      url: "https://example.com/table",
+      title: "Employee Directory",
+      timestamp: Date.now(),
+      elements: [],
+      pageContent: `#
+Name
+Email
+Department
+Salary
+6
+Frank Garcia
+frank.garcia@company.com
+Operations
+$63,655
+Showing 6-10 of 50`,
+    } as any);
+
+    (agent as any).updateMoneyTableAggregateFromSnapshot();
+
+    expect((agent as any).context.getWorkingNotes()).toContain("Frank Garcia");
+    expect((agent as any).context.getWorkingNotes()).toContain("rows read 5/50");
+  });
+
   test("counts visible list-detail actions for broad review guards", () => {
     const count = countVisibleListDetailActions({
       url: "https://example.com/jobs",
