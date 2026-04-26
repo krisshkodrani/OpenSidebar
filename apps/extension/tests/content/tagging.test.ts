@@ -465,6 +465,38 @@ describe("collapseNearIdentical (WI-1 dedup)", () => {
     expect(overflow!.collapsedGroups[0]).toContain("click me");
   });
 
+  test("does not collapse numeric pagination buttons into first and last only", () => {
+    const prev = document.createElement("button");
+    prev.textContent = "Prev";
+    document.body.appendChild(prev);
+
+    for (let i = 1; i <= 10; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = String(i);
+      document.body.appendChild(btn);
+    }
+
+    const next = document.createElement("button");
+    next.textContent = "Next";
+    document.body.appendChild(next);
+
+    const tagged = tagElements();
+    const labels = tagged.map((t) => t.text);
+
+    expect(labels).toEqual(expect.arrayContaining([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+    ]));
+  });
+
   test("protects draggable + dropzone elements among many identical buttons", () => {
     // 50 identical buttons
     for (let i = 1; i <= 50; i++) {

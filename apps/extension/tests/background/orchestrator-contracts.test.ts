@@ -216,6 +216,78 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
   });
 
+  test("paginated-table-scan suppresses search and keyboard tools while keeping scan tools", () => {
+    const node = makeNode(
+      [
+        ToolName.READ_PAGE,
+        ToolName.CLICK_ELEMENT,
+        ToolName.UPDATE_NOTES,
+        ToolName.FIND_ELEMENT,
+        ToolName.TYPE_TEXT,
+        ToolName.PRESS_KEY,
+        ToolName.SELECT_OPTION,
+        ToolName.SET_CHECKBOX,
+        ToolName.READ_ELEMENT,
+        ToolName.SCROLL_PAGE,
+        ToolName.CREATE_TAB,
+        ToolName.CLICK_COORDINATES,
+      ],
+      {
+        selectedSkillId: "paginated-table-scan",
+      },
+    );
+    const contract = buildRoleExecutionContract("executor", baseSettings, node);
+
+    expect(contract.allowedTools.includes(ToolName.FIND_ELEMENT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.PRESS_KEY)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.SELECT_OPTION)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.SET_CHECKBOX)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.READ_ELEMENT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.SCROLL_PAGE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CREATE_TAB)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
+  });
+
+  test("paginated-record-lookup suppresses exploratory tools while keeping search and pagination tools", () => {
+    const node = makeNode(
+      [
+        ToolName.READ_PAGE,
+        ToolName.FIND_ELEMENT,
+        ToolName.TYPE_TEXT,
+        ToolName.CLICK_ELEMENT,
+        ToolName.READ_ELEMENT,
+        ToolName.SCROLL_PAGE,
+        ToolName.INSPECT_HIDDEN,
+        ToolName.XRAY_PAGE,
+        ToolName.CLICK_COORDINATES,
+        ToolName.CREATE_TAB,
+        ToolName.UPDATE_NOTES,
+      ],
+      {
+        selectedSkillId: "paginated-record-lookup",
+      },
+    );
+    const contract = buildRoleExecutionContract("executor", baseSettings, node);
+
+    expect(contract.allowedTools.includes(ToolName.READ_ELEMENT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.SCROLL_PAGE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.XRAY_PAGE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CREATE_TAB)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.FIND_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
+  });
+
   test("cross-tab-compare suppresses history navigation while keeping synthesis tools", () => {
     const node = makeNode(
       [

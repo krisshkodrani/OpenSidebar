@@ -207,6 +207,12 @@ export interface SkillTraceSummary {
   }>;
 }
 
+export interface RunCompletionSummary {
+  runId: string;
+  status: "completed" | "partial" | "failed";
+  summary: string;
+}
+
 export function extractDoneSummary(traceFiles: string[]): string {
   for (const filePath of traceFiles) {
     const turns = readTrace(filePath);
@@ -225,6 +231,57 @@ export function extractDoneSummary(traceFiles: string[]): string {
     }
   }
   return "";
+}
+
+export function extractLatestReadPageText(traceFiles: string[]): string {
+  let latestText = "";
+  let latestTimestamp = "";
+
+  for (const filePath of traceFiles) {
+    if (!existsSync(filePath)) continue;
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const lines = raw.trim().split("\n").filter(Boolean);
+      for (const line of lines) {
+        const entry = JSON.parse(line);
+        const timestamp = String(entry.recordedAt ?? entry.ts ?? "");
+        const candidates: string[] = [];
+
+        for (const message of entry.llmRequest?.messages ?? []) {
+          if (message?.role !== "tool") continue;
+          const content = message.content;
+          if (
+            typeof content === "string" &&
+            content.includes("Page content:")
+          ) {
+            candidates.push(content);
+          }
+        }
+
+        for (const execution of entry.toolExecutions ?? []) {
+          const result = execution?.result;
+          if (
+            execution?.toolName === "read_page" &&
+            typeof result === "string" &&
+            result.includes("Page content:")
+          ) {
+            candidates.push(result);
+          }
+        }
+
+        for (const candidate of candidates) {
+          if (!latestText || timestamp >= latestTimestamp) {
+            latestText = candidate;
+            latestTimestamp = timestamp;
+          }
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return latestText;
 }
 
 export function readTrace(filePath: string): TraceTurn[] {
@@ -284,6 +341,55 @@ export function extractRunIdFromTraceFile(filePath: string): string | null {
   } catch {
     return null;
   }
+  return null;
+}
+
+export function readRunCompletionForTraceFiles(
+  traceFiles: string[],
+): RunCompletionSummary | null {
+  for (const filePath of traceFiles) {
+    const runId = extractRunIdFromTraceFile(filePath);
+    if (!runId || !existsSync(RUN_TRACE_DIR)) continue;
+    const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+    if (!existsSync(traceFile)) continue;
+
+    try {
+      const lines = readFileSync(traceFile, "utf-8")
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+      let latestSummary = "";
+      let latestStatus: RunCompletionSummary["status"] | null = null;
+
+      for (const line of lines) {
+        const entry = JSON.parse(line) as RunTraceEventRecord;
+        if (entry.traceKind !== "orchestrator.run.event") continue;
+        if (entry.type === "node_completed") {
+          const summary = entry.data?.summary;
+          if (typeof summary === "string" && summary.trim()) {
+            latestSummary = summary;
+          }
+        }
+        if (entry.type === "task_completed") {
+          const status = entry.data?.completionStatus;
+          if (
+            status === "completed" ||
+            status === "partial" ||
+            status === "failed"
+          ) {
+            latestStatus = status;
+          }
+        }
+      }
+
+      if (latestStatus) {
+        return { runId, status: latestStatus, summary: latestSummary };
+      }
+    } catch {
+      continue;
+    }
+  }
+
   return null;
 }
 

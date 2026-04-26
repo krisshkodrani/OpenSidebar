@@ -1,8 +1,10 @@
 import type { E2EHarness } from "../helpers/harness";
 import {
   extractDoneSummary,
+  extractLatestReadPageText,
   filterTraceFilesByWorkspace,
   findAllNewTraceFiles,
+  readRunCompletionForTraceFiles,
   readTrace,
   type TraceTurn,
 } from "../helpers/diagnostics";
@@ -89,6 +91,164 @@ function includesAny(text: string, values: readonly string[]): boolean {
   return values.some((value) => text.includes(value));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type TicketValidationState = {
+  statusChanged: boolean;
+  currentStatus: string;
+  priorityChanged: boolean;
+  currentPriority: string;
+  commentsAdded: number;
+  lastComment: string;
+  lastCommentInternal: boolean;
+};
+
+function parseTicketValidationState(
+  text: string,
+): TicketValidationState | null {
+  const statusMatch = text.match(
+    /id="status-select"[\s\S]{0,300}?selected="([^"]+)"/,
+  );
+  const priorityMatch = text.match(
+    /id="priority-select"[\s\S]{0,300}?selected="([^"]+)"/,
+  );
+  if (!statusMatch || !priorityMatch) return null;
+
+  const compact = text.replace(/\s+/g, " ").trim();
+  const marker = "You (Support Agent) Internal";
+  const commentsAdded = compact.split(marker).length - 1;
+  const lastCommentSection =
+    commentsAdded > 0 ? compact.split(marker).pop() || "" : "";
+  const lastComment = lastCommentSection
+    .replace(/^\d{1,2}:\d{2}:\d{2}\s+/, "")
+    .split(" Add Comment ")[0]
+    .trim();
+
+  return {
+    statusChanged: statusMatch[1] !== "Open",
+    currentStatus: statusMatch[1],
+    priorityChanged: priorityMatch[1] !== "High",
+    currentPriority: priorityMatch[1],
+    commentsAdded,
+    lastComment,
+    lastCommentInternal: commentsAdded > 0,
+  };
+}
+
+async function readTicketValidationState(
+  page: E2EHarness["page"],
+): Promise<TicketValidationState | null> {
+  return (
+    (await page.evaluate(() => {
+      const statusSelect =
+        document.querySelector<HTMLSelectElement>("#status-select");
+      const prioritySelect =
+        document.querySelector<HTMLSelectElement>("#priority-select");
+      if (!statusSelect || !prioritySelect) return null;
+
+      const pageText = document.body.innerText.replace(/\s+/g, " ").trim();
+      const marker = "You (Support Agent) Internal";
+      const commentsAdded = pageText.split(marker).length - 1;
+      const lastCommentSection =
+        commentsAdded > 0 ? pageText.split(marker).pop() || "" : "";
+      const lastComment = lastCommentSection
+        .replace(/^\d{1,2}:\d{2}:\d{2}\s+/, "")
+        .split(" Add Comment ")[0]
+        .trim();
+
+      return {
+        statusChanged: statusSelect.value !== "Open",
+        currentStatus: statusSelect.value,
+        priorityChanged: prioritySelect.value !== "High",
+        currentPriority: prioritySelect.value,
+        commentsAdded,
+        lastComment,
+        lastCommentInternal: commentsAdded > 0,
+      };
+    })) || null
+  );
+}
+
+async function waitForTicketEscalationState(
+  context: ArenaRunContext,
+): Promise<{
+  outcomeOk: boolean;
+  reason: string;
+  result: TicketValidationState | null;
+  traceFiles: string[];
+  traceTurns: TraceTurn[];
+  doneSummary: string;
+}> {
+  const { harness, workspaceId, task } = context;
+  const start = Date.now();
+  let lastTraceFiles: string[] = [];
+  let lastTraceTurns: TraceTurn[] = [];
+  let lastDoneSummary = "";
+  let lastResult: TicketValidationState | null = null;
+
+  while (Date.now() - start < task.timeoutMs) {
+    const collected = await collectTraceData(harness, workspaceId);
+    lastTraceFiles = collected.traceFiles;
+    lastTraceTurns = collected.traceTurns;
+    lastDoneSummary = collected.doneSummary;
+
+    const pageResult = await readTicketValidationState(harness.page).catch(
+      () => null,
+    );
+    const traceResult = parseTicketValidationState(
+      extractLatestReadPageText(lastTraceFiles),
+    );
+    lastResult = pageResult ?? traceResult ?? lastResult;
+
+    const runCompletion = readRunCompletionForTraceFiles(lastTraceFiles);
+    if (lastResult && runCompletion?.status === "completed") {
+      return {
+        outcomeOk: true,
+        reason: pageResult ? "page_state" : "trace_page_state",
+        result: lastResult,
+        traceFiles: lastTraceFiles,
+        traceTurns: lastTraceTurns,
+        doneSummary: lastDoneSummary || runCompletion.summary,
+      };
+    }
+
+    if (runCompletion?.status === "partial") {
+      return {
+        outcomeOk: false,
+        reason: "task_partial",
+        result: lastResult,
+        traceFiles: lastTraceFiles,
+        traceTurns: lastTraceTurns,
+        doneSummary: lastDoneSummary || runCompletion.summary,
+      };
+    }
+
+    if (runCompletion?.status === "failed") {
+      return {
+        outcomeOk: false,
+        reason: "task_failed",
+        result: lastResult,
+        traceFiles: lastTraceFiles,
+        traceTurns: lastTraceTurns,
+        doneSummary: lastDoneSummary || runCompletion.summary,
+      };
+    }
+
+    await sleep(2_000);
+  }
+
+  return {
+    outcomeOk: false,
+    reason: "timeout",
+    result: lastResult,
+    traceFiles: lastTraceFiles,
+    traceTurns: lastTraceTurns,
+    doneSummary: lastDoneSummary,
+  };
+}
+
 async function supportTicketTriaged(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -98,9 +258,7 @@ async function supportTicketTriaged(
     harness.page,
     harness.ctx.serviceWorker,
     async () => {
-      const result = await harness.page.evaluate(
-        () => (window as any).ticketResult ?? null,
-      );
+      const result = await readTicketValidationState(harness.page);
       if (!result) return null;
       if (!result.statusChanged || result.commentsAdded < 1) return null;
       return result;
@@ -161,30 +319,10 @@ async function supportTicketTriaged(
 async function ticketEscalatedWithAccountContext(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
-  const { harness, workspaceId } = context;
+  const outcome = await waitForTicketEscalationState(context);
+  const { traceFiles, traceTurns, doneSummary } = outcome;
 
-  const outcome = await waitForOutcome(
-    harness.page,
-    harness.ctx.serviceWorker,
-    async () => {
-      const result = await harness.page.evaluate(
-        () => (window as any).ticketResult ?? null,
-      );
-      if (!result) return null;
-      if (!result.statusChanged || !result.priorityChanged) return null;
-      if (result.commentsAdded < 1) return null;
-      return result;
-    },
-    context.task.timeoutMs,
-    workspaceId,
-  );
-
-  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
-    harness,
-    workspaceId,
-  );
-
-  if (!outcome.ok) {
+  if (!outcome.outcomeOk || !outcome.result) {
     return buildResult(
       false,
       outcome.reason,
@@ -195,7 +333,7 @@ async function ticketEscalatedWithAccountContext(
     );
   }
 
-  const result = outcome.result as any;
+  const result = outcome.result;
   const comment = normalizeText(result.lastComment);
   const hasIssue = includesAny(comment, ["csv", "export", "timeout", "report"]);
   const hasAccountContext = includesAny(comment, [
@@ -426,7 +564,12 @@ async function highestSalaryAnswered(
     harness,
     workspaceId,
   );
-  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  const runCompletion = readRunCompletionForTraceFiles(traceFiles);
+  const traceCompleted = runCompletion?.status === "completed";
+  const summary = getTaskCompletionSummary(
+    outcome.events,
+    doneSummary || runCompletion?.summary || "",
+  );
   const normalized = normalizeText(summary);
   const namesHighestEmployee =
     normalized.includes("isla wright") ||
@@ -436,11 +579,18 @@ async function highestSalaryAnswered(
     normalized.includes("113854") ||
     normalized.includes("$113");
 
-  const ok = outcome.ok && namesHighestEmployee && namesSalary;
+  const completionObserved = outcome.ok || traceCompleted;
+  const ok = completionObserved && namesHighestEmployee && namesSalary;
   return buildResult(
     ok,
-    ok ? "validated" : outcome.ok ? "highest_salary_answer_incomplete" : outcome.reason,
+    ok
+      ? "validated"
+      : completionObserved
+        ? "highest_salary_answer_incomplete"
+        : outcome.reason,
     [
+      `completionObserved=${String(completionObserved)}`,
+      `completionSource=${outcome.ok ? "event" : traceCompleted ? "run_trace" : "none"}`,
       `namesHighestEmployee=${String(namesHighestEmployee)}`,
       `namesSalary=${String(namesSalary)}`,
       `summary=${summary.slice(0, 160) || "-"}`,
@@ -453,6 +603,7 @@ async function highestSalaryAnswered(
       expectedSalary: "$113,854",
       namesHighestEmployee,
       namesSalary,
+      runCompletionStatus: runCompletion?.status ?? null,
     },
   );
 }

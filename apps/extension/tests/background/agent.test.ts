@@ -97,6 +97,7 @@ import {
   shouldOmitPerceptionForDoneValidation,
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
+import { getSnapshotFingerprint } from "../../src/background/agent/loop-helpers";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
@@ -1316,7 +1317,7 @@ describe("AgentLoop", () => {
     ).toBe(false);
   });
 
-  test("replays repeated mutations when the page snapshot is unchanged", () => {
+  test("replays repeated non-pagination mutations when the page snapshot is unchanged", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
@@ -1331,7 +1332,7 @@ describe("AgentLoop", () => {
           tag: 41,
           tagName: "button",
           role: "button",
-          text: "Next",
+          text: "Submit",
           attributes: {},
           rect: { x: 0, y: 0, width: 1, height: 1 },
           isVisible: true,
@@ -1343,7 +1344,7 @@ describe("AgentLoop", () => {
     (agent as any).recordMutationSensitiveAction(
       ToolName.CLICK_ELEMENT,
       { id: 41 },
-      'Clicked [41] button "Next"',
+      'Clicked [41] button "Submit"',
     );
 
     expect(
@@ -1353,6 +1354,80 @@ describe("AgentLoop", () => {
         { id: 41 },
       ),
     ).toBe(true);
+  });
+
+  test("does not replay pagination clicks even when returning to a previously seen page", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "paginated-table-scan",
+      },
+    );
+    const page2Snapshot = {
+      url: "https://example.com/table",
+      title: "Employee Directory",
+      timestamp: Date.now(),
+      pageContent:
+        "Employee Directory # Name Salary 6 Frank Garcia $63,655 7 Diana Chen $65,386 Showing 6 - 10 of 50 Prev 1 2 3 Next Page 2 of 10",
+      elements: [
+        {
+          tag: 41,
+          tagName: "button",
+          role: "button",
+          text: "3",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 1, height: 1 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    } as any;
+
+    (agent as any).context.setSnapshot(page2Snapshot);
+    (agent as any).recordMutationSensitiveAction(
+      ToolName.CLICK_ELEMENT,
+      { id: 41 },
+      'Clicked [41] button "3"',
+    );
+    (agent as any).context.setSnapshot({
+      ...page2Snapshot,
+      timestamp: Date.now() + 1,
+    });
+
+    expect(
+      (agent as any).replayMutationSensitiveAction(
+        "call-1",
+        ToolName.CLICK_ELEMENT,
+        { id: 41 },
+      ),
+    ).toBe(false);
+  });
+
+  test("snapshot fingerprint distinguishes paginated table pages after a long shared header", () => {
+    const sharedHeader = `OpenSidebar Fixtures ${"Navigation ".repeat(80)}Employee Directory Browse and search employees across departments. `;
+    const page1 = {
+      url: "https://example.com/table",
+      elements: { length: 49 },
+      pageContent:
+        sharedHeader +
+        "# Name Salary 1 Alice Smith $55,000 2 Bob Johnson $56,731 Showing 1 - 5 of 50 Prev 1 2 3 Next Page 1 of 10",
+    };
+    const page2 = {
+      url: "https://example.com/table",
+      elements: { length: 49 },
+      pageContent:
+        sharedHeader +
+        "# Name Salary 6 Frank Garcia $63,655 7 Diana Chen $65,386 Showing 6 - 10 of 50 Prev 1 2 3 Next Page 2 of 10",
+    };
+
+    expect(getSnapshotFingerprint(page1)).not.toBe(
+      getSnapshotFingerprint(page2),
+    );
   });
 
   test("preserves highest salary aggregate memory across paginated read_page results", () => {
@@ -1440,6 +1515,78 @@ Showing 6-10 of 50`,
 
     expect((agent as any).context.getWorkingNotes()).toContain("Frank Garcia");
     expect((agent as any).context.getWorkingNotes()).toContain("rows read 5/50");
+  });
+
+  test("extracts highest salary aggregate from compact read_page table text", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+
+    const note = (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 50 employees, 5 per page. # Name Email Department Salary 46 Yara Nelson yara.nelson@company.com Engineering $122,000 47 Omar Hall omar.hall@company.com Support $98,100 Showing 46 - 50 of 50 Page 10 of 10",
+    );
+
+    expect(note).toContain("Yara Nelson");
+    expect(note).toContain("$122,000");
+    expect((agent as any).context.getWorkingNotes()).toContain("seen rows 46-50/50");
+  });
+
+  test("rejects completed money table answer that conflicts with tracked aggregate", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+    (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
+    );
+    (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 6 Frank Garcia frank.garcia@company.com Operations $63,655 7 Yara Nelson yara.nelson@company.com Engineering $122,000 8 Omar Hall omar.hall@company.com Support $98,100 9 Ivy Stone ivy.stone@company.com Sales $99,000 10 Jack King jack.king@company.com Sales $100,000 Showing 6 - 10 of 10 Page 2 of 2",
+    );
+
+    const rejection = (agent as any).getIncorrectMoneyTableAggregateDoneRejection(
+      "The highest salary is Jack King at $100,000.",
+    );
+
+    expect(rejection).toContain("Yara Nelson");
+    expect(rejection).toContain("$122,000");
+  });
+
+  test("recognizes completed paginated money table aggregate summaries", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      { selectedSkillId: "paginated-table-scan" },
+    );
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+    (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
+    );
+    (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 6 Frank Garcia frank.garcia@company.com Operations $63,655 7 Yara Nelson yara.nelson@company.com Engineering $122,000 8 Omar Hall omar.hall@company.com Support $98,100 9 Ivy Stone ivy.stone@company.com Sales $99,000 10 Jack King jack.king@company.com Sales $100,000 Showing 6 - 10 of 10 Page 2 of 2",
+    );
+
+    expect(
+      (agent as any).isCompletedMoneyTableAggregateSummary(
+        "The highest salary is Yara Nelson at $122,000.",
+      ),
+    ).toBe(true);
+    expect(
+      (agent as any).isCompletedMoneyTableAggregateSummary(
+        "The highest salary is Jack King at $100,000.",
+      ),
+    ).toBe(false);
   });
 
   test("counts visible list-detail actions for broad review guards", () => {

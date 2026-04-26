@@ -113,6 +113,7 @@ import type {
 } from "./loop-types";
 import {
   getSkillToolPolicy,
+  getSkillToolSuppressionPolicy,
   resolveSkillToolProfile,
   type SkillToolPolicy,
 } from "../orchestrator/skills";
@@ -166,6 +167,7 @@ const SKILL_TURN_CAPS: Record<string, number> = {
   "multi-tab-procurement-loop": 45,
   "list-detail-review-loop": 45,
   "paginated-table-scan": 55,
+  "paginated-record-lookup": 35,
 };
 
 function applySkillTurnCap(
@@ -795,6 +797,38 @@ export function isListDetailReturnControlRepeatExempt(params: {
   );
 }
 
+function isPaginationNavigationClick(params: {
+  selectedSkillId?: string | null;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  snapshot?: DomSnapshot | null;
+}): boolean {
+  if (
+    params.selectedSkillId !== "paginated-table-scan" &&
+    params.selectedSkillId !== "paginated-record-lookup"
+  ) {
+    return false;
+  }
+  if (params.toolName !== ToolName.CLICK_ELEMENT) return false;
+
+  const id =
+    typeof params.args.id === "number" ? params.args.id : Number(params.args.id);
+  if (!Number.isFinite(id)) return false;
+
+  const element = params.snapshot?.elements.find((candidate) => candidate.tag === id);
+  if (!element) return false;
+
+  const attributes = Object.values(element.attributes || {})
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+  const label = `${element.text || ""} ${attributes}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  return /^(?:next|prev|previous|\d+|[<>]|[‹›«»])$/.test(label);
+}
+
 function hasRecentExactTextFieldRead(messages: LLMMessage[]): boolean {
   const recent = messages.slice(-10);
   return recent.some((message) => {
@@ -1188,6 +1222,42 @@ export class AgentLoop {
     }
 
     return ranked;
+  }
+
+  private applySkillToolSuppression(tools: ToolDefinition[]): ToolDefinition[] {
+    const policy = getSkillToolSuppressionPolicy(
+      this.selectedSkillId ?? undefined,
+    );
+    if (!policy) return tools;
+
+    const suppressed = new Set<ToolName>(
+      policy.temporarilySuppressedTools.filter(
+        (tool) => !policy.exemptTools.includes(tool),
+      ),
+    );
+    if (suppressed.size === 0) return tools;
+
+    const filtered = tools.filter(
+      (tool) => !suppressed.has(tool.function.name as ToolName),
+    );
+    if (filtered.length !== tools.length) {
+      this.log.info("agent", "Skill tool suppression applied", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId,
+        suppressedTools: Array.from(suppressed),
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
+      });
+      this.traceRecorder?.recordEvent("skill_tool_suppression_applied", {
+        turn: this.turnCount,
+        skillId: this.selectedSkillId ?? "unknown",
+        suppressedTools: Array.from(suppressed),
+        originalToolCount: tools.length,
+        filteredToolCount: filtered.length,
+      });
+    }
+
+    return filtered;
   }
 
   private recordSkillToolSelection(
@@ -1968,6 +2038,16 @@ export class AgentLoop {
     ) {
       return false;
     }
+    if (
+      isPaginationNavigationClick({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        args,
+        snapshot: this.context.getSnapshot(),
+      })
+    ) {
+      return false;
+    }
 
     const replay = this.lookupMutationReplay(toolName, args);
     if (!replay) return false;
@@ -2143,6 +2223,25 @@ export class AgentLoop {
     }
 
     const visibleRowIds = new Set<number>();
+    const compactResult = result.replace(/\s+/g, " ");
+    const compactRowPattern =
+      /\b(\d{1,6})\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})\s+[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\s+[A-Za-z][A-Za-z&/ -]{0,60}?\s+(\$\s*[\d,]+(?:\.\d+)?)/g;
+    let compactRow: RegExpExecArray | null;
+    while ((compactRow = compactRowPattern.exec(compactResult)) !== null) {
+      const rowId = Number(compactRow[1]);
+      const name = compactRow[2].trim();
+      const display = compactRow[3].trim();
+      const amount = parseMoneyAmount(display);
+      if (!Number.isFinite(rowId) || amount === null) continue;
+
+      visibleRowIds.add(rowId);
+      if (aggregate.bestAmount === null || amount > aggregate.bestAmount) {
+        aggregate.bestAmount = amount;
+        aggregate.bestDisplay = display;
+        aggregate.bestName = name;
+      }
+    }
+
     for (let idx = 0; idx < lines.length; idx++) {
       const amount = parseMoneyAmount(lines[idx]);
       if (amount === null) continue;
@@ -2238,6 +2337,59 @@ export class AgentLoop {
       `Continue scanning remaining table pages before reporting the highest value. ` +
       `Next action: ${getMoneyTableNextActionHint(aggregate)}.`
     );
+  }
+
+  private getIncorrectMoneyTableAggregateDoneRejection(
+    summary: string,
+  ): string | null {
+    if (!this.isMoneyTableAggregateTask()) return null;
+    this.updateMoneyTableAggregateFromSnapshot();
+    const aggregate =
+      this.moneyTableAggregate ?? this.hydrateMoneyTableAggregateFromWorkingNotes();
+    if (!aggregate?.bestName || !aggregate.bestDisplay) return null;
+
+    const complete =
+      aggregate.totalRows !== null &&
+      aggregate.totalRows > 0 &&
+      aggregate.seenRows.size >= aggregate.totalRows;
+    if (!complete) return null;
+
+    const normalizedSummary = summary.toLowerCase();
+    const normalizedName = aggregate.bestName.toLowerCase();
+    const bestDigits = aggregate.bestDisplay.replace(/[^\d]/g, "");
+    const summaryDigits = summary.replace(/[^\d]/g, "");
+    if (
+      normalizedSummary.includes(normalizedName) &&
+      bestDigits.length > 0 &&
+      summaryDigits.includes(bestDigits)
+    ) {
+      return null;
+    }
+
+    return (
+      `The exhaustive table scan found ${aggregate.bestName} at ` +
+      `${aggregate.bestDisplay}, but the done() summary did not report that ` +
+      `tracked highest candidate. Report ${aggregate.bestName} at ` +
+      `${aggregate.bestDisplay}.`
+    );
+  }
+
+  private isCompletedMoneyTableAggregateSummary(summary: string): boolean {
+    if (this.selectedSkillId !== "paginated-table-scan") return false;
+    if (!this.isMoneyTableAggregateTask()) return false;
+    this.updateMoneyTableAggregateFromSnapshot();
+    const aggregate =
+      this.moneyTableAggregate ??
+      this.hydrateMoneyTableAggregateFromWorkingNotes();
+    if (!aggregate?.bestName || !aggregate.bestDisplay) return false;
+
+    const complete =
+      aggregate.totalRows !== null &&
+      aggregate.totalRows > 0 &&
+      aggregate.seenRows.size >= aggregate.totalRows;
+    if (!complete) return false;
+
+    return this.getIncorrectMoneyTableAggregateDoneRejection(summary) === null;
   }
 
   private syncPlanStatus(
@@ -5852,7 +6004,9 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
       let messages = this.context.getPrompt();
       const allTools = toolRegistry.getDefinitions(this.disabledTools);
       // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
-      const tools = this.applySkillToolRanking(this.applyToolProfile(allTools));
+      const tools = this.applySkillToolRanking(
+        this.applySkillToolSuppression(this.applyToolProfile(allTools)),
+      );
 
       // Log context metrics for telemetry (reuse already-computed prompt)
       const metrics = this.context.getPromptMetricsFrom(messages);
@@ -7933,6 +8087,36 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 continue;
               }
 
+              const incorrectMoneyTableAnswer =
+                this.getIncorrectMoneyTableAggregateDoneRejection(summary);
+              if (incorrectMoneyTableAnswer) {
+                this.doneRejections++;
+                this.log.warn(
+                  "agent",
+                  "DONE rejected: paginated money table answer conflicts with aggregate",
+                  {
+                    turn: this.turnCount,
+                    rejections: this.doneRejections,
+                    reason: incorrectMoneyTableAnswer.slice(0, 200),
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "done_rejected_incorrect_money_table_answer",
+                  {
+                    turn: this.turnCount,
+                    reason: incorrectMoneyTableAnswer,
+                  },
+                );
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    `done() REJECTED: ${incorrectMoneyTableAnswer}\n\n` +
+                    "Use the tracked aggregate candidate in the final answer.",
+                });
+                continue;
+              }
+
               // Multi-step early done() guard (works without plan state)
               // If the user's query has numbered steps and the agent has barely
               // started, reject once. Uses doneRejections so maxDoneRejections
@@ -8153,6 +8337,8 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
               if (this.taskId && this.planSubtasks.length > 0) {
                 let shouldReject = false;
                 let rejectReason = "";
+                const completedMoneyTableAggregate =
+                  this.isCompletedMoneyTableAggregateSummary(summary);
                 const completedCount = this.planSubtasks.filter(
                   (s) => s.status === "completed",
                 ).length;
@@ -8172,7 +8358,8 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 const bypassPlanIncompleteRejection =
                   shouldReject
                     ? false
-                    : this.shouldBypassPlanIncompleteDoneRejection({
+                    : completedMoneyTableAggregate ||
+                      this.shouldBypassPlanIncompleteDoneRejection({
                         summary,
                         currentStepIndex: effectiveCurrentIdx,
                       });
@@ -8186,13 +8373,16 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 } else if (bypassPlanIncompleteRejection) {
                   this.log.info(
                     "agent",
-                    "Bypassing stale plan done rejection for satisfied edit task",
+                    "Bypassing stale plan done rejection for satisfied task",
                     {
                       turn: this.turnCount,
                       step: effectiveCurrentIdx,
                       remainingSteps:
                         this.planSubtasks.length - effectiveCurrentIdx - 1,
                       selectedSkillId: this.selectedSkillId,
+                      reason: completedMoneyTableAggregate
+                        ? "completed_money_table_aggregate"
+                        : "satisfied_edit_task",
                     },
                   );
                   this.traceRecorder?.recordEvent(
@@ -8202,6 +8392,9 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                       remainingSteps:
                         this.planSubtasks.length - effectiveCurrentIdx - 1,
                       selectedSkillId: this.selectedSkillId,
+                      reason: completedMoneyTableAggregate
+                        ? "completed_money_table_aggregate"
+                        : "satisfied_edit_task",
                     },
                   );
                 }
@@ -8254,7 +8447,11 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                   // the orchestrator's own verifier checks node completion.
                   // Calling validateDone with the full original query would
                   // reject because sibling steps aren't done yet.
-                  if (!shouldReject && !this.nodeId) {
+                  if (
+                    !shouldReject &&
+                    !this.nodeId &&
+                    !completedMoneyTableAggregate
+                  ) {
                     const currentSubtask =
                       effectiveCurrentIdx >= 0
                         ? this.planSubtasks[effectiveCurrentIdx]

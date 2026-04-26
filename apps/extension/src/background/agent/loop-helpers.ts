@@ -804,12 +804,16 @@ export function getSnapshotFingerprint(
   } | null,
 ): string {
   if (!snapshot) return "none|0|0";
-  const textSample = (
+  const text = (
     snapshot.pageContent ??
     snapshot.visibleContent ??
     ""
-  ).slice(0, 300);
-  return `${snapshot.url ?? "unknown"}|${snapshot.elements?.length ?? 0}|${djb2(textSample)}`;
+  ).replace(/\s+/g, " ");
+  const textSample =
+    text.length <= 900
+      ? text
+      : `${text.slice(0, 300)}|${text.slice(Math.max(0, text.length - 600))}`;
+  return `${snapshot.url ?? "unknown"}|${snapshot.elements?.length ?? 0}|${text.length}|${djb2(textSample)}`;
 }
 
 /**

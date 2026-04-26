@@ -1251,6 +1251,108 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(expanded![1].allowedTools).toEqual(initial.nodes[0].allowedTools);
     });
 
+    test("expandNode defaults dependency-free replanned child steps to sequential order", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                steps: [
+                    {
+                        objective: "Scan page 2 of the salary table",
+                        successCriteria: "Page 2 salaries are recorded",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Scan page 3 of the salary table",
+                        successCriteria: "Page 3 salaries are recorded",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Scan page 4 of the salary table",
+                        successCriteria: "Page 4 salaries are recorded",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const expanded = await planner.expandNode(
+            {
+                id: "node-salary-scan",
+                role: "executor",
+                description: "Find the highest salary across the paginated table",
+                successCriteria: "Highest salary is identified from all pages",
+                allowedTools: Object.values(ToolName),
+                dependencies: ["node-open-table"],
+                assumptions: [],
+                handoffArtifacts: [],
+                reflexionLog: [],
+                handoffDepth: 0,
+                status: "running",
+                retries: 0,
+            } as any,
+            "Salary Table",
+            "https://example.com/salaries",
+            "Need to scan remaining pages",
+        );
+
+        expect(expanded).not.toBeNull();
+        expect(expanded).toHaveLength(3);
+        expect(expanded![0].dependencies).toEqual(["node-open-table"]);
+        expect(expanded![1].dependencies).toEqual([expanded![0].id]);
+        expect(expanded![2].dependencies).toEqual([expanded![1].id]);
+    });
+
+    test("collapses paginated aggregate page plans into one skill-owned scan node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                steps: [
+                    {
+                        objective: "Extract salaries from page 1 of the employee directory table",
+                        successCriteria: "Page 1 salary values are recorded",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Extract salaries from page 2 of the employee directory table",
+                        successCriteria: "Page 2 salary values are recorded",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Compare all extracted salaries and report the highest salary",
+                        successCriteria: "The employee with the highest salary and the salary value are reported",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Review the employee directory and tell me which employee has the highest salary and what that salary is.",
+            "Employee Directory",
+            "https://example.com/data-table",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("paginated-table-scan");
+        expect(result.nodes[0].description).toContain("Scan the full paginated data surface");
+        expect(result.nodes[0].successCriteria).toContain("All pages or visible row ranges");
+    });
+
     test("selects continuation-edit for draft revision workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1469,11 +1571,57 @@ describe("selectPrimarySkill", () => {
         ).toBe("paginated-table-scan");
     });
 
+    test("matches targeted paginated record lookups without using aggregate scans", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Search for Diana in the employee directory and tell me her salary.",
+                objective:
+                    "Find Diana in the employee directory table and report the salary from her row",
+                successCriteria:
+                    "Final answer reports Diana's salary after verifying the exact employee row",
+                pageTitle: "Employee Directory",
+                pageUrl: "https://example.com/data-table",
+            })?.id,
+        ).toBe("paginated-record-lookup");
+    });
+
+    test("matches targeted feed lookups as paginated record lookups", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
+                objective:
+                    "Locate Post #35 in the feed and extract the secret code from that exact post",
+                successCriteria:
+                    "Final answer gives the code from Post #35, not from another post",
+                pageTitle: "Activity Feed",
+            })?.id,
+        ).toBe("paginated-record-lookup");
+    });
+
     test("keeps paginated aggregate scans on read and forward-click tools", () => {
         const policy = getSkillToolPolicy("paginated-table-scan");
         const suppression = getSkillToolSuppressionPolicy("paginated-table-scan");
 
         expect(policy?.preferredTools).toContain(ToolName.READ_PAGE);
+        expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(policy?.discouragedTools).toContain(ToolName.READ_ELEMENT);
+        expect(policy?.discouragedTools).toContain(ToolName.TYPE_TEXT);
+        expect(policy?.discouragedTools).toContain(ToolName.PRESS_KEY);
+        expect(policy?.discouragedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.READ_ELEMENT);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.TYPE_TEXT);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.PRESS_KEY);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
+    });
+
+    test("keeps paginated record lookup distinct from aggregate scan policy", () => {
+        const policy = getSkillToolPolicy("paginated-record-lookup");
+        const suppression = getSkillToolSuppressionPolicy("paginated-record-lookup");
+
+        expect(policy?.preferredTools).toContain(ToolName.FIND_ELEMENT);
+        expect(policy?.preferredTools).toContain(ToolName.TYPE_TEXT);
         expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
         expect(policy?.discouragedTools).toContain(ToolName.READ_ELEMENT);
         expect(policy?.discouragedTools).toContain(ToolName.SCROLL_PAGE);
@@ -1507,6 +1655,31 @@ describe("selectPrimarySkill", () => {
         ).toBe("cross-tab-compare");
     });
 
+    test("does not use cross-tab compare for single-page report navigation", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Now switch to the Reports tab and tell me what reports are available.",
+                objective: "Open the Reports tab and read the available reports",
+                successCriteria: "Available reports are listed from the Reports tab",
+                pageTitle: "Admin Dashboard",
+            })?.id,
+        ).not.toBe("cross-tab-compare");
+    });
+
+    test("keeps product configurators on structured form fill", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Configure the product: pick the Large (32 oz) size, enable custom engraving, and tell me the total price.",
+                objective:
+                    "Choose the requested product options and verify the total price",
+                successCriteria:
+                    "Selected options and total price are visible before answering",
+                pageTitle: "Product Configurator",
+            })?.id,
+        ).toBe("structured-form-fill");
+    });
+
     test("matches hover reveal workflows", () => {
         expect(
             selectPrimarySkill({
@@ -1525,6 +1698,21 @@ describe("selectPrimarySkill", () => {
                 successCriteria: "No blind retries near turn limit",
             })?.id,
         ).toBe("budget-aware-execution");
+    });
+
+    test("keeps paginated salary aggregates out of budget mode even with recovery context", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Review the employee directory and tell me which employee has the highest salary and what that salary is. Prior attempt reached the turn budget.",
+                objective:
+                    "Analyze the employee salary data to identify the employee with the highest salary value",
+                successCriteria:
+                    "Highest salary employee identified with name and exact salary amount extracted from the table",
+                pageTitle: "Employee Directory",
+                pageUrl: "http://127.0.0.1/data-table",
+            })?.id,
+        ).toBe("paginated-table-scan");
     });
 
     test("matches careful email reply workflows before generic continuation editing", () => {
@@ -1575,6 +1763,34 @@ describe("selectPrimarySkill", () => {
                     "Read the support ticket, update the appropriate ticket fields, and add a grounded internal note",
                 successCriteria:
                     "Ticket escalation state and internal note are visible after save",
+                pageTitle: "Support Ticket TICKET-4271",
+            })?.id,
+        ).toBe("crm-ticket-update");
+    });
+
+    test("keeps escalation ticket workflows out of continuation-edit", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Review TICKET-4271. If it needs escalation, set the ticket status to In Progress, raise the priority to Urgent, and leave an internal note with the customer impact, account context, and next step.",
+                objective:
+                    "Review the ticket, update status and priority, and add an internal note with customer impact and next step",
+                successCriteria:
+                    "Ticket status is In Progress, priority is Urgent, and internal note is visible",
+                pageTitle: "TICKET-4271 — CSV Export Timeout",
+            })?.id,
+        ).toBe("crm-ticket-update");
+    });
+
+    test("keeps ticket dropdown updates on crm-ticket-update instead of hover reveal", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Set ticket TICKET-4271 to In Progress and add an internal note summarizing the issue and next steps.",
+                objective:
+                    "Update the support ticket status dropdown and add a grounded internal note",
+                successCriteria:
+                    "Ticket status is In Progress and the internal note is visible after save",
                 pageTitle: "Support Ticket TICKET-4271",
             })?.id,
         ).toBe("crm-ticket-update");
