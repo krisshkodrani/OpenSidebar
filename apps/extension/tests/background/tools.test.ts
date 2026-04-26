@@ -317,7 +317,7 @@ describe("Tool Registration", () => {
         );
     });
 
-    test("click_element mirrors activation in the main world after content execution", async () => {
+    test("click_element does not mirror a successful content-script click", async () => {
         const result = await toolRegistry.execute(
             {
                 id: "tool-click-main",
@@ -331,13 +331,7 @@ describe("Tool Registration", () => {
         );
 
         expect(result).toBe("ok");
-        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
-            expect.objectContaining({
-                target: { tabId: 123 },
-                world: "MAIN",
-                args: ["9"],
-            }),
-        );
+        expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
     });
 
     test("click_element recovers intercepted clicks through the main-world bridge", async () => {
@@ -371,6 +365,36 @@ describe("Tool Registration", () => {
                 args: ["3"],
             }),
         );
+    });
+
+    test("click_element returns the interception when the main-world bridge times out", async () => {
+        vi.useFakeTimers();
+        (chrome.tabs.sendMessage as any) = vi.fn(async () => ({
+            payload: {
+                result: "Click intercepted! Element [3] is covered by [56] <span>.",
+                success: false,
+            },
+        }));
+        (chrome.scripting.executeScript as any) = vi.fn(() => new Promise(() => {}));
+
+        try {
+            const pending = toolRegistry.execute(
+                {
+                    id: "tool-click-intercepted-timeout",
+                    type: "function",
+                    function: {
+                        name: ToolName.CLICK_ELEMENT,
+                        arguments: JSON.stringify({ id: 3 }),
+                    },
+                } as any,
+                123,
+            );
+
+            await vi.advanceTimersByTimeAsync(2_000);
+            await expect(pending).resolves.toContain("Click intercepted!");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     test("go_back reports the destination URL after history navigation changes the page", async () => {

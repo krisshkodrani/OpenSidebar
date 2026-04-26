@@ -135,6 +135,7 @@ import {
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
+  djb2,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   isHallucinatedToolCall,
@@ -164,6 +165,7 @@ import {
 const SKILL_TURN_CAPS: Record<string, number> = {
   "multi-tab-procurement-loop": 45,
   "list-detail-review-loop": 45,
+  "paginated-table-scan": 55,
 };
 
 function applySkillTurnCap(
@@ -619,6 +621,152 @@ function actionMemoryKey(
     return rawArgsKey;
   }
   return `${rawArgsKey}@${getSnapshotFingerprint(snapshot ?? null)}`;
+}
+
+function getMutationReplayFingerprint(
+  snapshot: DomSnapshot | null | undefined,
+): string {
+  const base = getSnapshotFingerprint(snapshot ?? null);
+  if (!snapshot) return base;
+
+  const pageText = `${snapshot.pageContent ?? ""}\n${snapshot.visibleContent ?? ""}`.trim();
+  if (pageText) return base;
+
+  const elementSignature = (snapshot.elements ?? [])
+    .slice(0, 120)
+    .map((element) => {
+      const attributes = element.attributes ?? {};
+      const attributeText = [
+        attributes["aria-label"],
+        attributes.placeholder,
+        attributes.value,
+        attributes.title,
+        attributes.href,
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ");
+      return [
+        element.tag,
+        element.tagName,
+        element.role ?? "",
+        element.text ?? "",
+        attributeText,
+        element.isDisabled ? "disabled" : "enabled",
+      ]
+        .join(":")
+        .replace(/\s+/g, " ")
+        .slice(0, 180);
+    })
+    .join("|");
+
+  return `${base}|elements:${djb2(elementSignature)}`;
+}
+
+function getMutationReplayScopedKey(
+  mutationKey: string,
+  snapshot: DomSnapshot | null | undefined,
+): string {
+  return `${mutationKey}@${getMutationReplayFingerprint(snapshot)}`;
+}
+
+type MoneyTableAggregate = {
+  mode: "max";
+  label: string;
+  bestName: string | null;
+  bestAmount: number | null;
+  bestDisplay: string | null;
+  seenRows: Set<number>;
+  totalRows: number | null;
+  currentStart: number | null;
+  currentEnd: number | null;
+};
+
+function parseMoneyAmount(value: string): number | null {
+  const match = value.match(/\$\s*([\d,]+)(?:\.\d+)?/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatSeenRows(aggregate: MoneyTableAggregate): string {
+  const seen = aggregate.seenRows.size;
+  const total = aggregate.totalRows;
+  return total && total > 0 ? `${seen}/${total}` : `${seen}`;
+}
+
+function formatSeenRowRanges(seenRows: Set<number>): string {
+  const rows = Array.from(seenRows).sort((a, b) => a - b);
+  if (rows.length === 0) return "none";
+  const ranges: string[] = [];
+  let start = rows[0];
+  let prev = rows[0];
+  for (const row of rows.slice(1)) {
+    if (row === prev + 1) {
+      prev = row;
+      continue;
+    }
+    ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+    start = row;
+    prev = row;
+  }
+  ranges.push(start === prev ? String(start) : `${start}-${prev}`);
+  return ranges.join(",");
+}
+
+function parseSeenRowRanges(value: string): Set<number> {
+  const rows = new Set<number>();
+  for (const part of value.split(",")) {
+    const range = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+    if (!range) continue;
+    const start = Number(range[1]);
+    const end = Number(range[2] ?? range[1]);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+    for (let row = start; row <= end; row++) rows.add(row);
+  }
+  return rows;
+}
+
+function findFirstMissingRow(aggregate: MoneyTableAggregate): number | null {
+  const total = aggregate.totalRows;
+  if (!total || total <= 0) return null;
+  for (let row = 1; row <= total; row++) {
+    if (!aggregate.seenRows.has(row)) return row;
+  }
+  return null;
+}
+
+function formatMissingRowWindow(
+  firstMissingRow: number,
+  aggregate: MoneyTableAggregate,
+): string {
+  const total = aggregate.totalRows ?? firstMissingRow;
+  const windowSize =
+    aggregate.currentStart !== null && aggregate.currentEnd !== null
+      ? Math.max(1, aggregate.currentEnd - aggregate.currentStart + 1)
+      : 5;
+  const end = Math.min(total, firstMissingRow + windowSize - 1);
+  return `${firstMissingRow}-${end}`;
+}
+
+function getMoneyTableNextActionHint(aggregate: MoneyTableAggregate): string {
+  if (!aggregate.totalRows) {
+    return "continue through the visible pagination controls until the table shows all pages have been reviewed";
+  }
+  const firstMissingRow = findFirstMissingRow(aggregate);
+  if (firstMissingRow === null) {
+    return "call done with this candidate unless the current page contradicts it";
+  }
+  const missingWindow = formatMissingRowWindow(firstMissingRow, aggregate);
+  if (aggregate.currentStart === null || aggregate.currentEnd === null) {
+    return `read the current table page, then continue toward rows ${missingWindow}`;
+  }
+  if (firstMissingRow > aggregate.currentEnd) {
+    return `click Next to inspect rows ${missingWindow}; no find_element is needed for page numbers`;
+  }
+  if (firstMissingRow < aggregate.currentStart) {
+    return `go backward toward rows ${missingWindow} using a visible page button or Prev, then resume with Next`;
+  }
+  return `read the current table page again to capture missing rows ${missingWindow}`;
 }
 
 export function isListDetailReturnControlRepeatExempt(params: {
@@ -1135,6 +1283,7 @@ export class AgentLoop {
   private turnCount = 0;
   /** Original user query that started this loop */
   private originalQuery = "";
+  private moneyTableAggregate: MoneyTableAggregate | null = null;
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
   /** Tracks (tool+args) → result for non-idempotent action dedup after done() rejection */
@@ -1783,13 +1932,21 @@ export class AgentLoop {
   ): { result: string; source: "ledger" | "ephemeral" } | null {
     if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return null;
     const mutKey = buildMutationKey(toolName, args);
+    const currentSnapshot = this.context.getSnapshot?.() ?? null;
+    const currentFingerprint = getMutationReplayFingerprint(currentSnapshot);
     const ledgerHit = this.stepMutationLedger.find(
-      (entry) => entry.key === mutKey,
+      (entry) =>
+        entry.key === mutKey &&
+        entry.snapshotFingerprint === currentFingerprint,
     );
     if (ledgerHit) {
       return { result: ledgerHit.result, source: "ledger" };
     }
-    const ephemeralHit = this.executedActions.get(mutKey);
+    const ephemeralHit = this.guardAfterDoneRejection
+      ? this.executedActions.get(
+          getMutationReplayScopedKey(mutKey, currentSnapshot),
+        )
+      : null;
     if (ephemeralHit) {
       return { result: ephemeralHit, source: "ephemeral" };
     }
@@ -1836,11 +1993,18 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
     result: string,
+    actionSnapshot?: DomSnapshot | null,
   ): void {
     if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return;
 
     const mutKey = buildMutationKey(toolName, args);
-    this.executedActions.set(mutKey, result);
+    const snapshotForReplay =
+      actionSnapshot ?? this.context.getSnapshot?.() ?? null;
+    const snapshotFingerprint = getMutationReplayFingerprint(snapshotForReplay);
+    this.executedActions.set(
+      getMutationReplayScopedKey(mutKey, snapshotForReplay),
+      result,
+    );
 
     const ledgerEntry: MutationLedgerEntry = {
       key: mutKey,
@@ -1849,9 +2013,7 @@ export class AgentLoop {
       result: result.slice(0, 500),
       recordedAt: Date.now(),
       planIndex: this.lastPlanIndex,
-      snapshotFingerprint: getSnapshotFingerprint(
-        this.context.getSnapshot?.() ?? null,
-      ),
+      snapshotFingerprint,
     };
     const existingEntryIndex = this.stepMutationLedger.findIndex(
       (entry) => entry.key === mutKey,
@@ -1880,6 +2042,202 @@ export class AgentLoop {
     if (this.sideEffectsLog.length > 100) {
       this.sideEffectsLog = this.sideEffectsLog.slice(-100);
     }
+  }
+
+  private isMoneyTableAggregateTask(): boolean {
+    const taskText =
+      `${this.originalQuery}\n${this.planSubtasks[this.lastPlanIndex]?.description ?? ""}`.toLowerCase();
+    return (
+      /\b(highest|max(?:imum)?|largest|most)\b/.test(taskText) &&
+      /\b(salary|pay|compensation|price|cost|amount|revenue|budget)\b/.test(
+        taskText,
+      )
+    );
+  }
+
+  private hydrateMoneyTableAggregateFromWorkingNotes(): MoneyTableAggregate | null {
+    const notes = this.context.getWorkingNotes?.() ?? "";
+    if (!notes.includes("Paginated table aggregate:")) return null;
+    const candidate = notes.match(
+      /current highest ([^;]+?) candidate is (.+?) at (\$\s*[\d,]+(?:\.\d+)?)/i,
+    );
+    if (!candidate) return null;
+
+    const totalMatch =
+      notes.match(/seen rows [\d,\-\s]+\/(\d+)/i) ??
+      notes.match(/rows read \d+\/(\d+)/i);
+    const seenMatch = notes.match(/seen rows ([\d,\-\s]+)\/\d+/i);
+    const seenRows = seenMatch ? parseSeenRowRanges(seenMatch[1]) : new Set<number>();
+    const totalRows = totalMatch ? Number(totalMatch[1]) : null;
+    const bestAmount = parseMoneyAmount(candidate[3]);
+    if (bestAmount === null) return null;
+
+    return {
+      mode: "max",
+      label: candidate[1],
+      bestName: candidate[2],
+      bestAmount,
+      bestDisplay: candidate[3],
+      seenRows,
+      totalRows: totalRows && Number.isFinite(totalRows) ? totalRows : null,
+      currentStart: null,
+      currentEnd: null,
+    };
+  }
+
+  private updateMoneyTableAggregate(result: string): string | null {
+    if (!this.isMoneyTableAggregateTask()) return null;
+
+    const lines = result
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const range = result.match(
+      /Showing\s+(\d+)\s*(?:-|\u2012|\u2013|\u2014)\s*(\d+)\s+of\s+(\d+)/i,
+    );
+    let rangeStart: number | null = null;
+    let rangeEnd: number | null = null;
+    let totalRows: number | null = null;
+    if (range) {
+      rangeStart = Number(range[1]);
+      rangeEnd = Number(range[2]);
+      totalRows = Number(range[3]);
+    } else {
+      const totalSummary = result.match(
+        /\b(\d+)\s+(?:rows|records|employees|items)\b[^.\n]*\b(\d+)\s+per\s+page\b/i,
+      );
+      if (totalSummary) {
+        totalRows = Number(totalSummary[1]);
+      }
+    }
+
+    const aggregate =
+      this.moneyTableAggregate ??
+      this.hydrateMoneyTableAggregateFromWorkingNotes() ??
+      ({
+        mode: "max",
+        label: "money value",
+        bestName: null,
+        bestAmount: null,
+        bestDisplay: null,
+        seenRows: new Set<number>(),
+        totalRows: null,
+        currentStart: null,
+        currentEnd: null,
+      } satisfies MoneyTableAggregate);
+    if (totalRows && Number.isFinite(totalRows)) {
+      aggregate.totalRows = totalRows;
+    }
+
+    if (
+      rangeStart !== null &&
+      rangeEnd !== null &&
+      Number.isFinite(rangeStart) &&
+      Number.isFinite(rangeEnd)
+    ) {
+      aggregate.currentStart = rangeStart;
+      aggregate.currentEnd = rangeEnd;
+      for (let row = rangeStart; row <= rangeEnd; row++) {
+        aggregate.seenRows.add(row);
+      }
+    }
+
+    const visibleRowIds = new Set<number>();
+    for (let idx = 0; idx < lines.length; idx++) {
+      const amount = parseMoneyAmount(lines[idx]);
+      if (amount === null) continue;
+
+      let name: string | null = null;
+      let emailLineIndex: number | null = null;
+      for (let back = idx - 1; back >= Math.max(0, idx - 5); back--) {
+        if (lines[back].includes("@") && back > 0) {
+          emailLineIndex = back;
+          name = lines[back - 1];
+          break;
+        }
+      }
+      if (!name || /^[#\d]+$/.test(name)) continue;
+
+      if (emailLineIndex !== null) {
+        for (
+          let back = emailLineIndex - 2;
+          back >= Math.max(0, emailLineIndex - 7);
+          back--
+        ) {
+          if (/^\d+$/.test(lines[back])) {
+            const rowId = Number(lines[back]);
+            if (Number.isFinite(rowId)) {
+              visibleRowIds.add(rowId);
+            }
+            break;
+          }
+        }
+      }
+
+      if (aggregate.bestAmount === null || amount > aggregate.bestAmount) {
+        aggregate.bestAmount = amount;
+        aggregate.bestDisplay = lines[idx];
+        aggregate.bestName = name;
+      }
+    }
+
+    if (visibleRowIds.size > 0) {
+      for (const row of visibleRowIds) aggregate.seenRows.add(row);
+      if (rangeStart === null || rangeEnd === null) {
+        const sorted = Array.from(visibleRowIds).sort((a, b) => a - b);
+        aggregate.currentStart = sorted[0];
+        aggregate.currentEnd = sorted[sorted.length - 1];
+      }
+    }
+
+    this.moneyTableAggregate = aggregate;
+    if (!aggregate.bestName || !aggregate.bestDisplay) return null;
+
+    const coverage = formatSeenRows(aggregate);
+    const complete =
+      aggregate.totalRows !== null &&
+      aggregate.totalRows > 0 &&
+      aggregate.seenRows.size >= aggregate.totalRows;
+    const note =
+      `Paginated table aggregate: current highest ${aggregate.label} candidate is ` +
+      `${aggregate.bestName} at ${aggregate.bestDisplay}; rows read ${coverage}; ` +
+      `seen rows ${formatSeenRowRanges(aggregate.seenRows)}/${aggregate.totalRows ?? "unknown"}. ` +
+      (complete
+        ? "The scan is exhaustive; call done with this candidate unless the current page contradicts it."
+        : `The scan is not exhaustive yet. Next action: ${getMoneyTableNextActionHint(aggregate)}.`);
+    this.context.setWorkingNotes(note);
+    return `[Aggregation memory: ${note}]`;
+  }
+
+  private updateMoneyTableAggregateFromSnapshot(): void {
+    const snapshot = this.context.getSnapshot?.();
+    const pageText = snapshot?.pageContent || snapshot?.visibleContent || "";
+    if (!pageText.trim()) return;
+    this.updateMoneyTableAggregate(pageText);
+  }
+
+  private getIncompleteMoneyTableAggregateDoneRejection(): string | null {
+    if (!this.isMoneyTableAggregateTask()) return null;
+    this.updateMoneyTableAggregateFromSnapshot();
+    const aggregate =
+      this.moneyTableAggregate ??
+      this.hydrateMoneyTableAggregateFromWorkingNotes();
+    if (!aggregate?.bestName || !aggregate.bestDisplay) return null;
+
+    const complete =
+      aggregate.totalRows !== null &&
+      aggregate.totalRows > 0 &&
+      aggregate.seenRows.size >= aggregate.totalRows;
+    if (complete) return null;
+
+    return (
+      `The paginated table scan is not exhaustive yet: current candidate is ` +
+      `${aggregate.bestName} at ${aggregate.bestDisplay}, with rows read ` +
+      `${formatSeenRows(aggregate)} and seen rows ` +
+      `${formatSeenRowRanges(aggregate.seenRows)}/${aggregate.totalRows ?? "unknown"}. ` +
+      `Continue scanning remaining table pages before reporting the highest value. ` +
+      `Next action: ${getMoneyTableNextActionHint(aggregate)}.`
+    );
   }
 
   private syncPlanStatus(
@@ -5487,6 +5845,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
         this.maxTurns,
         this.sessionStartTime,
       );
+      this.updateMoneyTableAggregateFromSnapshot();
 
       // 1. LLM Inference (streamed)
       // `let` because retry loop may append diagnostic hints (cleaned up after)
@@ -7544,6 +7903,36 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 }
               }
 
+              const incompleteMoneyTableScan =
+                this.getIncompleteMoneyTableAggregateDoneRejection();
+              if (incompleteMoneyTableScan) {
+                this.doneRejections++;
+                this.log.warn(
+                  "agent",
+                  "DONE rejected: paginated money table scan incomplete",
+                  {
+                    turn: this.turnCount,
+                    rejections: this.doneRejections,
+                    reason: incompleteMoneyTableScan.slice(0, 200),
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "done_rejected_incomplete_money_table_scan",
+                  {
+                    turn: this.turnCount,
+                    reason: incompleteMoneyTableScan,
+                  },
+                );
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    `done() REJECTED: ${incompleteMoneyTableScan}\n\n` +
+                    "Do not call done() until the scan is exhaustive.",
+                });
+                continue;
+              }
+
               // Multi-step early done() guard (works without plan state)
               // If the user's query has numbered steps and the agent has barely
               // started, reject once. Uses doneRejections so maxDoneRejections
@@ -8967,7 +9356,12 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                     "You likely just committed an inline edit on this step.",
                 };
               }
-              this.recordMutationSensitiveAction(toolName, args, result);
+              this.recordMutationSensitiveAction(
+                toolName,
+                args,
+                result,
+                preActionSnapshot,
+              );
             } catch (toolError: any) {
               if (toolError.name === "AbortError") throw toolError;
               const errorMsg = toolError.message || String(toolError);
@@ -9040,6 +9434,12 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
               toolName === ToolName.XRAY_PAGE
             ) {
               this.hasReadPage = true;
+            }
+            if (toolName === ToolName.READ_PAGE) {
+              const aggregateNote = this.updateMoneyTableAggregate(result);
+              if (aggregateNote) {
+                result = `${result}\n\n${aggregateNote}`;
+              }
             }
 
             // Cache store (Feature 1): cache successful results for cacheable tools
@@ -9879,6 +10279,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
               });
               prevElementCount = snap.elements.length;
               this.context.setSnapshot(snap);
+              this.updateMoneyTableAggregateFromSnapshot();
 
               // Record post-tool DOM state so trace shows what perception was based on
               this.traceRecorder?.recordPostToolSnapshot({
