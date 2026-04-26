@@ -182,7 +182,8 @@ describe("POST /memory", () => {
       body: JSON.stringify({
         category: "site-knowledge",
         title: "Example memory",
-        content: "Remember this result for example.com",
+        content:
+          "Remember this result for example.com. SKU-160K Migration 4271 foo-Migration.",
         workspaceId: "ws-1",
         metadata: {
           domain: "example.com",
@@ -209,6 +210,24 @@ describe("POST /memory", () => {
     );
     expect(searchStatus).toBe(200);
     expect(searchData.results.some((item: any) => item.id === memoryId)).toBe(true);
+
+    const { status: hyphenatedStatus, data: hyphenatedData } = await api(
+      "/memory/search?q=SKU-160K&limit=5",
+    );
+    expect(hyphenatedStatus).toBe(200);
+    expect(hyphenatedData.results.some((item: any) => item.id === memoryId)).toBe(true);
+
+    const { status: spacedDashStatus, data: spacedDashData } = await api(
+      "/memory/search?q=Migration%20-%204271&limit=5",
+    );
+    expect(spacedDashStatus).toBe(200);
+    expect(spacedDashData.results.some((item: any) => item.id === memoryId)).toBe(true);
+
+    const { status: wordHyphenStatus, data: wordHyphenData } = await api(
+      "/memory/search?q=foo-Migration&limit=5",
+    );
+    expect(wordHyphenStatus).toBe(200);
+    expect(wordHyphenData.results.some((item: any) => item.id === memoryId)).toBe(true);
 
     const { status: domainStatus, data: domainData } = await api(
       "/memory/domain?d=example.com&limit=5",

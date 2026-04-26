@@ -213,12 +213,15 @@ function extractDomain(metadata: MemoryMetadata | undefined): string | null {
 
 function buildFtsQuery(query: string): string {
   const tokens = query
-    .replace(/["']/g, " ")
-    .replace(/[^\p{L}\p{N}\s_-]+/gu, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .split(/\s+/)
     .map((token) => token.trim())
     .filter(Boolean);
-  return tokens.join(" ");
+  return tokens.map(quoteFtsToken).join(" ");
+}
+
+function quoteFtsToken(token: string): string {
+  return `"${token.replace(/"/g, "\"\"")}"`;
 }
 
 function touchMemories(ids: string[]): void {

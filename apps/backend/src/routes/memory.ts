@@ -27,6 +27,7 @@ const VALID_CATEGORIES: MemoryCategory[] = [
   "site-knowledge",
   "learned-pattern",
 ];
+const MAX_MEMORY_LIMIT = 100;
 
 export async function handleMemoryRoutes(
   req: IncomingMessage,
@@ -67,7 +68,7 @@ export async function handleMemoryRoutes(
       sendError(res, "Missing query parameter: q");
       return;
     }
-    const limit = Number(searchParams.get("limit")) || 5;
+    const limit = parseLimit(searchParams.get("limit"), 5);
     const results = await queryMemories(query, limit);
     sendJson(res, { results });
     return;
@@ -80,7 +81,7 @@ export async function handleMemoryRoutes(
       sendError(res, "Missing query parameter: d (domain)");
       return;
     }
-    const limit = Number(searchParams.get("limit")) || 10;
+    const limit = parseLimit(searchParams.get("limit"), 10);
     const results = await queryMemoriesByDomain(domain, limit);
     sendJson(res, { results });
     return;
@@ -89,7 +90,7 @@ export async function handleMemoryRoutes(
   // GET /memory/list?category=...&limit=20
   if (pathname === "/memory/list" && method === "GET") {
     const category = searchParams.get("category") || undefined;
-    const limit = Number(searchParams.get("limit")) || 20;
+    const limit = parseLimit(searchParams.get("limit"), 20);
     const results = await fetchMemoryList(category, limit);
     sendJson(res, { results });
     return;
@@ -115,4 +116,12 @@ export async function handleMemoryRoutes(
   }
 
   sendError(res, "Not found", 404);
+}
+
+function parseLimit(raw: string | null, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  const integer = Math.floor(parsed);
+  if (integer < 1) return fallback;
+  return Math.min(integer, MAX_MEMORY_LIMIT);
 }
