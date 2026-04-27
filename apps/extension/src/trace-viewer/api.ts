@@ -23,10 +23,10 @@ export async function fetchTraceSessions(
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (filters.domain) params.set("domain", filters.domain);
-  if (filters.mode && filters.mode !== "all") params.set("mode", filters.mode);
   if (filters.model && filters.model !== "all")
     params.set("model", filters.model);
-  if (filters.tier && filters.tier !== "all") params.set("tier", filters.tier);
+  if (filters.skill && filters.skill !== "all")
+    params.set("skill", filters.skill);
   if (filters.runId) params.set("runId", filters.runId);
   params.set("limit", "1000");
   return fetchJson(`/api/traces/search?${params.toString()}`);
@@ -209,21 +209,23 @@ export async function fetchBackendHealth(): Promise<BackendHealth> {
 }
 
 export async function fetchScheduledTasks(): Promise<BackendScheduledTask[]> {
-  const data = await backendFetch<{ tasks: BackendScheduledTask[] }>("/tasks?limit=100");
+  const data = await backendFetch<{ tasks: BackendScheduledTask[] }>(
+    "/tasks?limit=100",
+  );
   return data.tasks;
 }
 
 export async function deleteScheduledTask(id: string): Promise<void> {
-  await fetch(`${BACKEND_URL}/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+  await fetch(`${BACKEND_URL}/tasks/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function fetchDurableRuns(
-  options?: {
-    includeCompleted?: boolean;
-    includeProgressSummary?: boolean;
-    controlRequested?: boolean;
-  },
-): Promise<BackendDurableRunSummary[]> {
+export async function fetchDurableRuns(options?: {
+  includeCompleted?: boolean;
+  includeProgressSummary?: boolean;
+  controlRequested?: boolean;
+}): Promise<BackendDurableRunSummary[]> {
   const params = new URLSearchParams();
   if (options?.includeCompleted) params.set("include_completed", "true");
   if (options?.includeProgressSummary) {

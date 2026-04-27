@@ -18,9 +18,8 @@ const DEFAULT_FILTERS: TraceFilters = {
   from: isoDayOffset(6),
   to: todayIso(),
   domain: "",
-  mode: "all",
   model: "all",
-  tier: "all",
+  skill: "all",
   runId: "",
 };
 
