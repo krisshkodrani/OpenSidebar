@@ -21,6 +21,7 @@ import LogList from "./components/traces/LogList";
 import OverviewTab from "./components/traces/OverviewTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
+import PromptsTab from "./components/traces/PromptsTab";
 import type { Subview } from "./store/types";
 
 // URL hash helpers
@@ -334,6 +335,10 @@ function ViewerBody({
           ) : activeSubview === "skills" ? (
             <div className="px-5 py-4">
               <SkillsTab session={currentSession as any} />
+            </div>
+          ) : activeSubview === "prompts" ? (
+            <div className="px-5 py-4">
+              <PromptsTab session={currentSession as any} />
             </div>
           ) : (
             <div className="px-5 py-4">
