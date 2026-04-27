@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
@@ -10,15 +10,14 @@ import RunsTableView from "./components/traces/RunsTableView";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
 import TraceDetailHeader from "./components/traces/TraceDetailHeader";
-import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
+import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
-import BackendPanel from "./components/BackendPanel";
-import type { TopLevelView } from "./store/types";
+import type { Subview } from "./store/types";
 
 // URL hash helpers
 
@@ -34,42 +33,42 @@ function parseHash(): { session?: string; view?: string; turn?: number } {
   };
 }
 
-const VALID_SUBVIEWS = new Set(["turns", "perception", "logs"]);
+const VALID_SUBVIEWS = new Set([
+  "overview",
+  "plan",
+  "turns",
+  "perception",
+  "logs",
+]);
+
 // App
 
 export default function App() {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const activeSubview = useStore((s) => s.activeSubview);
-  const topLevelView = useStore((s) => s.topLevelView);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
-  const setTopLevelView = useStore((s) => s.setTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
+  const scrollPositions = useStore((s) => s.scrollPositions);
+  const saveScrollPosition = useStore((s) => s.saveScrollPosition);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const { session, view, turn } = parseHash();
-    if (view === "backend") {
-      setTopLevelView("backend");
-    } else {
-      if (session) setCurrentSessionId(session);
-      if (view && VALID_SUBVIEWS.has(view))
-        setActiveSubview(view as "turns" | "perception" | "logs");
-      if (turn && !isNaN(turn)) {
-        setTimeout(() => navigateToTurn(turn), 500);
-      }
+    if (session) setCurrentSessionId(session);
+    if (view && VALID_SUBVIEWS.has(view)) setActiveSubview(view as Subview);
+    if (turn && !isNaN(turn)) {
+      requestAnimationFrame(() => navigateToTurn(turn));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const parts: string[] = [];
-    if (topLevelView === "backend") {
-      parts.push("view=backend");
-    } else {
-      if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      if (activeSubview && activeSubview !== "turns")
-        parts.push(`view=${activeSubview}`);
-    }
+    if (currentSessionId) parts.push(`session=${currentSessionId}`);
+    if (activeSubview && activeSubview !== "overview")
+      parts.push(`view=${activeSubview}`);
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
     if (window.location.hash !== newHash) {
       window.history.replaceState(
@@ -78,52 +77,33 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [currentSessionId, activeSubview, topLevelView]);
+  }, [currentSessionId, activeSubview]);
+
+  // Restore scroll position when switching tabs
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollPositions[activeSubview] || 0;
+    }
+  }, [activeSubview, scrollPositions]);
 
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <ViewerHeader />
-      <TopLevelToggle />
       <ViewerErrorBoundary>
-        {topLevelView === "backend" ? <BackendPanel /> : <ViewerBody />}
+        <ViewerBody scrollContainerRef={scrollContainerRef} />
       </ViewerErrorBoundary>
-    </div>
-  );
-}
-
-// Top-level tab toggle
-
-function TopLevelToggle() {
-  const topLevelView = useStore((s) => s.topLevelView);
-  const setTopLevelView = useStore((s) => s.setTopLevelView);
-
-  const tabs: { key: TopLevelView; label: string }[] = [
-    { key: "traces", label: "Traces" },
-    { key: "backend", label: "Backend" },
-  ];
-
-  return (
-    <div className="flex gap-0.5 px-5 bg-trace-panel border-b border-trace-border shrink-0">
-      {tabs.map((tab) => (
-        <button
-          key={tab.key}
-          onClick={() => setTopLevelView(tab.key)}
-          className={`px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
-            topLevelView === tab.key
-              ? "text-trace-accent-light border-trace-accent"
-              : "text-trace-muted border-transparent hover:text-trace-subtle"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
     </div>
   );
 }
 
 // Viewer body
 
-function ViewerBody() {
+function ViewerBody({
+  scrollContainerRef,
+}: {
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+}) {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
@@ -134,6 +114,7 @@ function ViewerBody() {
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSearchQuery = useStore((s) => s.setSearchQuery);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const saveScrollPosition = useStore((s) => s.saveScrollPosition);
   const { sessions, refreshSessions } = useTraceData();
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
@@ -144,7 +125,7 @@ function ViewerBody() {
       setCurrentSessionId(sessionId);
       setCurrentEntries([]);
       setSearchQuery("");
-      setActiveSubview("turns");
+      setActiveSubview("overview");
     },
     [
       currentSessionId,
@@ -197,6 +178,16 @@ function ViewerBody() {
     return () => window.removeEventListener("keydown", handler);
   }, [currentSessionId, hasPrev, hasNext, navigateSession, deselectSession]);
 
+  // Save scroll position on scroll
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      if (currentSessionId) {
+        saveScrollPosition(activeSubview, e.currentTarget.scrollTop);
+      }
+    },
+    [currentSessionId, activeSubview, saveScrollPosition],
+  );
+
   // Session selected: drill-in detail
   if (currentSessionId && currentSession) {
     return (
@@ -240,38 +231,52 @@ function ViewerBody() {
         </div>
         <TraceSubviewToggle />
 
-        {activeSubview === "turns" ? (
-          <>
-            <TurnSearchBar />
-            {(currentEntries as any[]).length === 0 && !tracesError ? (
-              <div className="flex-1 px-5 py-4">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
+        >
+          {activeSubview === "turns" ? (
+            <div className="flex flex-col px-5 py-4">
+              <TurnSearchBar />
+              {(currentEntries as any[]).length === 0 && !tracesError ? (
                 <LoadingSpinner message="Loading turns..." />
-              </div>
-            ) : (
-              <div className="flex-1 min-h-0 overflow-hidden flex flex-col px-5 py-4">
-                <TurnTimeline entries={currentEntries as any[]} />
-                <div className="flex-1 min-h-0">
-                  <TurnList />
+              ) : (
+                <>
+                  <TurnTimeline entries={currentEntries as any[]} />
+                  <div className="flex-1 min-h-0">
+                    <TurnList />
+                  </div>
+                </>
+              )}
+            </div>
+          ) : activeSubview === "perception" ? (
+            <div className="px-5 py-4">
+              <PerceptionList />
+            </div>
+          ) : activeSubview === "logs" ? (
+            <div className="flex flex-col">
+              {logsWarning && (
+                <div className="px-5 pt-3">
+                  <div className="text-xs text-state-warning bg-state-warning/10 border border-state-warning/25 rounded px-3 py-2">
+                    {logsWarning}
+                  </div>
                 </div>
+              )}
+              <LogList />
+            </div>
+          ) : (
+            <div className="px-5 py-4">
+              <div className="text-sm text-trace-muted">
+                {activeSubview === "overview"
+                  ? "Overview tab coming soon..."
+                  : activeSubview === "plan"
+                    ? "Plan tab coming soon..."
+                    : `${activeSubview} tab coming soon...`}
               </div>
-            )}
-          </>
-        ) : activeSubview === "perception" ? (
-          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 scrollbar-thin">
-            <PerceptionList />
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {logsWarning && (
-              <div className="px-5 pt-3">
-                <div className="text-xs text-state-warning bg-state-warning/10 border border-state-warning/25 rounded px-3 py-2">
-                  {logsWarning}
-                </div>
-              </div>
-            )}
-            <LogList />
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

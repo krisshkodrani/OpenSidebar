@@ -67,7 +67,10 @@ export interface TracesSlice {
   sessionLogsLoading: boolean;
   logsWarning: string | null;
   searchQuery: string;
-  activeSubview: "turns" | "perception" | "logs";
+  activeSubview: Subview;
+  setActiveSubview: (view: Subview) => void;
+  scrollPositions: ScrollPositions;
+  saveScrollPosition: (view: Subview, position: number) => void;
   tracesLoading: boolean;
   tracesError: string | null;
   setSessions: (sessions: TraceSession[]) => void;
@@ -82,7 +85,6 @@ export interface TracesSlice {
   setSessionLogsLoading: (loading: boolean) => void;
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
-  setActiveSubview: (view: "turns" | "perception" | "logs") => void;
   setTraceListMode: (mode: "sessions" | "runs") => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
@@ -99,14 +101,28 @@ export interface TracesSlice {
   collapseAllRunGroups: () => void;
 }
 
-export type TopLevelView = "traces" | "backend";
+export type Subview =
+  | "overview"
+  | "plan"
+  | "turns"
+  | "perception"
+  | "prompts"
+  | "skills"
+  | "logs";
+
+export interface ScrollPositions {
+  overview: number;
+  plan: number;
+  turns: number;
+  perception: number;
+  prompts: number;
+  skills: number;
+  logs: number;
+}
 
 // ── Combined Store ─────────────────────────────────────────────
 
-export type Store = TracesSlice & {
-  topLevelView: TopLevelView;
-  setTopLevelView: (view: TopLevelView) => void;
-};
+export type Store = TracesSlice;
 
 export type SliceCreator<T> = StateCreator<
   Store,
