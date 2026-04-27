@@ -189,6 +189,64 @@ describe("Content Actions", () => {
                 (window as any).find = origFind;
             }
         });
+
+        test("finds deeply nested shadow input by placeholder when window.find misses", async () => {
+            const host = document.createElement("macroponent-test-shell");
+            document.body.appendChild(host);
+            const shadow = host.attachShadow({ mode: "open" });
+            const inner = document.createElement("sn-navigator-panel");
+            shadow.appendChild(inner);
+            const innerShadow = inner.attachShadow({ mode: "open" });
+            innerShadow.innerHTML = `<input id="navigator-filter" type="search" placeholder="Filter" />`;
+            resetStableIds();
+            tagElements();
+
+            const origFind = (window as any).find;
+            (window as any).find = () => false;
+
+            try {
+                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Filter" });
+                expect(result.success).toBe(true);
+                expect(result.result).toContain("<input>");
+                expect(result.result).toContain("Use tag");
+                const match = result.result.match(/\[(\d+)\]/);
+                expect(match).not.toBeNull();
+                const tagId = Number(match![1]);
+                expect((getTagMap().get(tagId) as HTMLElement).id).toBe("navigator-filter");
+            } finally {
+                (window as any).find = origFind;
+            }
+        });
+
+        test("does not return body as actionable when window.find lands in non-actionable text", async () => {
+            document.body.innerHTML = `
+                <style>.search-label::before { content: "Search"; }</style>
+                <button id="other">Other action</button>
+            `;
+            resetStableIds();
+            tagElements();
+
+            const origFind = (window as any).find;
+            (window as any).find = (text: string) => {
+                const style = document.querySelector("style")!;
+                const textNode = style.firstChild!;
+                const sel = window.getSelection()!;
+                sel.removeAllRanges();
+                const range = document.createRange();
+                range.setStart(textNode, 0);
+                range.setEnd(textNode, text.length);
+                sel.addRange(range);
+                return true;
+            };
+
+            try {
+                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Search" });
+                expect(result.result).not.toContain("<body>");
+                expect(result.result).not.toContain("Use tag");
+            } finally {
+                (window as any).find = origFind;
+            }
+        });
     });
 
     describe("executeRead (read_page)", () => {
@@ -218,6 +276,35 @@ describe("Content Actions", () => {
 
             expect(result.success).toBe(true);
             expect(result.result).toContain(`Clicked [${buttonId}] button "Submit"`);
+        });
+
+        test("click_element treats ServiceNow macroponent shell as pass-through", async () => {
+            (window as any).happyDOM.setURL("https://workarenapublic18.service-now.com/now/nav/ui/home");
+            document.body.innerHTML = `
+                <button id="all" role="button" aria-label="All">All</button>
+                <macroponent-f51912f4c700201072b211d4d8c26010 id="shell"></macroponent-f51912f4c700201072b211d4d8c26010>
+            `;
+            resetStableIds();
+            tagElements();
+
+            const button = document.getElementById("all") as HTMLButtonElement;
+            const shell = document.getElementById("shell") as HTMLElement;
+            const buttonId = Number(button.getAttribute("data-os-tag"));
+            const clickHandler = vi.fn();
+            button.addEventListener("click", clickHandler);
+            const elementFromPoint = vi
+                .spyOn(document, "elementFromPoint")
+                .mockReturnValue(shell);
+
+            try {
+                const result = await executeAction(ToolName.CLICK_ELEMENT, { id: buttonId });
+
+                expect(result.success).toBe(true);
+                expect(result.result).toContain(`Clicked [${buttonId}] button "All"`);
+                expect(clickHandler).toHaveBeenCalledTimes(1);
+            } finally {
+                elementFromPoint.mockRestore();
+            }
         });
 
         test("type_text accepts string tag IDs", async () => {

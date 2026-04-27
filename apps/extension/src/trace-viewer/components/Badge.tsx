@@ -85,7 +85,7 @@ const VARIANT_CLASSES: Record<string, string> = {
 };
 
 const DEFAULT_EVENT_CLASS =
-  "bg-slate-500/10 text-slate-500 border border-slate-500/25";
+  "bg-trace-bg text-trace-muted border border-trace-border";
 
 interface BadgeProps {
   variant: BadgeVariant;

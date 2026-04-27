@@ -141,7 +141,9 @@ describe("trace-viewer store", () => {
       },
     ] as any);
 
-    const runOne = useStore.getState().runGroups.find((g) => g.runId === "run-1");
+    const runOne = useStore
+      .getState()
+      .runGroups.find((g) => g.runId === "run-1");
     expect(runOne?.expanded).toBe(true);
   });
 
@@ -155,45 +157,30 @@ describe("trace-viewer store", () => {
     expect(useStore.getState().focusTurnNumber).toBe(4);
   });
 
-  test("trace list mode defaults to runs and can be toggled", () => {
-    expect(useStore.getState().traceListMode).toBe("runs");
-
-    useStore.getState().setTraceListMode("sessions");
+  test("trace list mode defaults to sessions and can be toggled", () => {
     expect(useStore.getState().traceListMode).toBe("sessions");
+
+    useStore.getState().setTraceListMode("runs");
+    expect(useStore.getState().traceListMode).toBe("runs");
   });
 
-  test("compare selection is capped at two sessions and drives compare mode", () => {
-    useStore.getState().toggleCompareSession("s1");
-    useStore.getState().toggleCompareSession("s2");
-    expect(useStore.getState().compareSessionIds).toEqual(["s1", "s2"]);
+  test("setSessions falls back to sessions when selected run view has no groups", () => {
+    useStore.getState().setTraceListMode("runs");
+    useStore.getState().setSessions([
+      {
+        sessionId: "s1",
+        startTime: 100,
+        endTime: 160,
+        query: "Standalone query",
+        startUrl: "https://example.com/a",
+        outcome: "completed",
+        turnCount: 3,
+        summary: "done",
+        metrics: null,
+      },
+    ] as any);
 
-    useStore.getState().setCompareViewActive(true);
-    expect(useStore.getState().compareViewActive).toBe(true);
-
-    useStore.getState().toggleCompareSession("s3");
-    expect(useStore.getState().compareSessionIds).toEqual(["s2", "s3"]);
-    expect(useStore.getState().compareViewActive).toBe(false);
-
-    useStore.getState().clearCompareSessions();
-    expect(useStore.getState().compareSessionIds).toEqual([]);
-    expect(useStore.getState().compareViewActive).toBe(false);
-  });
-
-  test("saved views can be created, applied, and deleted", () => {
-    useStore.getState().setFilter("outcome", "error");
-    useStore.getState().setFilter("tier", "planner");
-    useStore.getState().saveCurrentView();
-
-    expect(useStore.getState().savedViews).toHaveLength(1);
-    expect(useStore.getState().savedViews[0].name).toContain("Error");
-
-    useStore.getState().setFilter("outcome", "all");
-    useStore.getState().setFilter("tier", "all");
-    useStore.getState().applySavedView(useStore.getState().savedViews[0].id);
-    expect(useStore.getState().filters.outcome).toBe("error");
-    expect(useStore.getState().filters.tier).toBe("planner");
-
-    useStore.getState().deleteSavedView(useStore.getState().savedViews[0].id);
-    expect(useStore.getState().savedViews).toHaveLength(0);
+    expect(useStore.getState().runGroups).toHaveLength(0);
+    expect(useStore.getState().traceListMode).toBe("sessions");
   });
 });

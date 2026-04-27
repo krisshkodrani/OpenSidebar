@@ -71,7 +71,7 @@ Routine E2E is divided by purpose rather than difficulty:
 | ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Smoke              | `npm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
 | Interactions       | `npm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
-| Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, durable state, and memory regressions                          |
+| Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, and durable state regressions                                  |
 | WorkArena gap      | `npm run test:e2e:workarena`             | Local CRM, ticket, document, chat, email, and workflow tasks modeled after WorkArena categories  |
 | WorkArena variance | `npm run test:e2e:workarena:variance`    | Repeated WorkArena-gap run for pass-rate variance; expensive by design                           |
 | WorkArena copy     | `npm run test:e2e:workarena:copy`        | No-token local rehearsal for adapter reports, held sessions, session import, and optional agent E2E |
@@ -186,7 +186,7 @@ Structured perception uses the unified v6 contract:
 - side panel UI: user interaction and settings
 - service worker: agent loop, orchestration, tool routing, tracing
 - content script: DOM tagging, snapshots, page actions
-- backend service: memory and scheduled task support
+- backend service: scheduled task and durable run support
 
 ### E2E harness
 

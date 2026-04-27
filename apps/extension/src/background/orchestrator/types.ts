@@ -128,7 +128,6 @@ export interface OrchestratorTask {
   rootTabUrl?: string | null;
   query: string;
   turnNumber?: number;
-  priorTurnMemoryBrief?: string;
   status:
     | "planning"
     | "running"
@@ -178,8 +177,6 @@ export interface OrchestratorTask {
   createdWorkerTabIds?: number[];
   /** Explicit task-owned tab roles, bindings, and rebound metadata */
   tabCoordination?: TaskTabCoordination;
-  /** Site-specific knowledge injected into executor instructions */
-  siteKnowledgeBrief?: string;
   /** Task-relevant, user-authored non-secret profile context */
   personalContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;

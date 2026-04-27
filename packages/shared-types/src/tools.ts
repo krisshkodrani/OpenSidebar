@@ -268,7 +268,7 @@ export type XrayPageArgs = Record<string, never>;
 /** Arguments for dismiss_overlays — no arguments */
 export type DismissOverlaysArgs = Record<string, never>;
 
-/** Arguments for update_notes — save a note to persistent working memory */
+/** Arguments for update_notes — save a note to the current run scratchpad */
 export interface UpdateNotesArgs {
   /** The note to save (max 500 chars) */
   note: string;
@@ -328,13 +328,4 @@ export type ToolArgsMap = {
   [ToolName.GET_PROFILE_FIELDS]: GetProfileFieldsArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
-  [ToolName.SCHEDULE_TASK]: ScheduleTaskArgs;
 };
-
-export interface ScheduleTaskArgs {
-  description: string;
-  query: string;
-  schedule?: string;
-  runAt?: string;
-  tabUrl?: string;
-}

@@ -5,6 +5,7 @@ import {
   tagElements,
   getTagMap,
   resetStableIds,
+  MAX_SHADOW_DEPTH,
 } from "../../src/content/tagging";
 
 describe("Shadow DOM Support - AFTER State", () => {
@@ -90,12 +91,12 @@ describe("Shadow DOM Support - AFTER State", () => {
   });
 
   test("querySelectorAllDeep respects max depth limit", () => {
-    // Create a chain of 5 nested shadow roots
+    // Create a chain deeper than the configured traversal limit
     let currentHost = document.createElement("div");
     currentHost.id = "level-0";
     document.body.appendChild(currentHost);
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= MAX_SHADOW_DEPTH + 2; i++) {
       const shadow = currentHost.attachShadow({ mode: "open" });
       const nextHost = document.createElement("div");
       nextHost.id = `level-${i}`;
@@ -110,14 +111,13 @@ describe("Shadow DOM Support - AFTER State", () => {
       currentHost = nextHost;
     }
 
-    // With max depth of 3, we should find buttons at levels 1, 2, 3 but not 4, 5
+    // The traversal should include roots up to MAX_SHADOW_DEPTH and stop after it.
     const buttons = querySelectorAllDeep(document, "button");
 
-    // Should find 3 buttons (depth limit prevents finding levels 4 and 5)
-    expect(buttons.length).toBe(3);
+    expect(buttons.length).toBe(MAX_SHADOW_DEPTH);
     expect(buttons.some((b) => b.id === "button-level-1")).toBe(true);
-    expect(buttons.some((b) => b.id === "button-level-2")).toBe(true);
-    expect(buttons.some((b) => b.id === "button-level-3")).toBe(true);
+    expect(buttons.some((b) => b.id === `button-level-${MAX_SHADOW_DEPTH}`)).toBe(true);
+    expect(buttons.some((b) => b.id === `button-level-${MAX_SHADOW_DEPTH + 1}`)).toBe(false);
 
     document.body.removeChild(document.getElementById("level-0")!);
   });
@@ -242,7 +242,7 @@ describe("DOM Coverage Report - AFTER", () => {
       standardDOM: "✅ Full support",
       openShadowDOM: "✅ Full support - querySelectorAllDeep works",
       closedShadowDOM: "⚠️ Graceful degradation - inaccessible by design",
-      nestedShadowDOM: "✅ Supported up to 3 levels deep",
+      nestedShadowDOM: "✅ Supported up to 10 levels deep",
       webComponents: "✅ Full support for open shadow roots",
       frameworks: {
         lit: "✅ Elements discoverable",

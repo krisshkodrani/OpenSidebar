@@ -3,7 +3,6 @@ import type {
   TracesSlice,
   TraceFilters,
   RunGroup,
-  SavedTraceView,
 } from "./types";
 import type { TraceSession } from "../../types/traces";
 import { isoDayOffset } from "../utils";
@@ -31,25 +30,6 @@ const OUTCOME_PRIORITY: Record<string, number> = {
   max_turns: 2,
   error: 3,
 };
-
-function titleCase(value: string): string {
-  return value
-    .split(/[_-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function describeFilters(filters: TraceFilters): string {
-  const parts: string[] = [];
-  if (filters.outcome !== "all") parts.push(titleCase(filters.outcome));
-  if (filters.mode !== "all") parts.push(titleCase(filters.mode));
-  if (filters.tier !== "all") parts.push(titleCase(filters.tier));
-  if (filters.domain) parts.push(filters.domain);
-  if (filters.model !== "all") parts.push(filters.model.replace(/^.*\//, ""));
-  if (parts.length === 0) return "Saved View";
-  return parts.slice(0, 3).join(" / ");
-}
 
 function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
   const byRun = new Map<string, TraceSession[]>();
@@ -112,10 +92,7 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessions: [],
   runGroups: [],
-  traceListMode: "runs",
-  compareSessionIds: [],
-  compareViewActive: false,
-  savedViews: [],
+  traceListMode: "sessions",
   availableDays: [],
   availableModels: [],
   filters: { ...DEFAULT_FILTERS },
@@ -134,9 +111,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     set((s) => {
       s.tableSort = { column, direction };
     }),
-  storyCache: {},
-  storyLoading: false,
-  storyError: null,
 
   setSessions: (sessions) =>
     set((s) => {
@@ -150,10 +124,12 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
         if (prevExpanded.has(g.runId)) g.expanded = true;
       }
       s.runGroups = groups;
-      const validSessionIds = new Set(sessions.map((session) => session.sessionId));
-      s.compareSessionIds = s.compareSessionIds.filter((id) => validSessionIds.has(id));
-      if (s.compareSessionIds.length < 2) {
-        s.compareViewActive = false;
+      if (
+        s.traceListMode === "runs" &&
+        groups.length === 0 &&
+        sessions.length > 0
+      ) {
+        s.traceListMode = "sessions";
       }
     }),
   setAvailableDays: (days) =>
@@ -208,51 +184,6 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     set((s) => {
       s.traceListMode = mode;
     }),
-  toggleCompareSession: (sessionId) =>
-    set((s) => {
-      const existingIndex = s.compareSessionIds.indexOf(sessionId);
-      if (existingIndex >= 0) {
-        s.compareSessionIds.splice(existingIndex, 1);
-      } else if (s.compareSessionIds.length >= 2) {
-        s.compareSessionIds = [s.compareSessionIds[1], sessionId];
-      } else {
-        s.compareSessionIds.push(sessionId);
-      }
-      s.compareViewActive = false;
-    }),
-  clearCompareSessions: () =>
-    set((s) => {
-      s.compareSessionIds = [];
-      s.compareViewActive = false;
-    }),
-  setCompareViewActive: (active) =>
-    set((s) => {
-      s.compareViewActive = active && s.compareSessionIds.length === 2;
-    }),
-  saveCurrentView: () =>
-    set((s) => {
-      const baseName = describeFilters(s.filters);
-      const name =
-        s.savedViews.some((view) => view.name === baseName)
-          ? `${baseName} ${s.savedViews.length + 1}`
-          : baseName;
-      const nextView: SavedTraceView = {
-        id: `view-${Date.now()}-${s.savedViews.length + 1}`,
-        name,
-        filters: { ...s.filters },
-      };
-      s.savedViews.unshift(nextView);
-    }),
-  applySavedView: (id) =>
-    set((s) => {
-      const view = s.savedViews.find((item) => item.id === id);
-      if (!view) return;
-      s.filters = { ...view.filters };
-    }),
-  deleteSavedView: (id) =>
-    set((s) => {
-      s.savedViews = s.savedViews.filter((view) => view.id !== id);
-    }),
   focusTurnNumber: null,
   navigateToTurn: (turnNumber) =>
     set((s) => {
@@ -284,17 +215,5 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   collapseAllRunGroups: () =>
     set((s) => {
       for (const g of s.runGroups) g.expanded = false;
-    }),
-  setStoryCache: (sessionId, content) =>
-    set((s) => {
-      s.storyCache[sessionId] = content;
-    }),
-  setStoryLoading: (loading) =>
-    set((s) => {
-      s.storyLoading = loading;
-    }),
-  setStoryError: (error) =>
-    set((s) => {
-      s.storyError = error;
     }),
 });

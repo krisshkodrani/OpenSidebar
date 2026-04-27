@@ -102,6 +102,7 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           t === "AGENT_STEP" ||
           t === "TASK_PROGRESS" ||
           t === "TASK_COMPLETION" ||
+          t === "STREAM_CHUNK" ||
           t === "APPROVAL_REQUEST" ||
           t === "CLARIFICATION_REQUEST" ||
           t === "TASK_RECOVERY"

@@ -55,6 +55,11 @@ export interface UserSettings {
   requireApprovals: boolean;
   /** Allow agent to open or switch to new pages (default: true) */
   allowNavigation: boolean;
+  /**
+   * Optional runtime navigation boundary. When set, browser navigation tools may
+   * only navigate to these origins, and generic web-search navigation is blocked.
+   */
+  allowedNavigationOrigins?: string[];
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
   /** Override executor model (default: google/gemini-3-flash-preview) */

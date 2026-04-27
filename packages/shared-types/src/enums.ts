@@ -69,7 +69,6 @@ export enum ToolName {
   GET_PROFILE_FIELDS = "get_profile_fields",
   CREATE_WINDOW = "create_window",
   UPDATE_PLAN = "update_plan",
-  SCHEDULE_TASK = "schedule_task",
 }
 
 /** Risk classification for a tool invocation */

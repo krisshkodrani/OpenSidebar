@@ -1,6 +1,9 @@
 export const E2E_TEST_API_ENABLED_STORAGE_KEY =
   "opensidebar:e2eTestApiEnabled";
 
+export const E2E_VISIBLE_RAIL_STORAGE_KEY =
+  "opensidebar:e2eVisibleRail";
+
 export const E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE =
   "E2E_SEED_PENDING_INTERACTION";
 

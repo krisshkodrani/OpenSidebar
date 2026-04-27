@@ -22,8 +22,8 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
   - trace viewer
   - extension tests and E2E harness
 - The backend is an app-local service used for:
-  - memory persistence
   - task scheduling
+  - durable run state
   - backend health and task APIs
 - Shared packages keep cross-app contracts stable:
   - `packages/shared-types/` for shared types

@@ -280,7 +280,7 @@ function buildExecutorSkillSection(node: TaskNode): string[] {
       "- For recommendation or best-match tasks, treat the visible listings as the candidate set unless the user narrowed the scope.",
       "- Open each next visible listing detail directly from the listings page; keep the loop moving in list order.",
       "- Capture only fit-critical facts: role, company, location, salary, seniority, and core stack.",
-      "- Keep compact notes per reviewed listing so the final recommendation can be synthesized from evidence instead of memory.",
+      "- Keep compact notes per reviewed listing so the final recommendation can be synthesized from evidence instead of unverified recall.",
       "- After each review, use the page's visible listings/back-to-results control before continuing.",
       "- Avoid exploratory recovery tools while visible list actions or return controls exist.",
       "- Call done() only after the requested listing set is reviewed, the listings page is visible again, and any recommendation is grounded in the captured facts.",
@@ -460,9 +460,8 @@ export function isVerificationTurnQuery(query?: string): boolean {
 
 export function shouldUseVerificationTurnMode(params: {
   originalQuery?: string;
-  priorTurnMemoryBrief?: string;
 }): boolean {
-  return !!params.priorTurnMemoryBrief && isVerificationTurnQuery(params.originalQuery);
+  return isVerificationTurnQuery(params.originalQuery);
 }
 
 export function buildExecutorInstruction(
@@ -471,9 +470,7 @@ export function buildExecutorInstruction(
   realitySignal?: string,
   objectiveOverride?: string,
   originalQuery?: string,
-  priorTurnMemoryBrief?: string,
   verificationTurnMode = false,
-  siteKnowledgeBrief?: string,
   personalContextBrief?: string,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
@@ -515,10 +512,6 @@ export function buildExecutorInstruction(
         ]
       : ["- Call done() only when success criteria are satisfied."]),
   );
-
-  if (siteKnowledgeBrief) {
-    sections.push("", siteKnowledgeBrief);
-  }
 
   if (personalContextBrief) {
     sections.push(
@@ -591,10 +584,6 @@ export function buildExecutorInstruction(
       "- Do not describe findings in plain text.",
       "- Do not repeat the prior action unless the user explicitly asked for that.",
     );
-  }
-
-  if (priorTurnMemoryBrief) {
-    sections.push("", priorTurnMemoryBrief);
   }
 
   if (originalQuery) {

@@ -21,23 +21,12 @@ import {
 import { loadSettings } from "../../utils/settings-storage";
 import { listPromptDescriptors } from "../../prompts";
 import {
-  buildQueryWithTurnMemory,
-  buildWorkspaceTurnRecord,
-  formatWorkspaceTurnMemoryForPrompt,
-  loadWorkspaceTurnMemory,
-  saveWorkspaceTurnRecord,
-} from "../agent/memory";
-import {
   appendTaskRunSideEffects,
   deleteTaskRunProgress,
   fetchTaskRunResume,
   listTaskRuns,
   patchTaskRun,
-  postMemory,
   resolveProfileContext,
-  searchMemory,
-  searchMemoryByDomain,
-  formatBackendMemoriesForPrompt,
   updateTaskRunCheckpoint,
   upsertTaskRun,
   upsertTaskRunNode,
@@ -49,17 +38,6 @@ import {
   type DurableTaskRunSummary,
   type DurableTaskRunResumeResponse,
 } from "../infrastructure/backend-client";
-import {
-  extractDomain,
-  buildExtractionContext,
-  extractSiteKnowledge as extractSiteKnowledgeLLM,
-  extractSiteKnowledgeFallback,
-  deduplicateSiteKnowledge,
-  rankSiteKnowledgeForTask,
-  formatSiteKnowledgeForPrompt,
-  type SiteKnowledgeEntry,
-} from "./site-knowledge";
-import { LLMClient } from "../llm/client";
 import { workspaceManager } from "../workspaces/manager";
 import { agentNotifications } from "../notifications";
 import { isUsableTab } from "../infrastructure/tab-resolution";
@@ -2182,39 +2160,64 @@ export class Orchestrator {
     resumeTabId: number,
   ): Promise<OrchestratorStartInput | null> {
     const settings = (await loadSettings()) ?? ({} as UserSettings);
-    const mode =
+    type ProviderMode = NonNullable<UserSettings["providerMode"]>;
+    const keyForMode = (mode: ProviderMode): string | undefined => {
+      if (mode === "fireworks") return settings.fireworksApiKey;
+      if (mode === "moonshot") return settings.kimiApiKey;
+      if (mode === "openai-groq") return settings.openaiApiKey;
+      return settings.openRouterApiKey;
+    };
+    const pickFallbackProvider = ():
+      | { mode: ProviderMode; activeKey: string }
+      | null => {
+      if (settings.openRouterApiKey) {
+        return { mode: "openrouter", activeKey: settings.openRouterApiKey };
+      }
+      if (settings.fireworksApiKey) {
+        return { mode: "fireworks", activeKey: settings.fireworksApiKey };
+      }
+      if (settings.kimiApiKey) {
+        return { mode: "moonshot", activeKey: settings.kimiApiKey };
+      }
+      if (settings.openaiApiKey) {
+        return { mode: "openai-groq", activeKey: settings.openaiApiKey };
+      }
+      return null;
+    };
+    const configuredMode: ProviderMode =
       settings.providerMode ??
       (settings.openRouterApiKey
         ? "openrouter"
         : settings.kimiApiKey
           ? "moonshot"
           : "fireworks");
-    const activeKey =
-      mode === "fireworks"
-        ? settings.fireworksApiKey
-        : mode === "moonshot"
-          ? settings.kimiApiKey
-        : mode === "openai-groq"
-          ? settings.openaiApiKey
-          : settings.openRouterApiKey;
-    if (!activeKey) {
+    const configuredKey = keyForMode(configuredMode);
+    const provider =
+      configuredKey != null && configuredKey.length > 0
+        ? { mode: configuredMode, activeKey: configuredKey }
+        : pickFallbackProvider();
+    if (!provider) {
       logger.warn(
         "orchestrator",
         "Cannot resume task without API key for active provider",
         {
           workspaceId: task.workspaceId,
-          providerMode: mode,
+          providerMode: configuredMode,
         },
       );
       return null;
     }
+    const resumeSettings: UserSettings = {
+      ...settings,
+      providerMode: provider.mode,
+    };
 
     return {
       query: task.query,
       tabId: resumeTabId,
       workspaceId: task.workspaceId,
-      settings,
-      openRouterApiKey: activeKey,
+      settings: resumeSettings,
+      openRouterApiKey: provider.activeKey,
     };
   }
 
@@ -3208,55 +3211,14 @@ export class Orchestrator {
       await this.stopTask(input.workspaceId);
     }
 
-    const priorTurnMemory = await loadWorkspaceTurnMemory(
-      input.workspaceId,
-    ).catch(() => null);
-    const priorTurnMemoryBrief =
-      formatWorkspaceTurnMemoryForPrompt(priorTurnMemory);
-
-    // Long-term memory from the backend store (non-blocking, falls back to empty)
-    const longTermMemories = await searchMemory(input.query, 5).catch(() => []);
-    const longTermBrief = formatBackendMemoriesForPrompt(longTermMemories);
     const personalContext = await resolveProfileContext(input.query).catch(
       () => null,
     );
     const personalContextBrief = personalContext?.rendered || "";
 
-    // Site-specific knowledge by domain (non-blocking)
-    let siteKnowledgeBrief = "";
-    try {
-      const tab = await chrome.tabs.get(input.tabId);
-      const currentDomain = extractDomain(tab.url || "");
-      if (currentDomain) {
-        const siteMemories = await searchMemoryByDomain(
-          currentDomain,
-          10,
-        ).catch(() => []);
-        siteKnowledgeBrief = formatSiteKnowledgeForPrompt(
-          rankSiteKnowledgeForTask(
-            deduplicateSiteKnowledge(siteMemories),
-            input.query,
-          ),
-        );
-      }
-    } catch {
-      // Tab may not be accessible — skip site knowledge
-    }
-
-    const combinedMemoryBrief = [
-      personalContextBrief,
-      priorTurnMemoryBrief,
-      longTermBrief,
-      siteKnowledgeBrief,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    const plannerQuery = buildQueryWithTurnMemory(
-      input.query,
-      combinedMemoryBrief,
-    );
-    const turnNumber = (priorTurnMemory?.turns.length ?? 0) + 1;
-
+    const plannerQuery = personalContextBrief
+      ? `${personalContextBrief}\n\nCURRENT REQUEST:\n${input.query}`
+      : input.query;
     const taskId = crypto.randomUUID();
     const task: OrchestratorTask = {
       runId: crypto.randomUUID(),
@@ -3265,10 +3227,8 @@ export class Orchestrator {
       rootTabId: input.tabId,
       rootTabUrl: null,
       query: input.query,
-      turnNumber,
-      priorTurnMemoryBrief: priorTurnMemoryBrief || undefined,
+      turnNumber: 1,
       personalContextBrief: personalContextBrief || undefined,
-      siteKnowledgeBrief: siteKnowledgeBrief || undefined,
       status: "planning",
       createdAt: Date.now(),
       nodes: [],
@@ -3974,7 +3934,6 @@ export class Orchestrator {
       });
       const verificationTurnMode = shouldUseVerificationTurnMode({
         originalQuery: task.query,
-        priorTurnMemoryBrief: task.priorTurnMemoryBrief,
       });
 
       const loop = this.deps.createAgentLoop({
@@ -4161,9 +4120,7 @@ export class Orchestrator {
           driftSignal,
           undefined, // node.description used directly
           task.query,
-          task.priorTurnMemoryBrief,
           verificationTurnMode,
-          task.siteKnowledgeBrief,
           task.personalContextBrief,
         );
 
@@ -5478,7 +5435,6 @@ export class Orchestrator {
       terminationReason: task.terminationReason,
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    await this.persistWorkspaceTurnMemory(task, completionPayload);
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
@@ -6067,119 +6023,6 @@ export class Orchestrator {
     });
   }
 
-  private async persistWorkspaceTurnMemory(
-    task: OrchestratorTask,
-    payload: TaskCompletionMessage["payload"],
-  ): Promise<void> {
-    try {
-      let finalUrl: string | null = null;
-      try {
-        const tab = await chrome.tabs.get(task.rootTabId);
-        finalUrl = tab.url ?? null;
-      } catch {
-        finalUrl = null;
-      }
-      await saveWorkspaceTurnRecord(
-        buildWorkspaceTurnRecord({
-          workspaceId: task.workspaceId,
-          taskId: task.id,
-          userQuery: task.query,
-          completion: payload,
-          completedAt: task.finishedAt ?? Date.now(),
-          turnNumber: task.turnNumber ?? 1,
-          finalUrl,
-        }),
-      );
-
-      // Long-term memory via the backend store (fire-and-forget)
-      postMemory({
-        category: "execution-result",
-        title: `${payload.status}: ${task.query.slice(0, 80)}`,
-        content: [
-          `User request: ${task.query}`,
-          `Outcome: ${payload.status}`,
-          `Summary: ${payload.summary}`,
-          finalUrl ? `Final URL: ${finalUrl}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        workspaceId: task.workspaceId,
-        metadata: { taskId: task.id, outcome: payload.status },
-      }).catch(() => {});
-
-      // Site-specific knowledge extraction (fire-and-forget)
-      this.extractAndStoreSiteKnowledge(task, payload, finalUrl).catch(
-        () => {},
-      );
-    } catch (error) {
-      logger.debug("orchestrator", "Failed to persist workspace turn memory", {
-        error,
-        workspaceId: task.workspaceId,
-        taskId: task.id,
-      });
-    }
-  }
-
-  private async extractAndStoreSiteKnowledge(
-    task: OrchestratorTask,
-    payload: TaskCompletionMessage["payload"],
-    finalUrl: string | null,
-  ): Promise<void> {
-    const domain = extractDomain(finalUrl || "");
-    if (!domain) return;
-
-    const context = buildExtractionContext(task, payload, finalUrl);
-
-    // Try LLM extraction, fall back to rule-based
-    let entries: SiteKnowledgeEntry[];
-    try {
-      const settings = await loadSettings();
-      if (!settings) throw new Error("no settings");
-      const mode = settings.providerMode ?? "fireworks";
-      const activeKey =
-        mode === "fireworks"
-          ? settings.fireworksApiKey
-          : mode === "moonshot"
-            ? settings.kimiApiKey
-          : mode === "openai-groq"
-            ? settings.openaiApiKey
-            : settings.openRouterApiKey;
-      if (!activeKey) throw new Error("no api key");
-
-      const client = new LLMClient(activeKey, {
-        providerMode: mode,
-        fireworksApiKey: settings.fireworksApiKey,
-        kimiApiKey: settings.kimiApiKey,
-      });
-      entries = await extractSiteKnowledgeLLM(context, domain, client);
-    } catch {
-      entries = extractSiteKnowledgeFallback(task, payload, domain);
-    }
-
-    for (const entry of entries) {
-      postMemory({
-        category: "site-knowledge",
-        title: `${entry.domain}: ${entry.tip.slice(0, 60)}`,
-        content: entry.tip,
-        workspaceId: task.workspaceId,
-        metadata: {
-          domain: entry.domain,
-          tipType: entry.tipType,
-          confidence: entry.confidence,
-          taskId: task.id,
-        },
-      }).catch(() => {});
-    }
-
-    if (entries.length > 0) {
-      logger.info("orchestrator", "Extracted site knowledge", {
-        domain,
-        count: entries.length,
-        tips: entries.map((e) => e.tip.slice(0, 50)),
-      });
-    }
-  }
-
   private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
     return task.nodes.map((node) => ({
       description: node.description,
@@ -6224,7 +6067,6 @@ export class Orchestrator {
       terminationReason,
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    await this.persistWorkspaceTurnMemory(task, completionPayload);
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,

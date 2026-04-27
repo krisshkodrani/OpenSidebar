@@ -1,4 +1,5 @@
 import React from "react";
+import { ChevronRight } from "lucide-react";
 import type { TraceSession } from "../../../types/traces";
 import { useStore } from "../../store";
 import Badge from "../Badge";
@@ -20,11 +21,11 @@ interface RunsTableViewProps {
 export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
   const runGroups = useStore((s) => s.runGroups);
   const tracesLoading = useStore((s) => s.tracesLoading);
-  const compareSessionIds = useStore((s) => s.compareSessionIds);
+  const sessions = useStore((s) => s.sessions);
+  const setTraceListMode = useStore((s) => s.setTraceListMode);
   const expandAllRunGroups = useStore((s) => s.expandAllRunGroups);
   const collapseAllRunGroups = useStore((s) => s.collapseAllRunGroups);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
-  const toggleCompareSession = useStore((s) => s.toggleCompareSession);
 
   if (tracesLoading) {
     return (
@@ -36,8 +37,22 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
 
   if (runGroups.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-trace-dim text-sm">
-        No runs found. Switch to Sessions or adjust filters.
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 px-5 text-center text-trace-muted text-sm">
+        <div>
+          No trace runs found for the current filters.
+          {sessions.length > 0
+            ? " These traces are still available as sessions."
+            : ""}
+        </div>
+        {sessions.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setTraceListMode("sessions")}
+            className="rounded border border-trace-border px-3 py-1.5 text-xs text-trace-subtle hover:text-trace-text hover:border-trace-accent/50 transition-colors"
+          >
+            View sessions
+          </button>
+        )}
       </div>
     );
   }
@@ -69,8 +84,12 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
               className="w-full text-left px-5 py-3 hover:bg-trace-accent/[0.05] transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-trace-muted text-xs">
-                  {group.expanded ? "v" : ">"}
+                <span className="text-trace-muted text-xs shrink-0">
+                  <ChevronRight
+                    size={14}
+                    className={`transition-transform ${group.expanded ? "rotate-90" : ""}`}
+                    aria-hidden="true"
+                  />
                 </span>
                 <span className="text-[11px] text-trace-muted shrink-0">
                   {formatTime(group.earliestStart)}
@@ -112,8 +131,6 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
                   <RunSessionRow
                     key={session.sessionId}
                     session={session}
-                    isCompared={compareSessionIds.includes(session.sessionId)}
-                    onToggleCompare={() => toggleCompareSession(session.sessionId)}
                     onSelect={() => onSelectSession(session.sessionId)}
                   />
                 ))}
@@ -128,13 +145,9 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
 
 function RunSessionRow({
   session,
-  isCompared,
-  onToggleCompare,
   onSelect,
 }: {
   session: TraceSession;
-  isCompared: boolean;
-  onToggleCompare: () => void;
   onSelect: () => void;
 }) {
   const models = getSessionModels(session).map(shortModel).join(", ");
@@ -164,19 +177,6 @@ function RunSessionRow({
         <span className="text-[10px] text-trace-muted shrink-0">
           {models || "-"}
         </span>
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleCompare();
-          }}
-          className={`shrink-0 text-[10px] rounded border px-2 py-1 transition-colors ${
-            isCompared
-              ? "border-trace-accent/40 text-trace-accent-light bg-trace-accent/10"
-              : "border-trace-border text-trace-muted hover:text-trace-text"
-          }`}
-        >
-          {isCompared ? "Queued" : "Compare"}
-        </button>
       </div>
     </div>
   );

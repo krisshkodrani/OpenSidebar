@@ -1,5 +1,5 @@
 import { toolRegistry } from "./registry";
-import { ToolName, MessageSource } from "../../types";
+import { ToolName, MessageSource, UserSettings } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
 import {
@@ -52,7 +52,6 @@ import {
   GET_PROFILE_FIELDS_DEF,
   CREATE_WINDOW_DEF,
   UPDATE_PLAN_DEF,
-  SCHEDULE_TASK_DEF,
 } from "./definitions";
 import {
   formatUnknownError,
@@ -64,6 +63,39 @@ import {
 export * from "./registry";
 export * from "./definitions";
 export * from "./bridge";
+
+async function getAllowedNavigationOrigins(): Promise<string[]> {
+  try {
+    const stored = await chrome.storage.sync.get("userSettings");
+    const settings = (stored.userSettings ?? {}) as UserSettings;
+    return Array.isArray(settings.allowedNavigationOrigins)
+      ? settings.allowedNavigationOrigins.filter(
+          (origin): origin is string => typeof origin === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function navigationBoundaryError(
+  target: string,
+  allowedOrigins: string[],
+): string {
+  return (
+    `Error: External navigation blocked for this task. Target ${target} is outside ` +
+    `the allowed origin${allowedOrigins.length === 1 ? "" : "s"}: ${allowedOrigins.join(", ")}. ` +
+    "Stay in the current application and use in-page navigation, application search, or a direct URL on the allowed origin."
+  );
+}
 
 async function waitForTabUrlChange(
   tabId: number,
@@ -443,6 +475,27 @@ export function registerTools() {
       const target = url ? url : `search: "${query}"`;
       logger.info("tools", "navigate", { tabId, url, query, target });
 
+      const allowedOrigins = await getAllowedNavigationOrigins();
+      if (allowedOrigins.length > 0) {
+        if (query) {
+          return (
+            `Error: External web search is blocked for this task. Allowed origin` +
+            `${allowedOrigins.length === 1 ? "" : "s"}: ${allowedOrigins.join(", ")}. ` +
+            "Use the current application's own navigation or search controls instead."
+          );
+        }
+        const targetOrigin = normalizeOrigin(url!);
+        const normalizedAllowed = allowedOrigins
+          .map(normalizeOrigin)
+          .filter((origin): origin is string => Boolean(origin));
+        if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
+          return navigationBoundaryError(
+            url!,
+            normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
+          );
+        }
+      }
+
       clearTabReady(tabId);
       if (url) {
         const urlResult = sanitizeUrl(url);
@@ -459,6 +512,19 @@ export function registerTools() {
   );
 
   toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args) => {
+    const allowedOrigins = await getAllowedNavigationOrigins();
+    if (allowedOrigins.length > 0) {
+      const targetOrigin = normalizeOrigin(args.url as string);
+      const normalizedAllowed = allowedOrigins
+        .map(normalizeOrigin)
+        .filter((origin): origin is string => Boolean(origin));
+      if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
+        return navigationBoundaryError(
+          args.url as string,
+          normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
+        );
+      }
+    }
     const urlResult = sanitizeUrl(args.url as string);
     if (!urlResult.ok) return `Error: ${urlResult.error}`;
     logger.info("tools", "create_tab", { url: urlResult.value });
@@ -1178,12 +1244,6 @@ export function registerTools() {
   toolRegistry.register(ToolName.UPDATE_PLAN, UPDATE_PLAN_DEF, async (args) => {
     // Fallback — the loop intercepts update_plan before reaching here
     return `Plan updated: ${(args.summary as string) || "no summary"}`;
-  });
-
-  // Schedule task tool (intercepted by agent loop, POSTs to backend)
-  toolRegistry.register(ToolName.SCHEDULE_TASK, SCHEDULE_TASK_DEF, async (args) => {
-    // Fallback — the loop intercepts schedule_task before reaching here
-    return `Task scheduling requested: ${(args.description as string) || "no description"}`;
   });
 
   logger.info(

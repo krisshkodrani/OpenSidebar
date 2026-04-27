@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { ChevronRight } from "lucide-react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
 import type { SessionLogEntry } from "../../store/types";
@@ -19,10 +20,10 @@ const LEVEL_BG: Record<string, string> = {
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  background: "text-[#0ea5e9]",
-  content: "text-[#22c55e]",
+  background: "text-trace-accent-light",
+  content: "text-state-success",
   sidepanel: "text-trace-accent-light",
-  offscreen: "text-[#f59e0b]",
+  offscreen: "text-state-warning",
 };
 
 function formatTs(ts: string): string {
@@ -72,12 +73,16 @@ function LogRow({ entry }: { entry: SessionLogEntry }) {
         <span className="text-trace-text truncate flex-1">{entry.msg}</span>
         {hasData && (
           <span className="text-trace-dim shrink-0">
-            {expanded ? "\u25BC" : "\u25B6"}
+            <ChevronRight
+              size={13}
+              className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+              aria-hidden="true"
+            />
           </span>
         )}
       </div>
       {expanded && entry.data && (
-        <pre className="px-3 py-1.5 ml-[285px] text-[10px] text-trace-subtle bg-trace-bg/60 rounded mb-1 overflow-x-auto max-h-[300px] whitespace-pre-wrap break-all">
+        <pre className="px-3 py-1.5 ml-0 sm:ml-[285px] text-[10px] text-trace-subtle bg-trace-bg/60 rounded mb-1 overflow-x-auto max-h-[300px] whitespace-pre-wrap break-all scrollbar-thin">
           {JSON.stringify(entry.data, null, 2)}
         </pre>
       )}
@@ -137,7 +142,7 @@ export default function LogList() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Filter bar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-trace-border shrink-0 bg-trace-panel/50">
         <select

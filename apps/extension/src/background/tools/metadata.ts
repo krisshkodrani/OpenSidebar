@@ -5,7 +5,7 @@ export interface ToolMeta {
   domModifying: boolean;
   sequential: boolean;
   /** Cache type for tool result caching. Omit or set false for non-cacheable tools. */
-  cacheable?: "dom" | "memory" | "static" | false;
+  cacheable?: "dom" | "static" | false;
   /** True if repeating this tool after a restart could cause unintended duplicate side-effects. */
   mutationSensitive?: boolean;
 }
@@ -232,13 +232,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
   },
 
-  // Task scheduling (intercepted in loop, POSTs to backend)
-  [ToolName.SCHEDULE_TASK]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: true,
-    mutationSensitive: true,
-  },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {
@@ -259,11 +252,11 @@ export const SEQUENTIAL_TOOLS: Set<ToolName> = new Set(
 );
 
 /** Pre-computed map: cacheable tool name → cache type. Only tools with a truthy `cacheable` value. */
-export const CACHEABLE_TOOLS: Map<ToolName, "dom" | "memory" | "static"> =
+export const CACHEABLE_TOOLS: Map<ToolName, "dom" | "static"> =
   new Map(
     (Object.entries(TOOL_METADATA) as [ToolName, ToolMeta][])
       .filter(([, m]) => !!m.cacheable)
-      .map(([name, m]) => [name, m.cacheable as "dom" | "memory" | "static"]),
+      .map(([name, m]) => [name, m.cacheable as "dom" | "static"]),
   );
 
 /** Tools whose side-effects are unsafe to repeat after a service worker restart. */

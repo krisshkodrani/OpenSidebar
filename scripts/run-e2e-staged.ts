@@ -28,14 +28,6 @@ const OPTIONAL_E2E_GATES = [
     ],
     description: "backend durable-run E2Es",
   },
-  {
-    envVar: "E2E_BACKEND_SITE_MEMORY",
-    files: [
-      "site-knowledge-memory.test.ts",
-      "trace-viewer-memory-api.test.ts",
-    ],
-    description: "backend memory E2Es",
-  },
 ] as const;
 
 function listTestFiles(): string[] {

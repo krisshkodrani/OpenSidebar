@@ -6,6 +6,7 @@ import {
   INTERACTIVE_SELECTORS,
   CONTAINER_TAGS,
   LABEL_CLASS,
+  MAX_SHADOW_DEPTH,
 } from "../../src/content/tagging/dom-traversal";
 
 // ----- helpers -----
@@ -224,5 +225,23 @@ describe("detectClickableElements", () => {
     setBody(`<span style="cursor:pointer">${longText}</span>`);
     const results = detectClickableElements();
     expect(results).toHaveLength(0);
+  });
+
+  test("finds cursor-pointer elements inside nested shadow DOM", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const inner = document.createElement("div");
+    shadow.appendChild(inner);
+    const innerShadow = inner.attachShadow({ mode: "open" });
+    innerShadow.innerHTML = `<span id="deep-action" style="cursor:pointer">Deep action</span>`;
+
+    const results = detectClickableElements();
+
+    expect(results.some((el) => el.id === "deep-action")).toBe(true);
+  });
+
+  test("documents the configured deep traversal limit", () => {
+    expect(MAX_SHADOW_DEPTH).toBe(10);
   });
 });

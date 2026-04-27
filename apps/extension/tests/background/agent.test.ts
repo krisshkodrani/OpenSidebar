@@ -1430,7 +1430,7 @@ describe("AgentLoop", () => {
     );
   });
 
-  test("preserves highest salary aggregate memory across paginated read_page results", () => {
+  test("preserves highest salary aggregate state across paginated read_page results", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),
@@ -1485,7 +1485,7 @@ Showing 31\u201335 of 50`);
     expect((agent as any).context.getWorkingNotes()).toContain("Isla Wright");
   });
 
-  test("updates highest salary aggregate memory from the current snapshot", () => {
+  test("updates highest salary aggregate state from the current snapshot", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
       onMessage: vi.fn(),

@@ -81,6 +81,106 @@ describe("Tool Registration", () => {
         expect(nav!.function.parameters.properties).toHaveProperty("query");
     });
 
+    test("navigate blocks web search when allowed origins are set", async () => {
+        (chrome.storage.sync as any).get = vi.fn(async () => ({
+            userSettings: {
+                allowedNavigationOrigins: ["https://workarenapublic18.service-now.com"],
+            },
+        }));
+        (chrome.search as any).query = vi.fn(async () => {});
+
+        const result = await toolRegistry.execute(
+            {
+                id: "nav-search",
+                type: "function",
+                function: {
+                    name: ToolName.NAVIGATE,
+                    arguments: JSON.stringify({ query: "Configuration Database Instances HBase" }),
+                },
+            },
+            123,
+        );
+
+        expect(result).toContain("External web search is blocked");
+        expect(chrome.search.query).not.toHaveBeenCalled();
+    });
+
+    test("navigate blocks off-origin URL when allowed origins are set", async () => {
+        (chrome.storage.sync as any).get = vi.fn(async () => ({
+            userSettings: {
+                allowedNavigationOrigins: ["https://workarenapublic18.service-now.com"],
+            },
+        }));
+        (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+        const result = await toolRegistry.execute(
+            {
+                id: "nav-url",
+                type: "function",
+                function: {
+                    name: ToolName.NAVIGATE,
+                    arguments: JSON.stringify({ url: "https://www.google.com/search?q=x" }),
+                },
+            },
+            123,
+        );
+
+        expect(result).toContain("External navigation blocked");
+        expect(chrome.tabs.update).not.toHaveBeenCalled();
+    });
+
+    test("navigate allows in-origin URL when allowed origins are set", async () => {
+        (chrome.storage.sync as any).get = vi.fn(async () => ({
+            userSettings: {
+                allowedNavigationOrigins: ["https://workarenapublic18.service-now.com"],
+            },
+        }));
+        (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+        const result = await toolRegistry.execute(
+            {
+                id: "nav-url",
+                type: "function",
+                function: {
+                    name: ToolName.NAVIGATE,
+                    arguments: JSON.stringify({
+                        url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+                    }),
+                },
+            },
+            123,
+        );
+
+        expect(result).toContain("Navigated to https://workarenapublic18.service-now.com/now/nav/ui/home");
+        expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+            url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+        });
+    });
+
+    test("create_tab blocks off-origin URL when allowed origins are set", async () => {
+        (chrome.storage.sync as any).get = vi.fn(async () => ({
+            userSettings: {
+                allowedNavigationOrigins: ["https://workarenapublic18.service-now.com"],
+            },
+        }));
+        (chrome.tabs as any).create = vi.fn(async () => ({ id: 999 }));
+
+        const result = await toolRegistry.execute(
+            {
+                id: "create-tab",
+                type: "function",
+                function: {
+                    name: ToolName.CREATE_TAB,
+                    arguments: JSON.stringify({ url: "https://www.google.com/search?q=x" }),
+                },
+            },
+            123,
+        );
+
+        expect(result).toContain("External navigation blocked");
+        expect(chrome.tabs.create).not.toHaveBeenCalled();
+    });
+
     test("done tool requires summary parameter", () => {
         const defs = toolRegistry.getDefinitions();
         const done = defs.find(d => d.function.name === ToolName.DONE);
@@ -282,7 +382,7 @@ describe("Tool Registration", () => {
         expect(def).toBeDefined();
         expect(def!.function.parameters.required).toContain("note");
         expect(def!.function.parameters.properties.note.type).toBe("string");
-        expect(def!.function.description).toContain("persistent working memory");
+        expect(def!.function.description).toContain("current run scratchpad");
     });
 
     test("get_profile_fields requires a fields array", () => {

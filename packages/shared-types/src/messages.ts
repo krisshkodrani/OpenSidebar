@@ -33,6 +33,7 @@ export type RuntimeMessage =
   | AgentStatusMessage
   | TaskRecoveryMessage
   | E2ESeedPendingInteractionMessage
+  | E2ERailUpdateMessage
   | EscalationRequestMessage
   | EscalationDecisionMessage
   | ApprovalRequestMessage
@@ -398,6 +399,26 @@ export interface E2ESeedPendingInteractionMessage extends BaseMessage {
           question: string;
           suggestions?: string[];
         };
+  };
+}
+
+/** Test-only observer update for the page-contained visible E2E rail. */
+export interface E2ERailUpdateMessage extends BaseMessage {
+  type: "E2E_RAIL_UPDATE";
+  source: string;
+  payload: {
+    prompt?: string;
+    status?: string;
+    detail?: string;
+    planItems?: string[];
+    feed?: Array<{
+      id: string;
+      kind: "status" | "step" | "plan" | "completion";
+      text: string;
+      timestamp: number;
+    }>;
+    finalText?: string;
+    outcome?: "completed" | "failed" | "stopped" | "";
   };
 }
 

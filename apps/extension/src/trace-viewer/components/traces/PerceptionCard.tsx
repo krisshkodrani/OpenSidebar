@@ -59,9 +59,9 @@ export default function PerceptionCard({
       </div>
 
       {/* Body */}
-      <div className="flex min-h-[200px]">
+      <div className="flex flex-col xl:flex-row min-h-[200px]">
         {/* Left: screenshot + elements */}
-        <div className="flex-1 border-r border-trace-accent/[0.12] p-3 flex flex-col gap-2.5 min-w-0">
+        <div className="flex-1 border-b xl:border-b-0 xl:border-r border-trace-accent/[0.12] p-3 flex flex-col gap-2.5 min-w-0">
           {!imgError ? (
             <img
               className="max-w-full rounded border border-trace-accent/[0.15] cursor-pointer transition-opacity hover:opacity-85"

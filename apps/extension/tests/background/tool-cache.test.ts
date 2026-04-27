@@ -51,12 +51,6 @@ describe("ToolResultCache", () => {
       expect(cache.get(key, "fp2")).toBeNull(); // fingerprint changed
     });
 
-    test("memory entry hits regardless of fingerprint", () => {
-      const key = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "q" });
-      cache.set(key, "result", "fp1", "memory");
-      expect(cache.get(key, "fp2")).toBe("result");
-    });
-
     test("static entry hits regardless of fingerprint", () => {
       const key = ToolResultCache.key(ToolName.GET_COOKIES, { domain: "x" });
       cache.set(key, "result", "fp1", "static");
@@ -67,35 +61,14 @@ describe("ToolResultCache", () => {
   describe("invalidateDom()", () => {
     test("clears only DOM entries", () => {
       const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
       const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
 
       cache.set(domKey, "dom-result", "fp1", "dom");
-      cache.set(memKey, "mem-result", "fp1", "memory");
       cache.set(staticKey, "static-result", "fp1", "static");
 
       cache.invalidateDom();
 
       expect(cache.get(domKey, "fp1")).toBeNull();
-      expect(cache.get(memKey, "fp1")).toBe("mem-result");
-      expect(cache.get(staticKey, "fp1")).toBe("static-result");
-    });
-  });
-
-  describe("invalidateMemory()", () => {
-    test("clears only memory entries", () => {
-      const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
-      const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
-
-      cache.set(domKey, "dom-result", "fp1", "dom");
-      cache.set(memKey, "mem-result", "fp1", "memory");
-      cache.set(staticKey, "static-result", "fp1", "static");
-
-      cache.invalidateMemory();
-
-      expect(cache.get(domKey, "fp1")).toBe("dom-result");
-      expect(cache.get(memKey, "fp1")).toBeNull();
       expect(cache.get(staticKey, "fp1")).toBe("static-result");
     });
   });
@@ -186,36 +159,27 @@ describe("ToolResultCache", () => {
   describe("clear()", () => {
     test("removes all entries and counts as invalidations", () => {
       cache.set(ToolResultCache.key(ToolName.FIND_ELEMENT, { a: 1 }), "r1", "fp", "dom");
-      cache.set(ToolResultCache.key(ToolName.RECALL_DEMO, { q: "x" }), "r2", "fp", "memory");
       cache.set(ToolResultCache.key(ToolName.GET_COOKIES, {}), "r3", "fp", "static");
 
       cache.clear();
 
       expect(cache.size).toBe(0);
       const stats = cache.getStats();
-      expect(stats.invalidations).toBe(3);
+      expect(stats.invalidations).toBe(2);
     });
   });
 
   describe("isolation between cache types", () => {
-    test("invalidateDom does not affect memory or static, and vice versa", () => {
+    test("invalidateDom does not affect static entries", () => {
       const domKey = ToolResultCache.key(ToolName.FIND_ELEMENT, { text: "a" });
-      const memKey = ToolResultCache.key(ToolName.RECALL_DEMO, { query: "b" });
       const staticKey = ToolResultCache.key(ToolName.GET_COOKIES, {});
 
       cache.set(domKey, "dom", "fp1", "dom");
-      cache.set(memKey, "mem", "fp1", "memory");
       cache.set(staticKey, "static", "fp1", "static");
 
       // Invalidate DOM
       cache.invalidateDom();
-      expect(cache.size).toBe(2);
-
-      // Re-add DOM, invalidate memory
-      cache.set(domKey, "dom2", "fp2", "dom");
-      cache.invalidateMemory();
-      expect(cache.get(domKey, "fp2")).toBe("dom2");
-      expect(cache.get(memKey, "fp1")).toBeNull();
+      expect(cache.size).toBe(1);
       expect(cache.get(staticKey, "fp1")).toBe("static");
     });
   });

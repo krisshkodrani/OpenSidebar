@@ -207,7 +207,7 @@ export function tagElements(): TaggedElement[] {
       if (entry.cyclesRemaining <= 0) dynamicTagEntries.delete(id);
       continue;
     }
-    if (!document.body.contains(entry.el)) {
+    if (!entry.el.isConnected) {
       // Element removed from DOM — clean up immediately
       dynamicTagEntries.delete(id);
       continue;

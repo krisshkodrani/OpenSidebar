@@ -51,21 +51,12 @@ export interface RunGroup {
   expanded: boolean;
 }
 
-export interface SavedTraceView {
-  id: string;
-  name: string;
-  filters: TraceFilters;
-}
-
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
   sessions: TraceSession[];
   runGroups: RunGroup[];
   traceListMode: "sessions" | "runs";
-  compareSessionIds: string[];
-  compareViewActive: boolean;
-  savedViews: SavedTraceView[];
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
   filters: TraceFilters;
@@ -76,7 +67,7 @@ export interface TracesSlice {
   sessionLogsLoading: boolean;
   logsWarning: string | null;
   searchQuery: string;
-  activeSubview: "turns" | "perception" | "logs" | "story";
+  activeSubview: "turns" | "perception" | "logs";
   tracesLoading: boolean;
   tracesError: string | null;
   setSessions: (sessions: TraceSession[]) => void;
@@ -91,14 +82,8 @@ export interface TracesSlice {
   setSessionLogsLoading: (loading: boolean) => void;
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
-  setActiveSubview: (view: "turns" | "perception" | "logs" | "story") => void;
+  setActiveSubview: (view: "turns" | "perception" | "logs") => void;
   setTraceListMode: (mode: "sessions" | "runs") => void;
-  toggleCompareSession: (sessionId: string) => void;
-  clearCompareSessions: () => void;
-  setCompareViewActive: (active: boolean) => void;
-  saveCurrentView: () => void;
-  applySavedView: (id: string) => void;
-  deleteSavedView: (id: string) => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
   /** Switch to Turns tab and scroll to a specific turn */
@@ -107,12 +92,6 @@ export interface TracesSlice {
   navigateToPerception: (turnNumber: number) => void;
   tableSort: { column: string; direction: "asc" | "desc" };
   setTableSort: (column: string, direction: "asc" | "desc") => void;
-  storyCache: Record<string, string>;
-  storyLoading: boolean;
-  storyError: string | null;
-  setStoryCache: (sessionId: string, content: string) => void;
-  setStoryLoading: (loading: boolean) => void;
-  setStoryError: (error: string | null) => void;
   setTracesLoading: (loading: boolean) => void;
   setTracesError: (error: string | null) => void;
   toggleRunGroup: (runId: string) => void;

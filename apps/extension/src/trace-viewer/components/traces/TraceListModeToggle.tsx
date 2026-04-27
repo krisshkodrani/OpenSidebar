@@ -10,14 +10,15 @@ export default function TraceListModeToggle() {
   return (
     <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border bg-trace-panel/70 shrink-0">
       <span className="text-[10px] uppercase tracking-[0.22em] text-trace-muted">
-        View
+        Traces
       </span>
       <div className="inline-flex rounded border border-trace-border overflow-hidden">
         <ModeButton
           active={traceListMode === "runs"}
           onClick={() => setTraceListMode("runs")}
+          disabled={runGroups.length === 0}
         >
-          Runs ({runGroups.length})
+          Trace Runs ({runGroups.length})
         </ModeButton>
         <ModeButton
           active={traceListMode === "sessions"}
@@ -33,19 +34,22 @@ export default function TraceListModeToggle() {
 function ModeButton({
   active,
   onClick,
+  disabled,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
         active
           ? "bg-trace-accent/15 text-trace-accent-light"
-          : "bg-transparent text-trace-muted hover:text-trace-text"
+          : "bg-transparent text-trace-muted hover:text-trace-text disabled:opacity-40 disabled:hover:text-trace-muted disabled:cursor-not-allowed"
       }`}
     >
       {children}

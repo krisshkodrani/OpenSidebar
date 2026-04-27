@@ -20,7 +20,7 @@ export interface SkillDescriptor {
   preferredTools?: string[];
   discouragedTools?: string[];
   capabilityNeeds?: SkillCapability[];
-  memoryScope?: "turn" | "workspace";
+  contextScope?: "turn" | "workspace";
   verifierMode: "deterministic" | "hybrid" | "llm";
   notes?: string[];
 }
@@ -78,7 +78,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "update_notes",
     ],
     discouragedTools: ["done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Do not assume hover succeeded just because the pointer moved.",
@@ -104,7 +104,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "click_element",
     ],
     discouragedTools: ["done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Prefer consolidation over exploration.",
@@ -132,7 +132,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "update_notes",
     ],
     discouragedTools: ["done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Prefer sequential execution.",
@@ -159,7 +159,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "read_element",
       "update_notes",
     ],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: ["Read cart state before and after mutation."],
   },
@@ -190,7 +190,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "submit_response",
       "verify_posted",
     ],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Match the source email's language and register unless the user asks otherwise.",
@@ -227,7 +227,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "submit_response",
       "verify_posted",
     ],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Identify the exact thread, speaker, audience, language, and tone before composing.",
@@ -268,7 +268,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "add_note",
       "verify_saved",
     ],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Read the customer issue and ticket properties before changing fields.",
@@ -299,7 +299,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "click_element",
     ],
     discouragedTools: ["press_key"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "deterministic",
     notes: [
       "Map values to fields before typing.",
@@ -328,7 +328,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "find_element",
     ],
     discouragedTools: ["click_coordinates", "done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "deterministic",
     notes: [
       "Commit the edit before calling done.",
@@ -340,7 +340,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     name: "Continuation Edit",
     description:
       "Revise prior work in the same workspace while preserving stable prior constraints unless explicitly overridden.",
-    tags: ["workflow", "continuation", "editing", "memory"],
+    tags: ["workflow", "continuation", "editing", "context"],
     triggers: [
       "change previous draft",
       "revise prior answer",
@@ -349,7 +349,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     maturity: "candidate",
     preferredTools: ["read_page", "update_notes", "type_text"],
     discouragedTools: ["navigate"],
-    memoryScope: "workspace",
+    contextScope: "workspace",
     verifierMode: "hybrid",
     notes: ["Apply the requested delta, not a full rewrite unless necessary."],
   },
@@ -358,7 +358,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     name: "Cross Tab Compare",
     description:
       "Collect facts from explicitly separate tabs or pages, normalize them, then compare or report the requested multi-source values after evidence is gathered.",
-    tags: ["workflow", "comparison", "tabs", "memory"],
+    tags: ["workflow", "comparison", "tabs", "context"],
     triggers: [
       "compare tabs",
       "read both tabs",
@@ -375,7 +375,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "right_click",
       "done",
     ],
-    memoryScope: "workspace",
+    contextScope: "workspace",
     verifierMode: "deterministic",
     notes: [
       "Gather all required facts before synthesizing.",
@@ -403,7 +403,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "read_element",
     ],
     discouragedTools: ["done", "navigate", "type_text", "dismiss_overlays"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Click the overlay's close/dismiss/accept/X button directly — do not use dismiss_overlays.",
@@ -434,7 +434,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "update_notes",
     ],
     discouragedTools: ["done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Capture the needed fact before navigating away from the target page.",
@@ -464,7 +464,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "update_notes",
     ],
     discouragedTools: ["navigate", "go_back", "click_coordinates", "done"],
-    memoryScope: "workspace",
+    contextScope: "workspace",
     verifierMode: "hybrid",
     notes: [
       "Use the checklist row as the source of truth for the target item, store, and quantity.",
@@ -507,7 +507,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "list_tabs",
       "done",
     ],
-    memoryScope: "workspace",
+    contextScope: "workspace",
     verifierMode: "hybrid",
     notes: [
       "A visible page is only a sample unless the pagination range proves it is the whole dataset.",
@@ -547,7 +547,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "list_tabs",
       "done",
     ],
-    memoryScope: "workspace",
+    contextScope: "workspace",
     verifierMode: "hybrid",
     notes: [
       "Use visible search or filter controls before manual pagination when the target is specific.",
@@ -577,7 +577,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "find_element",
     ],
     discouragedTools: ["read_element", "navigate", "go_back", "done"],
-    memoryScope: "turn",
+    contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Enumerate the requested visible review set once before opening detail pages.",
@@ -1034,7 +1034,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
   },
   "continuation-edit": {
     procedureMarkdown: [
-      "1. Load relevant workspace turn memory.",
+      "1. Re-ground on the current artifact and the user's requested change.",
       "2. Identify the current artifact being revised.",
       "3. Read the existing content before editing.",
       "4. Preserve prior requirements unless the user explicitly replaces them.",
@@ -1042,14 +1042,14 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "6. Verify the requested change is present and no stable prior constraint was lost unintentionally.",
     ].join("\n"),
     requiredEvidence: [
-      "Relevant prior-turn memory",
+      "Current artifact contents and visible context",
       "Artifact contents before editing",
       "Artifact contents after editing",
     ],
     commonFailures: [
       {
         signal: "overwriting stable prior constraints",
-        recovery: "re-read prior-turn memory and apply only the requested delta",
+        recovery: "re-read the current artifact and apply only the requested delta",
       },
       {
         signal: "re-drafting from scratch instead of revising",
@@ -1058,7 +1058,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     executionContract: {
       sequencing: [
-        "Read prior workspace context, read the current artifact, then apply only the requested delta.",
+        "Read the current workspace context and artifact, then apply only the requested delta.",
       ],
       completionChecks: [
         "The requested change is present.",
@@ -1599,7 +1599,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "inline-edit-surface": {
@@ -1609,7 +1608,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "modal-overlay-recovery": {
@@ -1623,7 +1621,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "multi-tab-procurement-loop": {
@@ -1641,7 +1638,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "list-detail-review-loop": {
@@ -1660,7 +1656,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "paginated-table-scan": {
@@ -1686,7 +1681,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "paginated-record-lookup": {
@@ -1707,7 +1701,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
   "cross-tab-compare": {
@@ -1721,7 +1714,6 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
-      ToolName.SCHEDULE_TASK,
     ],
   },
 };

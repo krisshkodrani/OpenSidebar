@@ -133,9 +133,11 @@ export default function TurnList() {
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const entry = filtered[virtualRow.index];
           const isFocused = virtualRow.index === focusedIdx;
+          const turnNum = entry.turnNumber ?? virtualRow.index + 1;
           return (
             <div
               key={virtualRow.key}
+              id={`turn-${turnNum}`}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
               style={{

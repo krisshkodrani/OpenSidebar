@@ -5,13 +5,10 @@ import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import FleetOverview from "./components/traces/FleetOverview";
 import FilterBar from "./components/traces/FilterBar";
-import CompareTray from "./components/traces/CompareTray";
-import SavedViewsBar from "./components/traces/SavedViewsBar";
 import SessionsTableView from "./components/traces/SessionsTableView";
 import RunsTableView from "./components/traces/RunsTableView";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
-import SessionCompareView from "./components/traces/SessionCompareView";
 import TraceDetailHeader from "./components/traces/TraceDetailHeader";
 import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
@@ -20,11 +17,10 @@ import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
-import StoryPanel from "./components/traces/StoryPanel";
 import BackendPanel from "./components/BackendPanel";
 import type { TopLevelView } from "./store/types";
 
-// ── URL hash helpers ───────────────────────────────────────
+// URL hash helpers
 
 function parseHash(): { session?: string; view?: string; turn?: number } {
   const hash = window.location.hash.slice(1);
@@ -38,8 +34,8 @@ function parseHash(): { session?: string; view?: string; turn?: number } {
   };
 }
 
-const VALID_SUBVIEWS = new Set(["turns", "perception", "logs", "story"]);
-// ── App ────────────────────────────────────────────────────
+const VALID_SUBVIEWS = new Set(["turns", "perception", "logs"]);
+// App
 
 export default function App() {
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -57,7 +53,7 @@ export default function App() {
     } else {
       if (session) setCurrentSessionId(session);
       if (view && VALID_SUBVIEWS.has(view))
-        setActiveSubview(view as "turns" | "perception" | "logs" | "story");
+        setActiveSubview(view as "turns" | "perception" | "logs");
       if (turn && !isNaN(turn)) {
         setTimeout(() => navigateToTurn(turn), 500);
       }
@@ -76,7 +72,11 @@ export default function App() {
     }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
     if (window.location.hash !== newHash) {
-      window.history.replaceState(null, "", newHash || window.location.pathname);
+      window.history.replaceState(
+        null,
+        "",
+        newHash || window.location.pathname,
+      );
     }
   }, [currentSessionId, activeSubview, topLevelView]);
 
@@ -91,15 +91,15 @@ export default function App() {
   );
 }
 
-// ── Top-level tab toggle ──────────────────────────────────
+// Top-level tab toggle
 
 function TopLevelToggle() {
   const topLevelView = useStore((s) => s.topLevelView);
   const setTopLevelView = useStore((s) => s.setTopLevelView);
 
   const tabs: { key: TopLevelView; label: string }[] = [
-    { key: "traces", label: "Sessions" },
-    { key: "backend", label: "Memory & Tasks" },
+    { key: "traces", label: "Traces" },
+    { key: "backend", label: "Backend" },
   ];
 
   return (
@@ -108,7 +108,7 @@ function TopLevelToggle() {
         <button
           key={tab.key}
           onClick={() => setTopLevelView(tab.key)}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
+          className={`px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
             topLevelView === tab.key
               ? "text-trace-accent-light border-trace-accent"
               : "text-trace-muted border-transparent hover:text-trace-subtle"
@@ -121,22 +121,19 @@ function TopLevelToggle() {
   );
 }
 
-// ── Viewer body ────────────────────────────────────────────
+// Viewer body
 
 function ViewerBody() {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
   const traceListMode = useStore((s) => s.traceListMode);
-  const compareViewActive = useStore((s) => s.compareViewActive);
-  const compareSessionIds = useStore((s) => s.compareSessionIds);
   const tracesError = useStore((s) => s.tracesError);
   const logsWarning = useStore((s) => s.logsWarning);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSearchQuery = useStore((s) => s.setSearchQuery);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
-  const setCompareViewActive = useStore((s) => s.setCompareViewActive);
   const { sessions, refreshSessions } = useTraceData();
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
@@ -148,7 +145,6 @@ function ViewerBody() {
       setCurrentEntries([]);
       setSearchQuery("");
       setActiveSubview("turns");
-      setCompareViewActive(false);
     },
     [
       currentSessionId,
@@ -156,7 +152,6 @@ function ViewerBody() {
       setCurrentEntries,
       setSearchQuery,
       setActiveSubview,
-      setCompareViewActive,
     ],
   );
 
@@ -202,10 +197,10 @@ function ViewerBody() {
     return () => window.removeEventListener("keydown", handler);
   }, [currentSessionId, hasPrev, hasNext, navigateSession, deselectSession]);
 
-  // ── Session selected: drill-in detail ──
+  // Session selected: drill-in detail
   if (currentSessionId && currentSession) {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-5 pt-3 pb-1 shrink-0">
           <button
             onClick={deselectSession}
@@ -240,7 +235,9 @@ function ViewerBody() {
           </span>
         </div>
 
-        <TraceDetailHeader session={currentSession as any} />
+        <div className="session-detail-summary scroll-shadow-y shrink-0 overflow-y-auto scrollbar-thin bg-trace-panel border-b border-trace-border">
+          <TraceDetailHeader session={currentSession as any} />
+        </div>
         <TraceSubviewToggle />
 
         {activeSubview === "turns" ? (
@@ -251,7 +248,7 @@ function ViewerBody() {
                 <LoadingSpinner message="Loading turns..." />
               </div>
             ) : (
-              <div className="flex-1 overflow-hidden flex flex-col px-5 py-4">
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col px-5 py-4">
                 <TurnTimeline entries={currentEntries as any[]} />
                 <div className="flex-1 min-h-0">
                   <TurnList />
@@ -260,18 +257,14 @@ function ViewerBody() {
             )}
           </>
         ) : activeSubview === "perception" ? (
-          <div className="flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 scrollbar-thin">
             <PerceptionList />
           </div>
-        ) : activeSubview === "story" ? (
-          <div className="flex-1 overflow-y-auto px-5 py-4 scrollbar-thin">
-            <StoryPanel />
-          </div>
         ) : (
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             {logsWarning && (
               <div className="px-5 pt-3">
-                <div className="text-xs text-yellow-400/80 bg-yellow-500/10 border border-yellow-500/20 rounded px-3 py-2">
+                <div className="text-xs text-state-warning bg-state-warning/10 border border-state-warning/25 rounded px-3 py-2">
                   {logsWarning}
                 </div>
               </div>
@@ -283,14 +276,12 @@ function ViewerBody() {
     );
   }
 
-  // ── No session: filter bar + sessions table ──
+  // No session: filter bar + sessions table
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <FilterBar onFiltersChanged={refreshSessions} />
-      <SavedViewsBar onFiltersChanged={refreshSessions} />
-      <TraceListModeToggle />
       <FleetOverview onFiltersChanged={refreshSessions} />
-      <CompareTray />
+      <TraceListModeToggle />
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -299,14 +290,10 @@ function ViewerBody() {
             onRetry={refreshSessions}
           />
         </div>
-      ) : compareViewActive && compareSessionIds.length === 2 ? (
-        <SessionCompareView sessions={sessions} />
+      ) : traceListMode === "runs" ? (
+        <RunsTableView onSelectSession={selectSession} />
       ) : (
-        traceListMode === "runs" ? (
-          <RunsTableView onSelectSession={selectSession} />
-        ) : (
-          <SessionsTableView onSelect={selectSession} />
-        )
+        <SessionsTableView onSelect={selectSession} />
       )}
     </div>
   );
