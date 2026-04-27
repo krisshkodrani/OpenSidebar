@@ -1,5 +1,6 @@
 import React from "react";
 import { useStore } from "../../store";
+import type { Subview } from "../../store/types";
 
 export default function TraceSubviewToggle() {
   const activeSubview = useStore((s) => s.activeSubview);
@@ -9,10 +10,14 @@ export default function TraceSubviewToggle() {
   const turnCount = entries.length;
   const perceptionCount = entries.filter((e) => e.perception).length;
 
-  const views = [
-    { key: "turns" as const, label: `Turns (${turnCount})` },
-    { key: "perception" as const, label: `Perception (${perceptionCount})` },
-    { key: "logs" as const, label: "Logs" },
+  const views: { key: Subview; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "plan", label: "Plan" },
+    { key: "turns", label: `Turns (${turnCount})` },
+    { key: "perception", label: `Perception (${perceptionCount})` },
+    { key: "prompts", label: "Prompts" },
+    { key: "skills", label: "Skills" },
+    { key: "logs", label: "Logs" },
   ];
 
   return (

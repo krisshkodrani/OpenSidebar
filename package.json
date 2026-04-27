@@ -84,6 +84,7 @@
     "prompts:check": "tsx scripts/check-inline-prompts.ts"
   },
   "dependencies": {
+    "@floating-ui/react": "^0.27.19",
     "@mozilla/readability": "^0.6.0",
     "@tanstack/react-virtual": "^3.13.19",
     "clsx": "^2.1.1",

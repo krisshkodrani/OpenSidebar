@@ -103,7 +103,20 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessionLogsLoading: false,
   logsWarning: null,
   searchQuery: "",
-  activeSubview: "turns",
+  activeSubview: "overview" as const,
+  scrollPositions: {
+    overview: 0,
+    plan: 0,
+    turns: 0,
+    perception: 0,
+    prompts: 0,
+    skills: 0,
+    logs: 0,
+  },
+  saveScrollPosition: (view, position) =>
+    set((s) => {
+      s.scrollPositions[view] = position;
+    }),
   tracesLoading: false,
   tracesError: null,
   tableSort: { column: "startTime", direction: "desc" },

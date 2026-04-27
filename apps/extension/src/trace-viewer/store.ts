@@ -6,7 +6,5 @@ import { createTracesSlice } from "./store/traces-slice";
 export const useStore = create<Store>()(
   immer((...a) => ({
     ...createTracesSlice(...a),
-    topLevelView: "traces" as const,
-    setTopLevelView: (view) => a[0]((s) => { s.topLevelView = view; }),
   })),
 );
