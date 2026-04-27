@@ -54,9 +54,8 @@ export default function FleetOverview({
     filters.outcome !== "all" ||
     filters.day !== "all" ||
     filters.domain !== "" ||
-    filters.mode !== "all" ||
     filters.model !== "all" ||
-    filters.tier !== "all" ||
+    filters.skill !== "all" ||
     filters.runId !== "";
 
   const clearFilters = () => {

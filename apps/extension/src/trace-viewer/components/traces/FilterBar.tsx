@@ -59,38 +59,33 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   }
   const availableOutcomes = outcomeSnapshot.current ?? computedOutcomes;
 
-  // Same pattern for modes
-  const modeSnapshot = useRef<OptionItem[] | null>(null);
+  // Compute available skills from sessions
+  const skillSnapshot = useRef<OptionItem[] | null>(null);
 
-  const computedModes = useMemo(() => {
+  const computedSkills = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const s of sessions) {
-      const models = Array.isArray(s.models) ? (s.models as string[]) : [];
-      const hasRecording = models.includes("recording");
-      const hasManual = models.includes("manual");
-      if (hasRecording) counts["recording"] = (counts["recording"] || 0) + 1;
-      if (hasManual) counts["manual"] = (counts["manual"] || 0) + 1;
-      if (!hasRecording && !hasManual)
-        counts["agent"] = (counts["agent"] || 0) + 1;
+      const skillId =
+        s.skillToolMetrics?.skillId ||
+        s.planDecomposition?.steps?.[0]?.selectedSkillId;
+      if (skillId) {
+        counts[skillId] = (counts[skillId] || 0) + 1;
+      }
     }
-    const labels: Record<string, string> = {
-      agent: "Agent",
-      recording: "Recording",
-      manual: "Manual",
-    };
     return Object.entries(counts)
       .filter(([, count]) => count > 0)
       .map(([value, count]) => ({
         value,
-        label: labels[value] || value,
+        label: value.replace(/-/g, " ").slice(0, 20),
         count,
-      }));
+      }))
+      .sort((a, b) => b.count - a.count);
   }, [sessions]);
 
-  if (filters.mode === "all") {
-    modeSnapshot.current = computedModes;
+  if (filters.skill === "all") {
+    skillSnapshot.current = computedSkills;
   }
-  const availableModes = modeSnapshot.current ?? computedModes;
+  const availableSkills = skillSnapshot.current ?? computedSkills;
 
   const [localDomain, setLocalDomain] = useState(filters.domain);
   const debouncedDomain = useDebounce(localDomain, 250);
@@ -126,9 +121,8 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
     filters.day !== "all" ||
     filters.from !== isoDayOffset(6) ||
     filters.domain !== "" ||
-    filters.mode !== "all" ||
     filters.model !== "all" ||
-    filters.tier !== "all" ||
+    filters.skill !== "all" ||
     filters.runId !== "";
 
   const handleClearAll = () => {
@@ -194,29 +188,17 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         </select>
       </Tooltip>
 
-      <Tooltip content="Filter by agent role (executor runs tasks, planner creates plans)">
-        <select
-          value={filters.tier}
-          onChange={(e) => handleSelectChange("tier", e.target.value)}
-          className={selectClass}
-        >
-          <option value="all">Role</option>
-          <option value="executor">Executor</option>
-          <option value="planner">Planner</option>
-        </select>
-      </Tooltip>
-
-      {availableModes.length > 0 && (
-        <Tooltip content="Filter by session mode: Agent (LLM-driven), Recording (playback), or Manual (human-driven)">
+      {availableSkills.length > 0 && (
+        <Tooltip content="Filter by skill used in this session">
           <select
-            value={filters.mode}
-            onChange={(e) => handleSelectChange("mode", e.target.value)}
+            value={filters.skill}
+            onChange={(e) => handleSelectChange("skill", e.target.value)}
             className={selectClass}
           >
-            <option value="all">Mode</option>
-            {availableModes.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label} ({m.count})
+            <option value="all">Skill</option>
+            {availableSkills.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label} ({s.count})
               </option>
             ))}
           </select>

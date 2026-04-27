@@ -31,9 +31,8 @@ export interface TraceFilters {
   from: string;
   to: string;
   domain: string;
-  mode: string; // "all" | "agent" | "recording" | "manual"
   model: string; // "all" | specific model name
-  tier: string; // "all" | "executor" | "planner"
+  skill: string; // "all" | specific skill ID
   runId: string; // "" means no filter, otherwise prefix match
 }
 

@@ -1,4 +1,10 @@
-import React, { useRef, useMemo, useEffect, useState, useCallback } from "react";
+import React, {
+  useRef,
+  useMemo,
+  useEffect,
+  useState,
+  useCallback,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
 import TurnCard from "./TurnCard";
@@ -9,16 +15,11 @@ export default function TurnList() {
   const entries = useStore((s) => s.currentEntries);
   const sessionId = useStore((s) => s.currentSessionId) ?? "";
   const searchQuery = useStore((s) => s.searchQuery);
-  const tierFilter = useStore((s) => s.filters.tier);
   const focusTurnNumber = useStore((s) => s.focusTurnNumber);
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     let result = entries;
-
-    if (tierFilter && tierFilter !== "all") {
-      result = result.filter((e) => e.llmRequest?.modelTier === tierFilter);
-    }
 
     const q = searchQuery.toLowerCase().trim();
     if (q) {
@@ -50,7 +51,7 @@ export default function TurnList() {
     }
 
     return result;
-  }, [entries, searchQuery, tierFilter]);
+  }, [entries, searchQuery]);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -64,9 +65,7 @@ export default function TurnList() {
   // Scroll to focused turn when navigating from Perception tab
   useEffect(() => {
     if (focusTurnNumber == null) return;
-    const idx = filtered.findIndex(
-      (e) => e.turnNumber === focusTurnNumber,
-    );
+    const idx = filtered.findIndex((e) => e.turnNumber === focusTurnNumber);
     if (idx >= 0) {
       virtualizer.scrollToIndex(idx, { align: "start" });
       setFocusedIdx(idx);
@@ -151,9 +150,7 @@ export default function TurnList() {
             >
               <div
                 className={
-                  isFocused
-                    ? "ring-1 ring-trace-accent/60 rounded-lg"
-                    : ""
+                  isFocused ? "ring-1 ring-trace-accent/60 rounded-lg" : ""
                 }
               >
                 <TurnCard

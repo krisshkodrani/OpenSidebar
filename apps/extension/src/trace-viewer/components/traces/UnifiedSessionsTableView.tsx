@@ -16,19 +16,20 @@ import {
 } from "../../utils";
 
 const COLUMNS = [
-  { key: "startTime", label: "Time", width: "w-[75px]", sortable: true },
+  { key: "startTime", label: "Time", width: "w-[70px]", sortable: true },
   {
     key: "query",
     label: "Query",
-    width: "flex-1 min-w-[200px]",
+    width: "flex-1 min-w-[180px]",
     sortable: true,
   },
-  { key: "outcome", label: "Outcome", width: "w-[75px]", sortable: true },
-  { key: "turnCount", label: "Turns", width: "w-[45px]", sortable: true },
-  { key: "model", label: "Model", width: "w-[85px]", sortable: false },
-  { key: "cost", label: "Est. Cost", width: "w-[65px]", sortable: true },
-  { key: "duration", label: "Duration", width: "w-[60px]", sortable: true },
-  { key: "runId", label: "Run", width: "w-[80px]", sortable: false },
+  { key: "outcome", label: "Outcome", width: "w-[70px]", sortable: true },
+  { key: "turnCount", label: "Turns", width: "w-[40px]", sortable: true },
+  { key: "model", label: "Model", width: "w-[75px]", sortable: false },
+  { key: "skill", label: "Skill", width: "w-[90px]", sortable: false },
+  { key: "cost", label: "Est. Cost", width: "w-[60px]", sortable: true },
+  { key: "duration", label: "Duration", width: "w-[55px]", sortable: true },
+  { key: "runId", label: "Run", width: "w-[70px]", sortable: false },
 ] as const;
 
 function sortSessions(
@@ -125,7 +126,7 @@ export default function UnifiedSessionsTableView({
   return (
     <div className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden">
       {/* Header */}
-      <div className="flex min-w-[700px] items-center gap-2 px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
+      <div className="flex min-w-[680px] items-center gap-2 px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
         {COLUMNS.map((col) =>
           col.sortable ? (
             <button
@@ -213,18 +214,25 @@ function SessionRow({
   const modelDisplay = models.length > 0 ? shortModel(models[0]) : "—";
   const hasMultipleModels = models.length > 1;
 
+  // Extract skill from plan decomposition or skillToolMetrics
+  const skillId =
+    session.skillToolMetrics?.skillId ||
+    session.planDecomposition?.steps?.[0]?.selectedSkillId ||
+    null;
+  const skillDisplay = skillId ? skillId.replace(/-/g, " ").slice(0, 12) : "—";
+
   return (
     <div
       onClick={onClick}
-      className="flex min-w-[700px] items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
+      className="flex min-w-[680px] items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
     >
-      <span className="w-[75px] text-trace-muted text-[11px] shrink-0">
+      <span className="w-[70px] text-trace-muted text-[11px] shrink-0">
         {formatTime(session.startTime)}
       </span>
       <span className="flex-1 min-w-0 text-trace-text truncate">
-        {truncate(extractQueryTitle(session.query).title, 50)}
+        {truncate(extractQueryTitle(session.query).title, 45)}
       </span>
-      <span className="w-[75px] shrink-0">
+      <span className="w-[70px] shrink-0">
         <Badge
           variant={
             outcomeClass(session.outcome) as
@@ -237,7 +245,7 @@ function SessionRow({
           {session.outcome}
         </Badge>
       </span>
-      <span className="w-[45px] text-trace-subtle text-right shrink-0">
+      <span className="w-[40px] text-trace-subtle text-right shrink-0">
         {session.turnCount || 0}
       </span>
       <Tooltip
@@ -247,15 +255,24 @@ function SessionRow({
             : "Model used for this session"
         }
       >
-        <span className="w-[85px] text-trace-subtle text-[10px] truncate shrink-0 cursor-help">
+        <span className="w-[75px] text-trace-subtle text-[10px] truncate shrink-0 cursor-help">
           {modelDisplay}
           {hasMultipleModels ? ` (+${models.length - 1})` : ""}
         </span>
       </Tooltip>
-      <span className="w-[65px] text-trace-subtle font-mono text-right shrink-0">
+      <Tooltip
+        content={
+          skillId ? `Skill: ${skillId}` : "No skill used in this session"
+        }
+      >
+        <span className="w-[90px] text-trace-accent text-[10px] truncate shrink-0 cursor-help">
+          {skillDisplay}
+        </span>
+      </Tooltip>
+      <span className="w-[60px] text-trace-subtle font-mono text-right shrink-0">
         {cost || "-"}
       </span>
-      <span className="w-[60px] text-trace-muted text-right shrink-0">
+      <span className="w-[55px] text-trace-muted text-right shrink-0">
         {duration}
       </span>
       <Tooltip
@@ -265,7 +282,7 @@ function SessionRow({
             : "Standalone session (not part of a run)"
         }
       >
-        <span className="w-[80px] text-trace-accent-light text-[10px] font-mono truncate shrink-0 cursor-help">
+        <span className="w-[70px] text-trace-accent-light text-[10px] font-mono truncate shrink-0 cursor-help">
           {runId ? runId.slice(0, 8) : "—"}
         </span>
       </Tooltip>
