@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { useStore } from "../../store";
 import { formatCost } from "../../utils";
+import Tooltip from "../Tooltip";
 
 interface FleetOverviewProps {
   onFiltersChanged: () => void;
@@ -33,8 +34,21 @@ export default function FleetOverview({
     const averageTurns =
       sessions.length === 0 ? "0.0" : (totalTurns / sessions.length).toFixed(1);
 
-    return { successRate, averageTurns, totalCost };
-  }, [sessions]);
+    // Calculate standalone vs grouped sessions
+    const sessionsInRuns = runGroups.reduce(
+      (sum, group) => sum + group.sessions.length,
+      0,
+    );
+    const standaloneSessions = sessions.length - sessionsInRuns;
+
+    return {
+      successRate,
+      averageTurns,
+      totalCost,
+      sessionsInRuns,
+      standaloneSessions,
+    };
+  }, [sessions, runGroups]);
 
   const hasActiveFilters =
     filters.outcome !== "all" ||
@@ -56,11 +70,31 @@ export default function FleetOverview({
         Summary
       </span>
       <div className="min-w-0 flex-1 flex items-center gap-x-4 gap-y-1 text-[11px] text-trace-muted flex-wrap">
-        <InlineStat label="Sessions" value={String(sessions.length)} />
-        <InlineStat label="Trace runs" value={String(runGroups.length)} />
-        <InlineStat label="Success" value={`${stats.successRate}%`} />
-        <InlineStat label="Avg turns" value={stats.averageTurns} />
-        <InlineStat label="Cost" value={formatCost(stats.totalCost) || "$0"} />
+        <InlineStat
+          label="Sessions"
+          value={String(sessions.length)}
+          tooltip={`${stats.standaloneSessions} standalone, ${stats.sessionsInRuns} in ${runGroups.length} runs`}
+        />
+        <InlineStat
+          label="Runs"
+          value={String(runGroups.length)}
+          tooltip="Unique run groups (sessions with the same runId)"
+        />
+        <InlineStat
+          label="Success"
+          value={`${stats.successRate}%`}
+          tooltip="% of sessions with outcome 'completed' or 'success'"
+        />
+        <InlineStat
+          label="Avg turns"
+          value={stats.averageTurns}
+          tooltip="Average number of turns per session"
+        />
+        <InlineStat
+          label="Cost"
+          value={formatCost(stats.totalCost) || "$0"}
+          tooltip="Total API cost across all sessions"
+        />
       </div>
       {hasActiveFilters && (
         <button
@@ -75,11 +109,23 @@ export default function FleetOverview({
   );
 }
 
-function InlineStat({ label, value }: { label: string; value: string }) {
+function InlineStat({
+  label,
+  value,
+  tooltip,
+}: {
+  label: string;
+  value: string;
+  tooltip: string;
+}) {
   return (
-    <span>
-      {label}:{" "}
-      <span className="font-semibold text-trace-subtle font-mono">{value}</span>
-    </span>
+    <Tooltip content={tooltip}>
+      <span className="cursor-help">
+        {label}:{" "}
+        <span className="font-semibold text-trace-subtle font-mono">
+          {value}
+        </span>
+      </span>
+    </Tooltip>
   );
 }
