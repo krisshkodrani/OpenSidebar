@@ -6,7 +6,6 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import {
   E2E_CANONICAL_SUITE_ORDER,
-  E2E_RETIRED_TESTS,
   E2E_SUITES,
   E2E_FOCUS_SUITE_ORDER,
   E2E_SUITE_ORDER,
@@ -40,12 +39,13 @@ function listTestFiles(): string[] {
 function validateSuites(): void {
   const allFiles = new Set(listTestFiles());
   const assigned = new Map<string, E2ESuiteName>();
-  const retired = new Set(E2E_RETIRED_TESTS);
 
   for (const suiteName of E2E_CANONICAL_SUITE_ORDER) {
     for (const file of E2E_SUITES[suiteName]) {
       if (!allFiles.has(file)) {
-        throw new Error(`Suite "${suiteName}" references missing test file: ${file}`);
+        throw new Error(
+          `Suite "${suiteName}" references missing test file: ${file}`,
+        );
       }
       const existing = assigned.get(file);
       if (existing) {
@@ -60,23 +60,14 @@ function validateSuites(): void {
   for (const suiteName of E2E_FOCUS_SUITE_ORDER) {
     for (const file of E2E_SUITES[suiteName]) {
       if (!allFiles.has(file)) {
-        throw new Error(`Suite "${suiteName}" references missing test file: ${file}`);
+        throw new Error(
+          `Suite "${suiteName}" references missing test file: ${file}`,
+        );
       }
     }
   }
 
-  for (const file of retired) {
-    if (!allFiles.has(file)) {
-      throw new Error(`Retired E2E test file is missing: ${file}`);
-    }
-    if (assigned.has(file)) {
-      throw new Error(`Retired E2E test file is still assigned: ${file}`);
-    }
-  }
-
-  const unassigned = [...allFiles].filter(
-    (file) => !assigned.has(file) && !retired.has(file),
-  );
+  const unassigned = [...allFiles].filter((file) => !assigned.has(file));
   if (unassigned.length > 0) {
     throw new Error(
       `Unassigned E2E test files detected: ${unassigned.join(", ")}`,
@@ -94,9 +85,9 @@ function parseArgs(): {
     ...E2E_SUITE_ORDER,
     ...E2E_FOCUS_SUITE_ORDER,
   ] as readonly string[];
-  const suiteArg = args.find((arg) =>
-    suiteNames.includes(arg),
-  ) as E2ESuiteName | undefined;
+  const suiteArg = args.find((arg) => suiteNames.includes(arg)) as
+    | E2ESuiteName
+    | undefined;
   return {
     suites: suiteArg ? [suiteArg] : [...E2E_SUITE_ORDER],
     listOnly: args.includes("--list"),
@@ -125,25 +116,17 @@ function runWithStreaming(
 function printPlan(suites: E2ESuiteName[]): void {
   console.log("\n[e2e:staged] Planned suite order:");
   for (const suite of suites) {
-    console.log(`\n[e2e:staged] ${suite.toUpperCase()} (${E2E_SUITES[suite].length} files)`);
-    for (const file of E2E_SUITES[suite]) {
-      console.log(`[e2e:staged]   - ${file}`);
-    }
-  }
-  if (E2E_RETIRED_TESTS.length > 0) {
     console.log(
-      `\n[e2e:staged] Retired from staged/focus runs (${E2E_RETIRED_TESTS.length} files):`,
+      `\n[e2e:staged] ${suite.toUpperCase()} (${E2E_SUITES[suite].length} files)`,
     );
-    for (const file of E2E_RETIRED_TESTS) {
+    for (const file of E2E_SUITES[suite]) {
       console.log(`[e2e:staged]   - ${file}`);
     }
   }
 }
 
 function printOptionalGateStatus(suites: E2ESuiteName[]): void {
-  const plannedFiles = new Set(
-    suites.flatMap((suite) => E2E_SUITES[suite]),
-  );
+  const plannedFiles = new Set(suites.flatMap((suite) => E2E_SUITES[suite]));
 
   for (const gate of OPTIONAL_E2E_GATES) {
     const gatedFiles = gate.files.filter((file) => plannedFiles.has(file));
