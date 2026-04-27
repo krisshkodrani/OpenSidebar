@@ -65,6 +65,27 @@
   overscroll-behavior: contain;
 }
 
+/* ── Touch-friendly targets ─────────────────────────────────── */
+@media (pointer: coarse) {
+  button,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ── Responsive timeline segments ───────────────────────────── */
+.timeline-segment {
+  min-width: 32px;
+}
+
+/* ── Mobile optimizations ───────────────────────────────────── */
+@media (max-width: 640px) {
+  .session-detail-summary {
+    max-height: min(50vh, 20rem);
+  }
+}
+
 /* ── Spinner Animation ──────────────────────────────────────── */
 @keyframes spin {
   to {

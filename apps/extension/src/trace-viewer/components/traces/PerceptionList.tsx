@@ -1,23 +1,35 @@
 import React, { useEffect, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
 import PerceptionCard from "./PerceptionCard";
+
+const ESTIMATED_PERCEPTION_HEIGHT = 600;
 
 export default function PerceptionList() {
   const entries = useStore((s) => s.currentEntries);
   const currentSessionId = useStore((s) => s.currentSessionId);
   const focusTurnNumber = useStore((s) => s.focusTurnNumber);
   const perceptionEntries = entries.filter((e) => e.perception);
-  const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: perceptionEntries.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ESTIMATED_PERCEPTION_HEIGHT,
+    overscan: 2,
+  });
 
   // Scroll to focused perception card when navigating from Turns tab
   useEffect(() => {
     if (focusTurnNumber == null) return;
-    const el = cardRefs.current.get(focusTurnNumber);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const idx = perceptionEntries.findIndex(
+      (e) => e.turnNumber === focusTurnNumber,
+    );
+    if (idx >= 0) {
+      virtualizer.scrollToIndex(idx, { align: "start" });
     }
     useStore.getState().focusTurnNumber = null;
-  }, [focusTurnNumber]);
+  }, [focusTurnNumber, perceptionEntries, virtualizer]);
 
   if (perceptionEntries.length === 0) {
     return (
@@ -30,21 +42,44 @@ export default function PerceptionList() {
     );
   }
 
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
-    <>
-      {perceptionEntries.map((entry, i) => (
-        <div
-          key={i}
-          ref={(el) => {
-            if (el) cardRefs.current.set(entry.turnNumber ?? 0, el);
-          }}
-        >
-          <PerceptionCard
-            entry={entry}
-            sessionId={currentSessionId || ""}
-          />
-        </div>
-      ))}
-    </>
+    <div
+      ref={parentRef}
+      style={{ height: "100%", overflow: "auto" }}
+      className="scrollbar-thin"
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {virtualItems.map((virtualItem) => {
+          const entry = perceptionEntries[virtualItem.index];
+          return (
+            <div
+              key={virtualItem.key}
+              ref={virtualizer.measureElement}
+              data-index={virtualItem.index}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <PerceptionCard
+                entry={entry}
+                sessionId={currentSessionId || ""}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
