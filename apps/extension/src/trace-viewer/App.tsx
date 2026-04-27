@@ -3,6 +3,7 @@ import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
+import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
 import FilterBar from "./components/traces/FilterBar";
 import SessionsTableView from "./components/traces/SessionsTableView";
@@ -19,6 +20,7 @@ import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
 import OverviewTab from "./components/traces/OverviewTab";
 import PlanTab from "./components/traces/PlanTab";
+import SkillsTab from "./components/traces/SkillsTab";
 import type { Subview } from "./store/types";
 
 // URL hash helpers
@@ -174,11 +176,63 @@ function ViewerBody({
       } else if (e.key === "]" && hasNext) {
         e.preventDefault();
         navigateSession(1);
+      } else if (currentSessionId) {
+        // Tab navigation shortcuts
+        const subviews: Subview[] = [
+          "overview",
+          "plan",
+          "turns",
+          "perception",
+          "prompts",
+          "skills",
+          "logs",
+        ];
+        const currentIdx = subviews.indexOf(activeSubview);
+
+        if (e.key === "1") {
+          e.preventDefault();
+          setActiveSubview("overview");
+        } else if (e.key === "2") {
+          e.preventDefault();
+          setActiveSubview("plan");
+        } else if (e.key === "3") {
+          e.preventDefault();
+          setActiveSubview("turns");
+        } else if (e.key === "4") {
+          e.preventDefault();
+          setActiveSubview("perception");
+        } else if (e.key === "5") {
+          e.preventDefault();
+          setActiveSubview("prompts");
+        } else if (e.key === "6") {
+          e.preventDefault();
+          setActiveSubview("skills");
+        } else if (e.key === "7") {
+          e.preventDefault();
+          setActiveSubview("logs");
+        } else if (e.key === "p" || e.key === "P") {
+          e.preventDefault();
+          setActiveSubview("plan");
+        } else if (e.key === "t" || e.key === "T") {
+          e.preventDefault();
+          setActiveSubview("turns");
+        } else if (e.key === "s" || e.key === "S") {
+          e.preventDefault();
+          setActiveSubview("skills");
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [currentSessionId, hasPrev, hasNext, navigateSession, deselectSession]);
+  }, [
+    currentSessionId,
+    hasPrev,
+    hasNext,
+    navigateSession,
+    deselectSession,
+    activeSubview,
+    setActiveSubview,
+  ]);
 
   // Save scroll position on scroll
   const handleScroll = useCallback(
@@ -223,9 +277,11 @@ function ViewerBody({
               &#8250;
             </button>
           </div>
-          <span className="ml-auto text-[9px] text-trace-muted font-mono">
-            Esc &middot; [ ] &middot; j k
-          </span>
+          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=sessions">
+            <span className="ml-auto text-[9px] text-trace-muted font-mono cursor-help">
+              Esc · [ ] · 1-7
+            </span>
+          </Tooltip>
         </div>
 
         <div className="session-detail-summary scroll-shadow-y shrink-0 overflow-y-auto scrollbar-thin bg-trace-panel border-b border-trace-border">
@@ -274,6 +330,10 @@ function ViewerBody({
           ) : activeSubview === "plan" ? (
             <div className="px-5 py-4">
               <PlanTab session={currentSession as any} />
+            </div>
+          ) : activeSubview === "skills" ? (
+            <div className="px-5 py-4">
+              <SkillsTab session={currentSession as any} />
             </div>
           ) : (
             <div className="px-5 py-4">
