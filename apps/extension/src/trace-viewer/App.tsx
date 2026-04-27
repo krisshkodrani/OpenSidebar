@@ -6,13 +6,10 @@ import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
 import FilterBar from "./components/traces/FilterBar";
-import SessionsTableView from "./components/traces/SessionsTableView";
-import RunsTableView from "./components/traces/RunsTableView";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
 import TraceDetailHeader from "./components/traces/TraceDetailHeader";
 import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
-import TraceListModeToggle from "./components/traces/TraceListModeToggle";
 import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
@@ -22,6 +19,7 @@ import OverviewTab from "./components/traces/OverviewTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
+import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
 import type { Subview } from "./store/types";
 
 // URL hash helpers
@@ -112,7 +110,6 @@ function ViewerBody({
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
-  const traceListMode = useStore((s) => s.traceListMode);
   const tracesError = useStore((s) => s.tracesError);
   const logsWarning = useStore((s) => s.logsWarning);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
@@ -352,12 +349,11 @@ function ViewerBody({
     );
   }
 
-  // No session: filter bar + sessions table
+  // No session: filter bar + unified sessions table
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <FilterBar onFiltersChanged={refreshSessions} />
       <FleetOverview onFiltersChanged={refreshSessions} />
-      <TraceListModeToggle />
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -366,10 +362,8 @@ function ViewerBody({
             onRetry={refreshSessions}
           />
         </div>
-      ) : traceListMode === "runs" ? (
-        <RunsTableView onSelectSession={selectSession} />
       ) : (
-        <SessionsTableView onSelect={selectSession} />
+        <UnifiedSessionsTableView onSelect={selectSession} />
       )}
     </div>
   );
