@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
-import { isoDayOffset, shortModel, formatCost } from "../../utils";
+import { isoDayOffset, shortModel } from "../../utils";
 
 interface FilterBarProps {
   onFiltersChanged: () => void;
@@ -38,7 +44,11 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       error: "Error",
     };
     return Object.entries(counts)
-      .map(([value, count]) => ({ value, label: labels[value] || value, count }))
+      .map(([value, count]) => ({
+        value,
+        label: labels[value] || value,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
   }, [sessions]);
 
@@ -59,12 +69,21 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       const hasManual = models.includes("manual");
       if (hasRecording) counts["recording"] = (counts["recording"] || 0) + 1;
       if (hasManual) counts["manual"] = (counts["manual"] || 0) + 1;
-      if (!hasRecording && !hasManual) counts["agent"] = (counts["agent"] || 0) + 1;
+      if (!hasRecording && !hasManual)
+        counts["agent"] = (counts["agent"] || 0) + 1;
     }
-    const labels: Record<string, string> = { agent: "Agent", recording: "Recording", manual: "Manual" };
+    const labels: Record<string, string> = {
+      agent: "Agent",
+      recording: "Recording",
+      manual: "Manual",
+    };
     return Object.entries(counts)
       .filter(([, count]) => count > 0)
-      .map(([value, count]) => ({ value, label: labels[value] || value, count }));
+      .map(([value, count]) => ({
+        value,
+        label: labels[value] || value,
+        count,
+      }));
   }, [sessions]);
 
   if (filters.mode === "all") {
@@ -101,14 +120,6 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
     [setFilter, onFiltersChanged],
   );
 
-  // Summary stats
-  let totalCost = 0;
-  let totalTurns = 0;
-  for (const s of sessions) {
-    totalTurns += s.turnCount || 0;
-    totalCost += s.metrics?.totalCost ?? 0;
-  }
-
   const hasActiveFilters =
     filters.outcome !== "all" ||
     filters.day !== "all" ||
@@ -129,7 +140,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
     "bg-white text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent shadow-sm";
 
   return (
-    <div className="flex items-center gap-2 px-5 py-2.5 border-b border-trace-border/40 shrink-0 flex-wrap">
+    <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border/40 shrink-0 flex-wrap">
       {/* Filters */}
       <select
         value={filters.outcome}
@@ -237,18 +248,9 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         </button>
       )}
 
-      {/* Stats summary — pushed right */}
-      <div className="ml-auto flex items-center gap-3 text-[10px] text-trace-muted">
-        <span>
-          <span className="font-semibold text-trace-subtle">{sessions.length}</span> sessions
-        </span>
-        <span>
-          <span className="font-semibold text-trace-subtle">{totalTurns}</span> turns
-        </span>
-        {totalCost > 0 && (
-          <span className="font-mono">{formatCost(totalCost)}</span>
-        )}
-      </div>
+      <span className="ml-auto text-[10px] text-trace-muted">
+        {sessions.length} session{sessions.length === 1 ? "" : "s"}
+      </span>
     </div>
   );
 }

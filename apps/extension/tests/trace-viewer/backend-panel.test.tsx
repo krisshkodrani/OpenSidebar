@@ -7,11 +7,7 @@ import BackendPanel from "../../src/trace-viewer/components/BackendPanel";
 const mockFetchBackendHealth = vi.fn();
 const mockFetchDurableRuns = vi.fn();
 const mockFetchDurableRunDetail = vi.fn();
-const mockFetchMemoryList = vi.fn();
-const mockFetchMemorySearch = vi.fn();
-const mockFetchMemoryDetail = vi.fn();
 const mockFetchScheduledTasks = vi.fn();
-const mockDeleteMemory = vi.fn();
 const mockDeleteScheduledTask = vi.fn();
 const mockRequestDurableRunResume = vi.fn();
 const mockRequestDurableRunStop = vi.fn();
@@ -21,15 +17,12 @@ vi.mock("../../src/trace-viewer/api", () => ({
   fetchDurableRuns: (...args: unknown[]) => mockFetchDurableRuns(...args),
   fetchDurableRunDetail: (...args: unknown[]) =>
     mockFetchDurableRunDetail(...args),
-  fetchMemoryList: () => mockFetchMemoryList(),
-  fetchMemorySearch: () => mockFetchMemorySearch(),
-  fetchMemoryDetail: () => mockFetchMemoryDetail(),
   fetchScheduledTasks: () => mockFetchScheduledTasks(),
-  deleteMemory: (...args: unknown[]) => mockDeleteMemory(...args),
   deleteScheduledTask: (...args: unknown[]) => mockDeleteScheduledTask(...args),
   requestDurableRunResume: (...args: unknown[]) =>
     mockRequestDurableRunResume(...args),
-  requestDurableRunStop: (...args: unknown[]) => mockRequestDurableRunStop(...args),
+  requestDurableRunStop: (...args: unknown[]) =>
+    mockRequestDurableRunStop(...args),
 }));
 
 vi.mock("../../src/trace-viewer/components/LoadingSpinner", () => ({
@@ -69,11 +62,7 @@ describe("trace-viewer BackendPanel", () => {
     mockFetchBackendHealth.mockReset();
     mockFetchDurableRuns.mockReset();
     mockFetchDurableRunDetail.mockReset();
-    mockFetchMemoryList.mockReset();
-    mockFetchMemorySearch.mockReset();
-    mockFetchMemoryDetail.mockReset();
     mockFetchScheduledTasks.mockReset();
-    mockDeleteMemory.mockReset();
     mockDeleteScheduledTask.mockReset();
     mockRequestDurableRunResume.mockReset();
     mockRequestDurableRunStop.mockReset();
@@ -81,12 +70,8 @@ describe("trace-viewer BackendPanel", () => {
     mockFetchBackendHealth.mockResolvedValue({
       status: "ok",
       uptime: 42,
-      memoryConnected: true,
-      memoryStats: { pageCount: 3 },
       pendingTasks: 1,
     });
-    mockFetchMemoryList.mockResolvedValue([]);
-    mockFetchMemorySearch.mockResolvedValue([]);
     mockFetchScheduledTasks.mockResolvedValue([]);
     mockFetchDurableRuns.mockResolvedValue([
       {
@@ -197,7 +182,8 @@ describe("trace-viewer BackendPanel", () => {
           id: "effect-1",
           nodeId: "compare-1",
           toolName: "read_page",
-          result: "Read the current page before synthesizing from recovered findings.",
+          result:
+            "Read the current page before synthesizing from recovered findings.",
           timestamp: Date.now(),
         },
       ],
@@ -223,7 +209,7 @@ describe("trace-viewer BackendPanel", () => {
     await flushAsyncWork();
 
     const runsButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim().toLowerCase() === "runs",
+      (button) => button.textContent?.trim().toLowerCase() === "durable runs",
     ) as HTMLButtonElement | undefined;
 
     expect(runsButton).toBeTruthy();

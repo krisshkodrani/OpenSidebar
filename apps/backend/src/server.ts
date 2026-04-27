@@ -1,7 +1,7 @@
 /**
  * Backend Agent Service — HTTP server entry point
  *
- * Provides local memory and task scheduling (SQLite)
+ * Provides local durable run state (SQLite)
  * for the OpenSidebar Chrome extension.
  *
  * Usage: npx tsx apps/backend/src/server.ts
@@ -15,11 +15,8 @@ import { fileURLToPath } from "url";
 import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { handleHealth } from "./routes/health.js";
-import { handleMemoryRoutes } from "./routes/memory.js";
 import { handleProfileRoutes } from "./routes/profile.js";
-import { handleTaskRoutes } from "./routes/tasks.js";
 import { handleTaskRunRoutes } from "./routes/task-runs.js";
-import { startTaskTick, stopTaskTick } from "./services/task-scheduler.js";
 import type { BackendConfig } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,17 +29,13 @@ function loadConfig(): BackendConfig {
       port: Number(process.env.BACKEND_PORT) || yaml.server?.port || 7590,
       host: yaml.server?.host || "127.0.0.1",
     },
-    memory: {
-      enabled: yaml.memory?.enabled ?? true,
-      backend: "sqlite",
-    },
-    tasks: {
+    storage: {
       databasePath: resolve(
         __dirname,
-        yaml.tasks?.database_path || "../data/backend-tasks.sqlite",
+        yaml.storage?.database_path ||
+          yaml.tasks?.database_path ||
+          "../data/backend-tasks.sqlite",
       ),
-      tickIntervalSeconds: yaml.tasks?.tick_interval_seconds || 60,
-      maxConcurrent: yaml.tasks?.max_concurrent || 1,
     },
   };
 }
@@ -116,34 +109,8 @@ async function handleRequest(
       return;
     }
 
-    if (pathname.startsWith("/memory")) {
-      await handleMemoryRoutes(req, res, {
-        pathname,
-        searchParams,
-        method,
-        parseJsonBody,
-        sendJson,
-        sendEmpty,
-        sendError,
-      });
-      return;
-    }
-
     if (pathname.startsWith("/profile")) {
       await handleProfileRoutes(req, res, {
-        pathname,
-        searchParams,
-        method,
-        parseJsonBody,
-        sendJson,
-        sendEmpty,
-        sendError,
-      });
-      return;
-    }
-
-    if (pathname.startsWith("/tasks")) {
-      await handleTaskRoutes(req, res, {
         pathname,
         searchParams,
         method,
@@ -179,9 +146,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
 
   console.log("[backend] Initializing backend database...");
-  initDatabase(config.tasks.databasePath);
-
-  startTaskTick(config.tasks.tickIntervalSeconds);
+  initDatabase(config.storage.databasePath);
 
   const server = createServer((req, res) => {
     handleRequest(req, res).catch((err) => {
@@ -200,7 +165,6 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     console.log(`\n[backend] Received ${signal}. Shutting down...`);
-    stopTaskTick();
     closeDatabase();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000).unref();

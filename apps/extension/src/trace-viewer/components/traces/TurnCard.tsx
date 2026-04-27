@@ -68,7 +68,7 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
           model &&
           !model.startsWith("manual") &&
           !model.startsWith("recording") && (
-            <span className="text-[9px] text-orange-400">
+            <span className="text-[9px] text-state-warning">
               via {actualProviderId}
             </span>
           )}

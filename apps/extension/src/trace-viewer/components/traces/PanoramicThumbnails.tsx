@@ -31,7 +31,7 @@ export default function PanoramicThumbnails({
               className="h-16 w-auto object-cover"
               loading="lazy"
             />
-            <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-trace-subtle text-center py-0.5">
+            <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[9px] text-white text-center py-0.5">
               {shot.label} · {shot.scrollY}px
             </span>
           </button>

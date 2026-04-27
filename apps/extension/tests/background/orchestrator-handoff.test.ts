@@ -250,9 +250,7 @@ describe("Orchestrator handoff briefing", () => {
       undefined,
       "Review this job application",
       "Apply to this frontend job using my saved profile.",
-      undefined,
       false,
-      undefined,
       "PERSONAL CONTEXT:\n- professional_summary: Senior frontend engineer\n- job_preferences.remote: true",
     );
 
@@ -285,16 +283,15 @@ describe("Orchestrator handoff briefing", () => {
     expect(isVerificationTurnQuery("Click Save and continue")).toBe(false);
   });
 
-  test("enables verification turn mode only when prior-turn memory exists", () => {
+  test("enables verification turn mode from follow-up wording", () => {
     expect(
       shouldUseVerificationTurnMode({
         originalQuery: "Confirm the current status",
-        priorTurnMemoryBrief: "PRIOR WORKSPACE TURNS:\nTurn 1 completed",
       }),
     ).toBe(true);
     expect(
       shouldUseVerificationTurnMode({
-        originalQuery: "Confirm the current status",
+        originalQuery: "Click Save and continue",
       }),
     ).toBe(false);
   });
@@ -533,7 +530,6 @@ describe("Orchestrator handoff briefing", () => {
       undefined,
       undefined,
       "Did it work? What's the status now?",
-      "PRIOR WORKSPACE TURNS:\nTurn 1 completed",
       true,
     );
 

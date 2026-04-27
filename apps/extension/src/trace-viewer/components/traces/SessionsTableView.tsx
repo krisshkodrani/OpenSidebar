@@ -15,13 +15,18 @@ import {
 } from "../../utils";
 
 const COLUMNS = [
-  { key: "startTime", label: "Time", width: "w-[90px]" },
-  { key: "query", label: "Query", width: "flex-1 min-w-0" },
-  { key: "outcome", label: "Outcome", width: "w-[90px]" },
-  { key: "turnCount", label: "Turns", width: "w-[55px]" },
-  { key: "cost", label: "Cost", width: "w-[70px]" },
-  { key: "duration", label: "Duration", width: "w-[75px]" },
-  { key: "models", label: "Model", width: "w-[120px]" },
+  { key: "startTime", label: "Time", width: "w-[90px]", sortable: true },
+  {
+    key: "query",
+    label: "Query",
+    width: "flex-1 min-w-[180px]",
+    sortable: true,
+  },
+  { key: "outcome", label: "Outcome", width: "w-[90px]", sortable: true },
+  { key: "turnCount", label: "Turns", width: "w-[55px]", sortable: true },
+  { key: "cost", label: "Cost", width: "w-[70px]", sortable: true },
+  { key: "duration", label: "Duration", width: "w-[75px]", sortable: true },
+  { key: "models", label: "Model", width: "w-[120px]", sortable: false },
 ] as const;
 
 function sortSessions(
@@ -45,12 +50,12 @@ function sortSessions(
         cmp = (a.turnCount || 0) - (b.turnCount || 0);
         break;
       case "cost":
-        cmp =
-          (a.metrics?.totalCost ?? 0) - (b.metrics?.totalCost ?? 0);
+        cmp = (a.metrics?.totalCost ?? 0) - (b.metrics?.totalCost ?? 0);
         break;
       case "duration":
         cmp =
-          ((a.endTime || 0) - (a.startTime || 0)) -
+          (a.endTime || 0) -
+          (a.startTime || 0) -
           ((b.endTime || 0) - (b.startTime || 0));
         break;
       default:
@@ -65,12 +70,12 @@ interface SessionsTableViewProps {
   onSelect: (sessionId: string) => void;
 }
 
-export default function SessionsTableView({ onSelect }: SessionsTableViewProps) {
+export default function SessionsTableView({
+  onSelect,
+}: SessionsTableViewProps) {
   const sessions = useStore((s) => s.sessions);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const tableSort = useStore((s) => s.tableSort);
-  const compareSessionIds = useStore((s) => s.compareSessionIds);
-  const toggleCompareSession = useStore((s) => s.toggleCompareSession);
   const setTableSort = useStore((s) => s.setTableSort);
 
   const sorted = useMemo(
@@ -111,29 +116,38 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
-        {COLUMNS.map((col) => (
-          <button
-            key={col.key}
-            onClick={() => handleSort(col.key)}
-            className={`${col.width} text-left hover:text-trace-accent-light transition-colors cursor-pointer truncate ${
-              tableSort.column === col.key ? "text-trace-accent-light" : ""
-            }`}
-          >
-            {col.label}
-            {tableSort.column === col.key && (
-              <span className="ml-0.5">
-                {tableSort.direction === "asc" ? "\u25B2" : "\u25BC"}
-              </span>
-            )}
-          </button>
-        ))}
+      <div className="flex min-w-[760px] items-center gap-2 px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
+        {COLUMNS.map((col) =>
+          col.sortable ? (
+            <button
+              key={col.key}
+              onClick={() => handleSort(col.key)}
+              className={`${col.width} text-left hover:text-trace-accent-light transition-colors cursor-pointer truncate ${
+                tableSort.column === col.key ? "text-trace-accent-light" : ""
+              }`}
+            >
+              {col.label}
+              {tableSort.column === col.key && (
+                <span className="ml-0.5">
+                  {tableSort.direction === "asc" ? "\u25B2" : "\u25BC"}
+                </span>
+              )}
+            </button>
+          ) : (
+            <span key={col.key} className={`${col.width} text-left truncate`}>
+              {col.label}
+            </span>
+          ),
+        )}
       </div>
 
       {/* Rows */}
-      <div ref={parentRef} className="flex-1 overflow-y-auto scrollbar-thin">
+      <div
+        ref={parentRef}
+        className="min-w-[760px] flex-1 overflow-y-auto scrollbar-thin"
+      >
         <div
           style={{
             height: `${virtualizer.getTotalSize()}px`,
@@ -158,8 +172,6 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
               >
                 <TableRow
                   session={session}
-                  isCompared={compareSessionIds.includes(session.sessionId)}
-                  onToggleCompare={() => toggleCompareSession(session.sessionId)}
                   onClick={() => onSelect(session.sessionId)}
                 />
               </div>
@@ -177,13 +189,9 @@ export default function SessionsTableView({ onSelect }: SessionsTableViewProps) 
 
 function TableRow({
   session,
-  isCompared,
-  onToggleCompare,
   onClick,
 }: {
   session: TraceSession;
-  isCompared: boolean;
-  onToggleCompare: () => void;
   onClick: () => void;
 }) {
   const cost = session.metrics?.totalCost
@@ -198,7 +206,7 @@ function TableRow({
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
+      className="flex min-w-[760px] items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
     >
       <span className="w-[90px] text-trace-muted text-[11px] shrink-0">
         {formatTime(session.startTime)}
@@ -231,19 +239,6 @@ function TableRow({
       <span className="w-[120px] text-trace-muted text-[10px] truncate shrink-0">
         {models || "-"}
       </span>
-      <button
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleCompare();
-        }}
-        className={`shrink-0 text-[10px] rounded border px-2 py-1 transition-colors ${
-          isCompared
-            ? "border-trace-accent/40 text-trace-accent-light bg-trace-accent/10"
-            : "border-trace-border text-trace-muted hover:text-trace-text"
-        }`}
-      >
-        {isCompared ? "Queued" : "Compare"}
-      </button>
     </div>
   );
 }

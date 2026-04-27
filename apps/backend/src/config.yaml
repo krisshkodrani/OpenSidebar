@@ -1,16 +1,11 @@
 name: opensidebar-backend
 description: >
   Backend agent service for OpenSidebar.
-  Provides local memory and task scheduling (SQLite).
+  Provides local durable run state (SQLite).
 
 server:
   port: 7590
   host: "127.0.0.1"
 
-memory:
-  enabled: true
-
-tasks:
+storage:
   database_path: ../data/backend-tasks.sqlite
-  tick_interval_seconds: 60
-  max_concurrent: 1

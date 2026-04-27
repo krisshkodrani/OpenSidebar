@@ -1,7 +1,7 @@
 import type { ToolName } from "../../types";
 
 /** Cache entry classification — controls invalidation strategy */
-export type CacheType = "dom" | "memory" | "static";
+export type CacheType = "dom" | "static";
 
 export interface CacheEntry {
   result: string;
@@ -23,7 +23,6 @@ export interface CacheStats {
  * Keys are `toolName:serializedArgs`. Each entry has a `cacheType` that
  * controls when it is invalidated:
  *   - "dom"    → invalidated when the DOM snapshot fingerprint changes
- *   - "memory" → invalidated when memory_add/update/delete executes
  *   - "static" → never invalidated within a session
  *
  * Error results (starting with "Error:") are never cached.
@@ -104,18 +103,6 @@ export class ToolResultCache {
     let count = 0;
     for (const [key, entry] of this.cache) {
       if (entry.cacheType === "dom") {
-        this.cache.delete(key);
-        count++;
-      }
-    }
-    this.stats.invalidations += count;
-  }
-
-  /** Invalidate all memory-type entries (called after memory mutation) */
-  invalidateMemory(): void {
-    let count = 0;
-    for (const [key, entry] of this.cache) {
-      if (entry.cacheType === "memory") {
         this.cache.delete(key);
         count++;
       }

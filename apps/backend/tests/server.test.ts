@@ -10,7 +10,6 @@ import { initDatabase, closeDatabase } from "../src/db";
 import { handleTaskRoutes } from "../src/routes/tasks";
 import { handleProfileRoutes } from "../src/routes/profile";
 import { handleTaskRunRoutes } from "../src/routes/task-runs";
-import { handleMemoryRoutes } from "../src/routes/memory";
 import type { RouteContext } from "../src/server";
 
 let server: Server;
@@ -92,11 +91,6 @@ beforeAll(async () => {
       return;
     }
 
-    if (url.pathname.startsWith("/memory")) {
-      await handleMemoryRoutes(req, res, ctx);
-      return;
-    }
-
     if (url.pathname.startsWith("/profile")) {
       await handleProfileRoutes(req, res, ctx);
       return;
@@ -172,81 +166,6 @@ describe("POST /profile/resolve", () => {
     });
     expect(data.missing).toEqual(["identity.email"]);
     expect(data.sensitiveFields).toEqual(["sensitive.date_of_birth"]);
-  });
-});
-
-describe("POST /memory", () => {
-  test("creates, lists, searches, fetches, and deletes native memories", async () => {
-    const { status, data } = await api("/memory", {
-      method: "POST",
-      body: JSON.stringify({
-        category: "site-knowledge",
-        title: "Example memory",
-        content:
-          "Remember this result for example.com. SKU-160K Migration 4271 foo-Migration.",
-        workspaceId: "ws-1",
-        metadata: {
-          domain: "example.com",
-          tipType: "strategy",
-          confidence: 0.95,
-        },
-      }),
-    });
-
-    expect(status).toBe(201);
-    expect(data.id).toBeTruthy();
-    expect(data.slug).toBe(data.id);
-
-    const memoryId = data.id as string;
-
-    const { status: listStatus, data: listData } = await api("/memory/list");
-    expect(listStatus).toBe(200);
-    expect(
-      listData.results.some((item: any) => item.id === memoryId && item.category === "site-knowledge"),
-    ).toBe(true);
-
-    const { status: searchStatus, data: searchData } = await api(
-      "/memory/search?q=remember%20result&limit=5",
-    );
-    expect(searchStatus).toBe(200);
-    expect(searchData.results.some((item: any) => item.id === memoryId)).toBe(true);
-
-    const { status: hyphenatedStatus, data: hyphenatedData } = await api(
-      "/memory/search?q=SKU-160K&limit=5",
-    );
-    expect(hyphenatedStatus).toBe(200);
-    expect(hyphenatedData.results.some((item: any) => item.id === memoryId)).toBe(true);
-
-    const { status: spacedDashStatus, data: spacedDashData } = await api(
-      "/memory/search?q=Migration%20-%204271&limit=5",
-    );
-    expect(spacedDashStatus).toBe(200);
-    expect(spacedDashData.results.some((item: any) => item.id === memoryId)).toBe(true);
-
-    const { status: wordHyphenStatus, data: wordHyphenData } = await api(
-      "/memory/search?q=foo-Migration&limit=5",
-    );
-    expect(wordHyphenStatus).toBe(200);
-    expect(wordHyphenData.results.some((item: any) => item.id === memoryId)).toBe(true);
-
-    const { status: domainStatus, data: domainData } = await api(
-      "/memory/domain?d=example.com&limit=5",
-    );
-    expect(domainStatus).toBe(200);
-    expect(domainData.results.some((item: any) => item.id === memoryId)).toBe(true);
-
-    const { status: detailStatus, data: detailData } = await api(`/memory/${memoryId}`);
-    expect(detailStatus).toBe(200);
-    expect(detailData.id).toBe(memoryId);
-    expect(detailData.metadata.domain).toBe("example.com");
-
-    const { status: deleteStatus } = await api(`/memory/${memoryId}`, {
-      method: "DELETE",
-    });
-    expect(deleteStatus).toBe(204);
-
-    const { status: missingStatus } = await api(`/memory/${memoryId}`);
-    expect(missingStatus).toBe(404);
   });
 });
 

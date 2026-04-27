@@ -54,7 +54,7 @@ export default function TurnLLMInputSection({
             {formatTokens(cm.totalTokens)}/{formatTokens(cm.maxTokens)}
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="w-20 h-1.5 bg-slate-300/70 rounded-[3px] overflow-hidden">
+            <span className="w-20 h-1.5 bg-trace-border rounded-[3px] overflow-hidden">
               <span
                 className={`block h-full rounded-[3px] transition-all ${utilColor}`}
                 style={{ width: `${Math.min(utilPct, 100)}%` }}

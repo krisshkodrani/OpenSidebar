@@ -1,16 +1,6 @@
 const BACKEND_URL = "http://127.0.0.1:7590";
 const BACKEND_TIMEOUT_MS = 8_000;
 
-export interface BackendMemoryResult {
-  id?: string;
-  slug: string;
-  title: string;
-  category: string;
-  content: string;
-  score: number;
-  metadata?: Record<string, unknown>;
-}
-
 export interface BackendTaskRunSummary {
   id: string;
   workspaceId: string;
@@ -77,150 +67,6 @@ export async function isBackendHealthy(): Promise<boolean> {
   }
 }
 
-export async function createSiteKnowledgeMemory(input: {
-  title: string;
-  content: string;
-  domain: string;
-  tipType?: "strategy" | "recovery" | "optimization";
-  confidence?: number;
-}): Promise<string> {
-  const res = await fetch(`${BACKEND_URL}/memory`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      category: "site-knowledge",
-      title: input.title,
-      content: input.content,
-      metadata: {
-        domain: input.domain,
-        tipType: input.tipType ?? "strategy",
-        confidence: input.confidence ?? 0.95,
-      },
-    }),
-    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to create site knowledge memory: ${res.status}`);
-  }
-
-  const data = (await res.json()) as { slug?: string };
-  if (!data.slug) {
-    throw new Error("Backend did not return a memory slug");
-  }
-  return data.slug;
-}
-
-export async function createMemory(input: {
-  category:
-    | "execution-result"
-    | "user-preference"
-    | "site-knowledge"
-    | "learned-pattern";
-  title: string;
-  content: string;
-  workspaceId?: string;
-  metadata?: Record<string, unknown>;
-}): Promise<BackendMemoryResult> {
-  const res = await fetch(`${BACKEND_URL}/memory`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to create memory: ${res.status}`);
-  }
-
-  const data = (await res.json()) as { id?: string; slug?: string };
-  const id = data.id ?? data.slug;
-  if (!id || !data.slug) {
-    throw new Error("Backend did not return a memory id");
-  }
-
-  return {
-    id,
-    slug: data.slug,
-    title: input.title,
-    category: input.category,
-    content: input.content,
-    score: 1,
-    metadata: input.metadata,
-  };
-}
-
-export async function deleteMemoryBySlug(slug: string): Promise<void> {
-  try {
-    await fetch(`${BACKEND_URL}/memory/${encodeURIComponent(slug)}`, {
-      method: "DELETE",
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-    });
-  } catch {
-    // Cleanup should be best-effort in E2E.
-  }
-}
-
-export async function searchDomainMemories(
-  domain: string,
-): Promise<BackendMemoryResult[]> {
-  const res = await fetch(
-    `${BACKEND_URL}/memory/domain?d=${encodeURIComponent(domain)}&limit=20`,
-    { signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS) },
-  );
-  if (!res.ok) {
-    throw new Error(`Failed to load domain memories: ${res.status}`);
-  }
-  const data = (await res.json()) as { results?: BackendMemoryResult[] };
-  return data.results ?? [];
-}
-
-export async function listMemories(params: {
-  category?: string;
-  limit?: number;
-} = {}): Promise<BackendMemoryResult[]> {
-  const search = new URLSearchParams();
-  if (params.category) search.set("category", params.category);
-  if (params.limit) search.set("limit", String(params.limit));
-  const suffix = search.size ? `?${search.toString()}` : "";
-  const res = await fetch(`${BACKEND_URL}/memory/list${suffix}`, {
-    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to load memories: ${res.status}`);
-  }
-  const data = (await res.json()) as { results?: BackendMemoryResult[] };
-  return data.results ?? [];
-}
-
-export async function searchMemories(
-  query: string,
-  limit = 10,
-): Promise<BackendMemoryResult[]> {
-  const res = await fetch(
-    `${BACKEND_URL}/memory/search?q=${encodeURIComponent(query)}&limit=${limit}`,
-    { signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS) },
-  );
-  if (!res.ok) {
-    throw new Error(`Failed to search memories: ${res.status}`);
-  }
-  const data = (await res.json()) as { results?: BackendMemoryResult[] };
-  return data.results ?? [];
-}
-
-export async function fetchMemoryBySlug(
-  slug: string,
-): Promise<BackendMemoryResult | null> {
-  const res = await fetch(`${BACKEND_URL}/memory/${encodeURIComponent(slug)}`, {
-    signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`Failed to fetch memory detail: ${res.status}`);
-  }
-  return (await res.json()) as BackendMemoryResult;
-}
-
 export async function waitForBackendHealthy(timeoutMs = 12_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
 
@@ -230,23 +76,6 @@ export async function waitForBackendHealthy(timeoutMs = 12_000): Promise<boolean
   }
 
   return false;
-}
-
-export async function waitForDomainMemory(
-  domain: string,
-  predicate: (memory: BackendMemoryResult) => boolean,
-  timeoutMs = 8_000,
-): Promise<BackendMemoryResult | null> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const memories = await searchDomainMemories(domain).catch(() => []);
-    const match = memories.find(predicate);
-    if (match) return match;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-
-  return null;
 }
 
 export async function listTaskRuns(params: {

@@ -74,42 +74,4 @@ describe("SessionsTableView", () => {
 
     expect(onSelect).toHaveBeenCalledWith("session-1");
   });
-
-  test("queues a session for compare without selecting the row", async () => {
-    useStore.setState({
-      sessions: [
-        {
-          sessionId: "session-compare",
-          startTime: Date.UTC(2026, 3, 15, 9, 30, 0),
-          endTime: Date.UTC(2026, 3, 15, 9, 31, 0),
-          query: "Objective: Compare this",
-          startUrl: "https://example.com",
-          outcome: "completed",
-          turnCount: 1,
-          summary: "done",
-          metrics: null,
-        },
-      ],
-      tracesLoading: false,
-      tableSort: { column: "startTime", direction: "desc" },
-    } as any);
-
-    const onSelect = vi.fn();
-    await act(async () => {
-      root.render(<SessionsTableView onSelect={onSelect} />);
-    });
-
-    const compareButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Compare"),
-    );
-    expect(compareButton).toBeTruthy();
-
-    await act(async () => {
-      compareButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-    });
-
-    expect(onSelect).not.toHaveBeenCalled();
-    expect(useStore.getState().compareSessionIds).toEqual(["session-compare"]);
-  });
 });

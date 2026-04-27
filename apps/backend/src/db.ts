@@ -1,5 +1,5 @@
 /**
- * SQLite database for the backend scheduler, durable task ledger, and memory store.
+ * SQLite database for the backend durable task ledger.
  */
 
 import Database from "better-sqlite3";
@@ -9,73 +9,6 @@ import { dirname } from "path";
 let db: Database.Database | null = null;
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS tasks (
-  id           TEXT PRIMARY KEY,
-  description  TEXT NOT NULL,
-  query        TEXT NOT NULL,
-  tab_url      TEXT,
-  workspace_id TEXT,
-  schedule     TEXT,
-  run_at       INTEGER,
-  status       TEXT NOT NULL DEFAULT 'pending',
-  last_run_at  INTEGER,
-  result       TEXT,
-  created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_tasks_pending
-  ON tasks(run_at) WHERE status = 'pending';
-
-CREATE INDEX IF NOT EXISTS idx_tasks_status
-  ON tasks(status);
-
-CREATE TABLE IF NOT EXISTS memory_entries (
-  id              TEXT NOT NULL UNIQUE,
-  workspace_id    TEXT,
-  domain          TEXT,
-  category        TEXT NOT NULL,
-  title           TEXT NOT NULL,
-  content         TEXT NOT NULL,
-  metadata_json   TEXT,
-  created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL,
-  last_accessed_at INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_memory_entries_category_updated
-  ON memory_entries(category, updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_memory_entries_domain_updated
-  ON memory_entries(domain, updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_memory_entries_workspace_updated
-  ON memory_entries(workspace_id, updated_at DESC);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(
-  title,
-  content,
-  content='memory_entries',
-  content_rowid='rowid'
-);
-
-CREATE TRIGGER IF NOT EXISTS memory_entries_ai AFTER INSERT ON memory_entries BEGIN
-  INSERT INTO memory_entries_fts(rowid, title, content)
-  VALUES (new.rowid, new.title, new.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS memory_entries_ad AFTER DELETE ON memory_entries BEGIN
-  INSERT INTO memory_entries_fts(memory_entries_fts, rowid, title, content)
-  VALUES ('delete', old.rowid, old.title, old.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS memory_entries_au AFTER UPDATE ON memory_entries BEGIN
-  INSERT INTO memory_entries_fts(memory_entries_fts, rowid, title, content)
-  VALUES ('delete', old.rowid, old.title, old.content);
-  INSERT INTO memory_entries_fts(rowid, title, content)
-  VALUES (new.rowid, new.title, new.content);
-END;
-
 CREATE TABLE IF NOT EXISTS task_runs (
   id                     TEXT PRIMARY KEY,
   client_run_id          TEXT,
@@ -193,18 +126,6 @@ function ensureColumn(
   database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
-function ensureFts5Available(database: Database.Database): void {
-  const enabled = database
-    .prepare("SELECT sqlite_compileoption_used('ENABLE_FTS5')")
-    .pluck()
-    .get();
-  if (enabled !== 1) {
-    throw new Error(
-      "SQLite FTS5 support is required for native backend memory but is unavailable in this build.",
-    );
-  }
-}
-
 export function initDatabase(dbPath: string): Database.Database {
   const dir = dirname(dbPath);
   if (!existsSync(dir)) {
@@ -216,15 +137,9 @@ export function initDatabase(dbPath: string): Database.Database {
   // WAL mode for better concurrent read performance
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 3000");
-  ensureFts5Available(db);
 
   // Run schema
   db.exec(SCHEMA);
-  db.prepare("INSERT INTO memory_entries_fts(memory_entries_fts) VALUES ('rebuild')").run();
-  ensureColumn(db, "memory_entries", "workspace_id", "TEXT");
-  ensureColumn(db, "memory_entries", "domain", "TEXT");
-  ensureColumn(db, "memory_entries", "metadata_json", "TEXT");
-  ensureColumn(db, "memory_entries", "last_accessed_at", "INTEGER");
   ensureColumn(db, "task_runs", "node_counts_json", "TEXT");
   ensureColumn(db, "task_runs", "resume_requested_at", "INTEGER");
   ensureColumn(db, "task_runs", "resume_requested_reason", "TEXT");

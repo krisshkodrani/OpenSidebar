@@ -129,7 +129,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     const tracesAfterTurn2 = new Set([...tracesAfterTurn1, ...turn2Traces]);
 
     // =================================================================
-    // TURN 3: Synthesize from memory
+    // TURN 3: Synthesize from visible tab state
     // =================================================================
     console.log("\n[cross-tab] === TURN 3: Compare both tabs ===");
 
@@ -158,7 +158,6 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     ).toBe(true);
 
     const allTraceFiles = [...turn1Traces, ...turn2Traces, ...turn3Traces];
-    const laterTurnTraces = [...turn2Traces, ...turn3Traces];
     const skillIds = collectSkillIdsForTraceFiles(allTraceFiles);
 
     expect(
@@ -170,9 +169,9 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
       "The executor prompt should include the selected workflow skill contract",
     ).toBe(true);
     expect(
-      traceFilesContainText(laterTurnTraces, "PRIOR WORKSPACE TURNS:"),
-      "Later turns should include prior workspace turn memory in the executor prompt",
-    ).toBe(true);
+      traceFilesContainText(allTraceFiles, "PRIOR WORKSPACE TURNS:"),
+      "Executor prompts should not depend on prior workspace memory",
+    ).toBe(false);
 
     // =================================================================
     // Final checks

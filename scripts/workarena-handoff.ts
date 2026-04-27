@@ -50,6 +50,7 @@ type HandoffArgs = {
   seed: number;
   maxTurns: number;
   timeoutMs: number;
+  resetRetries: number;
   json: boolean;
   noReport: boolean;
   noBuild: boolean;
@@ -91,15 +92,26 @@ function statusSummary(record: JsonRecord | null): JsonRecord | null {
 
 function parseArgs(): HandoffArgs {
   const args = process.argv.slice(2);
-  const taskArg = args[args.indexOf("--task") + 1];
-  const seedArg = Number.parseInt(args[args.indexOf("--seed") + 1] ?? "", 10);
-  const maxTurnsArg = Number.parseInt(args[args.indexOf("--max-turns") + 1] ?? "", 10);
-  const timeoutArg = Number.parseInt(args[args.indexOf("--timeout-ms") + 1] ?? "", 10);
+  const argValue = (name: string): string | null => {
+    const index = args.indexOf(name);
+    if (index < 0) return null;
+    const value = args[index + 1];
+    return value && !value.startsWith("--") ? value : null;
+  };
+  const taskArg = argValue("--task");
+  const seedArg = Number.parseInt(argValue("--seed") ?? "", 10);
+  const maxTurnsArg = Number.parseInt(argValue("--max-turns") ?? "", 10);
+  const timeoutArg = Number.parseInt(argValue("--timeout-ms") ?? "", 10);
+  const resetRetriesArg = Number.parseInt(argValue("--reset-retries") ?? "", 10);
   return {
     taskId: taskArg && !taskArg.startsWith("--") ? taskArg : null,
     seed: Number.isFinite(seedArg) ? seedArg : 42,
     maxTurns: Number.isFinite(maxTurnsArg) ? maxTurnsArg : 30,
     timeoutMs: Number.isFinite(timeoutArg) ? timeoutArg : 600_000,
+    resetRetries:
+      Number.isFinite(resetRetriesArg) && resetRetriesArg >= 0
+        ? Math.min(resetRetriesArg, 5)
+        : 2,
     json: args.includes("--json"),
     noReport: args.includes("--no-report"),
     noBuild: args.includes("--no-build"),
@@ -532,6 +544,99 @@ function runBuildIfNeeded(args: HandoffArgs): void {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function isRetryableResetFailure(record: JsonRecord): boolean {
+  const status = stringValue(record, "status");
+  return (
+    status !== "blocked_requires_reset_flag" &&
+    status !== "blocked_invalid_request" &&
+    status !== "reset_request_failed"
+  );
+}
+
+function summarizeResetAttempt(
+  record: JsonRecord,
+  attempt: number,
+  maxAttempts: number,
+  retryable: boolean,
+): JsonRecord {
+  return {
+    attempt,
+    maxAttempts,
+    retryable,
+    ok: typeof record.ok === "boolean" ? record.ok : null,
+    status: stringValue(record, "status"),
+    durationMs: numberValue(record, "durationMs"),
+    error: stringValue(record, "error"),
+    diagnostics: isRecord(record.diagnostics) ? record.diagnostics : null,
+  };
+}
+
+async function requestResetWithRetry(
+  bridge: WorkArenaSessionBridgeClient,
+  args: HandoffArgs,
+): Promise<{ reset: JsonRecord; attempts: JsonRecord[] }> {
+  const attempts: JsonRecord[] = [];
+  const maxAttempts = args.resetRetries + 1;
+  const startedAt = Date.now();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let reset: JsonRecord;
+    try {
+      reset = await bridge.request({
+        command: "reset",
+        taskId: args.taskId,
+        seed: args.seed,
+        allowServiceNowReset: true,
+        showBrowser: args.showBrowser,
+      });
+    } catch (error) {
+      reset = {
+        ok: false,
+        status: "reset_request_failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const succeeded = reset.status === "reset_succeeded";
+    const retryable = !succeeded && isRetryableResetFailure(reset);
+    const summary = summarizeResetAttempt(reset, attempt, maxAttempts, retryable);
+    attempts.push(summary);
+
+    if (succeeded || !retryable || attempt === maxAttempts) {
+      return {
+        reset: {
+          ...reset,
+          resetAttempts: attempts,
+          resetTotalMs: Date.now() - startedAt,
+        },
+        attempts,
+      };
+    }
+
+    const delayMs = Math.min(5000, 1000 * attempt);
+    summary.retryDelayMs = delayMs;
+    console.warn(
+      `[workarena:handoff] Reset attempt ${attempt}/${maxAttempts} failed (${stringValue(reset, "error") ?? stringValue(reset, "status") ?? "unknown"}); retrying in ${delayMs}ms`,
+    );
+    await sleep(delayMs);
+  }
+
+  return {
+    reset: {
+      ok: false,
+      status: "reset_failed",
+      error: "reset retry loop ended unexpectedly",
+      resetAttempts: attempts,
+      resetTotalMs: Date.now() - startedAt,
+    },
+    attempts,
+  };
+}
+
 async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaExecutionResult> {
   if (!args.taskId) {
     return buildBlockedResult(args, "error", "setup", "--task is required");
@@ -556,6 +661,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
   const bridge = new WorkArenaSessionBridgeClient();
   let bridgeDescription: JsonRecord | null = null;
   let reset: JsonRecord | null = null;
+  let resetAttempts: JsonRecord[] = [];
   let exportSession: JsonRecord | null = null;
   let validation: JsonRecord | null = null;
   let harnessStarted = false;
@@ -566,13 +672,9 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
 
   try {
     bridgeDescription = await bridge.description();
-    reset = await bridge.request({
-      command: "reset",
-      taskId: args.taskId,
-      seed: args.seed,
-      allowServiceNowReset: true,
-      showBrowser: args.showBrowser,
-    });
+    const resetResult = await requestResetWithRetry(bridge, args);
+    reset = resetResult.reset;
+    resetAttempts = resetResult.attempts;
     if (reset.status !== "reset_succeeded") {
       return buildErroredExecution(args, reset, "reset", start);
     }
@@ -629,6 +731,9 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     await navigateAndWait(harness.page, targetUrl);
     await harness.page.bringToFront();
     const importedPageUrl = harness.page.url();
+    await updateUserSettings(harness.ctx, {
+      allowedNavigationOrigins: [new URL(targetUrl).origin],
+    });
 
     const tabId = await getActiveTabId(harness.ctx.serviceWorker);
     if (tabId <= 0) {
@@ -659,7 +764,10 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     const metrics = readTraceMetrics(traceFiles.length > 0 ? traceFiles : traceSummary.traceFiles);
 
     const validationStart = Date.now();
-    validation = await bridge.request({ command: "validate" });
+    validation = await bridge.request({
+      command: "validate",
+      activeUrl: finalOpenSidebarUrl,
+    });
     const validationMs = Date.now() - validationStart;
     const validationResult = validationFromBridge(validation);
     const passed = validationResult.passed === true;
@@ -679,7 +787,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       prompt,
       browser: {
         ...browser,
-        activeUrl: targetUrl,
+        activeUrl: finalOpenSidebarUrl,
       },
       agent: {
         provider: harness.providerMode,
@@ -708,13 +816,14 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
             exportSession: statusSummary(exportSession),
             validation: statusSummary(validation),
           },
+          resetAttempts,
           storageImport,
           importedPageUrl,
           finalOpenSidebarUrl,
         },
       },
       timings: {
-        resetMs: numberValue(reset, "durationMs"),
+        resetMs: numberValue(reset, "resetTotalMs") ?? numberValue(reset, "durationMs"),
         agentMs,
         validationMs,
         totalMs: Date.now() - start,
@@ -800,7 +909,11 @@ function buildErroredExecution(
       details: { source },
     },
     timings: {
-      resetMs: reset ? numberValue(reset, "durationMs") : null,
+      resetMs: reset
+        ? (numberValue(reset, "resetTotalMs") ?? numberValue(reset, "durationMs"))
+        : stage === "reset"
+          ? (numberValue(source, "resetTotalMs") ?? numberValue(source, "durationMs"))
+          : null,
       agentMs: null,
       validationMs: null,
       totalMs: Date.now() - start,
@@ -834,6 +947,17 @@ function printHuman(result: WorkArenaExecutionResult, readiness?: ReadinessStatu
   console.log(`[workarena:handoff] Agent: ${result.agent.provider}`);
   console.log(`[workarena:handoff] Turns: ${result.agent.turns ?? "(none)"}`);
   console.log(`[workarena:handoff] Validation: ${String(result.validation.passed)}`);
+  const source = isRecord(result.validation.details.source)
+    ? result.validation.details.source
+    : null;
+  const resetAttempts = Array.isArray(result.validation.details.resetAttempts)
+    ? result.validation.details.resetAttempts
+    : source && Array.isArray(source.resetAttempts)
+      ? source.resetAttempts
+      : [];
+  if (resetAttempts.length > 1) {
+    console.log(`[workarena:handoff] Reset attempts: ${resetAttempts.length}`);
+  }
   if (result.validation.message) {
     console.log(`[workarena:handoff] Validation message: ${result.validation.message}`);
   }

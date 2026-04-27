@@ -217,9 +217,9 @@ describe("Orchestrator conversation collaboration", () => {
     };
   });
 
-  // ── WS4: Memory Writes (replaces LLM retrospective) ─────────────
+  // ── WS4: Completion Without Retrospective Memory ─────────────
 
-  test("memory writes fire when nodes have failed", async () => {
+  test("failed nodes complete without planner retrospective", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "failing step")];
     // confidence 0.5 (above 0.35 threshold) → no bonus retry → maxRetries=1
     // This gives exactly 2 cycles: retry on first, fail on second
@@ -235,15 +235,13 @@ describe("Orchestrator conversation collaboration", () => {
     });
 
     const orchestrator = new Orchestrator(orchestratorDeps);
-    await orchestrator.startTask(makeInput("memory write on failure"));
+    await orchestrator.startTask(makeInput("failure completion"));
 
     const messages = (globalThis as any).__runtimeMessages as Array<{
       type?: string;
       payload?: any;
     }>;
 
-    // Task should complete as failed (memory write may fail gracefully in test env
-    // since offscreen document API isn't available, but the code path is exercised)
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("failed");
@@ -252,7 +250,7 @@ describe("Orchestrator conversation collaboration", () => {
     // (the old retrospective method no longer exists on PlannerLike)
   });
 
-  test("memory writes do NOT fire when all nodes succeed", async () => {
+  test("successful nodes complete without planner retrospective", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "do the step")];
     verifierDecisionImpl = async () => ({
       decision: "accept",
@@ -278,7 +276,7 @@ describe("Orchestrator conversation collaboration", () => {
     expect(completion?.payload?.status).toBe("completed");
   });
 
-  test("same-workspace follow-up injects prior turn memory into planner and executor", async () => {
+  test("same-workspace follow-up does not inject prior turn memory", async () => {
     const plannerQueries: string[] = [];
     plannerBuildNodesImpl = async (...args: unknown[]) => {
       plannerQueries.push(String(args[0] ?? ""));
@@ -296,12 +294,14 @@ describe("Orchestrator conversation collaboration", () => {
     );
 
     expect(plannerQueries).toHaveLength(2);
-    expect(plannerQueries[1]).toContain("PRIOR WORKSPACE TURNS:");
-    expect(plannerQueries[1]).toContain("Draft a reply accepting Thursday 2 PM");
-    expect(plannerQueries[1]).toContain("CURRENT REQUEST:");
+    expect(plannerQueries[1]).not.toContain("PRIOR WORKSPACE TURNS:");
+    expect(plannerQueries[1]).not.toContain("Draft a reply accepting Thursday 2 PM");
+    expect(plannerQueries[1]).toBe(
+      "Change the reply. Suggest Monday at 11 AM instead.",
+    );
 
     const secondInstruction = capturedInstructions.at(-1)?.instruction ?? "";
-    expect(secondInstruction).toContain("PRIOR WORKSPACE TURNS:");
+    expect(secondInstruction).not.toContain("PRIOR WORKSPACE TURNS:");
     expect(secondInstruction).toContain("Original user request");
     expect(secondInstruction).toContain("Suggest Monday at 11 AM instead.");
   });

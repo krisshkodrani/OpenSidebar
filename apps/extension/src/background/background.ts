@@ -29,10 +29,6 @@ import {
   isE2ESeedPendingInteractionMessage,
   isE2ETestApiEnabled,
 } from "./e2e-test-api";
-import {
-  clearAllWorkspaceTurnMemory,
-  clearWorkspaceTurnMemory,
-} from "./agent/memory";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -574,7 +570,6 @@ chrome.runtime.onMessage.addListener(
               (k) => k === "chatMessages" || k.startsWith("chatMessages:"),
             );
             if (keys.length > 0) await chrome.storage.local.remove(keys);
-            await clearAllWorkspaceTurnMemory();
             sendResponse({
               ok: true,
               detail: "Chat history cleared for all workspaces.",
@@ -591,7 +586,6 @@ chrome.runtime.onMessage.addListener(
               return;
             }
             await chrome.storage.local.set({ [`chatMessages:${wsId}`]: [] });
-            await clearWorkspaceTurnMemory(wsId);
             sendResponse({
               ok: true,
               detail: "Chat history cleared for the active workspace.",

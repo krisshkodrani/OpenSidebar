@@ -1,6 +1,6 @@
 import React from "react";
 import { act } from "react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import { useStore } from "../../src/trace-viewer/store";
@@ -19,6 +19,13 @@ describe("RunsTableView", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   test("renders run groups and selects a child session", async () => {
@@ -88,10 +95,36 @@ describe("RunsTableView", () => {
     });
 
     expect(onSelectSession).toHaveBeenCalledWith("session-2");
+  });
 
-    const compareButton = interactiveElements.find((button) =>
-      button.textContent?.includes("Compare"),
-    );
-    expect(compareButton).toBeTruthy();
+  test("offers a path back to sessions when no run groups exist", async () => {
+    await act(async () => {
+      useStore.getState().setSessions([
+        {
+          sessionId: "session-without-run",
+          startTime: Date.UTC(2026, 3, 15, 9, 30, 0),
+          endTime: Date.UTC(2026, 3, 15, 9, 31, 0),
+          query: "Objective: inspect standalone trace",
+          startUrl: "https://example.com",
+          outcome: "completed",
+          turnCount: 1,
+          summary: "done",
+          metrics: null,
+        },
+      ] as any);
+      useStore.getState().setTraceListMode("runs");
+    });
+
+    await act(async () => {
+      root.render(<RunsTableView onSelectSession={vi.fn()} />);
+    });
+
+    expect(container.textContent).toContain("No trace runs found");
+    const sessionsButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("View sessions"));
+    expect(sessionsButton).toBeTruthy();
+
+    expect(sessionsButton?.getAttribute("type")).toBe("button");
   });
 });

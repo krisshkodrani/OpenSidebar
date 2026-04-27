@@ -30,7 +30,7 @@ Models are configurable in Settings.
 - `apps/extension/src/content/`: page snapshotting, tagging, and DOM actions
 - `apps/extension/src/sidepanel/`: chat UI, settings, approvals, and plan display
 - `apps/extension/src/trace-viewer/`: trace inspection UI
-- `apps/backend/src/`: local backend service for memory and scheduled tasks
+- `apps/backend/src/`: local backend service for scheduled tasks and durable run state
 - `packages/prompts/src/`: compiled prompt registry and render helpers
 - `packages/shared-types/src/`: shared runtime and domain contracts
 

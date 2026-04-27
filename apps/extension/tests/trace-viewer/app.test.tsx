@@ -17,26 +17,17 @@ vi.mock("../../src/trace-viewer/components/ViewerHeader", () => ({
 vi.mock("../../src/trace-viewer/components/ViewerErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock("../../src/trace-viewer/components/traces/SavedViewsBar", () => ({
-  default: () => <div>SavedViewsBar</div>,
-}));
 vi.mock("../../src/trace-viewer/components/traces/FleetOverview", () => ({
   default: () => <div>FleetOverview</div>,
 }));
 vi.mock("../../src/trace-viewer/components/traces/FilterBar", () => ({
   default: () => <div>FilterBar</div>,
 }));
-vi.mock("../../src/trace-viewer/components/traces/CompareTray", () => ({
-  default: () => <div>CompareTray</div>,
-}));
 vi.mock("../../src/trace-viewer/components/traces/SessionsTableView", () => ({
   default: () => <div>SessionsTableView</div>,
 }));
 vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
   default: () => <div>RunsTableView</div>,
-}));
-vi.mock("../../src/trace-viewer/components/traces/SessionCompareView", () => ({
-  default: () => <div>SessionCompareView</div>,
 }));
 vi.mock("../../src/trace-viewer/components/traces/TraceListModeToggle", () => ({
   default: () => <div>TraceListModeToggle</div>,
@@ -69,9 +60,6 @@ vi.mock("../../src/trace-viewer/components/traces/PerceptionList", () => ({
 }));
 vi.mock("../../src/trace-viewer/components/traces/LogList", () => ({
   default: () => <div>LogList</div>,
-}));
-vi.mock("../../src/trace-viewer/components/traces/StoryPanel", () => ({
-  default: () => <div>StoryPanel</div>,
 }));
 vi.mock("../../src/trace-viewer/components/BackendPanel", () => ({
   default: () => <div>BackendPanel</div>,
@@ -173,11 +161,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("renders compare view when compare mode is active", async () => {
-    useStore.setState({
-      compareViewActive: true,
-      compareSessionIds: ["session-1", "session-2"],
-    } as any);
+  test("renders sessions as the default trace list", async () => {
     mockUseTraceData.mockReturnValue({
       sessions: [
         {
@@ -212,7 +196,61 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain("SessionCompareView");
+      expect(useStore.getState().traceListMode).toBe("sessions");
+      expect(container.textContent).toContain("SessionsTableView");
+    });
+  });
+
+  test("renders selected session detail with a capped scrollable summary", async () => {
+    useStore.setState({
+      currentSessionId: "session-1",
+      activeSubview: "turns",
+      currentEntries: [
+        {
+          sessionId: "session-1",
+          turnNumber: 1,
+          timestamp: 100,
+          snapshot: null,
+          elements: [],
+          llmRequest: null,
+          llmResponse: null,
+          toolExecutions: [],
+          events: [],
+          progressState: { stagnantTurns: 0, signal: null },
+        },
+      ],
+    } as any);
+    mockUseTraceData.mockReturnValue({
+      sessions: [
+        {
+          sessionId: "session-1",
+          startTime: 100,
+          endTime: 200,
+          query: "Objective: inspect detail scroll affordance",
+          startUrl: "https://example.com",
+          outcome: "completed",
+          turnCount: 1,
+          summary: "done",
+          metrics: null,
+        },
+      ],
+      currentSessionId: "session-1",
+      refreshSessions: vi.fn(),
+    });
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      const summary = container.querySelector(".session-detail-summary");
+
+      expect(summary).toBeTruthy();
+      expect(summary?.className).toContain("overflow-y-auto");
+      expect(summary?.className).toContain("scrollbar-thin");
+      expect(summary?.className).toContain("scroll-shadow-y");
+      expect(summary?.textContent).toContain("TraceDetailHeader:session-1");
+      expect(container.textContent).toContain("TurnList");
     });
   });
 });

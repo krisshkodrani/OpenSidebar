@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ChevronRight } from "lucide-react";
 
 interface CollapsibleSectionProps {
   label: React.ReactNode;
@@ -25,11 +26,11 @@ export default function CollapsibleSection({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 cursor-pointer px-2 py-1.5 rounded bg-trace-accent/[0.05] border-none text-trace-subtle text-xs w-full text-left transition-colors hover:bg-trace-accent/[0.07]"
       >
-        <span
-          className={`text-[10px] shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
-        >
-          &#9654;
-        </span>
+        <ChevronRight
+          size={13}
+          className={`shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+          aria-hidden="true"
+        />
         <span className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {label}
           {preview && !open && (

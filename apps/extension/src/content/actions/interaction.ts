@@ -63,7 +63,9 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   const isOwnOverlay = (node: Element | null): boolean =>
     !!node &&
     (node.id === "opensidebar-agent-border" ||
+      node.id === "opensidebar-e2e-rail" ||
       node.id === "opensidebar-stop-btn" ||
+      Boolean(node.closest?.("#opensidebar-e2e-rail")) ||
       node.classList?.contains("opensidebar-tag"));
 
   // Body/HTML returned by elementFromPoint is a false positive — these root
@@ -73,6 +75,14 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   const isDocumentRoot = (node: Element | null): boolean =>
     node === document.body || node === document.documentElement;
 
+  const isServiceNowShellPassThrough = (node: Element | null): boolean => {
+    if (!node) return false;
+    const tagName = node.tagName.toLowerCase();
+    if (!tagName.startsWith("macroponent-")) return false;
+    const host = window.location.hostname.toLowerCase();
+    return host.endsWith(".service-now.com") || host.endsWith(".servicenow.com");
+  };
+
   // Z-Index Check: Auto-hide covering overlays (up to 3 layers) before clicking
   const MAX_OVERLAY_RETRIES = 3;
   for (let attempt = 0; attempt < MAX_OVERLAY_RETRIES; attempt++) {
@@ -81,7 +91,14 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const y = rect.top + rect.height / 2;
     const topEl = document.elementFromPoint(x, y);
 
-    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl) || isDocumentRoot(topEl)) {
+    if (
+      !topEl ||
+      el.contains(topEl) ||
+      topEl.contains(el) ||
+      isOwnOverlay(topEl) ||
+      isDocumentRoot(topEl) ||
+      isServiceNowShellPassThrough(topEl)
+    ) {
       break; // Clear to click (or our own overlay / document root — not a real blocker)
     }
 
@@ -122,7 +139,14 @@ export async function executeClick(args: ClickElementArgs): Promise<{
 
   for (const point of points) {
     const topEl = document.elementFromPoint(point.x, point.y);
-    if (!topEl || el.contains(topEl) || topEl.contains(el) || isOwnOverlay(topEl) || isDocumentRoot(topEl)) {
+    if (
+      !topEl ||
+      el.contains(topEl) ||
+      topEl.contains(el) ||
+      isOwnOverlay(topEl) ||
+      isDocumentRoot(topEl) ||
+      isServiceNowShellPassThrough(topEl)
+    ) {
       cleanClick = true;
       break;
     }

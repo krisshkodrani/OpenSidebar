@@ -10,7 +10,6 @@
 
 import { logger } from "../../utils";
 import { isContentScript } from "../../utils/context";
-import { pollPendingTasks } from "./backend-client";
 
 // --- Constants ---
 
@@ -82,129 +81,9 @@ function handleAlarm(alarm: chrome.alarms.Alarm): void {
     logger.debug("keepalive", "Keepalive ping", { ts: Date.now() });
     // The act of handling this alarm resets the SW termination timer
 
-    // Poll backend for scheduled tasks (silent fail when backend is offline)
-    pollPendingTasks()
-      .then((tasks) => {
-        if (tasks.length > 0) {
-          dispatchScheduledTask(tasks[0]);
-        }
-      })
-      .catch(() => {});
-
     void import("../orchestrator").then(({ orchestrator }) =>
       orchestrator.processDurableRunControlRequests().catch(() => {}),
     );
-  }
-}
-
-/**
- * Dispatches a scheduled task from the backend into the orchestrator.
- * Opens a tab (if tabUrl provided), then triggers the orchestrator directly.
- */
-async function dispatchScheduledTask(task: {
-  id: string;
-  query: string;
-  tabUrl: string | null;
-}): Promise<void> {
-  const { markTaskRunning, markTaskCompleted, markTaskFailed } =
-    await import("./backend-client-tasks");
-
-  // Mark as running so it won't be picked up again on next poll
-  await markTaskRunning(task.id);
-
-  logger.info("keepalive", "Dispatching scheduled task", {
-    taskId: task.id,
-    query: task.query.slice(0, 80),
-    tabUrl: task.tabUrl,
-  });
-
-  try {
-    // 1. Resolve or create a tab
-    let tabId: number;
-    if (task.tabUrl) {
-      const tab = await chrome.tabs.create({ url: task.tabUrl, active: false });
-      tabId = tab.id!;
-      // Wait a moment for navigation to start
-      await new Promise((r) => setTimeout(r, 1500));
-    } else {
-      // Use the currently active tab
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab?.id) {
-        logger.warn("keepalive", "No active tab for scheduled task, skipping", { taskId: task.id });
-        await markTaskFailed(task.id, "No active tab available");
-        return;
-      }
-      tabId = activeTab.id;
-    }
-
-    // 2. Import orchestrator lazily to avoid circular dependencies
-    const {
-      startScheduledOrchestratorTask,
-      waitForScheduledTaskCompletion,
-    } = await import("../orchestrator/scheduled-dispatch");
-    const { loadSettings } = await import("../../utils/settings-storage");
-
-    const settings = await loadSettings();
-    if (!settings) {
-      await markTaskFailed(task.id, "No settings configured");
-      return;
-    }
-
-    const mode = settings.providerMode ?? "fireworks";
-    const activeKey =
-      mode === "fireworks"
-        ? settings.fireworksApiKey
-        : mode === "moonshot"
-          ? settings.kimiApiKey
-          : mode === "openai-groq"
-            ? settings.openaiApiKey
-            : settings.openRouterApiKey;
-
-    if (!activeKey) {
-      await markTaskFailed(task.id, "No API key configured");
-      return;
-    }
-
-    // 3. Start the task via orchestrator (same path as USER_CHAT)
-    const workspaceId = `scheduled-${task.id.slice(0, 8)}`;
-
-    await startKeepalive();
-    await startScheduledOrchestratorTask({
-      query: task.query,
-      tabId,
-      workspaceId,
-      settings,
-      openRouterApiKey: activeKey || settings.openRouterApiKey,
-    });
-
-    const completion = await waitForScheduledTaskCompletion(workspaceId);
-    if (!completion) {
-      await markTaskFailed(
-        task.id,
-        "Timed out while waiting for task completion",
-      );
-      return;
-    }
-
-    const resultSummary =
-      completion.summary?.trim() ||
-      (completion.status === "failed"
-        ? "Task failed"
-        : "Task completed successfully");
-
-    if (completion.status === "failed") {
-      await markTaskFailed(task.id, resultSummary);
-      return;
-    }
-
-    await markTaskCompleted(task.id, resultSummary);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn("keepalive", "Scheduled task dispatch failed", {
-      taskId: task.id,
-      error: message,
-    });
-    await markTaskFailed(task.id, message).catch(() => {});
   }
 }
 

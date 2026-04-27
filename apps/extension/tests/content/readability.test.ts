@@ -173,6 +173,20 @@ describe("extractVisibleText", () => {
     expect(result).toContain("Deep content");
   });
 
+  test("extracts visible text from nested open shadow DOM", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const inner = document.createElement("div");
+    shadow.appendChild(inner);
+    const innerShadow = inner.attachShadow({ mode: "open" });
+    innerShadow.innerHTML = `<p>Configuration Database Instances HBase</p>`;
+
+    const result = extractVisibleText();
+
+    expect(result).toContain("Configuration Database Instances HBase");
+  });
+
   test("joins text from multiple nodes with spaces", () => {
     setBody(
       "<span>Hello</span><span>World</span>",

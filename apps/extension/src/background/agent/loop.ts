@@ -2305,7 +2305,7 @@ export class AgentLoop {
         ? "The scan is exhaustive; call done with this candidate unless the current page contradicts it."
         : `The scan is not exhaustive yet. Next action: ${getMoneyTableNextActionHint(aggregate)}.`);
     this.context.setWorkingNotes(note);
-    return `[Aggregation memory: ${note}]`;
+    return `[Aggregation state: ${note}]`;
   }
 
   private updateMoneyTableAggregateFromSnapshot(): void {
@@ -3963,7 +3963,6 @@ export class AgentLoop {
       allowedSet.add(ToolName.ESCALATE);
       allowedSet.add(ToolName.CLARIFY);
       allowedSet.add(ToolName.UPDATE_NOTES);
-      allowedSet.add(ToolName.SCHEDULE_TASK);
 
       const filtered = tools.filter((t) => allowedSet.has(t.function.name));
       this.log.info("agent", "Tool profile applied", {
@@ -8913,7 +8912,7 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
               continue;
             }
 
-            // UPDATE_NOTES tool — save a note to persistent working memory
+            // UPDATE_NOTES tool - save a note to the current run scratchpad
             if (toolName === ToolName.UPDATE_NOTES) {
               const note = (args.note as string) || "";
               this.context.appendWorkingNote(note);
@@ -8931,94 +8930,6 @@ while (this.isRunning && this.turnCount < this.maxTurns) {
                 turn: this.turnCount,
                 noteLength: note.length,
               });
-              continue;
-            }
-
-            // SCHEDULE_TASK tool — persist task for future execution via backend
-            if (toolName === ToolName.SCHEDULE_TASK) {
-              if (
-                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
-              ) {
-                continue;
-              }
-              const description =
-                (args.description as string) || "Scheduled task";
-              const query = (args.query as string) || "";
-              const schedule = args.schedule as string | undefined;
-              const runAt = args.runAt as string | undefined;
-              const tabUrl = args.tabUrl as string | undefined;
-
-              if (!query) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: "Error: query is required for scheduling a task.",
-                });
-                continue;
-              }
-
-              try {
-                const body: Record<string, unknown> = { description, query };
-                if (schedule) body.schedule = schedule;
-                if (runAt) body.runAt = new Date(runAt).getTime();
-                if (tabUrl) body.tabUrl = tabUrl;
-
-                const res = await fetch("http://127.0.0.1:7590/tasks", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                  signal: AbortSignal.timeout(3000),
-                });
-
-                if (!res.ok) {
-                  const errData = await res.json().catch(() => ({}));
-                  throw new Error(
-                    (errData as { error?: string }).error ||
-                      `HTTP ${res.status}`,
-                  );
-                }
-
-                const task = (await res.json()) as {
-                  id: string;
-                  runAt?: number;
-                  schedule?: string;
-                };
-                const when = task.schedule
-                  ? `recurring (${task.schedule})`
-                  : task.runAt
-                    ? `at ${new Date(task.runAt).toLocaleString()}`
-                    : "unknown time";
-
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Task scheduled: "${description}" — ${when} (ID: ${task.id})`,
-                });
-                this.recordMutationSensitiveAction(
-                  toolName,
-                  args,
-                  `Task scheduled: "${description}" — ${when} (ID: ${task.id})`,
-                );
-                this.log.info("agent", "SCHEDULE_TASK created", {
-                  turn: this.turnCount,
-                  taskId: task.id,
-                  description: description.slice(0, 80),
-                  schedule: schedule ?? null,
-                  runAt: runAt ?? null,
-                });
-              } catch (err: unknown) {
-                const message =
-                  err instanceof Error ? err.message : String(err);
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Failed to schedule task: ${message}. The backend service may not be running.`,
-                });
-                this.log.warn("agent", "SCHEDULE_TASK failed", {
-                  turn: this.turnCount,
-                  error: message,
-                });
-              }
               continue;
             }
 

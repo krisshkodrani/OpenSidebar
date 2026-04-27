@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 BRIDGE_PATH = Path(__file__).with_name("workarena-bridge.py")
@@ -76,6 +77,7 @@ class WorkArenaSession:
                     "command": "validate",
                     "mutatesServiceNow": False,
                     "requiresReset": True,
+                    "optionalActiveUrlSync": True,
                 },
                 {
                     "command": "teardown",
@@ -131,20 +133,40 @@ class WorkArenaSession:
         show_browser = bool(message.get("showBrowser", False))
         env_id = f"browsergym/{task_id}"
         start = time.time()
+        phase = "gym_make"
 
-        self.env = gym.make(
-            env_id,
-            headless=not show_browser,
-            wait_for_user_message=False,
-            use_raw_page_output=True,
-        )
-        self.obs, self.info = self.env.reset(seed=seed)
-        browser_env = self.env.unwrapped
-        task = browser_env.task
-        self.task_id = task_id
-        self.env_id = env_id
-        self.seed = seed
-        self.created_at_ms = int(time.time() * 1000)
+        try:
+            self.env = gym.make(
+                env_id,
+                headless=not show_browser,
+                wait_for_user_message=False,
+                use_raw_page_output=True,
+            )
+            phase = "env_reset"
+            self.obs, self.info = self.env.reset(seed=seed)
+            phase = "task_metadata"
+            browser_env = self.env.unwrapped
+            task = browser_env.task
+            self.task_id = task_id
+            self.env_id = env_id
+            self.seed = seed
+            self.created_at_ms = int(time.time() * 1000)
+        except Exception as exc:  # noqa: BLE001 - reset diagnostics must cross the bridge.
+            return {
+                "ok": False,
+                "status": "reset_failed",
+                "durationMs": int((time.time() - start) * 1000),
+                "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
+                "diagnostics": {
+                    "phase": phase,
+                    "taskId": task_id,
+                    "envId": env_id,
+                    "seed": seed,
+                    "showBrowser": show_browser,
+                    "errorType": type(exc).__name__,
+                },
+                "state": self.state_summary(),
+            }
 
         return {
             "ok": True,
@@ -196,7 +218,78 @@ class WorkArenaSession:
             },
         }
 
-    def validate(self) -> dict[str, Any]:
+    def _origin(self, value: Any) -> str | None:
+        if not isinstance(value, str) or not value:
+            return None
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return None
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    def _same_service_now_origin(self, active_url: str, current_url: str | None) -> bool:
+        target_origin = self._origin(active_url)
+        if target_origin is None:
+            return False
+
+        origins = {origin for origin in [self._origin(current_url)] if origin is not None}
+        if self.env is not None:
+            task = getattr(self.env.unwrapped, "task", None)
+            origins.add(self._origin(getattr(task, "start_url", None)))
+        return target_origin in origins
+
+    def _sync_page_url(self, active_url: str | None) -> dict[str, Any]:
+        if not active_url:
+            return {
+                "attempted": False,
+                "requestedUrl": None,
+                "activeUrl": self.obs.get("url") if self.obs else None,
+            }
+
+        browser_env = self.env.unwrapped
+        context = getattr(browser_env, "context", None)
+        page = getattr(browser_env, "page", None)
+        if page is None and context is not None:
+            pages = getattr(context, "pages", [])
+            page = pages[0] if pages else None
+        if page is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "requestedUrl": active_url,
+                "error": "No BrowserGym page is available for validation URL sync.",
+            }
+
+        current_url = getattr(page, "url", None) or (self.obs.get("url") if self.obs else None)
+        if not self._same_service_now_origin(active_url, current_url):
+            return {
+                "attempted": True,
+                "ok": False,
+                "requestedUrl": active_url,
+                "activeUrl": current_url,
+                "error": "Validation URL sync requires the same origin as the reset ServiceNow page.",
+            }
+
+        if current_url != active_url:
+            page.goto(active_url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+
+        synced_url = getattr(page, "url", active_url)
+        if self.obs is not None:
+            self.obs["url"] = synced_url
+            self.obs["open_pages_urls"] = [synced_url]
+            self.obs["open_pages_titles"] = [page.title()]
+
+        return {
+            "attempted": True,
+            "ok": True,
+            "requestedUrl": active_url,
+            "activeUrl": synced_url,
+        }
+
+    def validate(self, active_url: str | None = None) -> dict[str, Any]:
         if self.env is None:
             return {
                 "ok": False,
@@ -207,17 +300,38 @@ class WorkArenaSession:
 
         start = time.time()
         try:
+            url_sync = self._sync_page_url(active_url)
+            if url_sync.get("ok") is False:
+                return {
+                    "ok": False,
+                    "status": "blocked_invalid_validation_url",
+                    "durationMs": int((time.time() - start) * 1000),
+                    "state": self.state_summary(),
+                    "error": url_sync.get("error"),
+                    "urlSync": url_sync,
+                }
+
             reward, done, user_message, info = self.env.unwrapped._task_validate()
+            validation_details = info if isinstance(info, dict) else {}
+            validation_details = {
+                **validation_details,
+                "urlSync": url_sync,
+            }
             return {
                 "ok": True,
                 "status": "validated",
                 "durationMs": int((time.time() - start) * 1000),
                 "state": self.state_summary(),
+                "browser": {
+                    "activeUrl": url_sync.get("activeUrl")
+                    if isinstance(url_sync, dict)
+                    else None,
+                },
                 "validation": {
                     "passed": bool(done),
                     "score": reward,
                     "message": user_message,
-                    "details": info or {},
+                    "details": validation_details,
                 },
             }
         except Exception as exc:  # noqa: BLE001 - preserve validation failure details.
@@ -281,7 +395,8 @@ def handle(session: WorkArenaSession, message: dict[str, Any]) -> dict[str, Any]
         if command == "export_session":
             return session.export_session()
         if command == "validate":
-            return session.validate()
+            active_url = message.get("activeUrl")
+            return session.validate(active_url if isinstance(active_url, str) else None)
         if command == "teardown":
             return session.teardown()
         return {

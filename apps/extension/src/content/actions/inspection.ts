@@ -3,7 +3,14 @@
  */
 
 import { ScrollPageArgs, ScrollDirection, ReadElementArgs } from "../../types";
-import { getVisibleText, addDynamicTag, truncateText } from "../tagging";
+import {
+  getVisibleText,
+  addDynamicTag,
+  truncateText,
+  querySelectorAllDeep,
+  INTERACTIVE_SELECTORS,
+  isElementVisible,
+} from "../tagging";
 import { buildSnapshot } from "../snapshot";
 import {
   staleIdError,
@@ -183,37 +190,6 @@ export function executeFindElement(args: {
       navigated: false,
     };
   }
-  const found = (window as any).find(query);
-  if (!found) {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const scrollHeight = document.documentElement.scrollHeight;
-    const clientHeight = window.innerHeight;
-    const hasMoreContent = scrollHeight > clientHeight + scrollTop + 50;
-    return {
-      success: false,
-      result: hasMoreContent
-        ? `Text "${query}" not found in current viewport. Page is scrollable (${Math.round((scrollTop / (scrollHeight - clientHeight)) * 100)}% scrolled, ${Math.round(scrollTop)}/${scrollHeight - clientHeight}px). Scroll down further, wait 1-2 seconds for lazy content to load, then search again. Repeat until found.`
-        : `Text "${query}" not found on this page.`,
-      navigated: false,
-    };
-  }
-
-  // Locate the DOM node via the selection created by window.find()
-  const sel = window.getSelection();
-  const anchorNode = sel?.anchorNode;
-
-  // Clear selection to avoid visual artifacts
-  sel?.removeAllRanges();
-
-  if (!anchorNode) {
-    return {
-      success: true,
-      result: `Found "${query}" but could not locate its DOM node`,
-      navigated: false,
-    };
-  }
-
-  // Walk up from the text node to find the nearest interactive or semantic container
   const INTERACTIVE =
     "a[href],button,input,textarea,select,[role='button'],[role='link'],[role='tab'],[contenteditable='true']";
   const SEMANTIC_TAGS = new Set([
@@ -236,6 +212,121 @@ export function executeFindElement(args: {
     "dd",
   ]);
 
+  const isBadFindTarget = (el: Element | null): boolean => {
+    if (!el) return true;
+    const tag = el.tagName.toLowerCase();
+    return tag === "body" || tag === "html" || tag === "script" || tag === "style";
+  };
+
+  const candidateText = (el: Element): string => {
+    const parts = [
+      getVisibleText(el),
+      el.getAttribute("aria-label"),
+      el.getAttribute("placeholder"),
+      el.getAttribute("title"),
+      el.getAttribute("name"),
+      el.getAttribute("value"),
+      el.getAttribute("role"),
+    ];
+
+    const labelledBy = el.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      for (const refId of labelledBy.split(/\s+/)) {
+        const ref = document.getElementById(refId);
+        if (ref?.textContent) parts.push(ref.textContent);
+      }
+    }
+
+    return parts.filter(Boolean).join(" ").trim();
+  };
+
+  const findDeepInteractiveMatch = (): Element | null => {
+    const normalizedQuery = query.trim().toLowerCase();
+    const candidates = querySelectorAllDeep(document, INTERACTIVE_SELECTORS)
+      .filter((el) => isElementVisible(el) && !el.closest('[aria-hidden="true"]'));
+
+    const exactMatches: Element[] = [];
+    const partialMatches: Element[] = [];
+
+    for (const candidate of candidates) {
+      const haystack = candidateText(candidate);
+      if (!haystack) continue;
+      const normalized = haystack.toLowerCase();
+      if (normalized === normalizedQuery) {
+        exactMatches.push(candidate);
+      } else if (normalized.includes(normalizedQuery)) {
+        partialMatches.push(candidate);
+      }
+    }
+
+    const matches = exactMatches.length > 0 ? exactMatches : partialMatches;
+    if (matches.length === 0) return null;
+
+    return matches.sort((a, b) => {
+      const aTag = a.tagName.toLowerCase();
+      const bTag = b.tagName.toLowerCase();
+      const aInput = aTag === "input" || aTag === "textarea" ? 1 : 0;
+      const bInput = bTag === "input" || bTag === "textarea" ? 1 : 0;
+      if (aInput !== bInput) return bInput - aInput;
+      return candidateText(a).length - candidateText(b).length;
+    })[0];
+  };
+
+  const returnDeepInteractiveMatch = (): {
+    success: boolean;
+    result: string;
+    navigated: boolean;
+  } | null => {
+    const matched = findDeepInteractiveMatch();
+    if (!matched) return null;
+    if (matched instanceof HTMLElement) {
+      matched.scrollIntoView({ behavior: "instant", block: "center" });
+    }
+    const tagId = addDynamicTag(matched);
+    const tagName = matched.tagName.toLowerCase();
+    const context = truncateText(candidateText(matched) || getVisibleText(matched), 50);
+    return {
+      success: true,
+      result: `Found "${query}" near [${tagId}] <${tagName}> "${context}". Use tag [${tagId}] to interact with it.`,
+      navigated: false,
+    };
+  };
+
+  const found = (window as any).find(query);
+  if (!found) {
+    const deepMatch = returnDeepInteractiveMatch();
+    if (deepMatch) return deepMatch;
+
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight;
+    const clientHeight = window.innerHeight;
+    const hasMoreContent = scrollHeight > clientHeight + scrollTop + 50;
+    return {
+      success: false,
+      result: hasMoreContent
+        ? `Text "${query}" not found in current viewport. Page is scrollable (${Math.round((scrollTop / (scrollHeight - clientHeight)) * 100)}% scrolled, ${Math.round(scrollTop)}/${scrollHeight - clientHeight}px). Scroll down further, wait 1-2 seconds for lazy content to load, then search again. Repeat until found.`
+        : `Text "${query}" not found on this page.`,
+      navigated: false,
+    };
+  }
+
+  // Locate the DOM node via the selection created by window.find()
+  const sel = window.getSelection();
+  const anchorNode = sel?.anchorNode;
+
+  // Clear selection to avoid visual artifacts
+  sel?.removeAllRanges();
+
+  if (!anchorNode) {
+    const deepMatch = returnDeepInteractiveMatch();
+    return deepMatch ?? {
+      success: true,
+      result: `Found "${query}" but could not locate its DOM node`,
+      navigated: false,
+    };
+  }
+
+  // Walk up from the text node to find the nearest interactive or semantic container
   let target: Element | null =
     anchorNode.nodeType === Node.ELEMENT_NODE
       ? (anchorNode as Element)
@@ -262,8 +353,9 @@ export function executeFindElement(args: {
         : anchorNode.parentElement;
   }
 
-  if (!matched) {
-    return {
+  if (!matched || isBadFindTarget(matched)) {
+    const deepMatch = returnDeepInteractiveMatch();
+    return deepMatch ?? {
       success: true,
       result: `Found "${query}" but could not locate a container element`,
       navigated: false,

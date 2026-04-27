@@ -1,17 +1,18 @@
 import React from "react";
 import type { TraceEntry } from "../../../types/traces";
 import { formatDuration } from "../../utils";
+import { useStore } from "../../store";
 
 interface TurnTimelineProps {
   entries: TraceEntry[];
 }
 
-/** Build a plain-text title string: "T3 · 1.2s · click [5]" */
+/** Build a plain-text title string: "T3 - 1.2s - click [5]" */
 function buildTitle(entry: TraceEntry, turnNum: number): string {
   const dur = entry.llmResponse?.durationMs ?? 0;
   const tier = entry.llmRequest?.modelTier;
-  const parts: string[] = [`T${turnNum} · ${formatDuration(dur)}`];
-  if (tier) parts[0] += ` · ${tier}`;
+  const parts: string[] = [`T${turnNum} - ${formatDuration(dur)}`];
+  if (tier) parts[0] += ` - ${tier}`;
 
   const calls = entry.llmResponse?.toolCalls;
   if (calls && calls.length > 0) {
@@ -24,7 +25,7 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
           continue;
         }
         if (args.url) {
-          parts.push(`${name} → ${args.url.slice(0, 40)}`);
+          parts.push(`${name} -> ${args.url.slice(0, 40)}`);
           continue;
         }
         if (args.direction) {
@@ -33,7 +34,7 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
         }
         if (args.text) {
           const t =
-            args.text.length > 30 ? args.text.slice(0, 27) + "…" : args.text;
+            args.text.length > 30 ? `${args.text.slice(0, 27)}...` : args.text;
           parts.push(`${name} "${t}"`);
           continue;
         }
@@ -49,8 +50,8 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
   } else {
     const text = entry.llmResponse?.content;
     if (text) {
-      const preview = text.length > 60 ? text.slice(0, 57) + "…" : text;
-      parts.push(`💬 ${preview}`);
+      const preview = text.length > 60 ? `${text.slice(0, 57)}...` : text;
+      parts.push(`message: ${preview}`);
     }
   }
 
@@ -58,13 +59,15 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
 }
 
 export default function TurnTimeline({ entries }: TurnTimelineProps) {
+  const navigateToTurn = useStore((s) => s.navigateToTurn);
+
   if (entries.length < 2) return null;
 
   const durations = entries.map((e) => e.llmResponse?.durationMs ?? 0);
   const maxDuration = Math.max(...durations, 1);
 
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       <div className="text-[10px] text-trace-muted uppercase tracking-wider mb-1.5 font-semibold">
         Turn Timeline
       </div>
@@ -75,18 +78,20 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
           const tier = entry.llmRequest?.modelTier;
           const bgColor =
             tier === "planner"
-              ? "bg-amber-500/60 hover:bg-amber-500/80"
-              : "bg-cyan-500/50 hover:bg-cyan-500/70";
+              ? "bg-state-warning/70 hover:bg-state-warning"
+              : "bg-brand-live/60 hover:bg-brand-live";
 
           const turnNum = entry.turnNumber ?? i + 1;
 
           return (
-            <a
+            <button
               key={i}
-              href={`#turn-${turnNum}`}
-              className={`${bgColor} transition-colors cursor-pointer`}
+              type="button"
+              className={`${bgColor} border-0 p-0 transition-colors cursor-pointer`}
               style={{ width: `${widthPct}%`, minWidth: "3px" }}
               title={buildTitle(entry, turnNum)}
+              aria-label={`Jump to turn ${turnNum}`}
+              onClick={() => navigateToTurn(turnNum)}
             />
           );
         })}
@@ -95,10 +100,10 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
         <span>T1</span>
         <div className="flex gap-3">
           <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-cyan-500/60" /> executor
+            <span className="w-2 h-2 rounded-sm bg-brand-live/60" /> executor
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-amber-500/60" /> planner
+            <span className="w-2 h-2 rounded-sm bg-state-warning/70" /> planner
           </span>
         </div>
         <span>T{entries.length}</span>

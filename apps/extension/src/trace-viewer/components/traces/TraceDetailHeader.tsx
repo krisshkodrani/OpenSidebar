@@ -1,5 +1,9 @@
-import React, { useState, useMemo } from "react";
-import type { TraceEntry, TraceEvent, TraceSession } from "../../../types/traces";
+import React, { useEffect, useState, useMemo } from "react";
+import type {
+  TraceEntry,
+  TraceEvent,
+  TraceSession,
+} from "../../../types/traces";
 import type { RunTraceEvent } from "../../../utils/run-trace";
 import { useStore } from "../../store";
 import { computeSessionDiagnostics } from "../../diagnostics";
@@ -33,6 +37,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   const currentRunEvents = useStore((s) => s.currentRunEvents);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const outcome = session.outcome;
   const metrics = session.metrics;
   const duration = formatDuration(
@@ -68,6 +73,10 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   );
   const models = getSessionModels(session);
 
+  useEffect(() => {
+    setDetailsExpanded(false);
+  }, [session.sessionId]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(session.sessionId);
     setCopied(true);
@@ -99,9 +108,9 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   };
 
   return (
-    <div className="px-5 py-3.5 border-b border-trace-border shrink-0 bg-trace-panel">
-      <div className="flex items-center gap-3 mb-1.5">
-        <span className="text-xs text-trace-muted font-mono">
+    <div className="px-5 py-3.5">
+      <div className="flex items-center gap-3 mb-1.5 min-w-0 flex-wrap">
+        <span className="min-w-0 flex-1 text-xs text-trace-muted font-mono truncate">
           {session.sessionId}
         </span>
         <button
@@ -147,7 +156,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         >
           {outcome}
         </Badge>
-        <div className="flex items-center gap-1.5 ml-auto">
+        <div className="flex items-center gap-1.5 ml-auto shrink-0">
           <button
             className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
             title="Copy shareable link"
@@ -168,87 +177,120 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
       <div className="flex gap-4 text-[11px] text-trace-muted mt-1.5 flex-wrap">
         <span>{session.turnCount || 0} turns</span>
         <span>{duration}</span>
-        <span>{models.length} model{models.length === 1 ? "" : "s"}</span>
+        <span>
+          {models.length} model{models.length === 1 ? "" : "s"}
+        </span>
         {tokens && <span>{tokens}</span>}
         {cost && <span>{cost}</span>}
         {session.startUrl && <span>{truncate(session.startUrl, 50)}</span>}
+        <button
+          type="button"
+          onClick={() => setDetailsExpanded((value) => !value)}
+          aria-expanded={detailsExpanded}
+          className="ml-auto text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+        >
+          {detailsExpanded ? "Hide details" : "Show details"}
+        </button>
       </div>
 
-      {/* Latency stats strip */}
-      {latencyStats && (
-        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-trace-border/50 text-[10px] font-mono text-trace-muted">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-trace-accent-light/70">
-            Latency
-          </span>
-          <span>
-            min <span className="text-trace-subtle">{formatDuration(latencyStats.min)}</span>
-          </span>
-          <span>
-            p50 <span className="text-trace-subtle">{formatDuration(latencyStats.median)}</span>
-          </span>
-          <span>
-            p95 <span className="text-trace-subtle">{formatDuration(latencyStats.p95)}</span>
-          </span>
-          <span>
-            max <span className="text-trace-subtle">{formatDuration(latencyStats.max)}</span>
-          </span>
-          <span className="text-trace-muted">({latencyStats.count} calls)</span>
-        </div>
+      {detailsExpanded && (
+        <>
+          {/* Latency stats strip */}
+          {latencyStats && (
+            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-trace-border/50 text-[10px] font-mono text-trace-muted">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-trace-accent-light/70">
+                Latency
+              </span>
+              <span>
+                min{" "}
+                <span className="text-trace-subtle">
+                  {formatDuration(latencyStats.min)}
+                </span>
+              </span>
+              <span>
+                p50{" "}
+                <span className="text-trace-subtle">
+                  {formatDuration(latencyStats.median)}
+                </span>
+              </span>
+              <span>
+                p95{" "}
+                <span className="text-trace-subtle">
+                  {formatDuration(latencyStats.p95)}
+                </span>
+              </span>
+              <span>
+                max{" "}
+                <span className="text-trace-subtle">
+                  {formatDuration(latencyStats.max)}
+                </span>
+              </span>
+              <span className="text-trace-muted">
+                ({latencyStats.count} calls)
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <Badge variant="type">
+              {diagnostics.productiveTurns} productive
+            </Badge>
+            {diagnostics.wastedTurns > 0 && (
+              <Badge variant="event-stuck_signal">
+                {diagnostics.wastedTurns} wasted
+              </Badge>
+            )}
+            {diagnostics.loopTurns > 0 && (
+              <Badge variant="event-circuit_breaker">
+                {diagnostics.loopTurns} loop turns
+              </Badge>
+            )}
+            {diagnostics.escalations > 0 && (
+              <Badge variant="event-escalation">
+                {diagnostics.escalations} escalations
+              </Badge>
+            )}
+            {diagnostics.failovers > 0 && (
+              <Badge variant="category">
+                {diagnostics.failovers} failovers
+              </Badge>
+            )}
+            {diagnostics.contextHotTurns > 0 && (
+              <Badge variant="tier-planner">
+                {diagnostics.contextHotTurns} context hot
+              </Badge>
+            )}
+            {diagnostics.perceptionCalls > 0 && (
+              <Badge variant="cached">
+                {diagnostics.perceptionCacheHits}/{diagnostics.perceptionCalls}{" "}
+                cached perception
+              </Badge>
+            )}
+            {diagnostics.structuredPerceptionTurns > 0 && (
+              <Badge variant="type">
+                {diagnostics.structuredPerceptionTurns} structured
+              </Badge>
+            )}
+            {diagnostics.vlScreenshotTurns > 0 && (
+              <Badge variant="category">
+                {diagnostics.vlScreenshotTurns} VL screenshot
+              </Badge>
+            )}
+            {diagnostics.elementOnlyTurns > 0 && (
+              <Badge variant="event-stuck_signal">
+                {diagnostics.elementOnlyTurns} element-only
+              </Badge>
+            )}
+          </div>
+
+          <SkillPolicySection session={session} />
+          <CoordinationSection
+            entries={currentEntries}
+            runEvents={currentRunEvents}
+          />
+          <PlanSection session={session} />
+        </>
       )}
-
-      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-        <Badge variant="type">{diagnostics.productiveTurns} productive</Badge>
-        {diagnostics.wastedTurns > 0 && (
-          <Badge variant="event-stuck_signal">
-            {diagnostics.wastedTurns} wasted
-          </Badge>
-        )}
-        {diagnostics.loopTurns > 0 && (
-          <Badge variant="event-circuit_breaker">
-            {diagnostics.loopTurns} loop turns
-          </Badge>
-        )}
-        {diagnostics.escalations > 0 && (
-          <Badge variant="event-escalation">
-            {diagnostics.escalations} escalations
-          </Badge>
-        )}
-        {diagnostics.failovers > 0 && (
-          <Badge variant="category">{diagnostics.failovers} failovers</Badge>
-        )}
-        {diagnostics.contextHotTurns > 0 && (
-          <Badge variant="tier-planner">
-            {diagnostics.contextHotTurns} context hot
-          </Badge>
-        )}
-        {diagnostics.perceptionCalls > 0 && (
-          <Badge variant="cached">
-            {diagnostics.perceptionCacheHits}/{diagnostics.perceptionCalls} cached perception
-          </Badge>
-        )}
-        {diagnostics.structuredPerceptionTurns > 0 && (
-          <Badge variant="type">
-            {diagnostics.structuredPerceptionTurns} structured
-          </Badge>
-        )}
-        {diagnostics.vlScreenshotTurns > 0 && (
-          <Badge variant="category">
-            {diagnostics.vlScreenshotTurns} VL screenshot
-          </Badge>
-        )}
-        {diagnostics.elementOnlyTurns > 0 && (
-          <Badge variant="event-stuck_signal">
-            {diagnostics.elementOnlyTurns} element-only
-          </Badge>
-        )}
-      </div>
-
-      <SkillPolicySection session={session} />
-      <CoordinationSection
-        entries={currentEntries}
-        runEvents={currentRunEvents}
-      />
-      <PlanSection session={session} />
     </div>
   );
 }
@@ -274,7 +316,7 @@ function QueryTitle({ query }: { query: string }) {
       </div>
       {expanded && (
         <pre
-          className="mt-1.5 text-[11px] text-trace-muted leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-[rgba(0,0,0,0.2)] rounded px-2 py-1.5 scrollbar-thin cursor-pointer"
+          className="mt-1.5 text-[11px] text-trace-muted leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-trace-bg border border-trace-border rounded px-2 py-1.5 scrollbar-thin cursor-pointer"
           onClick={() => setExpanded(false)}
         >
           {query}
@@ -302,7 +344,7 @@ function SkillPolicySection({ session }: { session: TraceSession }) {
         <Badge variant="type">{metrics.rankingApplications} rankings</Badge>
         <Badge variant="type">{metrics.totalSelections} picks</Badge>
       </div>
-      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2 text-[11px]">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
         <MetricCard
           label="Preferred"
           value={`${Math.round(metrics.preferredSelectionRate * 100)}%`}
@@ -333,7 +375,7 @@ function MetricCard({
   hint: string;
 }) {
   return (
-    <div className="rounded border border-trace-border/70 bg-black/10 px-2.5 py-2">
+    <div className="rounded border border-trace-border/70 bg-trace-bg px-2.5 py-2">
       <div className="text-[10px] uppercase tracking-[0.18em] text-trace-muted">
         {label}
       </div>
@@ -410,7 +452,10 @@ function CoordinationSection({
   for (const event of redirectEvents) {
     const controllerId =
       stringValue(asRecord(event.data)?.controllerId) ?? "unknown";
-    controllerCounts.set(controllerId, (controllerCounts.get(controllerId) ?? 0) + 1);
+    controllerCounts.set(
+      controllerId,
+      (controllerCounts.get(controllerId) ?? 0) + 1,
+    );
   }
 
   return (
@@ -434,7 +479,7 @@ function CoordinationSection({
         )}
       </div>
       {latestState && (
-        <div className="grid grid-cols-[repeat(4,minmax(0,1fr))] gap-2 text-[11px] mb-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] mb-2">
           <MetricCard
             label="Primary"
             value={primaryTabId == null ? "-" : String(primaryTabId)}
@@ -459,21 +504,24 @@ function CoordinationSection({
       )}
       {controllerCounts.size > 0 && (
         <div className="flex gap-1.5 flex-wrap text-[11px] text-trace-muted">
-          {Array.from(controllerCounts.entries()).map(([controllerId, count]) => (
-            <span
-              key={controllerId}
-              className="px-1.5 py-0.5 rounded bg-black/10 border border-trace-border/70"
-            >
-              {controllerId}: {count}
-            </span>
-          ))}
+          {Array.from(controllerCounts.entries()).map(
+            ([controllerId, count]) => (
+              <span
+                key={controllerId}
+                className="px-1.5 py-0.5 rounded bg-trace-bg border border-trace-border/70"
+              >
+                {controllerId}: {count}
+              </span>
+            ),
+          )}
         </div>
       )}
       {rejectedRebinds.length > 0 && (
         <div className="mt-1.5 text-[11px] text-trace-muted">
           Last unsafe rebind:{" "}
-          {stringValue(asRecord(rejectedRebinds[rejectedRebinds.length - 1].data)?.reason) ??
-            "reason unavailable"}
+          {stringValue(
+            asRecord(rejectedRebinds[rejectedRebinds.length - 1].data)?.reason,
+          ) ?? "reason unavailable"}
         </div>
       )}
     </div>

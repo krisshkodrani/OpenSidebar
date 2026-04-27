@@ -2,6 +2,8 @@
 
 This page documents the local setup used to prepare OpenSidebar for real WorkArena benchmark runs. It does not vendor WorkArena into this repository.
 
+For the first guarded live run after Hugging Face access is approved, use the smoke checklist in [`workarena-smoke-test-checklist.md`](./workarena-smoke-test-checklist.md).
+
 ## Current Scope
 
 The current integration is a no-token doctor command. It verifies local prerequisites and Hugging Face gated dataset access before we add real task execution.
@@ -329,6 +331,24 @@ The validator covers:
 - the future `agent-execution` report shape
 
 The future execution result schema reserves stable fields for task id, seed, real WorkArena or local fixture prompt, start URL, trace ids/files, final answer, turns, perceptions, tool counts, tokens, cost, validation result, timings, and failure stage. Failure stages are fixed to `setup`, `reset`, `extension_launch`, `agent_run`, `validation`, and `teardown`.
+
+## Trace Learning Report
+
+After a WorkArena handoff batch, summarize the generated JSON reports and trace files into likely fix layers:
+
+```bash
+npm run benchmark:workarena:trace-learning
+```
+
+The report is written to:
+
+```text
+.artifacts/e2e/workarena-trace-learning-YYYY-MM-DD.md
+```
+
+The analyzer reads `agent-execution` reports, follows trace file references, counts turns, perception prompts, tool calls, tool failures, reset attempts, and selected skills, then routes each run toward a likely next fix layer: WorkArena harness/session, validation/session sync, DOM/perception runtime, tool execution runtime, planner/skill policy, skill/policy optimization, or trace/report instrumentation. These classifications are investigation hints, not final root-cause proof.
+
+By default, pending reports with no trace files are skipped because they do not contain agent behavior to learn from. Use `-- --include-pending` when you want the report to include blocked or pending contract records too.
 
 ## Local Copy Suite
 

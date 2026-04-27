@@ -40,7 +40,7 @@ If the release changes are concentrated in a different area, run the relevant pu
 | Change area | Recommended command |
 | ----------- | ------------------- |
 | Page actions, navigation, overlays, forms, shopping | `npm run test:e2e:interactions` |
-| Planner, continuation, recovery, memory, backend durability | `npm run test:e2e:runtime` |
+| Planner, continuation, recovery, backend durability | `npm run test:e2e:runtime` |
 | Workflow-benchmark behavior or WorkArena-gap changes | `npm run test:e2e:workarena` |
 | Release confidence on long workflow stability | `npm run test:e2e:workarena:variance` |
 

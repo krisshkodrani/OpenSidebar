@@ -8,6 +8,7 @@
 
 import { Readability } from "@mozilla/readability";
 import TurndownService from "turndown";
+import { getDeepQueryRoots } from "./tagging/dom-traversal";
 
 /** Shared Turndown instance (stateless — safe to reuse). */
 const turndown = new TurndownService({
@@ -81,36 +82,46 @@ export function extractVisibleText(maxLength: number = 15000): string {
   const chunks: string[] = [];
   let length = 0;
 
-  const walker = document.createTreeWalker(
-    document.body || document.documentElement,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
+  for (const root of getDeepQueryRoots(document)) {
+    const walkRoot =
+      root instanceof Document
+        ? root.body || root.documentElement
+        : root;
+    if (!walkRoot) continue;
 
-        // Skip non-content tags
-        if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+    const walker = document.createTreeWalker(
+      walkRoot,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
 
-        // Skip hidden elements
-        if (parent.offsetParent === null && parent.tagName !== "BODY") {
-          return NodeFilter.FILTER_REJECT;
-        }
+          // Skip non-content tags
+          if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
 
-        const text = node.textContent?.trim();
-        if (!text) return NodeFilter.FILTER_REJECT;
+          // Skip hidden elements
+          if (parent.offsetParent === null && parent.tagName !== "BODY") {
+            return NodeFilter.FILTER_REJECT;
+          }
 
-        return NodeFilter.FILTER_ACCEPT;
+          const text = node.textContent?.trim();
+          if (!text) return NodeFilter.FILTER_REJECT;
+
+          return NodeFilter.FILTER_ACCEPT;
+        },
       },
-    },
-  );
+    );
 
-  while (walker.nextNode()) {
-    const text = walker.currentNode.textContent?.trim();
-    if (!text) continue;
+    while (walker.nextNode()) {
+      const text = walker.currentNode.textContent?.trim();
+      if (!text) continue;
 
-    chunks.push(text);
-    length += text.length;
+      chunks.push(text);
+      length += text.length;
+
+      if (length >= maxLength) break;
+    }
 
     if (length >= maxLength) break;
   }

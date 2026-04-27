@@ -63,6 +63,15 @@ describe("TraceDetailHeader", () => {
       );
     });
 
+    const detailsButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Show details",
+    ) as HTMLButtonElement | undefined;
+    expect(detailsButton).toBeTruthy();
+
+    await act(async () => {
+      detailsButton!.click();
+    });
+
     expect(container.textContent).toContain("Skill Policy");
     expect(container.textContent).toContain("modal-overlay-recovery");
     expect(container.textContent).toContain("2 rankings");
@@ -162,11 +171,22 @@ describe("TraceDetailHeader", () => {
       );
     });
 
+    const detailsButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Show details",
+    ) as HTMLButtonElement | undefined;
+    expect(detailsButton).toBeTruthy();
+
+    await act(async () => {
+      detailsButton!.click();
+    });
+
     expect(container.textContent).toContain("Coordination");
     expect(container.textContent).toContain("1 state events");
     expect(container.textContent).toContain("1 redirects");
     expect(container.textContent).toContain("1 unsafe rebinds");
     expect(container.textContent).toContain("cross-tab-compare: 1");
-    expect(container.textContent).toContain("Multiple live workspace tabs match.");
+    expect(container.textContent).toContain(
+      "Multiple live workspace tabs match.",
+    );
   });
 });
