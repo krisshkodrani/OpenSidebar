@@ -8,6 +8,7 @@ import React, {
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
 import { isoDayOffset, shortModel } from "../../utils";
+import Tooltip from "../Tooltip";
 
 interface FilterBarProps {
   onFiltersChanged: () => void;
@@ -142,83 +143,95 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   return (
     <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border/40 shrink-0 flex-wrap">
       {/* Filters */}
-      <select
-        value={filters.outcome}
-        onChange={(e) => handleSelectChange("outcome", e.target.value)}
-        className={selectClass}
-      >
-        <option value="all">Outcome</option>
-        {availableOutcomes.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label} ({o.count})
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={filters.day}
-        onChange={(e) => {
-          if (e.target.value !== "all") {
-            setFilter("from", "");
-            setFilter("to", "");
-          }
-          handleSelectChange("day", e.target.value);
-        }}
-        className={selectClass}
-      >
-        <option value="all">Day</option>
-        {availableDays.map((d) => (
-          <option key={d.day} value={d.day}>
-            {d.day} ({d.count})
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={filters.model}
-        onChange={(e) => handleSelectChange("model", e.target.value)}
-        className={selectClass}
-      >
-        <option value="all">Model</option>
-        {availableModels.map((m) => (
-          <option key={m.model} value={m.model}>
-            {shortModel(m.model)} ({m.count})
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={filters.tier}
-        onChange={(e) => handleSelectChange("tier", e.target.value)}
-        className={selectClass}
-      >
-        <option value="all">Tier</option>
-        <option value="executor">Executor</option>
-        <option value="planner">Planner</option>
-      </select>
-
-      {availableModes.length > 0 && (
+      <Tooltip content="Filter by session outcome (completed, error, etc.)">
         <select
-          value={filters.mode}
-          onChange={(e) => handleSelectChange("mode", e.target.value)}
+          value={filters.outcome}
+          onChange={(e) => handleSelectChange("outcome", e.target.value)}
           className={selectClass}
         >
-          <option value="all">Mode</option>
-          {availableModes.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label} ({m.count})
+          <option value="all">Outcome</option>
+          {availableOutcomes.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label} ({o.count})
             </option>
           ))}
         </select>
+      </Tooltip>
+
+      <Tooltip content="Filter by day">
+        <select
+          value={filters.day}
+          onChange={(e) => {
+            if (e.target.value !== "all") {
+              setFilter("from", "");
+              setFilter("to", "");
+            }
+            handleSelectChange("day", e.target.value);
+          }}
+          className={selectClass}
+        >
+          <option value="all">Day</option>
+          {availableDays.map((d) => (
+            <option key={d.day} value={d.day}>
+              {d.day} ({d.count})
+            </option>
+          ))}
+        </select>
+      </Tooltip>
+
+      <Tooltip content="Filter by LLM model used">
+        <select
+          value={filters.model}
+          onChange={(e) => handleSelectChange("model", e.target.value)}
+          className={selectClass}
+        >
+          <option value="all">Model</option>
+          {availableModels.map((m) => (
+            <option key={m.model} value={m.model}>
+              {shortModel(m.model)} ({m.count})
+            </option>
+          ))}
+        </select>
+      </Tooltip>
+
+      <Tooltip content="Filter by agent role (executor runs tasks, planner creates plans)">
+        <select
+          value={filters.tier}
+          onChange={(e) => handleSelectChange("tier", e.target.value)}
+          className={selectClass}
+        >
+          <option value="all">Role</option>
+          <option value="executor">Executor</option>
+          <option value="planner">Planner</option>
+        </select>
+      </Tooltip>
+
+      {availableModes.length > 0 && (
+        <Tooltip content="Filter by session mode: Agent (LLM-driven), Recording (playback), or Manual (human-driven)">
+          <select
+            value={filters.mode}
+            onChange={(e) => handleSelectChange("mode", e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">Mode</option>
+            {availableModes.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label} ({m.count})
+              </option>
+            ))}
+          </select>
+        </Tooltip>
       )}
 
-      <input
-        type="text"
-        value={localDomain}
-        onChange={(e) => setLocalDomain(e.target.value)}
-        placeholder="Website"
-        className="bg-white text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim w-28 shadow-sm"
-      />
+      <Tooltip content="Filter by website/domain">
+        <input
+          type="text"
+          value={localDomain}
+          onChange={(e) => setLocalDomain(e.target.value)}
+          placeholder="Website"
+          className="bg-white text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim w-28 shadow-sm"
+        />
+      </Tooltip>
 
       {/* Date presets */}
       <div className="flex gap-1">
