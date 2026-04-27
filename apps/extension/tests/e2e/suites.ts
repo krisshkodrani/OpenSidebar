@@ -5,21 +5,6 @@ export type E2EDefaultSuiteName =
 export type E2EFocusSuiteName = "nightly-legacy";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
-export const E2E_RETIRED_TESTS: readonly string[] = [
-  "article-research.test.ts",
-  "data-table.test.ts",
-  "email-compose.test.ts",
-  "job-board.test.ts",
-  "kanban.test.ts",
-  "messaging-thread.test.ts",
-  "multi-step-form.test.ts",
-  "online-shop-boundaries.test.ts",
-  "procurement-list.test.ts",
-  "support-ticket.test.ts",
-  "tab-management.test.ts",
-  "team-chat.test.ts",
-];
-
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   smoke: [
     "summarize.test.ts",
