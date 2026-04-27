@@ -91,9 +91,9 @@ export default function FleetOverview({
           tooltip="Average number of turns per session"
         />
         <InlineStat
-          label="Cost"
+          label="Est. cost"
           value={formatCost(stats.totalCost) || "$0"}
-          tooltip="Total API cost across all sessions"
+          tooltip="Estimated total API cost across all sessions"
         />
       </div>
       {hasActiveFilters && (
