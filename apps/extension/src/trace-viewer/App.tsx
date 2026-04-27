@@ -17,6 +17,8 @@ import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
+import OverviewTab from "./components/traces/OverviewTab";
+import PlanTab from "./components/traces/PlanTab";
 import type { Subview } from "./store/types";
 
 // URL hash helpers
@@ -265,14 +267,18 @@ function ViewerBody({
               )}
               <LogList />
             </div>
+          ) : activeSubview === "overview" ? (
+            <div className="px-5 py-4">
+              <OverviewTab session={currentSession as any} />
+            </div>
+          ) : activeSubview === "plan" ? (
+            <div className="px-5 py-4">
+              <PlanTab session={currentSession as any} />
+            </div>
           ) : (
             <div className="px-5 py-4">
               <div className="text-sm text-trace-muted">
-                {activeSubview === "overview"
-                  ? "Overview tab coming soon..."
-                  : activeSubview === "plan"
-                    ? "Plan tab coming soon..."
-                    : `${activeSubview} tab coming soon...`}
+                {activeSubview} tab coming soon...
               </div>
             </div>
           )}

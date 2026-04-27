@@ -8,6 +8,7 @@ import type { RunTraceEvent } from "../../../utils/run-trace";
 import { useStore } from "../../store";
 import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
+import Tooltip from "../Tooltip";
 import CollapsibleSection from "../CollapsibleSection";
 import {
   outcomeClass,
@@ -232,49 +233,67 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           )}
 
           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            <Badge variant="type">
-              {diagnostics.productiveTurns} productive
-            </Badge>
+            <Tooltip content="Turns that resulted in meaningful progress toward the goal">
+              <div>
+                <Badge variant="type">
+                  {diagnostics.productiveTurns} productive
+                </Badge>
+              </div>
+            </Tooltip>
             {diagnostics.wastedTurns > 0 && (
-              <Badge variant="event-stuck_signal">
-                {diagnostics.wastedTurns} wasted
-              </Badge>
+              <Tooltip content="Turns that did not advance the task (stuck signal or loop detected)">
+                <div>
+                  <Badge variant="event-stuck_signal">
+                    {diagnostics.wastedTurns} wasted
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.loopTurns > 0 && (
-              <Badge variant="event-circuit_breaker">
-                {diagnostics.loopTurns} loop turns
-              </Badge>
+              <Tooltip content="Turns where the agent repeated the same action pattern">
+                <div>
+                  <Badge variant="event-circuit_breaker">
+                    {diagnostics.loopTurns} loop turns
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.escalations > 0 && (
-              <Badge variant="event-escalation">
-                {diagnostics.escalations} escalations
-              </Badge>
+              <Tooltip content="Times the agent escalated to a higher-tier model">
+                <div>
+                  <Badge variant="event-escalation">
+                    {diagnostics.escalations} escalations
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.failovers > 0 && (
-              <Badge variant="category">
-                {diagnostics.failovers} failovers
-              </Badge>
+              <Tooltip content="Times the agent failed over to a backup provider">
+                <div>
+                  <Badge variant="category">
+                    {diagnostics.failovers} failovers
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.contextHotTurns > 0 && (
-              <Badge variant="tier-planner">
-                {diagnostics.contextHotTurns} context hot
-              </Badge>
+              <Tooltip content="Turns where context window utilization exceeded 85%, triggering compression">
+                <div>
+                  <Badge variant="tier-planner">
+                    {diagnostics.contextHotTurns} context hot
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.perceptionCalls > 0 && (
-              <Badge variant="cached">
-                {diagnostics.perceptionCacheHits}/{diagnostics.perceptionCalls}{" "}
-                cached perception
-              </Badge>
-            )}
-            {diagnostics.structuredPerceptionTurns > 0 && (
-              <Badge variant="type">
-                {diagnostics.structuredPerceptionTurns} structured
-              </Badge>
-            )}
-            {diagnostics.vlScreenshotTurns > 0 && (
-              <Badge variant="category">
-                {diagnostics.vlScreenshotTurns} VL screenshot
-              </Badge>
+              <Tooltip content="Perception cache hit rate - lower numbers mean more API calls">
+                <div>
+                  <Badge variant="cached">
+                    {diagnostics.perceptionCacheHits}/
+                    {diagnostics.perceptionCalls} cached perception
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
             {diagnostics.elementOnlyTurns > 0 && (
               <Badge variant="event-stuck_signal">

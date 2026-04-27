@@ -1,6 +1,7 @@
 import React from "react";
 import type { TraceEntry } from "../../../types/traces";
 import Badge from "../Badge";
+import Tooltip from "../Tooltip";
 import TurnEventsSection from "./TurnEventsSection";
 import TurnLLMInputSection from "./TurnLLMInputSection";
 import TurnLLMOutputSection from "./TurnLLMOutputSection";
@@ -73,19 +74,31 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
             </span>
           )}
         {compressionLevel && compressionLevel !== "NONE" && (
-          <span className="text-[10px] text-trace-muted">
-            compress: {compressionLevel}
-          </span>
+          <Tooltip content="Context compression level applied to reduce token usage">
+            <span className="text-[10px] text-trace-muted cursor-help">
+              compress: {compressionLevel}
+            </span>
+          </Tooltip>
         )}
         <div className="flex items-center gap-2 ml-auto text-[11px] text-trace-muted shrink-0">
-          {duration != null && <span>{formatDuration(duration)}</span>}
+          {duration != null && (
+            <Tooltip content="LLM response time">
+              <span className="cursor-help">{formatDuration(duration)}</span>
+            </Tooltip>
+          )}
           {usage?.total_tokens && (
-            <span className="font-mono">
-              {formatTokens(usage.total_tokens)} tok
-            </span>
+            <Tooltip content="Total tokens used (prompt + completion)">
+              <span className="font-mono cursor-help">
+                {formatTokens(usage.total_tokens)} tok
+              </span>
+            </Tooltip>
           )}
           {usage?.cost && (
-            <span className="font-mono">{formatCost(usage.cost)}</span>
+            <Tooltip content="Estimated API cost">
+              <span className="font-mono cursor-help">
+                {formatCost(usage.cost)}
+              </span>
+            </Tooltip>
           )}
         </div>
       </div>
