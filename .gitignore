@@ -1,5 +1,7 @@
 ﻿node_modules/
+.nx/
 dist/
+dist-dev/
 __pycache__/
 .DS_Store
 .env
@@ -30,6 +32,7 @@ logs/archive/
 traces/*.jsonl
 traces/runs/*.jsonl
 traces/archive/
+traces/screenshots/
 
 
 # Test coverage
@@ -66,6 +69,12 @@ plans/
 
 # Local data
 data/
+apps/backend/data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
 
 # Legacy ad-hoc docs artifacts
 docs/shopping-trace-*
@@ -74,4 +83,3 @@ docs/deep-research-report.md
 
 # Test results
 test-results/
-traces/screenshots/

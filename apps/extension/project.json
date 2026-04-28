@@ -1,0 +1,90 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "extension",
+  "projectType": "application",
+  "sourceRoot": "apps/extension/src",
+  "tags": ["scope:extension", "type:app"],
+  "implicitDependencies": [
+    "shared-types",
+    "prompts-package",
+    "prompts",
+    "skills"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prompts-package:build", "prompts-package:check"],
+      "outputs": ["{workspaceRoot}/dist"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/vite-clean.ts build"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "vite --config apps/extension/vite.config.ts --mode development"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "eslint \"apps/extension/src/**/*.{ts,tsx}\" \"apps/extension/tests/**/*.{ts,tsx}\" --ignore-pattern \"apps/extension/tests/e2e/fixtures/**\""
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "vitest run --config apps/extension/vitest.config.ts"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/.tsbuild/apps/extension"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsc -b apps/extension/tsconfig.json"
+      }
+    },
+    "test-e2e-staged": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-staged.ts"
+      }
+    },
+    "test-e2e-easy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-staged.ts smoke"
+      }
+    },
+    "test-e2e-medium": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-staged.ts interaction-regression"
+      }
+    },
+    "test-e2e-hard": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-staged.ts runtime-regression"
+      }
+    }
+  }
+}

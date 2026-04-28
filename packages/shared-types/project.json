@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "shared-types",
+  "projectType": "library",
+  "sourceRoot": "packages/shared-types/src",
+  "tags": ["scope:shared", "type:types"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "eslint \"packages/shared-types/src/**/*.ts\""
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/.tsbuild/packages/shared-types"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsc -b packages/shared-types/tsconfig.json"
+      }
+    }
+  }
+}

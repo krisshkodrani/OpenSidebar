@@ -13,7 +13,7 @@
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
   Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows autonomously.<br />
-  Bring your own provider key. No subscription, no telemetry, and an optional local backend for memory and scheduled tasks.
+  Bring your own provider key. No subscription, no telemetry, and an optional local backend for profile data and durable task state.
 </p>
 
 ---
@@ -65,18 +65,18 @@ npm run build
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
-### Optional Backend
+### Local Backend
 
-The extension can run without the backend. Start the backend only if you want local services such as memory or scheduled task support.
+The extension can run without local backend APIs, but development usually starts the unified local server so traces, the trace viewer, profile lookup, and durable task state all use one process.
 
 ```bash
-npm run backend
+npm run dev
 ```
 
 ## Development
 
 ```bash
-npm run dev        # Extension + log server + trace viewer
+npm run dev        # Extension + local server + trace viewer
 npm run build      # Production build
 npm test           # Extension unit + integration tests
 npm run test:backend
@@ -103,7 +103,7 @@ npm run fmt        # Prettier
 ## Repo Layout
 
 - `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
-- `apps/backend/` - local backend service for memory and scheduled task support
+- `apps/backend/` - local backend routes for profile data and durable task state
 - `packages/shared-types/` - shared runtime and domain types
 - `packages/prompts/` - compiled prompt runtime and generated prompt registry
 - `prompts/` - prompt source templates

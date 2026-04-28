@@ -10,19 +10,19 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 4. Copy `.env.example` to `.env` if you want local provider-backed runs.
 5. Run `npm run dev`.
 
-`npm run dev` starts the extension build, the local log server, and the trace viewer.
+`npm run dev` starts the extension build, the unified local server, and the trace viewer.
 
 ## Command Reference
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Extension dev stack + logs + trace viewer |
+| `npm run dev` | Extension dev stack + local backend/logs + trace viewer |
 | `npm run build` | Production build |
 | `npm test` | Extension unit and integration suite |
 | `npm run test:backend` | Backend Vitest suite |
 | `npm run lint` | ESLint for extension, backend, packages, and scripts |
 | `npm run fmt` | Prettier for extension source and packages |
-| `npm run logs` | Start log server + trace viewer |
+| `npm run logs` | Start unified local server + trace viewer |
 | `npm run logs:tail` | Tail recent structured logs |
 | `npm run logs:errors` | Show error-level logs |
 | `npm run traces` | Trace query CLI |
@@ -71,7 +71,7 @@ The active product surface is:
 - `apps/extension/src/content/`: DOM tagging, snapshots, page actions
 - `apps/extension/src/sidepanel/`: React UI, chat, settings, approvals, progress
 - `apps/extension/src/trace-viewer/`: trace inspection UI
-- `apps/backend/src/`: local backend service for memory and scheduled tasks
+- `apps/backend/src/`: local backend routes for profile data and durable task state
 - `packages/shared-types/`: shared runtime and domain contracts
 - `packages/prompts/`: prompt runtime and generated prompt assets
 

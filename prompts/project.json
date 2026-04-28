@@ -1,0 +1,27 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "prompts",
+  "projectType": "library",
+  "sourceRoot": "prompts",
+  "tags": ["scope:prompts", "type:data"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/packages/prompts/src/generated.ts",
+        "{workspaceRoot}/packages/prompts/src/manifest.json"
+      ],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "nx run prompts-package:build"
+      }
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "nx run prompts-package:check"
+      }
+    }
+  }
+}
