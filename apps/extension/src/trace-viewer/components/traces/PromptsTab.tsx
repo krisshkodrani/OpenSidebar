@@ -1,26 +1,21 @@
 import React, { useState } from "react";
-import type { TraceSession, TraceEntry } from "../../../types/traces";
-import Badge from "../Badge";
+import type { TraceSession } from "../../../types/traces";
 import Tooltip from "../Tooltip";
-import CollapsibleSection from "../CollapsibleSection";
-import { formatTokens } from "../../utils";
 
 interface PromptsTabProps {
   session: TraceSession;
 }
 
-export default function PromptsTab({ session }: PromptsTabProps) {
-  const [selectedTurn, setSelectedTurn] = useState<number | null>(null);
-
+export default function PromptsTab(_props: PromptsTabProps) {
   return (
     <div className="space-y-4">
-      <SystemPromptEvolution session={session} />
-      <MessageFlow session={session} />
+      <SystemPromptEvolution />
+      <MessageFlow />
     </div>
   );
 }
 
-function SystemPromptEvolution({ session }: { session: TraceSession }) {
+function SystemPromptEvolution() {
   // In a real implementation, we'd extract system prompts from entries
   // For now, show a placeholder
   return (
@@ -46,7 +41,7 @@ function SystemPromptEvolution({ session }: { session: TraceSession }) {
   );
 }
 
-function MessageFlow({ session }: { session: TraceSession }) {
+function MessageFlow() {
   const [filter, setFilter] = useState<
     "all" | "system" | "user" | "assistant" | "tool"
   >("all");

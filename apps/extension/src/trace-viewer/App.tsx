@@ -11,6 +11,7 @@ import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
+import FleetInsights from "./components/traces/FleetInsights";
 import FilterBar from "./components/traces/FilterBar";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -54,6 +55,8 @@ const VALID_SUBVIEWS = new Set([
   "plan",
   "turns",
   "perception",
+  "prompts",
+  "skills",
   "logs",
 ]);
 
@@ -66,7 +69,6 @@ export default function App() {
   const setActiveSubview = useStore((s) => s.setActiveSubview);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const scrollPositions = useStore((s) => s.scrollPositions);
-  const saveScrollPosition = useStore((s) => s.saveScrollPosition);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -220,18 +222,6 @@ function ViewerBody({
         e.preventDefault();
         navigateSession(1);
       } else if (currentSessionId) {
-        // Tab navigation shortcuts
-        const subviews: Subview[] = [
-          "overview",
-          "plan",
-          "turns",
-          "perception",
-          "prompts",
-          "skills",
-          "logs",
-        ];
-        const currentIdx = subviews.indexOf(activeSubview);
-
         if (e.key === "1") {
           e.preventDefault();
           setActiveSubview("overview");
@@ -399,11 +389,12 @@ function ViewerBody({
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <FilterBar onFiltersChanged={refreshSessions} />
       <FleetOverview onFiltersChanged={refreshSessions} />
+      <FleetInsights onSelectSession={selectSession} />
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
             message={`Failed to load sessions: ${tracesError}`}
-            hint="Ensure the log server is running (npm run logs)"
+            hint="Ensure the local server is running (npm run logs)"
             onRetry={refreshSessions}
           />
         </div>

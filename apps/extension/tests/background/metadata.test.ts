@@ -62,8 +62,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.CLARIFY)).toBe(true);
     });
 
-    test("has exactly 16 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(16);
+    test("has exactly 15 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(15);
     });
   });
 
@@ -105,13 +105,20 @@ describe("Tool Metadata", () => {
     });
 
     test("get_profile_fields is LOW risk for non-sensitive fields", () => {
-      expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["identity.first_name"] })).toBe(RiskLevel.LOW);
+      expect(
+        classifyRisk(ToolName.GET_PROFILE_FIELDS, {
+          fields: ["identity.first_name"],
+        }),
+      ).toBe(RiskLevel.LOW);
     });
 
     test("get_profile_fields becomes HIGH risk for sensitive fields", () => {
-      expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["sensitive.date_of_birth"] })).toBe(RiskLevel.HIGH);
+      expect(
+        classifyRisk(ToolName.GET_PROFILE_FIELDS, {
+          fields: ["sensitive.date_of_birth"],
+        }),
+      ).toBe(RiskLevel.HIGH);
     });
-
   });
 
   describe("page assist tools metadata", () => {

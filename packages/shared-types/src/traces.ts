@@ -90,6 +90,8 @@ export interface TraceEntry {
   correlationId?: string;
   /** Parent run for nested/derived executions (future-proofing) */
   parentRunId?: string;
+  /** Stable per-turn ID for correlating events, tools, screenshots, and logs */
+  turnId?: string;
   sessionId: string;
   turnNumber: number;
   timestamp: number;
@@ -184,6 +186,10 @@ export interface TraceEntry {
 
 /** A panoramic screenshot captured at a different scroll position for trace recording */
 export interface TracePanoramicShot {
+  /** Stable screenshot ID for correlation with extracted screenshot artifacts */
+  screenshotId?: string;
+  sessionId?: string;
+  turnNumber?: number;
   dataUrl: string;
   scrollY: number;
   label: string; // "top", "middle", "bottom"
@@ -191,6 +197,11 @@ export interface TracePanoramicShot {
 
 /** A single tool execution within a trace turn */
 export interface TraceToolExecution {
+  /** Stable execution ID for joining tool calls, tool results, and events */
+  executionId?: string;
+  turnId?: string;
+  sessionId?: string;
+  turnNumber?: number;
   toolCallId: string;
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -306,6 +317,11 @@ export interface TraceEventPayloadByType {
 
 type KnownTraceEvent = {
   [K in keyof TraceEventPayloadByType]: {
+    /** Stable event ID for trace integrity checks and cross-stream joins */
+    eventId?: string;
+    turnId?: string;
+    sessionId?: string;
+    turnNumber?: number;
     type: K;
     timestamp: number;
     data: TraceEventPayloadByType[K];
@@ -313,6 +329,11 @@ type KnownTraceEvent = {
 }[keyof TraceEventPayloadByType];
 
 type GenericTraceEvent = {
+  /** Stable event ID for trace integrity checks and cross-stream joins */
+  eventId?: string;
+  turnId?: string;
+  sessionId?: string;
+  turnNumber?: number;
   type: string;
   timestamp: number;
   data: Record<string, unknown>;

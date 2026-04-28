@@ -60,7 +60,7 @@ export default function PerceptionCard({
 
       {/* Body */}
       <div className="flex flex-col xl:flex-row min-h-[200px]">
-        {/* Left: screenshot + elements */}
+        {/* Left: screenshot */}
         <div className="flex-1 border-b xl:border-b-0 xl:border-r border-trace-accent/[0.12] p-3 flex flex-col gap-2.5 min-w-0">
           {!imgError ? (
             <img
@@ -78,30 +78,35 @@ export default function PerceptionCard({
           {p.panoramicShots && p.panoramicShots.length > 0 && (
             <PanoramicThumbnails shots={p.panoramicShots} />
           )}
-          {elementText && (
+        </div>
+
+        {/* Right: interpretation + metadata (or DOM distillation in VL mode) */}
+        <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
+          {p.mode === "vl_screenshot_only" ? (
             <div className="text-[11px] text-trace-muted font-mono max-h-[400px] overflow-y-auto leading-normal whitespace-pre-wrap break-all">
               {elementText}
             </div>
+          ) : (
+            <>
+              <div className="text-xs text-trace-subtle leading-relaxed whitespace-pre-wrap break-words">
+                {p.interpretation}
+              </div>
+              <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-trace-accent/[0.12]">
+                <span>Model: {p.model || "?"}</span>
+                {p.providerId && <span>Provider: {p.providerId}</span>}
+                <span>
+                  Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}
+                </span>
+                <span>Cached: {p.cached ? "Yes" : "No"}</span>
+                {p.freshnessReason && (
+                  <span>Freshness: {p.freshnessReason}</span>
+                )}
+                {p.screenshotStatus && (
+                  <span>Screenshot: {p.screenshotStatus}</span>
+                )}
+              </div>
+            </>
           )}
-        </div>
-
-        {/* Right: interpretation + metadata */}
-        <div className="flex-1 p-3 min-w-0 flex flex-col gap-2.5">
-          <div className="text-xs text-trace-subtle leading-relaxed whitespace-pre-wrap break-words">
-            {p.interpretation}
-          </div>
-          <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-trace-accent/[0.12]">
-            <span>Model: {p.model || "?"}</span>
-            {p.providerId && <span>Provider: {p.providerId}</span>}
-            <span>
-              Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}
-            </span>
-            <span>Cached: {p.cached ? "Yes" : "No"}</span>
-            {p.freshnessReason && <span>Freshness: {p.freshnessReason}</span>}
-            {p.screenshotStatus && (
-              <span>Screenshot: {p.screenshotStatus}</span>
-            )}
-          </div>
         </div>
       </div>
     </div>

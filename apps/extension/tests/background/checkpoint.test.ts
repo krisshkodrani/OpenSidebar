@@ -126,7 +126,6 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
       ToolName.CREATE_TAB,
       ToolName.CLOSE_TAB,
       ToolName.CREATE_WINDOW,
-      ToolName.SCHEDULE_TASK,
     ];
     for (const tool of expected) {
       expect(MUTATION_SENSITIVE_TOOLS.has(tool)).toBe(true);
@@ -160,8 +159,8 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
     }
   });
 
-  test("has exactly 15 entries", () => {
-    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(15);
+  test("has exactly 14 entries", () => {
+    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(14);
   });
 
   test("is a subset of tools with risk >= MEDIUM or explicit side-effects", () => {

@@ -264,6 +264,22 @@ describe("trace-viewer App regression flows", () => {
     });
 
     await waitFor(() => {
+      expect(container.textContent).toContain("Investigation");
+      expect(container.textContent).toContain("Related Sessions");
+      expect(container.textContent).toContain("Turn Diff");
+      expect(container.textContent).toContain("First divergence at T1");
+    });
+
+    const turnsTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.startsWith("Turns"),
+    );
+    expect(turnsTab).toBeTruthy();
+
+    await act(async () => {
+      turnsTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await waitFor(() => {
       expect(container.textContent).toContain("Turn Timeline");
       expect(container.textContent).toContain("Turn 1");
       expect(container.textContent).toContain("Turn 2");
@@ -309,9 +325,10 @@ describe("trace-viewer App regression flows", () => {
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain(
-        "Comparison trace failed after one turn.",
-      );
+      expect(container.textContent).toContain("Compare viewer trace output");
+      expect(container.textContent).toContain("Evidence Trail");
+      expect(container.textContent).toContain("Turn Diff");
+      expect(container.textContent).toContain("First divergence at T1");
     });
   });
 });

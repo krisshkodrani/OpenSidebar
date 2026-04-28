@@ -72,7 +72,7 @@ describe("FleetOverview", () => {
     expect(container.textContent).toContain("Summary");
     expect(container.textContent).toContain("Sessions:");
     expect(container.textContent).toContain("2");
-    expect(container.textContent).toContain("Trace runs:");
+    expect(container.textContent).toContain("Runs:");
     expect(container.textContent).toContain("Success:");
     expect(container.textContent).toContain("50%");
     expect(container.textContent).toContain("Avg turns:");

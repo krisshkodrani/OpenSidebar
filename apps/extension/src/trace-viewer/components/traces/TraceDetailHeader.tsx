@@ -5,6 +5,7 @@ import type {
   TraceSession,
 } from "../../../types/traces";
 import type { RunTraceEvent } from "../../../utils/run-trace";
+import { redactTracePayload } from "../../../utils/trace-protection";
 import { useStore } from "../../store";
 import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
@@ -93,8 +94,12 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   };
 
   const handleExport = () => {
-    const lines = [JSON.stringify(session)];
-    for (const entry of currentEntries) {
+    const redactedSession = redactTracePayload(session, { mode: "export" });
+    const redactedEntries = currentEntries.map((entry) =>
+      redactTracePayload(entry, { mode: "export" }),
+    );
+    const lines = [JSON.stringify(redactedSession)];
+    for (const entry of redactedEntries) {
       lines.push(JSON.stringify(entry));
     }
     const blob = new Blob([lines.join("\n") + "\n"], {
