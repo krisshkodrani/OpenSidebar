@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
@@ -20,11 +26,17 @@ import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
 import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
+import SkillDetail from "./components/traces/SkillDetail";
 import type { Subview } from "./store/types";
 
 // URL hash helpers
 
-function parseHash(): { session?: string; view?: string; turn?: number } {
+function parseHash(): {
+  session?: string;
+  view?: string;
+  turn?: number;
+  skill?: string;
+} {
   const hash = window.location.hash.slice(1);
   if (!hash) return {};
   const params = new URLSearchParams(hash);
@@ -33,6 +45,7 @@ function parseHash(): { session?: string; view?: string; turn?: number } {
     session: params.get("session") || undefined,
     view: params.get("view") || undefined,
     turn: turnStr ? parseInt(turnStr, 10) : undefined,
+    skill: params.get("skill") || undefined,
   };
 }
 
@@ -54,11 +67,13 @@ export default function App() {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const scrollPositions = useStore((s) => s.scrollPositions);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
+  const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const { session, view, turn } = parseHash();
+    const { session, view, turn, skill } = parseHash();
+    if (skill) setCurrentSkillId(skill);
     if (session) setCurrentSessionId(session);
     if (view && VALID_SUBVIEWS.has(view)) setActiveSubview(view as Subview);
     if (turn && !isNaN(turn)) {
@@ -68,10 +83,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const onHashChange = () => {
+      const { skill } = parseHash();
+      setCurrentSkillId(skill || null);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
     const parts: string[] = [];
-    if (currentSessionId) parts.push(`session=${currentSessionId}`);
-    if (activeSubview && activeSubview !== "overview")
-      parts.push(`view=${activeSubview}`);
+    if (currentSkillId) {
+      parts.push(`skill=${currentSkillId}`);
+    } else {
+      if (currentSessionId) parts.push(`session=${currentSessionId}`);
+      if (activeSubview && activeSubview !== "overview")
+        parts.push(`view=${activeSubview}`);
+    }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
     if (window.location.hash !== newHash) {
       window.history.replaceState(
@@ -80,7 +108,15 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [currentSessionId, activeSubview]);
+  }, [currentSessionId, activeSubview, currentSkillId]);
+
+  const navigateToSkill = useCallback((skillId: string) => {
+    setCurrentSkillId(skillId);
+  }, []);
+
+  const closeSkill = useCallback(() => {
+    setCurrentSkillId(null);
+  }, []);
 
   // Restore scroll position when switching tabs
   useEffect(() => {
@@ -94,7 +130,14 @@ export default function App() {
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <ViewerHeader />
       <ViewerErrorBoundary>
-        <ViewerBody scrollContainerRef={scrollContainerRef} />
+        {currentSkillId ? (
+          <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
+        ) : (
+          <ViewerBody
+            scrollContainerRef={scrollContainerRef}
+            navigateToSkill={navigateToSkill}
+          />
+        )}
       </ViewerErrorBoundary>
     </div>
   );
@@ -104,8 +147,10 @@ export default function App() {
 
 function ViewerBody({
   scrollContainerRef,
+  navigateToSkill,
 }: {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
+  navigateToSkill: (skillId: string) => void;
 }) {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
@@ -363,7 +408,10 @@ function ViewerBody({
           />
         </div>
       ) : (
-        <UnifiedSessionsTableView onSelect={selectSession} />
+        <UnifiedSessionsTableView
+          onSelect={selectSession}
+          navigateToSkill={navigateToSkill}
+        />
       )}
     </div>
   );

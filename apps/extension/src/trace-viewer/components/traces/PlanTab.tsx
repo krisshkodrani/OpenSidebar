@@ -140,6 +140,10 @@ function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
     blocked: "✗",
   };
 
+  const handleSkillClick = (skillId: string) => {
+    window.location.hash = `skill=${skillId}`;
+  };
+
   return (
     <div className={`border rounded-lg p-3 ${statusColors[step.status]}`}>
       <div className="flex items-start justify-between">
@@ -167,9 +171,12 @@ function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
         <div className="flex items-center gap-2 shrink-0">
           {step.selectedSkillId && (
             <Tooltip content="Skill used for this step">
-              <span className="px-1.5 py-0.5 rounded bg-brand-live/20 text-brand-live text-[10px] font-medium cursor-help">
+              <button
+                onClick={() => handleSkillClick(step.selectedSkillId!)}
+                className="px-1.5 py-0.5 rounded bg-brand-live/20 text-brand-live text-[10px] font-medium cursor-help hover:underline"
+              >
                 {step.selectedSkillId}
-              </span>
+              </button>
             </Tooltip>
           )}
           {step.turnRange && (

@@ -6,8 +6,20 @@
  * Or:    npm run logs
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { existsSync, mkdirSync, statSync, renameSync, unlinkSync, readFileSync, readdirSync } from "fs";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import {
+  existsSync,
+  mkdirSync,
+  statSync,
+  renameSync,
+  unlinkSync,
+  readFileSync,
+  readdirSync,
+} from "fs";
 import { appendFile, readFile, writeFile } from "fs/promises";
 import { join, dirname, extname, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -24,6 +36,10 @@ import {
   type TraceSearchFiltersLike,
   type TraceSessionLike,
 } from "./log-server-helpers";
+import {
+  listSkillDescriptors,
+  getLoadedSkillContract,
+} from "../apps/extension/src/background/orchestrator/skills";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -96,9 +112,17 @@ function sendText(res: ServerResponse, text: string, status = 500): void {
   res.end(text);
 }
 
-function sendFile(res: ServerResponse, filePath: string, contentType: string, extraHeaders?: Record<string, string>): void {
+function sendFile(
+  res: ServerResponse,
+  filePath: string,
+  contentType: string,
+  extraHeaders?: Record<string, string>,
+): void {
   setCorsHeaders(res);
-  const headers: Record<string, string> = { "Content-Type": contentType, ...extraHeaders };
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    ...extraHeaders,
+  };
   res.writeHead(200, headers);
   const data = readFileSync(filePath);
   res.end(data);
@@ -115,7 +139,9 @@ async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
     .filter(Boolean)
     .map((line) => {
       try {
-        return normalizeAgentSessionRecord(JSON.parse(line)) as TraceSessionLike;
+        return normalizeAgentSessionRecord(
+          JSON.parse(line),
+        ) as TraceSessionLike;
       } catch {
         return null;
       }
@@ -200,556 +226,679 @@ const MIME_TYPES: Record<string, string> = {
 
 /* ── HTTP Server ───────────────────────────────────────────── */
 
-const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
+const server = createServer(
+  async (req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
 
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    sendEmpty(res, 204);
-    return;
-  }
-
-  // Health check
-  if (url.pathname === "/health" && req.method === "GET") {
-    sendJson(res, { entries: entryCount, file: LOG_FILE });
-    return;
-  }
-
-  // Ingest endpoint
-  if (url.pathname === "/ingest" && req.method === "POST") {
-    try {
-      const body = await parseJsonBody(req);
-      if (!Array.isArray(body)) {
-        sendText(res, "Expected JSON array", 400);
-        return;
-      }
-
-      rotateIfNeeded();
-
-      // Write all entries to the main log file
-      const lines = body.map((entry: unknown) => JSON.stringify(entry)).join("\n") + "\n";
-      await appendFile(LOG_FILE, lines);
-      entryCount += body.length;
-
-      // Also write session-scoped entries to per-session files for correlation
-      const bySession = new Map<string, unknown[]>();
-      for (const entry of body) {
-        const sid = (entry as Record<string, unknown>)?.sid;
-        if (typeof sid === "string" && sid.length > 0) {
-          let list = bySession.get(sid);
-          if (!list) { list = []; bySession.set(sid, list); }
-          list.push(entry);
-        }
-      }
-      for (const [sid, entries] of bySession) {
-        const sessionLogFile = join(LOG_DIR, `session-${sid}.jsonl`);
-        const sessionLines = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
-        await appendFile(sessionLogFile, sessionLines);
-      }
-
+    // CORS preflight
+    if (req.method === "OPTIONS") {
       sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Ingest error: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // Trace entry endpoint — append a TraceEntry to traces/{sessionId}.jsonl
-  if (url.pathname === "/traces" && req.method === "POST") {
-    try {
-      const entry = normalizeAgentTurnRecord(await parseJsonBody(req));
-      const sessionId = entry?.sessionId;
-      if (!sessionId || typeof sessionId !== "string") {
-        sendText(res, "Missing sessionId", 400);
-        return;
-      }
+    // Health check
+    if (url.pathname === "/health" && req.method === "GET") {
+      sendJson(res, { entries: entryCount, file: LOG_FILE });
+      return;
+    }
 
-      // Auto-extract inline screenshots to files (keeps JSONL compact)
-      const perception = entry?.perception as Record<string, unknown> | undefined;
-      const turnNumber = entry?.turnNumber;
-      if (perception && typeof turnNumber === "number") {
-        const dataUrl = perception.screenshotDataUrl;
-        if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
-          try {
-            const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
-            const buffer = Buffer.from(base64, "base64");
-            const filename = `${sessionId}-T${turnNumber}.jpg`;
-            await writeFile(join(SCREENSHOT_DIR, filename), buffer);
-          } catch { /* best-effort */ }
-          // Strip inline data URL — viewer will use the file-based API instead
-          delete perception.screenshotDataUrl;
+    // Ingest endpoint
+    if (url.pathname === "/ingest" && req.method === "POST") {
+      try {
+        const body = await parseJsonBody(req);
+        if (!Array.isArray(body)) {
+          sendText(res, "Expected JSON array", 400);
+          return;
         }
 
-        // Also extract panoramic shots to files
-        const panoramicShots = perception.panoramicShots as Array<Record<string, unknown>> | undefined;
-        if (Array.isArray(panoramicShots)) {
-          for (let i = 0; i < panoramicShots.length; i++) {
-            const shot = panoramicShots[i];
-            const shotUrl = shot?.dataUrl;
-            if (typeof shotUrl === "string" && shotUrl.startsWith("data:image/")) {
-              try {
-                const base64 = shotUrl.replace(/^data:image\/[a-z]+;base64,/, "");
-                const buffer = Buffer.from(base64, "base64");
-                const filename = `${sessionId}-T${turnNumber}-pan${i}.jpg`;
-                await writeFile(join(SCREENSHOT_DIR, filename), buffer);
-                // Replace inline data URL with file reference
-                shot.dataUrl = `/api/traces/${sessionId}/screenshots/${turnNumber}-pan${i}`;
-              } catch { /* best-effort */ }
+        rotateIfNeeded();
+
+        // Write all entries to the main log file
+        const lines =
+          body.map((entry: unknown) => JSON.stringify(entry)).join("\n") + "\n";
+        await appendFile(LOG_FILE, lines);
+        entryCount += body.length;
+
+        // Also write session-scoped entries to per-session files for correlation
+        const bySession = new Map<string, unknown[]>();
+        for (const entry of body) {
+          const sid = (entry as Record<string, unknown>)?.sid;
+          if (typeof sid === "string" && sid.length > 0) {
+            let list = bySession.get(sid);
+            if (!list) {
+              list = [];
+              bySession.set(sid, list);
+            }
+            list.push(entry);
+          }
+        }
+        for (const [sid, entries] of bySession) {
+          const sessionLogFile = join(LOG_DIR, `session-${sid}.jsonl`);
+          const sessionLines =
+            entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+          await appendFile(sessionLogFile, sessionLines);
+        }
+
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Ingest error: ${err}`, 500);
+      }
+      return;
+    }
+
+    // Trace entry endpoint — append a TraceEntry to traces/{sessionId}.jsonl
+    if (url.pathname === "/traces" && req.method === "POST") {
+      try {
+        const entry = normalizeAgentTurnRecord(await parseJsonBody(req));
+        const sessionId = entry?.sessionId;
+        if (!sessionId || typeof sessionId !== "string") {
+          sendText(res, "Missing sessionId", 400);
+          return;
+        }
+
+        // Auto-extract inline screenshots to files (keeps JSONL compact)
+        const perception = entry?.perception as
+          | Record<string, unknown>
+          | undefined;
+        const turnNumber = entry?.turnNumber;
+        if (perception && typeof turnNumber === "number") {
+          const dataUrl = perception.screenshotDataUrl;
+          if (
+            typeof dataUrl === "string" &&
+            dataUrl.startsWith("data:image/")
+          ) {
+            try {
+              const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+              const buffer = Buffer.from(base64, "base64");
+              const filename = `${sessionId}-T${turnNumber}.jpg`;
+              await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+            } catch {
+              /* best-effort */
+            }
+            // Strip inline data URL — viewer will use the file-based API instead
+            delete perception.screenshotDataUrl;
+          }
+
+          // Also extract panoramic shots to files
+          const panoramicShots = perception.panoramicShots as
+            | Array<Record<string, unknown>>
+            | undefined;
+          if (Array.isArray(panoramicShots)) {
+            for (let i = 0; i < panoramicShots.length; i++) {
+              const shot = panoramicShots[i];
+              const shotUrl = shot?.dataUrl;
+              if (
+                typeof shotUrl === "string" &&
+                shotUrl.startsWith("data:image/")
+              ) {
+                try {
+                  const base64 = shotUrl.replace(
+                    /^data:image\/[a-z]+;base64,/,
+                    "",
+                  );
+                  const buffer = Buffer.from(base64, "base64");
+                  const filename = `${sessionId}-T${turnNumber}-pan${i}.jpg`;
+                  await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+                  // Replace inline data URL with file reference
+                  shot.dataUrl = `/api/traces/${sessionId}/screenshots/${turnNumber}-pan${i}`;
+                } catch {
+                  /* best-effort */
+                }
+              }
             }
           }
         }
+
+        const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
+        await appendFile(traceFile, JSON.stringify(entry) + "\n");
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Trace error: ${err}`, 500);
       }
-
-      const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
-      await appendFile(traceFile, JSON.stringify(entry) + "\n");
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Trace error: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // Trace session endpoint — append a TraceSession to traces/index.jsonl
-  if (url.pathname === "/traces/session" && req.method === "POST") {
-    try {
-      const session = normalizeAgentSessionRecord(await parseJsonBody(req));
-      await appendFile(TRACE_INDEX, JSON.stringify(session) + "\n");
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Trace session error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // Screenshot save endpoint — decode base64 data URL and write to traces/screenshots/
-  if (url.pathname === "/traces/screenshot" && req.method === "POST") {
-    try {
-      const body = await parseJsonBody(req);
-      const sessionId = body?.sessionId;
-      const turnNumber = body?.turnNumber;
-      const dataUrl = body?.dataUrl;
-      if (
-        !sessionId ||
-        typeof sessionId !== "string" ||
-        typeof turnNumber !== "number" ||
-        !dataUrl ||
-        typeof dataUrl !== "string"
-      ) {
-        sendText(res, "Expected { sessionId, turnNumber, dataUrl }", 400);
-        return;
+    // Trace session endpoint — append a TraceSession to traces/index.jsonl
+    if (url.pathname === "/traces/session" && req.method === "POST") {
+      try {
+        const session = normalizeAgentSessionRecord(await parseJsonBody(req));
+        await appendFile(TRACE_INDEX, JSON.stringify(session) + "\n");
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Trace session error: ${err}`, 500);
       }
-      // Strip data URL prefix (e.g. "data:image/jpeg;base64,")
-      const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
-      const buffer = Buffer.from(base64, "base64");
-      const filename = `${sessionId}-T${turnNumber}.jpg`;
-      const filepath = join(SCREENSHOT_DIR, filename);
-      await writeFile(filepath, buffer);
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Screenshot save error: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // Orchestrator run-trace event endpoint
-  if (url.pathname === "/run-traces" && req.method === "POST") {
-    try {
-      const event = normalizeRunEventRecord(await parseJsonBody(req));
-      const runId = event?.runId;
-      if (!runId || typeof runId !== "string") {
-        sendText(res, "Missing runId", 400);
-        return;
-      }
-      const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
-      await appendFile(traceFile, JSON.stringify(event) + "\n");
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Run trace error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // Orchestrator run-trace manifest endpoint
-  if (url.pathname === "/run-traces/session" && req.method === "POST") {
-    try {
-      const manifest = normalizeRunManifestRecord(await parseJsonBody(req));
-      await appendFile(RUN_TRACE_INDEX, JSON.stringify(manifest) + "\n");
-      sendEmpty(res, 204);
-    } catch (err) {
-      sendText(res, `Run manifest error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // --- Trace Viewer API ---
-
-  // GET /api/traces — list all trace sessions
-  if (url.pathname === "/api/traces" && req.method === "GET") {
-    try {
-      const sessions = (await readAllTraceSessions()).sort((a, b) => {
-        const t = (b.startTime ?? 0) - (a.startTime ?? 0);
-        if (t !== 0) return t;
-        return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
-      });
-      sendJson(res, sessions);
-    } catch (err) {
-      sendText(res, `Error reading traces: ${err}`, 500);
-    }
-    return;
-  }
-
-  // DELETE /api/traces — delete all trace sessions, turn files, and screenshots
-  if (url.pathname === "/api/traces" && req.method === "DELETE") {
-    try {
-      let deleted = 0;
-      const removeDirFiles = (dir: string, filter: (f: string) => boolean) => {
-        if (!existsSync(dir)) return;
-        for (const file of readdirSync(dir)) {
-          if (filter(file)) {
-            try { unlinkSync(join(dir, file)); deleted++; } catch { /* ignore */ }
-          }
+    // Screenshot save endpoint — decode base64 data URL and write to traces/screenshots/
+    if (url.pathname === "/traces/screenshot" && req.method === "POST") {
+      try {
+        const body = await parseJsonBody(req);
+        const sessionId = body?.sessionId;
+        const turnNumber = body?.turnNumber;
+        const dataUrl = body?.dataUrl;
+        if (
+          !sessionId ||
+          typeof sessionId !== "string" ||
+          typeof turnNumber !== "number" ||
+          !dataUrl ||
+          typeof dataUrl !== "string"
+        ) {
+          sendText(res, "Expected { sessionId, turnNumber, dataUrl }", 400);
+          return;
         }
-      };
-      // Trace session files + index
-      removeDirFiles(TRACE_DIR, (f) => f.endsWith(".jsonl"));
-      // Screenshots
-      removeDirFiles(SCREENSHOT_DIR, () => true);
-      // Per-session log files (not the main log)
-      removeDirFiles(LOG_DIR, (f) => f.startsWith("session-") && f.endsWith(".jsonl"));
-      // Run traces
-      removeDirFiles(RUN_TRACE_DIR, (f) => f.endsWith(".jsonl"));
-
-      sendJson(res, { deleted });
-    } catch (err) {
-      sendText(res, `Delete error: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /api/traces/days — list day buckets with counts
-  if (url.pathname === "/api/traces/days" && req.method === "GET") {
-    try {
-      const sessions = await readAllTraceSessions();
-      const counts = new Map<string, number>();
-      for (const s of sessions) {
-        if (typeof s.startTime !== "number" || !Number.isFinite(s.startTime)) continue;
-        const key = localDayKey(s.startTime);
-        counts.set(key, (counts.get(key) || 0) + 1);
+        // Strip data URL prefix (e.g. "data:image/jpeg;base64,")
+        const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
+        const buffer = Buffer.from(base64, "base64");
+        const filename = `${sessionId}-T${turnNumber}.jpg`;
+        const filepath = join(SCREENSHOT_DIR, filename);
+        await writeFile(filepath, buffer);
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Screenshot save error: ${err}`, 500);
       }
-      const days = Array.from(counts.entries())
-        .map(([day, count]) => ({ day, count }))
-        .sort((a, b) => b.day.localeCompare(a.day));
-      sendJson(res, days);
-    } catch (err) {
-      sendText(res, `Error reading trace days: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // GET /api/traces/models — list unique model names with counts
-  if (url.pathname === "/api/traces/models" && req.method === "GET") {
-    try {
-      const sessions = await readAllTraceSessions();
-      const counts = new Map<string, number>();
-      for (const s of sessions) {
-        for (const m of getSessionModels(s)) {
-          if (m === "recording" || m === "manual") continue;
-          counts.set(m, (counts.get(m) || 0) + 1);
+    // Orchestrator run-trace event endpoint
+    if (url.pathname === "/run-traces" && req.method === "POST") {
+      try {
+        const event = normalizeRunEventRecord(await parseJsonBody(req));
+        const runId = event?.runId;
+        if (!runId || typeof runId !== "string") {
+          sendText(res, "Missing runId", 400);
+          return;
         }
+        const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+        await appendFile(traceFile, JSON.stringify(event) + "\n");
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Run trace error: ${err}`, 500);
       }
-      const result = Array.from(counts.entries())
-        .map(([model, count]) => ({ model, count }))
-        .sort((a, b) => b.count - a.count);
-      sendJson(res, result);
-    } catch (err) {
-      sendText(res, `Error reading trace models: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // GET /api/traces/search — filter sessions by day/domain/outcome/session/query/mode/model
-  if (url.pathname === "/api/traces/search" && req.method === "GET") {
-    try {
-      const day = url.searchParams.get("day");
-      const from = url.searchParams.get("from");
-      const to = url.searchParams.get("to");
-      const domain = (url.searchParams.get("domain") || url.searchParams.get("website") || "").toLowerCase().trim();
-      const outcome = (url.searchParams.get("outcome") || "").trim();
-      const sessionPrefix = (url.searchParams.get("sessionIdPrefix") || "").trim();
-      const mode = (url.searchParams.get("mode") || "").trim();
-      const model = (url.searchParams.get("model") || "").trim();
-      const tier = (url.searchParams.get("tier") || "").trim();
-      const q = (url.searchParams.get("q") || "").toLowerCase().trim();
-      const runId = (url.searchParams.get("runId") || "").trim();
-      const cursor = (url.searchParams.get("cursor") || "").trim();
-      const withMeta = url.searchParams.get("meta") === "1";
-      const limitRaw = Number(url.searchParams.get("limit") || "200");
-      const limit = Number.isFinite(limitRaw)
-        ? Math.max(1, Math.min(5000, Math.floor(limitRaw)))
-        : 200;
-
-      let sessions = await readAllTraceSessions();
-      const baseFilters: TraceSearchFiltersLike = {
-        day,
-        from,
-        to,
-        domain,
-        outcome,
-        sessionPrefix,
-        mode,
-        model,
-        q,
-        runId,
-      };
-
-      sessions = sessions.filter((s) => matchesTraceFilters(s, baseFilters));
-
-      if (tier && tier !== "all") {
-        const withEntries = await Promise.all(
-          sessions.map(async (session) => {
-            if (typeof session.sessionId !== "string" || session.sessionId.length === 0) {
-              return session;
-            }
-            return {
-              ...session,
-              _entries: await readTraceEntries(session.sessionId),
-            };
-          }),
-        );
-        sessions = withEntries.filter((s) =>
-          matchesTraceFilters(s, { ...baseFilters, tier }, s._entries),
-        );
+    // Orchestrator run-trace manifest endpoint
+    if (url.pathname === "/run-traces/session" && req.method === "POST") {
+      try {
+        const manifest = normalizeRunManifestRecord(await parseJsonBody(req));
+        await appendFile(RUN_TRACE_INDEX, JSON.stringify(manifest) + "\n");
+        sendEmpty(res, 204);
+      } catch (err) {
+        sendText(res, `Run manifest error: ${err}`, 500);
       }
+      return;
+    }
 
-      sessions.sort((a, b) => {
-        const t = (b.startTime ?? 0) - (a.startTime ?? 0);
-        if (t !== 0) return t;
-        return String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
-      });
-      let filtered = sessions;
-      if (cursor) {
-        const sep = cursor.indexOf("|");
-        if (sep > 0) {
-          const cursorStart = Number(cursor.slice(0, sep));
-          const cursorSession = cursor.slice(sep + 1);
-          if (Number.isFinite(cursorStart)) {
-            filtered = sessions.filter((s) => {
-              const st = typeof s.startTime === "number" ? s.startTime : 0;
-              const sid = typeof s.sessionId === "string" ? s.sessionId : "";
-              if (st < cursorStart) return true;
-              if (st > cursorStart) return false;
-              return sid > cursorSession;
-            });
-          }
-        }
-      }
+    // --- Trace Viewer API ---
 
-      const page = filtered.slice(0, limit);
-      const sliced = page.map(serializeTraceSearchSession);
-      const nextCursor = filtered.length > limit && page.length > 0
-        ? `${page[page.length - 1].startTime || 0}|${page[page.length - 1].sessionId || ""}`
-        : null;
-
-      if (withMeta) {
-        sendJson(res, {
-          items: sliced,
-          total: sessions.length,
-          returned: sliced.length,
-          hasMore: Boolean(nextCursor),
-          nextCursor,
+    // GET /api/traces — list all trace sessions
+    if (url.pathname === "/api/traces" && req.method === "GET") {
+      try {
+        const sessions = (await readAllTraceSessions()).sort((a, b) => {
+          const t = (b.startTime ?? 0) - (a.startTime ?? 0);
+          if (t !== 0) return t;
+          return String(a.sessionId || "").localeCompare(
+            String(b.sessionId || ""),
+          );
         });
-        return;
+        sendJson(res, sessions);
+      } catch (err) {
+        sendText(res, `Error reading traces: ${err}`, 500);
       }
-      sendJson(res, sliced);
-    } catch (err) {
-      sendText(res, `Error searching traces: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  // GET /api/traces/:sessionId — get all turns for a session
-  const runTraceMatch = url.pathname.match(/^\/api\/run-traces\/([a-zA-Z0-9_-]+)$/);
-  if (runTraceMatch && req.method === "GET") {
-    try {
-      const runId = runTraceMatch[1];
-      const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
-      if (!existsSync(traceFile)) {
-        sendJson(res, []);
-        return;
-      }
-      const raw = await readFile(traceFile, "utf-8");
-      const events = raw
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try { return JSON.parse(line); } catch { return null; }
-        })
-        .map((event) => (event ? normalizeRunEventRecord(event) : null))
-        .filter(Boolean)
-        .sort((a, b) =>
-          String((a as any).ts ?? (a as any).recordedAt ?? "").localeCompare(
-            String((b as any).ts ?? (b as any).recordedAt ?? ""),
-          ),
+    // DELETE /api/traces — delete all trace sessions, turn files, and screenshots
+    if (url.pathname === "/api/traces" && req.method === "DELETE") {
+      try {
+        let deleted = 0;
+        const removeDirFiles = (
+          dir: string,
+          filter: (f: string) => boolean,
+        ) => {
+          if (!existsSync(dir)) return;
+          for (const file of readdirSync(dir)) {
+            if (filter(file)) {
+              try {
+                unlinkSync(join(dir, file));
+                deleted++;
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        };
+        // Trace session files + index
+        removeDirFiles(TRACE_DIR, (f) => f.endsWith(".jsonl"));
+        // Screenshots
+        removeDirFiles(SCREENSHOT_DIR, () => true);
+        // Per-session log files (not the main log)
+        removeDirFiles(
+          LOG_DIR,
+          (f) => f.startsWith("session-") && f.endsWith(".jsonl"),
         );
-      sendJson(res, events);
-    } catch (err) {
-      sendText(res, `Error reading run trace: ${err}`, 500);
-    }
-    return;
-  }
+        // Run traces
+        removeDirFiles(RUN_TRACE_DIR, (f) => f.endsWith(".jsonl"));
 
-  const traceMatch = url.pathname.match(/^\/api\/traces\/([a-zA-Z0-9_-]+)$/);
-  if (traceMatch && req.method === "GET") {
-    try {
-      const sessionId = traceMatch[1];
-      const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
-      if (!existsSync(traceFile)) {
-        sendJson(res, []);
-        return;
+        sendJson(res, { deleted });
+      } catch (err) {
+        sendText(res, `Delete error: ${err}`, 500);
       }
-      const raw = await readFile(traceFile, "utf-8");
-      const entries = raw
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try { return JSON.parse(line); } catch { return null; }
-        })
-        .map((entry) => (entry ? normalizeAgentTurnRecord(entry) : null))
-        .filter(Boolean);
-      sendJson(res, entries);
-    } catch (err) {
-      sendText(res, `Error reading trace: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /api/traces/:sessionId/screenshots/:turn — serve screenshot image
-  // Supports both primary (T3) and panoramic (T3-pan0) filenames
-  const screenshotMatch = url.pathname.match(
-    /^\/api\/traces\/([a-zA-Z0-9_-]+)\/screenshots\/(\d+(?:-pan\d+)?)$/,
-  );
-  if (screenshotMatch && req.method === "GET") {
-    const sessionId = screenshotMatch[1];
-    const turn = screenshotMatch[2];
-    const filepath = join(SCREENSHOT_DIR, `${sessionId}-T${turn}.jpg`);
-    if (!existsSync(filepath)) {
-      sendText(res, "Screenshot not found", 404);
       return;
     }
-    sendFile(res, filepath, "image/jpeg", { "Cache-Control": "public, max-age=86400" });
-    return;
-  }
 
-  // GET /api/logs/:sessionId — get all logs for a trace session
-  const logSessionMatch = url.pathname.match(/^\/api\/logs\/([a-zA-Z0-9_-]+)$/);
-  if (logSessionMatch && req.method === "GET") {
-    try {
-      const sessionId = logSessionMatch[1];
-      const sessionLogFile = join(LOG_DIR, `session-${sessionId}.jsonl`);
-      if (!existsSync(sessionLogFile)) {
-        sendJson(res, []);
-        return;
+    // GET /api/traces/days — list day buckets with counts
+    if (url.pathname === "/api/traces/days" && req.method === "GET") {
+      try {
+        const sessions = await readAllTraceSessions();
+        const counts = new Map<string, number>();
+        for (const s of sessions) {
+          if (typeof s.startTime !== "number" || !Number.isFinite(s.startTime))
+            continue;
+          const key = localDayKey(s.startTime);
+          counts.set(key, (counts.get(key) || 0) + 1);
+        }
+        const days = Array.from(counts.entries())
+          .map(([day, count]) => ({ day, count }))
+          .sort((a, b) => b.day.localeCompare(a.day));
+        sendJson(res, days);
+      } catch (err) {
+        sendText(res, `Error reading trace days: ${err}`, 500);
       }
-      const raw = await readFile(sessionLogFile, "utf-8");
-      const entries = raw
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try { return JSON.parse(line); } catch { return null; }
-        })
-        .filter(Boolean);
-
-      // Optional level filter
-      const level = (url.searchParams.get("level") || "").toUpperCase();
-      const filtered = level
-        ? entries.filter((e: Record<string, unknown>) => e.lvl === level)
-        : entries;
-
-      sendJson(res, filtered);
-    } catch (err) {
-      sendText(res, `Error reading session logs: ${err}`, 500);
-    }
-    return;
-  }
-
-  // GET /assets/* — serve built viewer assets from dist/assets/
-  if (url.pathname.startsWith("/assets/") && req.method === "GET") {
-    const distDir = join(PROJECT_ROOT, "dist");
-    const filePath = resolve(distDir, ...url.pathname.split("/").filter(Boolean));
-    if (!filePath.startsWith(distDir)) { sendText(res, "Forbidden", 403); return; }
-    if (existsSync(filePath) && statSync(filePath).isFile()) {
-      const ext = extname(filePath);
-      const contentType = MIME_TYPES[ext] || "application/octet-stream";
-      sendFile(res, filePath, contentType, { "Cache-Control": "public, max-age=31536000, immutable" });
       return;
     }
-    sendText(res, "Asset not found", 404);
-    return;
-  }
 
-  // GET /viewer* — serve the built React trace viewer
-  if (url.pathname.startsWith("/viewer") && req.method === "GET") {
-    try {
-      // Strip /viewer prefix to get the sub-path
-      let subPath = url.pathname.slice("/viewer".length);
-      if (subPath === "" || subPath === "/") subPath = "/index.html";
+    // GET /api/traces/models — list unique model names with counts
+    if (url.pathname === "/api/traces/models" && req.method === "GET") {
+      try {
+        const sessions = await readAllTraceSessions();
+        const counts = new Map<string, number>();
+        for (const s of sessions) {
+          for (const m of getSessionModels(s)) {
+            if (m === "recording" || m === "manual") continue;
+            counts.set(m, (counts.get(m) || 0) + 1);
+          }
+        }
+        const result = Array.from(counts.entries())
+          .map(([model, count]) => ({ model, count }))
+          .sort((a, b) => b.count - a.count);
+        sendJson(res, result);
+      } catch (err) {
+        sendText(res, `Error reading trace models: ${err}`, 500);
+      }
+      return;
+    }
 
-      const filePath = resolve(VIEWER_DIR, ...subPath.split("/").filter(Boolean));
-      if (!filePath.startsWith(VIEWER_DIR)) { sendText(res, "Forbidden", 403); return; }
+    // GET /api/traces/search — filter sessions by day/domain/outcome/session/query/mode/model
+    if (url.pathname === "/api/traces/search" && req.method === "GET") {
+      try {
+        const day = url.searchParams.get("day");
+        const from = url.searchParams.get("from");
+        const to = url.searchParams.get("to");
+        const domain = (
+          url.searchParams.get("domain") ||
+          url.searchParams.get("website") ||
+          ""
+        )
+          .toLowerCase()
+          .trim();
+        const outcome = (url.searchParams.get("outcome") || "").trim();
+        const sessionPrefix = (
+          url.searchParams.get("sessionIdPrefix") || ""
+        ).trim();
+        const mode = (url.searchParams.get("mode") || "").trim();
+        const model = (url.searchParams.get("model") || "").trim();
+        const tier = (url.searchParams.get("tier") || "").trim();
+        const q = (url.searchParams.get("q") || "").toLowerCase().trim();
+        const runId = (url.searchParams.get("runId") || "").trim();
+        const cursor = (url.searchParams.get("cursor") || "").trim();
+        const withMeta = url.searchParams.get("meta") === "1";
+        const limitRaw = Number(url.searchParams.get("limit") || "200");
+        const limit = Number.isFinite(limitRaw)
+          ? Math.max(1, Math.min(5000, Math.floor(limitRaw)))
+          : 200;
+
+        let sessions = await readAllTraceSessions();
+        const baseFilters: TraceSearchFiltersLike = {
+          day,
+          from,
+          to,
+          domain,
+          outcome,
+          sessionPrefix,
+          mode,
+          model,
+          q,
+          runId,
+        };
+
+        sessions = sessions.filter((s) => matchesTraceFilters(s, baseFilters));
+
+        if (tier && tier !== "all") {
+          const withEntries = await Promise.all(
+            sessions.map(async (session) => {
+              if (
+                typeof session.sessionId !== "string" ||
+                session.sessionId.length === 0
+              ) {
+                return session;
+              }
+              return {
+                ...session,
+                _entries: await readTraceEntries(session.sessionId),
+              };
+            }),
+          );
+          sessions = withEntries.filter((s) =>
+            matchesTraceFilters(s, { ...baseFilters, tier }, s._entries),
+          );
+        }
+
+        sessions.sort((a, b) => {
+          const t = (b.startTime ?? 0) - (a.startTime ?? 0);
+          if (t !== 0) return t;
+          return String(a.sessionId || "").localeCompare(
+            String(b.sessionId || ""),
+          );
+        });
+        let filtered = sessions;
+        if (cursor) {
+          const sep = cursor.indexOf("|");
+          if (sep > 0) {
+            const cursorStart = Number(cursor.slice(0, sep));
+            const cursorSession = cursor.slice(sep + 1);
+            if (Number.isFinite(cursorStart)) {
+              filtered = sessions.filter((s) => {
+                const st = typeof s.startTime === "number" ? s.startTime : 0;
+                const sid = typeof s.sessionId === "string" ? s.sessionId : "";
+                if (st < cursorStart) return true;
+                if (st > cursorStart) return false;
+                return sid > cursorSession;
+              });
+            }
+          }
+        }
+
+        const page = filtered.slice(0, limit);
+        const sliced = page.map(serializeTraceSearchSession);
+        const nextCursor =
+          filtered.length > limit && page.length > 0
+            ? `${page[page.length - 1].startTime || 0}|${page[page.length - 1].sessionId || ""}`
+            : null;
+
+        if (withMeta) {
+          sendJson(res, {
+            items: sliced,
+            total: sessions.length,
+            returned: sliced.length,
+            hasMore: Boolean(nextCursor),
+            nextCursor,
+          });
+          return;
+        }
+        sendJson(res, sliced);
+      } catch (err) {
+        sendText(res, `Error searching traces: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/traces/:sessionId — get all turns for a session
+    const runTraceMatch = url.pathname.match(
+      /^\/api\/run-traces\/([a-zA-Z0-9_-]+)$/,
+    );
+    if (runTraceMatch && req.method === "GET") {
+      try {
+        const runId = runTraceMatch[1];
+        const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+        if (!existsSync(traceFile)) {
+          sendJson(res, []);
+          return;
+        }
+        const raw = await readFile(traceFile, "utf-8");
+        const events = raw
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return null;
+            }
+          })
+          .map((event) => (event ? normalizeRunEventRecord(event) : null))
+          .filter(Boolean)
+          .sort((a, b) =>
+            String((a as any).ts ?? (a as any).recordedAt ?? "").localeCompare(
+              String((b as any).ts ?? (b as any).recordedAt ?? ""),
+            ),
+          );
+        sendJson(res, events);
+      } catch (err) {
+        sendText(res, `Error reading run trace: ${err}`, 500);
+      }
+      return;
+    }
+
+    const traceMatch = url.pathname.match(/^\/api\/traces\/([a-zA-Z0-9_-]+)$/);
+    if (traceMatch && req.method === "GET") {
+      try {
+        const sessionId = traceMatch[1];
+        const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
+        if (!existsSync(traceFile)) {
+          sendJson(res, []);
+          return;
+        }
+        const raw = await readFile(traceFile, "utf-8");
+        const entries = raw
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return null;
+            }
+          })
+          .map((entry) => (entry ? normalizeAgentTurnRecord(entry) : null))
+          .filter(Boolean);
+        sendJson(res, entries);
+      } catch (err) {
+        sendText(res, `Error reading trace: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/traces/:sessionId/screenshots/:turn — serve screenshot image
+    // Supports both primary (T3) and panoramic (T3-pan0) filenames
+    const screenshotMatch = url.pathname.match(
+      /^\/api\/traces\/([a-zA-Z0-9_-]+)\/screenshots\/(\d+(?:-pan\d+)?)$/,
+    );
+    if (screenshotMatch && req.method === "GET") {
+      const sessionId = screenshotMatch[1];
+      const turn = screenshotMatch[2];
+      const filepath = join(SCREENSHOT_DIR, `${sessionId}-T${turn}.jpg`);
+      if (!existsSync(filepath)) {
+        sendText(res, "Screenshot not found", 404);
+        return;
+      }
+      sendFile(res, filepath, "image/jpeg", {
+        "Cache-Control": "public, max-age=86400",
+      });
+      return;
+    }
+
+    // GET /api/logs/:sessionId — get all logs for a trace session
+    const logSessionMatch = url.pathname.match(
+      /^\/api\/logs\/([a-zA-Z0-9_-]+)$/,
+    );
+    if (logSessionMatch && req.method === "GET") {
+      try {
+        const sessionId = logSessionMatch[1];
+        const sessionLogFile = join(LOG_DIR, `session-${sessionId}.jsonl`);
+        if (!existsSync(sessionLogFile)) {
+          sendJson(res, []);
+          return;
+        }
+        const raw = await readFile(sessionLogFile, "utf-8");
+        const entries = raw
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+
+        // Optional level filter
+        const level = (url.searchParams.get("level") || "").toUpperCase();
+        const filtered = level
+          ? entries.filter((e: Record<string, unknown>) => e.lvl === level)
+          : entries;
+
+        sendJson(res, filtered);
+      } catch (err) {
+        sendText(res, `Error reading session logs: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /assets/* — serve built viewer assets from dist/assets/
+    if (url.pathname.startsWith("/assets/") && req.method === "GET") {
+      const distDir = join(PROJECT_ROOT, "dist");
+      const filePath = resolve(
+        distDir,
+        ...url.pathname.split("/").filter(Boolean),
+      );
+      if (!filePath.startsWith(distDir)) {
+        sendText(res, "Forbidden", 403);
+        return;
+      }
       if (existsSync(filePath) && statSync(filePath).isFile()) {
         const ext = extname(filePath);
         const contentType = MIME_TYPES[ext] || "application/octet-stream";
-        sendFile(res, filePath, contentType);
+        sendFile(res, filePath, contentType, {
+          "Cache-Control": "public, max-age=31536000, immutable",
+        });
         return;
       }
-
-      // SPA fallback — serve index.html for unknown sub-paths
-      const indexPath = join(VIEWER_DIR, "index.html");
-      if (existsSync(indexPath)) {
-        const html = await readFile(indexPath, "utf-8");
-        setCorsHeaders(res);
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(html);
-        return;
-      }
-
-      sendText(res,
-        "Trace viewer not found. Run 'npm run build' first. Expected at: " + VIEWER_DIR,
-        404,
-      );
-    } catch (err) {
-      sendText(res, `Error serving viewer: ${err}`, 500);
+      sendText(res, "Asset not found", 404);
+      return;
     }
-    return;
-  }
 
-  // Golden dataset endpoint — save EvalCase JSONL to evals/golden/
-  if (url.pathname === "/golden" && req.method === "POST") {
-    try {
-      const body = await parseJsonBody(req);
-      const rawName = body?.name;
-      const cases = body?.cases;
-      if (!rawName || typeof rawName !== "string" || !Array.isArray(cases)) {
-        sendText(res, "Expected { name: string, cases: EvalCase[] }", 400);
-        return;
+    // GET /viewer* — serve the built React trace viewer
+    if (url.pathname.startsWith("/viewer") && req.method === "GET") {
+      try {
+        // Strip /viewer prefix to get the sub-path
+        let subPath = url.pathname.slice("/viewer".length);
+        if (subPath === "" || subPath === "/") subPath = "/index.html";
+
+        const filePath = resolve(
+          VIEWER_DIR,
+          ...subPath.split("/").filter(Boolean),
+        );
+        if (!filePath.startsWith(VIEWER_DIR)) {
+          sendText(res, "Forbidden", 403);
+          return;
+        }
+        if (existsSync(filePath) && statSync(filePath).isFile()) {
+          const ext = extname(filePath);
+          const contentType = MIME_TYPES[ext] || "application/octet-stream";
+          sendFile(res, filePath, contentType);
+          return;
+        }
+
+        // SPA fallback — serve index.html for unknown sub-paths
+        const indexPath = join(VIEWER_DIR, "index.html");
+        if (existsSync(indexPath)) {
+          const html = await readFile(indexPath, "utf-8");
+          setCorsHeaders(res);
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(html);
+          return;
+        }
+
+        // Check if dev mode artifacts exist instead
+        const devArtifact = join(PROJECT_ROOT, "dist", "src", "sidepanel");
+        const hasDevArtifacts = existsSync(devArtifact);
+
+        const message = hasDevArtifacts
+          ? "Trace viewer not found. The dist/ folder contains dev-mode artifacts (from 'npm run dev'). Please run 'npm run build' first to generate the production trace viewer. Expected at: " +
+            VIEWER_DIR
+          : "Trace viewer not found. Run 'npm run build' first. Expected at: " +
+            VIEWER_DIR;
+
+        sendText(res, message, 404);
+      } catch (err) {
+        sendText(res, `Error serving viewer: ${err}`, 500);
       }
-      const safeName = rawName.toLowerCase().replace(/[^a-z0-9_-]/g, "-").replace(/-+/g, "-");
-      const filename = `${safeName}.jsonl`;
-      const filepath = join(GOLDEN_DIR, filename);
-      const lines = cases.map((c: unknown) => JSON.stringify(c)).join("\n") + "\n";
-      await writeFile(filepath, lines);
-      sendJson(res, { filename, caseCount: cases.length });
-    } catch (err) {
-      sendText(res, `Golden save error: ${err}`, 500);
+      return;
     }
-    return;
-  }
 
-  sendText(res, "Not found", 404);
-});
+    // GET /api/skills — list all skill descriptors
+    if (url.pathname === "/api/skills" && req.method === "GET") {
+      try {
+        const skills = listSkillDescriptors();
+        sendJson(res, skills);
+      } catch (err) {
+        sendText(res, `Error reading skills: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/skills/:skillId — get full skill contract
+    const skillMatch = url.pathname.match(/^\/api\/skills\/([a-zA-Z0-9_-]+)$/);
+    if (skillMatch && req.method === "GET") {
+      try {
+        const skillId = skillMatch[1];
+        const contract = getLoadedSkillContract(skillId);
+        if (!contract) {
+          sendJson(res, { error: "Skill not found" }, 404);
+          return;
+        }
+        sendJson(res, contract);
+      } catch (err) {
+        sendText(res, `Error reading skill: ${err}`, 500);
+      }
+      return;
+    }
+
+    // Golden dataset endpoint — save EvalCase JSONL to evals/golden/
+    if (url.pathname === "/golden" && req.method === "POST") {
+      try {
+        const body = await parseJsonBody(req);
+        const rawName = body?.name;
+        const cases = body?.cases;
+        if (!rawName || typeof rawName !== "string" || !Array.isArray(cases)) {
+          sendText(res, "Expected { name: string, cases: EvalCase[] }", 400);
+          return;
+        }
+        const safeName = rawName
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, "-")
+          .replace(/-+/g, "-");
+        const filename = `${safeName}.jsonl`;
+        const filepath = join(GOLDEN_DIR, filename);
+        const lines =
+          cases.map((c: unknown) => JSON.stringify(c)).join("\n") + "\n";
+        await writeFile(filepath, lines);
+        sendJson(res, { filename, caseCount: cases.length });
+      } catch (err) {
+        sendText(res, `Golden save error: ${err}`, 500);
+      }
+      return;
+    }
+
+    sendText(res, "Not found", 404);
+  },
+);
 
 server.listen(PORT, HOST, () => {
   console.log(`Log server listening on http://${HOST}:${PORT}`);

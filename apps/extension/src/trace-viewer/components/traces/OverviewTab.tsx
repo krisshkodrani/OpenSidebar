@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { TraceSession } from "../../../types/traces";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
@@ -13,6 +13,21 @@ interface OverviewTabProps {
   session: TraceSession;
 }
 
+function getAllSkillIds(session: TraceSession): string[] {
+  const ids = new Set<string>();
+  if (session.skillToolMetrics?.skillId) {
+    ids.add(session.skillToolMetrics.skillId);
+  }
+  if (session.planDecomposition?.steps) {
+    for (const step of session.planDecomposition.steps) {
+      if (step.selectedSkillId) {
+        ids.add(step.selectedSkillId);
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
 export default function OverviewTab({ session }: OverviewTabProps) {
   const { title } = extractQueryTitle(session.query || "");
   const duration = formatDuration(
@@ -23,13 +38,13 @@ export default function OverviewTab({ session }: OverviewTabProps) {
   const completedSteps =
     plan?.steps?.filter(
       (s) =>
-        // Heuristic: steps without dependencies or with completed dependencies
         s.dependencies?.length === 0 ||
         s.dependencies?.every((d) => d < (plan?.steps?.indexOf(s) || 0)),
     ).length || 0;
   const totalSteps = plan?.steps?.length || 0;
 
   const metrics = session.metrics;
+  const skillIds = useMemo(() => getAllSkillIds(session), [session]);
   const skills = session.skillToolMetrics;
 
   return (
@@ -110,41 +125,38 @@ export default function OverviewTab({ session }: OverviewTabProps) {
       )}
 
       {/* Skills */}
-      {skills && (
+      {skillIds.length > 0 && (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
           <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
             Skills Used
           </div>
           <div className="flex flex-wrap gap-2">
-            <Tooltip
-              content={
-                <div className="space-y-1">
-                  <div className="font-semibold">{skills.skillId}</div>
-                  <div>
-                    Preferred: {Math.round(skills.preferredSelectionRate * 100)}
-                    %
+            {skillIds.map((skillId) => (
+              <Tooltip
+                key={skillId}
+                content={
+                  <div className="space-y-1">
+                    <div className="font-semibold">{skillId}</div>
+                    {skills?.skillId === skillId && (
+                      <>
+                        <div>
+                          Preferred:{" "}
+                          {Math.round(skills.preferredSelectionRate * 100)}%
+                        </div>
+                        <div>Total selections: {skills.totalSelections}</div>
+                      </>
+                    )}
                   </div>
-                  <div>Total selections: {skills.totalSelections}</div>
-                </div>
-              }
-            >
-              <span className="inline-flex items-center px-2 py-1 rounded bg-brand-live/10 text-brand-live text-[11px] font-medium cursor-help">
-                {skills.skillId}
-              </span>
-            </Tooltip>
+                }
+              >
+                <span className="inline-flex items-center px-2 py-1 rounded bg-brand-live/10 text-brand-live text-[11px] font-medium cursor-help">
+                  {skillId}
+                </span>
+              </Tooltip>
+            ))}
           </div>
         </div>
       )}
-
-      {/* Timeline placeholder - will be enhanced later */}
-      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-        <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
-          Session Timeline
-        </div>
-        <div className="text-[12px] text-trace-muted">
-          Timeline visualization coming soon...
-        </div>
-      </div>
     </div>
   );
 }
