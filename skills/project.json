@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "skills",
+  "projectType": "library",
+  "sourceRoot": "skills",
+  "tags": ["scope:skills", "type:data"],
+  "targets": {
+    "validate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/validate-skills.ts"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/validate-skills.ts"
+      }
+    }
+  }
+}

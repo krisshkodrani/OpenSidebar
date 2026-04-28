@@ -1,0 +1,242 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "tools",
+  "projectType": "library",
+  "sourceRoot": "scripts",
+  "tags": ["scope:tools", "type:tooling"],
+  "targets": {
+    "dev-stack": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/dev-stack.ts"
+      }
+    },
+    "local-server": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/log-server.ts"
+      }
+    },
+    "logs-tail": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/log-query.ts tail"
+      }
+    },
+    "logs-errors": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/log-query.ts errors"
+      }
+    },
+    "traces": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/trace-query.ts"
+      }
+    },
+    "fixtures": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/serve-fixtures.ts"
+      }
+    },
+    "prompts-build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/packages/prompts/src/generated.ts",
+        "{workspaceRoot}/packages/prompts/src/manifest.json"
+      ],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/build-prompts.ts"
+      }
+    },
+    "prompts-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/check-inline-prompts.ts"
+      }
+    },
+    "run-e2e-staged": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-staged.ts"
+      }
+    },
+    "run-e2e-arena": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-arena.ts"
+      }
+    },
+    "run-e2e-visible-demo": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/run-e2e-visible-demo.ts"
+      }
+    },
+    "e2e-arena-list": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/e2e-arena.ts"
+      }
+    },
+    "e2e-arena-report": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/e2e-arena.ts --report"
+      }
+    },
+    "workarena-copy-suite": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-copy-suite.ts"
+      }
+    },
+    "workarena-setup": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-setup.ts"
+      }
+    },
+    "workarena-doctor": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-doctor.ts"
+      }
+    },
+    "workarena-list": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-list.ts"
+      }
+    },
+    "workarena-first-task": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-first-task.ts"
+      }
+    },
+    "workarena-category-coverage": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-category-coverage.ts"
+      }
+    },
+    "workarena-adapter": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-adapter.ts"
+      }
+    },
+    "workarena-dry": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-dry.ts"
+      }
+    },
+    "workarena-run": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-run.ts"
+      }
+    },
+    "workarena-local-execution": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-local-execution.ts"
+      }
+    },
+    "workarena-browser-strategy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-browser-strategy.ts"
+      }
+    },
+    "workarena-held-session": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-held-session.ts"
+      }
+    },
+    "workarena-handoff": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-handoff.ts"
+      }
+    },
+    "workarena-trace-learning": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-trace-learning.ts"
+      }
+    },
+    "workarena-validate-reports": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-validate-reports.ts"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "eslint \"scripts/**/*.ts\" --ignore-pattern \"scripts/run-e2e-progressive.ts\""
+      }
+    }
+  }
+}

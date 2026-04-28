@@ -1,0 +1,43 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "prompts-package",
+  "projectType": "library",
+  "sourceRoot": "packages/prompts/src",
+  "tags": ["scope:prompts", "type:package"],
+  "implicitDependencies": ["prompts"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{projectRoot}/src/generated.ts",
+        "{projectRoot}/src/manifest.json"
+      ],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/build-prompts.ts"
+      }
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/check-inline-prompts.ts"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "eslint \"packages/prompts/src/**/*.ts\""
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/.tsbuild/packages/prompts"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsc -b packages/prompts/tsconfig.json"
+      }
+    }
+  }
+}
