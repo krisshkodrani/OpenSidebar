@@ -347,9 +347,25 @@ function QueryTitle({ query }: { query: string }) {
 
 // ── Plan section ────────────────────────────────────────────────────
 
+function getAllSkillIds(session: TraceSession): string[] {
+  const ids = new Set<string>();
+  if (session.skillToolMetrics?.skillId) {
+    ids.add(session.skillToolMetrics.skillId);
+  }
+  if (session.planDecomposition?.steps) {
+    for (const step of session.planDecomposition.steps) {
+      if (step.selectedSkillId) {
+        ids.add(step.selectedSkillId);
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
 function SkillPolicySection({ session }: { session: TraceSession }) {
   const metrics = session.skillToolMetrics;
-  if (!metrics) return null;
+  const skillIds = getAllSkillIds(session);
+  if (skillIds.length === 0) return null;
 
   return (
     <div className="border-t border-trace-border mt-2.5 pt-2.5">
@@ -357,29 +373,40 @@ function SkillPolicySection({ session }: { session: TraceSession }) {
         <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
           Skill Policy
         </span>
-        <span className="px-1.5 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-medium">
-          {metrics.skillId}
-        </span>
-        <Badge variant="type">{metrics.rankingApplications} rankings</Badge>
-        <Badge variant="type">{metrics.totalSelections} picks</Badge>
+        {skillIds.map((skillId) => (
+          <span
+            key={skillId}
+            className="px-1.5 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-medium"
+          >
+            {skillId}
+          </span>
+        ))}
+        {metrics && (
+          <>
+            <Badge variant="type">{metrics.rankingApplications} rankings</Badge>
+            <Badge variant="type">{metrics.totalSelections} picks</Badge>
+          </>
+        )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-        <MetricCard
-          label="Preferred"
-          value={`${Math.round(metrics.preferredSelectionRate * 100)}%`}
-          hint={`${metrics.preferredSelections} selections`}
-        />
-        <MetricCard
-          label="Neutral"
-          value={`${metrics.neutralSelections}`}
-          hint="middle-path picks"
-        />
-        <MetricCard
-          label="Discouraged"
-          value={`${Math.round(metrics.discouragedSelectionRate * 100)}%`}
-          hint={`${metrics.discouragedSelections} selections`}
-        />
-      </div>
+      {metrics && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+          <MetricCard
+            label="Preferred"
+            value={`${Math.round(metrics.preferredSelectionRate * 100)}%`}
+            hint={`${metrics.preferredSelections} selections`}
+          />
+          <MetricCard
+            label="Neutral"
+            value={`${metrics.neutralSelections}`}
+            hint="middle-path picks"
+          />
+          <MetricCard
+            label="Discouraged"
+            value={`${Math.round(metrics.discouragedSelectionRate * 100)}%`}
+            hint={`${metrics.discouragedSelections} selections`}
+          />
+        </div>
+      )}
     </div>
   );
 }

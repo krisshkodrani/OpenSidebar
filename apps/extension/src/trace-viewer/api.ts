@@ -72,6 +72,48 @@ export async function fetchSessionLogs(
   );
 }
 
+// ── Skill catalog API ─────────────────────────────────────
+
+export interface SkillDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  triggers: string[];
+  maturity: "draft" | "candidate" | "active";
+  preferredTools?: string[];
+  discouragedTools?: string[];
+  capabilityNeeds?: string[];
+  contextScope?: "turn" | "workspace";
+  verifierMode: "deterministic" | "hybrid" | "llm";
+  notes?: string[];
+}
+
+export interface SkillContract extends SkillDescriptor {
+  procedureMarkdown: string;
+  requiredEvidence?: string[];
+  commonFailures?: Array<{
+    signal: string;
+    recovery: string;
+  }>;
+  executionContract?: {
+    sequencing?: string[];
+    toolDiscipline?: string[];
+    completionChecks?: string[];
+    failureRecovery?: string[];
+  };
+}
+
+export async function fetchSkillCatalog(): Promise<SkillDescriptor[]> {
+  return fetchJson("/api/skills");
+}
+
+export async function fetchSkillContract(
+  skillId: string,
+): Promise<SkillContract> {
+  return fetchJson(`/api/skills/${encodeURIComponent(skillId)}`);
+}
+
 // ── Backend agent service (port 7590) ─────────────────────
 
 const BACKEND_URL = "http://127.0.0.1:7590";

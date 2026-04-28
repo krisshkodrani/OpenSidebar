@@ -1,4 +1,14 @@
 import React, { useMemo, useRef } from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+  type FilterFn,
+} from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
 import type { TraceSession } from "../../../types/traces";
@@ -15,91 +25,275 @@ import {
   truncate,
 } from "../../utils";
 
-const COLUMNS = [
-  { key: "startTime", label: "Time", width: "w-[65px]", sortable: true },
-  {
-    key: "query",
-    label: "Query",
-    width: "flex-1 min-w-[280px]",
-    sortable: true,
-  },
-  { key: "outcome", label: "Outcome", width: "w-[70px]", sortable: true },
-  { key: "turnCount", label: "Turns", width: "w-[45px]", sortable: true },
-  { key: "skill", label: "Skill", width: "w-[110px]", sortable: false },
-  { key: "model", label: "Model", width: "w-[90px]", sortable: false },
-  { key: "cost", label: "Est. Cost", width: "w-[65px]", sortable: true },
-  { key: "runId", label: "Run", width: "w-[65px]", sortable: false },
-] as const;
+// ── Custom filter functions ────────────────────────────────────
 
-function sortSessions(
-  sessions: TraceSession[],
-  column: string,
-  direction: "asc" | "desc",
-): TraceSession[] {
-  const sorted = [...sessions].sort((a, b) => {
-    let cmp = 0;
-    switch (column) {
-      case "startTime":
-        cmp = (a.startTime || 0) - (b.startTime || 0);
-        break;
-      case "query":
-        cmp = (a.query || "").localeCompare(b.query || "");
-        break;
-      case "outcome":
-        cmp = (a.outcome || "").localeCompare(b.outcome || "");
-        break;
-      case "turnCount":
-        cmp = (a.turnCount || 0) - (b.turnCount || 0);
-        break;
-      case "cost":
-        cmp = (a.metrics?.totalCost ?? 0) - (b.metrics?.totalCost ?? 0);
-        break;
-      case "duration":
-        cmp =
-          (a.endTime || 0) -
-          (a.startTime || 0) -
-          ((b.endTime || 0) - (b.startTime || 0));
-        break;
-      default:
-        cmp = 0;
+const fuzzyFilter: FilterFn<TraceSession> = (row, columnId, filterValue) => {
+  const value = row.getValue(columnId);
+  if (value == null) return false;
+  return String(value)
+    .toLowerCase()
+    .includes(String(filterValue).toLowerCase());
+};
+
+const skillFilter: FilterFn<TraceSession> = (row, _columnId, filterValue) => {
+  if (!filterValue || filterValue === "all") return true;
+  const session = row.original;
+  const skillIds = new Set<string>();
+  if (session.skillToolMetrics?.skillId) {
+    skillIds.add(session.skillToolMetrics.skillId);
+  }
+  if (session.planDecomposition?.steps) {
+    for (const step of session.planDecomposition.steps) {
+      if (step.selectedSkillId) {
+        skillIds.add(step.selectedSkillId);
+      }
     }
-    return direction === "asc" ? cmp : -cmp;
-  });
-  return sorted;
+  }
+  return skillIds.has(filterValue as string);
+};
+
+// ── Column definitions ─────────────────────────────────────────
+
+function createColumns(
+  navigateToSkillProp?: (skillId: string) => void,
+): ColumnDef<TraceSession>[] {
+  return [
+    {
+      accessorKey: "startTime",
+      header: "Time",
+      size: 72,
+      enableSorting: true,
+      cell: ({ row }) => (
+        <span className="text-trace-muted text-[11px]">
+          {formatTime(row.original.startTime)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "query",
+      header: "Query",
+      size: 200,
+      enableSorting: true,
+      filterFn: fuzzyFilter,
+      cell: ({ row }) => (
+        <span className="text-trace-text truncate pr-2">
+          {truncate(extractQueryTitle(row.original.query).title, 60)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "outcome",
+      header: "Outcome",
+      size: 80,
+      enableSorting: true,
+      filterFn: fuzzyFilter,
+      cell: ({ row }) => (
+        <Badge
+          variant={
+            outcomeClass(row.original.outcome) as
+              | "completed"
+              | "stopped"
+              | "error"
+              | "max_turns"
+          }
+        >
+          {row.original.outcome}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "turnCount",
+      header: "Turns",
+      size: 52,
+      enableSorting: true,
+      cell: ({ row }) => (
+        <span className="text-trace-subtle text-right">
+          {row.original.turnCount || 0}
+        </span>
+      ),
+    },
+    {
+      id: "skill",
+      header: "Skill",
+      size: 120,
+      enableSorting: false,
+      filterFn: skillFilter,
+      accessorFn: (row) => {
+        const ids = new Set<string>();
+        if (row.skillToolMetrics?.skillId) {
+          ids.add(row.skillToolMetrics.skillId);
+        }
+        if (row.planDecomposition?.steps) {
+          for (const step of row.planDecomposition.steps) {
+            if (step.selectedSkillId) {
+              ids.add(step.selectedSkillId);
+            }
+          }
+        }
+        return Array.from(ids);
+      },
+      cell: ({ row }) => {
+        const skillIds = row.getValue<string[]>("skill");
+        if (skillIds.length === 0) return <span>—</span>;
+
+        return (
+          <Tooltip content={`Skills: ${skillIds.join(", ")}`}>
+            <span className="text-trace-accent text-[10px] truncate">
+              {skillIds.map((id, i) => (
+                <span key={id}>
+                  {navigateToSkillProp ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToSkillProp(id);
+                      }}
+                      className="hover:underline cursor-pointer"
+                    >
+                      {id.replace(/-/g, " ")}
+                    </button>
+                  ) : (
+                    id.replace(/-/g, " ")
+                  )}
+                  {i < skillIds.length - 1 && (
+                    <span className="text-trace-muted">, </span>
+                  )}
+                </span>
+              ))}
+            </span>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      id: "model",
+      header: "Model",
+      size: 100,
+      enableSorting: false,
+      accessorFn: (row) => getSessionModels(row),
+      cell: ({ row }) => {
+        const models = row.getValue<string[]>("model");
+        const modelDisplay = models.length > 0 ? shortModel(models[0]) : "—";
+        const hasMultipleModels = models.length > 1;
+
+        return (
+          <Tooltip
+            content={
+              hasMultipleModels
+                ? `Models: ${models.map(shortModel).join(", ")}`
+                : "Model used for this session"
+            }
+          >
+            <span className="text-trace-subtle text-[10px] truncate cursor-help">
+              {modelDisplay}
+              {hasMultipleModels ? ` (+${models.length - 1})` : ""}
+            </span>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      id: "cost",
+      header: "Est. Cost",
+      size: 72,
+      enableSorting: true,
+      accessorFn: (row) => row.metrics?.totalCost ?? 0,
+      cell: ({ row }) => {
+        const cost = row.original.metrics?.totalCost;
+        return (
+          <span className="text-trace-subtle font-mono text-right">
+            {cost ? formatCost(cost) : "-"}
+          </span>
+        );
+      },
+    },
+    {
+      id: "runId",
+      header: "Run",
+      size: 80,
+      enableSorting: false,
+      accessorFn: (row) => (row as any).runId as string | undefined,
+      cell: ({ row }) => {
+        const runId = row.getValue<string | undefined>("runId");
+        return (
+          <Tooltip
+            content={
+              runId
+                ? `Part of run: ${runId}`
+                : "Standalone session (not part of a run)"
+            }
+          >
+            <span className="text-trace-accent-light text-[10px] font-mono truncate cursor-help">
+              {runId ? runId.slice(0, 8) : "—"}
+            </span>
+          </Tooltip>
+        );
+      },
+    },
+  ];
 }
+
+// ── Component ──────────────────────────────────────────────────
 
 interface UnifiedSessionsTableViewProps {
   onSelect: (sessionId: string) => void;
+  navigateToSkill?: (skillId: string) => void;
 }
 
 export default function UnifiedSessionsTableView({
   onSelect,
+  navigateToSkill,
 }: UnifiedSessionsTableViewProps) {
   const sessions = useStore((s) => s.sessions);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const tableSort = useStore((s) => s.tableSort);
   const setTableSort = useStore((s) => s.setTableSort);
+  const [sorting, setSorting] = React.useState<SortingState>([
+    { id: tableSort.column, desc: tableSort.direction === "desc" },
+  ]);
 
-  const sortedSessions = useMemo(
-    () => sortSessions(sessions, tableSort.column, tableSort.direction),
-    [sessions, tableSort],
+  const [globalFilter, setGlobalFilter] = React.useState("");
+
+  // Sync table sort with store
+  React.useEffect(() => {
+    if (sorting.length > 0) {
+      setTableSort(sorting[0].id, sorting[0].desc ? "desc" : "asc");
+    }
+  }, [sorting, setTableSort]);
+
+  const columns = useMemo(
+    () => createColumns(navigateToSkill),
+    [navigateToSkill],
   );
+
+  const table = useReactTable({
+    data: sessions,
+    columns,
+    state: {
+      sorting,
+      globalFilter,
+    },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    globalFilterFn: fuzzyFilter,
+    defaultColumn: {
+      minSize: 60,
+      maxSize: 800,
+    },
+    columnResizeMode: "onChange",
+  });
+
+  const { rows } = table.getRowModel();
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: sortedSessions.length,
+    count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 44,
     overscan: 15,
   });
-
-  const handleSort = (column: string) => {
-    if (tableSort.column === column) {
-      setTableSort(column, tableSort.direction === "asc" ? "desc" : "asc");
-    } else {
-      setTableSort(column, "desc");
-    }
-  };
 
   if (tracesLoading) {
     return (
@@ -117,44 +311,68 @@ export default function UnifiedSessionsTableView({
     );
   }
 
-  // Count unique runs
+  // Count unique runs from filtered rows
   const uniqueRuns = new Set(
-    sessions.map((s) => (s as any).runId).filter(Boolean),
+    rows.map((r) => (r.original as any).runId).filter(Boolean),
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-x-auto overflow-y-hidden">
-      {/* Header */}
-      <div className="flex min-w-[800px] items-center gap-2 px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
-        {COLUMNS.map((col) =>
-          col.sortable ? (
-            <button
-              key={col.key}
-              onClick={() => handleSort(col.key)}
-              className={`${col.width} text-left hover:text-trace-accent-light transition-colors cursor-pointer truncate ${
-                tableSort.column === col.key ? "text-trace-accent-light" : ""
-              }`}
-            >
-              {col.label}
-              {tableSort.column === col.key && (
-                <span className="ml-0.5">
-                  {tableSort.direction === "asc" ? "▲" : "▼"}
-                </span>
-              )}
-            </button>
-          ) : (
-            <span key={col.key} className={`${col.width} text-left truncate`}>
-              {col.label}
-            </span>
-          ),
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Global filter */}
+      <div className="px-4 py-2 border-b border-trace-border bg-trace-bg shrink-0">
+        <input
+          type="text"
+          placeholder="Search sessions..."
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          className="w-full max-w-md px-3 py-1.5 text-sm bg-trace-surface border border-trace-border rounded text-trace-text placeholder:text-trace-dim focus:outline-none focus:border-trace-accent"
+        />
+      </div>
+
+      {/* Table header */}
+      <div className="flex items-center px-4 py-2 text-[10px] font-semibold text-trace-muted uppercase tracking-wider border-b border-trace-border bg-trace-bg shrink-0">
+        {table.getHeaderGroups().map((headerGroup) =>
+          headerGroup.headers.map((header) => {
+            const canSort = header.column.getCanSort();
+            const isSorted = header.column.getIsSorted();
+
+            return canSort ? (
+              <button
+                key={header.id}
+                onClick={header.column.getToggleSortingHandler()}
+                className={`text-left hover:text-trace-accent-light transition-colors cursor-pointer truncate px-2 first:pl-0 last:pr-0 flex-1 ${
+                  isSorted ? "text-trace-accent-light" : ""
+                }`}
+                style={{ minWidth: header.getSize() }}
+              >
+                {flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                )}
+                {isSorted && (
+                  <span className="ml-0.5">
+                    {isSorted === "asc" ? "▲" : "▼"}
+                  </span>
+                )}
+              </button>
+            ) : (
+              <span
+                key={header.id}
+                className="text-left truncate px-2 first:pl-0 last:pr-0 flex-1"
+                style={{ minWidth: header.getSize() }}
+              >
+                {flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                )}
+              </span>
+            );
+          }),
         )}
       </div>
 
-      {/* Rows */}
-      <div
-        ref={parentRef}
-        className="min-w-[700px] flex-1 overflow-y-auto scrollbar-thin"
-      >
+      {/* Virtualized rows */}
+      <div ref={parentRef} className="flex-1 overflow-y-auto scrollbar-thin">
         <div
           style={{
             height: `${virtualizer.getTotalSize()}px`,
@@ -163,12 +381,13 @@ export default function UnifiedSessionsTableView({
           }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
-            const session = sortedSessions[virtualRow.index];
+            const row = rows[virtualRow.index];
             return (
               <div
-                key={session.sessionId}
+                key={row.id}
                 data-index={virtualRow.index}
                 ref={virtualizer.measureElement}
+                onClick={() => onSelect(row.original.sessionId)}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -176,11 +395,19 @@ export default function UnifiedSessionsTableView({
                   width: "100%",
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
+                className="flex items-center px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
               >
-                <SessionRow
-                  session={session}
-                  onClick={() => onSelect(session.sessionId)}
-                />
+                {row.getVisibleCells().map((cell) => (
+                  <div
+                    key={cell.id}
+                    className="shrink-0 px-2 first:pl-0 last:pr-0 overflow-hidden flex-1"
+                    style={{
+                      minWidth: cell.column.getSize(),
+                    }}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </div>
+                ))}
               </div>
             );
           })}
@@ -188,100 +415,9 @@ export default function UnifiedSessionsTableView({
       </div>
 
       <div className="px-4 py-1.5 text-[10px] text-trace-muted border-t border-trace-border/50 shrink-0">
-        {sessions.length} sessions
+        {rows.length} sessions
         {uniqueRuns.size > 0 && ` · ${uniqueRuns.size} runs`}
       </div>
-    </div>
-  );
-}
-
-function SessionRow({
-  session,
-  onClick,
-}: {
-  session: TraceSession;
-  onClick: () => void;
-}) {
-  const cost = session.metrics?.totalCost
-    ? formatCost(session.metrics.totalCost)
-    : "";
-  const duration = formatDuration(
-    (session.endTime || 0) - (session.startTime || 0),
-  );
-  const runId = (session as any).runId as string | undefined;
-  const models = session.models || [];
-  const modelDisplay = models.length > 0 ? shortModel(models[0]) : "—";
-  const hasMultipleModels = models.length > 1;
-
-  // Extract skill from plan decomposition or skillToolMetrics
-  const skillId =
-    session.skillToolMetrics?.skillId ||
-    session.planDecomposition?.steps?.[0]?.selectedSkillId ||
-    null;
-  const skillDisplay = skillId ? skillId.replace(/-/g, " ").slice(0, 14) : "—";
-
-  return (
-    <div
-      onClick={onClick}
-      className="flex min-w-[800px] items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
-    >
-      <span className="w-[65px] text-trace-muted text-[11px] shrink-0">
-        {formatTime(session.startTime)}
-      </span>
-      <span className="flex-1 min-w-[280px] text-trace-text truncate pr-2">
-        {truncate(extractQueryTitle(session.query).title, 60)}
-      </span>
-      <span className="w-[70px] shrink-0">
-        <Badge
-          variant={
-            outcomeClass(session.outcome) as
-              | "completed"
-              | "stopped"
-              | "error"
-              | "max_turns"
-          }
-        >
-          {session.outcome}
-        </Badge>
-      </span>
-      <span className="w-[45px] text-trace-subtle text-right shrink-0">
-        {session.turnCount || 0}
-      </span>
-      <Tooltip
-        content={
-          skillId ? `Skill: ${skillId}` : "No skill used in this session"
-        }
-      >
-        <span className="w-[110px] text-trace-accent text-[10px] truncate shrink-0 cursor-help">
-          {skillDisplay}
-        </span>
-      </Tooltip>
-      <Tooltip
-        content={
-          hasMultipleModels
-            ? `Models: ${models.map(shortModel).join(", ")}`
-            : "Model used for this session"
-        }
-      >
-        <span className="w-[90px] text-trace-subtle text-[10px] truncate shrink-0 cursor-help">
-          {modelDisplay}
-          {hasMultipleModels ? ` (+${models.length - 1})` : ""}
-        </span>
-      </Tooltip>
-      <span className="w-[65px] text-trace-subtle font-mono text-right shrink-0">
-        {cost || "-"}
-      </span>
-      <Tooltip
-        content={
-          runId
-            ? `Part of run: ${runId}`
-            : "Standalone session (not part of a run)"
-        }
-      >
-        <span className="w-[65px] text-trace-accent-light text-[10px] font-mono truncate shrink-0 cursor-help">
-          {runId ? runId.slice(0, 8) : "—"}
-        </span>
-      </Tooltip>
     </div>
   );
 }
