@@ -1,4 +1,4 @@
-const BACKEND_URL = "http://127.0.0.1:7590";
+const BACKEND_URL = "http://127.0.0.1:7589/api/backend";
 const BACKEND_TIMEOUT_MS = 8_000;
 
 export interface BackendTaskRunSummary {

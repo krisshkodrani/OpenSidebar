@@ -11,7 +11,7 @@ import type {
 } from "@shared-types/progress";
 import { logger } from "../../utils";
 
-const BACKEND_URL = "http://127.0.0.1:7590";
+const BACKEND_URL = "http://127.0.0.1:7589/api/backend";
 const TIMEOUT_MS = 5000;
 
 // ── Types ──

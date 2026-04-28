@@ -40,6 +40,11 @@ import {
   listSkillDescriptors,
   getLoadedSkillContract,
 } from "../apps/extension/src/background/orchestrator/skills";
+import { initDatabase, closeDatabase } from "../apps/backend/src/db";
+import {
+  handleBackendRequest,
+  loadBackendConfig,
+} from "../apps/backend/src/server";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -84,7 +89,7 @@ function parseJsonBody(req: IncomingMessage): Promise<any> {
  */
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, GET, PATCH, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -184,6 +189,20 @@ if (!existsSync(GOLDEN_DIR)) {
   mkdirSync(GOLDEN_DIR, { recursive: true });
 }
 
+const backendConfig = loadBackendConfig();
+initDatabase(backendConfig.storage.databasePath);
+
+function toBackendRoute(url: URL): {
+  pathname: string;
+  searchParams: URLSearchParams;
+} {
+  const path = url.pathname.slice("/api/backend".length);
+  return {
+    pathname: path.length > 0 ? path : "/health",
+    searchParams: url.searchParams,
+  };
+}
+
 /** Rotate log file when it exceeds MAX_FILE_SIZE */
 function rotateIfNeeded(): void {
   try {
@@ -233,6 +252,14 @@ const server = createServer(
     // CORS preflight
     if (req.method === "OPTIONS") {
       sendEmpty(res, 204);
+      return;
+    }
+
+    if (
+      url.pathname === "/api/backend" ||
+      url.pathname.startsWith("/api/backend/")
+    ) {
+      await handleBackendRequest(req, res, toBackendRoute(url));
       return;
     }
 
@@ -901,9 +928,20 @@ const server = createServer(
 );
 
 server.listen(PORT, HOST, () => {
-  console.log(`Log server listening on http://${HOST}:${PORT}`);
+  console.log(`Local server listening on http://${HOST}:${PORT}`);
   console.log(`Writing to ${LOG_FILE}`);
   console.log(`Traces to ${TRACE_DIR}`);
   console.log(`Trace viewer: http://${HOST}:${PORT}/viewer`);
+  console.log(`Backend API: http://${HOST}:${PORT}/api/backend/health`);
   console.log(`Press Ctrl+C to stop\n`);
 });
+
+const shutdown = (signal: string) => {
+  console.log(`\n[local-server] Received ${signal}. Shutting down...`);
+  closeDatabase();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref();
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

@@ -16,7 +16,7 @@ export default function ErrorBanner({
       {message}
       {hint && (
         <div className="mt-2">
-          Make sure the log server is running:{" "}
+          Make sure the local server is running:{" "}
           <code className="text-trace-accent-light">npm run logs</code>
         </div>
       )}

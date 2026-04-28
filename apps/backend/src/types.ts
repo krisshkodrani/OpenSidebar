@@ -284,4 +284,5 @@ export interface BackendConfig {
 export interface HealthResponse {
   status: "ok" | "degraded";
   uptime: number;
+  pendingTasks: number;
 }

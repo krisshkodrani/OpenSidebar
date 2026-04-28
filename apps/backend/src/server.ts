@@ -11,7 +11,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync } from "fs";
 import { join, dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { handleHealth } from "./routes/health.js";
@@ -21,7 +21,7 @@ import type { BackendConfig } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function loadConfig(): BackendConfig {
+export function loadBackendConfig(): BackendConfig {
   const raw = readFileSync(join(__dirname, "config.yaml"), "utf-8");
   const yaml = parseYaml(raw);
   return {
@@ -91,16 +91,20 @@ function parseUrl(req: IncomingMessage): {
   return { pathname: url.pathname, searchParams: url.searchParams };
 }
 
-async function handleRequest(
+export async function handleBackendRequest(
   req: IncomingMessage,
   res: ServerResponse,
+  route?: {
+    pathname: string;
+    searchParams: URLSearchParams;
+  },
 ): Promise<void> {
   if (req.method === "OPTIONS") {
     sendEmpty(res);
     return;
   }
 
-  const { pathname, searchParams } = parseUrl(req);
+  const { pathname, searchParams } = route ?? parseUrl(req);
   const method = req.method || "GET";
 
   try {
@@ -142,14 +146,14 @@ async function handleRequest(
   }
 }
 
-async function main(): Promise<void> {
-  const config = loadConfig();
+export async function startBackendServer(): Promise<void> {
+  const config = loadBackendConfig();
 
   console.log("[backend] Initializing backend database...");
   initDatabase(config.storage.databasePath);
 
   const server = createServer((req, res) => {
-    handleRequest(req, res).catch((err) => {
+    handleBackendRequest(req, res).catch((err) => {
       console.error("[backend] Unhandled request error:", err);
       if (!res.headersSent) {
         sendError(res, "Internal server error", 500);
@@ -174,10 +178,13 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-main().catch((err) => {
-  console.error("[backend] Fatal startup error:", err);
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+if (invokedPath === import.meta.url) {
+  startBackendServer().catch((err) => {
+    console.error("[backend] Fatal startup error:", err);
+    process.exit(1);
+  });
+}
 
 export type RouteContext = {
   pathname: string;

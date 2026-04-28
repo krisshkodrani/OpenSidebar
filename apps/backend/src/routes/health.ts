@@ -11,6 +11,7 @@ export async function handleHealth(res: ServerResponse, sendJson: SendJsonFn): P
   const response: HealthResponse = {
     status: "ok",
     uptime: Date.now() - startedAt,
+    pendingTasks: 0,
   };
 
   sendJson(res, response);

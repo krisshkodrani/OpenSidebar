@@ -1,27 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { X } from "lucide-react";
 import {
   fetchBackendHealth,
   fetchDurableRunDetail,
   fetchDurableRuns,
-  fetchScheduledTasks,
-  deleteScheduledTask,
   requestDurableRunResume,
   requestDurableRunStop,
   type BackendHealth,
   type BackendDurableRunDetail,
   type BackendDurableRunSummary,
-  type BackendScheduledTask,
 } from "../api";
 import LoadingSpinner from "./LoadingSpinner";
 import ErrorBanner from "./ErrorBanner";
-
-type Tab = "runs" | "tasks";
-
-const TAB_LABELS: Record<Tab, string> = {
-  runs: "Durable Runs",
-  tasks: "Scheduled Tasks",
-};
 
 function formatProgressPayload(payload: unknown): string {
   if (Array.isArray(payload)) {
@@ -38,7 +27,6 @@ function formatProgressPayload(payload: unknown): string {
 export default function BackendPanel() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [offline, setOffline] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("runs");
 
   const loadHealth = useCallback(async () => {
     try {
@@ -59,7 +47,7 @@ export default function BackendPanel() {
       <div className="flex-1 px-5 py-8">
         <ErrorBanner
           message="Backend service is offline"
-          hint="Start it with npm run backend (port 7590)"
+          hint="Start it with npm run dev or npm run logs"
           onRetry={loadHealth}
         />
       </div>
@@ -73,35 +61,12 @@ export default function BackendPanel() {
         <div className="shrink-0 flex items-center gap-x-4 gap-y-1 px-5 py-1.5 border-b border-trace-border bg-trace-panel flex-wrap">
           <StatusDot connected={health.status === "ok"} />
           <Stat label="Status" value={health.status} />
-          <Stat label="Pending Tasks" value={String(health.pendingTasks)} />
           <Stat label="Uptime" value={formatUptime(health.uptime)} />
         </div>
       )}
 
-      {/* Tab toggle */}
-      <div className="flex gap-0.5 px-5 pt-2 bg-trace-panel border-b border-trace-border shrink-0 overflow-x-auto scrollbar-thin">
-        {(["runs", "tasks"] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
-              activeTab === tab
-                ? "text-trace-accent-light border-trace-accent"
-                : "text-trace-muted border-transparent hover:text-trace-subtle"
-            }`}
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-        {activeTab === "runs" ? (
-          <DurableRunsTab />
-        ) : (
-          <TasksTab onChanged={loadHealth} />
-        )}
+        <DurableRunsTab />
       </div>
     </div>
   );
@@ -410,120 +375,6 @@ function DurableRunsTab() {
 }
 
 // ── Tasks Tab ───────────────────────────────────────────────
-
-function TasksTab({ onChanged }: { onChanged: () => void }) {
-  const [tasks, setTasks] = useState<BackendScheduledTask[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchScheduledTasks();
-      setTasks(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
-
-  const handleDelete = useCallback(
-    async (id: string) => {
-      await deleteScheduledTask(id);
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      onChanged();
-    },
-    [onChanged],
-  );
-
-  if (loading && tasks.length === 0) {
-    return (
-      <div className="px-5 py-4">
-        <LoadingSpinner message="Loading tasks..." />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="px-5 py-4">
-        <ErrorBanner message={error} onRetry={loadTasks} />
-      </div>
-    );
-  }
-
-  if (tasks.length === 0) {
-    return (
-      <div className="px-5 py-12 text-center text-trace-muted text-xs">
-        No scheduled tasks. Ask the agent to schedule something, e.g.
-        &ldquo;check this page every morning at 9am&rdquo;.
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-5 py-4 overflow-x-auto scrollbar-thin">
-      <table className="w-full min-w-[760px] text-xs">
-        <thead>
-          <tr className="text-left text-[10px] uppercase tracking-wider text-trace-muted border-b border-trace-border">
-            <th className="py-2 pr-3">Description</th>
-            <th className="py-2 pr-3">Schedule</th>
-            <th className="py-2 pr-3">Next Run</th>
-            <th className="py-2 pr-3">Status</th>
-            <th className="py-2 pr-3">Last Result</th>
-            <th className="py-2 w-8"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tasks.map((task) => (
-            <tr
-              key={task.id}
-              className="border-b border-trace-border/50 hover:bg-trace-bg/50"
-            >
-              <td
-                className="py-2 pr-3 text-trace-text max-w-[240px] truncate"
-                title={task.query}
-              >
-                {task.description}
-              </td>
-              <td className="py-2 pr-3 font-mono text-trace-muted">
-                {task.schedule ?? "one-shot"}
-              </td>
-              <td className="py-2 pr-3 text-trace-muted">
-                {task.runAt ? new Date(task.runAt).toLocaleString() : "-"}
-              </td>
-              <td className="py-2 pr-3">
-                <TaskStatusBadge status={task.status} />
-              </td>
-              <td
-                className="py-2 pr-3 text-trace-dim max-w-[180px] truncate"
-                title={task.result ?? ""}
-              >
-                {task.result ?? "-"}
-              </td>
-              <td className="py-2">
-                <button
-                  onClick={() => handleDelete(task.id)}
-                  className="text-trace-dim hover:text-state-error transition-colors"
-                  title="Delete task"
-                  aria-label={`Delete task ${task.description}`}
-                >
-                  <X size={12} aria-hidden="true" />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 // ── Shared components ───────────────────────────────────────
 
