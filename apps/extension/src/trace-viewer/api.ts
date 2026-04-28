@@ -114,24 +114,9 @@ export async function fetchSkillContract(
   return fetchJson(`/api/skills/${encodeURIComponent(skillId)}`);
 }
 
-// ── Backend agent service (port 7590) ─────────────────────
+// ── Local backend API ─────────────────────────────────────
 
-const BACKEND_URL = "http://127.0.0.1:7590";
-
-export interface BackendScheduledTask {
-  id: string;
-  description: string;
-  query: string;
-  tabUrl: string | null;
-  workspaceId: string | null;
-  schedule: string | null;
-  runAt: number | null;
-  status: string;
-  lastRunAt: number | null;
-  result: string | null;
-  createdAt: number;
-  updatedAt: number;
-}
+const BACKEND_URL = "/api/backend";
 
 export interface BackendHealth {
   status: string;
@@ -248,19 +233,6 @@ async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function fetchBackendHealth(): Promise<BackendHealth> {
   return backendFetch("/health");
-}
-
-export async function fetchScheduledTasks(): Promise<BackendScheduledTask[]> {
-  const data = await backendFetch<{ tasks: BackendScheduledTask[] }>(
-    "/tasks?limit=100",
-  );
-  return data.tasks;
-}
-
-export async function deleteScheduledTask(id: string): Promise<void> {
-  await fetch(`${BACKEND_URL}/tasks/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
 }
 
 export async function fetchDurableRuns(options?: {

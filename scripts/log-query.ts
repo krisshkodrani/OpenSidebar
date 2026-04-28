@@ -63,7 +63,7 @@ function formatEntry(e: LogEntry): string {
 function readEntries(): LogEntry[] {
   if (!existsSync(LOG_FILE)) {
     console.error(`Log file not found: ${LOG_FILE}`);
-    console.error("Start the log server first: bun run logs");
+    console.error("Start the local server first: npm run logs");
     process.exit(1);
   }
 

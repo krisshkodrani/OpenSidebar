@@ -251,6 +251,26 @@ describe("Orchestrator integration join tests", () => {
     const _origFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      if (url.startsWith("http://127.0.0.1:7589/api/backend/")) {
+        let body: any = null;
+        try {
+          body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+        } catch {
+          body = null;
+        }
+        if (backendFetchImpl) {
+          return await backendFetchImpl(url, init, body);
+        }
+        backendCalls.push({
+          url,
+          method: init?.method ?? "GET",
+          body,
+        });
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.startsWith("http://127.0.0.1:7589/")) {
         try {
           const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;

@@ -46,7 +46,7 @@ export default function SkillDetail({ skillId, onBack }: SkillDetailProps) {
       <div className="flex-1 flex flex-col items-center justify-center px-5">
         <ErrorBanner
           message={error || "Skill not found"}
-          hint="Ensure the log server is running (npm run logs)"
+          hint="Ensure the local server is running (npm run logs)"
         />
         {onBack && (
           <button

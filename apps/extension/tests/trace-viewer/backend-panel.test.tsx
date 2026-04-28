@@ -7,8 +7,6 @@ import BackendPanel from "../../src/trace-viewer/components/BackendPanel";
 const mockFetchBackendHealth = vi.fn();
 const mockFetchDurableRuns = vi.fn();
 const mockFetchDurableRunDetail = vi.fn();
-const mockFetchScheduledTasks = vi.fn();
-const mockDeleteScheduledTask = vi.fn();
 const mockRequestDurableRunResume = vi.fn();
 const mockRequestDurableRunStop = vi.fn();
 
@@ -17,8 +15,6 @@ vi.mock("../../src/trace-viewer/api", () => ({
   fetchDurableRuns: (...args: unknown[]) => mockFetchDurableRuns(...args),
   fetchDurableRunDetail: (...args: unknown[]) =>
     mockFetchDurableRunDetail(...args),
-  fetchScheduledTasks: () => mockFetchScheduledTasks(),
-  deleteScheduledTask: (...args: unknown[]) => mockDeleteScheduledTask(...args),
   requestDurableRunResume: (...args: unknown[]) =>
     mockRequestDurableRunResume(...args),
   requestDurableRunStop: (...args: unknown[]) =>
@@ -62,8 +58,6 @@ describe("trace-viewer BackendPanel", () => {
     mockFetchBackendHealth.mockReset();
     mockFetchDurableRuns.mockReset();
     mockFetchDurableRunDetail.mockReset();
-    mockFetchScheduledTasks.mockReset();
-    mockDeleteScheduledTask.mockReset();
     mockRequestDurableRunResume.mockReset();
     mockRequestDurableRunStop.mockReset();
 
@@ -72,7 +66,6 @@ describe("trace-viewer BackendPanel", () => {
       uptime: 42,
       pendingTasks: 1,
     });
-    mockFetchScheduledTasks.mockResolvedValue([]);
     mockFetchDurableRuns.mockResolvedValue([
       {
         id: "run-1",
@@ -207,16 +200,6 @@ describe("trace-viewer BackendPanel", () => {
     });
 
     await flushAsyncWork();
-
-    const runsButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim().toLowerCase() === "durable runs",
-    ) as HTMLButtonElement | undefined;
-
-    expect(runsButton).toBeTruthy();
-
-    await act(async () => {
-      runsButton?.click();
-    });
 
     await waitFor(() => {
       expect(container.textContent).toContain("Structured Progress");
