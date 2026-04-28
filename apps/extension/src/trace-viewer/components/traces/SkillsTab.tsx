@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import type { TraceSession, TraceEntry } from "../../../types/traces";
+import type { TraceSession } from "../../../types/traces";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import CollapsibleSection from "../CollapsibleSection";

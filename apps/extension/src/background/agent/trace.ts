@@ -23,6 +23,7 @@ import {
 import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
 import { logger } from "../../utils";
+import { redactTracePayload } from "../../utils/trace-protection";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const FLUSH_TIMEOUT_MS = 2000;
@@ -240,13 +241,19 @@ export class TraceRecorder {
     type: string,
     data: Record<string, unknown>,
   ): void {
-    if (type !== "skill_tool_ranking_applied" && type !== "skill_tool_selected") {
+    if (
+      type !== "skill_tool_ranking_applied" &&
+      type !== "skill_tool_selected"
+    ) {
       return;
     }
     const skillId = typeof data.skillId === "string" ? data.skillId : null;
     if (!skillId) return;
 
-    if (!this.skillToolMetricsState || this.skillToolMetricsState.skillId !== skillId) {
+    if (
+      !this.skillToolMetricsState ||
+      this.skillToolMetricsState.skillId !== skillId
+    ) {
       this.skillToolMetricsState = {
         skillId,
         rankingApplications: 0,
@@ -262,7 +269,8 @@ export class TraceRecorder {
       return;
     }
 
-    const preference = typeof data.preference === "string" ? data.preference : null;
+    const preference =
+      typeof data.preference === "string" ? data.preference : null;
     this.skillToolMetricsState.totalSelections += 1;
     if (preference === "preferred") {
       this.skillToolMetricsState.preferredSelections += 1;
@@ -313,6 +321,17 @@ export class TraceRecorder {
     panoramicShots?: TracePanoramicShot[],
   ): Promise<void> {
     if (!this.currentTurn) return;
+    const sessionId = this.currentTurn.sessionId;
+    const turnNumber = this.currentTurn.turnNumber;
+    const enrichedPanoramicShots =
+      sessionId && typeof turnNumber === "number" && panoramicShots?.length
+        ? panoramicShots.map((shot, index) => ({
+            screenshotId: `${sessionId}:turn:${turnNumber}:panorama:${index}`,
+            sessionId,
+            turnNumber,
+            ...shot,
+          }))
+        : panoramicShots;
     this.currentTurn.perception = {
       interpretation: perception.interpretation,
       model: perception.model,
@@ -332,7 +351,9 @@ export class TraceRecorder {
         : {}),
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
       ...(elementSummary ? { elementSummary } : {}),
-      ...(panoramicShots?.length ? { panoramicShots } : {}),
+      ...(enrichedPanoramicShots?.length
+        ? { panoramicShots: enrichedPanoramicShots }
+        : {}),
     };
   }
 
@@ -357,6 +378,23 @@ export class TraceRecorder {
   async endTurn(): Promise<void> {
     if (!this.currentTurn) return;
 
+    const sessionId = this.currentTurn.sessionId!;
+    const turnNumber = this.currentTurn.turnNumber!;
+    const turnId = `${sessionId}:turn:${turnNumber}`;
+    const toolExecutions = this.turnToolExecutions.map((tool, index) => ({
+      executionId: `${turnId}:tool:${tool.toolCallId || index}`,
+      turnId,
+      sessionId,
+      turnNumber,
+      ...tool,
+    }));
+    const events = this.turnEvents.map((event, index) => ({
+      eventId: `${turnId}:event:${index}`,
+      turnId,
+      sessionId,
+      turnNumber,
+      ...event,
+    }));
     const entry: TraceEntry = {
       schemaVersion: TRACE_SCHEMA_VERSION,
       traceKind: "agent.turn",
@@ -365,8 +403,9 @@ export class TraceRecorder {
       ...(this.runId ? { runId: this.runId } : {}),
       correlationId: this.correlationId,
       ...(this.parentRunId ? { parentRunId: this.parentRunId } : {}),
-      sessionId: this.currentTurn.sessionId!,
-      turnNumber: this.currentTurn.turnNumber!,
+      turnId,
+      sessionId,
+      turnNumber,
       timestamp: this.currentTurn.timestamp!,
       workspaceId: this.workspaceId,
       snapshot: this.currentTurn.snapshot!,
@@ -382,8 +421,8 @@ export class TraceRecorder {
         usage: null,
         durationMs: 0,
       },
-      toolExecutions: this.turnToolExecutions,
-      events: this.turnEvents,
+      toolExecutions,
+      events,
       progressState: this.currentTurn.progressState ?? {
         stagnantTurns: 0,
         signal: null,
@@ -503,7 +542,9 @@ export class TraceRecorder {
     // Drain any previously queued items first
     await this.drainPending();
 
-    const serialized = JSON.stringify(data);
+    const serialized = JSON.stringify(
+      redactTracePayload(data, { mode: "runtime" }),
+    );
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);

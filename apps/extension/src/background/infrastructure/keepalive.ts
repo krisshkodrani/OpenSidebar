@@ -10,6 +10,7 @@
 
 import { logger } from "../../utils";
 import { isContentScript } from "../../utils/context";
+import { orchestrator } from "../orchestrator";
 
 // --- Constants ---
 
@@ -81,9 +82,7 @@ function handleAlarm(alarm: chrome.alarms.Alarm): void {
     logger.debug("keepalive", "Keepalive ping", { ts: Date.now() });
     // The act of handling this alarm resets the SW termination timer
 
-    void import("../orchestrator").then(({ orchestrator }) =>
-      orchestrator.processDurableRunControlRequests().catch(() => {}),
-    );
+    void orchestrator.processDurableRunControlRequests().catch(() => {});
   }
 }
 

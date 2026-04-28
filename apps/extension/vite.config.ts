@@ -6,6 +6,11 @@ import path from "path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const outDir =
+    mode === "production"
+      ? path.resolve(__dirname, "../../dist")
+      : path.resolve(__dirname, "../../dist-dev");
+
   return {
     root: __dirname,
     define: {
@@ -23,8 +28,12 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: path.resolve(__dirname, "../../dist"),
+      outDir,
       emptyOutDir: true,
+      // The MV3 background service worker is intentionally bundled as a single
+      // module; Chrome extension workers are more reliable with static imports
+      // than with lazy runtime chunks. Keep the warning useful for future growth.
+      chunkSizeWarningLimit: 750,
       rollupOptions: {
         input: {
           "trace-viewer": path.resolve(
@@ -35,13 +44,6 @@ export default defineConfig(({ mode }) => {
         external: [],
       },
     },
-    // Dev mode uses a different directory to avoid overwriting production builds
-    ...(mode !== "production" && {
-      build: {
-        outDir: path.resolve(__dirname, "../../dist-dev"),
-        emptyOutDir: true,
-      },
-    }),
     server: {
       port: 5173,
       strictPort: true,

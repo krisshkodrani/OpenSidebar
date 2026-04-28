@@ -78,7 +78,7 @@ describe("Orchestrator role contracts", () => {
         ToolName.TYPE_TEXT,
         ToolName.PRESS_KEY,
         ToolName.UPDATE_NOTES,
-        ToolName.SCHEDULE_TASK,
+        ToolName.CLARIFY,
       ],
       {
         selectedSkillId: "structured-form-fill",
@@ -90,7 +90,7 @@ describe("Orchestrator role contracts", () => {
     expect(contract.disabledTools.has(ToolName.PRESS_KEY)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
-    expect(contract.allowedTools.includes(ToolName.SCHEDULE_TASK)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);
   });
 
   test("modal-overlay-recovery suppresses broad actions but keeps recovery exits available", () => {

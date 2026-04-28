@@ -18,7 +18,6 @@ import {
   outcomeClass,
   formatTime,
   formatCost,
-  formatDuration,
   getSessionModels,
   shortModel,
   extractQueryTitle,

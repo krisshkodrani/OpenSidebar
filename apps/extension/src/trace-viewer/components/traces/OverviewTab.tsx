@@ -8,6 +8,11 @@ import {
   formatTokens,
   extractQueryTitle,
 } from "../../utils";
+import InvestigationSummary from "./InvestigationSummary";
+import EvidenceTimeline from "./EvidenceTimeline";
+import SessionComparisonPanel from "./SessionComparisonPanel";
+import TimelineDiffPanel from "./TimelineDiffPanel";
+import TraceIntegrityPanel from "./TraceIntegrityPanel";
 
 interface OverviewTabProps {
   session: TraceSession;
@@ -49,6 +54,16 @@ export default function OverviewTab({ session }: OverviewTabProps) {
 
   return (
     <div className="space-y-4">
+      <InvestigationSummary session={session} />
+
+      <EvidenceTimeline session={session} />
+
+      <SessionComparisonPanel session={session} />
+
+      <TimelineDiffPanel session={session} />
+
+      <TraceIntegrityPanel session={session} />
+
       {/* Query Section */}
       <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
         <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">

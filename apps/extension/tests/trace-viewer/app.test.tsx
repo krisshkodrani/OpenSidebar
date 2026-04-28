@@ -29,6 +29,12 @@ vi.mock("../../src/trace-viewer/components/traces/SessionsTableView", () => ({
 vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
   default: () => <div>RunsTableView</div>,
 }));
+vi.mock(
+  "../../src/trace-viewer/components/traces/UnifiedSessionsTableView",
+  () => ({
+    default: () => <div>UnifiedSessionsTableView</div>,
+  }),
+);
 vi.mock("../../src/trace-viewer/components/traces/TraceListModeToggle", () => ({
   default: () => <div>TraceListModeToggle</div>,
 }));
@@ -148,7 +154,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("routes to backend top-level view from hash", async () => {
+  test("ignores unsupported top-level view from hash", async () => {
     window.location.hash = "#view=backend";
 
     await act(async () => {
@@ -156,8 +162,9 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(useStore.getState().topLevelView).toBe("backend");
-      expect(container.textContent).toContain("BackendPanel");
+      expect(useStore.getState().activeSubview).toBe("overview");
+      expect(container.textContent).toContain("UnifiedSessionsTableView");
+      expect(container.textContent).not.toContain("BackendPanel");
     });
   });
 
@@ -197,7 +204,7 @@ describe("trace-viewer App", () => {
 
     await waitFor(() => {
       expect(useStore.getState().traceListMode).toBe("sessions");
-      expect(container.textContent).toContain("SessionsTableView");
+      expect(container.textContent).toContain("UnifiedSessionsTableView");
     });
   });
 

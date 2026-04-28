@@ -10,11 +10,12 @@ import {
 
 describe("trace-viewer api", () => {
   beforeEach(() => {
-    global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    global.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     ) as any;
   });
 
@@ -25,9 +26,8 @@ describe("trace-viewer api", () => {
       from: "2026-04-10",
       to: "2026-04-15",
       domain: "example.com",
-      mode: "agent",
       model: "openai/gpt-5.4-mini:nitro",
-      tier: "planner",
+      skill: "checkout",
       runId: "run-123",
     });
 
@@ -39,9 +39,8 @@ describe("trace-viewer api", () => {
     expect(url).toContain("from=2026-04-10");
     expect(url).toContain("to=2026-04-15");
     expect(url).toContain("domain=example.com");
-    expect(url).toContain("mode=agent");
     expect(url).toContain("model=openai%2Fgpt-5.4-mini%3Anitro");
-    expect(url).toContain("tier=planner");
+    expect(url).toContain("skill=checkout");
     expect(url).toContain("runId=run-123");
     expect(url).toContain("limit=1000");
   });
