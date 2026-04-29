@@ -78,6 +78,16 @@ export interface NavigateArgs {
   query?: string;
 }
 
+/** Arguments for open_servicenow_module */
+export interface OpenServiceNowModuleArgs {
+  /** Optional ServiceNow application name, e.g. "Configuration" */
+  application?: string;
+  /** Module path labels, with the target module as the last item */
+  path: string[];
+  /** Whether to navigate after resolving the target URL (default true) */
+  run?: boolean;
+}
+
 /** Arguments for create_tab */
 export interface CreateTabArgs {
   /** URL to open in the new tab */
@@ -392,6 +402,7 @@ export type ToolArgsMap = {
   [ToolName.SCROLL_PAGE]: ScrollPageArgs;
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
+  [ToolName.OPEN_SERVICENOW_MODULE]: OpenServiceNowModuleArgs;
 
   [ToolName.CREATE_TAB]: CreateTabArgs;
   [ToolName.CLOSE_TAB]: CloseTabArgs;

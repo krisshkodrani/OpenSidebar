@@ -1922,6 +1922,29 @@ describe("selectPrimarySkill", () => {
                 "form_fill",
             ),
         ).toBe("full");
+        expect(
+            selectPrimarySkill({
+                query:
+                    'Navigate to the "Database Instances > HBase" module of the "Configuration" application.',
+                objective:
+                    "Navigate to the Database Instances > HBase module in the Configuration application",
+                successCriteria: "HBase Instances page is visible",
+                pageTitle: "Home | ServiceNow",
+            })?.id,
+        ).toBe("servicenow-module-navigation");
+        expect(
+            getSkillToolPolicy("servicenow-module-navigation")?.preferredTools,
+        ).toContain(ToolName.OPEN_SERVICENOW_MODULE);
+        expect(
+            getSkillToolPolicy("servicenow-module-navigation")?.discouragedTools,
+        ).toContain(ToolName.NAVIGATE);
+        expect(
+            resolveSkillToolProfile(
+                "servicenow-module-navigation",
+                "Navigate to the Database Instances > HBase module",
+                "HBase Instances page is visible",
+            ),
+        ).toBe("navigate");
     });
 
     test("matches paginated aggregate table scans", () => {

@@ -20,6 +20,7 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.SCROLL_PAGE,
   ToolName.READ_PAGE,
   ToolName.NAVIGATE,
+  ToolName.OPEN_SERVICENOW_MODULE,
   ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB,
   ToolName.SWITCH_TAB,

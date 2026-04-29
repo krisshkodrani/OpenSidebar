@@ -123,6 +123,40 @@ export const NAVIGATE_DEF: ToolDefinition = {
   },
 };
 
+export const OPEN_SERVICENOW_MODULE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.OPEN_SERVICENOW_MODULE,
+    description:
+      "Resolve and open a ServiceNow application module from ServiceNow metadata. For tasks like 'Navigate to the X > Y module of the Z application', call this before manual menu/search clicks or navigate(query).",
+    parameters: {
+      type: "object",
+      properties: {
+        application: {
+          type: "string",
+          description:
+            'Optional ServiceNow application name, e.g. "Configuration".',
+        },
+        path: {
+          type: "array",
+          description:
+            'Module path labels, with the target module as the last item, e.g. ["Database Instances", "HBase"].',
+          items: {
+            type: "string",
+            description: "One application navigator path label.",
+          },
+        },
+        run: {
+          type: "boolean",
+          description:
+            "Whether to navigate after resolving the target URL. Defaults to true.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+};
+
 export const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {

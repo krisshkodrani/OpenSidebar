@@ -50,6 +50,16 @@ export function formatStepLabel(
       }
       return "Navigate";
     }
+    case ToolName.OPEN_SERVICENOW_MODULE: {
+      const application = args.application as string | undefined;
+      const path = Array.isArray(args.path)
+        ? args.path.map(String).filter(Boolean)
+        : [];
+      const target = path.length ? path.join(" > ") : "module";
+      return application
+        ? `Open ServiceNow module ${application} > ${target}`
+        : `Open ServiceNow module ${target}`;
+    }
     case ToolName.CLICK_ELEMENT:
       return `Click ${el(args.id)}`;
     case ToolName.TYPE_TEXT: {

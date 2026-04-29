@@ -460,6 +460,40 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
+    id: "servicenow-module-navigation",
+    name: "ServiceNow Module Navigation",
+    description:
+      "Resolve and open ServiceNow application navigator modules by metadata instead of manual menu or global search exploration.",
+    tags: ["workflow", "servicenow", "navigation", "module"],
+    triggers: [
+      "ServiceNow module",
+      "application navigator",
+      "navigate to the module",
+      "module of the application",
+      "module in the application",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "open_servicenow_module",
+      "read_page",
+      "done",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "navigate",
+      "type_text",
+      "press_key",
+      "scroll_page",
+      "click_coordinates",
+    ],
+    contextScope: "turn",
+    verifierMode: "deterministic",
+    notes: [
+      "Use ServiceNow module metadata before manual application navigator clicks.",
+      "Do not call navigate with a search query inside ServiceNow.",
+    ],
+  },
+  {
     id: "structured-form-fill",
     name: "Structured Form Fill",
     description:
@@ -947,6 +981,47 @@ const SKILL_BODIES: Record<
       ],
       completionChecks: [
         "A request/order/cart confirmation exists after submission.",
+      ],
+    },
+  },
+  "servicenow-module-navigation": {
+    procedureMarkdown: [
+      "1. Parse the requested ServiceNow application name and module path from the task.",
+      "2. Call open_servicenow_module with the application when named and the path labels in order, ending with the target module.",
+      "3. Treat ServiceNow home, global search, or Configuration Hub as intermediate states, not completion.",
+      "4. If open_servicenow_module cannot resolve confidently, use its candidate diagnostics to choose the closest module or fall back to visible navigator controls.",
+      "5. Call done only after the resolved module URL, title, list heading, or tool output proves the target module is open.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Requested ServiceNow application or module path",
+      "Resolved module target URL or page evidence",
+      "Current ServiceNow page matches the requested module",
+    ],
+    commonFailures: [
+      {
+        signal: "navigate(query=...) is blocked or opens external search",
+        recovery:
+          "call open_servicenow_module from the current ServiceNow origin instead",
+      },
+      {
+        signal: "spending turns in ServiceNow home/global search",
+        recovery:
+          "extract the application and path labels and resolve the module directly",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Resolve the module with open_servicenow_module, then verify the resulting ServiceNow page.",
+      ],
+      toolDiscipline: [
+        "Prefer open_servicenow_module before manual navigator clicks or search text entry.",
+        "Do not use navigate with query for ServiceNow module lookup.",
+      ],
+      completionChecks: [
+        "The current page or tool output identifies the requested ServiceNow module target.",
+      ],
+      failureRecovery: [
+        "Use candidate diagnostics from open_servicenow_module before falling back to UI navigation.",
       ],
     },
   },
@@ -1883,6 +1958,8 @@ const listSortPattern =
   /\b(sort|order by|ascending|descending|sort column|sort [^.\n]{0,80}list|sort [^.\n]{0,80}table)\b/i;
 const catalogOrderPattern =
   /\b(service catalog|catalog item|request item|standard laptop|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog)\b/i;
+const serviceNowModuleNavigationPattern =
+  /\b(service\s*now|servicenow|application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module)\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
 const configuratorPattern =
@@ -2007,6 +2084,10 @@ export function resolveSkillToolProfile(
 
   if (descriptor.id === "catalog-order-workflow") {
     return "full";
+  }
+
+  if (descriptor.id === "servicenow-module-navigation") {
+    return "navigate";
   }
 
   if (
@@ -2293,6 +2374,17 @@ export function selectPrimarySkill(input: {
       id: "catalog-order-workflow",
       reason:
         "Task requires configuring and ordering a catalog item through request or order confirmation.",
+    };
+  }
+
+  if (
+    serviceNowModuleNavigationPattern.test(corpus) &&
+    /\b(module|application navigator|service\s*now|servicenow)\b/i.test(corpus)
+  ) {
+    return {
+      id: "servicenow-module-navigation",
+      reason:
+        "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
     };
   }
 
