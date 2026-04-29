@@ -179,6 +179,514 @@ describe("Tool Registration", () => {
     });
   });
 
+  test("open_servicenow_module resolves and opens a ServiceNow module", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: {
+                value: "45a4f1329f1221001e021a1cf67fcfe5",
+                display_value: "45a4f1329f1221001e021a1cf67fcfe5",
+              },
+              title: { value: "HBase", display_value: "HBase" },
+              application: {
+                value: "app1",
+                display_value: "Configuration",
+              },
+              name: {
+                value: "cmdb_ci_db_hbase_instance",
+                display_value: "cmdb_ci_db_hbase_instance",
+              },
+              table: {
+                value: "cmdb_ci_db_hbase_instance",
+                display_value: "cmdb_ci_db_hbase_instance",
+              },
+              link_type: { value: "LIST", display_value: "List" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/now/table/sys_app_module?"),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Opened ServiceNow module.");
+    expect(result).toContain("Application: Configuration");
+    expect(result).toContain("Module: HBase");
+    expect(result).toContain(`Target URL: ${targetUrl}`);
+  });
+
+  test("open_servicenow_module can resolve without navigating", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: { value: "abc123", display_value: "abc123" },
+              title: { value: "Problems", display_value: "Problems" },
+              application: { value: "app1", display_value: "Problem" },
+              table: { value: "problem", display_value: "problem" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+    const result = await toolRegistry.execute(
+      {
+        id: "resolve-module",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Problem",
+            path: ["Problems"],
+            run: false,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
+    expect(result).toContain("Resolved ServiceNow module.");
+    expect(result).toContain("Target URL:");
+  });
+
+  test("open_servicenow_module falls back to page ServiceNow lookup when background lookup is unauthorized", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    let fetchCount = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      fetchCount++;
+      if (fetchCount === 1) {
+        return new Response("", { status: 401 });
+      }
+      return new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: {
+                value: "45a4f1329f1221001e021a1cf67fcfe5",
+                display_value: "45a4f1329f1221001e021a1cf67fcfe5",
+              },
+              title: { value: "HBase", display_value: "HBase" },
+              application: {
+                value: "app1",
+                display_value: "Configuration",
+              },
+              table: {
+                value: "cmdb_ci_db_hbase_instance",
+                display_value: "cmdb_ci_db_hbase_instance",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+      if (details.args?.[0] === "sys_app_module") {
+        return [{ result: await details.func(...details.args), frameId: 0 }];
+      }
+      return [
+        {
+          frameId: 0,
+          result: { ok: false, reason: "navigator_candidate_not_found" },
+        },
+      ];
+    });
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-page-fallback",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(fetchCount).toBe(2);
+    expect(chrome.scripting.executeScript).toHaveBeenCalled();
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Opened ServiceNow module.");
+    expect(result).toContain("Application: Configuration");
+  });
+
+  test("open_servicenow_module falls back to navigator search when metadata lookup is unavailable", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    document.body.innerHTML = `
+      <button aria-label="All" aria-expanded="true">All</button>
+      <nav>
+        <section>Configuration Database Instances
+          <a href="${target}">HBase</a>
+        </section>
+      </nav>
+    `;
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+      if (details.args?.[0] === "sys_app_module") {
+        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+      }
+      return [{ frameId: 0, result: await details.func(...details.args) }];
+    });
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-navigator-fallback",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.scripting.executeScript).toHaveBeenCalled();
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain(
+      "Opened ServiceNow module via navigator fallback.",
+    );
+    expect(result).toContain("Winning path: navigator_href");
+    expect(result).toContain("Navigator query: existing navigator");
+    expect(result).toContain("Metadata:");
+    expect(result).toContain("Navigator:");
+  });
+
+  test("open_servicenow_module uses an already-open ServiceNow navigator module href", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+    document.body.innerHTML = `
+      <button aria-label="All" aria-expanded="true">All</button>
+      <input aria-label="Search" placeholder="Search" />
+      <div id="servicenow-nav-host"></div>
+    `;
+    const host = document.querySelector("#servicenow-nav-host") as HTMLElement;
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <input aria-label="Filter" placeholder="Filter" />
+      <nav>
+        <section>Configuration Database Instances
+          <a href="${target}">HBase</a>
+        </section>
+      </nav>
+    `;
+    const allButton = document.querySelector("button") as HTMLButtonElement;
+    const hbaseLink = shadow.querySelector("a") as HTMLAnchorElement;
+    const allClick = vi.fn();
+    const hbaseClick = vi.fn((event: Event) => event.preventDefault());
+    allButton.addEventListener("click", allClick);
+    hbaseLink.addEventListener("click", hbaseClick);
+
+    let scriptCalls = 0;
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+      scriptCalls++;
+      if (details.args?.[0] === "sys_app_module") {
+        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+      }
+      return [{ frameId: 0, result: await details.func(...details.args) }];
+    });
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-open-navigator-fallback",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.scripting.executeScript).toHaveBeenCalled();
+    expect(allClick).not.toHaveBeenCalled();
+    expect(hbaseClick).not.toHaveBeenCalled();
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain(
+      "Opened ServiceNow module via navigator fallback.",
+    );
+    expect(result).toContain("Navigator query: existing navigator");
+  });
+
+  test("open_servicenow_module commits navigator when metadata is slow", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise<Response>((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                new Response(JSON.stringify({ result: [] }), {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                }),
+              ),
+            100,
+          ),
+        ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    document.body.innerHTML = `
+      <button aria-label="All" aria-expanded="true">All</button>
+      <nav>
+        <section>Configuration Database Instances
+          <a href="${target}">HBase</a>
+        </section>
+      </nav>
+    `;
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-fast-navigator",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Winning path: navigator_href");
+    expect(result).toContain("Metadata: pending");
+  });
+
+  test("open_servicenow_module commits metadata when it resolves before navigator", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: {
+                value: "45a4f1329f1221001e021a1cf67fcfe5",
+                display_value: "45a4f1329f1221001e021a1cf67fcfe5",
+              },
+              title: { value: "HBase", display_value: "HBase" },
+              application: {
+                value: "app1",
+                display_value: "Configuration",
+              },
+              table: {
+                value: "cmdb_ci_db_hbase_instance",
+                display_value: "cmdb_ci_db_hbase_instance",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve([
+                {
+                  frameId: 0,
+                  result: {
+                    ok: false,
+                    reason: "navigator_candidate_not_found",
+                  },
+                },
+              ]),
+            100,
+          ),
+        ),
+    );
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-fast-metadata",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Winning path: metadata");
+    expect(result).toContain("Navigator: pending");
+  });
+
+  test("open_servicenow_module rejects non-ServiceNow origins", async () => {
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://example.com/start",
+      title: "Start",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({ path: ["HBase"] }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("not_servicenow_origin");
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
+  });
+
+  test("open_servicenow_module returns candidate diagnostics when unresolved", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: { value: "abc123", display_value: "abc123" },
+              title: { value: "Incidents", display_value: "Incidents" },
+              application: { value: "app1", display_value: "Incident" },
+              table: { value: "incident", display_value: "incident" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({ path: ["Missing Module"] }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("no_confident_module_match");
+    expect(result).toContain("Top candidates:");
+    expect(result).toContain("Incident > Incidents");
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
+  });
+
   test("apply_list_filter navigates to the structured ServiceNow list query", async () => {
     const query =
       "caller_id=abc123^ORcategory=inquiry^ORstate=1^ORassigned_toISEMPTY";

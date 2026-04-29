@@ -50,6 +50,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
+  [ToolName.OPEN_SERVICENOW_MODULE]: {
+    risk: RiskLevel.HIGH,
+    domModifying: false,
+    sequential: true,
+    mutationSensitive: true,
+  },
   [ToolName.DONE]: {
     risk: RiskLevel.LOW,
     domModifying: false,
@@ -391,6 +397,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.FIND_ELEMENT,
     ToolName.SCROLL_PAGE,
     // Navigate
+    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.NAVIGATE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
@@ -470,6 +477,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.READ_PAGE,
     ToolName.SCROLL_PAGE,
     ToolName.CLICK_ELEMENT,
+    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.NAVIGATE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
@@ -517,6 +525,7 @@ export function buildDomAwareProfile(
     ToolName.WAIT,
     // Navigate — always available; agent may need go_back from any page
     ToolName.NAVIGATE,
+    ToolName.OPEN_SERVICENOW_MODULE,
     ToolName.GO_BACK,
     ToolName.CREATE_TAB,
     ToolName.SWITCH_TAB,

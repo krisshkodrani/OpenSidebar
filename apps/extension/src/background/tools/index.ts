@@ -19,6 +19,7 @@ import {
   SCROLL_PAGE_DEF,
   READ_PAGE_DEF,
   NAVIGATE_DEF,
+  OPEN_SERVICENOW_MODULE_DEF,
   CREATE_TAB_DEF,
   CLOSE_TAB_DEF,
   SWITCH_TAB_DEF,
@@ -193,6 +194,52 @@ type ServiceNowReferenceCandidate = {
   referenceTable: string;
 };
 
+type ServiceNowModuleRecord = {
+  sysId: string;
+  title: string;
+  application: string;
+  name: string;
+  table: string;
+  linkType: string;
+  targetHints: string[];
+  raw: Record<string, unknown>;
+};
+
+type ResolvedServiceNowModule = {
+  ok: true;
+  module: ServiceNowModuleRecord;
+  target: string;
+  targetUrl: string;
+  candidateCount: number;
+  score: number;
+  candidates: ServiceNowModuleRecord[];
+};
+
+type ServiceNowModuleResolutionFailure = {
+  ok: false;
+  reason: string;
+  candidateCount?: number;
+  candidates?: ServiceNowModuleRecord[];
+};
+
+type ServiceNowNavigatorCandidateResult =
+  | {
+      ok: true;
+      query: string;
+      candidateText: string;
+      href: string;
+      target: string | null;
+      targetUrl: string | null;
+      frameId: number;
+    }
+  | { ok: false; reason: string };
+
+type TimedServiceNowResult<T> = {
+  value?: T;
+  error?: string;
+  durationMs: number;
+};
+
 function parseServiceNowReferenceCandidate(
   status: string | undefined,
 ): ServiceNowReferenceCandidate | null {
@@ -227,6 +274,16 @@ function unwrapServiceNowFieldValue(fieldValue: unknown): string {
     const obj = fieldValue as Record<string, unknown>;
     if (typeof obj.value === "string") return obj.value;
     if (typeof obj.display_value === "string") return obj.display_value;
+  }
+  return "";
+}
+
+function unwrapServiceNowDisplayValue(fieldValue: unknown): string {
+  if (typeof fieldValue === "string") return fieldValue;
+  if (fieldValue && typeof fieldValue === "object") {
+    const obj = fieldValue as Record<string, unknown>;
+    if (typeof obj.display_value === "string") return obj.display_value;
+    if (typeof obj.value === "string") return obj.value;
   }
   return "";
 }
@@ -288,6 +345,1008 @@ function commonServiceNowReferenceTableForField(
     location: "cmn_location",
   };
   return commonReferences[key] ?? commonReferences[compactKey] ?? null;
+}
+
+function isServiceNowOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname.toLowerCase();
+    return host === "service-now.com" || host.endsWith(".service-now.com");
+  } catch {
+    return false;
+  }
+}
+
+function cleanServiceNowQueryValue(value: string): string {
+  return value.replace(/\^/g, "").trim();
+}
+
+function shouldRetryServiceNowLookupInPage(reason: string): boolean {
+  return (
+    reason === "lookup_http_401" ||
+    reason === "lookup_http_403" ||
+    /failed|network|abort|timeout/i.test(reason)
+  );
+}
+
+function parseServiceNowModuleRecord(
+  record: Record<string, unknown>,
+): ServiceNowModuleRecord {
+  const title =
+    unwrapServiceNowDisplayValue(record.title) ||
+    unwrapServiceNowDisplayValue(record.sys_name) ||
+    unwrapServiceNowFieldValue(record.name);
+  const name = unwrapServiceNowFieldValue(record.name);
+  const application =
+    unwrapServiceNowDisplayValue(record.application) ||
+    unwrapServiceNowDisplayValue(record.menu) ||
+    unwrapServiceNowDisplayValue(record.sys_scope);
+  const targetHints = [
+    record.url,
+    record.link,
+    record.arguments,
+    record.query,
+    record.filter,
+    record.path,
+  ]
+    .map(unwrapServiceNowFieldValue)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    sysId: unwrapServiceNowFieldValue(record.sys_id),
+    title,
+    application,
+    name,
+    table: unwrapServiceNowFieldValue(record.table),
+    linkType: unwrapServiceNowDisplayValue(record.link_type),
+    targetHints,
+    raw: record,
+  };
+}
+
+function serviceNowMatchKey(value: string): string {
+  return normalizeServiceNowReferenceKey(value).replace(/_/g, "");
+}
+
+function stripServiceNowShellTarget(value: string): string {
+  const candidates = [value];
+  for (let i = 0; i < 2; i += 1) {
+    const latest = candidates[candidates.length - 1];
+    try {
+      const decoded = decodeURIComponent(latest);
+      if (decoded === latest) break;
+      candidates.push(decoded);
+    } catch {
+      break;
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      const targetMatch = /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(
+        parsed.pathname,
+      );
+      if (targetMatch?.[1]) {
+        return decodeURIComponent(targetMatch[1]) + parsed.search;
+      }
+      return `${parsed.pathname.replace(/^\/+/, "")}${parsed.search}`;
+    } catch {
+      const targetMatch = /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(
+        candidate,
+      );
+      if (targetMatch?.[1]) return decodeURIComponent(targetMatch[1]);
+    }
+  }
+  return value.replace(/^\/+/, "");
+}
+
+function candidateLooksLikeServiceNowTarget(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || /^javascript:/i.test(trimmed)) return false;
+  return (
+    /\.do(?:\?|$)/i.test(trimmed) ||
+    /^\$?[a-z0-9_]+(?:_list)?\.do(?:\?|$)/i.test(trimmed) ||
+    /^(?:kb|sp|catalog|com\.glideapp)\?/i.test(trimmed)
+  );
+}
+
+function buildServiceNowTargetUrlFromHref(
+  origin: string,
+  href: string,
+): { target: string; targetUrl: string } | null {
+  const target = stripServiceNowShellTarget(href).trim();
+  if (!candidateLooksLikeServiceNowTarget(target)) return null;
+  return {
+    target,
+    targetUrl: `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
+  };
+}
+
+function appendServiceNowModuleParam(target: string, sysId: string): string {
+  if (!sysId || /(?:^|[?&])sysparm_userpref_module=/i.test(target)) {
+    return target;
+  }
+  return `${target}${target.includes("?") ? "&" : "?"}sysparm_userpref_module=${encodeURIComponent(sysId)}`;
+}
+
+function buildServiceNowModuleTarget(
+  module: ServiceNowModuleRecord,
+): string | null {
+  for (const hint of module.targetHints) {
+    const target = stripServiceNowShellTarget(hint).trim();
+    if (candidateLooksLikeServiceNowTarget(target)) {
+      return appendServiceNowModuleParam(target, module.sysId);
+    }
+  }
+
+  const table =
+    module.table ||
+    (/^[a-z][a-z0-9_]*$/i.test(module.name) && module.name.includes("_")
+      ? module.name
+      : "");
+  if (!table) return null;
+  const target = table.endsWith(".do")
+    ? table
+    : table.endsWith("_list")
+      ? `${table}.do`
+      : `${table}_list.do`;
+  return appendServiceNowModuleParam(target, module.sysId);
+}
+
+function scoreServiceNowModuleCandidate(
+  module: ServiceNowModuleRecord,
+  application: string,
+  path: string[],
+  target: string | null,
+): number {
+  const leaf = path[path.length - 1] || "";
+  const leafKey = serviceNowMatchKey(leaf);
+  const titleKey = serviceNowMatchKey(module.title);
+  const nameKey = serviceNowMatchKey(module.name);
+  const appKey = serviceNowMatchKey(application);
+  const moduleAppKey = serviceNowMatchKey(module.application);
+  const searchableKey = serviceNowMatchKey(
+    [
+      module.title,
+      module.application,
+      module.name,
+      module.table,
+      module.linkType,
+      ...module.targetHints,
+    ].join(" "),
+  );
+
+  let score = 0;
+  if (titleKey === leafKey) score += 100;
+  else if (titleKey.includes(leafKey) || leafKey.includes(titleKey)) score += 55;
+  if (nameKey === leafKey) score += 25;
+  else if (nameKey.includes(leafKey)) score += 15;
+  if (appKey) {
+    if (moduleAppKey === appKey) score += 60;
+    else if (moduleAppKey.includes(appKey) || appKey.includes(moduleAppKey)) {
+      score += 25;
+    }
+  }
+  for (const segment of path.slice(0, -1)) {
+    const segmentKey = serviceNowMatchKey(segment);
+    if (segmentKey && searchableKey.includes(segmentKey)) score += 12;
+  }
+  if (target) score += 10;
+  return score;
+}
+
+function serviceNowModuleMatchesLeaf(
+  module: ServiceNowModuleRecord,
+  leaf: string,
+): boolean {
+  const leafKey = serviceNowMatchKey(leaf);
+  const titleKey = serviceNowMatchKey(module.title);
+  const nameKey = serviceNowMatchKey(module.name);
+  return (
+    titleKey === leafKey ||
+    titleKey.includes(leafKey) ||
+    leafKey.includes(titleKey) ||
+    nameKey === leafKey ||
+    nameKey.includes(leafKey)
+  );
+}
+
+async function getServiceNowTabOrigin(
+  tabId: number,
+): Promise<{ ok: true; origin: string } | { ok: false; reason: string }> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const origin = new URL(tab.url || "").origin;
+    if (!isServiceNowOrigin(origin)) {
+      return { ok: false, reason: "not_servicenow_origin" };
+    }
+    return { ok: true, origin };
+  } catch {
+    return { ok: false, reason: "missing_tab_origin" };
+  }
+}
+
+async function fetchServiceNowTableRecords(
+  origin: string,
+  table: string,
+  params: Record<string, string>,
+): Promise<Record<string, unknown>[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const search = new URLSearchParams(params);
+    const response = await fetch(
+      `${origin}/api/now/table/${encodeURIComponent(table)}?${search.toString()}`,
+      {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`lookup_http_${response.status}`);
+    }
+    const payload = await response.json().catch(() => null);
+    return Array.isArray(payload?.result) ? payload.result : [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchServiceNowTableRecordsFromPage(
+  tabId: number,
+  table: string,
+  params: Record<string, string>,
+): Promise<Record<string, unknown>[]> {
+  const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+  const inject = (frameId: number) =>
+    chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      world: "MAIN" as any,
+      func: async (
+        tableName: string,
+        requestParams: Record<string, string>,
+      ) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4_000);
+        try {
+          const search = new URLSearchParams(requestParams);
+          const url = new URL(
+            `/api/now/table/${encodeURIComponent(tableName)}?${search.toString()}`,
+            window.location.origin,
+          ).href;
+          const response = await fetch(
+            url,
+            {
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+              signal: controller.signal,
+            },
+          );
+          if (!response.ok) {
+            return { ok: false, reason: `lookup_http_${response.status}` };
+          }
+          const payload = await response.json().catch(() => null);
+          return {
+            ok: true,
+            records: Array.isArray(payload?.result) ? payload.result : [],
+          };
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") {
+            return { ok: false, reason: "lookup_timeout" };
+          }
+          return {
+            ok: false,
+            reason:
+              error instanceof Error && error.message
+                ? `lookup_failed:${error.message.slice(0, 80)}`
+                : "lookup_failed",
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      args: [table, params],
+    });
+
+  let lastReason = "lookup_failed";
+  for (const frameId of frameIds) {
+    const results = await Promise.race([
+      inject(frameId),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("ServiceNow table lookup timed out")),
+          5_000,
+        ),
+      ),
+    ]).catch(() => null);
+    for (const result of results ?? []) {
+      const value = result.result as
+        | { ok: true; records: Record<string, unknown>[] }
+        | { ok: false; reason: string }
+        | undefined;
+      if (!value) continue;
+      if (value.ok) return value.records;
+      if (!value.ok && typeof value.reason === "string") {
+        lastReason = value.reason;
+      }
+    }
+  }
+  throw new Error(lastReason);
+}
+
+async function prepareServiceNowNavigatorCandidate(
+  tabId: number,
+  origin: string,
+  application: string,
+  path: string[],
+): Promise<ServiceNowNavigatorCandidateResult> {
+  const leaf = path[path.length - 1] || "";
+  const searchValues = [
+    leaf,
+    path.join(" "),
+    application ? `${application} ${leaf}` : "",
+  ]
+    .map((value) => value.trim())
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+  if (!leaf || searchValues.length === 0) {
+    return { ok: false, reason: "empty_module_path" };
+  }
+
+  const runInFrame = (frameId: number) =>
+    chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      world: "MAIN" as any,
+      func: async (
+        appName: string,
+        modulePath: string[],
+        queries: string[],
+      ) => {
+        const delay = (ms: number) =>
+          new Promise((resolve) => setTimeout(resolve, ms));
+        const normalize = (value: string): string =>
+          value.replace(/\s+/g, " ").trim().toLowerCase();
+        const leafLabel = modulePath[modulePath.length - 1] || "";
+        const leafKey = normalize(leafLabel);
+        const appKey = normalize(appName);
+        const pathKeys = modulePath.map(normalize).filter(Boolean);
+        const view = window;
+
+        const isVisible = (node: Element): boolean => {
+          if (!node.isConnected) return false;
+          const style = view.getComputedStyle(node);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          ) {
+            return false;
+          }
+          const rect = node.getBoundingClientRect();
+          return (
+            rect.width > 0 ||
+            rect.height > 0 ||
+            Boolean(node.textContent?.trim())
+          );
+        };
+
+        const textOf = (node: Element): string =>
+          [
+            node.textContent ?? "",
+            node.getAttribute("aria-label") ?? "",
+            node.getAttribute("title") ?? "",
+          ]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        const queryAllDeep = (selector: string): Element[] => {
+          const found: Element[] = [];
+          const visit = (root: ParentNode) => {
+            const nodes = Array.from(root.querySelectorAll(selector));
+            found.push(...nodes);
+            for (const node of Array.from(root.querySelectorAll("*"))) {
+              if (node instanceof HTMLElement && node.shadowRoot) {
+                visit(node.shadowRoot);
+              }
+            }
+          };
+          visit(document);
+          return found;
+        };
+
+        const dispatchPointerClick = (node: HTMLElement) => {
+          node.scrollIntoView?.({ block: "center", inline: "center" });
+          const rect = node.getBoundingClientRect();
+          const mouseInit: MouseEventInit = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            view,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+            button: 0,
+          };
+          try {
+            node.dispatchEvent(
+              new view.PointerEvent("pointerdown", {
+                ...mouseInit,
+                pointerId: 1,
+                pointerType: "mouse",
+                isPrimary: true,
+                buttons: 1,
+              }),
+            );
+          } catch {
+            // PointerEvent is optional in some page contexts.
+          }
+          node.dispatchEvent(
+            new view.MouseEvent("mousedown", { ...mouseInit, buttons: 1 }),
+          );
+          try {
+            node.dispatchEvent(
+              new view.PointerEvent("pointerup", {
+                ...mouseInit,
+                pointerId: 1,
+                pointerType: "mouse",
+                isPrimary: true,
+                buttons: 0,
+              }),
+            );
+          } catch {
+            // PointerEvent is optional in some page contexts.
+          }
+          node.dispatchEvent(new view.MouseEvent("mouseup", mouseInit));
+          node.click();
+        };
+
+        const clickableSelector =
+          'a,button,[role="button"],[role="menuitem"],[role="link"]';
+        const findAllButton = (): HTMLElement | null => {
+          for (const node of queryAllDeep(clickableSelector)) {
+            if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
+            const text = normalize(textOf(node));
+            if (text === "all" || text.startsWith("all ")) return node;
+          }
+          return null;
+        };
+
+        const findFilterInput = (): HTMLInputElement | null => {
+          const inputs = queryAllDeep("input").filter(
+            (node): node is HTMLInputElement =>
+              node instanceof HTMLInputElement && isVisible(node),
+          );
+          const score = (input: HTMLInputElement): number => {
+            const blob = normalize(
+              [
+                input.placeholder,
+                input.getAttribute("aria-label") ?? "",
+                input.id,
+                input.name,
+                input.getAttribute("role") ?? "",
+              ].join(" "),
+            );
+            let value = 0;
+            if (blob.includes("filter")) value += 100;
+            if (blob.includes("menu")) value += 35;
+            if (blob.includes("search")) value += 20;
+            if (input.type === "search") value += 10;
+            return value;
+          };
+          const ranked = inputs
+            .map((input) => ({ input, score: score(input) }))
+            .sort((a, b) => b.score - a.score);
+          const best = ranked[0];
+          return best && best.score >= 50 ? best.input : null;
+        };
+
+        const waitForFilterInput =
+          async (): Promise<HTMLInputElement | null> => {
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+              const input = findFilterInput();
+              if (input) return input;
+              await delay(250);
+            }
+            return null;
+          };
+
+        const setInputValue = async (
+          input: HTMLInputElement,
+          nextValue: string,
+        ) => {
+          input.focus();
+          const setter = Object.getOwnPropertyDescriptor(
+            view.HTMLInputElement.prototype,
+            "value",
+          )?.set;
+          if (setter) setter.call(input, "");
+          else input.value = "";
+          input.dispatchEvent(
+            new view.InputEvent("input", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              inputType: "deleteContentBackward",
+            }),
+          );
+          for (const char of nextValue) {
+            input.dispatchEvent(
+              new view.KeyboardEvent("keydown", {
+                key: char,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+              }),
+            );
+            if (setter) setter.call(input, input.value + char);
+            else input.value += char;
+            input.dispatchEvent(
+              new view.InputEvent("input", {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                data: char,
+                inputType: "insertText",
+              }),
+            );
+            input.dispatchEvent(
+              new view.KeyboardEvent("keyup", {
+                key: char,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+              }),
+            );
+            await delay(10);
+          }
+          input.dispatchEvent(
+            new view.Event("change", { bubbles: true, composed: true }),
+          );
+        };
+
+        const candidateScore = (node: HTMLElement): number => {
+          const text = normalize(textOf(node));
+          if (!text || !leafKey || !text.includes(leafKey)) return 0;
+          const context = normalize(
+            [
+              text,
+              node.closest("li,div,section,nav")?.textContent ?? "",
+              node.parentElement?.textContent ?? "",
+            ].join(" "),
+          );
+          const href = node.getAttribute("href") ?? "";
+          const looksLikeModuleLink =
+            node.tagName.toLowerCase() === "a" &&
+            (/\.do(?:\?|$)/i.test(href) ||
+              href.includes("sysparm_userpref_module") ||
+              href.startsWith("$"));
+          const parentPathMatched = pathKeys
+            .slice(0, -1)
+            .some((segmentKey) => context.includes(segmentKey));
+          if (leafKey === "all" && !looksLikeModuleLink && !parentPathMatched) {
+            return 0;
+          }
+          let score = text === leafKey ? 120 : 60;
+          if (text.startsWith(leafKey)) score += 20;
+          if (looksLikeModuleLink) score += 25;
+          if (appKey && context.includes(appKey)) score += 30;
+          for (const segmentKey of pathKeys.slice(0, -1)) {
+            if (context.includes(segmentKey)) score += 15;
+          }
+          if (/view results|no exact match|filter|search/i.test(text)) {
+            score -= 80;
+          }
+          return score;
+        };
+
+        const findModuleCandidate = (): {
+          node: HTMLElement;
+          text: string;
+        } | null => {
+          let best: { node: HTMLElement; text: string; score: number } | null =
+            null;
+          for (const node of queryAllDeep(clickableSelector)) {
+            if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
+            const score = candidateScore(node);
+            if (score < 50) continue;
+            if (!best || score > best.score) {
+              best = { node, text: textOf(node), score };
+            }
+          }
+          return best ? { node: best.node, text: best.text } : null;
+        };
+
+        const waitForModuleCandidate = async (
+          timeoutMs: number,
+        ): Promise<{ node: HTMLElement; text: string } | null> => {
+          const deadline = Date.now() + timeoutMs;
+          do {
+            const candidate = findModuleCandidate();
+            if (candidate) return candidate;
+            await delay(250);
+          } while (Date.now() < deadline);
+          return null;
+        };
+
+        const returnCandidate = (
+          candidate: { node: HTMLElement; text: string },
+          query: string,
+        ) => {
+          const href =
+            candidate.node instanceof HTMLAnchorElement
+              ? candidate.node.getAttribute("href") || candidate.node.href || ""
+              : candidate.node.getAttribute("href") || "";
+          return {
+            ok: true,
+            query,
+            candidateText: candidate.text || leafLabel,
+            href,
+          };
+        };
+
+        const preExistingCandidate = await waitForModuleCandidate(500);
+        if (preExistingCandidate) {
+          return returnCandidate(preExistingCandidate, "existing navigator");
+        }
+
+        const allButton = findAllButton();
+        const navigatorAlreadyOpen =
+          Boolean(findFilterInput()) ||
+          allButton?.getAttribute("aria-expanded") === "true";
+        if (allButton && !navigatorAlreadyOpen) {
+          dispatchPointerClick(allButton);
+          await delay(1_500);
+        }
+
+        const openedCandidate = await waitForModuleCandidate(2_500);
+        if (openedCandidate) {
+          return returnCandidate(openedCandidate, "visible navigator");
+        }
+
+        for (const query of queries) {
+          const input = await waitForFilterInput();
+          if (input) {
+            await setInputValue(input, query);
+          }
+          const candidate = await waitForModuleCandidate(input ? 2_500 : 750);
+          if (candidate) {
+            return returnCandidate(candidate, query);
+          }
+        }
+
+        return { ok: false, reason: "navigator_candidate_not_found" };
+      },
+      args: [application, path, searchValues],
+    });
+
+  const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+  let lastReason = "navigator_script_failed";
+  for (const frameId of frameIds) {
+    const results = await runInFrame(frameId).catch(() => null);
+    const value = results?.[0]?.result as
+      | ({ ok: true; query: string; candidateText: string; href: string } | {
+          ok: false;
+          reason: string;
+        })
+      | undefined;
+    if (!value) {
+      lastReason = "navigator_script_failed";
+      continue;
+    }
+    if (!value.ok) {
+      lastReason = value.reason;
+      continue;
+    }
+
+    const target = buildServiceNowTargetUrlFromHref(origin, value.href);
+    return {
+      ok: true,
+      query: value.query,
+      candidateText: value.candidateText,
+      href: value.href,
+      target: target?.target ?? null,
+      targetUrl: target?.targetUrl ?? null,
+      frameId,
+    };
+  }
+
+  return { ok: false, reason: lastReason };
+}
+
+async function withServiceNowTiming<T>(
+  promise: Promise<T>,
+): Promise<TimedServiceNowResult<T>> {
+  const startedAt = Date.now();
+  try {
+    return {
+      value: await promise,
+      durationMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "failed",
+      durationMs: Date.now() - startedAt,
+    };
+  }
+}
+
+function formatServiceNowDuration(durationMs: number): string {
+  return `${Math.max(0, Math.round(durationMs))}ms`;
+}
+
+function summarizeServiceNowMetadataOutcome(
+  outcome: TimedServiceNowResult<
+    ResolvedServiceNowModule | ServiceNowModuleResolutionFailure
+  > | null,
+  startedAt: number,
+): string {
+  if (!outcome) {
+    return `Metadata: pending after ${formatServiceNowDuration(Date.now() - startedAt)}`;
+  }
+  if (outcome.error) {
+    return `Metadata: ${outcome.error} in ${formatServiceNowDuration(outcome.durationMs)}`;
+  }
+  const value = outcome.value;
+  if (!value) {
+    return `Metadata: no result in ${formatServiceNowDuration(outcome.durationMs)}`;
+  }
+  return value.ok
+    ? `Metadata: resolved ${value.module.title} in ${formatServiceNowDuration(outcome.durationMs)}`
+    : `Metadata: ${value.reason} in ${formatServiceNowDuration(outcome.durationMs)}`;
+}
+
+function summarizeServiceNowNavigatorOutcome(
+  outcome: TimedServiceNowResult<ServiceNowNavigatorCandidateResult> | null,
+  startedAt: number,
+): string {
+  if (!outcome) {
+    return `Navigator: pending after ${formatServiceNowDuration(Date.now() - startedAt)}`;
+  }
+  if (outcome.error) {
+    return `Navigator: ${outcome.error} in ${formatServiceNowDuration(outcome.durationMs)}`;
+  }
+  const value = outcome.value;
+  if (!value) {
+    return `Navigator: no result in ${formatServiceNowDuration(outcome.durationMs)}`;
+  }
+  return value.ok
+    ? `Navigator: candidate ${value.candidateText} via ${value.query} in ${formatServiceNowDuration(outcome.durationMs)}`
+    : `Navigator: ${value.reason} in ${formatServiceNowDuration(outcome.durationMs)}`;
+}
+
+async function commitResolvedServiceNowModule(
+  tabId: number,
+  resolved: ResolvedServiceNowModule,
+): Promise<void> {
+  clearTabReady(tabId);
+  await chrome.tabs.update(tabId, { url: resolved.targetUrl });
+  await waitForNavigation(tabId, 10_000);
+  await waitForContentScriptReady(tabId, 2_000);
+}
+
+async function commitServiceNowNavigatorCandidate(
+  tabId: number,
+  candidate: Extract<ServiceNowNavigatorCandidateResult, { ok: true }>,
+): Promise<"navigator_href" | "navigator_click" | "navigator_click_unavailable"> {
+  clearTabReady(tabId);
+  if (candidate.targetUrl) {
+    await chrome.tabs.update(tabId, { url: candidate.targetUrl });
+    await waitForNavigation(tabId, 10_000);
+    await waitForContentScriptReady(tabId, 2_000);
+    return "navigator_href";
+  }
+
+  const results = await chrome.scripting
+    .executeScript({
+      target: { tabId, frameIds: [candidate.frameId] },
+      world: "MAIN" as any,
+      func: (candidateText: string, candidateHref: string) => {
+        const normalize = (value: string): string =>
+          value.replace(/\s+/g, " ").trim().toLowerCase();
+        const targetText = normalize(candidateText);
+        const targetHref = candidateHref.trim();
+        const view = window;
+        const isVisible = (node: Element): boolean => {
+          if (!node.isConnected) return false;
+          const style = view.getComputedStyle(node);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          ) {
+            return false;
+          }
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 || rect.height > 0;
+        };
+        const textOf = (node: Element): string =>
+          [
+            node.textContent ?? "",
+            node.getAttribute("aria-label") ?? "",
+            node.getAttribute("title") ?? "",
+          ]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+        const queryAllDeep = (selector: string): Element[] => {
+          const found: Element[] = [];
+          const visit = (root: ParentNode) => {
+            found.push(...Array.from(root.querySelectorAll(selector)));
+            for (const node of Array.from(root.querySelectorAll("*"))) {
+              if (node instanceof HTMLElement && node.shadowRoot) {
+                visit(node.shadowRoot);
+              }
+            }
+          };
+          visit(document);
+          return found;
+        };
+        const click = (node: HTMLElement) => {
+          node.scrollIntoView?.({ block: "center", inline: "center" });
+          node.dispatchEvent(
+            new view.MouseEvent("mousedown", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            }),
+          );
+          node.dispatchEvent(
+            new view.MouseEvent("mouseup", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+            }),
+          );
+          node.click();
+        };
+        for (const node of queryAllDeep(
+          'a,button,[role="button"],[role="menuitem"],[role="link"]',
+        )) {
+          if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
+          const href = node.getAttribute("href") || "";
+          const text = normalize(textOf(node));
+          const hrefMatches = targetHref && href === targetHref;
+          const textMatches =
+            targetText && (text === targetText || text.includes(targetText));
+          if (hrefMatches || textMatches) {
+            click(node);
+            return true;
+          }
+        }
+        return false;
+      },
+      args: [candidate.candidateText, candidate.href],
+    })
+    .catch(() => null);
+  const clicked = Boolean(results?.[0]?.result);
+  if (!clicked) return "navigator_click_unavailable";
+  await waitForNavigation(tabId, 10_000);
+  await waitForContentScriptReady(tabId, 2_000);
+  return "navigator_click";
+}
+
+async function resolveServiceNowModule(
+  tabId: number,
+  application: string,
+  path: string[],
+  knownOrigin?: string,
+): Promise<ResolvedServiceNowModule | ServiceNowModuleResolutionFailure> {
+  let origin: string;
+  if (knownOrigin) {
+    origin = knownOrigin;
+  } else {
+    const originResult = await getServiceNowTabOrigin(tabId);
+    if (!originResult.ok) return originResult;
+    origin = originResult.origin;
+  }
+
+  const leaf = path[path.length - 1] || "";
+  const safeLeaf = cleanServiceNowQueryValue(leaf);
+  if (!safeLeaf) return { ok: false, reason: "empty_module_path" };
+
+  let records: Record<string, unknown>[] = [];
+  const lookupParams = {
+    sysparm_query: `titleLIKE${safeLeaf}^ORnameLIKE${safeLeaf}^ORsys_nameLIKE${safeLeaf}`,
+    sysparm_fields:
+      "sys_id,title,sys_name,application,menu,name,table,link_type,url,link,arguments,query,filter,path,sys_scope",
+    sysparm_limit: "100",
+    sysparm_display_value: "all",
+  };
+  try {
+    records = await fetchServiceNowTableRecords(
+      origin,
+      "sys_app_module",
+      lookupParams,
+    );
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "module_lookup_failed";
+    if (shouldRetryServiceNowLookupInPage(reason)) {
+      try {
+        records = await fetchServiceNowTableRecordsFromPage(
+          tabId,
+          "sys_app_module",
+          lookupParams,
+        );
+      } catch (pageError) {
+        return {
+          ok: false,
+          reason:
+            pageError instanceof Error ? pageError.message : "module_lookup_failed",
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        reason,
+      };
+    }
+  }
+
+  const modules = records
+    .map(parseServiceNowModuleRecord)
+    .filter((module) => module.sysId && module.title);
+  if (modules.length === 0) {
+    return { ok: false, reason: "no_matching_modules", candidateCount: 0 };
+  }
+
+  const ranked = modules
+    .map((module) => {
+      const target = buildServiceNowModuleTarget(module);
+      return {
+        module,
+        target,
+        score: scoreServiceNowModuleCandidate(
+          module,
+          application,
+          path,
+          target,
+        ),
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.module.title.length - b.module.title.length;
+    });
+
+  const selected = ranked.find(
+    (candidate) =>
+      candidate.target &&
+      candidate.score >= 65 &&
+      serviceNowModuleMatchesLeaf(candidate.module, leaf),
+  );
+  const candidates = ranked.slice(0, 8).map((candidate) => candidate.module);
+  if (!selected?.target) {
+    return {
+      ok: false,
+      reason: "no_confident_module_match",
+      candidateCount: modules.length,
+      candidates,
+    };
+  }
+
+  const targetUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(selected.target)}`;
+  return {
+    ok: true,
+    module: selected.module,
+    target: selected.target,
+    targetUrl,
+    candidateCount: modules.length,
+    score: selected.score,
+    candidates,
+  };
+}
+
+function summarizeServiceNowModuleCandidates(
+  candidates: ServiceNowModuleRecord[] | undefined,
+): string {
+  if (!candidates?.length) return "";
+  return candidates
+    .slice(0, 5)
+    .map((candidate) => {
+      const target = buildServiceNowModuleTarget(candidate) || "no target";
+      return `- ${candidate.application || "Unknown app"} > ${candidate.title} (${candidate.sysId}) -> ${target}`;
+    })
+    .join("\n");
 }
 
 async function resolveServiceNowReferenceFromBackground(
@@ -1523,12 +2582,22 @@ export function registerTools() {
             args.text,
           );
           let autocompleteReason: string | null = null;
-          if (
+          let shouldTryAutocomplete =
             !resolved.ok &&
             (resolved.reason === "lookup_http_401" ||
               resolved.reason === "lookup_failed" ||
-              resolved.reason === "lookup_timeout")
-          ) {
+              resolved.reason === "lookup_timeout");
+          if (!resolved.ok && resolved.reason === "lookup_http_401") {
+            const pageResolved = await resolveServiceNowReferenceFromPage(
+              tabId,
+              args,
+              serviceNowCandidate,
+              args.text,
+            );
+            resolved = pageResolved;
+            shouldTryAutocomplete = !resolved.ok;
+          }
+          if (!resolved.ok && shouldTryAutocomplete) {
             const selected =
               await selectServiceNowReferenceAutocompleteInMainWorld(
                 tabId,
@@ -1540,15 +2609,6 @@ export function registerTools() {
               return `${String(result)} (ServiceNow reference value committed)`;
             }
             autocompleteReason = selected.reason;
-          }
-          if (!resolved.ok && resolved.reason === "lookup_http_401") {
-            const pageResolved = await resolveServiceNowReferenceFromPage(
-              tabId,
-              args,
-              serviceNowCandidate,
-              args.text,
-            );
-            resolved = pageResolved;
           }
           if (resolved.ok) {
             const committed = await commitServiceNowReferenceInMainWorld(
@@ -1747,6 +2807,190 @@ export function registerTools() {
       await waitForNavigation(tabId);
       await waitForContentScriptReady(tabId, 2000);
       return `Navigated to ${target}. Page has loaded. Fresh page snapshot is available.`;
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.OPEN_SERVICENOW_MODULE,
+    OPEN_SERVICENOW_MODULE_DEF,
+    async (args, tabId) => {
+      const application =
+        typeof args.application === "string" ? args.application.trim() : "";
+      const path = Array.isArray(args.path)
+        ? args.path
+            .filter((segment): segment is string => typeof segment === "string")
+            .map((segment) => segment.trim())
+            .filter(Boolean)
+        : [];
+      const shouldRun = args.run !== false;
+
+      if (path.length === 0) {
+        return "Error: open_servicenow_module requires a non-empty path array.";
+      }
+
+      logger.info("tools", "open_servicenow_module", {
+        tabId,
+        application,
+        path,
+        shouldRun,
+      });
+
+      if (!shouldRun) {
+        const resolved = await resolveServiceNowModule(tabId, application, path);
+        if (!resolved.ok) {
+          const candidateLines = summarizeServiceNowModuleCandidates(
+            resolved.candidates,
+          );
+          return [
+            `Error: Could not resolve ServiceNow module (${resolved.reason}).`,
+            `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+            resolved.candidateCount !== undefined
+              ? `Candidate count: ${resolved.candidateCount}`
+              : "",
+            candidateLines ? `Top candidates:\n${candidateLines}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+
+        return [
+          "Resolved ServiceNow module.",
+          `Application: ${resolved.module.application || application || "unknown"}`,
+          `Module: ${resolved.module.title}`,
+          `Module sys_id: ${resolved.module.sysId}`,
+          `Target: ${resolved.target}`,
+          `Target URL: ${resolved.targetUrl}`,
+          `Candidate count: ${resolved.candidateCount}`,
+        ].join("\n");
+      }
+
+      const originResult = await getServiceNowTabOrigin(tabId);
+      if (!originResult.ok) {
+        return [
+          `Error: Could not resolve ServiceNow module (${originResult.reason}).`,
+          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+        ].join("\n");
+      }
+
+      const raceStartedAt = Date.now();
+      let metadataOutcome: TimedServiceNowResult<
+        ResolvedServiceNowModule | ServiceNowModuleResolutionFailure
+      > | null = null;
+      let navigatorOutcome: TimedServiceNowResult<ServiceNowNavigatorCandidateResult> | null =
+        null;
+      let metadataPending = true;
+      let navigatorPending = true;
+      let navigatorCommitFailure: string | null = null;
+      const metadataPromise = withServiceNowTiming(
+        resolveServiceNowModule(tabId, application, path, originResult.origin),
+      ).then((outcome) => ({ source: "metadata" as const, outcome }));
+      const navigatorPromise = withServiceNowTiming(
+        prepareServiceNowNavigatorCandidate(
+          tabId,
+          originResult.origin,
+          application,
+          path,
+        ),
+      ).then((outcome) => ({ source: "navigator" as const, outcome }));
+
+      while (metadataPending || navigatorPending) {
+        const next = await Promise.race(
+          [
+            metadataPending ? metadataPromise : null,
+            navigatorPending ? navigatorPromise : null,
+          ].filter(
+            (
+              promise,
+            ): promise is
+              | typeof metadataPromise
+              | typeof navigatorPromise => Boolean(promise),
+          ),
+        );
+
+        if (next.source === "metadata") {
+          metadataPending = false;
+          metadataOutcome = next.outcome;
+          const resolved = metadataOutcome.value;
+          if (resolved?.ok) {
+            await commitResolvedServiceNowModule(tabId, resolved);
+            return [
+              "Opened ServiceNow module.",
+              "Winning path: metadata",
+              `Application: ${resolved.module.application || application || "unknown"}`,
+              `Module: ${resolved.module.title}`,
+              `Module sys_id: ${resolved.module.sysId}`,
+              `Target: ${resolved.target}`,
+              `Target URL: ${resolved.targetUrl}`,
+              `Candidate count: ${resolved.candidateCount}`,
+              summarizeServiceNowMetadataOutcome(metadataOutcome, raceStartedAt),
+              summarizeServiceNowNavigatorOutcome(navigatorOutcome, raceStartedAt),
+            ].join("\n");
+          }
+          continue;
+        }
+
+        navigatorPending = false;
+        navigatorOutcome = next.outcome;
+        const candidate = navigatorOutcome.value;
+        if (candidate?.ok) {
+          try {
+            const commitPath = await commitServiceNowNavigatorCandidate(
+              tabId,
+              candidate,
+            );
+            if (commitPath !== "navigator_click_unavailable") {
+              return [
+                "Opened ServiceNow module via navigator fallback.",
+                `Winning path: ${commitPath}`,
+                `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+                `Navigator query: ${candidate.query}`,
+                `Candidate: ${candidate.candidateText}`,
+                candidate.target ? `Target: ${candidate.target}` : "",
+                candidate.targetUrl ? `Target URL: ${candidate.targetUrl}` : "",
+                summarizeServiceNowMetadataOutcome(
+                  metadataOutcome,
+                  raceStartedAt,
+                ),
+                summarizeServiceNowNavigatorOutcome(
+                  navigatorOutcome,
+                  raceStartedAt,
+                ),
+              ]
+                .filter(Boolean)
+                .join("\n");
+            }
+            navigatorCommitFailure = commitPath;
+          } catch (error) {
+            navigatorCommitFailure =
+              error instanceof Error ? error.message : "navigator_commit_failed";
+          }
+        }
+      }
+
+      const resolved = metadataOutcome?.value;
+      const candidateLines =
+        resolved && !resolved.ok
+          ? summarizeServiceNowModuleCandidates(resolved.candidates)
+          : "";
+      return [
+        `Error: Could not resolve ServiceNow module (${
+          resolved && !resolved.ok
+            ? resolved.reason
+            : metadataOutcome?.error || "metadata_unavailable"
+        }).`,
+        `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+        summarizeServiceNowMetadataOutcome(metadataOutcome, raceStartedAt),
+        summarizeServiceNowNavigatorOutcome(navigatorOutcome, raceStartedAt),
+        navigatorCommitFailure
+          ? `Navigator commit reason: ${navigatorCommitFailure}`
+          : "",
+        resolved && !resolved.ok && resolved.candidateCount !== undefined
+          ? `Candidate count: ${resolved.candidateCount}`
+          : "",
+        candidateLines ? `Top candidates:\n${candidateLines}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     },
   );
 
