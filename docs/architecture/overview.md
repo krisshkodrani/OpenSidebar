@@ -23,6 +23,7 @@ Side Panel <-> Service Worker <-> Content Script
 | Perception | `x-ai/grok-4.1-fast` |
 
 Models are configurable in Settings.
+Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_API_KEY`; the executor defaults to `mimo-v2-omni` and the planner defaults to `mimo-v2-pro`.
 
 ## Core Subsystems
 

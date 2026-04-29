@@ -11,6 +11,8 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 | Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Planning, rerouting, verification |
 | Perception | `x-ai/grok-4.1-fast` | OpenRouter | Visual grounding |
 
+Xiaomi MiMo can be selected as an agent provider with `XIAOMI_API_KEY`. In that mode, the executor uses `mimo-v2-omni` and planner choices are limited to curated MiMo V2 models.
+
 ## Runtime Capabilities
 
 - Single-step execution through the main agent loop.
