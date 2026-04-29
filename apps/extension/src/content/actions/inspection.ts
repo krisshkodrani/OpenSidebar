@@ -32,6 +32,100 @@ function readFormControlValue(el: Element): string | null {
   return null;
 }
 
+function getWindowMaxScroll(): number {
+  return Math.max(
+    0,
+    document.documentElement.scrollHeight - window.innerHeight,
+  );
+}
+
+function describeScrollContainer(el: HTMLElement): string {
+  const tag = el.tagName.toLowerCase();
+  const id = el.id ? `#${el.id}` : "";
+  const className =
+    typeof el.className === "string" && el.className.trim()
+      ? `.${el.className.trim().split(/\s+/).slice(0, 2).join(".")}`
+      : "";
+  const label =
+    el.getAttribute("aria-label") ||
+    el.getAttribute("role") ||
+    getVisibleText(el).slice(0, 40);
+  return `${tag}${id}${className}${label ? ` "${label}"` : ""}`.slice(0, 120);
+}
+
+function canScrollContainer(
+  el: HTMLElement,
+  direction: ScrollDirection | undefined,
+): boolean {
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  if (maxScroll <= 1) return false;
+  if (direction === ScrollDirection.UP || direction === ScrollDirection.TOP) {
+    return el.scrollTop > 1;
+  }
+  return el.scrollTop < maxScroll - 1;
+}
+
+function findBestScrollableContainer(
+  direction: ScrollDirection | undefined,
+): HTMLElement | null {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>("body *"),
+  );
+  let best: { el: HTMLElement; score: number } | null = null;
+
+  for (const el of candidates) {
+    if (!isHtmlElement(el) || !canScrollContainer(el, direction)) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    if (
+      rect.bottom < 0 ||
+      rect.top > window.innerHeight ||
+      rect.right < 0 ||
+      rect.left > window.innerWidth
+    ) {
+      continue;
+    }
+
+    const style = window.getComputedStyle(el);
+    const overflow = `${style.overflowY} ${style.overflow}`.toLowerCase();
+    const overflowScore = /\b(auto|scroll)\b/.test(overflow) ? 2 : 1;
+    const visibleHeight =
+      Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+    const score =
+      (el.scrollHeight - el.clientHeight) * overflowScore +
+      Math.max(0, visibleHeight);
+    if (!best || score > best.score) {
+      best = { el, score };
+    }
+  }
+
+  return best?.el ?? null;
+}
+
+function scrollContainer(
+  el: HTMLElement,
+  direction: ScrollDirection | undefined,
+  amount: number,
+): string {
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  switch (direction) {
+    case ScrollDirection.TOP:
+      el.scrollTop = 0;
+      break;
+    case ScrollDirection.BOTTOM:
+      el.scrollTop = maxScroll;
+      break;
+    case ScrollDirection.UP:
+      el.scrollTop = Math.max(0, el.scrollTop - amount);
+      break;
+    case ScrollDirection.DOWN:
+    default:
+      el.scrollTop = Math.min(maxScroll, el.scrollTop + amount);
+      break;
+  }
+  return `Scrolled nested container ${describeScrollContainer(el)} ${direction ?? "down"}. Position: ${el.scrollTop}/${maxScroll}`;
+}
+
 export function executeScroll(args: ScrollPageArgs): {
   success: boolean;
   result: string;
@@ -67,10 +161,27 @@ export function executeScroll(args: ScrollPageArgs): {
         navigated: false,
       };
     }
+    const beforeY = window.scrollY;
     window.scrollTo({ top: args.y, behavior: "instant" });
+    if (getWindowMaxScroll() <= 0 || window.scrollY === beforeY) {
+      const nested = findBestScrollableContainer(
+        args.y > 0 ? ScrollDirection.DOWN : ScrollDirection.TOP,
+      );
+      if (nested) {
+        nested.scrollTop = Math.min(
+          Math.max(0, args.y),
+          nested.scrollHeight - nested.clientHeight,
+        );
+        return {
+          success: true,
+          result: `Scrolled nested container ${describeScrollContainer(nested)} to y=${args.y}. Position: ${nested.scrollTop}/${nested.scrollHeight - nested.clientHeight}`,
+          navigated: false,
+        };
+      }
+    }
     return {
       success: true,
-      result: `Scrolled to y=${args.y}. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`,
+      result: `Scrolled to y=${args.y}. New position: ${window.scrollY}/${getWindowMaxScroll()}`,
       navigated: false,
     };
   }
@@ -123,6 +234,7 @@ export function executeScroll(args: ScrollPageArgs): {
     };
   }
 
+  const beforeY = window.scrollY;
   switch (args.direction) {
     case ScrollDirection.TOP:
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -141,11 +253,27 @@ export function executeScroll(args: ScrollPageArgs): {
       break;
   }
 
+  const windowMaxScroll = getWindowMaxScroll();
+  const windowDidNotMove = window.scrollY === beforeY;
+  if (
+    (windowMaxScroll <= 0 || windowDidNotMove) &&
+    args.direction !== ScrollDirection.TOP
+  ) {
+    const nested = findBestScrollableContainer(args.direction);
+    if (nested) {
+      return {
+        success: true,
+        result: scrollContainer(nested, args.direction, amount),
+        navigated: false,
+      };
+    }
+  }
+
   return {
     success: true,
     result: isAbsolute
-      ? `Scrolled to ${args.direction}. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`
-      : `Scrolled ${args.direction} by ${amount}px. New position: ${window.scrollY}/${document.documentElement.scrollHeight - window.innerHeight}`,
+      ? `Scrolled to ${args.direction}. New position: ${window.scrollY}/${windowMaxScroll}`
+      : `Scrolled ${args.direction} by ${amount}px. New position: ${window.scrollY}/${windowMaxScroll}`,
     navigated: false,
   };
 }
@@ -228,7 +356,9 @@ export function executeFindElement(args: {
   const isBadFindTarget = (el: Element | null): boolean => {
     if (!el) return true;
     const tag = el.tagName.toLowerCase();
-    return tag === "body" || tag === "html" || tag === "script" || tag === "style";
+    return (
+      tag === "body" || tag === "html" || tag === "script" || tag === "style"
+    );
   };
 
   const candidateText = (el: Element): string => {
@@ -310,10 +440,14 @@ export function executeFindElement(args: {
 
         const aRole = a.getAttribute("role") ?? "";
         const bRole = b.getAttribute("role") ?? "";
-        const aOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(aRole)
+        const aOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(
+          aRole,
+        )
           ? 1
           : 0;
-        const bOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(bRole)
+        const bOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(
+          bRole,
+        )
           ? 1
           : 0;
         if (aOptionLike !== bOptionLike) return bOptionLike - aOptionLike;
@@ -324,8 +458,12 @@ export function executeFindElement(args: {
 
   const findDeepInteractiveMatch = (): Element | null => {
     const normalizedQuery = query.trim().toLowerCase();
-    const candidates = querySelectorAllDeep(document, INTERACTIVE_SELECTORS)
-      .filter((el) => isElementVisible(el) && !el.closest('[aria-hidden="true"]'));
+    const candidates = querySelectorAllDeep(
+      document,
+      INTERACTIVE_SELECTORS,
+    ).filter(
+      (el) => isElementVisible(el) && !el.closest('[aria-hidden="true"]'),
+    );
 
     const exactMatches: Element[] = [];
     const partialMatches: Element[] = [];
@@ -366,7 +504,10 @@ export function executeFindElement(args: {
     }
     const tagId = addDynamicTag(matched);
     const tagName = matched.tagName.toLowerCase();
-    const context = truncateText(candidateText(matched) || getVisibleText(matched), 50);
+    const context = truncateText(
+      candidateText(matched) || getVisibleText(matched),
+      50,
+    );
     return {
       success: true,
       result: `Found "${query}" near [${tagId}] <${tagName}> "${context}". Use tag [${tagId}] to interact with it.`,
@@ -401,11 +542,13 @@ export function executeFindElement(args: {
 
   if (!anchorNode) {
     const deepMatch = returnDeepInteractiveMatch();
-    return deepMatch ?? {
-      success: true,
-      result: `Found "${query}" but could not locate its DOM node`,
-      navigated: false,
-    };
+    return (
+      deepMatch ?? {
+        success: true,
+        result: `Found "${query}" but could not locate its DOM node`,
+        navigated: false,
+      }
+    );
   }
 
   // Walk up from the text node to find the nearest interactive or semantic container
@@ -437,11 +580,13 @@ export function executeFindElement(args: {
 
   if (!matched || isBadFindTarget(matched)) {
     const deepMatch = returnDeepInteractiveMatch();
-    return deepMatch ?? {
-      success: true,
-      result: `Found "${query}" but could not locate a container element`,
-      navigated: false,
-    };
+    return (
+      deepMatch ?? {
+        success: true,
+        result: `Found "${query}" but could not locate a container element`,
+        navigated: false,
+      }
+    );
   }
 
   // Drill down: if matched is a non-interactive container (p, form, div, etc.),

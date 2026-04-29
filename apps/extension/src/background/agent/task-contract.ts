@@ -53,19 +53,27 @@ const CONVERSATIONAL_FILLERS = new Set([
 ]);
 
 function extractQuotedPhrases(text: string): string[] {
-  const phrases: string[] = [];
-  for (const match of text.matchAll(/"([^"]{0,120})"/g)) {
-    phrases.push(normalize(match[1] || ""));
-  }
-  for (const match of text.matchAll(/(^|[^\w])'([^']{0,120})'(?!\w)/g)) {
-    phrases.push(normalize(match[2] || ""));
-  }
+  const phrases = [
+    ...Array.from(text.matchAll(/"([^"]*)"/g), (match) =>
+      normalize(match[1] || ""),
+    ),
+    ...Array.from(text.matchAll(/(^|[^\w])'([^']*)'(?!\w)/g), (match) =>
+      normalize(match[2] || ""),
+    ),
+  ];
 
   return unique(
     phrases
       .filter((value) => value.length >= 2)
+      .filter((value) => value.length <= 120)
       .filter((value) => !looksLikeQuotedAnswerPrompt(value)),
   ).filter((value) => !CONVERSATIONAL_FILLERS.has(value));
+}
+
+function stripQuotedSpans(text: string): string {
+  return text
+    .replace(/"([^"]*)"/g, " ")
+    .replace(/(^|[^\w])'([^']*)'(?!\w)/g, "$1 ");
 }
 
 function looksLikeQuotedAnswerPrompt(value: string): boolean {
@@ -102,20 +110,19 @@ function extractFieldValuePairs(text: string): Array<{
     }
   }
 
-  return unique(
-    pairs.map((pair) => `${pair.field}\u0000${pair.value}`),
-  ).map((serialized) => {
-    const [field, value = ""] = serialized.split("\u0000");
-    return { field, value };
-  });
+  return unique(pairs.map((pair) => `${pair.field}\u0000${pair.value}`)).map(
+    (serialized) => {
+      const [field, value = ""] = serialized.split("\u0000");
+      return { field, value };
+    },
+  );
 }
 
 function isRecordFormCreationPrompt(text: string): boolean {
   return (
     /\b(create|add|open|start|submit)\b[^.\n]{0,80}\b(new\s+)?(record|incident|case|ticket|request|entry|form|item)\b/i.test(
       text,
-    ) ||
-    /\bcreate\s+a\s+new\b/i.test(text)
+    ) || /\bcreate\s+a\s+new\b/i.test(text)
   );
 }
 
@@ -125,7 +132,9 @@ function formatFieldValue(pair: { field: string; value: string }): string {
     : `${pair.field}=empty`;
 }
 
-function synthesizeFieldValueFormPlan(query: string): SynthesizedPlanStep[] | null {
+function synthesizeFieldValueFormPlan(
+  query: string,
+): SynthesizedPlanStep[] | null {
   const pairs = extractFieldValuePairs(query);
   if (pairs.length < 3 || !isRecordFormCreationPrompt(query)) return null;
 
@@ -450,7 +459,8 @@ export function buildTaskContract(query: string): TaskContract {
             (required) =>
               entity.includes(required) ||
               required.includes(entity) ||
-              entity.split(" ").slice(-1)[0] === required.split(" ").slice(-1)[0],
+              entity.split(" ").slice(-1)[0] ===
+                required.split(" ").slice(-1)[0],
           ),
         )
       : [];
@@ -461,7 +471,7 @@ export function buildTaskContract(query: string): TaskContract {
         query,
       ),
     requiredEntities: unique([...requiredEntities, ...broadEntities]),
-    requiredNumbers: extractLargeNumbers(query),
+    requiredNumbers: extractLargeNumbers(stripQuotedSpans(query)),
     requiredActionTargets: multiAction.targets,
     actionTargetDestination: multiAction.destination,
     returnTargets: extractReturnTargets(query),
@@ -472,7 +482,8 @@ export function buildTaskContract(query: string): TaskContract {
     requiresAggregateReport:
       Boolean(exhaustiveScope.label) && extractAggregateReportIntent(query),
     requiresSequentialDetailReview:
-      Boolean(exhaustiveScope.label) && extractSequentialDetailReviewIntent(query),
+      Boolean(exhaustiveScope.label) &&
+      extractSequentialDetailReviewIntent(query),
   };
 }
 
@@ -514,8 +525,8 @@ export function assessTaskContractCoverage(params: {
   );
   const missingReturnTarget = Boolean(
     params.requireReturnTarget &&
-      params.contract.returnTargets.length > 0 &&
-      !params.contract.returnTargets.some((target) => corpus.includes(target)),
+    params.contract.returnTargets.length > 0 &&
+    !params.contract.returnTargets.some((target) => corpus.includes(target)),
   );
   const exhaustiveLabel = params.contract.exhaustiveScopeLabel;
   const exhaustiveCount = params.contract.exhaustiveScopeCount;
@@ -537,8 +548,8 @@ export function assessTaskContractCoverage(params: {
     /\b(all|every|each|reviewed|checked|inspected|visited)\b/.test(corpus);
   const missingExhaustiveCoverage = Boolean(
     exhaustiveLabel &&
-      (!mentionsExhaustiveLabel ||
-        !(mentionsExhaustiveCount || mentionsExhaustiveMarker)),
+    (!mentionsExhaustiveLabel ||
+      !(mentionsExhaustiveCount || mentionsExhaustiveMarker)),
   );
   // Multi-return check: when "both"/"all N" is detected, ensure enough
   // distinct entities from the contract are present in the summary
@@ -616,7 +627,9 @@ export function repairPlanCoverage(params: {
   }
 
   const refreshedCorpus = normalize(
-    steps.map((step) => `${step.objective}\n${step.successCriteria}`).join("\n"),
+    steps
+      .map((step) => `${step.objective}\n${step.successCriteria}`)
+      .join("\n"),
   );
   const missingReportTargets = contract.reportTargets.filter(
     (target) => !refreshedCorpus.includes(target),
@@ -737,10 +750,7 @@ export function synthesizePlanFromTaskContract(
     });
   }
 
-  if (
-    steps.length === 0 &&
-    contract.requiredActionTargets.length >= 2
-  ) {
+  if (steps.length === 0 && contract.requiredActionTargets.length >= 2) {
     for (const target of contract.requiredActionTargets) {
       const destination = contract.actionTargetDestination;
       steps.push({
@@ -780,11 +790,12 @@ export function synthesizeBatchedExhaustivePlan(query: string): Array<{
     return null;
   }
 
-  const batchSize = contract.requiresSequentialDetailReview && count <= 12
-    ? 1
-    : contract.requiresSequentialDetailReview
-      ? 2
-      : Math.max(1, Math.ceil(count / Math.min(4, count)));
+  const batchSize =
+    contract.requiresSequentialDetailReview && count <= 12
+      ? 1
+      : contract.requiresSequentialDetailReview
+        ? 2
+        : Math.max(1, Math.ceil(count / Math.min(4, count)));
   const singular = singularizePhrase(label);
   const steps: Array<{
     objective: string;

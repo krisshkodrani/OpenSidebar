@@ -577,12 +577,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "blocking overlay",
     ],
     maturity: "candidate",
-    preferredTools: [
-      "read_page",
-      "click_element",
-      "press_key",
-      "read_element",
-    ],
+    preferredTools: ["read_page", "click_element", "press_key", "read_element"],
     discouragedTools: ["done", "navigate", "type_text", "dismiss_overlays"],
     contextScope: "turn",
     verifierMode: "hybrid",
@@ -667,11 +662,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "page through a directory or records table",
     ],
     maturity: "candidate",
-    preferredTools: [
-      "read_page",
-      "click_element",
-      "update_notes",
-    ],
+    preferredTools: ["read_page", "click_element", "update_notes"],
     discouragedTools: [
       "find_element",
       "read_element",
@@ -773,7 +764,10 @@ const SKILL_CATALOG: SkillDescriptor[] = [
   },
 ];
 
-const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescriptor>> = {
+const SKILL_BODIES: Record<
+  string,
+  Omit<LoadedSkillContract, keyof SkillDescriptor>
+> = {
   "chart-value-extraction": {
     procedureMarkdown: [
       "1. Identify the requested metric, category, series, or chart segment before interacting.",
@@ -792,20 +786,26 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "scrolling or hovering repeatedly without reading chart structure",
-        recovery: "call inspect_chart and target only the missing series or category",
+        signal:
+          "scrolling or hovering repeatedly without reading chart structure",
+        recovery:
+          "call inspect_chart and target only the missing series or category",
       },
       {
-        signal: "clicking chart/report controls changes the report URL or opens editor/drilldown state",
-        recovery: "return to the stable report/dashboard view and extract from read-only chart/page evidence",
+        signal:
+          "clicking chart/report controls changes the report URL or opens editor/drilldown state",
+        recovery:
+          "return to the stable report/dashboard view and extract from read-only chart/page evidence",
       },
       {
         signal: "ending after reaching the chart page without a value",
         recovery: "extract a concrete value before done()",
       },
       {
-        signal: "final answer includes supporting numbers such as count, total, axis range, or timestamp for a single-value question",
-        recovery: "answer again with only the requested numeric chart value and unit",
+        signal:
+          "final answer includes supporting numbers such as count, total, axis range, or timestamp for a single-value question",
+        recovery:
+          "answer again with only the requested numeric chart value and unit",
       },
     ],
     executionContract: {
@@ -844,9 +844,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       },
     ],
     executionContract: {
-      sequencing: [
-        "Search, read the result, extract the fact, then answer.",
-      ],
+      sequencing: ["Search, read the result, extract the fact, then answer."],
       completionChecks: [
         "The final answer contains the requested fact or states that it was not found after grounded search.",
       ],
@@ -899,17 +897,18 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "scrolling the list without changing sort state",
-        recovery: "use apply_list_sort with the requested fields and directions before trying manual headers",
+        recovery:
+          "use apply_list_sort with the requested fields and directions before trying manual headers",
       },
       {
-        signal: "opening personalization or column configuration while trying to sort",
-        recovery: "close the configuration surface and apply the sort as query/list state",
+        signal:
+          "opening personalization or column configuration while trying to sort",
+        recovery:
+          "close the configuration surface and apply the sort as query/list state",
       },
     ],
     executionContract: {
-      sequencing: [
-        "Inspect table, apply sort, verify sort state.",
-      ],
+      sequencing: ["Inspect table, apply sort, verify sort state."],
       toolDiscipline: [
         "Use apply_list_sort before column-header, personalization, or list-menu clicks for explicit sort requests.",
       ],
@@ -970,15 +969,19 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "clicking the trigger instead of hovering it first",
-        recovery: "re-ground the page and use hover before attempting the revealed target",
+        recovery:
+          "re-ground the page and use hover before attempting the revealed target",
       },
       {
-        signal: "assuming the hover succeeded without verifying the revealed UI",
+        signal:
+          "assuming the hover succeeded without verifying the revealed UI",
         recovery: "read the revealed area before the next action",
       },
       {
-        signal: "continuing to inspect the revealed UI after the needed value is already known",
-        recovery: "capture the value once, then move directly into the downstream action that depends on it",
+        signal:
+          "continuing to inspect the revealed UI after the needed value is already known",
+        recovery:
+          "capture the value once, then move directly into the downstream action that depends on it",
       },
     ],
     executionContract: {
@@ -1015,12 +1018,15 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "continuing exploratory behavior after repeated non-progressing turns",
-        recovery: "consolidate facts, narrow the target, and stop blind retries",
+        signal:
+          "continuing exploratory behavior after repeated non-progressing turns",
+        recovery:
+          "consolidate facts, narrow the target, and stop blind retries",
       },
       {
         signal: "spending final turns without new information",
-        recovery: "switch to conservation mode and report the smallest unresolved step",
+        recovery:
+          "switch to conservation mode and report the smallest unresolved step",
       },
     ],
   },
@@ -1128,23 +1134,30 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "reply is composed before reading the source email",
-        recovery: "read the email and rebuild the reply checklist before editing the draft",
+        recovery:
+          "read the email and rebuild the reply checklist before editing the draft",
       },
       {
-        signal: "reply changes language, tone, dates, owners, or commitments without support",
-        recovery: "revise the draft against the source email and remove unsupported claims",
+        signal:
+          "reply changes language, tone, dates, owners, or commitments without support",
+        recovery:
+          "revise the draft against the source email and remove unsupported claims",
       },
       {
         signal: "send action is attempted when the task only asked for a draft",
         recovery: "leave the reply as a draft and do not click send",
       },
       {
-        signal: "task asks to reply/respond/confirm to a sender but completion happens with only a draft",
-        recovery: "verify the recipient and draft, then click the visible Send button",
+        signal:
+          "task asks to reply/respond/confirm to a sender but completion happens with only a draft",
+        recovery:
+          "verify the recipient and draft, then click the visible Send button",
       },
       {
-        signal: "send was clicked but no sent/list/thread/toast feedback was checked",
-        recovery: "read the resulting page and verify concrete send feedback before calling done",
+        signal:
+          "send was clicked but no sent/list/thread/toast feedback was checked",
+        recovery:
+          "read the resulting page and verify concrete send feedback before calling done",
       },
     ],
     executionContract: {
@@ -1192,20 +1205,27 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "message answers the user request but not the thread's actual question",
-        recovery: "re-read the latest relevant messages and revise around the unresolved question",
+        signal:
+          "message answers the user request but not the thread's actual question",
+        recovery:
+          "re-read the latest relevant messages and revise around the unresolved question",
       },
       {
         signal: "message is posted to the wrong channel, thread, or recipient",
-        recovery: "stop further posting, re-ground on the intended thread, and report uncertainty if it cannot be repaired",
+        recovery:
+          "stop further posting, re-ground on the intended thread, and report uncertainty if it cannot be repaired",
       },
       {
-        signal: "reply changes language or formality in a way that clashes with the thread",
-        recovery: "revise to match the observed thread language and tone unless the user requested a different style",
+        signal:
+          "reply changes language or formality in a way that clashes with the thread",
+        recovery:
+          "revise to match the observed thread language and tone unless the user requested a different style",
       },
       {
-        signal: "post was clicked but no new-message, list, toast, or composer-cleared feedback was checked",
-        recovery: "read the resulting thread state and verify the post landed before calling done",
+        signal:
+          "post was clicked but no new-message, list, toast, or composer-cleared feedback was checked",
+        recovery:
+          "read the resulting thread state and verify the post landed before calling done",
       },
     ],
     executionContract: {
@@ -1252,24 +1272,31 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "status or priority is changed without reading the ticket issue",
-        recovery: "re-read ticket context and correct fields before saving further changes",
+        signal:
+          "status or priority is changed without reading the ticket issue",
+        recovery:
+          "re-read ticket context and correct fields before saving further changes",
       },
       {
-        signal: "internal note is generic or omits available impact/account/next-step context",
+        signal:
+          "internal note is generic or omits available impact/account/next-step context",
         recovery: "revise the note using visible ticket facts before posting",
       },
       {
         signal: "escalation was requested but only status was changed",
-        recovery: "look for escalation, priority, severity, or SLA fields; if priority is the available control, set it to Urgent when justified by customer impact",
+        recovery:
+          "look for escalation, priority, severity, or SLA fields; if priority is the available control, set it to Urgent when justified by customer impact",
       },
       {
-        signal: "status or priority dropdown was opened but the selected value was not verified",
-        recovery: "re-read the field label/value after choosing the option and before saving",
+        signal:
+          "status or priority dropdown was opened but the selected value was not verified",
+        recovery:
+          "re-read the field label/value after choosing the option and before saving",
       },
       {
         signal: "unrequested ticket fields are modified",
-        recovery: "restore unrelated fields when possible and limit changes to the requested scope",
+        recovery:
+          "restore unrelated fields when possible and limit changes to the requested scope",
       },
     ],
     executionContract: {
@@ -1301,9 +1328,11 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "4. Prefer the returned profile values as the source of truth for name, email, and address fields.",
       "5. Stay on the current form unless the page itself shows that login or authentication is required.",
       "6. Fill fields one by one without submitting early.",
-      "7. Re-check required fields and validation messages before submission.",
-      "8. For product configurators or option forms, re-read the derived total, price, or summary after option changes before submission or completion.",
-      "9. Submit only when all requested values are present and no obvious validation blocker remains.",
+      "7. Preserve quoted literals exactly, including punctuation, pipes, slashes, spacing, and long command strings.",
+      '8. For textarea or long literal fields, verify the live value with read_element(attribute="value") or read_page evidence before submission.',
+      "9. Re-check required fields and validation messages before submission.",
+      "10. For product configurators or option forms, re-read the derived total, price, or summary after option changes before submission or completion.",
+      "11. Submit only when all requested values are present and no obvious validation blocker remains.",
     ].join("\n"),
     requiredEvidence: [
       "Field mapping for requested values",
@@ -1330,6 +1359,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       toolDiscipline: [
         "Use get_profile_fields for exact saved-profile values when the task calls for them.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
+        'Use read_element(attribute="value") for filled textareas or long exact literals when read_page evidence is ambiguous.',
         "For configurators, use read_page after option changes to verify the derived total or summary.",
       ],
       completionChecks: [
@@ -1363,15 +1393,19 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "typing into an inline editor but never committing the change",
-        recovery: "commit explicitly with Enter, Tab, or the page's apply action before calling done",
+        recovery:
+          "commit explicitly with Enter, Tab, or the page's apply action before calling done",
       },
       {
-        signal: "falling back to coordinate clicks while tagged targets are still available",
-        recovery: "re-ground the page and use the tagged cell, row, or rename target directly",
+        signal:
+          "falling back to coordinate clicks while tagged targets are still available",
+        recovery:
+          "re-ground the page and use the tagged cell, row, or rename target directly",
       },
       {
         signal: "calling done while the editor input is still active",
-        recovery: "commit the edit, then verify the value is visible in the committed page state",
+        recovery:
+          "commit the edit, then verify the value is visible in the committed page state",
       },
     ],
     executionContract: {
@@ -1409,7 +1443,8 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "overwriting stable prior constraints",
-        recovery: "re-read the current artifact and apply only the requested delta",
+        recovery:
+          "re-read the current artifact and apply only the requested delta",
       },
       {
         signal: "re-drafting from scratch instead of revising",
@@ -1486,15 +1521,19 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "calling done after dismissing only one of multiple overlays",
-        recovery: "re-read the page and dismiss remaining overlays before calling done",
+        recovery:
+          "re-read the page and dismiss remaining overlays before calling done",
       },
       {
         signal: "clicking stale element IDs after an overlay is removed",
-        recovery: "re-read the page to get fresh element tags after each dismissal",
+        recovery:
+          "re-read the page to get fresh element tags after each dismissal",
       },
       {
-        signal: "assuming dismiss_overlays handled all overlays without re-reading",
-        recovery: "always re-read after dismiss_overlays to verify and detect remaining overlays",
+        signal:
+          "assuming dismiss_overlays handled all overlays without re-reading",
+        recovery:
+          "always re-read after dismiss_overlays to verify and detect remaining overlays",
       },
     ],
     executionContract: {
@@ -1534,15 +1573,20 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     commonFailures: [
       {
         signal: "navigating back without capturing the needed fact first",
-        recovery: "store the extracted fact in notes before leaving the target page",
+        recovery:
+          "store the extracted fact in notes before leaving the target page",
       },
       {
-        signal: "forgetting to verify the return page matches the expected origin",
-        recovery: "read the page after returning and confirm the URL or content matches",
+        signal:
+          "forgetting to verify the return page matches the expected origin",
+        recovery:
+          "read the page after returning and confirm the URL or content matches",
       },
       {
-        signal: "over-decomposing the round trip into too many intermediate steps",
-        recovery: "combine navigate and read into a bounded step where possible",
+        signal:
+          "over-decomposing the round trip into too many intermediate steps",
+        recovery:
+          "combine navigate and read into a bounded step where possible",
       },
     ],
     executionContract: {
@@ -1580,16 +1624,22 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "browsing or comparing unrelated products after the target item is already visible",
-        recovery: "buy the requested item immediately and stop exploratory shopping behavior",
+        signal:
+          "browsing or comparing unrelated products after the target item is already visible",
+        recovery:
+          "buy the requested item immediately and stop exploratory shopping behavior",
       },
       {
-        signal: "returning to the checklist before purchase confirmation exists",
-        recovery: "stay on the store tab until the purchase is visibly confirmed, then return",
+        signal:
+          "returning to the checklist before purchase confirmation exists",
+        recovery:
+          "stay on the store tab until the purchase is visibly confirmed, then return",
       },
       {
-        signal: "using browser-history navigation between source and store tabs",
-        recovery: "use create_tab and switch_tab so the source checklist tab remains stable",
+        signal:
+          "using browser-history navigation between source and store tabs",
+        recovery:
+          "use create_tab and switch_tab so the source checklist tab remains stable",
       },
     ],
     executionContract: {
@@ -1632,16 +1682,22 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "answering from the first visible page when pagination shows more rows exist",
-        recovery: "reject the answer, update notes with the visible range, and continue to the next unscanned page",
+        signal:
+          "answering from the first visible page when pagination shows more rows exist",
+        recovery:
+          "reject the answer, update notes with the visible range, and continue to the next unscanned page",
       },
       {
-        signal: "using find_element to search for a page number or value in a paginated table",
-        recovery: "use the visible Next control or the next sequential page-number button and update notes with the covered range",
+        signal:
+          "using find_element to search for a page number or value in a paginated table",
+        recovery:
+          "use the visible Next control or the next sequential page-number button and update notes with the covered range",
       },
       {
-        signal: "losing the current best candidate after a replan or page change",
-        recovery: "restore the candidate and seen ranges from notes before continuing the scan",
+        signal:
+          "losing the current best candidate after a replan or page change",
+        recovery:
+          "restore the candidate and seen ranges from notes before continuing the scan",
       },
     ],
     executionContract: {
@@ -1684,16 +1740,21 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "answering from a similar row without verifying the exact target identity",
-        recovery: "re-read the visible row labels and continue searching until the exact target is visible",
+        signal:
+          "answering from a similar row without verifying the exact target identity",
+        recovery:
+          "re-read the visible row labels and continue searching until the exact target is visible",
       },
       {
-        signal: "clicking page numbers or pagination controls repeatedly without tracking coverage",
-        recovery: "use the visible Next control sequentially and update notes with searched ranges",
+        signal:
+          "clicking page numbers or pagination controls repeatedly without tracking coverage",
+        recovery:
+          "use the visible Next control sequentially and update notes with searched ranges",
       },
       {
         signal: "manual pagination begins while a search/filter box is visible",
-        recovery: "use the search/filter control first for the exact target text",
+        recovery:
+          "use the search/filter control first for the exact target text",
       },
     ],
     executionContract: {
@@ -1738,20 +1799,27 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
     ],
     commonFailures: [
       {
-        signal: "reading or inspecting list buttons instead of clicking visible tagged actions",
-        recovery: "use the tagged View Details or Open button directly when it is already visible",
+        signal:
+          "reading or inspecting list buttons instead of clicking visible tagged actions",
+        recovery:
+          "use the tagged View Details or Open button directly when it is already visible",
       },
       {
         signal: "remaining on the detail page after capturing the needed facts",
-        recovery: "use the page's own back or return control immediately once the required facts are stored",
+        recovery:
+          "use the page's own back or return control immediately once the required facts are stored",
       },
       {
-        signal: "re-reading the full list page between every item without using the visible next action",
-        recovery: "continue directly to the next tagged list action when the list is already visible",
+        signal:
+          "re-reading the full list page between every item without using the visible next action",
+        recovery:
+          "continue directly to the next tagged list action when the list is already visible",
       },
       {
-        signal: "the same list item is opened more than once without new user intent",
-        recovery: "restore the checklist from notes and move to the next pending item",
+        signal:
+          "the same list item is opened more than once without new user intent",
+        recovery:
+          "restore the checklist from notes and move to the next pending item",
       },
     ],
     executionContract: {
@@ -1792,8 +1860,7 @@ const continuationArtifactPattern =
   /\b(draft|reply|tone|email|message|copy|text|wording|paragraph|sentence)\b/i;
 const continuationRevisionPattern =
   /\b(change|revise|rewrite|edit|one more change|previous draft|current draft|make (?:it|the tone)|keep the rest|preserve)\b/i;
-const gridEditPattern =
-  /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
+const gridEditPattern = /\b(spreadsheet|grid|cell|row|column|sheet|table)\b/i;
 const inlineEditPattern =
   /\b(rename|inline edit|inline rename|change .* value|update .* value|replace .* value|edit .* cell|rename .* to|filename|file name|document name|table cell|grid cell)\b/i;
 const cartPattern =
@@ -1849,7 +1916,9 @@ const overlayRecoveryPattern =
 
 function buildCorpus(parts: Array<string | undefined>): string {
   return parts
-    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .filter(
+      (part): part is string => typeof part === "string" && part.length > 0,
+    )
     .join("\n")
     .toLowerCase();
 }
@@ -1858,9 +1927,7 @@ export function listSkillDescriptors(): SkillDescriptor[] {
   return SKILL_CATALOG.map((skill) => ({ ...skill }));
 }
 
-export function getSkillDescriptor(
-  id: string,
-): SkillDescriptor | undefined {
+export function getSkillDescriptor(id: string): SkillDescriptor | undefined {
   return SKILL_CATALOG.find((skill) => skill.id === id);
 }
 
@@ -1887,9 +1954,7 @@ function normalizeSkillTools(tools?: string[]): ToolName[] {
   );
 }
 
-export function getSkillToolPolicy(
-  id?: string,
-): SkillToolPolicy | null {
+export function getSkillToolPolicy(id?: string): SkillToolPolicy | null {
   const descriptor = getSkillDescriptor(id || "");
   if (!descriptor) return null;
   return {
@@ -1914,9 +1979,7 @@ function hasCommunicationWriteIntent(text: string): boolean {
     /\b(reply|email|e-mail|message|comment|response)\b[^.\n]{0,80}\bdraft\b/i.test(
       text,
     ) ||
-    /\bwrite\b[^.\n]{0,60}\b(message|comment|reply|response)\b/i.test(
-      text,
-    )
+    /\bwrite\b[^.\n]{0,60}\b(message|comment|reply|response)\b/i.test(text)
   );
 }
 
@@ -2186,10 +2249,7 @@ export function selectPrimarySkill(input: {
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
 
-  if (
-    chartValuePattern.test(corpus) &&
-    chartValueIntentPattern.test(corpus)
-  ) {
+  if (chartValuePattern.test(corpus) && chartValueIntentPattern.test(corpus)) {
     return {
       id: "chart-value-extraction",
       reason:
@@ -2296,7 +2356,8 @@ export function selectPrimarySkill(input: {
   if (currentStepLooksLikeContinuationRevision) {
     return {
       id: "continuation-edit",
-      reason: "Task requests revising prior work while preserving earlier intent.",
+      reason:
+        "Task requests revising prior work while preserving earlier intent.",
     };
   }
 
@@ -2332,7 +2393,8 @@ export function selectPrimarySkill(input: {
   ) {
     return {
       id: "continuation-edit",
-      reason: "Task requests revising prior work while preserving earlier intent.",
+      reason:
+        "Task requests revising prior work while preserving earlier intent.",
     };
   }
 
@@ -2372,10 +2434,9 @@ export function selectPrimarySkill(input: {
   if (explicitListDetailLoop || naturalListDetailRecommendation) {
     return {
       id: "list-detail-review-loop",
-      reason:
-        explicitListDetailLoop
-          ? "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence."
-          : "Task requires reviewing visible list items and grounding a recommendation in item-level detail facts.",
+      reason: explicitListDetailLoop
+        ? "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence."
+        : "Task requires reviewing visible list items and grounding a recommendation in item-level detail facts.",
     };
   }
 
@@ -2418,7 +2479,9 @@ export function selectPrimarySkill(input: {
 
   if (
     profileFieldPattern.test(stepCorpus) &&
-    /\b(fill|checkout|form|field|name|email|submit|place order)\b/i.test(stepCorpus)
+    /\b(fill|checkout|form|field|name|email|submit|place order)\b/i.test(
+      stepCorpus,
+    )
   ) {
     return {
       id: "structured-form-fill",

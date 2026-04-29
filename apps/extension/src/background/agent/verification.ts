@@ -247,7 +247,10 @@ export interface WorkflowDoneGuardResult {
 }
 
 function normalizeWorkflowGuardText(value: unknown): string {
-  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function workflowSkillOrQueryMatches(
@@ -257,6 +260,41 @@ function workflowSkillOrQueryMatches(
   pattern: RegExp,
 ): boolean {
   return selectedSkillId === skillId || pattern.test(queryText);
+}
+
+function extractStandaloneNumericTokens(text: string): string[] {
+  const tokens: string[] = [];
+  const numberPattern =
+    /(^|[^a-z0-9])((?:[$]\s*)?\d[\d,]*(?:\.\d+)?%?)(?![a-z0-9])/gi;
+  for (const match of text.matchAll(numberPattern)) {
+    const token = (match[2] || "").replace(/\s+/g, "");
+    if (token) tokens.push(token);
+  }
+  return tokens;
+}
+
+function chartQueryExpectsSingleNumericAnswer(queryText: string): boolean {
+  const asksForMultipleNumericValues =
+    /\b(?:both|two|three|all|each|every|multiple)\b[^.]{0,50}\b(?:numbers|values|counts|percentages|percents|metrics)\b/.test(
+      queryText,
+    ) ||
+    /\b(?:numbers|values|counts|percentages|percents|metrics)\b[^.]{0,50}\b(?:both|two|three|all|each|every|multiple)\b/.test(
+      queryText,
+    ) ||
+    /\bcompare\b[^.]{0,80}\b(?:numbers|values|counts|percentages|percents|metrics)\b/.test(
+      queryText,
+    );
+  if (asksForMultipleNumericValues) return false;
+
+  return (
+    /\bwhat\s+is\s+(?:the\s+)?(?:value|count|percentage|percent)\b/.test(
+      queryText,
+    ) ||
+    /\b(?:maximum|minimum|highest|lowest|largest|smallest)\s+(?:value|count|percentage|percent|number)\b/.test(
+      queryText,
+    ) ||
+    /\bgive\s+me\s+both\s+the\s+label\s+and\s+the\s+count\b/.test(queryText)
+  );
 }
 
 /**
@@ -300,6 +338,17 @@ export function assessWorkflowDoneGuard(
           "Chart value task requires a concrete extracted value before completion.",
       };
     }
+    const numericTokens = extractStandaloneNumericTokens(summary);
+    if (
+      chartQueryExpectsSingleNumericAnswer(queryText) &&
+      numericTokens.length > 1
+    ) {
+      return {
+        blocked: true,
+        reason:
+          "Chart value task asks for one numeric answer; remove supporting counts, totals, axis ranges, timestamps, and tie details before completion.",
+      };
+    }
   }
 
   const searchActive = workflowSkillOrQueryMatches(
@@ -319,8 +368,7 @@ export function assessWorkflowDoneGuard(
     const hasAnswer =
       /\b(answer|answer is|states?|says|according to|the requested|final answer)\b/.test(
         summary,
-      ) &&
-      !/\b(no answer|without an answer|not answered)\b/.test(summary);
+      ) && !/\b(no answer|without an answer|not answered)\b/.test(summary);
     if (searchInterim && !hasAnswer) {
       return {
         blocked: true,
