@@ -62,13 +62,14 @@ function uniqueCandidates(
 
   for (const entry of entries) {
     if (!entry.url) continue;
-    const variants = [
-      { source: entry.source, url: entry.url },
-      {
-        source: `${entry.source}:canonical`,
-        url: canonicalizeClassicServiceNowUrl(entry.url),
-      },
-    ];
+    const canonicalUrl = canonicalizeClassicServiceNowUrl(entry.url);
+    const variants =
+      canonicalUrl === entry.url
+        ? [{ source: entry.source, url: entry.url }]
+        : [
+            { source: `${entry.source}:canonical`, url: canonicalUrl },
+            { source: entry.source, url: entry.url },
+          ];
     for (const variant of variants) {
       if (!parseUrl(variant.url) || seen.has(variant.url)) continue;
       seen.add(variant.url);
@@ -112,7 +113,12 @@ export function selectValidationUrl(input: {
       reason = "origin_mismatch";
     } else {
       const candidatePath = workArenaUrlPath(entry.url);
-      if (expectedPath && (!candidatePath || !candidatePath.includes(expectedPath))) {
+      const isFinalOpenSidebarUrl = entry.source.startsWith("finalOpenSidebarUrl");
+      if (
+        !isFinalOpenSidebarUrl &&
+        expectedPath &&
+        (!candidatePath || !candidatePath.includes(expectedPath))
+      ) {
         reason = "path_mismatch";
       }
     }
