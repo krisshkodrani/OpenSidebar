@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import "../setup";
 import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
@@ -35,6 +35,10 @@ beforeEach(() => {
         return { payload: { result: "ok", success: true } };
     });
     (chrome.storage.sync as any).get = vi.fn(async () => ({ userSettings: {} }));
+});
+
+afterEach(() => {
+    vi.restoreAllMocks();
 });
 
 describe("Tool Registration", () => {
@@ -157,6 +161,233 @@ describe("Tool Registration", () => {
         });
     });
 
+    test("apply_list_filter navigates to the structured ServiceNow list query", async () => {
+        const query = "caller_id=abc123^ORcategory=inquiry^ORstate=1^ORassigned_toISEMPTY";
+        const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+        const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    result: [
+                        {
+                            sys_id: { value: "abc123", display_value: "abc123" },
+                            name: { value: "Margaret Grey", display_value: "Margaret Grey" },
+                            first_name: { value: "Margaret", display_value: "Margaret" },
+                            last_name: { value: "Grey", display_value: "Grey" },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { "content-type": "application/json" } },
+            ),
+        );
+        (chrome.tabs as any).get = vi.fn(async () => ({
+            id: 123,
+            url: "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do",
+            title: "Incidents | ServiceNow",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).update = vi.fn(async () => ({}));
+        (chrome.scripting.executeScript as any) = vi.fn(async () => [
+            {
+                frameId: 9,
+                result: {
+                    ok: true,
+                    platform: "servicenow",
+                    table: "incident",
+                    query,
+                    targetUrl,
+                    conditions: [
+                        {
+                            label: "Caller",
+                            field: "caller_id",
+                            operator: "is",
+                            displayValue: "Margaret Grey",
+                            predicate: "caller_id=abc123",
+                        },
+                        {
+                            label: "Assigned to",
+                            field: "assigned_to",
+                            operator: "is empty",
+                            displayValue: "",
+                            predicate: "assigned_toISEMPTY",
+                        },
+                    ],
+                },
+            },
+        ]);
+
+        const result = await toolRegistry.execute(
+            {
+                id: "apply-filter",
+                type: "function",
+                function: {
+                    name: ToolName.APPLY_LIST_FILTER,
+                    arguments: JSON.stringify({
+                        join: "OR",
+                        conditions: [
+                            { field: "Caller", operator: "is", value: "Margaret Grey" },
+                            { field: "Assigned to", operator: "is", value: "" },
+                        ],
+                    }),
+                },
+            },
+            123,
+        );
+
+        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+            expect.objectContaining({
+                target: { tabId: 123, allFrames: true },
+                world: "MAIN",
+                args: [
+                    expect.objectContaining({
+                        table: "incident",
+                        referenceValueOverrides: [
+                            expect.objectContaining({
+                                field: "Caller",
+                                referenceTable: "sys_user",
+                                displayValue: "Margaret Grey",
+                                sysId: "abc123",
+                            }),
+                        ],
+                    }),
+                ],
+            }),
+        );
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringContaining("/api/now/table/sys_user?"),
+            expect.objectContaining({ credentials: "include" }),
+        );
+        expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+        expect(result).toContain("Applied incident list filter.");
+        expect(result).toContain(`sysparm_query=${query}`);
+    });
+
+    test("apply_list_sort navigates to the structured ServiceNow list sort query", async () => {
+        const query = "ORDERBYDESCnumber^ORDERBYDESCcalendar_duration";
+        const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+        const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+        (chrome.tabs as any).get = vi.fn(async () => ({
+            id: 123,
+            url: "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do",
+            title: "Incidents | ServiceNow",
+            groupId: -1,
+        }));
+        (chrome.tabs as any).update = vi.fn(async () => ({}));
+        (chrome.scripting.executeScript as any) = vi.fn(async () => [
+            {
+                frameId: 9,
+                result: {
+                    ok: true,
+                    platform: "servicenow",
+                    table: "incident",
+                    query,
+                    targetUrl,
+                    sorts: [
+                        {
+                            label: "Number",
+                            field: "number",
+                            direction: "desc",
+                            predicate: "ORDERBYDESCnumber",
+                        },
+                        {
+                            label: "Duration",
+                            field: "calendar_duration",
+                            direction: "desc",
+                            predicate: "ORDERBYDESCcalendar_duration",
+                        },
+                    ],
+                },
+            },
+        ]);
+
+        const result = await toolRegistry.execute(
+            {
+                id: "apply-sort",
+                type: "function",
+                function: {
+                    name: ToolName.APPLY_LIST_SORT,
+                    arguments: JSON.stringify({
+                        sorts: [
+                            { field: "Number", direction: "descending" },
+                            { field: "Duration", direction: "descending" },
+                        ],
+                    }),
+                },
+            },
+            123,
+        );
+
+        expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+            expect.objectContaining({
+                target: { tabId: 123, allFrames: true },
+                world: "MAIN",
+                args: [
+                    expect.objectContaining({
+                        table: "incident",
+                        sorts: [
+                            { field: "Number", direction: "descending" },
+                            { field: "Duration", direction: "descending" },
+                        ],
+                    }),
+                ],
+            }),
+        );
+        expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+        expect(result).toContain("Applied incident list sorting.");
+        expect(result).toContain(`sysparm_query=${query}`);
+        expect(result).toContain("ORDERBYDESCcalendar_duration");
+    });
+
+    test("inspect_chart reports Highcharts point counts and percentages", async () => {
+        const originalHighcharts = (window as any).Highcharts;
+        (window as any).Highcharts = {
+            charts: [
+                {
+                    title: { textStr: "Incidents by category" },
+                    options: { chart: { type: "bar" } },
+                    xAxis: [{ categories: ["Software", "(empty)"] }],
+                    series: [
+                        {
+                            name: "Incident",
+                            points: [
+                                { category: "Software", x: 0, y: 63, percent: 94.02985074626866 },
+                                { category: "(empty)", x: 1, y: 4, percent: 5.970149253731343 },
+                            ],
+                        },
+                    ],
+                    getDataRows: () => [
+                        ["Category", "Count", "Percent"],
+                        ["Software", 63, 94.02985074626866],
+                        ["(empty)", 4, 5.970149253731343],
+                    ],
+                },
+            ],
+        };
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "inspect-chart",
+                    type: "function",
+                    function: {
+                        name: ToolName.INSPECT_CHART,
+                        arguments: JSON.stringify({ pattern: "(empty)" }),
+                    },
+                },
+                123,
+            );
+
+            expect(result).toContain("(empty)");
+            expect(result).toContain("count=4");
+            expect(result).toContain("percent=5.970149253731343");
+        } finally {
+            (window as any).Highcharts = originalHighcharts;
+        }
+    });
+
     test("create_tab blocks off-origin URL when allowed origins are set", async () => {
         (chrome.storage.sync as any).get = vi.fn(async () => ({
             userSettings: {
@@ -218,7 +449,7 @@ describe("Tool Registration", () => {
         expect(hide!.function.parameters.properties.id.type).toBe("integer");
     });
 
-    test("scroll_page tool has y param and optional id/direction", () => {
+    test("scroll_page tool has y param and optional id/direction/amount", () => {
         const defs = toolRegistry.getDefinitions();
         const scroll = defs.find(d => d.function.name === ToolName.SCROLL_PAGE);
         expect(scroll).toBeDefined();
@@ -227,6 +458,8 @@ describe("Tool Registration", () => {
         expect(scroll!.function.parameters.properties.y).toBeDefined();
         expect(scroll!.function.parameters.properties.y.type).toBe("integer");
         expect(scroll!.function.parameters.properties.direction).toBeDefined();
+        expect(scroll!.function.parameters.properties.amount).toBeDefined();
+        expect(scroll!.function.parameters.properties.amount.type).toBe("integer");
         expect(scroll!.function.parameters.properties.id).toBeDefined();
         expect(scroll!.function.parameters.properties.id.type).toBe("integer");
     });
@@ -410,11 +643,411 @@ describe("Tool Registration", () => {
         expect(result).toBe("ok");
         expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
             expect.objectContaining({
-                target: { tabId: 123 },
+                target: { tabId: 123, frameIds: [0] },
                 world: "MAIN",
                 args: ["7", "hello"],
             }),
         );
+    });
+
+    test("type_text does not main-world mirror autocomplete reference inputs", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="customer_lookup"
+                name="customer_lookup"
+                role="combobox"
+                value="existing"
+            />
+        `;
+        const input = document.querySelector("input") as HTMLInputElement;
+        input.value = "existing";
+        const inputEvents: string[] = [];
+        input.addEventListener("input", () => inputEvents.push(input.value));
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+            await details.func(...details.args);
+            return [{ result: undefined }];
+        });
+
+        const result = await toolRegistry.execute(
+            {
+                id: "tool-type-reference-main",
+                type: "function",
+                function: {
+                    name: ToolName.TYPE_TEXT,
+                    arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                },
+            } as any,
+            123,
+        );
+
+        expect(result).toBe("ok");
+        expect(input.value).toBe("existing");
+        expect(inputEvents).toEqual([]);
+    });
+
+    test("type_text commits ServiceNow reference inputs through g_form", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+        `;
+        const input = document.querySelector("[data-os-tag='7']") as HTMLInputElement;
+        const hidden = document.getElementById("incident.caller_id") as HTMLInputElement;
+        const originalFetch = globalThis.fetch;
+        const originalGForm = (window as any).g_form;
+        const setValue = vi.fn((_field: string, sysId: string, display: string) => {
+            hidden.value = sysId;
+            input.value = display;
+        });
+        (window as any).g_form = {
+            getGlideUIElement: () => ({ reference: "sys_user" }),
+            setValue,
+        };
+        globalThis.fetch = vi.fn(async () =>
+            new Response(
+                JSON.stringify({
+                    result: [{ sys_id: "abc123", name: "Joe Employee" }],
+                }),
+                {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                },
+            ),
+        ) as any;
+        const originalGetAllFrames = (chrome.webNavigation as any).getAllFrames;
+        (chrome.webNavigation as any).getAllFrames = vi.fn((_details: any, cb: any) =>
+            cb([{ frameId: 0 }, { frameId: 9 }]),
+        );
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+            if (details.target.frameIds?.[0] === 9) {
+                return [{ result: await details.func(...details.args), frameId: 9 }];
+            }
+            return [{ result: undefined, frameId: 0 }];
+        });
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe("ok (ServiceNow reference value committed)");
+            expect(setValue).toHaveBeenCalledWith("caller_id", "abc123", "Joe Employee");
+            expect(hidden.value).toBe("abc123");
+            expect(input.value).toBe("Joe Employee");
+            expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    target: { tabId: 123, frameIds: [9] },
+                    world: "MAIN",
+                }),
+            );
+        } finally {
+            globalThis.fetch = originalFetch;
+            (window as any).g_form = originalGForm;
+            (chrome.webNavigation as any).getAllFrames = originalGetAllFrames;
+        }
+    });
+
+    test("type_text commits ServiceNow reference inputs through hidden sys_id field without g_form", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+        `;
+        const input = document.querySelector("[data-os-tag='7']") as HTMLInputElement;
+        const hidden = document.getElementById("incident.caller_id") as HTMLInputElement;
+        const originalFetch = globalThis.fetch;
+        const originalGForm = (window as any).g_form;
+        (window as any).g_form = undefined;
+        globalThis.fetch = vi.fn(async () =>
+            new Response(
+                JSON.stringify({
+                    result: [{ sys_id: "abc123", name: "Joe Employee" }],
+                }),
+                {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                },
+            ),
+        ) as any;
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: await details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference-hidden",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe("ok (ServiceNow reference value committed)");
+            expect(hidden.value).toBe("abc123");
+            expect(input.value).toBe("Joe Employee");
+        } finally {
+            globalThis.fetch = originalFetch;
+            (window as any).g_form = originalGForm;
+        }
+    });
+
+    test("type_text falls back to page ServiceNow lookup when background lookup is unauthorized", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+        `;
+        const hidden = document.getElementById("incident.caller_id") as HTMLInputElement;
+        const originalFetch = globalThis.fetch;
+        const originalGForm = (window as any).g_form;
+        const setValue = vi.fn((_field: string, sysId: string) => {
+            hidden.value = sysId;
+        });
+        (window as any).g_form = {
+            getGlideUIElement: () => ({ reference: "sys_user" }),
+            setValue,
+        };
+        let fetchCount = 0;
+        globalThis.fetch = vi.fn(async () => {
+            fetchCount++;
+            if (fetchCount === 1) {
+                return new Response("", { status: 401 });
+            }
+            return new Response(
+                JSON.stringify({
+                    result: [{ sys_id: "abc123", name: "Joe Employee" }],
+                }),
+                {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" },
+                },
+            );
+        }) as any;
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: await details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference-page-fallback",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe("ok (ServiceNow reference value committed)");
+            expect(fetchCount).toBe(2);
+            expect(setValue).toHaveBeenCalledWith("caller_id", "abc123", "Joe Employee");
+            expect(hidden.value).toBe("abc123");
+        } finally {
+            globalThis.fetch = originalFetch;
+            (window as any).g_form = originalGForm;
+        }
+    });
+
+    test("type_text selects ServiceNow reference autocomplete when REST lookup is unauthorized", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+            <table class="ac_results">
+                <tbody>
+                    <tr role="option" data-sys-id="0123456789abcdef0123456789abcdef">
+                        <td>Joe Employee</td>
+                        <td>employee@example.com</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+        const input = document.querySelector("[data-os-tag='7']") as HTMLInputElement;
+        const hidden = document.getElementById("incident.caller_id") as HTMLInputElement;
+        const option = document.querySelector("[role='option']") as HTMLElement;
+        const originalFetch = globalThis.fetch;
+        const originalGForm = (window as any).g_form;
+        const setValue = vi.fn((_field: string, sysId: string, display: string) => {
+            hidden.value = sysId;
+            input.value = display;
+        });
+        (window as any).g_form = {
+            getGlideUIElement: () => ({ reference: "sys_user" }),
+            getValue: () => hidden.value,
+            setValue,
+        };
+        option.addEventListener("click", () => {
+            hidden.value = "0123456789abcdef0123456789abcdef";
+            input.value = "Joe Employee";
+        });
+        globalThis.fetch = vi.fn(async () => new Response("", { status: 401 })) as any;
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: await details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference-autocomplete",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe("ok (ServiceNow reference value committed)");
+            expect(globalThis.fetch).toHaveBeenCalled();
+            expect(setValue).toHaveBeenCalledWith(
+                "caller_id",
+                "0123456789abcdef0123456789abcdef",
+                "Joe Employee",
+            );
+            expect(hidden.value).toBe("0123456789abcdef0123456789abcdef");
+            expect(input.value).toBe("Joe Employee");
+        } finally {
+            globalThis.fetch = originalFetch;
+            (window as any).g_form = originalGForm;
+        }
+    });
+
+    test("type_text searches ServiceNow reference autocomplete by prefix when full display value has no option", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+            <table class="ac_results">
+                <tbody>
+                    <tr role="option" data-sys-id="fedcba9876543210fedcba9876543210" style="display: none">
+                        <td>Joe Employee</td>
+                        <td>employee@example.com</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+        const input = document.querySelector("[data-os-tag='7']") as HTMLInputElement;
+        const hidden = document.getElementById("incident.caller_id") as HTMLInputElement;
+        const option = document.querySelector("[role='option']") as HTMLElement;
+        const originalFetch = globalThis.fetch;
+        const originalGForm = (window as any).g_form;
+        const searchedValues: string[] = [];
+        (window as any).g_form = {
+            getGlideUIElement: () => ({ reference: "sys_user" }),
+            getValue: () => hidden.value,
+            setValue: (_field: string, sysId: string, display: string) => {
+                hidden.value = sysId;
+                input.value = display;
+            },
+        };
+        input.addEventListener("input", () => {
+            searchedValues.push(input.value);
+            option.style.display = input.value === "Joe" ? "" : "none";
+        });
+        globalThis.fetch = vi.fn(async () => new Response("", { status: 401 })) as any;
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: await details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference-prefix-autocomplete",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Joe Employee" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe("ok (ServiceNow reference value committed)");
+            expect(searchedValues).toContain("Joe Employee");
+            expect(searchedValues).toContain("Joe");
+            expect(hidden.value).toBe("fedcba9876543210fedcba9876543210");
+            expect(input.value).toBe("Joe Employee");
+        } finally {
+            globalThis.fetch = originalFetch;
+            (window as any).g_form = originalGForm;
+        }
+    });
+
+    test("type_text reports ServiceNow reference commit failures", async () => {
+        document.body.innerHTML = `
+            <input
+                data-os-tag="7"
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+        `;
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = vi.fn(async () =>
+            new Response(JSON.stringify({ result: [] }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+            }),
+        ) as any;
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: await details.func(...details.args), frameId: 0 },
+        ]);
+
+        try {
+            const result = await toolRegistry.execute(
+                {
+                    id: "tool-type-servicenow-reference-failure",
+                    type: "function",
+                    function: {
+                        name: ToolName.TYPE_TEXT,
+                        arguments: JSON.stringify({ id: 7, text: "Missing User" }),
+                    },
+                } as any,
+                123,
+            );
+
+            expect(result).toBe(
+                "ok (ServiceNow reference commit failed: no_matching_record)",
+            );
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 
     test("click_element does not mirror a successful content-script click", async () => {
@@ -460,7 +1093,7 @@ describe("Tool Registration", () => {
         expect(result).toContain("main-world event bridge");
         expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
             expect.objectContaining({
-                target: { tabId: 123 },
+                target: { tabId: 123, allFrames: true },
                 world: "MAIN",
                 args: ["3"],
             }),

@@ -4,6 +4,34 @@ import { ToolName } from "../../src/types";
 import { executeAction, isLikelyOverlay } from "../../src/content/actions";
 import { tagElements, getTagMap, addDynamicTag, resetStableIds } from "../../src/content/tagging";
 
+function shadowGlobalConstructor(name: string, replacement: unknown): () => void {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, {
+        configurable: true,
+        writable: true,
+        value: replacement,
+    });
+    return () => {
+        if (descriptor) {
+            Object.defineProperty(globalThis, name, descriptor);
+        }
+    };
+}
+
+function createEmbeddedDocument(): Document {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    const frameDoc = iframe.contentDocument ?? document.implementation.createHTMLDocument("embedded");
+    const view = frameDoc.defaultView;
+    if (view) {
+        if (!view.HTMLElement.prototype.scrollIntoView) {
+            view.HTMLElement.prototype.scrollIntoView = () => { };
+        }
+        view.Element.prototype.getBoundingClientRect = Element.prototype.getBoundingClientRect;
+    }
+    return frameDoc;
+}
+
 describe("Content Actions", () => {
     beforeEach(() => {
         document.body.innerHTML = "";
@@ -213,6 +241,35 @@ describe("Content Actions", () => {
                 expect(match).not.toBeNull();
                 const tagId = Number(match![1]);
                 expect((getTagMap().get(tagId) as HTMLElement).id).toBe("navigator-filter");
+            } finally {
+                (window as any).find = origFind;
+            }
+        });
+
+        test("tags deep visible text matches inside suggestion-like rows when window.find misses", async () => {
+            document.body.innerHTML = `
+                <div role="listbox">
+                    <div id="joe-row" role="option">
+                        <span>Joe Employee</span>
+                        <span>employee@example.com</span>
+                    </div>
+                </div>
+            `;
+            resetStableIds();
+            tagElements();
+
+            const origFind = (window as any).find;
+            (window as any).find = () => false;
+
+            try {
+                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Joe Employee" });
+
+                expect(result.success).toBe(true);
+                expect(result.result).toContain("Use tag");
+                const match = result.result.match(/\[(\d+)\]/);
+                expect(match).not.toBeNull();
+                const tagId = Number(match![1]);
+                expect((getTagMap().get(tagId) as HTMLElement).id).toBe("joe-row");
             } finally {
                 (window as any).find = origFind;
             }
@@ -655,6 +712,27 @@ describe("Content Actions", () => {
             expect((document.getElementById("inp") as HTMLInputElement).value).toBe("hello");
         });
 
+        test("type_text accepts controls when the global input constructor does not match", async () => {
+            document.body.innerHTML = '<input id="inp" type="text" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let inpTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.id === "inp") { inpTag = tag; break; }
+            }
+            const restore = shadowGlobalConstructor("HTMLInputElement", class OtherInputElement {});
+
+            try {
+                const result = await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "hello" });
+
+                expect(result.success).toBe(true);
+                expect((document.getElementById("inp") as HTMLInputElement).value).toBe("hello");
+            } finally {
+                restore();
+            }
+        });
+
         test("contenteditable uses textContent approach", async () => {
             document.body.innerHTML = '<div id="editable" contenteditable="true"></div>';
             resetStableIds();
@@ -669,6 +747,39 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.TYPE_TEXT, { id: editTag, text: "hi" });
             expect(result.success).toBe(true);
             expect(document.getElementById("editable")!.textContent).toBe("hi");
+        });
+    });
+
+    describe("executeReadElement", () => {
+        test("read_element value returns live textarea value, not only the HTML attribute", async () => {
+            document.body.innerHTML = '<textarea id="notes"></textarea>';
+            resetStableIds();
+            tagElements();
+            const textarea = document.getElementById("notes") as HTMLTextAreaElement;
+            textarea.value = "Closed before close notes were made mandatory";
+            const tag = Number(textarea.getAttribute("data-os-tag"));
+
+            const result = await executeAction(ToolName.READ_ELEMENT, {
+                id: tag,
+                attribute: "value",
+            });
+
+            expect(result.success).toBe(true);
+            expect(result.result).toContain('value="Closed before close notes were made mandatory"');
+        });
+
+        test("read_element default output returns live input value", async () => {
+            document.body.innerHTML = '<input id="caller" type="text" />';
+            resetStableIds();
+            tagElements();
+            const input = document.getElementById("caller") as HTMLInputElement;
+            input.value = "Joe Employee";
+            const tag = Number(input.getAttribute("data-os-tag"));
+
+            const result = await executeAction(ToolName.READ_ELEMENT, { id: tag });
+
+            expect(result.success).toBe(true);
+            expect(result.result).toContain("Joe Employee");
         });
     });
 
@@ -728,6 +839,31 @@ describe("Content Actions", () => {
             expect(result.result).toContain('"shipping"');
         });
 
+        test("select_option accepts controls when the global select constructor does not match", async () => {
+            document.body.innerHTML = `
+                <select id="quantity">
+                    <option value="1">1</option>
+                    <option value="10">10</option>
+                </select>`;
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let selectTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "quantity") { selectTag = tag; break; }
+            }
+            const restore = shadowGlobalConstructor("HTMLSelectElement", class OtherSelectElement {});
+
+            try {
+                const result = await executeAction(ToolName.SELECT_OPTION, { id: selectTag, value: "10" });
+
+                expect(result.success).toBe(true);
+                expect((document.getElementById("quantity") as HTMLSelectElement).value).toBe("10");
+            } finally {
+                restore();
+            }
+        });
+
         test("set_checkbox result includes element description", async () => {
             document.body.innerHTML = '<input type="checkbox" id="remember" aria-label="Remember me" />';
             resetStableIds();
@@ -744,6 +880,53 @@ describe("Content Actions", () => {
             expect(result.result).toContain("<input>");
             expect(result.result).toContain('"Remember me"');
             expect(result.result).toContain("checked=true");
+        });
+
+        test("set_checkbox accepts controls when the global input constructor does not match", async () => {
+            document.body.innerHTML = '<input type="checkbox" id="remember" />';
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let cbTag = -1;
+            for (const [tag, el] of tagMap) {
+                if ((el as HTMLElement).id === "remember") { cbTag = tag; break; }
+            }
+            const restore = shadowGlobalConstructor("HTMLInputElement", class OtherInputElement {});
+
+            try {
+                const result = await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
+
+                expect(result.success).toBe(true);
+                expect((document.getElementById("remember") as HTMLInputElement).checked).toBe(true);
+            } finally {
+                restore();
+            }
+        });
+
+        test("set_checkbox accepts a visible label for a hidden checkbox control", async () => {
+            document.body.innerHTML = `
+                <input id="knowledge" name="incident.knowledge" type="checkbox" checked style="display: none" />
+                <label for="knowledge">Knowledge</label>
+            `;
+            resetStableIds();
+            tagElements();
+            const tagMap = getTagMap();
+            let labelTag = -1;
+            for (const [tag, el] of tagMap) {
+                if (el.tagName.toLowerCase() === "label" && el.textContent?.trim() === "Knowledge") {
+                    labelTag = tag;
+                    break;
+                }
+            }
+            expect(labelTag).toBeGreaterThan(0);
+
+            const result = await executeAction(ToolName.SET_CHECKBOX, {
+                id: labelTag,
+                checked: false,
+            });
+
+            expect(result.success).toBe(true);
+            expect((document.getElementById("knowledge") as HTMLInputElement).checked).toBe(false);
         });
     });
 
@@ -853,6 +1036,31 @@ describe("Content Actions", () => {
             expect(captured!.button).toBe(2);
         });
 
+        test("click_element dispatches mouse activation in the target owner document", async () => {
+            const frameDoc = createEmbeddedDocument();
+            frameDoc.body.innerHTML = '<button id="pick">Pick Joe Employee</button>';
+            const frameView = frameDoc.defaultView!;
+            class OwnerMouseEvent extends MouseEvent {
+                ownerConstructed = true;
+            }
+            Object.defineProperty(frameView, "MouseEvent", {
+                configurable: true,
+                value: OwnerMouseEvent,
+            });
+
+            const button = frameDoc.getElementById("pick")!;
+            const tag = addDynamicTag(button);
+            let ownerConstructed = false;
+            button.addEventListener("mousedown", (event) => {
+                ownerConstructed = (event as MouseEvent & { ownerConstructed?: boolean }).ownerConstructed === true;
+            });
+
+            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: tag });
+
+            expect(result.success).toBe(true);
+            expect(ownerConstructed).toBe(true);
+        });
+
         test("press_key enter submits the focused form", async () => {
             document.body.innerHTML = `
                 <form id="rename-form">
@@ -872,6 +1080,58 @@ describe("Content Actions", () => {
             const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
             expect(result.success).toBe(true);
             expect(submitted).toBe(true);
+        });
+
+        test("press_key targets the last typed control in its owner document", async () => {
+            const frameDoc = createEmbeddedDocument();
+            frameDoc.body.innerHTML = `
+                <input id="caller" name="sys_display.incident.caller_id" type="text" />
+            `;
+            const input = frameDoc.getElementById("caller") as HTMLInputElement;
+            const inputTag = addDynamicTag(input);
+            const keydowns: string[] = [];
+            input.addEventListener("keydown", (event) => {
+                keydowns.push((event as KeyboardEvent).key);
+            });
+
+            const typeResult = await executeAction(ToolName.TYPE_TEXT, {
+                id: inputTag,
+                text: "Joe Employee",
+            });
+            expect(typeResult.success).toBe(true);
+            expect(input.value).toBe("Joe Employee");
+
+            const keyResult = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
+            expect(keyResult.success).toBe(true);
+            expect(keydowns).toContain("Enter");
+        });
+
+        test("press_key enter does not auto-submit autocomplete reference inputs", async () => {
+            document.body.innerHTML = `
+                <form id="incident-form">
+                    <input id="caller" name="sys_display.incident.caller_id" role="combobox" type="text" />
+                </form>
+            `;
+            resetStableIds();
+            tagElements();
+            const input = document.getElementById("caller") as HTMLInputElement;
+            const inputTag = Number(input.getAttribute("data-os-tag"));
+
+            let submitted = false;
+            const form = document.getElementById("incident-form") as HTMLFormElement;
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                submitted = true;
+            });
+
+            await executeAction(ToolName.TYPE_TEXT, {
+                id: inputTag,
+                text: "Joe Employee",
+            });
+
+            const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
+            expect(result.success).toBe(true);
+            expect(submitted).toBe(false);
         });
     });
 });

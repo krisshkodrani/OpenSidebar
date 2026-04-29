@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -78,6 +79,7 @@ class WorkArenaSession:
                     "mutatesServiceNow": False,
                     "requiresReset": True,
                     "optionalActiveUrlSync": True,
+                    "optionalSubmittedRecordNumber": True,
                 },
                 {
                     "command": "teardown",
@@ -289,7 +291,268 @@ class WorkArenaSession:
             "activeUrl": synced_url,
         }
 
-    def validate(self, active_url: str | None = None) -> dict[str, Any]:
+    def _import_storage_state(
+        self, storage_state: Any, active_url: str | None = None
+    ) -> dict[str, Any]:
+        if not isinstance(storage_state, dict):
+            return {
+                "attempted": False,
+                "cookies": 0,
+                "localStorage": 0,
+                "sessionStorage": 0,
+                "origins": [],
+            }
+
+        browser_env = self.env.unwrapped
+        context = getattr(browser_env, "context", None)
+        page = getattr(browser_env, "page", None)
+        if page is None and context is not None:
+            pages = getattr(context, "pages", [])
+            page = pages[0] if pages else None
+        if page is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "error": "No BrowserGym page is available for storage sync.",
+            }
+
+        active_origin = self._origin(active_url)
+        current_origin = self._origin(getattr(page, "url", None))
+        task = getattr(browser_env, "task", None)
+        task_origin = self._origin(getattr(task, "start_url", None))
+        allowed_origins = {
+            origin for origin in [active_origin, current_origin, task_origin] if origin is not None
+        }
+
+        cookies = storage_state.get("cookies")
+        cookie_count = 0
+        if context is not None and isinstance(cookies, list) and cookies:
+            sanitized_cookies: list[dict[str, Any]] = []
+            for cookie in cookies:
+                if not isinstance(cookie, dict):
+                    continue
+                name = cookie.get("name")
+                value = cookie.get("value")
+                if not isinstance(name, str) or not isinstance(value, str):
+                    continue
+                sanitized = {
+                    "name": name,
+                    "value": value,
+                }
+                for key in ["domain", "path", "sameSite"]:
+                    if isinstance(cookie.get(key), str):
+                        sanitized[key] = cookie[key]
+                for key in ["httpOnly", "secure"]:
+                    if isinstance(cookie.get(key), bool):
+                        sanitized[key] = cookie[key]
+                expires = cookie.get("expires")
+                if isinstance(expires, (int, float)) and expires >= 0:
+                    sanitized["expires"] = expires
+                sanitized_cookies.append(sanitized)
+            if sanitized_cookies:
+                context.add_cookies(sanitized_cookies)
+                cookie_count = len(sanitized_cookies)
+
+        local_storage_count = 0
+        session_storage_count = 0
+        synced_origins: list[str] = []
+        skipped_origins: list[str] = []
+        origins = storage_state.get("origins")
+        if isinstance(origins, list):
+            for origin_record in origins:
+                if not isinstance(origin_record, dict):
+                    continue
+                origin = origin_record.get("origin")
+                if not isinstance(origin, str) or self._origin(origin) not in allowed_origins:
+                    if isinstance(origin, str):
+                        skipped_origins.append(origin)
+                    continue
+
+                if self._origin(getattr(page, "url", None)) != self._origin(origin):
+                    page.goto(origin, wait_until="domcontentloaded", timeout=30000)
+
+                local_entries = origin_record.get("localStorage")
+                session_entries = origin_record.get("sessionStorage")
+                local_entries = local_entries if isinstance(local_entries, list) else []
+                session_entries = session_entries if isinstance(session_entries, list) else []
+                payload = {
+                    "localStorageEntries": [
+                        {"name": item.get("name"), "value": item.get("value")}
+                        for item in local_entries
+                        if isinstance(item, dict)
+                        and isinstance(item.get("name"), str)
+                        and isinstance(item.get("value"), str)
+                    ],
+                    "sessionStorageEntries": [
+                        {"name": item.get("name"), "value": item.get("value")}
+                        for item in session_entries
+                        if isinstance(item, dict)
+                        and isinstance(item.get("name"), str)
+                        and isinstance(item.get("value"), str)
+                    ],
+                }
+                page.evaluate(
+                    """payload => {
+                        for (const entry of payload.localStorageEntries) {
+                            window.localStorage.setItem(entry.name, entry.value);
+                        }
+                        for (const entry of payload.sessionStorageEntries) {
+                            window.sessionStorage.setItem(entry.name, entry.value);
+                        }
+                    }""",
+                    payload,
+                )
+                local_storage_count += len(payload["localStorageEntries"])
+                session_storage_count += len(payload["sessionStorageEntries"])
+                synced_origins.append(origin)
+
+        return {
+            "attempted": True,
+            "ok": True,
+            "cookies": cookie_count,
+            "localStorage": local_storage_count,
+            "sessionStorage": session_storage_count,
+            "origins": synced_origins,
+            "skippedOrigins": skipped_origins,
+        }
+
+    def _sync_submitted_record_id(self, submitted_record_number: Any) -> dict[str, Any]:
+        if not isinstance(submitted_record_number, str) or not submitted_record_number:
+            return {
+                "attempted": False,
+                "reason": "no_submitted_record_number",
+            }
+
+        record_number = submitted_record_number.strip().upper()
+        if not re.fullmatch(r"[A-Z]{2,}\d+", record_number):
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": submitted_record_number,
+                "error": "submittedRecordNumber is not a ServiceNow record number",
+            }
+
+        browser_env = self.env.unwrapped
+        task = getattr(browser_env, "task", None)
+        session_key = getattr(task, "session_sys_id_field", None)
+        table_name = getattr(task, "table_name", None)
+        instance = getattr(task, "instance", None)
+        if not isinstance(session_key, str) or not session_key:
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "error": "Active WorkArena task does not expose session_sys_id_field.",
+            }
+        if not isinstance(table_name, str) or not table_name or instance is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "sessionKey": session_key,
+                "error": "Active WorkArena task does not expose a queryable ServiceNow table.",
+            }
+
+        context = getattr(browser_env, "context", None)
+        page = getattr(browser_env, "page", None)
+        if page is None and context is not None:
+            pages = getattr(context, "pages", [])
+            page = pages[0] if pages else None
+        if page is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "sessionKey": session_key,
+                "table": table_name,
+                "error": "No BrowserGym page is available for record id sync.",
+            }
+
+        try:
+            existing = page.evaluate(
+                "key => window.localStorage.getItem(key)",
+                session_key,
+            )
+        except Exception:
+            existing = None
+        if isinstance(existing, str) and existing:
+            return {
+                "attempted": True,
+                "ok": True,
+                "recordNumber": record_number,
+                "sessionKey": session_key,
+                "table": table_name,
+                "existing": True,
+            }
+
+        try:
+            from browsergym.workarena.api.utils import table_api_call
+
+            response = table_api_call(
+                instance=instance,
+                table=table_name,
+                params={
+                    "sysparm_query": f"number={record_number}",
+                    "sysparm_fields": "sys_id,number",
+                },
+                wait_for_record=True,
+                max_retries=20,
+                raise_on_wait_expired=False,
+            )
+            records = response.get("result") if isinstance(response, dict) else []
+            if not isinstance(records, list) or len(records) == 0:
+                return {
+                    "attempted": True,
+                    "ok": False,
+                    "recordNumber": record_number,
+                    "sessionKey": session_key,
+                    "table": table_name,
+                    "error": "Submitted record number was not found in ServiceNow.",
+                }
+            first_record = records[0] if isinstance(records[0], dict) else {}
+            sys_id = first_record.get("sys_id")
+            if not isinstance(sys_id, str) or not sys_id:
+                return {
+                    "attempted": True,
+                    "ok": False,
+                    "recordNumber": record_number,
+                    "sessionKey": session_key,
+                    "table": table_name,
+                    "error": "Submitted record did not include a sys_id.",
+                }
+
+            page.evaluate(
+                """payload => {
+                    window.localStorage.setItem(payload.sessionKey, payload.sysId);
+                }""",
+                {"sessionKey": session_key, "sysId": sys_id},
+            )
+            return {
+                "attempted": True,
+                "ok": True,
+                "recordNumber": record_number,
+                "sessionKey": session_key,
+                "table": table_name,
+                "sysId": sys_id,
+                "existing": False,
+            }
+        except Exception as exc:  # noqa: BLE001 - preserve validation diagnostics.
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "sessionKey": session_key,
+                "table": table_name,
+                "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
+            }
+
+    def validate(
+        self,
+        active_url: str | None = None,
+        storage_state: Any | None = None,
+        submitted_record_number: Any | None = None,
+        final_answer: Any | None = None,
+    ) -> dict[str, Any]:
         if self.env is None:
             return {
                 "ok": False,
@@ -311,11 +574,28 @@ class WorkArenaSession:
                     "urlSync": url_sync,
                 }
 
+            storage_sync = self._import_storage_state(storage_state, active_url)
+            if storage_sync.get("ok") is False:
+                return {
+                    "ok": False,
+                    "status": "blocked_storage_sync_failed",
+                    "durationMs": int((time.time() - start) * 1000),
+                    "state": self.state_summary(),
+                    "error": storage_sync.get("error"),
+                    "urlSync": url_sync,
+                    "storageSync": storage_sync,
+                }
+
+            record_sync = self._sync_submitted_record_id(submitted_record_number)
+            answer_sync = self._sync_assistant_answer(final_answer)
             reward, done, user_message, info = self.env.unwrapped._task_validate()
             validation_details = info if isinstance(info, dict) else {}
             validation_details = {
                 **validation_details,
                 "urlSync": url_sync,
+                "storageSync": storage_sync,
+                "recordSync": record_sync,
+                "answerSync": answer_sync,
             }
             return {
                 "ok": True,
@@ -342,6 +622,56 @@ class WorkArenaSession:
                 "state": self.state_summary(),
                 "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
             }
+
+    def _sync_assistant_answer(self, final_answer: Any) -> dict[str, Any]:
+        if not isinstance(final_answer, str) or not final_answer.strip():
+            return {
+                "attempted": False,
+                "reason": "no_final_answer",
+            }
+
+        browser_env = self.env.unwrapped
+        chat = getattr(browser_env, "chat", None)
+        if chat is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "error": "BrowserGym environment does not expose chat.",
+            }
+
+        answer = final_answer.strip()
+        messages = getattr(chat, "messages", [])
+        if (
+            isinstance(messages, list)
+            and messages
+            and isinstance(messages[-1], dict)
+            and messages[-1].get("role") == "assistant"
+            and messages[-1].get("message") == answer
+        ):
+            return {
+                "attempted": True,
+                "ok": True,
+                "existing": True,
+                "messageLength": len(answer),
+            }
+
+        try:
+            chat.add_message(role="assistant", msg=answer)
+        except Exception:
+            if not isinstance(messages, list):
+                return {
+                    "attempted": True,
+                    "ok": False,
+                    "error": "BrowserGym chat messages are not mutable.",
+                }
+            messages.append({"role": "assistant", "message": answer})
+
+        return {
+            "attempted": True,
+            "ok": True,
+            "existing": False,
+            "messageLength": len(answer),
+        }
 
     def teardown(self) -> dict[str, Any]:
         if self.env is None:
@@ -396,7 +726,12 @@ def handle(session: WorkArenaSession, message: dict[str, Any]) -> dict[str, Any]
             return session.export_session()
         if command == "validate":
             active_url = message.get("activeUrl")
-            return session.validate(active_url if isinstance(active_url, str) else None)
+            return session.validate(
+                active_url if isinstance(active_url, str) else None,
+                message.get("storageState"),
+                message.get("submittedRecordNumber"),
+                message.get("finalAnswer"),
+            )
         if command == "teardown":
             return session.teardown()
         return {

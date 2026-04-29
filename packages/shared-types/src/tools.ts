@@ -262,6 +262,74 @@ export interface InspectHiddenArgs {
   maxResults?: number;
 }
 
+/** Arguments for inspect_chart */
+export interface InspectChartArgs {
+  /** Case-insensitive text filter for chart labels or series */
+  pattern?: string;
+  /** Maximum data labels or points to return (default: 30, max: 100) */
+  maxResults?: number;
+}
+
+/** Arguments for inspect_table */
+export interface InspectTableArgs {
+  /** Maximum visible rows to summarize per table/list (default: 10, max: 50) */
+  maxRows?: number;
+}
+
+/** Arguments for inspect_filter_state */
+export interface InspectFilterStateArgs {
+  /** Case-insensitive field/filter text to focus on */
+  pattern?: string;
+  /** Maximum controls or condition rows to return (default: 30, max: 80) */
+  maxResults?: number;
+}
+
+/** One structured condition for apply_list_filter */
+export interface ApplyListFilterCondition {
+  /** Visible field label or system field name, e.g. "Caller" or "caller_id" */
+  field: string;
+  /** Operator text, e.g. "is", "is empty", "is not", or "starts with" */
+  operator?: string;
+  /** Display value to filter by. Empty string with "is" becomes an empty condition. */
+  value?: string;
+}
+
+/** Arguments for apply_list_filter */
+export interface ApplyListFilterArgs {
+  /** Structured field/operator/value conditions to apply */
+  conditions: ApplyListFilterCondition[];
+  /** How to join multiple conditions. Defaults to OR only when the request explicitly uses OR. */
+  join?: "AND" | "OR";
+  /** Optional visible list/table title or system table name */
+  table?: string;
+  /** Whether to navigate/run the filter after building it (default true) */
+  run?: boolean;
+}
+
+/** One structured sort clause for apply_list_sort */
+export interface ApplyListSortClause {
+  /** Visible field label or system field name, e.g. "Number" or "calendar_duration" */
+  field: string;
+  /** Sort direction. Defaults to ascending. */
+  direction?: "ascending" | "descending" | "asc" | "desc";
+}
+
+/** Arguments for apply_list_sort */
+export interface ApplyListSortArgs {
+  /** Ordered sort clauses to apply, primary first */
+  sorts: ApplyListSortClause[];
+  /** Optional visible list/table title or system table name */
+  table?: string;
+  /** Whether to navigate/run the sort after building it (default true) */
+  run?: boolean;
+}
+
+/** Arguments for inspect_catalog_item */
+export interface InspectCatalogItemArgs {
+  /** Maximum configurable controls to return (default: 40, max: 80) */
+  maxControls?: number;
+}
+
 /** Arguments for xray_page — no arguments, simple toggle */
 export type XrayPageArgs = Record<string, never>;
 
@@ -321,6 +389,12 @@ export type ToolArgsMap = {
   [ToolName.DELETE_COOKIE]: DeleteCookieArgs;
   [ToolName.SEARCH_HISTORY]: SearchHistoryArgs;
   [ToolName.INSPECT_HIDDEN]: InspectHiddenArgs;
+  [ToolName.INSPECT_CHART]: InspectChartArgs;
+  [ToolName.INSPECT_TABLE]: InspectTableArgs;
+  [ToolName.INSPECT_FILTER_STATE]: InspectFilterStateArgs;
+  [ToolName.APPLY_LIST_FILTER]: ApplyListFilterArgs;
+  [ToolName.APPLY_LIST_SORT]: ApplyListSortArgs;
+  [ToolName.INSPECT_CATALOG_ITEM]: InspectCatalogItemArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.CLARIFY]: ClarifyArgs;

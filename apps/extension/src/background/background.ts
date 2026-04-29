@@ -7,6 +7,10 @@ import {
   UserSettings,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
+import {
+  formatMissingProviderKeys,
+  getProviderKeyStatus,
+} from "../utils/provider-keys";
 import { storageLogger } from "../utils/storage-logger";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import { workspaceManager } from "./workspaces/manager";
@@ -214,7 +218,9 @@ async function handleSidePanelOpened(
         workspace: existingWorkspace.name,
       });
       // Pre-cache settings + warm perception (fire-and-forget)
-      loadSettings().then((s) => { if (s) cachedSettings = s; });
+      loadSettings().then((s) => {
+        if (s) cachedSettings = s;
+      });
       perceptionWarmup.warmup(tabId);
       return existingWorkspace.id;
     } else {
@@ -240,7 +246,9 @@ async function handleSidePanelOpened(
             tabId,
           });
           // Pre-cache settings + warm perception (fire-and-forget)
-          loadSettings().then((s) => { if (s) cachedSettings = s; });
+          loadSettings().then((s) => {
+            if (s) cachedSettings = s;
+          });
           perceptionWarmup.warmup(tabId);
           // Consumed the flag
           await removeUserOpenedPanel(tabId);
@@ -420,22 +428,28 @@ chrome.runtime.onMessage.addListener(
         }
       })().catch((err) => {
         logger.error("agent", "handleUserChat failed", { error: err });
-        chrome.runtime.sendMessage({
-          type: "AGENT_STATUS",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          workspaceId: wsId,
-          payload: {
-            status: AgentStatus.ERROR,
-            detail: `Unexpected error: ${err?.message ?? String(err)}`,
-          },
-        }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            type: "AGENT_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            workspaceId: wsId,
+            payload: {
+              status: AgentStatus.ERROR,
+              detail: `Unexpected error: ${err?.message ?? String(err)}`,
+            },
+          })
+          .catch(() => {});
       });
       return false;
     }
 
     // 2. Stop Agent
-    if ((message.source === MessageSource.SIDEPANEL || message.source === MessageSource.CONTENT) && message.type === "STOP_AGENT") {
+    if (
+      (message.source === MessageSource.SIDEPANEL ||
+        message.source === MessageSource.CONTENT) &&
+      message.type === "STOP_AGENT"
+    ) {
       const wsId = message.payload?.workspaceId;
       (async () => {
         await orchestrator.stopTask(wsId ?? undefined);
@@ -453,12 +467,18 @@ chrome.runtime.onMessage.addListener(
     }
 
     // 3. Pause / Resume Agent
-    if (message.source === MessageSource.SIDEPANEL && message.type === "PAUSE_AGENT") {
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "PAUSE_AGENT"
+    ) {
       const wsId = message.payload?.workspaceId;
       orchestrator.pauseTask(wsId ?? undefined);
       return false;
     }
-    if (message.source === MessageSource.SIDEPANEL && message.type === "RESUME_AGENT") {
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "RESUME_AGENT"
+    ) {
       const wsId = message.payload?.workspaceId;
       orchestrator.resumeTask(wsId ?? undefined);
       return false;
@@ -643,72 +663,13 @@ async function handleUserChat(
     while (currentPayload) {
       const text = sanitizeUserInput(currentPayload.text);
 
-    // Validate tabId — side panel's chrome.tabs.query can race with workspace creation
-    const tabId = await resolveValidTabId(
-      currentPayload.tabId,
-      workspaceId,
-      workspaceManager,
-    );
-    if (tabId === null) {
-      chrome.runtime.sendMessage({
-        type: "AGENT_STATUS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
+      // Validate tabId — side panel's chrome.tabs.query can race with workspace creation
+      const tabId = await resolveValidTabId(
+        currentPayload.tabId,
         workspaceId,
-        payload: {
-          status: AgentStatus.ERROR,
-          detail:
-            "No active web page found. Please open a web page and try again.",
-        },
-      });
-      return;
-    }
-
-    logger.debug("agent", "User message", { text, tabId, workspaceId });
-
-    // 1. Get Settings (API Keys) — use cache if populated, else load fresh
-    const settings =
-      cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
-    const openRouterApiKey = settings.openRouterApiKey;
-    const mode = settings.providerMode ?? "fireworks";
-
-    // Check the primary API key for the active provider
-    const activeKey =
-      mode === "fireworks"
-        ? settings.fireworksApiKey
-        : mode === "moonshot"
-          ? settings.kimiApiKey
-          : mode === "openai-groq"
-            ? settings.openaiApiKey
-            : openRouterApiKey;
-    const activeKeyName =
-      mode === "fireworks"
-        ? "Fireworks AI"
-        : mode === "moonshot"
-          ? "Moonshot AI"
-          : mode === "openai-groq"
-            ? "OpenAI"
-            : "OpenRouter";
-
-    if (!activeKey) {
-      chrome.runtime.sendMessage({
-        type: "AGENT_STATUS",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId,
-        payload: {
-          status: AgentStatus.ERROR,
-          detail: `No ${activeKeyName} API Key configured. Open Settings to add one.`,
-        },
-      });
-      return;
-    }
-
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      const tabUrl = tab.url ?? "";
-      const blocked = getBlockedRuleForUrl(tabUrl, settings);
-      if (blocked) {
+        workspaceManager,
+      );
+      if (tabId === null) {
         chrome.runtime.sendMessage({
           type: "AGENT_STATUS",
           requestId: crypto.randomUUID(),
@@ -716,38 +677,84 @@ async function handleUserChat(
           workspaceId,
           payload: {
             status: AgentStatus.ERROR,
-            detail: `Blocked on ${blocked.host} by site access rule "${blocked.rule}".`,
+            detail:
+              "No active web page found. Please open a web page and try again.",
           },
         });
         return;
       }
-    } catch {
-      // Ignore tab lookup failures and proceed with normal flow.
-    }
 
-    // Notify content script that agent is active
-    sendAgentActivity(tabId, true);
+      logger.debug("agent", "User message", { text, tabId, workspaceId });
 
-    await startKeepalive();
-    try {
-      await orchestrator.startTask({
-        query: text,
-        tabId,
-        workspaceId,
-        settings,
-        // In Fireworks-only mode openRouterApiKey may be empty — pass the
-        // active provider key so LLMClient pools receive a valid key.
-        openRouterApiKey: activeKey || openRouterApiKey,
-      });
-    } finally {
-      const outcomeStatus = orchestrator.getRecentOutcome(workspaceId);
-      sendAgentActivity(
-        tabId,
-        false,
-        outcomeStatus ? { status: outcomeStatus } : undefined,
-      );
-      await maybeStopKeepalive();
-    }
+      // 1. Get Settings (API Keys) — use cache if populated, else load fresh
+      const settings =
+        cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
+      const openRouterApiKey = settings.openRouterApiKey;
+      const providerKeyStatus = getProviderKeyStatus(settings);
+
+      if (!providerKeyStatus.hasRequiredKeys) {
+        const missingKeys = formatMissingProviderKeys(providerKeyStatus);
+        const keyNoun =
+          providerKeyStatus.missingKeyNames.length === 1
+            ? "API Key"
+            : "API Keys";
+        chrome.runtime.sendMessage({
+          type: "AGENT_STATUS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          workspaceId,
+          payload: {
+            status: AgentStatus.ERROR,
+            detail: `No ${missingKeys} ${keyNoun} configured. Open Settings to add one.`,
+          },
+        });
+        return;
+      }
+
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        const tabUrl = tab.url ?? "";
+        const blocked = getBlockedRuleForUrl(tabUrl, settings);
+        if (blocked) {
+          chrome.runtime.sendMessage({
+            type: "AGENT_STATUS",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.BACKGROUND,
+            workspaceId,
+            payload: {
+              status: AgentStatus.ERROR,
+              detail: `Blocked on ${blocked.host} by site access rule "${blocked.rule}".`,
+            },
+          });
+          return;
+        }
+      } catch {
+        // Ignore tab lookup failures and proceed with normal flow.
+      }
+
+      // Notify content script that agent is active
+      sendAgentActivity(tabId, true);
+
+      await startKeepalive();
+      try {
+        await orchestrator.startTask({
+          query: text,
+          tabId,
+          workspaceId,
+          settings,
+          // In non-OpenRouter modes openRouterApiKey may be empty — pass the
+          // active provider key so LLMClient pools receive a valid key.
+          openRouterApiKey: providerKeyStatus.activeKey || openRouterApiKey,
+        });
+      } finally {
+        const outcomeStatus = orchestrator.getRecentOutcome(workspaceId);
+        sendAgentActivity(
+          tabId,
+          false,
+          outcomeStatus ? { status: outcomeStatus } : undefined,
+        );
+        await maybeStopKeepalive();
+      }
 
       currentPayload = queuedUserChat.get(workspaceId);
       queuedUserChat.delete(workspaceId);

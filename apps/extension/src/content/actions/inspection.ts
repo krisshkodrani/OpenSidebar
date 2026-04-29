@@ -18,6 +18,19 @@ import {
   getTaggedElement,
   normalizeTagId,
 } from "./helpers";
+import {
+  isHtmlElement,
+  isInputElement,
+  isSelectElement,
+  isTextAreaElement,
+} from "../dom-guards";
+
+function readFormControlValue(el: Element): string | null {
+  if (isInputElement(el) || isTextAreaElement(el) || isSelectElement(el)) {
+    return el.value;
+  }
+  return null;
+}
 
 export function executeScroll(args: ScrollPageArgs): {
   success: boolean;
@@ -40,7 +53,7 @@ export function executeScroll(args: ScrollPageArgs): {
       const tagId = normalizeTagId(args.id);
       const el = getTaggedElement(args.id);
       if (!el) return staleIdError(args.id);
-      if (!(el instanceof HTMLElement)) {
+      if (!isHtmlElement(el)) {
         return {
           success: false,
           result: `Element [${tagId}] is not scrollable`,
@@ -74,7 +87,7 @@ export function executeScroll(args: ScrollPageArgs): {
     if (!el) {
       return staleIdError(args.id);
     }
-    if (!(el instanceof HTMLElement)) {
+    if (!isHtmlElement(el)) {
       return {
         success: false,
         result: `Element [${tagId}] is not scrollable`,
@@ -240,6 +253,75 @@ export function executeFindElement(args: {
     return parts.filter(Boolean).join(" ").trim();
   };
 
+  const promoteTextMatchTarget = (
+    el: Element,
+    normalizedQuery: string,
+  ): Element => {
+    const actionableAncestor = el.closest(
+      [
+        INTERACTIVE_SELECTORS,
+        "[role='option']",
+        "[role='row']",
+        "[role='gridcell']",
+        "[role='menuitem']",
+        "[role='listitem']",
+        "li",
+        "tr",
+        "td",
+      ].join(","),
+    );
+    if (
+      actionableAncestor &&
+      candidateText(actionableAncestor).toLowerCase().includes(normalizedQuery)
+    ) {
+      return actionableAncestor;
+    }
+    return el;
+  };
+
+  const findDeepTextMatch = (): Element | null => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return null;
+
+    const candidates = querySelectorAllDeep(document, "*").filter((el) => {
+      if (isBadFindTarget(el)) return false;
+      if (!isElementVisible(el) || el.closest('[aria-hidden="true"]')) {
+        return false;
+      }
+      const haystack = candidateText(el).toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+
+    if (candidates.length === 0) return null;
+
+    return candidates
+      .map((candidate) => promoteTextMatchTarget(candidate, normalizedQuery))
+      .filter((candidate, index, all) => all.indexOf(candidate) === index)
+      .sort((a, b) => {
+        const aText = candidateText(a).toLowerCase();
+        const bText = candidateText(b).toLowerCase();
+        const aExact = aText === normalizedQuery ? 1 : 0;
+        const bExact = bText === normalizedQuery ? 1 : 0;
+        if (aExact !== bExact) return bExact - aExact;
+
+        const aInteractive = a.matches(INTERACTIVE) ? 1 : 0;
+        const bInteractive = b.matches(INTERACTIVE) ? 1 : 0;
+        if (aInteractive !== bInteractive) return bInteractive - aInteractive;
+
+        const aRole = a.getAttribute("role") ?? "";
+        const bRole = b.getAttribute("role") ?? "";
+        const aOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(aRole)
+          ? 1
+          : 0;
+        const bOptionLike = /^(option|row|gridcell|menuitem|listitem)$/.test(bRole)
+          ? 1
+          : 0;
+        if (aOptionLike !== bOptionLike) return bOptionLike - aOptionLike;
+
+        return aText.length - bText.length;
+      })[0];
+  };
+
   const findDeepInteractiveMatch = (): Element | null => {
     const normalizedQuery = query.trim().toLowerCase();
     const candidates = querySelectorAllDeep(document, INTERACTIVE_SELECTORS)
@@ -277,9 +359,9 @@ export function executeFindElement(args: {
     result: string;
     navigated: boolean;
   } | null => {
-    const matched = findDeepInteractiveMatch();
+    const matched = findDeepInteractiveMatch() ?? findDeepTextMatch();
     if (!matched) return null;
-    if (matched instanceof HTMLElement) {
+    if (isHtmlElement(matched)) {
       matched.scrollIntoView({ behavior: "instant", block: "center" });
     }
     const tagId = addDynamicTag(matched);
@@ -433,11 +515,22 @@ export function executeReadElement(args: ReadElementArgs): {
     return staleIdError(args.id);
   }
 
-  if (el instanceof HTMLElement) {
+  if (isHtmlElement(el)) {
     el.scrollIntoView({ behavior: "instant", block: "center" });
   }
 
   if (args.attribute) {
+    if (args.attribute.toLowerCase() === "value") {
+      const propertyValue = readFormControlValue(el);
+      if (propertyValue !== null) {
+        const desc = describeElement(el, tagId);
+        return {
+          success: true,
+          result: `${desc} value="${truncateText(propertyValue, 2000)}"`,
+          navigated: false,
+        };
+      }
+    }
     const value = el.getAttribute(args.attribute);
     if (value === null) {
       const available = Array.from(el.attributes)
@@ -458,7 +551,7 @@ export function executeReadElement(args: ReadElementArgs): {
   }
 
   const desc = describeElement(el, tagId);
-  const text = el.textContent || "";
+  const text = readFormControlValue(el) ?? el.textContent ?? "";
   return {
     success: true,
     result: `${desc}: ${truncateText(text, 2000)}`,

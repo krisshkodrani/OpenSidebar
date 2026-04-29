@@ -311,8 +311,15 @@ export async function sendDismissModals(
  * Navigate a page and wait for the content script to be ready.
  * Uses a short delay after load to let the content script initialize.
  */
-export async function navigateAndWait(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+export async function navigateAndWait(
+  page: Page,
+  url: string,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  await page.goto(url, {
+    waitUntil: "domcontentloaded",
+    ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
+  });
   // Give content script time to initialize
   await new Promise((r) => setTimeout(r, 1000));
 }

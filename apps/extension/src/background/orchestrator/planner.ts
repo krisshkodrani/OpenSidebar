@@ -36,6 +36,12 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_COORDINATES,
   ToolName.READ_ELEMENT,
   ToolName.INSPECT_HIDDEN,
+  ToolName.INSPECT_CHART,
+  ToolName.INSPECT_TABLE,
+  ToolName.INSPECT_FILTER_STATE,
+  ToolName.APPLY_LIST_FILTER,
+  ToolName.APPLY_LIST_SORT,
+  ToolName.INSPECT_CATALOG_ITEM,
   ToolName.XRAY_PAGE,
   ToolName.GET_PROFILE_FIELDS,
   ToolName.DISMISS_OVERLAYS,
@@ -128,6 +134,13 @@ interface DecompositionStep {
 
 const PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
 const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
+const SKILL_OWNED_WORKFLOW_IDS = new Set([
+  "chart-value-extraction",
+  "search-answer-extraction",
+  "list-filter-workflow",
+  "list-sort-workflow",
+  "catalog-order-workflow",
+]);
 
 function unionTools(groups: TaskNode[]): ToolName[] {
   const tools: ToolName[] = [];
@@ -389,6 +402,58 @@ function collapsePaginatedTableScanNodes(
   return isSkillOwnedPaginatedAggregateScan(query, nodes)
     ? collapsePaginatedAggregateScanNodes(query, nodes)
     : nodes;
+}
+
+function collapseSkillOwnedWorkflowNodes(
+  nodes: TaskNode[],
+  query: string,
+  pageTitle?: string,
+  pageUrl?: string,
+): TaskNode[] {
+  if (nodes.length < 2) return nodes;
+
+  const selection = selectPrimarySkill({
+    query,
+    objective: query,
+    successCriteria: query,
+    pageTitle,
+    pageUrl,
+  });
+  if (!selection || !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) return nodes;
+
+  const firstNode = nodes[0];
+  return [
+    {
+      ...firstNode,
+      selectedSkillId: selection.id,
+      selectedSkillReason: selection.reason,
+      description: compactText(
+        [
+          `Complete the workflow for the original request: ${query}`,
+          ...nodes.map((node) => node.description),
+        ].join(" "),
+      ),
+      successCriteria: compactText(
+        [
+          "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
+          ...nodes.map((node) => node.successCriteria),
+        ].join(" "),
+      ),
+      allowedTools: unionTools(nodes),
+      dependencies: [...firstNode.dependencies],
+      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      verificationGate:
+        nodes
+          .slice()
+          .reverse()
+          .find((node) => node.verificationGate)?.verificationGate,
+      status: "pending",
+      retries: 0,
+      result: undefined,
+      error: undefined,
+    },
+  ];
 }
 
 function compactText(value: string): string {
@@ -699,14 +764,39 @@ export class OrchestratorPlanner {
       );
     }
 
+    const collapsedSkillOwnedWorkflowNodes = collapseSkillOwnedWorkflowNodes(
+      nodes,
+      query,
+      pageTitle,
+      pageUrl,
+    );
+    if (collapsedSkillOwnedWorkflowNodes !== nodes) {
+      nodes = collapsedSkillOwnedWorkflowNodes;
+      logger.info(
+        "orchestrator",
+        "Collapsed workflow micro-steps into skill-owned node",
+        {
+          count: nodes.length,
+          selectedSkillId: nodes[0]?.selectedSkillId,
+        },
+      );
+    }
+
     logger.info("orchestrator", "Planner generated nodes", {
       count: nodes.length,
     });
 
     // Simple task: decomposition had no subtasks (empty array)
+    const isSkillOwnedSingleNode = Boolean(
+      nodes.length === 1 &&
+        nodes[0]?.selectedSkillId &&
+        SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId),
+    );
     const isSingleNode =
       nodes.length === 1 &&
-      (!decomposition?.subtasks?.length || decomposition.subtasks.length === 0);
+      (isSkillOwnedSingleNode ||
+        !decomposition?.subtasks?.length ||
+        decomposition.subtasks.length === 0);
 
     return { nodes, isSingleNode, difficulty };
   }
@@ -718,6 +808,18 @@ export class OrchestratorPlanner {
     reason: string,
     signal?: AbortSignal,
   ): Promise<TaskNode[] | null> {
+    if (
+      node.selectedSkillId &&
+      SKILL_OWNED_WORKFLOW_IDS.has(node.selectedSkillId)
+    ) {
+      logger.info(
+        "orchestrator",
+        "Skipped micro-step expansion for skill-owned workflow node",
+        { nodeId: node.id, selectedSkillId: node.selectedSkillId },
+      );
+      return null;
+    }
+
     const decomposition = await this.planner.decompose(
       `Replan objective: ${node.description}\nReason: ${reason}`,
       pageTitle,

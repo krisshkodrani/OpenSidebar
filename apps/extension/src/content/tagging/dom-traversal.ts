@@ -51,6 +51,7 @@ export const INTERACTIVE_SELECTORS = [
   "[role='radio']",
   "[role='switch']",
   "[role='combobox']",
+  "[role='option']",
   "[contenteditable='true']",
   "summary",
   "details",

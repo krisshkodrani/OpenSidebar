@@ -199,6 +199,13 @@ export interface PendingAsyncChangeSignal {
   reason: string;
 }
 
+export interface FormSubmissionResetSignal {
+  reason: string;
+  previousRecordId: string;
+  currentRecordId: string;
+  filledFieldsBeforeSubmit: number;
+}
+
 const STRUCTURAL_ADVANCE_TOOLS = new Set<string>([
   ToolName.CLICK_ELEMENT,
   ToolName.TYPE_TEXT,
@@ -324,6 +331,14 @@ const ASYNC_TOKEN_STOPWORDS = new Set([
   "click",
 ]);
 
+const FORM_FINALIZING_CONTROL_RE =
+  /\b(submit|save|create|insert|send|confirm|finish|place order|checkout)\b/i;
+const FORM_SUBMISSION_CONTEXT_RE =
+  /\b(submit|submission|submitted|save|saved|create|created|insert|record|form|confirmation|complete)\b/i;
+const FORM_VALIDATION_ERROR_RE =
+  /\b(error message|validation error|mandatory fields?\s+(?:are\s+)?not filled|required fields?|cannot be blank|must be filled|please fill|required value)\b/i;
+const RECORD_ID_RE = /\b[A-Z]{2,}\d{4,}\b/g;
+
 export function tokenizeStepText(stepText: string): string[] {
   return [
     ...new Set(stepText.toLowerCase().match(/[a-z0-9$@._-]{3,}/g) ?? []),
@@ -355,6 +370,202 @@ export function snapshotSearchText(snapshot: DomSnapshot | null): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function elementAttributeText(element: DomSnapshot["elements"][number]): string {
+  return [
+    element.text,
+    element.tagName,
+    element.role,
+    element.attributes.id,
+    element.attributes.name,
+    element.attributes.type,
+    element.attributes.value,
+    element.attributes.selected,
+    element.attributes.placeholder,
+    element.attributes["aria-label"],
+    element.attributes.title,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function findToolTargetElement(
+  snapshot: DomSnapshot | null | undefined,
+  toolArgs: Record<string, unknown> | undefined,
+): DomSnapshot["elements"][number] | null {
+  if (!snapshot || !toolArgs) return null;
+  const rawId = toolArgs.id;
+  const tagId =
+    typeof rawId === "number"
+      ? rawId
+      : typeof rawId === "string"
+        ? Number(rawId)
+        : NaN;
+  if (!Number.isFinite(tagId)) return null;
+  return snapshot.elements.find((element) => element.tag === tagId) ?? null;
+}
+
+function extractPrimaryRecordId(
+  snapshot: DomSnapshot | null | undefined,
+): string | null {
+  if (!snapshot) return null;
+  const numberField = snapshot.elements.find((element) =>
+    /\b(?:number|record_number)\b/i.test(
+      `${element.attributes.id ?? ""} ${element.attributes.name ?? ""}`,
+    ),
+  );
+  const numberValue = [numberField?.attributes.value, numberField?.text].find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  const numberMatch = numberValue?.match(RECORD_ID_RE)?.[0];
+  if (numberMatch) return numberMatch;
+
+  return (
+    [snapshot.title, snapshot.pageContent, snapshot.visibleContent]
+      .filter(Boolean)
+      .join(" ")
+      .match(RECORD_ID_RE)?.[0] ?? null
+  );
+}
+
+function getUserEnteredFormValue(
+  element: DomSnapshot["elements"][number],
+): string {
+  const attrs = element.attributes;
+  const fieldName = `${attrs.id ?? ""} ${attrs.name ?? ""}`.toLowerCase();
+  if (!fieldName) return "";
+  if (/\b(search|typeahead|filter|query)\b/.test(fieldName)) return "";
+  if (/\b(?:^|[._-])number\b/.test(fieldName)) return "";
+
+  const type = String(attrs.type ?? "").toLowerCase();
+  if (["button", "submit", "hidden", "radio", "checkbox"].includes(type)) {
+    return "";
+  }
+
+  if (element.tagName.toLowerCase() === "select") {
+    const selected = String(attrs.selected ?? "").trim();
+    return selected && !/^--\s*none\s*--$/i.test(selected) ? selected : "";
+  }
+
+  const value = String(attrs.value ?? element.text ?? "").trim();
+  const placeholder = String(attrs.placeholder ?? "").trim();
+  if (!value || value === placeholder) return "";
+  if (/^(search|related search|resolved)$/i.test(value)) return "";
+  return value;
+}
+
+function countUserEnteredFormValues(
+  snapshot: DomSnapshot | null | undefined,
+): number {
+  if (!snapshot) return 0;
+  return snapshot.elements.filter((element) => getUserEnteredFormValue(element))
+    .length;
+}
+
+/**
+ * Detect record-creation UIs that signal a successful submit by resetting from a
+ * populated "Create ABC123" form to the next blank "Create ABC124" form.
+ */
+export function detectFormSubmissionResetSuccess(params: {
+  currentStepDescription: string;
+  currentStepSuccessCriteria?: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot: DomSnapshot | null;
+  actionEffect: ActionEffect | null;
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+}): FormSubmissionResetSignal | null {
+  const {
+    currentStepDescription,
+    currentStepSuccessCriteria,
+    preActionSnapshot,
+    currentSnapshot,
+    actionEffect,
+    toolName,
+    toolArgs,
+  } = params;
+  if (!preActionSnapshot || !currentSnapshot || !actionEffect) return null;
+  if (toolName !== ToolName.CLICK_ELEMENT && toolName !== ToolName.PRESS_KEY) {
+    return null;
+  }
+
+  const stepText = `${currentStepDescription}\n${currentStepSuccessCriteria ?? ""}`;
+  if (!FORM_SUBMISSION_CONTEXT_RE.test(stepText)) return null;
+
+  if (toolName === ToolName.CLICK_ELEMENT) {
+    const target = findToolTargetElement(preActionSnapshot, toolArgs);
+    if (
+      !target ||
+      !FORM_FINALIZING_CONTROL_RE.test(elementAttributeText(target))
+    ) {
+      return null;
+    }
+  }
+
+  const materiallyChanged =
+    actionEffect.urlChanged ||
+    actionEffect.deltaPercent >= ACTION_EFFECT.ZERO_THRESHOLD;
+  if (!materiallyChanged) return null;
+
+  const beforeRecordId = extractPrimaryRecordId(preActionSnapshot);
+  const afterRecordId = extractPrimaryRecordId(currentSnapshot);
+  if (!beforeRecordId || !afterRecordId || beforeRecordId === afterRecordId) {
+    return null;
+  }
+
+  const beforeFilledCount = countUserEnteredFormValues(preActionSnapshot);
+  const afterFilledCount = countUserEnteredFormValues(currentSnapshot);
+  if (beforeFilledCount < 2 || afterFilledCount >= beforeFilledCount) {
+    return null;
+  }
+
+  const afterText = snapshotSearchText(currentSnapshot);
+  if (FORM_VALIDATION_ERROR_RE.test(afterText)) return null;
+  if (!/\b(create|new record)\b/i.test(afterText)) return null;
+
+  return {
+    previousRecordId: beforeRecordId,
+    currentRecordId: afterRecordId,
+    filledFieldsBeforeSubmit: beforeFilledCount,
+    reason:
+      `Submit advanced from populated record ${beforeRecordId} to fresh ` +
+      `record form ${afterRecordId}; treating the prior record submission as complete.`,
+  };
+}
+
+export function shouldTrackFormSubmissionReset(params: {
+  currentStepDescription: string;
+  currentStepSuccessCriteria?: string;
+  preActionSnapshot?: DomSnapshot | null;
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+}): boolean {
+  const {
+    currentStepDescription,
+    currentStepSuccessCriteria,
+    preActionSnapshot,
+    toolName,
+    toolArgs,
+  } = params;
+  if (!preActionSnapshot) return false;
+  if (toolName !== ToolName.CLICK_ELEMENT && toolName !== ToolName.PRESS_KEY) {
+    return false;
+  }
+  const stepText = `${currentStepDescription}\n${currentStepSuccessCriteria ?? ""}`;
+  if (!FORM_SUBMISSION_CONTEXT_RE.test(stepText)) return false;
+
+  if (toolName === ToolName.CLICK_ELEMENT) {
+    const target = findToolTargetElement(preActionSnapshot, toolArgs);
+    if (
+      !target ||
+      !FORM_FINALIZING_CONTROL_RE.test(elementAttributeText(target))
+    ) {
+      return false;
+    }
+  }
+
+  return countUserEnteredFormValues(preActionSnapshot) >= 2;
 }
 
 export interface SuccessCriteriaResult {

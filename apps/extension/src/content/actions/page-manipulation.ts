@@ -11,6 +11,7 @@ import {
   isLikelyOverlay,
   normalizeTagId,
 } from "./helpers";
+import { isHtmlElement, isInputElement } from "../dom-guards";
 
 /**
  * Walk up from an element to find the nearest overlay ancestor.
@@ -45,7 +46,7 @@ export function executeHideElement(args: HideElementArgs): {
   if (!el) {
     return staleIdError(args.id);
   }
-  if (!(el instanceof HTMLElement)) {
+  if (!isHtmlElement(el)) {
     return {
       success: false,
       result: `Element [${tagId}] is not an HTMLElement`,
@@ -99,7 +100,7 @@ export function executeUploadFile(args: Record<string, unknown>): {
     return staleIdError(args.id);
   }
 
-  if (!(el instanceof HTMLInputElement) || el.type !== "file") {
+  if (!isInputElement(el) || el.type !== "file") {
     return {
       success: false,
       result: `Element [${tagId}] is not a file input`,

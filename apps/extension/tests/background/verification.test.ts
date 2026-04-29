@@ -2,6 +2,7 @@ import { describe, test, expect } from "vitest";
 import "../setup";
 import {
   assessDoneSummary,
+  assessWorkflowDoneGuard,
   checkSummaryStepCoherence,
   checkVerificationGate,
   detectAdmission,
@@ -200,6 +201,20 @@ describe("assessDoneSummary", () => {
     expect(r.confident).toBe(true);
   });
 
+  test("success override: form fields filled with 'unable to' literal stays confident", () => {
+    const r = assessDoneSummary(
+      'All requested form fields have been successfully filled. Description: "Multiple employees have reported that they are unable to send/receive email."',
+    );
+    expect(r.confident).toBe(true);
+  });
+
+  test("does not treat non-failure 'unable to' field values as admission", () => {
+    const r = assessDoneSummary(
+      "Description is set to Multiple employees have reported that they are unable to send/receive email.",
+    );
+    expect(r.confident).toBe(true);
+  });
+
   test("success override: 'is now in' overrides failure signal", () => {
     const r = assessDoneSummary(
       "Item is now in the cart, but cart count didn't update",
@@ -218,6 +233,103 @@ describe("assessDoneSummary", () => {
   test("failure without override: 'cart count didn't update' stays blocked", () => {
     const r = assessDoneSummary("The cart count didn't update after clicking add");
     expect(r.confident).toBe(false);
+  });
+});
+
+describe("assessWorkflowDoneGuard", () => {
+  test("rejects chart pages without an extracted value", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Tell me the value shown in the incident chart.",
+      summary: "The incident chart page is open and visible.",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("concrete extracted value");
+  });
+
+  test("allows chart summaries with a concrete value", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Tell me the value shown in the incident chart.",
+      summary: "The chart value for Critical incidents is 12.",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects opened knowledge articles without the requested answer", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Search the knowledge base and answer the password reset question.",
+      summary: "Opened the relevant KB article.",
+      selectedSkillId: "search-answer-extraction",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("requested answer");
+  });
+
+  test("allows knowledge summaries that provide the answer", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Search the knowledge base and answer the password reset question.",
+      summary: "The article says users should reset the password from Account Settings.",
+      selectedSkillId: "search-answer-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects filter builder opened without applied filter", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Filter the incident list to show priority 1 records.",
+      summary: "The filter builder is open and ready.",
+      selectedSkillId: "list-filter-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("filter to be applied");
+  });
+
+  test("allows applied list filters", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Filter the incident list to show priority 1 records.",
+      summary: "The priority 1 filter is applied and the results updated.",
+      selectedSkillId: "list-filter-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects list opened without verified sort state", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Sort the incident list by Updated descending.",
+      summary: "The incident list is open and visible.",
+      selectedSkillId: "list-sort-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("verified sort state");
+  });
+
+  test("allows verified list sort state", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Sort the incident list by Updated descending.",
+      summary: "The incident list is sorted by Updated in descending order.",
+      selectedSkillId: "list-sort-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects catalog detail pages without request confirmation", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Order a standard laptop from the service catalog.",
+      summary: "The catalog item detail page is open with configuration options visible.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("confirmation evidence");
+  });
+
+  test("allows catalog request confirmations", () => {
+    const result = assessWorkflowDoneGuard({
+      query: "Order a standard laptop from the service catalog.",
+      summary: "The standard laptop request was submitted and confirmation REQ0012345 is visible.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(false);
   });
 });
 

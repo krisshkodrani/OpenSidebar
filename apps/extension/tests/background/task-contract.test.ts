@@ -196,6 +196,66 @@ describe("task contract helpers", () => {
     expect(synthesized![synthesized!.length - 1].objective).toMatch(/report/i);
   });
 
+  test("synthesizes a compact plan for field-heavy record creation prompts", () => {
+    const synthesized = synthesizePlanFromTaskContract(
+      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
+    );
+
+    expect(synthesized).not.toBeNull();
+    expect(synthesized).toHaveLength(2);
+    expect(synthesized![0].toolProfile).toBe("form_fill");
+    expect(synthesized![0].objective).toContain(
+      'Short description="EMAIL Server Down Again"',
+    );
+    expect(synthesized![0].objective).toContain('Channel="Phone"');
+    expect(synthesized![1].toolProfile).toBe("submit_form");
+    expect(synthesized![1].dependencies).toEqual([0]);
+  });
+
+  test("does not turn empty WorkArena field values into fake quoted obligations", () => {
+    const prompt =
+      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".';
+    const contract = buildTaskContract(prompt);
+
+    expect(contract.requiredEntities).not.toContain("for field");
+    expect(contract.requiredEntities).not.toContain(", a value of");
+    expect(contract.requiredEntities).not.toContain(", and a value of");
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: [
+        "Short description: EMAIL Server Down Again",
+        "Caller: Joe Employee",
+        "Knowledge: false",
+        "Service: empty",
+        "Resolution notes: Closed before close notes were made mandatory",
+        "Description: Multiple employees have reported that they are unable to send/receive email.",
+        "Change Request: empty",
+        "Channel: Phone",
+        "Submit advanced from populated record INC0045792 to a fresh record form.",
+      ].join("\n"),
+    });
+
+    expect(coverage.satisfied).toBe(true);
+  });
+
+  test("does not treat quoted knowledge-base questions as literal summary obligations", () => {
+    const prompt =
+      'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."';
+    const contract = buildTaskContract(prompt);
+
+    expect(contract.requiredEntities).not.toContain(
+      "each year, how many new hires does the company typically make? your answer should be a number.",
+    );
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: "The company typically makes 100 new hires each year.",
+    });
+
+    expect(coverage.satisfied).toBe(true);
+  });
+
   test("extracts multi-target board update obligations", () => {
     const contract = buildTaskContract(
       "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",

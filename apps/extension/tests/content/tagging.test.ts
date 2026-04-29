@@ -195,6 +195,24 @@ describe("tagElements", () => {
     expect(btnTag).toBeDefined();
     expect(btnTag!.attributes["label"]).toBe("Account Settings");
   });
+
+  test("tags visible labels for hidden checkbox controls with checked state", () => {
+    document.body.innerHTML = `
+      <input id="knowledge" name="incident.knowledge" type="checkbox" checked style="display: none" />
+      <label for="knowledge">Knowledge</label>
+    `;
+
+    const tagged = tagElements();
+    const knowledge = tagged.find((item) => item.text === "Knowledge");
+
+    expect(knowledge).toBeDefined();
+    expect(knowledge!.tagName).toBe("label");
+    expect(knowledge!.role).toBe("checkbox");
+    expect(knowledge!.attributes["type"]).toBe("checkbox");
+    expect(knowledge!.attributes["checked"]).toBe("true");
+    expect(knowledge!.attributes["control"]).toBe("knowledge");
+    expect(knowledge!.attributes["name"]).toBe("incident.knowledge");
+  });
 });
 
 describe("stable element IDs", () => {

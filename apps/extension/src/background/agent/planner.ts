@@ -242,6 +242,19 @@ function hasSequentialActionSequence(query: string): boolean {
   return actionMatches.length >= 2;
 }
 
+function isCompactFieldValueFormPlan(
+  steps: Array<{ objective: string; toolProfile?: ToolProfile }> | null,
+): boolean {
+  if (!steps || steps.length !== 2) return false;
+  return (
+    steps[0]?.toolProfile === "form_fill" &&
+    steps[1]?.toolProfile === "submit_form" &&
+    /^Fill the form with the requested field values:/i.test(
+      steps[0]?.objective ?? "",
+    )
+  );
+}
+
 export function inferToolProfileForStep(
   objective: string,
   successCriteria: string,
@@ -809,6 +822,34 @@ export class TaskPlanner {
           },
         };
       }
+      if (
+        synthesizedFallback &&
+        isCompactFieldValueFormPlan(synthesizedFallback) &&
+        steps &&
+        steps.length >= synthesizedFallback.length &&
+        !isCompactFieldValueFormPlan(steps)
+      ) {
+        logger.info(
+          "agent",
+          "Planner field-value form plan replaced with compact form-fill plan",
+          {
+            originalStepCount: steps.length,
+            synthesizedStepCount: synthesizedFallback.length,
+          },
+        );
+        return {
+          subtasks: synthesizedFallback.map((step) => step.objective),
+          steps: synthesizedFallback,
+          difficulty,
+          limitOverrides,
+          instrumentation: {
+            outcome: "structured_steps",
+            parsedStepCount: synthesizedFallback.length,
+            parsedSubtaskCount: synthesizedFallback.length,
+            requestedMultiStep: true,
+          },
+        };
+      }
       const legacySubtasks = Array.isArray(parsed.subtasks)
         ? parsed.subtasks
             .filter((step: unknown): step is string => typeof step === "string")
@@ -873,6 +914,34 @@ export class TaskPlanner {
       // Hard cap: exhaustive bounded review tasks may need more than 8 steps
       // to cover all requested items plus a final synthesis/report step.
       if (subtasks.length > maxStructuredSteps) {
+        if (
+          synthesizedFallback &&
+          synthesizedFallback.length >= 2 &&
+          synthesizedFallback.length <= maxStructuredSteps &&
+          synthesizedFallback.length < subtasks.length
+        ) {
+          logger.info(
+            "agent",
+            "Planner decomposition exceeded step cap; using compact task-contract synthesis",
+            {
+              original: subtasks.length,
+              synthesizedStepCount: synthesizedFallback.length,
+              maxStructuredSteps,
+            },
+          );
+          return {
+            subtasks: synthesizedFallback.map((step) => step.objective),
+            steps: synthesizedFallback,
+            difficulty,
+            limitOverrides,
+            instrumentation: {
+              outcome: "structured_steps",
+              parsedStepCount: synthesizedFallback.length,
+              parsedSubtaskCount: synthesizedFallback.length,
+              requestedMultiStep: true,
+            },
+          };
+        }
         logger.warn(
           "agent",
           "Planner decomposition exceeded step cap, truncating",

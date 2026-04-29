@@ -12,7 +12,12 @@ import {
   RightClickArgs,
   SetCheckboxArgs,
 } from "../../types";
-import { getTagMap, getVisibleText, addDynamicTag } from "../tagging";
+import {
+  getTagMap,
+  getVisibleText,
+  addDynamicTag,
+  getCheckboxOrRadioControl,
+} from "../tagging";
 import {
   staleIdError,
   describeElement,
@@ -20,6 +25,15 @@ import {
   isLikelyOverlay,
   normalizeTagId,
 } from "./helpers";
+import {
+  isAnchorElement,
+  isButtonElement,
+  isFormElement,
+  isHtmlElement,
+  isInputElement,
+  isSelectElement,
+  isTextAreaElement,
+} from "../dom-guards";
 
 /**
  * Use the native prototype value setter to bypass React/Vue controlled input interception.
@@ -30,16 +44,197 @@ function setNativeValue(
   el: HTMLInputElement | HTMLTextAreaElement,
   value: string,
 ): void {
-  const proto =
-    el instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
+  const view = el.ownerDocument?.defaultView ?? window;
+  const proto = isTextAreaElement(el)
+    ? view.HTMLTextAreaElement.prototype
+    : view.HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   if (setter) {
     setter.call(el, value);
   } else {
     el.value = value;
   }
+}
+
+let lastKeyboardTarget: Element | null = null;
+
+function isLiveKeyboardTarget(el: Element | null): el is Element {
+  if (!el?.isConnected) return false;
+  try {
+    const frameElement = el.ownerDocument?.defaultView?.frameElement;
+    return !frameElement || frameElement.isConnected;
+  } catch {
+    return true;
+  }
+}
+
+function rememberKeyboardTarget(el: Element | null): void {
+  if (isLiveKeyboardTarget(el)) {
+    lastKeyboardTarget = el;
+  }
+}
+
+function getActiveElement(doc: Document | null | undefined): Element | null {
+  try {
+    return doc?.activeElement ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isDocumentFallbackElement(el: Element | null): boolean {
+  if (!el) return true;
+  const doc = el.ownerDocument;
+  return el === doc.body || el === doc.documentElement;
+}
+
+function findFocusableElement(root: ParentNode): HTMLElement | null {
+  return root.querySelector<HTMLElement>(
+    "[tabindex], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable='true']",
+  );
+}
+
+function resolveKeyboardTarget(): Element {
+  if (lastKeyboardTarget && !isLiveKeyboardTarget(lastKeyboardTarget)) {
+    lastKeyboardTarget = null;
+  }
+
+  if (lastKeyboardTarget) {
+    const ownerDoc = lastKeyboardTarget.ownerDocument;
+    const ownerActive = getActiveElement(ownerDoc);
+    if (!isDocumentFallbackElement(ownerActive)) {
+      return ownerActive!;
+    }
+
+    if (isHtmlElement(lastKeyboardTarget)) {
+      lastKeyboardTarget.focus();
+      const focused = getActiveElement(ownerDoc);
+      if (!isDocumentFallbackElement(focused)) {
+        return focused!;
+      }
+    }
+
+    return lastKeyboardTarget;
+  }
+
+  const active = getActiveElement(document);
+  if (!isDocumentFallbackElement(active)) {
+    return active!;
+  }
+
+  const focusable = findFocusableElement(document);
+  if (focusable) {
+    focusable.focus();
+    return focusable;
+  }
+
+  return document.body ?? document.documentElement;
+}
+
+function keyboardEventForTarget(
+  target: Element,
+  type: string,
+  opts: KeyboardEventInit,
+): KeyboardEvent {
+  const view = target.ownerDocument?.defaultView ?? window;
+  const EventCtor = view.KeyboardEvent ?? KeyboardEvent;
+  return new EventCtor(type, opts);
+}
+
+function mouseEventForTarget(
+  target: Element,
+  type: string,
+  opts: MouseEventInit = {},
+): MouseEvent {
+  const view = target.ownerDocument?.defaultView ?? window;
+  const EventCtor = view.MouseEvent ?? MouseEvent;
+  return new EventCtor(type, { view, ...opts });
+}
+
+function pointerEventForTarget(
+  target: Element,
+  type: string,
+  opts: PointerEventInit = {},
+): Event {
+  const view = target.ownerDocument?.defaultView ?? window;
+  const FallbackCtor =
+    typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
+  const EventCtor = view.PointerEvent ?? view.MouseEvent ?? FallbackCtor;
+  return new EventCtor(type, { view, ...opts });
+}
+
+function centerMouseOptions(target: Element): MouseEventInit {
+  const rect = target.getBoundingClientRect();
+  return {
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.top + rect.height / 2,
+  };
+}
+
+function dispatchMouseActivation(target: Element, opts: MouseEventInit): void {
+  const hoverOpts = {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    buttons: 0,
+    ...opts,
+  };
+  const downOpts = { ...hoverOpts, buttons: 1 };
+  const upOpts = { ...hoverOpts, buttons: 0 };
+
+  target.dispatchEvent(pointerEventForTarget(target, "pointerover", hoverOpts));
+  target.dispatchEvent(mouseEventForTarget(target, "mouseover", hoverOpts));
+  target.dispatchEvent(mouseEventForTarget(target, "mousemove", hoverOpts));
+  target.dispatchEvent(pointerEventForTarget(target, "pointerdown", downOpts));
+  target.dispatchEvent(mouseEventForTarget(target, "mousedown", downOpts));
+  target.dispatchEvent(pointerEventForTarget(target, "pointerup", upOpts));
+  target.dispatchEvent(mouseEventForTarget(target, "mouseup", upOpts));
+}
+
+function dispatchClickActivation(
+  target: Element,
+  opts: MouseEventInit = centerMouseOptions(target),
+): void {
+  dispatchMouseActivation(target, opts);
+  if (isHtmlElement(target)) {
+    target.click();
+  } else {
+    target.dispatchEvent(
+      mouseEventForTarget(target, "click", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 0,
+        ...opts,
+      }),
+    );
+  }
+}
+
+function isAutocompleteLikeTextInput(el: HTMLInputElement): boolean {
+  const role = el.getAttribute("role")?.toLowerCase() ?? "";
+  const blob = [
+    el.getAttribute("id"),
+    el.getAttribute("name"),
+    el.getAttribute("class"),
+    el.getAttribute("autocomplete"),
+    el.getAttribute("aria-label"),
+    el.getAttribute("aria-controls"),
+    el.getAttribute("aria-haspopup"),
+    el.getAttribute("aria-autocomplete"),
+    el.getAttribute("placeholder"),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    role === "combobox" ||
+    el.hasAttribute("list") ||
+    el.hasAttribute("aria-autocomplete") ||
+    /\b(combo|autocomplete|typeahead|suggest|lookup|reference)\b/.test(blob) ||
+    /\bsys_display\./.test(blob)
+  );
 }
 
 export async function executeClick(args: ClickElementArgs): Promise<{
@@ -56,6 +251,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
 
   // Scroll into view if needed
   el.scrollIntoView({ behavior: "instant", block: "center" });
+  const ownerDoc = el.ownerDocument ?? document;
 
   // Our own injected elements (agent border, stop button) must be excluded from
   // elementFromPoint checks — they cover the viewport at max z-index but have
@@ -73,7 +269,9 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   // (e.g. LinkedIn messaging) where scrollIntoView shifts a fixed panel and
   // elementFromPoint lands on the document root behind it.
   const isDocumentRoot = (node: Element | null): boolean =>
-    node === document.body || node === document.documentElement;
+    !!node &&
+    (node === node.ownerDocument.body ||
+      node === node.ownerDocument.documentElement);
 
   const isServiceNowShellPassThrough = (node: Element | null): boolean => {
     if (!node) return false;
@@ -89,7 +287,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     const rect = el.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
-    const topEl = document.elementFromPoint(x, y);
+    const topEl = ownerDoc.elementFromPoint(x, y);
 
     if (
       !topEl ||
@@ -103,7 +301,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     }
 
     // Auto-hide the covering element only if it looks like an overlay
-    if (topEl instanceof HTMLElement) {
+    if (isHtmlElement(topEl)) {
       if (!isLikelyOverlay(topEl)) break; // Not an overlay — stop retrying
       topEl.style.display = "none";
     }
@@ -138,7 +336,7 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   let blockingDetails = null;
 
   for (const point of points) {
-    const topEl = document.elementFromPoint(point.x, point.y);
+    const topEl = ownerDoc.elementFromPoint(point.x, point.y);
     if (
       !topEl ||
       el.contains(topEl) ||
@@ -171,19 +369,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       (finalTop as HTMLElement).shadowRoot?.contains(el) ?? false;
     if (blockerIsChild || targetInsideBlocker || targetInShadowOfBlocker) {
       for (let i = 0; i < count; i++) {
-        el.dispatchEvent(
-          new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-        );
-        el.dispatchEvent(
-          new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
-        );
-        if (el instanceof HTMLElement) {
-          el.click();
-        } else {
-          el.dispatchEvent(
-            new MouseEvent("click", { bubbles: true, cancelable: true }),
-          );
-        }
+        rememberKeyboardTarget(el);
+        dispatchClickActivation(el);
         if (i < count - 1) {
           await new Promise((r) => setTimeout(r, 150));
         }
@@ -191,8 +378,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
       const mayNavigate =
         el.tagName === "A" ||
         el.closest("a") !== null ||
-        (el instanceof HTMLFormElement) ||
-        (el instanceof HTMLButtonElement && el.type === "submit");
+        isFormElement(el) ||
+        (isButtonElement(el) && el.type === "submit");
       return {
         success: true,
         result: `Clicked [${tagId}] ${el.tagName.toLowerCase()} "${getVisibleText(el).slice(0, 40)}" (overlay pass-through)`,
@@ -222,20 +409,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   // double-processing on toggle elements (accordions, checkboxes, tabs).
   //
   for (let i = 0; i < count; i++) {
-    el.dispatchEvent(
-      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
-    );
-    el.dispatchEvent(
-      new MouseEvent("mouseup", { bubbles: true, cancelable: true }),
-    );
-    if (el instanceof HTMLElement) {
-      el.click(); // Native click — trusted, works with React/Vue/Angular
-    } else {
-      // SVG/non-HTML elements don't have .click() — synthetic fallback
-      el.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    }
+    rememberKeyboardTarget(el);
+    dispatchClickActivation(el);
 
     // Delay between clicks for multi-click (let event handlers process)
     if (i < count - 1) {
@@ -264,9 +439,9 @@ export function executeType(args: TypeTextArgs): {
 
   if (
     !(
-      el instanceof HTMLInputElement ||
-      el instanceof HTMLTextAreaElement ||
-      (el as HTMLElement).isContentEditable
+      isInputElement(el) ||
+      isTextAreaElement(el) ||
+      (isHtmlElement(el) && el.isContentEditable)
     )
   ) {
     return {
@@ -277,17 +452,19 @@ export function executeType(args: TypeTextArgs): {
   }
 
   // Scroll into view and focus the element
-  if (el instanceof HTMLElement) {
+  if (isHtmlElement(el)) {
     el.scrollIntoView({ behavior: "instant", block: "center" });
     el.focus();
+    rememberKeyboardTarget(el);
   }
 
   // ContentEditable: set text directly and fire input events
-  const isInput = el instanceof HTMLInputElement;
-  const isTextarea = el instanceof HTMLTextAreaElement;
+  const isInput = isInputElement(el);
+  const isTextarea = isTextAreaElement(el);
   if (!isInput && !isTextarea) {
     const htmlEl = el as HTMLElement;
     htmlEl.focus();
+    rememberKeyboardTarget(htmlEl);
     htmlEl.textContent = args.text;
     htmlEl.dispatchEvent(
       new InputEvent("input", { bubbles: true, data: args.text, inputType: "insertText" }),
@@ -302,7 +479,7 @@ export function executeType(args: TypeTextArgs): {
 
   // Input/textarea: clear using native setter, then type char-by-char for SPA frameworks
   {
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    if (isInputElement(el) || isTextAreaElement(el)) {
       setNativeValue(el, "");
       el.dispatchEvent(
         new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }),
@@ -311,16 +488,16 @@ export function executeType(args: TypeTextArgs): {
 
     for (const char of args.text) {
       el.dispatchEvent(
-        new KeyboardEvent("keydown", { key: char, bubbles: true }),
+        keyboardEventForTarget(el, "keydown", { key: char, bubbles: true }),
       );
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (isInputElement(el) || isTextAreaElement(el)) {
         setNativeValue(el, el.value + char);
         el.dispatchEvent(
           new InputEvent("input", { bubbles: true, data: char, inputType: "insertText" }),
         );
       }
       el.dispatchEvent(
-        new KeyboardEvent("keyup", { key: char, bubbles: true }),
+        keyboardEventForTarget(el, "keyup", { key: char, bubbles: true }),
       );
     }
 
@@ -331,7 +508,7 @@ export function executeType(args: TypeTextArgs): {
   let navigated = false;
   if (args.pressEnter) {
     el.dispatchEvent(
-      new KeyboardEvent("keydown", {
+      keyboardEventForTarget(el, "keydown", {
         key: "Enter",
         code: "Enter",
         keyCode: 13,
@@ -339,7 +516,7 @@ export function executeType(args: TypeTextArgs): {
       }),
     );
     el.dispatchEvent(
-      new KeyboardEvent("keyup", {
+      keyboardEventForTarget(el, "keyup", {
         key: "Enter",
         code: "Enter",
         keyCode: 13,
@@ -349,7 +526,10 @@ export function executeType(args: TypeTextArgs): {
 
     // Check if the input is inside a form — Enter may submit it
     const form = el.closest("form");
-    if (form) {
+    if (
+      isFormElement(form) &&
+      !(isInputElement(el) && isAutocompleteLikeTextInput(el))
+    ) {
       form.requestSubmit();
       navigated = true;
     }
@@ -430,9 +610,9 @@ export function executeHover(args: { id: number }): {
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
   // Dispatch synthetic mouse events (triggers JS handlers)
-  el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-  el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-  el.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  el.dispatchEvent(mouseEventForTarget(el, "mouseover", { bubbles: true }));
+  el.dispatchEvent(mouseEventForTarget(el, "mouseenter", { bubbles: true }));
+  el.dispatchEvent(mouseEventForTarget(el, "mousemove", { bubbles: true }));
 
   // Force CSS :hover styles (synthetic events don't activate the pseudo-class)
   const forcedCss = forceHoverStyles(el as HTMLElement);
@@ -455,7 +635,7 @@ export function executeSelectOption(args: SelectOptionArgs): {
     return staleIdError(args.id);
   }
 
-  if (!(el instanceof HTMLSelectElement)) {
+  if (!isSelectElement(el)) {
     return {
       success: false,
       result: `Element [${tagId}] is not a <select> element`,
@@ -484,9 +664,11 @@ export function executeSelectOption(args: SelectOptionArgs): {
 
   // Scroll into view and set the value using native setter for React compatibility
   el.scrollIntoView({ behavior: "instant", block: "center" });
+  rememberKeyboardTarget(el);
 
   // Use native prototype setter to bypass React/Vue controlled select interception
-  const selectProto = HTMLSelectElement.prototype;
+  const view = el.ownerDocument?.defaultView ?? window;
+  const selectProto = view.HTMLSelectElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(selectProto, "value")?.set;
   if (setter) {
     setter.call(el, match.value);
@@ -520,35 +702,30 @@ export function executePressKey(args: PressKeyArgs): {
     metaKey: modifiers.includes("meta"),
   };
 
-  // Dispatch to the focused element (or document.body as fallback).
-  // If nothing is focused, try to focus the most relevant interactive element.
-  let target: EventTarget = document.activeElement ?? document.body;
-  if (target === document.body) {
-    // No element focused — try to focus a focusable element near the viewport center
-    const focusable = document.querySelector<HTMLElement>(
-      "[tabindex], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [contenteditable='true']",
-    );
-    if (focusable) {
-      focusable.focus();
-      target = focusable;
-    }
-  }
+  // Dispatch to the focused element in the last interacted document. Same-origin
+  // iframes keep their own activeElement, so top-level document.activeElement is
+  // often only the iframe shell or body.
+  const target = resolveKeyboardTarget();
+  rememberKeyboardTarget(target);
 
-  target.dispatchEvent(new KeyboardEvent("keydown", opts));
-  target.dispatchEvent(new KeyboardEvent("keypress", opts));
-  target.dispatchEvent(new KeyboardEvent("keyup", opts));
+  target.dispatchEvent(keyboardEventForTarget(target, "keydown", opts));
+  target.dispatchEvent(keyboardEventForTarget(target, "keypress", opts));
+  target.dispatchEvent(keyboardEventForTarget(target, "keyup", opts));
 
   // Only auto-submit forms on Enter when the focused element is a single-line
   // text input — not for textareas, contenteditable, or select/autocomplete.
   if (args.key === "Enter") {
-    const focusedEl =
-      target instanceof HTMLElement ? target : document.activeElement;
-    const isSingleLineInput =
-      focusedEl instanceof HTMLInputElement &&
-      !["checkbox", "radio", "file", "range", "hidden"].includes(focusedEl.type);
-    if (isSingleLineInput) {
-      const form = focusedEl.closest("form");
-      if (form instanceof HTMLFormElement) {
+    const focusedEl = target;
+    const focusedInput = isInputElement(focusedEl as Element | null)
+      ? (focusedEl as HTMLInputElement)
+      : null;
+    if (
+      focusedInput &&
+      !["checkbox", "radio", "file", "range", "hidden"].includes(focusedInput.type) &&
+      !isAutocompleteLikeTextInput(focusedInput)
+    ) {
+      const form = focusedInput.closest("form");
+      if (isFormElement(form)) {
         form.requestSubmit();
       }
     }
@@ -586,6 +763,7 @@ export function executeDragAndDrop(args: DragAndDropArgs): {
   }
 
   sourceEl.scrollIntoView({ behavior: "instant", block: "center" });
+  rememberKeyboardTarget(sourceEl);
 
   const srcRect = sourceEl.getBoundingClientRect();
   const tgtRect = targetEl.getBoundingClientRect();
@@ -693,6 +871,7 @@ export function executeRightClick(args: RightClickArgs): {
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
+  rememberKeyboardTarget(el);
   const rect = el.getBoundingClientRect();
   const clientX = rect.left + rect.width / 2;
   const clientY = rect.top + rect.height / 2;
@@ -704,13 +883,11 @@ export function executeRightClick(args: RightClickArgs): {
     clientX,
     clientY,
   };
-  const PointerCtor =
-    typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
-  el.dispatchEvent(new PointerCtor("pointerdown", eventOpts));
-  el.dispatchEvent(new MouseEvent("mousedown", eventOpts));
-  el.dispatchEvent(new PointerCtor("pointerup", eventOpts));
-  el.dispatchEvent(new MouseEvent("mouseup", eventOpts));
-  el.dispatchEvent(new MouseEvent("contextmenu", eventOpts));
+  el.dispatchEvent(pointerEventForTarget(el, "pointerdown", eventOpts));
+  el.dispatchEvent(mouseEventForTarget(el, "mousedown", eventOpts));
+  el.dispatchEvent(pointerEventForTarget(el, "pointerup", eventOpts));
+  el.dispatchEvent(mouseEventForTarget(el, "mouseup", eventOpts));
+  el.dispatchEvent(mouseEventForTarget(el, "contextmenu", eventOpts));
 
   return {
     success: true,
@@ -730,10 +907,8 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
     return staleIdError(args.id);
   }
 
-  if (
-    !(el instanceof HTMLInputElement) ||
-    (el.type !== "checkbox" && el.type !== "radio")
-  ) {
+  const control = getCheckboxOrRadioControl(el);
+  if (!control) {
     return {
       success: false,
       result: `Element [${tagId}] is not a checkbox or radio input`,
@@ -742,23 +917,24 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
   }
 
   el.scrollIntoView({ behavior: "instant", block: "center" });
+  rememberKeyboardTarget(control);
 
   // Use click() for React/framework compatibility — direct property assignment
   // doesn't trigger synthetic event handlers. click() toggles the native state
   // AND fires the full event pipeline (mousedown, mouseup, click, change).
-  if (el.type === "radio") {
+  if (control.type === "radio") {
     // Radio: click to select (only if not already in desired state)
-    if (args.checked && !el.checked) el.click();
+    if (args.checked && !control.checked) control.click();
   } else {
     // Checkbox: click toggles, so only click if current state differs
-    if (el.checked !== args.checked) el.click();
+    if (control.checked !== args.checked) control.click();
   }
 
   // Fallback: ensure the DOM property matches the requested state
-  if (el.checked !== args.checked) {
-    el.checked = args.checked;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+  if (control.checked !== args.checked) {
+    control.checked = args.checked;
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   return {
@@ -788,20 +964,14 @@ export function executeClickCoordinates(args: ClickCoordinatesArgs): {
 
   // Dispatch events on the resolved element, or documentElement as fallback
   const target = el || document.documentElement;
+  rememberKeyboardTarget(el);
   const eventOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
 
-  target.dispatchEvent(new MouseEvent("mousedown", eventOpts));
-  target.dispatchEvent(new MouseEvent("mouseup", eventOpts));
-  // Single click event — native .click() for HTMLElements, synthetic fallback for SVG
-  if (el instanceof HTMLElement) {
-    el.click();
-  } else {
-    target.dispatchEvent(new MouseEvent("click", eventOpts));
-  }
+  dispatchClickActivation(target, eventOpts);
 
   // Detect navigation
   const willNavigate =
-    el instanceof HTMLAnchorElement && !!el.href && !el.target;
+    isAnchorElement(el) && !!el.href && !el.target;
 
   const label = description ? ` (${description})` : "";
   const tagInfo = el
