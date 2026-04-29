@@ -22,6 +22,11 @@ import {
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
 import { isElementVisible, dismissElement, addDynamicTag, resetStableIds } from "./tagging";
+import {
+  classifyValueKind,
+  isSensitiveInput,
+  withTimelineText,
+} from "../utils/website-skills";
 
 logger.info("system", "Content Script Loaded");
 
@@ -643,6 +648,24 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return;
       }
 
+      if (message.type === "SKILL_RECORDING_START") {
+        startSkillRecording();
+        sendResponse?.({ ok: true });
+        return true;
+      }
+
+      if (message.type === "SKILL_RECORDING_STOP") {
+        stopSkillRecording();
+        sendResponse?.({ ok: true });
+        return true;
+      }
+
+      if (message.type === "SKILL_RECORDING_CANCEL") {
+        stopSkillRecording();
+        sendResponse?.({ ok: true });
+        return true;
+      }
+
       if (message.type === "DISMISS_MODALS") {
         const result = autoDismissModals();
         sendResponse({
@@ -871,6 +894,391 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
     },
   );
+}
+
+// --- Website Skill Recording Overlay ---
+
+const RECORDING_HUD_ID = "opensidebar-recording-hud";
+const RECORDING_BORDER_ID = "opensidebar-recording-border";
+const RECORDING_STYLE_ID = "opensidebar-recording-style";
+const RECORDING_FEEDBACK_CLASS = "opensidebar-recording-feedback";
+
+let skillRecordingActive = false;
+let skillRecordingAbort: AbortController | null = null;
+let skillRecordingLastHref = window.location.href;
+const skillRecordingInputTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+
+function startSkillRecording() {
+  if (skillRecordingActive) return;
+  skillRecordingActive = true;
+  skillRecordingLastHref = window.location.href;
+  skillRecordingAbort = new AbortController();
+  ensureSkillRecordingStyles();
+  renderSkillRecordingOverlay();
+  emitSkillRecordingEvent("page", document.title || "page");
+
+  const signal = skillRecordingAbort.signal;
+  document.addEventListener("click", handleSkillRecordingClick, {
+    capture: true,
+    signal,
+  });
+  document.addEventListener("change", handleSkillRecordingChange, {
+    capture: true,
+    signal,
+  });
+  document.addEventListener("input", handleSkillRecordingInput, {
+    capture: true,
+    signal,
+  });
+  window.addEventListener("popstate", checkSkillRecordingNavigation, { signal });
+  window.addEventListener("hashchange", checkSkillRecordingNavigation, { signal });
+}
+
+function stopSkillRecording() {
+  skillRecordingActive = false;
+  skillRecordingAbort?.abort();
+  skillRecordingAbort = null;
+  document.getElementById(RECORDING_HUD_ID)?.remove();
+  document.getElementById(RECORDING_BORDER_ID)?.remove();
+  document
+    .querySelectorAll(`.${RECORDING_FEEDBACK_CLASS}`)
+    .forEach((node) => node.remove());
+}
+
+function handleSkillRecordingClick(event: MouseEvent) {
+  if (!skillRecordingActive) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const el = target?.closest<HTMLElement>(
+    "button, a, [role='button'], input, textarea, select, [contenteditable='true']",
+  );
+  if (!el || isRecordingOverlayElement(el)) return;
+  if (isEditableElement(el)) return;
+  pulseSkillRecordingElement(el, "click");
+  emitSkillRecordingEvent("click", getElementLabel(el), el);
+  checkSkillRecordingNavigationSoon();
+}
+
+function handleSkillRecordingChange(event: Event) {
+  if (!skillRecordingActive) return;
+  const el = event.target instanceof HTMLElement ? event.target : null;
+  if (!el || isRecordingOverlayElement(el)) return;
+  captureSkillRecordingField(el);
+}
+
+function handleSkillRecordingInput(event: Event) {
+  if (!skillRecordingActive) return;
+  const el = event.target instanceof HTMLElement ? event.target : null;
+  if (!el || isRecordingOverlayElement(el)) return;
+  if (!isEditableElement(el)) return;
+  const previous = skillRecordingInputTimers.get(el);
+  if (previous) clearTimeout(previous);
+  skillRecordingInputTimers.set(
+    el,
+    setTimeout(() => captureSkillRecordingField(el), 500),
+  );
+}
+
+function captureSkillRecordingField(el: HTMLElement) {
+  if (!skillRecordingActive || !isEditableElement(el)) return;
+  pulseSkillRecordingElement(el, "field");
+  const input = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+  const label = getElementLabel(el);
+  const inputType =
+    el instanceof HTMLInputElement ? el.type : el.tagName.toLowerCase();
+  const value = "value" in input ? String(input.value || "") : el.textContent || "";
+  const sensitive = isSensitiveInput(inputType);
+
+  if (el instanceof HTMLSelectElement) {
+    emitSkillRecordingEvent("select", label, el, {
+      selectedLabel: el.selectedOptions?.[0]?.textContent?.trim() || undefined,
+    });
+    return;
+  }
+
+  if (el instanceof HTMLInputElement && el.type === "checkbox") {
+    emitSkillRecordingEvent("checkbox", label, el, {
+      checked: el.checked,
+    });
+    return;
+  }
+
+  if (!value && !(el instanceof HTMLElement && el.isContentEditable)) return;
+  emitSkillRecordingEvent("input", label, el, {
+    inputType,
+    sensitive,
+    valueKind: sensitive ? "redacted" : classifyValueKind(value, inputType),
+  });
+}
+
+function checkSkillRecordingNavigationSoon() {
+  setTimeout(checkSkillRecordingNavigation, 350);
+  setTimeout(checkSkillRecordingNavigation, 900);
+}
+
+function checkSkillRecordingNavigation() {
+  if (!skillRecordingActive || window.location.href === skillRecordingLastHref) {
+    return;
+  }
+  skillRecordingLastHref = window.location.href;
+  resetStableIds();
+  emitSkillRecordingEvent("navigation", window.location.pathname || "/");
+}
+
+function emitSkillRecordingEvent(
+  kind: Parameters<typeof withTimelineText>[0]["kind"],
+  label: string,
+  el?: HTMLElement,
+  extra: Partial<Parameters<typeof withTimelineText>[0]> = {},
+) {
+  const event = withTimelineText({
+    id: crypto.randomUUID(),
+    kind,
+    timestamp: Date.now(),
+    url: window.location.href,
+    path: window.location.pathname || "/",
+    label: label.trim().slice(0, 120) || "unnamed control",
+    tagName: el?.tagName.toLowerCase(),
+    ...extra,
+  });
+  chrome.runtime
+    .sendMessage({
+      type: "SKILL_RECORDING_EVENT",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.CONTENT,
+      payload: { event },
+    })
+    .catch(() => {});
+}
+
+function isEditableElement(el: HTMLElement): boolean {
+  return (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement ||
+    el.isContentEditable
+  );
+}
+
+function isRecordingOverlayElement(el: Element): boolean {
+  return Boolean(el.closest(`#${RECORDING_HUD_ID}, #${RECORDING_BORDER_ID}`));
+}
+
+function getElementLabel(el: HTMLElement): string {
+  const aria = el.getAttribute("aria-label") || el.getAttribute("title");
+  if (aria?.trim()) return aria.trim();
+  if (el.id) {
+    const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+    if (label?.textContent?.trim()) return label.textContent.trim();
+  }
+  const wrappingLabel = el.closest("label");
+  if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.trim();
+  const labelledBy = el.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const text = labelledBy
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (text) return text;
+  }
+  const placeholder = el.getAttribute("placeholder");
+  if (placeholder?.trim()) return placeholder.trim();
+  const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
+  if (text) return text;
+  return el.getAttribute("name") || el.id || el.tagName.toLowerCase();
+}
+
+function pulseSkillRecordingElement(el: HTMLElement, mode: "click" | "field") {
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const pulse = document.createElement("div");
+  pulse.className = RECORDING_FEEDBACK_CLASS;
+  pulse.setAttribute("data-mode", mode);
+  Object.assign(pulse.style, {
+    position: "fixed",
+    left: `${Math.max(0, rect.left - 4)}px`,
+    top: `${Math.max(0, rect.top - 4)}px`,
+    width: `${rect.width + 8}px`,
+    height: `${rect.height + 8}px`,
+    pointerEvents: "none",
+    zIndex: "2147483647",
+  });
+  document.documentElement.appendChild(pulse);
+  setTimeout(() => pulse.remove(), 760);
+}
+
+function renderSkillRecordingOverlay() {
+  if (!document.getElementById(RECORDING_BORDER_ID)) {
+    const border = document.createElement("div");
+    border.id = RECORDING_BORDER_ID;
+    document.documentElement.appendChild(border);
+  }
+
+  if (document.getElementById(RECORDING_HUD_ID)) return;
+  const hud = document.createElement("div");
+  hud.id = RECORDING_HUD_ID;
+  hud.innerHTML = `
+    <div data-main>
+      <span data-dot></span>
+      <span data-title>Recording site skill</span>
+      <span data-privacy>Typed values are redacted</span>
+    </div>
+    <div data-actions>
+      <button type="button" data-stop>Stop</button>
+      <button type="button" data-cancel>Cancel</button>
+    </div>
+  `;
+  hud.querySelector("[data-stop]")?.addEventListener("click", () => {
+    chrome.runtime
+      .sendMessage({
+        type: "SKILL_RECORDING_STOP",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.CONTENT,
+        payload: {},
+      })
+      .catch(() => {});
+  });
+  hud.querySelector("[data-cancel]")?.addEventListener("click", () => {
+    chrome.runtime
+      .sendMessage({
+        type: "SKILL_RECORDING_CANCEL",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.CONTENT,
+        payload: {},
+      })
+      .catch(() => {});
+  });
+  document.documentElement.appendChild(hud);
+}
+
+function ensureSkillRecordingStyles() {
+  if (document.getElementById(RECORDING_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = RECORDING_STYLE_ID;
+  style.textContent = `
+    #${RECORDING_BORDER_ID} {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483645;
+      pointer-events: none;
+      box-shadow:
+        inset 0 0 0 2px rgba(220, 38, 38, 0.88),
+        inset 0 0 0 7px rgba(245, 158, 11, 0.28);
+    }
+
+    #${RECORDING_HUD_ID} {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: min(620px, calc(100vw - 28px));
+      padding: 8px 9px 8px 12px;
+      border: 1px solid rgba(185, 28, 28, 0.28);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.96);
+      color: #7f1d1d;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      pointer-events: auto;
+    }
+
+    #${RECORDING_HUD_ID} [data-main] {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    #${RECORDING_HUD_ID} [data-dot] {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #dc2626;
+      box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.16);
+      animation: opensidebar-recording-dot 1.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    #${RECORDING_HUD_ID} [data-title] {
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    #${RECORDING_HUD_ID} [data-privacy] {
+      font-size: 11px;
+      line-height: 15px;
+      color: #92400e;
+      white-space: nowrap;
+    }
+
+    #${RECORDING_HUD_ID} [data-actions] {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #${RECORDING_HUD_ID} button {
+      border: 1px solid rgba(185, 28, 28, 0.24);
+      border-radius: 7px;
+      background: rgba(254, 242, 242, 0.9);
+      color: #991b1b;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 16px;
+      font-weight: 650;
+      padding: 5px 9px;
+      letter-spacing: 0;
+    }
+
+    #${RECORDING_HUD_ID} button:hover {
+      background: #fee2e2;
+    }
+
+    .${RECORDING_FEEDBACK_CLASS} {
+      border: 2px solid rgba(220, 38, 38, 0.88);
+      border-radius: 8px;
+      animation: opensidebar-recording-pulse 720ms ease-out forwards;
+    }
+
+    .${RECORDING_FEEDBACK_CLASS}[data-mode="field"] {
+      border-color: rgba(245, 158, 11, 0.94);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    @keyframes opensidebar-recording-dot {
+      0%, 100% { opacity: 0.66; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.08); }
+    }
+
+    @keyframes opensidebar-recording-pulse {
+      0% { opacity: 0; transform: scale(0.98); }
+      18% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.08); }
+    }
+
+    @media (max-width: 640px) {
+      #${RECORDING_HUD_ID} {
+        align-items: stretch;
+        flex-direction: column;
+        width: calc(100vw - 28px);
+      }
+
+      #${RECORDING_HUD_ID} [data-main] {
+        flex-wrap: wrap;
+      }
+
+      #${RECORDING_HUD_ID} [data-actions] {
+        justify-content: flex-end;
+      }
+    }
+  `;
+  document.documentElement.appendChild(style);
 }
 
 // --- Agent Activity Border Overlay ---

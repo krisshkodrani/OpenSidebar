@@ -4,6 +4,7 @@ import { createChatSlice } from "./store/chat-slice";
 import { createAgentSlice } from "./store/agent-slice";
 import { createSettingsSlice } from "./store/settings-slice";
 import { createSavedPromptsSlice } from "./store/saved-prompts-slice";
+import { createWebsiteSkillsSlice } from "./store/website-skills-slice";
 import { createUiSlice } from "./store/ui-slice";
 import type { Store } from "./store/types";
 
@@ -15,6 +16,7 @@ export const useStore = create<Store>()(
     ...createAgentSlice(...a),
     ...createSettingsSlice(...a),
     ...createSavedPromptsSlice(...a),
+    ...createWebsiteSkillsSlice(...a),
     ...createUiSlice(...a),
   })),
 );

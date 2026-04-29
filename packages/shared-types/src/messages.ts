@@ -8,7 +8,10 @@ import type { UserSettings } from "./settings";
 import type {
   AgentStep,
   Citation,
+  SkillRecordingEvent,
   ToolCallSummary,
+  UserWebsiteSkill,
+  UserWebsiteSkillDraft,
 } from "./agent";
 
 // --- Core Message Types ---
@@ -74,7 +77,16 @@ export type RuntimeMessage =
   | ScrollToPositionMessage
   | ScrollToPositionResponse
   | WorkspaceSyncMessage
-  | AgentStepLabelMessage;
+  | AgentStepLabelMessage
+  | SkillRecordingStartMessage
+  | SkillRecordingStopMessage
+  | SkillRecordingCancelMessage
+  | SkillRecordingEventMessage
+  | SkillRecordingStatusMessage
+  | UserSkillSaveMessage
+  | UserSkillListMessage
+  | UserSkillDeleteMessage
+  | UserSkillUsageStatusMessage;
 
 // --- Chat Messages ---
 
@@ -195,6 +207,82 @@ export interface WorkspaceSyncMessage extends BaseMessage {
   source: MessageSource.SIDEPANEL;
   payload: {
     workspaceId: string;
+  };
+}
+
+export interface SkillRecordingStartMessage extends BaseMessage {
+  type: "SKILL_RECORDING_START";
+  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND;
+  payload: {
+    tabId: number;
+  };
+}
+
+export interface SkillRecordingStopMessage extends BaseMessage {
+  type: "SKILL_RECORDING_STOP";
+  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND | MessageSource.CONTENT;
+  payload: {
+    tabId?: number;
+  };
+}
+
+export interface SkillRecordingCancelMessage extends BaseMessage {
+  type: "SKILL_RECORDING_CANCEL";
+  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND | MessageSource.CONTENT;
+  payload: {
+    tabId?: number;
+  };
+}
+
+export interface SkillRecordingEventMessage extends BaseMessage {
+  type: "SKILL_RECORDING_EVENT";
+  source: MessageSource.CONTENT | MessageSource.BACKGROUND;
+  payload: {
+    event: SkillRecordingEvent;
+  };
+}
+
+export interface SkillRecordingStatusMessage extends BaseMessage {
+  type: "SKILL_RECORDING_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    status: "idle" | "recording" | "review" | "paused";
+    timeline: string[];
+    draft?: UserWebsiteSkillDraft;
+    detail?: string;
+  };
+}
+
+export interface UserSkillSaveMessage extends BaseMessage {
+  type: "USER_SKILL_SAVE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    draft: UserWebsiteSkillDraft;
+    enabled?: boolean;
+  };
+}
+
+export interface UserSkillListMessage extends BaseMessage {
+  type: "USER_SKILL_LIST";
+  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND;
+  payload: {
+    skills?: UserWebsiteSkill[];
+  };
+}
+
+export interface UserSkillDeleteMessage extends BaseMessage {
+  type: "USER_SKILL_DELETE";
+  source: MessageSource.SIDEPANEL;
+  payload: {
+    id: string;
+  };
+}
+
+export interface UserSkillUsageStatusMessage extends BaseMessage {
+  type: "USER_SKILL_USAGE_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    skill: UserWebsiteSkill | null;
   };
 }
 

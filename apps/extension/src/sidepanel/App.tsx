@@ -27,6 +27,8 @@ import {
   PlanStrip,
   PrimaryTaskRail,
   StalledRecoveryCard,
+  SkillRecordingPanel,
+  WebsiteSkillsDrawer,
 } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -65,6 +67,16 @@ export default function App() {
   );
   const setReady = useStore((s) => s.setReady);
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
+  const loadUserWebsiteSkills = useStore((s) => s.loadUserWebsiteSkills);
+  const startSkillRecording = useStore((s) => s.startSkillRecording);
+  const recordSkillIntroDismissed = useStore(
+    (s) => s.recordSkillIntroDismissed,
+  );
+  const setRecordSkillIntroDismissed = useStore(
+    (s) => s.setRecordSkillIntroDismissed,
+  );
+  const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
+  const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   // Memoize filtered messages — avoids re-running filter/map on every delta
   const visibleMessages = useMemo(
@@ -119,6 +131,11 @@ export default function App() {
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
+  const [isWebsiteSkillsOpen, setIsWebsiteSkillsOpen] = useState(false);
+  const [isRecordIntroOpen, setIsRecordIntroOpen] = useState(false);
+  const [recordIntroDontShowAgain, setRecordIntroDontShowAgain] =
+    useState(false);
+  const [isSkillChipOpen, setIsSkillChipOpen] = useState(false);
   const [savedPromptsPrefill, setSavedPromptsPrefill] = useState<
     string | undefined
   >(undefined);
@@ -223,10 +240,53 @@ export default function App() {
       await loadMessagesFromStorage();
       // 5. Load saved prompts
       await loadSavedPrompts();
+      await loadUserWebsiteSkills();
       setReady();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const beginSkillRecording = useCallback(async () => {
+    let activeTabId = 0;
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (tab?.id) activeTabId = tab.id;
+    } catch (e) {
+      logger.warn("ui", "Failed to get active tab for skill recording", {
+        error: e,
+      });
+    }
+    if (!activeTabId) {
+      setError("Open a normal web page before recording a site skill.");
+      return;
+    }
+    await startSkillRecording(activeTabId);
+    setIsRecordIntroOpen(false);
+    setIsWebsiteSkillsOpen(false);
+  }, [setError, startSkillRecording]);
+
+  const handleRecordSkill = useCallback(() => {
+    if (recordSkillIntroDismissed) {
+      void beginSkillRecording();
+    } else {
+      setRecordIntroDontShowAgain(false);
+      setIsRecordIntroOpen(true);
+    }
+  }, [beginSkillRecording, recordSkillIntroDismissed]);
+
+  const handleConfirmRecordIntro = useCallback(async () => {
+    if (recordIntroDontShowAgain) {
+      await setRecordSkillIntroDismissed(true);
+    }
+    await beginSkillRecording();
+  }, [
+    beginSkillRecording,
+    recordIntroDontShowAgain,
+    setRecordSkillIntroDismissed,
+  ]);
 
   // Tab activation listener — detect workspace switches
   useEffect(() => {
@@ -635,7 +695,10 @@ export default function App() {
             setSavedPromptsPrefill(undefined);
             setIsSavedPromptsOpen(true);
           }}
+          onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
+          onRecordSkill={handleRecordSkill}
           modeBadgeLabel={getInteractionModeBadge(getInteractionMode(settings))}
+          recordingActive={skillRecordingStatus === "recording"}
         />
 
         <SettingsDrawer
@@ -657,6 +720,12 @@ export default function App() {
           prefillContent={savedPromptsPrefill}
         />
 
+        <WebsiteSkillsDrawer
+          isOpen={isWebsiteSkillsOpen}
+          onClose={() => setIsWebsiteSkillsOpen(false)}
+          onStartRecording={handleRecordSkill}
+        />
+
         <PlanStrip
           isExpanded={isPlanExpanded}
           onToggle={() => setIsPlanExpanded((v) => !v)}
@@ -665,6 +734,41 @@ export default function App() {
         <main className="flex-1 overflow-hidden relative flex flex-col">
           <PrimaryTaskRail />
           <StalledRecoveryCard />
+          <SkillRecordingPanel
+            onHelp={() => {
+              setRecordIntroDontShowAgain(false);
+              setIsRecordIntroOpen(true);
+            }}
+          />
+          {activeUserWebsiteSkill && (
+            <div className="mx-4 mt-2 rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/80 dark:bg-primary-900/20 text-xs text-primary-800 dark:text-primary-200">
+              <button
+                onClick={() => setIsSkillChipOpen((value) => !value)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left"
+              >
+                <span className="truncate">
+                  Using site skill: {activeUserWebsiteSkill.name}
+                </span>
+                <span className="text-[10px] uppercase text-primary-500">
+                  {isSkillChipOpen ? "Hide" : "View"}
+                </span>
+              </button>
+              {isSkillChipOpen && (
+                <div className="border-t border-primary-200 dark:border-primary-800 px-3 py-2 text-warm-700 dark:text-warm-200">
+                  <p className="font-semibold">{activeUserWebsiteSkill.name}</p>
+                  <p className="mt-0.5 text-warm-500 dark:text-warm-400">
+                    {activeUserWebsiteSkill.origin}
+                    {activeUserWebsiteSkill.pathPattern}
+                  </p>
+                  <ol className="mt-2 space-y-1">
+                    {activeUserWebsiteSkill.workflowSteps.map((step, index) => (
+                      <li key={`${step}-${index}`}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
           {blockedSiteWarning && (
             <div className="mx-4 mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               {blockedSiteWarning}
@@ -764,6 +868,67 @@ export default function App() {
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
         </div>
+
+        {isRecordIntroOpen && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 px-4 backdrop-enter"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Record Skill"
+          >
+            <div className="w-full max-w-[330px] rounded-lg border border-warm-200 dark:border-warm-700 bg-warm-50 dark:bg-warm-900 p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-warm-900 dark:text-warm-100">
+                    Teach a website workflow
+                  </h2>
+                  <p className="mt-1 text-xs text-warm-500 dark:text-warm-400">
+                    Recording captures clicks, field choices, and page changes.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsRecordIntroOpen(false)}
+                  className="p-1 rounded-full text-warm-500 hover:bg-warm-100 dark:hover:bg-warm-800"
+                  aria-label="Cancel"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <ul className="mt-3 space-y-2 text-xs text-warm-700 dark:text-warm-200">
+                <li>Typed values are redacted by default.</li>
+                <li>The saved result is generalized agent guidance.</li>
+                <li>It is not blind macro replay.</li>
+              </ul>
+              <label className="mt-3 flex items-center gap-2 text-xs text-warm-600 dark:text-warm-300">
+                <input
+                  type="checkbox"
+                  checked={recordIntroDontShowAgain}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setRecordIntroDontShowAgain(checked);
+                    void setRecordSkillIntroDismissed(checked);
+                  }}
+                  className="h-3.5 w-3.5 rounded border-warm-300"
+                />
+                Don&apos;t show this again
+              </label>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={handleConfirmRecordIntro}
+                  className="flex-1 rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                >
+                  Start recording
+                </button>
+                <button
+                  onClick={() => setIsRecordIntroOpen(false)}
+                  className="rounded-md border border-warm-300 dark:border-warm-700 px-3 py-2 text-sm font-semibold text-warm-700 dark:text-warm-200 hover:bg-warm-100 dark:hover:bg-warm-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {screenshot && settings.showDebugScreenshots && (
           <div className="fixed bottom-4 right-4 z-50 max-w-md">
