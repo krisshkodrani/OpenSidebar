@@ -53,6 +53,7 @@ import {
   APPLY_LIST_FILTER_DEF,
   APPLY_LIST_SORT_DEF,
   INSPECT_CATALOG_ITEM_DEF,
+  CONFIGURE_CATALOG_ITEM_DEF,
   XRAY_PAGE_DEF,
   UPDATE_NOTES_DEF,
   GET_PROFILE_FIELDS_DEF,
@@ -3702,6 +3703,345 @@ export function registerTools() {
         [maxControls],
         "No catalog item state found.",
       );
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.CONFIGURE_CATALOG_ITEM,
+    CONFIGURE_CATALOG_ITEM_DEF,
+    async (args, tabId) => {
+      const quantity =
+        args.quantity === undefined || args.quantity === null
+          ? null
+          : String(args.quantity);
+      const textFields = Array.isArray(args.textFields)
+        ? args.textFields
+            .filter(
+              (field: any) =>
+                typeof field?.field === "string" &&
+                typeof field?.value === "string" &&
+                field.field.trim(),
+            )
+            .map((field: any) => ({
+              field: field.field.trim(),
+              value: field.value,
+            }))
+        : [];
+      const checkboxes = Array.isArray(args.checkboxes)
+        ? args.checkboxes
+            .filter(
+              (checkbox: any) =>
+                typeof checkbox?.label === "string" &&
+                typeof checkbox?.checked === "boolean" &&
+                checkbox.label.trim(),
+            )
+            .map((checkbox: any) => ({
+              label: checkbox.label.trim(),
+              checked: checkbox.checked,
+            }))
+        : [];
+      const submit = args.submit === true;
+      const submitButton =
+        typeof args.submitButton === "string" && args.submitButton.trim()
+          ? args.submitButton.trim()
+          : null;
+
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId, allFrames: true },
+          world: "MAIN" as any,
+          func: (input: {
+            quantity: string | null;
+            textFields: Array<{ field: string; value: string }>;
+            checkboxes: Array<{ label: string; checked: boolean }>;
+            submit: boolean;
+            submitButton: string | null;
+          }) => {
+            const norm = (value: unknown) =>
+              String(value ?? "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toLowerCase();
+            const display = (value: unknown) =>
+              String(value ?? "").replace(/\s+/g, " ").trim();
+            const visible = (el: Element | null) => {
+              if (!el || !(el instanceof HTMLElement)) return false;
+              const style = window.getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                style.opacity !== "0" &&
+                rect.width > 0 &&
+                rect.height > 0
+              );
+            };
+            const escapeCss = (value: string) =>
+              window.CSS?.escape
+                ? window.CSS.escape(value)
+                : value.replace(/["\\]/g, "\\$&");
+            const labelsFor = (el: Element): string[] => {
+              const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+              const labels = [
+                el.getAttribute("aria-label"),
+                el.getAttribute("title"),
+                el.getAttribute("placeholder"),
+                el.getAttribute("name"),
+                el.getAttribute("id"),
+                el.getAttribute("control"),
+                control.value,
+                el.textContent,
+              ];
+              const id = el.getAttribute("id");
+              if (id) {
+                document
+                  .querySelectorAll(`label[for="${escapeCss(id)}"]`)
+                  .forEach((label) => labels.push(label.textContent));
+              }
+              const closestLabel = el.closest("label");
+              if (closestLabel) labels.push(closestLabel.textContent);
+              const previous = el.previousElementSibling;
+              if (previous) labels.push(previous.textContent);
+              return labels.map(display).filter(Boolean);
+            };
+            const matches = (labels: string[], expected: string) => {
+              const needle = norm(expected);
+              return labels.some((label) => {
+                const haystack = norm(label);
+                return haystack === needle || haystack.includes(needle);
+              });
+            };
+            const setNativeValue = (
+              el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+              value: string,
+            ) => {
+              const prototype = Object.getPrototypeOf(el);
+              const descriptor =
+                Object.getOwnPropertyDescriptor(prototype, "value") ||
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+              if (descriptor?.set) descriptor.set.call(el, value);
+              el.value = value;
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+              el.dispatchEvent(new Event("blur", { bubbles: true }));
+            };
+            const setNativeChecked = (el: HTMLInputElement, checked: boolean) => {
+              const descriptor =
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked") ||
+                Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "checked");
+              if (descriptor?.set) descriptor.set.call(el, checked);
+              el.checked = checked;
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+            };
+            const checkboxState = (el: Element): boolean | null => {
+              if (el instanceof HTMLInputElement && el.type === "checkbox") {
+                return el.checked;
+              }
+              const controlId =
+                el.getAttribute("for") ||
+                el.getAttribute("control") ||
+                el.getAttribute("aria-controls");
+              const controlled = controlId
+                ? document.getElementById(controlId)
+                : null;
+              if (controlled instanceof HTMLInputElement && controlled.type === "checkbox") {
+                return controlled.checked;
+              }
+              const checked =
+                el.getAttribute("aria-checked") ||
+                el.getAttribute("checked") ||
+                el.getAttribute("data-checked");
+              if (checked === "true") return true;
+              if (checked === "false") return false;
+              return null;
+            };
+            const findQuantity = () => {
+              const controls = [
+                ...document.querySelectorAll("select, input"),
+              ] as Array<HTMLInputElement | HTMLSelectElement>;
+              return (
+                controls.find((el) => matches(labelsFor(el), "quantity")) ||
+                controls.find((el) => /quantity|qty/i.test(`${el.id} ${el.name}`))
+              );
+            };
+            const findTextControl = (field: string) => {
+              const controls = [
+                ...document.querySelectorAll(
+                  "textarea, input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit'])",
+                ),
+              ] as Array<HTMLInputElement | HTMLTextAreaElement>;
+              return controls.find((el) => matches(labelsFor(el), field));
+            };
+            const findCheckbox = (label: string) => {
+              const controls = [
+                ...document.querySelectorAll(
+                  "input[type='checkbox'], [role='checkbox'], label[type='checkbox'], label[control]",
+                ),
+              ];
+              return controls.find((el) => matches(labelsFor(el), label));
+            };
+            const findSubmitControl = () => {
+              const controls = [
+                ...document.querySelectorAll(
+                  "button, input[type='button'], input[type='submit'], a, [role='button']",
+                ),
+              ].filter(visible);
+              if (input.submitButton) {
+                const exact = controls.find((el) =>
+                  matches(labelsFor(el), input.submitButton as string),
+                );
+                if (exact) return exact as HTMLElement;
+              }
+              return controls.find((el) =>
+                labelsFor(el).some((label) =>
+                  /\b(order now|place order|submit order|request|checkout|add to cart|order)\b/i.test(
+                    label,
+                  ),
+                ),
+              ) as HTMLElement | undefined;
+            };
+
+            const configured: string[] = [];
+            const mismatches: string[] = [];
+            const pageLooksCatalog =
+              /catalog|cat_item|service catalog|order now|request/i.test(
+                `${location.href} ${document.title} ${document.body?.innerText || ""}`,
+              );
+
+            if (input.quantity !== null) {
+              const quantity = findQuantity();
+              if (!quantity) {
+                mismatches.push(`Quantity control not found for ${input.quantity}.`);
+              } else if (quantity instanceof HTMLSelectElement) {
+                const option = [...quantity.options].find(
+                  (candidate) =>
+                    norm(candidate.value) === norm(input.quantity) ||
+                    norm(candidate.textContent) === norm(input.quantity),
+                );
+                if (!option) {
+                  mismatches.push(`Quantity option not found for ${input.quantity}.`);
+                } else {
+                  setNativeValue(quantity, option.value);
+                  configured.push(`Quantity=${option.textContent?.trim() || option.value}`);
+                }
+              } else {
+                setNativeValue(quantity, input.quantity);
+                configured.push(`Quantity=${input.quantity}`);
+              }
+            }
+
+            for (const field of input.textFields) {
+              const control = findTextControl(field.field);
+              if (!control) {
+                mismatches.push(`Text field not found: ${field.field}.`);
+                continue;
+              }
+              setNativeValue(control, field.value);
+              configured.push(`${field.field}="${field.value}"`);
+            }
+
+            for (const checkbox of input.checkboxes) {
+              const control = findCheckbox(checkbox.label);
+              if (!control) {
+                mismatches.push(`Checkbox not found: ${checkbox.label}.`);
+                continue;
+              }
+              const before = checkboxState(control);
+              if (before !== checkbox.checked && control instanceof HTMLElement && visible(control)) {
+                control.click();
+              }
+              const controlId =
+                control.getAttribute("for") ||
+                control.getAttribute("control") ||
+                control.getAttribute("aria-controls");
+              const inputEl = controlId ? document.getElementById(controlId) : control;
+              if (inputEl instanceof HTMLInputElement && inputEl.type === "checkbox") {
+                setNativeChecked(inputEl, checkbox.checked);
+              }
+              const after = checkboxState(control);
+              if (after !== null && after !== checkbox.checked) {
+                mismatches.push(
+                  `Checkbox ${checkbox.label} is ${after ? "checked" : "unchecked"}.`,
+                );
+              } else {
+                configured.push(`${checkbox.label}=${checkbox.checked ? "checked" : "unchecked"}`);
+              }
+            }
+
+            const submitControl =
+              mismatches.length === 0 && input.submit ? findSubmitControl() : null;
+            let submitClicked = false;
+            let submitLabel: string | null = null;
+            if (input.submit && mismatches.length === 0) {
+              if (!submitControl) {
+                mismatches.push("Submit/order control not found.");
+              } else {
+                submitLabel = labelsFor(submitControl)[0] || submitControl.textContent || "submit";
+                submitControl.click();
+                submitClicked = true;
+              }
+            }
+
+            return {
+              matched: pageLooksCatalog || configured.length > 0 || mismatches.length > 0,
+              ok: mismatches.length === 0 && (!input.submit || submitClicked),
+              url: location.href,
+              title: document.title,
+              configured,
+              mismatches,
+              submitClicked,
+              submitLabel,
+            };
+          },
+          args: [
+            {
+              quantity,
+              textFields,
+              checkboxes,
+              submit,
+              submitButton,
+            },
+          ],
+        });
+
+        const plans = (results || [])
+          .map((result) => result.result as Record<string, unknown> | undefined)
+          .filter((result): result is Record<string, unknown> => Boolean(result));
+        const selected =
+          plans.find((plan) => plan.ok === true) ||
+          plans.find((plan) => plan.matched === true);
+
+        if (!selected) {
+          return "Error: Could not find a catalog item form on the current page.";
+        }
+
+        if (selected.submitClicked === true) {
+          await waitForNavigation(tabId, 12_000);
+          await waitForDomReady(tabId, { timeoutMs: 2_000, waitForElements: true });
+        }
+
+        const tab = await chrome.tabs.get(tabId);
+        const configured = Array.isArray(selected.configured)
+          ? selected.configured.map(String)
+          : [];
+        const mismatches = Array.isArray(selected.mismatches)
+          ? selected.mismatches.map(String)
+          : [];
+        const lines = [
+          selected.ok ? "Configured catalog item." : "Catalog item configuration incomplete.",
+          configured.length ? `Configured:\n- ${configured.join("\n- ")}` : "",
+          mismatches.length ? `Mismatches:\n- ${mismatches.join("\n- ")}` : "",
+          selected.submitClicked
+            ? `Clicked submit control: ${String(selected.submitLabel || "submit")}`
+            : "",
+          `Current URL: ${tab.url || selected.url || ""}`,
+          `Current title: ${tab.title || selected.title || ""}`,
+        ];
+        return lines.filter(Boolean).join("\n");
+      } catch (e: any) {
+        return `Error configuring catalog item: ${e.message}`;
+      }
     },
   );
 

@@ -222,6 +222,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
     cacheable: "dom",
   },
+  [ToolName.CONFIGURE_CATALOG_ITEM]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: true,
+    mutationSensitive: true,
+  },
   [ToolName.XRAY_PAGE]: {
     risk: RiskLevel.LOW,
     domModifying: true,
