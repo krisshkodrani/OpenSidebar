@@ -485,9 +485,13 @@ The agent uses a two-tier architecture with independent provider pools for each 
 
 ### Executor Tier (observe→act cycles)
 - **Fireworks** (`accounts/fireworks/routers/kimi-k2p5-turbo`)
+- **Xiaomi MiMo** (`mimo-v2-omni`) when `providerMode` is `xiaomi`
 
 ### Planner Tier (reasoning/escalation)
 - **Fireworks** (`accounts/fireworks/routers/kimi-k2p5-turbo`)
+- **Xiaomi MiMo** (`mimo-v2-pro`, `mimo-v2-flash`, or `mimo-v2-omni`) when `providerMode` is `xiaomi`
+
+The Xiaomi provider uses OpenAI-compatible chat completions at `https://api.xiaomimimo.com/v1/chat/completions` with `XIAOMI_API_KEY`. Xiaomi support is scoped to the agent provider stack; it does not add TTS, STT, image generation, or audio support.
 
 Both pools use `ProviderPool` with `PoolConfig` for generic configuration. The `TaskPlanner` also uses the planner pool.
 

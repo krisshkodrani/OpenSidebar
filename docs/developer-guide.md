@@ -53,6 +53,7 @@ Validate real browser behavior with the built extension and live agent loop.
 Prerequisites:
 
 - `FIREWORKS_API_KEY` by default, unless `E2E_PROVIDER` points at another configured provider
+- `XIAOMI_API_KEY` when `E2E_PROVIDER=xiaomi`
 - successful build assets
 
 ```bash
@@ -109,6 +110,7 @@ Viewer:
 | Structured perception | `x-ai/grok-4.1-fast`                         |
 
 Settings overrides live in `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
+Xiaomi MiMo is available as `providerMode: "xiaomi"` for agent executor/planner traffic. It uses `XIAOMI_API_KEY`, `mimo-v2-omni` for the multimodal executor, and `mimo-v2-pro` as the default planner.
 
 ## Observation Path
 

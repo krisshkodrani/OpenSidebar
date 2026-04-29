@@ -31,6 +31,8 @@ npm run build
 3. Add the provider key you want to use
 4. Close Settings
 
+Supported agent provider keys include Fireworks AI, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
+
 ## First Task
 
 Try one of these:

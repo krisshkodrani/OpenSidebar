@@ -18,6 +18,7 @@ This task is preferred for the first run because it is navigation/menu-oriented 
 - [ ] Hugging Face access is approved for `ServiceNow/WorkArena-Instances`.
 - [ ] `HUGGING_FACE_HUB_TOKEN` is set in the shell or repo-local `.env`.
 - [ ] The OpenSidebar E2E provider key is set, usually `FIREWORKS_API_KEY`.
+- [ ] For Xiaomi MiMo runs, `E2E_PROVIDER=xiaomi` and `XIAOMI_API_KEY` are set.
 - [ ] WorkArena Python dependencies are installed under `.artifacts/workarena/.venv`.
 - [ ] The OpenSidebar extension build succeeds.
 - [ ] The operator accepts that commands with `--allow-servicenow-reset` may reset or mutate a remote ServiceNow WorkArena instance.
