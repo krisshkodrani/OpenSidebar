@@ -45,6 +45,10 @@ import {
   handleBackendRequest,
   loadBackendConfig,
 } from "../apps/backend/src/server";
+import {
+  buildTraceInsights,
+  type TraceInsightsFilters,
+} from "./trace-insights";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -170,6 +174,54 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
       }
     })
     .filter(Boolean) as TraceEntryLike[];
+}
+
+async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
+  const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+  if (!existsSync(traceFile)) return [];
+  const raw = await readFile(traceFile, "utf-8");
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return normalizeRunEventRecord(JSON.parse(line)) as TraceEntryLike;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as TraceEntryLike[];
+}
+
+function traceInsightsFilters(searchParams: URLSearchParams): TraceInsightsFilters {
+  return {
+    day: searchParams.get("day"),
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+    domain:
+      searchParams.get("domain") ||
+      searchParams.get("website") ||
+      searchParams.get("host") ||
+      "",
+    outcome: (searchParams.get("outcome") || "").trim(),
+    sessionPrefix: (
+      searchParams.get("sessionId") ||
+      searchParams.get("sessionIdPrefix") ||
+      ""
+    ).trim(),
+    sessionId: (searchParams.get("sessionId") || "").trim(),
+    mode: (searchParams.get("mode") || "").trim(),
+    model: (searchParams.get("model") || "").trim(),
+    skill: (searchParams.get("skill") || "").trim(),
+    q: (searchParams.get("q") || "").toLowerCase().trim(),
+    runId: (searchParams.get("runId") || "").trim(),
+    tier: (searchParams.get("tier") || "").trim(),
+    tool: (searchParams.get("tool") || "").trim(),
+    toolStatus: (searchParams.get("toolStatus") || "").trim(),
+    failure: (searchParams.get("failure") || "").trim(),
+    eventType: (searchParams.get("eventType") || "").trim(),
+  };
 }
 
 // Ensure directories exist
@@ -553,6 +605,42 @@ const server = createServer(
         sendJson(res, result);
       } catch (err) {
         sendText(res, `Error reading trace models: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/trace-insights — aggregate sessions, tools, skills, runs, models, failures, events
+    if (url.pathname === "/api/trace-insights" && req.method === "GET") {
+      try {
+        const sessions = await readAllTraceSessions();
+        const entriesBySession = new Map<string, TraceEntryLike[]>();
+        const runEventsByRun = new Map<string, TraceEntryLike[]>();
+
+        await Promise.all(
+          sessions.map(async (session) => {
+            const sessionId =
+              typeof session.sessionId === "string" ? session.sessionId : "";
+            if (sessionId) {
+              entriesBySession.set(sessionId, await readTraceEntries(sessionId));
+            }
+            const runId = typeof session.runId === "string" ? session.runId : "";
+            if (runId && !runEventsByRun.has(runId)) {
+              runEventsByRun.set(runId, await readRunTraceEvents(runId));
+            }
+          }),
+        );
+
+        sendJson(
+          res,
+          buildTraceInsights({
+            sessions,
+            entriesBySession,
+            runEventsByRun,
+            filters: traceInsightsFilters(url.searchParams),
+          }),
+        );
+      } catch (err) {
+        sendText(res, `Error reading trace insights: ${err}`, 500);
       }
       return;
     }

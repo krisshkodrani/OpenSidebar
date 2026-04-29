@@ -55,6 +55,7 @@ export interface RunGroup {
 export interface TracesSlice {
   sessions: TraceSession[];
   runGroups: RunGroup[];
+  activeTopLevelView: TopLevelView;
   traceListMode: "sessions" | "runs";
   availableDays: DayBucket[];
   availableModels: ModelBucket[];
@@ -84,6 +85,7 @@ export interface TracesSlice {
   setSessionLogsLoading: (loading: boolean) => void;
   setLogsWarning: (warning: string | null) => void;
   setSearchQuery: (query: string) => void;
+  setActiveTopLevelView: (view: TopLevelView) => void;
   setTraceListMode: (mode: "sessions" | "runs") => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
@@ -108,6 +110,8 @@ export type Subview =
   | "prompts"
   | "skills"
   | "logs";
+
+export type TopLevelView = "sessions" | "runs" | "insights";
 
 export interface ScrollPositions {
   overview: number;

@@ -4,6 +4,7 @@ import {
   deleteAllTraces,
   fetchRunTraceEvents,
   fetchSessionLogs,
+  fetchTraceInsights,
   fetchTraceSessions,
   screenshotUrl,
 } from "../../src/trace-viewer/api";
@@ -59,6 +60,33 @@ describe("trace-viewer api", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url] = (global.fetch as any).mock.calls[0];
     expect(url).toBe("/api/run-traces/run-123");
+  });
+
+  test("fetchTraceInsights builds query params for aggregate filters", async () => {
+    await fetchTraceInsights({
+      from: "2026-04-10",
+      to: "2026-04-15",
+      runId: "run-123",
+      tool: "click",
+      toolStatus: "failure",
+      skill: "checkout",
+      failure: "tool_execution",
+      eventType: "circuit_breaker",
+      model: "all",
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toContain("/api/trace-insights?");
+    expect(url).toContain("from=2026-04-10");
+    expect(url).toContain("to=2026-04-15");
+    expect(url).toContain("runId=run-123");
+    expect(url).toContain("tool=click");
+    expect(url).toContain("toolStatus=failure");
+    expect(url).toContain("skill=checkout");
+    expect(url).toContain("failure=tool_execution");
+    expect(url).toContain("eventType=circuit_breaker");
+    expect(url).not.toContain("model=all");
   });
 
   test("deleteAllTraces sends DELETE request", async () => {

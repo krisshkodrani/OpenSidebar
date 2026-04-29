@@ -164,6 +164,13 @@ describe("trace-viewer store", () => {
     expect(useStore.getState().traceListMode).toBe("runs");
   });
 
+  test("top-level viewer mode defaults to sessions and can switch to insights", () => {
+    expect(useStore.getState().activeTopLevelView).toBe("sessions");
+
+    useStore.getState().setActiveTopLevelView("insights");
+    expect(useStore.getState().activeTopLevelView).toBe("insights");
+  });
+
   test("setSessions falls back to sessions when selected run view has no groups", () => {
     useStore.getState().setTraceListMode("runs");
     useStore.getState().setSessions([

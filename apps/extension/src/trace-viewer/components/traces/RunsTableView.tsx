@@ -100,6 +100,9 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
                 <span className="min-w-0 flex-1 text-[12px] text-trace-text">
                   {truncate(extractQueryTitle(group.query).title, 80)}
                 </span>
+                <RunOutcomeStrip
+                  outcomes={group.sessions.map((session) => session.outcome)}
+                />
                 <Badge
                   variant={
                     outcomeClass(group.overallOutcome) as
@@ -140,6 +143,29 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
         ))}
       </div>
     </div>
+  );
+}
+
+function RunOutcomeStrip({ outcomes }: { outcomes: string[] }) {
+  if (outcomes.length === 0) return null;
+  return (
+    <span
+      className="hidden xl:flex h-2 w-20 overflow-hidden rounded border border-trace-border bg-trace-surface shrink-0"
+      title={outcomes.join(" -> ")}
+    >
+      {outcomes.map((outcome, index) => (
+        <span
+          key={`${outcome}-${index}`}
+          className={`h-full flex-1 ${
+            outcome === "completed" || outcome === "success"
+              ? "bg-state-success"
+              : outcome === "stopped" || outcome === "max_turns"
+                ? "bg-state-warning"
+                : "bg-state-error"
+          }`}
+        />
+      ))}
+    </span>
   );
 }
 

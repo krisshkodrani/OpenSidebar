@@ -91,6 +91,7 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
 export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   sessions: [],
   runGroups: [],
+  activeTopLevelView: "sessions",
   traceListMode: "sessions",
   availableDays: [],
   availableModels: [],
@@ -187,6 +188,10 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   setSearchQuery: (query) =>
     set((s) => {
       s.searchQuery = query;
+    }),
+  setActiveTopLevelView: (view) =>
+    set((s) => {
+      s.activeTopLevelView = view;
     }),
   setActiveSubview: (view) =>
     set((s) => {
