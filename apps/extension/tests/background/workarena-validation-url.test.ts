@@ -20,9 +20,31 @@ describe("WorkArena validation URL selection", () => {
       "https://workarena.example.com/now/nav/ui/classic/params/target/incident_list.do%3Fsysparm_query%3DORDERBYDESCnumber%5EORDERBYDESCcalendar_duration",
     );
     expect(selection.candidates[0]).toMatchObject({
+      source: "finalOpenSidebarUrl:canonical",
+      selected: true,
+      reason: null,
+    });
+  });
+
+  test("uses final navigation URLs when success intentionally leaves the start page", () => {
+    const startUrl = "https://workarena.example.com/now/nav/ui/home";
+    const finalUrl =
+      "https://workarena.example.com/now/nav/ui/classic/params/target/cmdb_ci_db_hbase_instance_list.do%3Fsysparm_userpref_module%3D45a4f1329f1221001e021a1cf67fcfe5";
+
+    const selection = selectValidationUrl({
+      startUrl,
+      browserActiveUrl: startUrl,
+      importedPageUrl: startUrl,
+      finalOpenSidebarUrl: finalUrl,
+      frameUrls: [],
+    });
+
+    expect(selection.source).toBe("finalOpenSidebarUrl");
+    expect(selection.url).toBe(finalUrl);
+    expect(selection.candidates[0]).toMatchObject({
       source: "finalOpenSidebarUrl",
-      selected: false,
-      reason: "path_mismatch",
+      selected: true,
+      reason: null,
     });
   });
 
@@ -54,11 +76,6 @@ describe("WorkArena validation URL selection", () => {
           source: "frameUrl:1",
           selected: false,
           reason: "origin_mismatch",
-        }),
-        expect.objectContaining({
-          source: "frameUrl:2",
-          selected: false,
-          reason: "path_mismatch",
         }),
       ]),
     );
